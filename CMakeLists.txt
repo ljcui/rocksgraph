@@ -24,9 +24,11 @@ add_executable(rg-server
         ast/rewriters/return_star_rewriter.cc
         ast/rewriters/rewriter_registry.cc
         ast/rewriters/rewriter_pipeline.cc
+        value/value.cc
     ${GENERATED_SOURCES}
 )
 target_link_libraries(rg-server ANTLR4Runtime::antlr4_runtime)
+target_include_directories(rg-server PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 set_target_properties(rg-server PROPERTIES BUILD_RPATH "/usr/local/lib")
 
 option(BUILD_TESTS "Build tests" ON)
@@ -49,5 +51,13 @@ if(BUILD_TESTS)
         target_link_libraries(ast_rewriter_test GTest::gtest_main ANTLR4Runtime::antlr4_runtime)
         set_target_properties(ast_rewriter_test PROPERTIES BUILD_RPATH "/usr/local/lib")
         add_test(NAME ast_rewriter_test COMMAND ast_rewriter_test)
+
+        add_executable(value_test
+            tests/value_test.cc
+            value/value.cc
+        )
+        target_include_directories(value_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+        target_link_libraries(value_test GTest::gtest_main)
+        add_test(NAME value_test COMMAND value_test)
     endif()
 endif()
