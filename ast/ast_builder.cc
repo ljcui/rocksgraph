@@ -9,7 +9,7 @@
 #include "CypherParser.h"
 #include "antlr4-runtime.h"
 
-namespace cypher {
+namespace ast {
 
 namespace {
 
@@ -1338,4 +1338,4 @@ ParseResult parseCypher(const std::string &input) {
   return result;
 }
 
-}  // namespace cypher
+}  // namespace ast

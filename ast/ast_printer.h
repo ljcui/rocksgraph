@@ -1,11 +1,10 @@
-#ifndef RGRAPH_AST_PRINTER_H
-#define RGRAPH_AST_PRINTER_H
+#pragma once
 
 #include <ostream>
 
 #include "ast.h"
 
-namespace cypher {
+namespace ast {
 
 class ASTPrinter : public ASTVisitor {
  public:
@@ -116,6 +115,4 @@ class ASTPrinter : public ASTVisitor {
   int indent_ = 0;
 };
 
-}  // namespace cypher
-
-#endif  // RGRAPH_AST_PRINTER_H
+}  // namespace ast

@@ -1,5 +1,4 @@
-#ifndef RGRAPH_AST_BUILDER_H
-#define RGRAPH_AST_BUILDER_H
+#pragma once
 
 #include <memory>
 #include <string>
@@ -7,7 +6,7 @@
 
 #include "ast.h"
 
-namespace cypher {
+namespace ast {
 
     struct ParseResult {
         std::unique_ptr<Statement> statement;
@@ -18,6 +17,4 @@ namespace cypher {
     // and errors will contain human-readable messages.
     ParseResult parseCypher(const std::string &input);
 
-}  // namespace cypher
-
-#endif  // RGRAPH_AST_BUILDER_H
+}  // namespace ast

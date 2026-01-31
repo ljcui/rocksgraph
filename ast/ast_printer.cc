@@ -2,7 +2,7 @@
 
 #include <sstream>
 
-namespace cypher {
+namespace ast {
 
 ASTPrinter::ASTPrinter(std::ostream &out) : out_(out) {}
 
@@ -900,4 +900,4 @@ void ASTPrinter::visit(Return &node) {
   dedent();
 }
 
-}  // namespace cypher
+}  // namespace ast

@@ -1,17 +1,16 @@
-#ifndef RGRAPH_AST_H
-#define RGRAPH_AST_H
+#pragma once
 
 #include <cassert>
-#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
-namespace cypher {
+#include "ast_visitor.h"
+
+namespace ast {
 
 // Forward declarations
-class ASTVisitor;
 class ReadingClause;
 class UpdatingClause;
 class With;
@@ -717,108 +716,6 @@ class Return : public ProjectionClause {
 };
 
 // ============================================
-// Visitor interface
-// ============================================
-class ASTVisitor {
- public:
-  virtual ~ASTVisitor() = default;
-
-  // Top-level statements and queries
-  virtual void visit(Statement& node) {}
-  virtual void visit(Query& node) {}
-  virtual void visit(RegularQuery& node) {}
-  virtual void visit(StandaloneCall& node) {}
-  virtual void visit(SingleQuery& node) {}
-  virtual void visit(SinglePartQuery& node) {}
-  virtual void visit(MultiPartQuery& node) {}
-  virtual void visit(UnionPart& node) {}
-
-  // Expressions
-  virtual void visit(Expression& node) {}
-  virtual void visit(BinaryExpression& node) {}
-  virtual void visit(OrExpression& node) {}
-  virtual void visit(XorExpression& node) {}
-  virtual void visit(AndExpression& node) {}
-  virtual void visit(ComparisonExpression& node) {}
-  virtual void visit(ComparisonChainExpression& node) {}
-  virtual void visit(AddExpression& node) {}
-  virtual void visit(SubtractExpression& node) {}
-  virtual void visit(MultiplyExpression& node) {}
-  virtual void visit(DivideExpression& node) {}
-  virtual void visit(ModuloExpression& node) {}
-  virtual void visit(PowerExpression& node) {}
-  virtual void visit(UnaryExpression& node) {}
-  virtual void visit(NotExpression& node) {}
-  virtual void visit(UnaryPlusExpression& node) {}
-  virtual void visit(UnaryMinusExpression& node) {}
-  virtual void visit(StringPredicateExpression& node) {}
-  virtual void visit(ListPredicateExpression& node) {}
-  virtual void visit(LabelPredicateExpression& node) {}
-  virtual void visit(NullPredicateExpression& node) {}
-
-  // Literals
-  virtual void visit(Literal& node) {}
-  virtual void visit(BooleanLiteral& node) {}
-  virtual void visit(IntegerLiteral& node) {}
-  virtual void visit(DoubleLiteral& node) {}
-  virtual void visit(StringLiteral& node) {}
-  virtual void visit(NullLiteral& node) {}
-  virtual void visit(ListLiteral& node) {}
-  virtual void visit(MapLiteral& node) {}
-  virtual void visit(Properties& node) {}
-
-  // Other expressions
-  virtual void visit(Variable& node) {}
-  virtual void visit(Parameter& node) {}
-  virtual void visit(PropertyExpression& node) {}
-  virtual void visit(ListIndexExpression& node) {}
-  virtual void visit(ListSliceExpression& node) {}
-  virtual void visit(FunctionInvocation& node) {}
-  virtual void visit(CountStarExpression& node) {}
-  virtual void visit(CaseExpression& node) {}
-  virtual void visit(ParenthesizedExpression& node) {}
-  virtual void visit(ListComprehension& node) {}
-  virtual void visit(PatternComprehension& node) {}
-  virtual void visit(PatternPredicateExpression& node) {}
-  virtual void visit(Quantifier& node) {}
-  virtual void visit(AllQuantifier& node) {}
-  virtual void visit(AnyQuantifier& node) {}
-  virtual void visit(NoneQuantifier& node) {}
-  virtual void visit(SingleQuantifier& node) {}
-  virtual void visit(ExistentialSubquery& node) {}
-
-  // Pattern
-  virtual void visit(Pattern& node) {}
-  virtual void visit(PatternPart& node) {}
-  virtual void visit(PatternElement& node) {}
-  virtual void visit(RelationshipsPattern& node) {}
-  virtual void visit(NodePattern& node) {}
-  virtual void visit(RelationshipPattern& node) {}
-  virtual void visit(RelationshipDetail& node) {}
-
-  // Clauses
-  virtual void visit(Clause& node) {}
-  virtual void visit(ReadingClause& node) {}
-  virtual void visit(Match& node) {}
-  virtual void visit(Unwind& node) {}
-  virtual void visit(InQueryCall& node) {}
-  virtual void visit(UpdatingClause& node) {}
-  virtual void visit(Create& node) {}
-  virtual void visit(Merge& node) {}
-  virtual void visit(Delete& node) {}
-  virtual void visit(Set& node) {}
-  virtual void visit(SetItem& node) {}
-  virtual void visit(Remove& node) {}
-  virtual void visit(RemoveItem& node) {}
-  virtual void visit(ProjectionClause& node) {}
-  virtual void visit(ProjectionBody& node) {}
-  virtual void visit(ProjectionItem& node) {}
-  virtual void visit(SortItem& node) {}
-  virtual void visit(With& node) {}
-  virtual void visit(Return& node) {}
-};
-
-// ============================================
 // accept implementations
 // ============================================
 inline void Statement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
@@ -1035,6 +932,4 @@ inline void SortItem::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 inline void With::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 inline void Return::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 
-}  // namespace cypher
-
-#endif  // RGRAPH_AST_H
+}  // namespace ast
