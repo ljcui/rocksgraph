@@ -4,6 +4,7 @@
 
 ## 项目结构与模块组织
 - `ast/`：Cypher 语法（`Cypher.g4`）、生成的解析器/词法器源码，以及 AST 工具（builder、printer、rewriter、equality）。
+- `value/`：Value 值系统与数据类型定义（标量、集合、图元素、时空/空间类型）。
 - `tests/`：GoogleTest 单元测试（例如 `*_test.cc`）。
 - `main.cc`：`rg-server` 可执行文件入口。
 - `cmake/`：CMake 辅助模块（ANTLR4 runtime 探测）。
@@ -17,6 +18,7 @@
 说明：
 - 需要 ANTLR4 runtime（`find_package(ANTLR4Runtime REQUIRED)`）。
 - 仅在检测到 GTest 时构建测试（默认 `-DBUILD_TESTS=ON`）。
+  - 已包含 `value_test` 与 `ast_rewriter_test`。
 
 ## 编码风格与命名规范
 - 采用 C++20（由 `CMakeLists.txt` 强制）。
@@ -32,6 +34,9 @@
 ## 生成代码与语法变更
 - `ast/Cypher*.cc/.h` 由 `ast/Cypher.g4` 生成。
 - 避免手工修改生成文件；语法变更后用本地 ANTLR 流程重新生成。
+
+## Git 忽略项
+- `build/`、`cmake-build-debug/`、`.idea/` 应保持忽略与未跟踪。
 
 ## 回答问题规范
 - 回答问题时一律使用中文。
