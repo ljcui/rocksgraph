@@ -21,6 +21,9 @@ add_executable(rg-server
         ast/ast_equal.cc
         ast/ast_printer.cc
         ast/ast_rewriter.cc
+        ast/rewriters/return_star_rewriter.cc
+        ast/rewriters/rewriter_registry.cc
+        ast/rewriters/rewriter_pipeline.cc
     ${GENERATED_SOURCES}
 )
 target_link_libraries(rg-server ANTLR4Runtime::antlr4_runtime)
@@ -37,6 +40,9 @@ if(BUILD_TESTS)
             ast/ast_equal.cc
             ast/ast_printer.cc
             ast/ast_rewriter.cc
+            ast/rewriters/return_star_rewriter.cc
+            ast/rewriters/rewriter_registry.cc
+            ast/rewriters/rewriter_pipeline.cc
             ${GENERATED_SOURCES}
         )
         target_include_directories(ast_rewriter_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

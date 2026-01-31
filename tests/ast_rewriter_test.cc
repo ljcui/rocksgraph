@@ -4,7 +4,8 @@
 
 #include "ast/ast_builder.h"
 #include "ast/ast_equal.h"
-#include "ast/ast_rewriter.h"
+#include "ast/rewriters/return_star_rewriter.h"
+#include "ast/rewriters/rewriter_pipeline.h"
 
 namespace {
 
@@ -45,4 +46,24 @@ TEST(ReturnStarRewriterTest, WithStarThenReturnStar) {
 TEST(ReturnStarRewriterTest, WithAliasReturnStar) {
   expectRewriteEquals("MATCH (n) WITH n AS m RETURN *",
                       "MATCH (n) WITH n AS m RETURN m");
+}
+
+TEST(RewriterPipelineTest, DefaultPipelineUsesReturnStar) {
+  auto statement = parseOrFail("MATCH (n) RETURN *");
+  auto expected_statement = parseOrFail("MATCH (n) RETURN n");
+
+  ast::applyDefaultRewriters(*statement);
+
+  EXPECT_TRUE(ast::ASTEqual::equal(statement.get(), expected_statement.get()))
+      << "rewrite mismatch for pipeline";
+}
+
+TEST(RewriterPipelineTest, ParseAndRewriteUsesDefaultPipeline) {
+  auto result = ast::parseCypherAndRewrite("MATCH (n) RETURN *");
+  EXPECT_TRUE(result.errors.empty()) << "parse errors for rewrite wrapper";
+  ASSERT_TRUE(result.statement != nullptr);
+  auto expected_statement = parseOrFail("MATCH (n) RETURN n");
+
+  EXPECT_TRUE(ast::ASTEqual::equal(result.statement.get(), expected_statement.get()))
+      << "rewrite mismatch for parseCypherAndRewrite";
 }

@@ -17,4 +17,7 @@ namespace ast {
     // and errors will contain human-readable messages.
     ParseResult parseCypher(const std::string &input);
 
+    // Parse and apply default AST rewriters when parsing succeeds.
+    ParseResult parseCypherAndRewrite(const std::string &input);
+
 }  // namespace ast
