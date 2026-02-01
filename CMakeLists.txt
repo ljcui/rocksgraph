@@ -18,9 +18,13 @@ find_package(ANTLR4Runtime REQUIRED)
 add_executable(rg-server
     main.cc
         ast/ast_builder.cc
+        ast/ast_clone.cc
         ast/ast_equal.cc
         ast/ast_printer.cc
         ast/ast_rewriter.cc
+        ast/rewriters/comparison_chain_rewriter.cc
+        ast/rewriters/parenthesized_expression_rewriter.cc
+        ast/rewriters/pattern_predicate_rewriter.cc
         ast/rewriters/return_star_rewriter.cc
         ast/rewriters/rewriter_registry.cc
         ast/rewriters/rewriter_pipeline.cc
@@ -39,9 +43,13 @@ if(BUILD_TESTS)
         add_executable(ast_rewriter_test
             tests/ast_rewriter_test.cc
             ast/ast_builder.cc
+            ast/ast_clone.cc
             ast/ast_equal.cc
             ast/ast_printer.cc
             ast/ast_rewriter.cc
+            ast/rewriters/comparison_chain_rewriter.cc
+            ast/rewriters/parenthesized_expression_rewriter.cc
+            ast/rewriters/pattern_predicate_rewriter.cc
             ast/rewriters/return_star_rewriter.cc
             ast/rewriters/rewriter_registry.cc
             ast/rewriters/rewriter_pipeline.cc

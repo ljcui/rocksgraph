@@ -6,6 +6,12 @@ namespace ast {
 
 void ASTRewriter::rewrite(ASTNode &node) { node.accept(*this); }
 
+void ASTRewriter::rewriteExpression(std::unique_ptr<Expression> &expr) {
+  if (expr) {
+    expr->accept(*this);
+  }
+}
+
 void ASTRewriter::visit(Statement &node) { (void)node; }
 void ASTRewriter::visit(Query &node) { (void)node; }
 void ASTRewriter::visit(RegularQuery &node) {

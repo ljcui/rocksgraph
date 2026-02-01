@@ -12,7 +12,7 @@
 
 ## 构建、测试与开发命令
 - 配置：`cmake -S . -B build`（生成构建文件）。
-- 构建：`cmake --build build`（编译 `rg-server`）。
+- 构建：`cmake --build build -j5`（编译 `rg-server`）。
 - 测试：`ctest --test-dir build`（在检测到 GTest 时运行测试）。
 
 说明：

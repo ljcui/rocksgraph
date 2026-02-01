@@ -8,9 +8,15 @@ namespace ast {
 
 class ASTRewriter : public ASTVisitor {
  public:
-  void rewrite(ASTNode &node);
+ void rewrite(ASTNode &node);
 
  protected:
+  void rewriteMaybe(std::unique_ptr<Expression> &ptr) {
+    if (ptr) {
+      rewriteExpression(ptr);
+    }
+  }
+
   template <typename T>
   void rewriteMaybe(std::unique_ptr<T> &ptr) {
     if (ptr) {
@@ -24,6 +30,8 @@ class ASTRewriter : public ASTVisitor {
       rewriteMaybe(item);
     }
   }
+
+  virtual void rewriteExpression(std::unique_ptr<Expression> &expr);
 
   void visit(Statement &node) override;
   void visit(Query &node) override;

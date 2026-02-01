@@ -4,6 +4,9 @@
 
 #include "ast/ast_builder.h"
 #include "ast/ast_equal.h"
+#include "ast/rewriters/comparison_chain_rewriter.h"
+#include "ast/rewriters/parenthesized_expression_rewriter.h"
+#include "ast/rewriters/pattern_predicate_rewriter.h"
 #include "ast/rewriters/return_star_rewriter.h"
 #include "ast/rewriters/rewriter_pipeline.h"
 
@@ -16,12 +19,13 @@ std::unique_ptr<ast::Statement> parseOrFail(const std::string &query) {
   return std::move(result.statement);
 }
 
-void expectRewriteEquals(const std::string &input,
-                         const std::string &expected) {
+template <typename Rewriter>
+void expectRewriteEqualsWith(const std::string &input,
+                             const std::string &expected) {
   auto statement = parseOrFail(input);
   auto expected_statement = parseOrFail(expected);
 
-  ast::ReturnStarRewriter rewriter;
+  Rewriter rewriter;
   rewriter.rewrite(*statement);
 
   EXPECT_TRUE(ast::ASTEqual::equal(statement.get(), expected_statement.get()))
@@ -31,21 +35,51 @@ void expectRewriteEquals(const std::string &input,
 }  // namespace
 
 TEST(ReturnStarRewriterTest, MatchReturnStar) {
-  expectRewriteEquals("MATCH (n) RETURN *", "MATCH (n) RETURN n");
+  expectRewriteEqualsWith<ast::ReturnStarRewriter>("MATCH (n) RETURN *",
+                                                   "MATCH (n) RETURN n");
 }
 
 TEST(ReturnStarRewriterTest, UnwindReturnStar) {
-  expectRewriteEquals("UNWIND [1, 2] AS x RETURN *", "UNWIND [1, 2] AS x RETURN x");
+  expectRewriteEqualsWith<ast::ReturnStarRewriter>(
+      "UNWIND [1, 2] AS x RETURN *", "UNWIND [1, 2] AS x RETURN x");
 }
 
 TEST(ReturnStarRewriterTest, WithStarThenReturnStar) {
-  expectRewriteEquals("MATCH (n) WITH * RETURN *",
-                      "MATCH (n) WITH n RETURN n");
+  expectRewriteEqualsWith<ast::ReturnStarRewriter>(
+      "MATCH (n) WITH * RETURN *", "MATCH (n) WITH n RETURN n");
 }
 
 TEST(ReturnStarRewriterTest, WithAliasReturnStar) {
-  expectRewriteEquals("MATCH (n) WITH n AS m RETURN *",
-                      "MATCH (n) WITH n AS m RETURN m");
+  expectRewriteEqualsWith<ast::ReturnStarRewriter>(
+      "MATCH (n) WITH n AS m RETURN *", "MATCH (n) WITH n AS m RETURN m");
+}
+
+TEST(ComparisonChainRewriterTest, ReturnChain) {
+  expectRewriteEqualsWith<ast::ComparisonChainRewriter>(
+      "RETURN 1 < 2 < 3", "RETURN 1 < 2 AND 2 < 3");
+}
+
+TEST(ComparisonChainRewriterTest, WhereChain) {
+  expectRewriteEqualsWith<ast::ComparisonChainRewriter>(
+      "MATCH (n) WHERE 1 < n.age <= 10 RETURN n",
+      "MATCH (n) WHERE 1 < n.age AND n.age <= 10 RETURN n");
+}
+
+TEST(ParenthesizedExpressionRewriterTest, ReturnNested) {
+  expectRewriteEqualsWith<ast::ParenthesizedExpressionRewriter>(
+      "RETURN ((1))", "RETURN 1");
+}
+
+TEST(ParenthesizedExpressionRewriterTest, WhereExpression) {
+  expectRewriteEqualsWith<ast::ParenthesizedExpressionRewriter>(
+      "MATCH (n) WHERE ((n.age > 1)) RETURN n",
+      "MATCH (n) WHERE n.age > 1 RETURN n");
+}
+
+TEST(PatternPredicateRewriterTest, WherePattern) {
+  expectRewriteEqualsWith<ast::PatternPredicateRewriter>(
+      "MATCH (n) WHERE (n)-[:R]->(m) RETURN n",
+      "MATCH (n) WHERE EXISTS { (n)-[:R]->(m) } RETURN n");
 }
 
 TEST(RewriterPipelineTest, DefaultPipelineUsesReturnStar) {
