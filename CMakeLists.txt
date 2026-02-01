@@ -23,6 +23,7 @@ add_executable(rg-server
         ast/ast_printer.cc
         ast/ast_to_cypher.cc
         ast/ast_rewriter.cc
+        ast/rewriters/anonymous_pattern_name_rewriter.cc
         ast/rewriters/comparison_chain_rewriter.cc
         ast/rewriters/count_star_rewriter.cc
         ast/rewriters/existential_subquery_rewriter.cc
@@ -51,6 +52,7 @@ add_executable(ast_rewriter_test
     ast/ast_printer.cc
     ast/ast_to_cypher.cc
     ast/ast_rewriter.cc
+    ast/rewriters/anonymous_pattern_name_rewriter.cc
     ast/rewriters/comparison_chain_rewriter.cc
     ast/rewriters/count_star_rewriter.cc
     ast/rewriters/existential_subquery_rewriter.cc
@@ -76,6 +78,7 @@ add_executable(ast_to_cypher_test
     ast/ast_printer.cc
     ast/ast_to_cypher.cc
     ast/ast_rewriter.cc
+    ast/rewriters/anonymous_pattern_name_rewriter.cc
     ast/rewriters/comparison_chain_rewriter.cc
     ast/rewriters/count_star_rewriter.cc
     ast/rewriters/existential_subquery_rewriter.cc

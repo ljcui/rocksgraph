@@ -7,6 +7,7 @@
 #include "ast/rewriters/comparison_chain_rewriter.h"
 #include "ast/rewriters/count_star_rewriter.h"
 #include "ast/rewriters/existential_subquery_rewriter.h"
+#include "ast/rewriters/anonymous_pattern_name_rewriter.h"
 #include "ast/rewriters/order_by_alias_rewriter.h"
 #include "ast/rewriters/parenthesized_expression_rewriter.h"
 #include "ast/rewriters/pattern_predicate_rewriter.h"
@@ -112,6 +113,18 @@ TEST(ProjectionAliasRewriterTest, FillsAliasFromAddExpression) {
   expectRewriteEqualsWith<ast::ProjectionAliasRewriter>(
       "MATCH (n) RETURN n.age + 1",
       "MATCH (n) RETURN n.age + 1 AS `n.age + 1`");
+}
+
+TEST(AnonymousPatternNameRewriterTest, NamesUnnamedNodes) {
+  expectRewriteEqualsWith<ast::AnonymousPatternNameRewriter>(
+      "MATCH ()-[r]-() RETURN r",
+      "MATCH (anon_0)-[r]-(anon_1) RETURN r");
+}
+
+TEST(AnonymousPatternNameRewriterTest, NamesUnnamedRelationships) {
+  expectRewriteEqualsWith<ast::AnonymousPatternNameRewriter>(
+      "MATCH ()--() RETURN 1",
+      "MATCH (anon_0)-[anon_1]-(anon_2) RETURN 1");
 }
 
 TEST(RewriterPipelineTest, DefaultPipelineUsesReturnStar) {
