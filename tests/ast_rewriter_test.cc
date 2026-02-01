@@ -105,7 +105,13 @@ TEST(CountStarRewriterTest, CountStarToFunction) {
 
 TEST(ProjectionAliasRewriterTest, FillsAliasFromProperty) {
   expectRewriteEqualsWith<ast::ProjectionAliasRewriter>(
-      "MATCH (n) RETURN n.name", "MATCH (n) RETURN n.name AS name");
+      "MATCH (n) RETURN n.name", "MATCH (n) RETURN n.name AS `n.name`");
+}
+
+TEST(ProjectionAliasRewriterTest, FillsAliasFromAddExpression) {
+  expectRewriteEqualsWith<ast::ProjectionAliasRewriter>(
+      "MATCH (n) RETURN n.age + 1",
+      "MATCH (n) RETURN n.age + 1 AS `n.age + 1`");
 }
 
 TEST(RewriterPipelineTest, DefaultPipelineUsesReturnStar) {
