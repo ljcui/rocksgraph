@@ -5,8 +5,12 @@
 #include "ast/ast_builder.h"
 #include "ast/ast_equal.h"
 #include "ast/rewriters/comparison_chain_rewriter.h"
+#include "ast/rewriters/count_star_rewriter.h"
+#include "ast/rewriters/existential_subquery_rewriter.h"
+#include "ast/rewriters/order_by_alias_rewriter.h"
 #include "ast/rewriters/parenthesized_expression_rewriter.h"
 #include "ast/rewriters/pattern_predicate_rewriter.h"
+#include "ast/rewriters/projection_alias_rewriter.h"
 #include "ast/rewriters/return_star_rewriter.h"
 #include "ast/rewriters/rewriter_pipeline.h"
 
@@ -80,6 +84,28 @@ TEST(PatternPredicateRewriterTest, WherePattern) {
   expectRewriteEqualsWith<ast::PatternPredicateRewriter>(
       "MATCH (n) WHERE (n)-[:R]->(m) RETURN n",
       "MATCH (n) WHERE EXISTS { (n)-[:R]->(m) } RETURN n");
+}
+
+TEST(ExistentialSubqueryRewriterTest, PatternToMatchQuery) {
+  expectRewriteEqualsWith<ast::ExistentialSubqueryRewriter>(
+      "MATCH (n) WHERE EXISTS { (n)-[:R]->(m) } RETURN n",
+      "MATCH (n) WHERE EXISTS { MATCH (n)-[:R]->(m) RETURN 1 } RETURN n");
+}
+
+TEST(OrderByAliasRewriterTest, RewritesExpressionToAlias) {
+  expectRewriteEqualsWith<ast::OrderByAliasRewriter>(
+      "MATCH (n) RETURN n.age AS age ORDER BY n.age",
+      "MATCH (n) RETURN n.age AS age ORDER BY age");
+}
+
+TEST(CountStarRewriterTest, CountStarToFunction) {
+  expectRewriteEqualsWith<ast::CountStarRewriter>(
+      "RETURN count(*)", "RETURN count(1)");
+}
+
+TEST(ProjectionAliasRewriterTest, FillsAliasFromProperty) {
+  expectRewriteEqualsWith<ast::ProjectionAliasRewriter>(
+      "MATCH (n) RETURN n.name", "MATCH (n) RETURN n.name AS name");
 }
 
 TEST(RewriterPipelineTest, DefaultPipelineUsesReturnStar) {

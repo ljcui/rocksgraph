@@ -23,8 +23,12 @@ add_executable(rg-server
         ast/ast_printer.cc
         ast/ast_rewriter.cc
         ast/rewriters/comparison_chain_rewriter.cc
+        ast/rewriters/count_star_rewriter.cc
+        ast/rewriters/existential_subquery_rewriter.cc
+        ast/rewriters/order_by_alias_rewriter.cc
         ast/rewriters/parenthesized_expression_rewriter.cc
         ast/rewriters/pattern_predicate_rewriter.cc
+        ast/rewriters/projection_alias_rewriter.cc
         ast/rewriters/return_star_rewriter.cc
         ast/rewriters/rewriter_registry.cc
         ast/rewriters/rewriter_pipeline.cc
@@ -48,8 +52,12 @@ if(BUILD_TESTS)
             ast/ast_printer.cc
             ast/ast_rewriter.cc
             ast/rewriters/comparison_chain_rewriter.cc
+            ast/rewriters/count_star_rewriter.cc
+            ast/rewriters/existential_subquery_rewriter.cc
+            ast/rewriters/order_by_alias_rewriter.cc
             ast/rewriters/parenthesized_expression_rewriter.cc
             ast/rewriters/pattern_predicate_rewriter.cc
+            ast/rewriters/projection_alias_rewriter.cc
             ast/rewriters/return_star_rewriter.cc
             ast/rewriters/rewriter_registry.cc
             ast/rewriters/rewriter_pipeline.cc
