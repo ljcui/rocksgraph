@@ -40,67 +40,63 @@ target_link_libraries(rg-server ANTLR4Runtime::antlr4_runtime)
 target_include_directories(rg-server PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 set_target_properties(rg-server PROPERTIES BUILD_RPATH "/usr/local/lib")
 
-option(BUILD_TESTS "Build tests" ON)
-if(BUILD_TESTS)
-    enable_testing()
-    find_package(GTest)
-    if(GTest_FOUND)
-        add_executable(ast_rewriter_test
-            tests/ast_rewriter_test.cc
-            ast/ast_builder.cc
-            ast/ast_clone.cc
-            ast/ast_equal.cc
-            ast/ast_printer.cc
-            ast/ast_to_cypher.cc
-            ast/ast_rewriter.cc
-            ast/rewriters/comparison_chain_rewriter.cc
-            ast/rewriters/count_star_rewriter.cc
-            ast/rewriters/existential_subquery_rewriter.cc
-            ast/rewriters/order_by_alias_rewriter.cc
-            ast/rewriters/parenthesized_expression_rewriter.cc
-            ast/rewriters/pattern_predicate_rewriter.cc
-            ast/rewriters/projection_alias_rewriter.cc
-            ast/rewriters/return_star_rewriter.cc
-            ast/rewriters/rewriter_registry.cc
-            ast/rewriters/rewriter_pipeline.cc
-            ${GENERATED_SOURCES}
-        )
-        target_include_directories(ast_rewriter_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-        target_link_libraries(ast_rewriter_test GTest::gtest_main ANTLR4Runtime::antlr4_runtime)
-        set_target_properties(ast_rewriter_test PROPERTIES BUILD_RPATH "/usr/local/lib")
-        add_test(NAME ast_rewriter_test COMMAND ast_rewriter_test)
+enable_testing()
+find_package(GTest REQUIRED)
 
-        add_executable(ast_to_cypher_test
-            tests/ast_to_cypher_test.cc
-            ast/ast_builder.cc
-            ast/ast_clone.cc
-            ast/ast_equal.cc
-            ast/ast_printer.cc
-            ast/ast_to_cypher.cc
-            ast/ast_rewriter.cc
-            ast/rewriters/comparison_chain_rewriter.cc
-            ast/rewriters/count_star_rewriter.cc
-            ast/rewriters/existential_subquery_rewriter.cc
-            ast/rewriters/order_by_alias_rewriter.cc
-            ast/rewriters/parenthesized_expression_rewriter.cc
-            ast/rewriters/pattern_predicate_rewriter.cc
-            ast/rewriters/projection_alias_rewriter.cc
-            ast/rewriters/return_star_rewriter.cc
-            ast/rewriters/rewriter_registry.cc
-            ast/rewriters/rewriter_pipeline.cc
-            ${GENERATED_SOURCES}
-        )
-        target_include_directories(ast_to_cypher_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-        target_link_libraries(ast_to_cypher_test GTest::gtest_main ANTLR4Runtime::antlr4_runtime)
-        set_target_properties(ast_to_cypher_test PROPERTIES BUILD_RPATH "/usr/local/lib")
-        add_test(NAME ast_to_cypher_test COMMAND ast_to_cypher_test)
+add_executable(ast_rewriter_test
+    tests/ast_rewriter_test.cc
+    ast/ast_builder.cc
+    ast/ast_clone.cc
+    ast/ast_equal.cc
+    ast/ast_printer.cc
+    ast/ast_to_cypher.cc
+    ast/ast_rewriter.cc
+    ast/rewriters/comparison_chain_rewriter.cc
+    ast/rewriters/count_star_rewriter.cc
+    ast/rewriters/existential_subquery_rewriter.cc
+    ast/rewriters/order_by_alias_rewriter.cc
+    ast/rewriters/parenthesized_expression_rewriter.cc
+    ast/rewriters/pattern_predicate_rewriter.cc
+    ast/rewriters/projection_alias_rewriter.cc
+    ast/rewriters/return_star_rewriter.cc
+    ast/rewriters/rewriter_registry.cc
+    ast/rewriters/rewriter_pipeline.cc
+    ${GENERATED_SOURCES}
+)
+target_include_directories(ast_rewriter_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(ast_rewriter_test GTest::gtest_main ANTLR4Runtime::antlr4_runtime)
+set_target_properties(ast_rewriter_test PROPERTIES BUILD_RPATH "/usr/local/lib")
+add_test(NAME ast_rewriter_test COMMAND ast_rewriter_test)
 
-        add_executable(value_test
-            tests/value_test.cc
-            value/value.cc
-        )
-        target_include_directories(value_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-        target_link_libraries(value_test GTest::gtest_main)
-        add_test(NAME value_test COMMAND value_test)
-    endif()
-endif()
+add_executable(ast_to_cypher_test
+    tests/ast_to_cypher_test.cc
+    ast/ast_builder.cc
+    ast/ast_clone.cc
+    ast/ast_equal.cc
+    ast/ast_printer.cc
+    ast/ast_to_cypher.cc
+    ast/ast_rewriter.cc
+    ast/rewriters/comparison_chain_rewriter.cc
+    ast/rewriters/count_star_rewriter.cc
+    ast/rewriters/existential_subquery_rewriter.cc
+    ast/rewriters/order_by_alias_rewriter.cc
+    ast/rewriters/parenthesized_expression_rewriter.cc
+    ast/rewriters/pattern_predicate_rewriter.cc
+    ast/rewriters/projection_alias_rewriter.cc
+    ast/rewriters/return_star_rewriter.cc
+    ast/rewriters/rewriter_registry.cc
+    ast/rewriters/rewriter_pipeline.cc
+    ${GENERATED_SOURCES}
+)
+target_include_directories(ast_to_cypher_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(ast_to_cypher_test GTest::gtest_main ANTLR4Runtime::antlr4_runtime)
+set_target_properties(ast_to_cypher_test PROPERTIES BUILD_RPATH "/usr/local/lib")
+add_test(NAME ast_to_cypher_test COMMAND ast_to_cypher_test)
+
+add_executable(value_test
+    tests/value_test.cc
+    value/value.cc
+)
+target_include_directories(value_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(value_test GTest::gtest_main)
+add_test(NAME value_test COMMAND value_test)

@@ -12,13 +12,8 @@
 
 ## 构建、测试与开发命令
 - 配置：`cmake -S . -B build`（生成构建文件）。
-- 构建：`cmake --build build -j5`（编译 `rg-server`）。
-- 测试：`ctest --test-dir build`（在检测到 GTest 时运行测试）。
-
-说明：
-- 需要 ANTLR4 runtime（`find_package(ANTLR4Runtime REQUIRED)`）。
-- 仅在检测到 GTest 时构建测试（默认 `-DBUILD_TESTS=ON`）。
-  - 已包含 `value_test` 与 `ast_rewriter_test`。
+- 构建：`cmake --build build -j8`（编译默认目标，包含 `rg-server` 与测试）。
+- 测试：`ctest --test-dir build`（需先完成构建；运行全部测试）。
 
 ## 编码风格与命名规范
 - 采用 C++20（由 `CMakeLists.txt` 强制）。
@@ -37,6 +32,9 @@
 
 ## Git 忽略项
 - `build/`、`cmake-build-debug/`、`.idea/` 应保持忽略与未跟踪。
+
+## 提交规范
+- Git commit 提交信息必须使用英文。
 
 ## 回答问题规范
 - 回答问题时一律使用中文。
