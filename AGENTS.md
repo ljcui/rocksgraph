@@ -14,6 +14,7 @@
 - 配置：`cmake -S . -B build`（生成构建文件）。
 - 构建：`cmake --build build -j8`（编译默认目标，包含 `rg-server` 与测试）。
 - 测试：`ctest --test-dir build`（需先完成构建；运行全部测试）。
+- 工具执行要求：执行构建命令时，`timeout_ms` 最多设置为 30000（30 秒）。
 
 ## 编码风格与命名规范
 - 采用 C++20（由 `CMakeLists.txt` 强制）。

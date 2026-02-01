@@ -9,6 +9,7 @@
 #include "CypherParser.h"
 #include "antlr4-runtime.h"
 #include "rewriters/rewriter_pipeline.h"
+#include "semantic_validator.h"
 
 namespace ast {
 
@@ -1335,6 +1336,8 @@ ParseResult parseCypher(const std::string &input) {
   result.statement = builder.buildStatement(tree->oC_Statement());
   if (!result.statement) {
     result.errors.push_back("failed to build AST");
+  } else {
+    validateStatement(*result.statement, result.errors);
   }
   return result;
 }

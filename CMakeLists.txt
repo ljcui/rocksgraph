@@ -23,6 +23,8 @@ add_executable(rg-server
         ast/ast_printer.cc
         ast/ast_to_cypher.cc
         ast/ast_rewriter.cc
+        ast/ast_walker.cc
+        ast/semantic_validator.cc
         ast/rewriters/anonymous_pattern_name_rewriter.cc
         ast/rewriters/comparison_chain_rewriter.cc
         ast/rewriters/count_star_rewriter.cc
@@ -52,6 +54,8 @@ add_executable(ast_rewriter_test
     ast/ast_printer.cc
     ast/ast_to_cypher.cc
     ast/ast_rewriter.cc
+    ast/ast_walker.cc
+    ast/semantic_validator.cc
     ast/rewriters/anonymous_pattern_name_rewriter.cc
     ast/rewriters/comparison_chain_rewriter.cc
     ast/rewriters/count_star_rewriter.cc
@@ -78,6 +82,8 @@ add_executable(ast_to_cypher_test
     ast/ast_printer.cc
     ast/ast_to_cypher.cc
     ast/ast_rewriter.cc
+    ast/ast_walker.cc
+    ast/semantic_validator.cc
     ast/rewriters/anonymous_pattern_name_rewriter.cc
     ast/rewriters/comparison_chain_rewriter.cc
     ast/rewriters/count_star_rewriter.cc
@@ -103,3 +109,31 @@ add_executable(value_test
 target_include_directories(value_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(value_test GTest::gtest_main)
 add_test(NAME value_test COMMAND value_test)
+
+add_executable(semantic_validator_test
+    tests/semantic_validator_test.cc
+    ast/ast_builder.cc
+    ast/ast_clone.cc
+    ast/ast_equal.cc
+    ast/ast_printer.cc
+    ast/ast_to_cypher.cc
+    ast/ast_rewriter.cc
+    ast/ast_walker.cc
+    ast/semantic_validator.cc
+    ast/rewriters/anonymous_pattern_name_rewriter.cc
+    ast/rewriters/comparison_chain_rewriter.cc
+    ast/rewriters/count_star_rewriter.cc
+    ast/rewriters/existential_subquery_rewriter.cc
+    ast/rewriters/order_by_alias_rewriter.cc
+    ast/rewriters/parenthesized_expression_rewriter.cc
+    ast/rewriters/pattern_predicate_rewriter.cc
+    ast/rewriters/projection_alias_rewriter.cc
+    ast/rewriters/return_star_rewriter.cc
+    ast/rewriters/rewriter_registry.cc
+    ast/rewriters/rewriter_pipeline.cc
+    ${GENERATED_SOURCES}
+)
+target_include_directories(semantic_validator_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(semantic_validator_test GTest::gtest_main ANTLR4Runtime::antlr4_runtime)
+set_target_properties(semantic_validator_test PROPERTIES BUILD_RPATH "/usr/local/lib")
+add_test(NAME semantic_validator_test COMMAND semantic_validator_test)
