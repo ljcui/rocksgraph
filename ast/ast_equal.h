@@ -109,8 +109,7 @@ class ASTEqual {
                                const NullLiteral &right);
   static bool equalListLiteral(const ListLiteral &left,
                                const ListLiteral &right);
-  static bool equalMapLiteral(const MapLiteral &left,
-                              const MapLiteral &right);
+  static bool equalMapLiteral(const MapLiteral &left, const MapLiteral &right);
   static bool equalProperties(const Properties &left, const Properties &right);
 
   static bool equalVariable(const Variable &left, const Variable &right);
@@ -137,8 +136,7 @@ class ASTEqual {
   static bool equalPatternPredicateExpression(
       const PatternPredicateExpression &left,
       const PatternPredicateExpression &right);
-  static bool equalQuantifier(const Quantifier &left,
-                              const Quantifier &right);
+  static bool equalQuantifier(const Quantifier &left, const Quantifier &right);
   static bool equalAllQuantifier(const AllQuantifier &left,
                                  const AllQuantifier &right);
   static bool equalAnyQuantifier(const AnyQuantifier &left,

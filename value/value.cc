@@ -145,8 +145,8 @@ void appendValue(std::ostringstream &oss, const Value &value) {
     }
     case ValueType::kLocalTime: {
       const auto &local_time = value.as_local_time();
-      oss << "LocalTime{" << local_time.hour << ':' << local_time.minute
-          << ':' << local_time.second << '.' << local_time.nanosecond << '}';
+      oss << "LocalTime{" << local_time.hour << ':' << local_time.minute << ':'
+          << local_time.second << '.' << local_time.nanosecond << '}';
       break;
     }
     case ValueType::kTime: {
@@ -159,16 +159,15 @@ void appendValue(std::ostringstream &oss, const Value &value) {
     case ValueType::kLocalDateTime: {
       const auto &dt = value.as_local_date_time();
       oss << "LocalDateTime{" << dt.date.year << '-' << dt.date.month << '-'
-          << dt.date.day << 'T' << dt.time.hour << ':' << dt.time.minute
-          << ':' << dt.time.second << '.' << dt.time.nanosecond << '}';
+          << dt.date.day << 'T' << dt.time.hour << ':' << dt.time.minute << ':'
+          << dt.time.second << '.' << dt.time.nanosecond << '}';
       break;
     }
     case ValueType::kDateTime: {
       const auto &dt = value.as_date_time();
       oss << "DateTime{" << dt.local_date_time.date.year << '-'
-          << dt.local_date_time.date.month << '-'
-          << dt.local_date_time.date.day << 'T'
-          << dt.local_date_time.time.hour << ':'
+          << dt.local_date_time.date.month << '-' << dt.local_date_time.date.day
+          << 'T' << dt.local_date_time.time.hour << ':'
           << dt.local_date_time.time.minute << ':'
           << dt.local_date_time.time.second << '.'
           << dt.local_date_time.time.nanosecond
@@ -177,8 +176,8 @@ void appendValue(std::ostringstream &oss, const Value &value) {
     }
     case ValueType::kDuration: {
       const auto &duration = value.as_duration();
-      oss << "Duration{months=" << duration.months << ", days="
-          << duration.days << ", seconds=" << duration.seconds
+      oss << "Duration{months=" << duration.months << ", days=" << duration.days
+          << ", seconds=" << duration.seconds
           << ", nanoseconds=" << duration.nanoseconds << '}';
       break;
     }
@@ -301,7 +300,9 @@ ValueType Value::type() const {
   return ValueType::kPoint;
 }
 
-bool Value::is_null() const { return std::holds_alternative<std::monostate>(storage_); }
+bool Value::is_null() const {
+  return std::holds_alternative<std::monostate>(storage_);
+}
 
 bool Value::is_bool() const { return std::holds_alternative<bool>(storage_); }
 
@@ -309,7 +310,9 @@ bool Value::is_integer() const {
   return std::holds_alternative<int64_t>(storage_);
 }
 
-bool Value::is_double() const { return std::holds_alternative<double>(storage_); }
+bool Value::is_double() const {
+  return std::holds_alternative<double>(storage_);
+}
 
 bool Value::is_string() const {
   return std::holds_alternative<std::string>(storage_);
@@ -327,7 +330,9 @@ bool Value::is_relationship() const {
   return std::holds_alternative<RelationshipPtr>(storage_);
 }
 
-bool Value::is_path() const { return std::holds_alternative<PathPtr>(storage_); }
+bool Value::is_path() const {
+  return std::holds_alternative<PathPtr>(storage_);
+}
 
 bool Value::is_date() const { return std::holds_alternative<Date>(storage_); }
 

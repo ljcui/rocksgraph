@@ -99,9 +99,7 @@ void ASTWalker::visit(ListPredicateExpression &node) {
   walkMaybe(node.element);
   walkMaybe(node.list);
 }
-void ASTWalker::visit(LabelPredicateExpression &node) {
-  walkMaybe(node.expr);
-}
+void ASTWalker::visit(LabelPredicateExpression &node) { walkMaybe(node.expr); }
 void ASTWalker::visit(NullPredicateExpression &node) {
   walkMaybe(node.operand);
 }
@@ -145,9 +143,7 @@ void ASTWalker::visit(CaseExpression &node) {
   }
   walkMaybe(node.else_expr);
 }
-void ASTWalker::visit(ParenthesizedExpression &node) {
-  walkMaybe(node.expr);
-}
+void ASTWalker::visit(ParenthesizedExpression &node) { walkMaybe(node.expr); }
 void ASTWalker::visit(ListComprehension &node) {
   walkMaybe(node.list_expr);
   walkMaybe(node.where_expr);
@@ -204,9 +200,7 @@ void ASTWalker::visit(RelationshipsPattern &node) {
   }
 }
 void ASTWalker::visit(NodePattern &node) { walkMaybe(node.properties); }
-void ASTWalker::visit(RelationshipPattern &node) {
-  walkMaybe(node.detail);
-}
+void ASTWalker::visit(RelationshipPattern &node) { walkMaybe(node.detail); }
 void ASTWalker::visit(RelationshipDetail &node) { walkMaybe(node.properties); }
 
 void ASTWalker::visit(Clause &node) { (void)node; }

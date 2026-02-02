@@ -18,6 +18,7 @@
 
 ## 编码风格与命名规范
 - 采用 C++20（由 `CMakeLists.txt` 强制）。
+- 采用Google C++编程风格（由`.clang-format`强制）。
 - 缩进 2 空格；大括号同行（K&R 风格）。
 - 文件名使用 `snake_case`（如 `ast_rewriter.cc`），测试文件使用 `*_test.cc`。
 - 函数与类型命名简短且语义明确（如 `ReturnStarRewriter`）。

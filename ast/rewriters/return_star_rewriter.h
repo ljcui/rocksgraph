@@ -29,8 +29,10 @@ class ReturnStarRewriter : public ASTRewriter {
                             const Scope &fallback) const;
   void expandStar(ProjectionBody &body);
 
-  void collectFromReadingClause(const ReadingClause &clause, Scope &scope) const;
-  void collectFromUpdatingClause(const UpdatingClause &clause, Scope &scope) const;
+  void collectFromReadingClause(const ReadingClause &clause,
+                                Scope &scope) const;
+  void collectFromUpdatingClause(const UpdatingClause &clause,
+                                 Scope &scope) const;
   void collectFromPattern(const Pattern &pattern, Scope &scope) const;
   void collectFromPatternPart(const PatternPart &part, Scope &scope) const;
   void collectFromPatternElement(const PatternElement &element,

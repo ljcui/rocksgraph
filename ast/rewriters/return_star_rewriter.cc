@@ -163,8 +163,8 @@ void ReturnStarRewriter::collectFromPatternPart(const PatternPart &part,
   }
 }
 
-void ReturnStarRewriter::collectFromPatternElement(const PatternElement &element,
-                                                   Scope &scope) const {
+void ReturnStarRewriter::collectFromPatternElement(
+    const PatternElement &element, Scope &scope) const {
   if (element.node_pattern) {
     collectFromNodePattern(*element.node_pattern, scope);
   }

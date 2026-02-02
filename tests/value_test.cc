@@ -1,6 +1,6 @@
-#include <gtest/gtest.h>
-
 #include "value/value.h"
+
+#include <gtest/gtest.h>
 
 TEST(ValueTest, ScalarTypes) {
   rg::Value null_value;

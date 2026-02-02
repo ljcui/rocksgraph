@@ -19,10 +19,10 @@ bool ASTEqual::equal(const ASTNode *left, const ASTNode *right) {
     return false;
   }
 
-#define AST_EQUAL_TYPE(Type, Func)                                   \
-  if (typeid(*left) == typeid(Type)) {                               \
-    return Func(static_cast<const Type &>(*left),                    \
-                static_cast<const Type &>(*right));                 \
+#define AST_EQUAL_TYPE(Type, Func)                  \
+  if (typeid(*left) == typeid(Type)) {              \
+    return Func(static_cast<const Type &>(*left),   \
+                static_cast<const Type &>(*right)); \
   }
 
   AST_EQUAL_TYPE(RegularQuery, equalRegularQuery)
@@ -193,8 +193,7 @@ bool ASTEqual::equalExpression(const Expression &, const Expression &) {
 
 bool ASTEqual::equalBinaryExpression(const BinaryExpression &left,
                                      const BinaryExpression &right) {
-  return equalPtr(left.left, right.left) &&
-         equalPtr(left.right, right.right);
+  return equalPtr(left.left, right.left) && equalPtr(left.right, right.right);
 }
 
 bool ASTEqual::equalOrExpression(const OrExpression &left,
@@ -296,8 +295,7 @@ bool ASTEqual::equalStringPredicateExpression(
 }
 
 bool ASTEqual::equalListPredicateExpression(
-    const ListPredicateExpression &left,
-    const ListPredicateExpression &right) {
+    const ListPredicateExpression &left, const ListPredicateExpression &right) {
   return equalPtr(left.element, right.element) &&
          equalPtr(left.list, right.list);
 }
@@ -309,10 +307,8 @@ bool ASTEqual::equalLabelPredicateExpression(
 }
 
 bool ASTEqual::equalNullPredicateExpression(
-    const NullPredicateExpression &left,
-    const NullPredicateExpression &right) {
-  return left.is_null == right.is_null &&
-         equalPtr(left.operand, right.operand);
+    const NullPredicateExpression &left, const NullPredicateExpression &right) {
+  return left.is_null == right.is_null && equalPtr(left.operand, right.operand);
 }
 
 bool ASTEqual::equalLiteral(const Literal &, const Literal &) { return true; }
@@ -346,7 +342,8 @@ bool ASTEqual::equalListLiteral(const ListLiteral &left,
   return equalList(left.elements, right.elements);
 }
 
-bool ASTEqual::equalMapLiteral(const MapLiteral &left, const MapLiteral &right) {
+bool ASTEqual::equalMapLiteral(const MapLiteral &left,
+                               const MapLiteral &right) {
   if (left.entries.size() != right.entries.size()) {
     return false;
   }
@@ -363,7 +360,8 @@ bool ASTEqual::equalMapLiteral(const MapLiteral &left, const MapLiteral &right) 
 
 bool ASTEqual::equalProperties(const Properties &left,
                                const Properties &right) {
-  return equalPtr(left.map, right.map) && equalPtr(left.parameter, right.parameter);
+  return equalPtr(left.map, right.map) &&
+         equalPtr(left.parameter, right.parameter);
 }
 
 bool ASTEqual::equalVariable(const Variable &left, const Variable &right) {
@@ -422,8 +420,7 @@ bool ASTEqual::equalCaseExpression(const CaseExpression &left,
 }
 
 bool ASTEqual::equalParenthesizedExpression(
-    const ParenthesizedExpression &left,
-    const ParenthesizedExpression &right) {
+    const ParenthesizedExpression &left, const ParenthesizedExpression &right) {
   return equalPtr(left.expr, right.expr);
 }
 
@@ -558,7 +555,8 @@ bool ASTEqual::equalRelationshipDetail(const RelationshipDetail &left,
 
 bool ASTEqual::equalClause(const Clause &, const Clause &) { return true; }
 
-bool ASTEqual::equalReadingClause(const ReadingClause &, const ReadingClause &) {
+bool ASTEqual::equalReadingClause(const ReadingClause &,
+                                  const ReadingClause &) {
   return true;
 }
 

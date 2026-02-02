@@ -127,7 +127,8 @@ ExprText expressionText(const Expression &expr) {
     }
     return {left_text + " " + node->op + " " + right_text, kComparison};
   }
-  if (const auto *node = dynamic_cast<const ComparisonChainExpression *>(&expr)) {
+  if (const auto *node =
+          dynamic_cast<const ComparisonChainExpression *>(&expr)) {
     if (!node->left || node->rights.empty()) {
       return {};
     }
@@ -272,8 +273,7 @@ ExprText expressionText(const Expression &expr) {
     }
     return {left_text + " " + node->op + " " + right_text, kComparison};
   }
-  if (const auto *node =
-          dynamic_cast<const ListPredicateExpression *>(&expr)) {
+  if (const auto *node = dynamic_cast<const ListPredicateExpression *>(&expr)) {
     if (!node->element || !node->list) {
       return {};
     }
@@ -286,8 +286,7 @@ ExprText expressionText(const Expression &expr) {
     }
     return {element_text + " IN " + list_text, kComparison};
   }
-  if (const auto *node =
-          dynamic_cast<const NullPredicateExpression *>(&expr)) {
+  if (const auto *node = dynamic_cast<const NullPredicateExpression *>(&expr)) {
     if (!node->operand) {
       return {};
     }
@@ -986,8 +985,7 @@ std::string readingClauseToString(const ReadingClause &clause) {
     if (pattern.empty()) {
       return {};
     }
-    std::string out = match->optional_match ? "OPTIONAL MATCH "
-                                            : "MATCH ";
+    std::string out = match->optional_match ? "OPTIONAL MATCH " : "MATCH ";
     out += pattern;
     if (match->where) {
       const std::string where_text = expressionToString(*match->where);
@@ -1021,8 +1019,8 @@ std::string readingClauseToString(const ReadingClause &clause) {
       }
       args.push_back(text);
     }
-    std::string out = "CALL " + call->procedure_name + "(" +
-                      join(args, ", ") + ")";
+    std::string out =
+        "CALL " + call->procedure_name + "(" + join(args, ", ") + ")";
     if (!call->yield_items.empty()) {
       std::vector<std::string> items;
       items.reserve(call->yield_items.size());

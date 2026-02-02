@@ -300,8 +300,7 @@ void ASTPrinter::visit(Literal &node) {
 }
 
 void ASTPrinter::visit(BooleanLiteral &node) {
-  line(std::string("BooleanLiteral value=") +
-       (node.value ? "true" : "false"));
+  line(std::string("BooleanLiteral value=") + (node.value ? "true" : "false"));
 }
 
 void ASTPrinter::visit(IntegerLiteral &node) {

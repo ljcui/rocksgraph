@@ -153,10 +153,10 @@ class Value {
   bool operator!=(const Value &other) const;
 
  private:
-  using Storage = std::variant<std::monostate, bool, int64_t, double, std::string,
-                               List, Map, NodePtr, RelationshipPtr, PathPtr,
-                               Date, LocalTime, Time, LocalDateTime, DateTime,
-                               Duration, Point>;
+  using Storage =
+      std::variant<std::monostate, bool, int64_t, double, std::string, List,
+                   Map, NodePtr, RelationshipPtr, PathPtr, Date, LocalTime,
+                   Time, LocalDateTime, DateTime, Duration, Point>;
   Storage storage_;
 };
 

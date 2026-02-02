@@ -13,9 +13,7 @@ class ASTRewriter : public ASTWalker {
   void rewrite(ASTNode &node);
 
  protected:
-  void rewriteMaybe(std::unique_ptr<Expression> &ptr) {
-    walkMaybe(ptr);
-  }
+  void rewriteMaybe(std::unique_ptr<Expression> &ptr) { walkMaybe(ptr); }
 
   template <typename T>
   void rewriteMaybe(std::unique_ptr<T> &ptr) {

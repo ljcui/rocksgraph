@@ -4,10 +4,10 @@
 
 #include "ast/ast_builder.h"
 #include "ast/ast_equal.h"
+#include "ast/rewriters/anonymous_pattern_name_rewriter.h"
 #include "ast/rewriters/comparison_chain_rewriter.h"
 #include "ast/rewriters/count_star_rewriter.h"
 #include "ast/rewriters/existential_subquery_rewriter.h"
-#include "ast/rewriters/anonymous_pattern_name_rewriter.h"
 #include "ast/rewriters/order_by_alias_rewriter.h"
 #include "ast/rewriters/parenthesized_expression_rewriter.h"
 #include "ast/rewriters/pattern_predicate_rewriter.h"
@@ -20,7 +20,8 @@ namespace {
 std::unique_ptr<ast::Statement> parseOrFail(const std::string &query) {
   auto result = ast::parseCypher(query);
   EXPECT_TRUE(result.errors.empty()) << "parse errors for query: " << query;
-  EXPECT_TRUE(result.statement != nullptr) << "null statement for query: " << query;
+  EXPECT_TRUE(result.statement != nullptr)
+      << "null statement for query: " << query;
   return std::move(result.statement);
 }
 
@@ -50,8 +51,8 @@ TEST(ReturnStarRewriterTest, UnwindReturnStar) {
 }
 
 TEST(ReturnStarRewriterTest, WithStarThenReturnStar) {
-  expectRewriteEqualsWith<ast::ReturnStarRewriter>(
-      "MATCH (n) WITH * RETURN *", "MATCH (n) WITH n RETURN n");
+  expectRewriteEqualsWith<ast::ReturnStarRewriter>("MATCH (n) WITH * RETURN *",
+                                                   "MATCH (n) WITH n RETURN n");
 }
 
 TEST(ReturnStarRewriterTest, WithAliasReturnStar) {
@@ -71,8 +72,8 @@ TEST(ComparisonChainRewriterTest, WhereChain) {
 }
 
 TEST(ParenthesizedExpressionRewriterTest, ReturnNested) {
-  expectRewriteEqualsWith<ast::ParenthesizedExpressionRewriter>(
-      "RETURN ((1))", "RETURN 1");
+  expectRewriteEqualsWith<ast::ParenthesizedExpressionRewriter>("RETURN ((1))",
+                                                                "RETURN 1");
 }
 
 TEST(ParenthesizedExpressionRewriterTest, WhereExpression) {
@@ -100,8 +101,8 @@ TEST(OrderByAliasRewriterTest, RewritesExpressionToAlias) {
 }
 
 TEST(CountStarRewriterTest, CountStarToFunction) {
-  expectRewriteEqualsWith<ast::CountStarRewriter>(
-      "RETURN count(*)", "RETURN count(1)");
+  expectRewriteEqualsWith<ast::CountStarRewriter>("RETURN count(*)",
+                                                  "RETURN count(1)");
 }
 
 TEST(ProjectionAliasRewriterTest, FillsAliasFromProperty) {
@@ -117,14 +118,12 @@ TEST(ProjectionAliasRewriterTest, FillsAliasFromAddExpression) {
 
 TEST(AnonymousPatternNameRewriterTest, NamesUnnamedNodes) {
   expectRewriteEqualsWith<ast::AnonymousPatternNameRewriter>(
-      "MATCH ()-[r]-() RETURN r",
-      "MATCH (anon_0)-[r]-(anon_1) RETURN r");
+      "MATCH ()-[r]-() RETURN r", "MATCH (anon_0)-[r]-(anon_1) RETURN r");
 }
 
 TEST(AnonymousPatternNameRewriterTest, NamesUnnamedRelationships) {
   expectRewriteEqualsWith<ast::AnonymousPatternNameRewriter>(
-      "MATCH ()--() RETURN 1",
-      "MATCH (anon_0)-[anon_1]-(anon_2) RETURN 1");
+      "MATCH ()--() RETURN 1", "MATCH (anon_0)-[anon_1]-(anon_2) RETURN 1");
 }
 
 TEST(RewriterPipelineTest, DefaultPipelineUsesReturnStar) {
@@ -143,6 +142,7 @@ TEST(RewriterPipelineTest, ParseAndRewriteUsesDefaultPipeline) {
   ASSERT_TRUE(result.statement != nullptr);
   auto expected_statement = parseOrFail("MATCH (n) RETURN n");
 
-  EXPECT_TRUE(ast::ASTEqual::equal(result.statement.get(), expected_statement.get()))
+  EXPECT_TRUE(
+      ast::ASTEqual::equal(result.statement.get(), expected_statement.get()))
       << "rewrite mismatch for parseCypherAndRewrite";
 }

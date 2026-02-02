@@ -30,7 +30,7 @@ TEST(SemanticValidatorTest, WithProjectionScopes) {
 }
 
 TEST(SemanticValidatorTest, ComprehensionUsesOuterScope) {
-  auto result = ast::parseCypher(
-      "MATCH (n) RETURN [x IN [1,2] WHERE x > n.age | x]");
+  auto result =
+      ast::parseCypher("MATCH (n) RETURN [x IN [1,2] WHERE x > n.age | x]");
   EXPECT_TRUE(result.errors.empty());
 }

@@ -1,16 +1,18 @@
+#include "ast/ast_to_cypher.h"
+
 #include <gtest/gtest.h>
 
 #include <string>
 
 #include "ast/ast_builder.h"
-#include "ast/ast_to_cypher.h"
 
 namespace {
 
 std::string toCypherOrFail(const std::string &query) {
   auto result = ast::parseCypher(query);
   EXPECT_TRUE(result.errors.empty()) << "parse errors for query: " << query;
-  EXPECT_TRUE(result.statement != nullptr) << "null statement for query: " << query;
+  EXPECT_TRUE(result.statement != nullptr)
+      << "null statement for query: " << query;
   if (!result.statement) {
     return {};
   }
@@ -44,6 +46,5 @@ TEST(AstToCypherTest, RelationshipPatternDetails) {
 
 TEST(AstToCypherTest, EscapesSymbolicNames) {
   const std::string query = "MATCH (`a-b` {`k-1`: 1}) RETURN `a-b`";
-  EXPECT_EQ(toCypherOrFail(query),
-            "MATCH (`a-b` {`k-1`: 1}) RETURN `a-b`");
+  EXPECT_EQ(toCypherOrFail(query), "MATCH (`a-b` {`k-1`: 1}) RETURN `a-b`");
 }

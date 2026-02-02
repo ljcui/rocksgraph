@@ -537,8 +537,8 @@ class ASTBuilder {
     if (ctx->oC_Variable()) {
       node->variable = parseVariable(ctx->oC_Variable());
     }
-    node->element = buildPatternElement(ctx->oC_AnonymousPatternPart()
-                                            ->oC_PatternElement());
+    node->element = buildPatternElement(
+        ctx->oC_AnonymousPatternPart()->oC_PatternElement());
     return node;
   }
 
@@ -738,11 +738,11 @@ class ASTBuilder {
 
   std::unique_ptr<Expression> buildStringListNullPredicateExpression(
       CypherParser::OC_StringListNullPredicateExpressionContext *ctx) {
-    auto expr = buildAddOrSubtractExpression(
-        ctx->oC_AddOrSubtractExpression());
+    auto expr = buildAddOrSubtractExpression(ctx->oC_AddOrSubtractExpression());
     for (auto *child : ctx->children) {
-      if (auto *string_pred = dynamic_cast<
-              CypherParser::OC_StringPredicateExpressionContext *>(child)) {
+      if (auto *string_pred =
+              dynamic_cast<CypherParser::OC_StringPredicateExpressionContext *>(
+                  child)) {
         auto node = std::make_unique<StringPredicateExpression>();
         node->left = std::move(expr);
         node->op = extractStringPredicateOp(string_pred);
@@ -751,8 +751,9 @@ class ASTBuilder {
         expr = std::move(node);
         continue;
       }
-      if (auto *list_pred = dynamic_cast<
-              CypherParser::OC_ListPredicateExpressionContext *>(child)) {
+      if (auto *list_pred =
+              dynamic_cast<CypherParser::OC_ListPredicateExpressionContext *>(
+                  child)) {
         auto node = std::make_unique<ListPredicateExpression>();
         node->element = std::move(expr);
         node->list = buildAddOrSubtractExpression(
@@ -760,8 +761,9 @@ class ASTBuilder {
         expr = std::move(node);
         continue;
       }
-      if (auto *null_pred = dynamic_cast<
-              CypherParser::OC_NullPredicateExpressionContext *>(child)) {
+      if (auto *null_pred =
+              dynamic_cast<CypherParser::OC_NullPredicateExpressionContext *>(
+                  child)) {
         auto node = std::make_unique<NullPredicateExpression>();
         node->operand = std::move(expr);
         node->is_null = !hasOperator(null_pred, "NOT");
@@ -863,8 +865,9 @@ class ASTBuilder {
       CypherParser::OC_NonArithmeticOperatorExpressionContext *ctx) {
     auto expr = buildAtom(ctx->oC_Atom());
     for (auto *child : ctx->children) {
-      if (auto *list_op = dynamic_cast<
-              CypherParser::OC_ListOperatorExpressionContext *>(child)) {
+      if (auto *list_op =
+              dynamic_cast<CypherParser::OC_ListOperatorExpressionContext *>(
+                  child)) {
         expr = applyListOperator(std::move(expr), list_op);
       } else if (auto *prop =
                      dynamic_cast<CypherParser::OC_PropertyLookupContext *>(
@@ -905,9 +908,8 @@ class ASTBuilder {
     }
     if (ctx->oC_PatternPredicate()) {
       auto node = std::make_unique<PatternPredicateExpression>();
-      node->relationships_pattern =
-          buildRelationshipsPattern(ctx->oC_PatternPredicate()
-                                        ->oC_RelationshipsPattern());
+      node->relationships_pattern = buildRelationshipsPattern(
+          ctx->oC_PatternPredicate()->oC_RelationshipsPattern());
       return node;
     }
     if (ctx->oC_ParenthesizedExpression()) {
@@ -1053,8 +1055,7 @@ class ASTBuilder {
     node->variable = parseVariable(id_in_coll->oC_Variable());
     node->list_expr = buildExpression(id_in_coll->oC_Expression());
     if (filter->oC_Where()) {
-      node->where_expr =
-          buildExpression(filter->oC_Where()->oC_Expression());
+      node->where_expr = buildExpression(filter->oC_Where()->oC_Expression());
     }
     if (ctx->oC_Expression()) {
       node->eval_expr = buildExpression(ctx->oC_Expression());
@@ -1180,8 +1181,7 @@ class ASTBuilder {
     return labels;
   }
 
-  std::string parseSymbolicName(
-      CypherParser::OC_SymbolicNameContext *ctx) {
+  std::string parseSymbolicName(CypherParser::OC_SymbolicNameContext *ctx) {
     if (!ctx) {
       return {};
     }
@@ -1207,8 +1207,7 @@ class ASTBuilder {
     return parseSymbolicName(ctx->oC_SymbolicName());
   }
 
-  std::string parseProcedureName(
-      CypherParser::OC_ProcedureNameContext *ctx) {
+  std::string parseProcedureName(CypherParser::OC_ProcedureNameContext *ctx) {
     return parseQualifiedName(ctx->oC_Namespace(), ctx->oC_SymbolicName());
   }
 
@@ -1252,16 +1251,14 @@ class ASTBuilder {
     return "CONTAINS";
   }
 
-  void parseYieldItems(
-      CypherParser::OC_YieldItemsContext *ctx,
-      std::vector<StandaloneCall::YieldItem> &items,
-      std::unique_ptr<Expression> &where_expr) {
+  void parseYieldItems(CypherParser::OC_YieldItemsContext *ctx,
+                       std::vector<StandaloneCall::YieldItem> &items,
+                       std::unique_ptr<Expression> &where_expr) {
     for (auto *item_ctx : ctx->oC_YieldItem()) {
       StandaloneCall::YieldItem item;
       if (item_ctx->oC_ProcedureResultField()) {
-        item.result_field =
-            parseSymbolicName(item_ctx->oC_ProcedureResultField()
-                                  ->oC_SymbolicName());
+        item.result_field = parseSymbolicName(
+            item_ctx->oC_ProcedureResultField()->oC_SymbolicName());
       }
       item.variable = parseVariable(item_ctx->oC_Variable());
       items.push_back(std::move(item));
@@ -1284,8 +1281,7 @@ class ASTBuilder {
     return out;
   }
 
-  bool hasOperator(antlr4::ParserRuleContext *ctx,
-                   const std::string &op) {
+  bool hasOperator(antlr4::ParserRuleContext *ctx, const std::string &op) {
     const std::string op_upper = toUpperAscii(op);
     for (auto *child : ctx->children) {
       if (toUpperAscii(child->getText()) == op_upper) {

@@ -48,8 +48,7 @@ std::unique_ptr<RelationshipDetail> cloneRelationshipDetail(
 std::unique_ptr<Properties> cloneProperties(const Properties &props);
 std::unique_ptr<MapLiteral> cloneMapLiteral(const MapLiteral &map);
 std::unique_ptr<ListLiteral> cloneListLiteral(const ListLiteral &list);
-std::unique_ptr<ReadingClause> cloneReadingClause(
-    const ReadingClause &clause);
+std::unique_ptr<ReadingClause> cloneReadingClause(const ReadingClause &clause);
 std::unique_ptr<UpdatingClause> cloneUpdatingClause(
     const UpdatingClause &clause);
 std::unique_ptr<Match> cloneMatch(const Match &match);
@@ -62,10 +61,8 @@ std::unique_ptr<Set> cloneSet(const Set &set);
 std::unique_ptr<SetItem> cloneSetItem(const SetItem &item);
 std::unique_ptr<Remove> cloneRemove(const Remove &remove);
 std::unique_ptr<RemoveItem> cloneRemoveItem(const RemoveItem &item);
-std::unique_ptr<ProjectionBody> cloneProjectionBody(
-    const ProjectionBody &body);
-std::unique_ptr<ProjectionItem> cloneProjectionItem(
-    const ProjectionItem &item);
+std::unique_ptr<ProjectionBody> cloneProjectionBody(const ProjectionBody &body);
+std::unique_ptr<ProjectionItem> cloneProjectionItem(const ProjectionItem &item);
 std::unique_ptr<SortItem> cloneSortItem(const SortItem &item);
 std::unique_ptr<With> cloneWith(const With &with_clause);
 std::unique_ptr<Return> cloneReturn(const Return &return_clause);
@@ -189,8 +186,7 @@ std::unique_ptr<Expression> cloneExpressionImpl(const Expression &expr) {
     cloned->right = cloneExpressionPtr(node->right);
     return cloned;
   }
-  if (const auto *node =
-          dynamic_cast<const ListPredicateExpression *>(&expr)) {
+  if (const auto *node = dynamic_cast<const ListPredicateExpression *>(&expr)) {
     auto cloned = std::make_unique<ListPredicateExpression>();
     cloned->element = cloneExpressionPtr(node->element);
     cloned->list = cloneExpressionPtr(node->list);
@@ -203,8 +199,7 @@ std::unique_ptr<Expression> cloneExpressionImpl(const Expression &expr) {
     cloned->labels = node->labels;
     return cloned;
   }
-  if (const auto *node =
-          dynamic_cast<const NullPredicateExpression *>(&expr)) {
+  if (const auto *node = dynamic_cast<const NullPredicateExpression *>(&expr)) {
     auto cloned = std::make_unique<NullPredicateExpression>();
     cloned->operand = cloneExpressionPtr(node->operand);
     cloned->is_null = node->is_null;
@@ -285,8 +280,7 @@ std::unique_ptr<Expression> cloneExpressionImpl(const Expression &expr) {
     cloned->else_expr = cloneExpressionPtr(node->else_expr);
     return cloned;
   }
-  if (const auto *node =
-          dynamic_cast<const ParenthesizedExpression *>(&expr)) {
+  if (const auto *node = dynamic_cast<const ParenthesizedExpression *>(&expr)) {
     auto cloned = std::make_unique<ParenthesizedExpression>();
     cloned->expr = cloneExpressionPtr(node->expr);
     return cloned;
@@ -299,8 +293,7 @@ std::unique_ptr<Expression> cloneExpressionImpl(const Expression &expr) {
     cloned->eval_expr = cloneExpressionPtr(node->eval_expr);
     return cloned;
   }
-  if (const auto *node =
-          dynamic_cast<const PatternComprehension *>(&expr)) {
+  if (const auto *node = dynamic_cast<const PatternComprehension *>(&expr)) {
     auto cloned = std::make_unique<PatternComprehension>();
     cloned->variable = node->variable;
     cloned->relationships_pattern =
@@ -328,8 +321,7 @@ std::unique_ptr<Expression> cloneExpressionImpl(const Expression &expr) {
   if (const auto *node = dynamic_cast<const SingleQuantifier *>(&expr)) {
     return cloneQuantifier(*node);
   }
-  if (const auto *node =
-          dynamic_cast<const ExistentialSubquery *>(&expr)) {
+  if (const auto *node = dynamic_cast<const ExistentialSubquery *>(&expr)) {
     auto cloned = std::make_unique<ExistentialSubquery>();
     if (node->query) {
       cloned->query = cloneRegularQuery(*node->query);
@@ -354,8 +346,7 @@ std::unique_ptr<MapLiteral> cloneMapLiteral(const MapLiteral &map) {
   auto cloned = std::make_unique<MapLiteral>();
   cloned->entries.reserve(map.entries.size());
   for (const auto &entry : map.entries) {
-    cloned->entries.emplace_back(entry.first,
-                                 cloneExpressionPtr(entry.second));
+    cloned->entries.emplace_back(entry.first, cloneExpressionPtr(entry.second));
   }
   return cloned;
 }
@@ -455,8 +446,7 @@ std::unique_ptr<InQueryCall> cloneInQueryCall(const InQueryCall &call) {
   return cloned;
 }
 
-std::unique_ptr<ReadingClause> cloneReadingClause(
-    const ReadingClause &clause) {
+std::unique_ptr<ReadingClause> cloneReadingClause(const ReadingClause &clause) {
   if (const auto *node = dynamic_cast<const Match *>(&clause)) {
     return cloneMatch(*node);
   }
@@ -588,7 +578,8 @@ std::unique_ptr<Return> cloneReturn(const Return &return_clause) {
 std::unique_ptr<SinglePartQuery> cloneSinglePartQuery(
     const SinglePartQuery &query) {
   auto cloned = std::make_unique<SinglePartQuery>();
-  cloned->reading_clauses = cloneList(query.reading_clauses, cloneReadingClause);
+  cloned->reading_clauses =
+      cloneList(query.reading_clauses, cloneReadingClause);
   cloned->updating_clauses =
       cloneList(query.updating_clauses, cloneUpdatingClause);
   cloned->return_clause = cloneMaybe(query.return_clause, cloneReturn);

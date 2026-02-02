@@ -291,9 +291,7 @@ class CypherPrinter : public ASTVisitor {
     push(renderMaybe(node.parameter));
   }
 
-  void visit(Variable &node) override {
-    push(renderSymbolicName(node.name));
-  }
+  void visit(Variable &node) override { push(renderSymbolicName(node.name)); }
 
   void visit(Parameter &node) override {
     if (isDecimal(node.name)) {
@@ -365,8 +363,8 @@ class CypherPrinter : public ASTVisitor {
 
   void visit(ListComprehension &node) override {
     std::string out = "[";
-    out += renderFilterExpression(node.variable, node.list_expr,
-                                  node.where_expr);
+    out +=
+        renderFilterExpression(node.variable, node.list_expr, node.where_expr);
     if (node.eval_expr) {
       out += " | ";
       out += renderMaybe(node.eval_expr);
@@ -793,9 +791,7 @@ class CypherPrinter : public ASTVisitor {
     return oss.str();
   }
 
-  static std::string wrap(const std::string &text) {
-    return "(" + text + ")";
-  }
+  static std::string wrap(const std::string &text) { return "(" + text + ")"; }
 
   std::string wrapBinary(const std::string &op,
                          const std::unique_ptr<Expression> &left,
@@ -822,8 +818,8 @@ class CypherPrinter : public ASTVisitor {
                                const Quantifier &node) {
     std::string out = keyword;
     out += "(";
-    out += renderFilterExpression(node.variable, node.list_expr,
-                                  node.predicate);
+    out +=
+        renderFilterExpression(node.variable, node.list_expr, node.predicate);
     out += ")";
     return out;
   }

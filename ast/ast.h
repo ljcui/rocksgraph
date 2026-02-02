@@ -313,9 +313,7 @@ class Properties : public ASTNode {
  public:
   std::unique_ptr<MapLiteral> map;
   std::unique_ptr<Parameter> parameter;
-  void validate() const {
-    assert((map && !parameter) || (!map && parameter));
-  }
+  void validate() const { assert((map && !parameter) || (!map && parameter)); }
   void accept(ASTVisitor& visitor) override;
 };
 
