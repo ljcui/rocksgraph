@@ -63,17 +63,6 @@ class SemanticValidator : public ASTWalker {
     replaceCurrentScope(yield_scope);
   }
 
-  void visit(MultiPartQuery &node) override {
-    for (auto &part : node.parts) {
-      walkList(part.reading_clauses);
-      walkList(part.updating_clauses);
-      if (part.with_clause) {
-        part.with_clause->accept(*this);
-      }
-    }
-    walkMaybe(node.final_single_part_query);
-  }
-
   void visit(Match &node) override {
     if (node.pattern) {
       collectFromPattern(*node.pattern, currentScope());
@@ -162,9 +151,7 @@ class SemanticValidator : public ASTWalker {
       collectFromRelationshipsPattern(*node.relationships_pattern,
                                       currentScope());
     }
-    walkMaybe(node.relationships_pattern);
-    walkMaybe(node.where_expr);
-    walkMaybe(node.eval_expr);
+    ASTWalker::visit(node);
     popScope();
   }
 
@@ -174,7 +161,7 @@ class SemanticValidator : public ASTWalker {
       collectFromRelationshipsPattern(*node.relationships_pattern,
                                       currentScope());
     }
-    walkMaybe(node.relationships_pattern);
+    ASTWalker::visit(node);
     popScope();
   }
 
