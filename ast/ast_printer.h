@@ -2,7 +2,7 @@
 
 #include <ostream>
 
-#include "ast.h"
+#include "ast_node.h"
 
 namespace ast {
 

@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-#include "ast.h"
+#include "ast_node.h"
 
 namespace ast {
 

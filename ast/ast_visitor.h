@@ -90,98 +90,98 @@ class ASTVisitor {
   virtual ~ASTVisitor() = default;
 
   // Top-level statements and queries
-  virtual void visit(Statement& node) {}
-  virtual void visit(Query& node) {}
-  virtual void visit(RegularQuery& node) {}
-  virtual void visit(StandaloneCall& node) {}
-  virtual void visit(SingleQuery& node) {}
-  virtual void visit(SinglePartQuery& node) {}
-  virtual void visit(MultiPartQuery& node) {}
-  virtual void visit(UnionPart& node) {}
+  virtual void visit(Statement& node) = 0;
+  virtual void visit(Query& node) = 0;
+  virtual void visit(RegularQuery& node) = 0;
+  virtual void visit(StandaloneCall& node) = 0;
+  virtual void visit(SingleQuery& node) = 0;
+  virtual void visit(SinglePartQuery& node) = 0;
+  virtual void visit(MultiPartQuery& node) = 0;
+  virtual void visit(UnionPart& node) = 0;
 
   // Expressions
-  virtual void visit(Expression& node) {}
-  virtual void visit(BinaryExpression& node) {}
-  virtual void visit(OrExpression& node) {}
-  virtual void visit(XorExpression& node) {}
-  virtual void visit(AndExpression& node) {}
-  virtual void visit(ComparisonExpression& node) {}
-  virtual void visit(ComparisonChainExpression& node) {}
-  virtual void visit(AddExpression& node) {}
-  virtual void visit(SubtractExpression& node) {}
-  virtual void visit(MultiplyExpression& node) {}
-  virtual void visit(DivideExpression& node) {}
-  virtual void visit(ModuloExpression& node) {}
-  virtual void visit(PowerExpression& node) {}
-  virtual void visit(UnaryExpression& node) {}
-  virtual void visit(NotExpression& node) {}
-  virtual void visit(UnaryPlusExpression& node) {}
-  virtual void visit(UnaryMinusExpression& node) {}
-  virtual void visit(StringPredicateExpression& node) {}
-  virtual void visit(ListPredicateExpression& node) {}
-  virtual void visit(LabelPredicateExpression& node) {}
-  virtual void visit(NullPredicateExpression& node) {}
+  virtual void visit(Expression& node) = 0;
+  virtual void visit(BinaryExpression& node) = 0;
+  virtual void visit(OrExpression& node) = 0;
+  virtual void visit(XorExpression& node) = 0;
+  virtual void visit(AndExpression& node) = 0;
+  virtual void visit(ComparisonExpression& node) = 0;
+  virtual void visit(ComparisonChainExpression& node) = 0;
+  virtual void visit(AddExpression& node) = 0;
+  virtual void visit(SubtractExpression& node) = 0;
+  virtual void visit(MultiplyExpression& node) = 0;
+  virtual void visit(DivideExpression& node) = 0;
+  virtual void visit(ModuloExpression& node) = 0;
+  virtual void visit(PowerExpression& node) = 0;
+  virtual void visit(UnaryExpression& node) = 0;
+  virtual void visit(NotExpression& node) = 0;
+  virtual void visit(UnaryPlusExpression& node) = 0;
+  virtual void visit(UnaryMinusExpression& node) = 0;
+  virtual void visit(StringPredicateExpression& node) = 0;
+  virtual void visit(ListPredicateExpression& node) = 0;
+  virtual void visit(LabelPredicateExpression& node) = 0;
+  virtual void visit(NullPredicateExpression& node) = 0;
 
   // Literals
-  virtual void visit(Literal& node) {}
-  virtual void visit(BooleanLiteral& node) {}
-  virtual void visit(IntegerLiteral& node) {}
-  virtual void visit(DoubleLiteral& node) {}
-  virtual void visit(StringLiteral& node) {}
-  virtual void visit(NullLiteral& node) {}
-  virtual void visit(ListLiteral& node) {}
-  virtual void visit(MapLiteral& node) {}
-  virtual void visit(Properties& node) {}
+  virtual void visit(Literal& node) = 0;
+  virtual void visit(BooleanLiteral& node) = 0;
+  virtual void visit(IntegerLiteral& node) = 0;
+  virtual void visit(DoubleLiteral& node) = 0;
+  virtual void visit(StringLiteral& node) = 0;
+  virtual void visit(NullLiteral& node) = 0;
+  virtual void visit(ListLiteral& node) = 0;
+  virtual void visit(MapLiteral& node) = 0;
+  virtual void visit(Properties& node) = 0;
 
   // Other expressions
-  virtual void visit(Variable& node) {}
-  virtual void visit(Parameter& node) {}
-  virtual void visit(PropertyExpression& node) {}
-  virtual void visit(ListIndexExpression& node) {}
-  virtual void visit(ListSliceExpression& node) {}
-  virtual void visit(FunctionInvocation& node) {}
-  virtual void visit(CountStarExpression& node) {}
-  virtual void visit(CaseExpression& node) {}
-  virtual void visit(ParenthesizedExpression& node) {}
-  virtual void visit(ListComprehension& node) {}
-  virtual void visit(PatternComprehension& node) {}
-  virtual void visit(PatternPredicateExpression& node) {}
-  virtual void visit(Quantifier& node) {}
-  virtual void visit(AllQuantifier& node) {}
-  virtual void visit(AnyQuantifier& node) {}
-  virtual void visit(NoneQuantifier& node) {}
-  virtual void visit(SingleQuantifier& node) {}
-  virtual void visit(ExistentialSubquery& node) {}
+  virtual void visit(Variable& node) = 0;
+  virtual void visit(Parameter& node) = 0;
+  virtual void visit(PropertyExpression& node) = 0;
+  virtual void visit(ListIndexExpression& node) = 0;
+  virtual void visit(ListSliceExpression& node) = 0;
+  virtual void visit(FunctionInvocation& node) = 0;
+  virtual void visit(CountStarExpression& node) = 0;
+  virtual void visit(CaseExpression& node) = 0;
+  virtual void visit(ParenthesizedExpression& node) = 0;
+  virtual void visit(ListComprehension& node) = 0;
+  virtual void visit(PatternComprehension& node) = 0;
+  virtual void visit(PatternPredicateExpression& node) = 0;
+  virtual void visit(Quantifier& node) = 0;
+  virtual void visit(AllQuantifier& node) = 0;
+  virtual void visit(AnyQuantifier& node) = 0;
+  virtual void visit(NoneQuantifier& node) = 0;
+  virtual void visit(SingleQuantifier& node) = 0;
+  virtual void visit(ExistentialSubquery& node) = 0;
 
   // Pattern
-  virtual void visit(Pattern& node) {}
-  virtual void visit(PatternPart& node) {}
-  virtual void visit(PatternElement& node) {}
-  virtual void visit(RelationshipsPattern& node) {}
-  virtual void visit(NodePattern& node) {}
-  virtual void visit(RelationshipPattern& node) {}
-  virtual void visit(RelationshipDetail& node) {}
+  virtual void visit(Pattern& node) = 0;
+  virtual void visit(PatternPart& node) = 0;
+  virtual void visit(PatternElement& node) = 0;
+  virtual void visit(RelationshipsPattern& node) = 0;
+  virtual void visit(NodePattern& node) = 0;
+  virtual void visit(RelationshipPattern& node) = 0;
+  virtual void visit(RelationshipDetail& node) = 0;
 
   // Clauses
-  virtual void visit(Clause& node) {}
-  virtual void visit(ReadingClause& node) {}
-  virtual void visit(Match& node) {}
-  virtual void visit(Unwind& node) {}
-  virtual void visit(InQueryCall& node) {}
-  virtual void visit(UpdatingClause& node) {}
-  virtual void visit(Create& node) {}
-  virtual void visit(Merge& node) {}
-  virtual void visit(Delete& node) {}
-  virtual void visit(Set& node) {}
-  virtual void visit(SetItem& node) {}
-  virtual void visit(Remove& node) {}
-  virtual void visit(RemoveItem& node) {}
-  virtual void visit(ProjectionClause& node) {}
-  virtual void visit(ProjectionBody& node) {}
-  virtual void visit(ProjectionItem& node) {}
-  virtual void visit(SortItem& node) {}
-  virtual void visit(With& node) {}
-  virtual void visit(Return& node) {}
+  virtual void visit(Clause& node) = 0;
+  virtual void visit(ReadingClause& node) = 0;
+  virtual void visit(Match& node) = 0;
+  virtual void visit(Unwind& node) = 0;
+  virtual void visit(InQueryCall& node) = 0;
+  virtual void visit(UpdatingClause& node) = 0;
+  virtual void visit(Create& node) = 0;
+  virtual void visit(Merge& node) = 0;
+  virtual void visit(Delete& node) = 0;
+  virtual void visit(Set& node) = 0;
+  virtual void visit(SetItem& node) = 0;
+  virtual void visit(Remove& node) = 0;
+  virtual void visit(RemoveItem& node) = 0;
+  virtual void visit(ProjectionClause& node) = 0;
+  virtual void visit(ProjectionBody& node) = 0;
+  virtual void visit(ProjectionItem& node) = 0;
+  virtual void visit(SortItem& node) = 0;
+  virtual void visit(With& node) = 0;
+  virtual void visit(Return& node) = 0;
 };
 
 }  // namespace ast
