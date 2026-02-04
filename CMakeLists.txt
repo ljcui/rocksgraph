@@ -22,6 +22,7 @@ add_executable(rg-server
         ast/ast_equal.cc
         ast/ast_printer.cc
         ast/ast_to_cypher.cc
+        ast/expression_to_string.cc
         ast/ast_rewriter.cc
         ast/ast_walker.cc
         ast/semantic_validator.cc
@@ -53,6 +54,7 @@ add_executable(ast_rewriter_test
     ast/ast_equal.cc
     ast/ast_printer.cc
     ast/ast_to_cypher.cc
+    ast/expression_to_string.cc
     ast/ast_rewriter.cc
     ast/ast_walker.cc
     ast/semantic_validator.cc
@@ -81,6 +83,7 @@ add_executable(ast_to_cypher_test
     ast/ast_equal.cc
     ast/ast_printer.cc
     ast/ast_to_cypher.cc
+    ast/expression_to_string.cc
     ast/ast_rewriter.cc
     ast/ast_walker.cc
     ast/semantic_validator.cc
@@ -117,6 +120,7 @@ add_executable(semantic_validator_test
     ast/ast_equal.cc
     ast/ast_printer.cc
     ast/ast_to_cypher.cc
+    ast/expression_to_string.cc
     ast/ast_rewriter.cc
     ast/ast_walker.cc
     ast/semantic_validator.cc
