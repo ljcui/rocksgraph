@@ -21,6 +21,14 @@ std::string joinArgs(const std::vector<std::string> &parts) {
   return out;
 }
 
+void printMinimalUsage() {
+  const auto info = gflags::GetCommandLineFlagInfoOrDie("rewrite");
+  std::cerr << gflags::ProgramUsage() << "\n\n"
+            << "  -" << info.name << " (" << info.description
+            << ") type: " << info.type << " default: " << info.default_value
+            << "\n";
+}
+
 int main(int argc, char **argv) {
   gflags::SetUsageMessage(
       "Usage:\n  ast_dump [--rewrite] [--] <cypher...>");
@@ -28,7 +36,7 @@ int main(int argc, char **argv) {
 
   if (argc <= 1) {
     spdlog::error("Missing cypher statement.");
-    gflags::ShowUsageWithFlags(argv[0]);
+    printMinimalUsage();
     return 1;
   }
 
