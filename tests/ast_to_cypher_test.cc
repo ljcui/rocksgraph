@@ -5,18 +5,22 @@
 #include <string>
 
 #include "ast/ast_builder.h"
+#include "ast/ast_exception.h"
 
 namespace {
 
 std::string toCypherOrFail(const std::string &query) {
-  auto result = ast::parseCypher(query);
-  EXPECT_TRUE(result.errors.empty()) << "parse errors for query: " << query;
-  EXPECT_TRUE(result.statement != nullptr)
-      << "null statement for query: " << query;
-  if (!result.statement) {
-    return {};
+  try {
+    auto statement = ast::parseCypher(query);
+    return ast::toCypher(*statement);
+  } catch (const ast::ParseError &e) {
+    ADD_FAILURE() << "parse errors for query: " << query
+                  << " message: " << e.what();
+  } catch (const ast::SemanticError &e) {
+    ADD_FAILURE() << "semantic errors for query: " << query
+                  << " message: " << e.what();
   }
-  return ast::toCypher(*result.statement);
+  return {};
 }
 
 }  // namespace

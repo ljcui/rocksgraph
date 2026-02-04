@@ -68,19 +68,19 @@ DEFINE_EXCEPTION(InternalError, Exception);
 
 }  // namespace common
 
-#define THROW(exception_type, message) \
-  throw exception_type((message), __FILE__, __LINE__, __func__)
+#define THROW(exception_type, ...) \
+  throw exception_type(__VA_ARGS__, __FILE__, __LINE__, __func__)
 
-#define THROW_IF(condition, exception_type, message) \
-  do {                                               \
-    if (condition) {                                 \
-      THROW(exception_type, message);                \
-    }                                                \
+#define THROW_IF(condition, exception_type, ...) \
+  do {                                           \
+    if (condition) {                             \
+      THROW(exception_type, __VA_ARGS__);        \
+    }                                            \
   } while (0)
 
-#define CHECK(condition, exception_type, message) \
-  do {                                            \
-    if (!(condition)) {                           \
-      THROW(exception_type, message);             \
-    }                                             \
+#define CHECK(condition, exception_type, ...) \
+  do {                                        \
+    if (!(condition)) {                       \
+      THROW(exception_type, __VA_ARGS__);     \
+    }                                         \
   } while (0)

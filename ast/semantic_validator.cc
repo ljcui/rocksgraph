@@ -1,8 +1,10 @@
 #include "semantic_validator.h"
 
 #include <unordered_set>
+#include <utility>
 
 #include "ast_walker.h"
+#include "ast_exception.h"
 
 namespace ast {
 namespace {
@@ -338,9 +340,13 @@ class SemanticValidator : public ASTWalker {
 
 }  // namespace
 
-void validateStatement(ASTNode &node, std::vector<std::string> &errors) {
+void validateStatement(ASTNode &node) {
+  std::vector<std::string> errors;
   SemanticValidator validator(errors);
   validator.validate(node);
+  if (!errors.empty()) {
+    THROW(SemanticError, std::move(errors));
+  }
 }
 
 }  // namespace ast

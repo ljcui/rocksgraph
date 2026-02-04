@@ -4,14 +4,19 @@
 #include <cstdlib>
 #include <sstream>
 #include <utility>
+#include <vector>
 
 #include "CypherLexer.h"
 #include "CypherParser.h"
 #include "antlr4-runtime.h"
+#include "ast_exception.h"
+#include "common/exception.h"
 #include "rewriters/rewriter_pipeline.h"
 #include "semantic_validator.h"
 
 namespace ast {
+
+using common::InternalError;
 
 namespace {
 
@@ -1306,8 +1311,7 @@ class ASTBuilder {
 
 }  // namespace
 
-ParseResult parseCypher(const std::string &input) {
-  ParseResult result;
+std::unique_ptr<Statement> parseCypher(const std::string &input) {
   antlr4::ANTLRInputStream input_stream(input);
   CypherLexer lexer(&input_stream);
   antlr4::CommonTokenStream tokens(&lexer);
@@ -1321,29 +1325,26 @@ ParseResult parseCypher(const std::string &input) {
 
   auto *tree = parser.oC_Cypher();
   if (!errors.errors.empty()) {
-    result.errors = std::move(errors.errors);
-    return result;
+    THROW(ParseError, std::move(errors.errors));
   }
   if (!tree || !tree->oC_Statement()) {
-    result.errors.push_back("failed to parse statement");
-    return result;
+    std::vector<std::string> parse_errors;
+    parse_errors.emplace_back("failed to parse statement");
+    THROW(ParseError, std::move(parse_errors));
   }
   ASTBuilder builder;
-  result.statement = builder.buildStatement(tree->oC_Statement());
-  if (!result.statement) {
-    result.errors.push_back("failed to build AST");
-  } else {
-    validateStatement(*result.statement, result.errors);
+  auto statement = builder.buildStatement(tree->oC_Statement());
+  if (!statement) {
+    THROW(InternalError, "failed to build AST");
   }
-  return result;
+  validateStatement(*statement);
+  return statement;
 }
 
-ParseResult parseCypherAndRewrite(const std::string &input) {
-  ParseResult result = parseCypher(input);
-  if (result.statement && result.errors.empty()) {
-    applyDefaultRewriters(*result.statement);
-  }
-  return result;
+std::unique_ptr<Statement> parseCypherAndRewrite(const std::string &input) {
+  auto statement = parseCypher(input);
+  applyDefaultRewriters(*statement);
+  return statement;
 }
 
 }  // namespace ast

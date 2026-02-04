@@ -4,6 +4,7 @@
 
 #include "ast/ast_builder.h"
 #include "ast/ast_equal.h"
+#include "ast/ast_exception.h"
 #include "ast/rewriters/anonymous_pattern_name_rewriter.h"
 #include "ast/rewriters/comparison_chain_rewriter.h"
 #include "ast/rewriters/count_star_rewriter.h"
@@ -18,11 +19,16 @@
 namespace {
 
 std::unique_ptr<ast::Statement> parseOrFail(const std::string &query) {
-  auto result = ast::parseCypher(query);
-  EXPECT_TRUE(result.errors.empty()) << "parse errors for query: " << query;
-  EXPECT_TRUE(result.statement != nullptr)
-      << "null statement for query: " << query;
-  return std::move(result.statement);
+  try {
+    return ast::parseCypher(query);
+  } catch (const ast::ParseError &e) {
+    ADD_FAILURE() << "parse errors for query: " << query
+                  << " message: " << e.what();
+  } catch (const ast::SemanticError &e) {
+    ADD_FAILURE() << "semantic errors for query: " << query
+                  << " message: " << e.what();
+  }
+  return {};
 }
 
 template <typename Rewriter>
@@ -137,12 +143,11 @@ TEST(RewriterPipelineTest, DefaultPipelineUsesReturnStar) {
 }
 
 TEST(RewriterPipelineTest, ParseAndRewriteUsesDefaultPipeline) {
-  auto result = ast::parseCypherAndRewrite("MATCH (n) RETURN *");
-  EXPECT_TRUE(result.errors.empty()) << "parse errors for rewrite wrapper";
-  ASSERT_TRUE(result.statement != nullptr);
+  std::unique_ptr<ast::Statement> statement;
+  ASSERT_NO_THROW(
+      statement = ast::parseCypherAndRewrite("MATCH (n) RETURN *"));
   auto expected_statement = parseOrFail("MATCH (n) RETURN n");
 
-  EXPECT_TRUE(
-      ast::ASTEqual::equal(result.statement.get(), expected_statement.get()))
+  EXPECT_TRUE(ast::ASTEqual::equal(statement.get(), expected_statement.get()))
       << "rewrite mismatch for parseCypherAndRewrite";
 }

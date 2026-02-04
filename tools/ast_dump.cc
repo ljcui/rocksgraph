@@ -6,6 +6,7 @@
 #include "spdlog/spdlog.h"
 
 #include "ast/ast_builder.h"
+#include "ast/ast_exception.h"
 #include "ast/ast_printer.h"
 
 DEFINE_bool(rewrite, false, "Rewrite the cypher statement before printing.");
@@ -30,6 +31,7 @@ void printMinimalUsage() {
 }
 
 int main(int argc, char **argv) {
+  using common::Exception;
   gflags::SetUsageMessage(
       "Usage:\n  ast_dump [--rewrite] [--] <cypher...>");
   gflags::ParseCommandLineFlags(&argc, &argv, true);
@@ -47,20 +49,22 @@ int main(int argc, char **argv) {
   }
   std::string input = joinArgs(parts);
 
-  ast::ParseResult result =
-      FLAGS_rewrite ? ast::parseCypherAndRewrite(input) : ast::parseCypher(input);
-  if (!result.errors.empty()) {
-    for (const auto &err : result.errors) {
+  try {
+    auto statement = FLAGS_rewrite ? ast::parseCypherAndRewrite(input)
+                                   : ast::parseCypher(input);
+    ast::ASTPrinter printer(std::cout);
+    printer.print(*statement);
+    return 0;
+  } catch (const ast::ParseError &e) {
+    for (const auto &err : e.errors()) {
       spdlog::error("Parse error: {}", err);
     }
-    return 1;
+  } catch (const ast::SemanticError &e) {
+    for (const auto &err : e.errors()) {
+      spdlog::error("Semantic error: {}", err);
+    }
+  } catch (const Exception &e) {
+    spdlog::error("Internal error: {}", e.what());
   }
-  if (!result.statement) {
-    spdlog::error("Parse error: failed to build AST");
-    return 1;
-  }
-
-  ast::ASTPrinter printer(std::cout);
-  printer.print(*result.statement);
-  return 0;
+  return 1;
 }

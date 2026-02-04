@@ -1,9 +1,13 @@
 #include "ast_clone.h"
 
-#include <cassert>
 #include <utility>
 
+#include "common/exception.h"
+
 namespace ast {
+
+using common::InternalError;
+
 namespace {
 
 template <typename T, typename CloneFunc>
@@ -332,8 +336,7 @@ std::unique_ptr<Expression> cloneExpressionImpl(const Expression &expr) {
     cloned->where_expr = cloneExpressionPtr(node->where_expr);
     return cloned;
   }
-  assert(false && "Unsupported Expression type for clone");
-  return nullptr;
+  THROW(InternalError, "Unsupported Expression type for clone");
 }
 
 std::unique_ptr<ListLiteral> cloneListLiteral(const ListLiteral &list) {
@@ -456,8 +459,7 @@ std::unique_ptr<ReadingClause> cloneReadingClause(const ReadingClause &clause) {
   if (const auto *node = dynamic_cast<const InQueryCall *>(&clause)) {
     return cloneInQueryCall(*node);
   }
-  assert(false && "Unsupported ReadingClause type for clone");
-  return nullptr;
+  THROW(InternalError, "Unsupported ReadingClause type for clone");
 }
 
 std::unique_ptr<Create> cloneCreate(const Create &create) {
@@ -531,8 +533,7 @@ std::unique_ptr<UpdatingClause> cloneUpdatingClause(
   if (const auto *node = dynamic_cast<const Remove *>(&clause)) {
     return cloneRemove(*node);
   }
-  assert(false && "Unsupported UpdatingClause type for clone");
-  return nullptr;
+  THROW(InternalError, "Unsupported UpdatingClause type for clone");
 }
 
 std::unique_ptr<ProjectionItem> cloneProjectionItem(
@@ -611,8 +612,7 @@ std::unique_ptr<SingleQuery> cloneSingleQuery(const SingleQuery &query) {
   if (const auto *node = dynamic_cast<const MultiPartQuery *>(&query)) {
     return cloneMultiPartQuery(*node);
   }
-  assert(false && "Unsupported SingleQuery type for clone");
-  return nullptr;
+  THROW(InternalError, "Unsupported SingleQuery type for clone");
 }
 
 std::unique_ptr<UnionPart> cloneUnionPart(const UnionPart &part) {
