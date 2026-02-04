@@ -15,6 +15,18 @@ set(GENERATED_SOURCES
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 find_package(ANTLR4Runtime REQUIRED)
+find_package(gflags REQUIRED)
+find_package(spdlog REQUIRED)
+if(TARGET gflags::gflags)
+    set(GFLAGS_TARGET gflags::gflags)
+else()
+    set(GFLAGS_TARGET gflags)
+endif()
+if(TARGET spdlog::spdlog)
+    set(SPDLOG_TARGET spdlog::spdlog)
+else()
+    set(SPDLOG_TARGET spdlog)
+endif()
 add_executable(rg-server
     main.cc
         ast/ast_builder.cc
@@ -68,7 +80,7 @@ add_executable(ast_dump
     ${GENERATED_SOURCES}
 )
 target_include_directories(ast_dump PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(ast_dump ANTLR4Runtime::antlr4_runtime)
+target_link_libraries(ast_dump ANTLR4Runtime::antlr4_runtime ${GFLAGS_TARGET} ${SPDLOG_TARGET})
 set_target_properties(ast_dump PROPERTIES BUILD_RPATH "/usr/local/lib")
 
 enable_testing()

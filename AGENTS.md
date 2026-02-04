@@ -1,11 +1,15 @@
 # Repository Guidelines
 ## 项目背景
-- 这是一个正在开发中的单机图数据库项目，编程语言是c++，查询语言使用opencypher，测试框架使用gtest。
+- 这是一个正在开发中的单机图数据库项目（单机、C++20）。
+- 查询语言使用 OpenCypher。
+- 测试框架使用 GoogleTest。
+- 命令行解析使用 gflags；日志打印使用 spdlog。
 
 ## 项目结构与模块组织
 - `ast/`：Cypher 语法（`Cypher.g4`）、生成的解析器/词法器源码，以及 AST 工具（builder、printer、rewriter、equality）。
 - `value/`：Value 值系统与数据类型定义（标量、集合、图元素、时空/空间类型）。
 - `tests/`：GoogleTest 单元测试（例如 `*_test.cc`）。
+- `tools/`：开发工具（如 `ast_dump`）。
 - `main.cc`：`rg-server` 可执行文件入口。
 - `cmake/`：CMake 辅助模块（ANTLR4 runtime 探测）。
 - `build/` 与 `cmake-build-debug/`：构建产物目录，应保持未跟踪。
@@ -18,7 +22,7 @@
 
 ## 编码风格与命名规范
 - 采用 C++20（由 `CMakeLists.txt` 强制）。
-- 采用Google C++编程风格（由`.clang-format`强制）。
+- 采用 Google C++ 编程风格（由 `.clang-format` 强制）。
 - 缩进 2 空格；大括号同行（K&R 风格）。
 - 文件名使用 `snake_case`（如 `ast_rewriter.cc`），测试文件使用 `*_test.cc`。
 - 函数与类型命名简短且语义明确（如 `ReturnStarRewriter`）。

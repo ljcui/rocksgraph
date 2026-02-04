@@ -1,18 +1,14 @@
 #include <iostream>
-#include <sstream>
 #include <string>
 #include <vector>
+
+#include "gflags/gflags.h"
+#include "spdlog/spdlog.h"
 
 #include "ast/ast_builder.h"
 #include "ast/ast_printer.h"
 
-namespace {
-
-void printUsage(const char *prog) {
-  std::cerr << "Usage: " << prog
-            << " [--rewrite] [--] <cypher...>\n"
-            << "       " << prog << " [--rewrite] < <file.cypher>\n";
-}
+DEFINE_bool(rewrite, false, "Rewrite the cypher statement before printing.");
 
 std::string joinArgs(const std::vector<std::string> &parts) {
   std::string out;
@@ -25,55 +21,34 @@ std::string joinArgs(const std::vector<std::string> &parts) {
   return out;
 }
 
-}  // namespace
-
 int main(int argc, char **argv) {
-  bool rewrite = false;
-  bool passthrough = false;
-  std::vector<std::string> parts;
-  parts.reserve(static_cast<size_t>(argc > 1 ? argc - 1 : 0));
+  gflags::SetUsageMessage(
+      "Usage:\n  ast_dump [--rewrite] [--] <cypher...>");
+  gflags::ParseCommandLineFlags(&argc, &argv, true);
 
-  for (int i = 1; i < argc; ++i) {
-    std::string arg(argv[i]);
-    if (!passthrough && arg == "--help") {
-      printUsage(argv[0]);
-      return 0;
-    }
-    if (!passthrough && arg == "--rewrite") {
-      rewrite = true;
-      continue;
-    }
-    if (!passthrough && arg == "--") {
-      passthrough = true;
-      continue;
-    }
-    parts.push_back(std::move(arg));
-  }
-
-  std::string input;
-  if (!parts.empty()) {
-    input = joinArgs(parts);
-  } else {
-    std::ostringstream oss;
-    oss << std::cin.rdbuf();
-    input = oss.str();
-  }
-
-  if (input.empty()) {
-    printUsage(argv[0]);
+  if (argc <= 1) {
+    spdlog::error("Missing cypher statement.");
+    gflags::ShowUsageWithFlags(argv[0]);
     return 1;
   }
 
+  std::vector<std::string> parts;
+  parts.reserve(static_cast<size_t>(argc - 1));
+  for (int i = 1; i < argc; ++i) {
+    parts.emplace_back(argv[i]);
+  }
+  std::string input = joinArgs(parts);
+
   ast::ParseResult result =
-      rewrite ? ast::parseCypherAndRewrite(input) : ast::parseCypher(input);
+      FLAGS_rewrite ? ast::parseCypherAndRewrite(input) : ast::parseCypher(input);
   if (!result.errors.empty()) {
     for (const auto &err : result.errors) {
-      std::cerr << "Parse error: " << err << "\n";
+      spdlog::error("Parse error: {}", err);
     }
     return 1;
   }
   if (!result.statement) {
-    std::cerr << "Parse error: failed to build AST\n";
+    spdlog::error("Parse error: failed to build AST");
     return 1;
   }
 
