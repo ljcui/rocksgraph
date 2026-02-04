@@ -12,6 +12,7 @@
 #include "ast/rewriters/order_by_alias_rewriter.h"
 #include "ast/rewriters/parenthesized_expression_rewriter.h"
 #include "ast/rewriters/pattern_predicate_rewriter.h"
+#include "ast/rewriters/pattern_predicate_normalization_rewriter.h"
 #include "ast/rewriters/projection_alias_rewriter.h"
 #include "ast/rewriters/return_star_rewriter.h"
 #include "ast/rewriters/rewriter_pipeline.h"
@@ -92,6 +93,19 @@ TEST(PatternPredicateRewriterTest, WherePattern) {
   expectRewriteEqualsWith<ast::PatternPredicateRewriter>(
       "MATCH (n) WHERE (n)-[:R]->(m) RETURN n",
       "MATCH (n) WHERE EXISTS { (n)-[:R]->(m) } RETURN n");
+}
+
+TEST(PatternPredicateNormalizationRewriterTest, PullsNodePredicatesToWhere) {
+  expectRewriteEqualsWith<ast::PatternPredicateNormalizationRewriter>(
+      "MATCH (n:Person {name: 'Alice'}) WHERE n.age > 30 RETURN n",
+      "MATCH (n) WHERE n:Person AND n.name = 'Alice' AND n.age > 30 RETURN n");
+}
+
+TEST(PatternPredicateNormalizationRewriterTest,
+     PullsRelationshipPredicatesToWhere) {
+  expectRewriteEqualsWith<ast::PatternPredicateNormalizationRewriter>(
+      "MATCH (n)-[r:KNOWS {since: 2020}]->(m) RETURN r",
+      "MATCH (n)-[r]->(m) WHERE r:KNOWS AND r.since = 2020 RETURN r");
 }
 
 TEST(ExistentialSubqueryRewriterTest, PatternToMatchQuery) {

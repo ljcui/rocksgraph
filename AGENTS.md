@@ -13,6 +13,7 @@
 - `main.cc`：`rg-server` 可执行文件入口。
 - `cmake/`：CMake 辅助模块（ANTLR4 runtime 探测）。
 - `build/` 与 `cmake-build-debug/`：构建产物目录，应保持未跟踪。
+- 异常分层：`common/exception.h` 仅放通用、无业务语义的异常；AST 相关异常（如 Parse/Semantic）放在 `ast/`。
 
 ## 构建、测试与开发命令
 - 配置：`cmake -S . -B build`（生成构建文件）。

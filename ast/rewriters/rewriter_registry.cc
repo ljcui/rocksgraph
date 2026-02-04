@@ -7,6 +7,7 @@
 #include "order_by_alias_rewriter.h"
 #include "parenthesized_expression_rewriter.h"
 #include "pattern_predicate_rewriter.h"
+#include "pattern_predicate_normalization_rewriter.h"
 #include "projection_alias_rewriter.h"
 #include "return_star_rewriter.h"
 
@@ -26,6 +27,9 @@ std::vector<std::unique_ptr<ASTRewriter>> makeDefaultRewriters() {
   rewriters.emplace_back(std::make_unique<ReturnStarRewriter>());
   // Assign anonymous names after scope-expanding rewrites.
   rewriters.emplace_back(std::make_unique<AnonymousPatternNameRewriter>());
+  // Pull inline pattern predicates into WHERE after names are assigned.
+  rewriters.emplace_back(
+      std::make_unique<PatternPredicateNormalizationRewriter>());
   return rewriters;
 }
 

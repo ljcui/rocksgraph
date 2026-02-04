@@ -45,6 +45,7 @@ add_executable(rg-server
         ast/rewriters/order_by_alias_rewriter.cc
         ast/rewriters/parenthesized_expression_rewriter.cc
         ast/rewriters/pattern_predicate_rewriter.cc
+        ast/rewriters/pattern_predicate_normalization_rewriter.cc
         ast/rewriters/projection_alias_rewriter.cc
         ast/rewriters/return_star_rewriter.cc
         ast/rewriters/rewriter_registry.cc
@@ -73,6 +74,7 @@ add_executable(ast_dump
     ast/rewriters/order_by_alias_rewriter.cc
     ast/rewriters/parenthesized_expression_rewriter.cc
     ast/rewriters/pattern_predicate_rewriter.cc
+    ast/rewriters/pattern_predicate_normalization_rewriter.cc
     ast/rewriters/projection_alias_rewriter.cc
     ast/rewriters/return_star_rewriter.cc
     ast/rewriters/rewriter_registry.cc
@@ -104,6 +106,7 @@ add_executable(ast_rewriter_test
     ast/rewriters/order_by_alias_rewriter.cc
     ast/rewriters/parenthesized_expression_rewriter.cc
     ast/rewriters/pattern_predicate_rewriter.cc
+    ast/rewriters/pattern_predicate_normalization_rewriter.cc
     ast/rewriters/projection_alias_rewriter.cc
     ast/rewriters/return_star_rewriter.cc
     ast/rewriters/rewriter_registry.cc
@@ -133,6 +136,7 @@ add_executable(ast_to_cypher_test
     ast/rewriters/order_by_alias_rewriter.cc
     ast/rewriters/parenthesized_expression_rewriter.cc
     ast/rewriters/pattern_predicate_rewriter.cc
+    ast/rewriters/pattern_predicate_normalization_rewriter.cc
     ast/rewriters/projection_alias_rewriter.cc
     ast/rewriters/return_star_rewriter.cc
     ast/rewriters/rewriter_registry.cc
@@ -170,6 +174,7 @@ add_executable(semantic_validator_test
     ast/rewriters/order_by_alias_rewriter.cc
     ast/rewriters/parenthesized_expression_rewriter.cc
     ast/rewriters/pattern_predicate_rewriter.cc
+    ast/rewriters/pattern_predicate_normalization_rewriter.cc
     ast/rewriters/projection_alias_rewriter.cc
     ast/rewriters/return_star_rewriter.cc
     ast/rewriters/rewriter_registry.cc
