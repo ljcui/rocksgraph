@@ -44,6 +44,33 @@ target_link_libraries(rg-server ANTLR4Runtime::antlr4_runtime)
 target_include_directories(rg-server PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 set_target_properties(rg-server PROPERTIES BUILD_RPATH "/usr/local/lib")
 
+add_executable(ast_dump
+    tools/ast_dump.cc
+    ast/ast_builder.cc
+    ast/ast_clone.cc
+    ast/ast_equal.cc
+    ast/ast_printer.cc
+    ast/expression_to_string.cc
+    ast/ast_rewriter.cc
+    ast/ast_walker.cc
+    ast/semantic_validator.cc
+    ast/rewriters/anonymous_pattern_name_rewriter.cc
+    ast/rewriters/comparison_chain_rewriter.cc
+    ast/rewriters/count_star_rewriter.cc
+    ast/rewriters/existential_subquery_rewriter.cc
+    ast/rewriters/order_by_alias_rewriter.cc
+    ast/rewriters/parenthesized_expression_rewriter.cc
+    ast/rewriters/pattern_predicate_rewriter.cc
+    ast/rewriters/projection_alias_rewriter.cc
+    ast/rewriters/return_star_rewriter.cc
+    ast/rewriters/rewriter_registry.cc
+    ast/rewriters/rewriter_pipeline.cc
+    ${GENERATED_SOURCES}
+)
+target_include_directories(ast_dump PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(ast_dump ANTLR4Runtime::antlr4_runtime)
+set_target_properties(ast_dump PROPERTIES BUILD_RPATH "/usr/local/lib")
+
 enable_testing()
 find_package(GTest REQUIRED)
 
