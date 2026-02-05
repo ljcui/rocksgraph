@@ -185,3 +185,34 @@ target_include_directories(semantic_validator_test PRIVATE ${CMAKE_CURRENT_SOURC
 target_link_libraries(semantic_validator_test GTest::gtest_main ANTLR4Runtime::antlr4_runtime)
 set_target_properties(semantic_validator_test PROPERTIES BUILD_RPATH "/usr/local/lib")
 add_test(NAME semantic_validator_test COMMAND semantic_validator_test)
+
+add_executable(planner_query_test
+    tests/planner_query_test.cc
+    planner/planner_query.cc
+    ast/ast_builder.cc
+    ast/ast_clone.cc
+    ast/ast_equal.cc
+    ast/ast_printer.cc
+    ast/ast_to_cypher.cc
+    ast/expression_to_string.cc
+    ast/ast_rewriter.cc
+    ast/ast_walker.cc
+    ast/semantic_validator.cc
+    ast/rewriters/anonymous_pattern_name_rewriter.cc
+    ast/rewriters/comparison_chain_rewriter.cc
+    ast/rewriters/count_star_rewriter.cc
+    ast/rewriters/existential_subquery_rewriter.cc
+    ast/rewriters/order_by_alias_rewriter.cc
+    ast/rewriters/parenthesized_expression_rewriter.cc
+    ast/rewriters/pattern_predicate_rewriter.cc
+    ast/rewriters/pattern_predicate_normalization_rewriter.cc
+    ast/rewriters/projection_alias_rewriter.cc
+    ast/rewriters/return_star_rewriter.cc
+    ast/rewriters/rewriter_registry.cc
+    ast/rewriters/rewriter_pipeline.cc
+    ${GENERATED_SOURCES}
+)
+target_include_directories(planner_query_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(planner_query_test GTest::gtest_main ANTLR4Runtime::antlr4_runtime)
+set_target_properties(planner_query_test PROPERTIES BUILD_RPATH "/usr/local/lib")
+add_test(NAME planner_query_test COMMAND planner_query_test)
