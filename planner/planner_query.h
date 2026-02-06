@@ -94,6 +94,6 @@ struct PlannerQuery {
   RegularQueryIR regular;
 };
 
-PlannerQuery buildPlannerQuery(ast::Statement &statement);
+PlannerQuery buildPlannerQuery(const ast::Statement &statement);
 
 }  // namespace planner
