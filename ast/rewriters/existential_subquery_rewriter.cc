@@ -11,7 +11,7 @@ void ExistentialSubqueryRewriter::rewriteExpression(
   }
   ASTRewriter::rewriteExpression(expr);
   auto *subquery = dynamic_cast<ExistentialSubquery *>(expr.get());
-  if (!subquery || !subquery->pattern || subquery->query) {
+  if ((subquery == nullptr) || !subquery->pattern || subquery->query) {
     return;
   }
 

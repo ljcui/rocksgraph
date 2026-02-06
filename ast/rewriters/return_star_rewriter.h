@@ -39,11 +39,11 @@ class ReturnStarRewriter : public ASTRewriter {
                                  Scope &scope) const;
   void collectFromRelationshipsPattern(const RelationshipsPattern &pattern,
                                        Scope &scope) const;
-  void collectFromNodePattern(const NodePattern &node, Scope &scope) const;
-  void collectFromRelationshipDetail(const RelationshipDetail &detail,
-                                     Scope &scope) const;
-  void collectFromProjectionItem(const ProjectionItem &item,
-                                 Scope &scope) const;
+  static void collectFromNodePattern(const NodePattern &node, Scope &scope);
+  static void collectFromRelationshipDetail(const RelationshipDetail &detail,
+                                            Scope &scope);
+  static void collectFromProjectionItem(const ProjectionItem &item,
+                                        Scope &scope);
 
   std::vector<Scope> scope_stack_;
 };

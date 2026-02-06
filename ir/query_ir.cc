@@ -1,3 +1,5 @@
+#include "ir/query_ir.h"
+
 #include <algorithm>
 #include <memory>
 #include <string>
@@ -6,21 +8,20 @@
 #include <vector>
 
 #include "common/exception.h"
-#include "ir/query_ir.h"
 
 namespace ir {
 
 namespace {
 
-std::string makeUnsupportedError(std::string_view feature) {
+std::string MakeUnsupportedError(std::string_view feature) {
   return std::string(feature) + " is not supported";
 }
 
-std::string makeMissingError(std::string_view subject) {
+std::string MakeMissingError(std::string_view subject) {
   return "missing " + std::string(subject);
 }
 
-std::unique_ptr<SingleQueryIR> cloneTail(
+std::unique_ptr<SingleQueryIR> CloneTail(
     const std::unique_ptr<SingleQueryIR> &tail) {
   if (!tail) {
     return nullptr;
@@ -28,7 +29,7 @@ std::unique_ptr<SingleQueryIR> cloneTail(
   return std::make_unique<SingleQueryIR>(*tail);
 }
 
-SingleQueryIR *lastQueryPart(SingleQueryIR *query) {
+SingleQueryIR *LastQueryPart(SingleQueryIR *query) {
   SingleQueryIR *current = query;
   while (current->tail) {
     current = current->tail.get();
@@ -36,7 +37,7 @@ SingleQueryIR *lastQueryPart(SingleQueryIR *query) {
   return current;
 }
 
-const SingleQueryIR *lastQueryPart(const SingleQueryIR *query) {
+const SingleQueryIR *LastQueryPart(const SingleQueryIR *query) {
   const SingleQueryIR *current = query;
   while (current->tail) {
     current = current->tail.get();
@@ -44,7 +45,7 @@ const SingleQueryIR *lastQueryPart(const SingleQueryIR *query) {
   return current;
 }
 
-void appendUnique(std::vector<std::string> &to,
+void AppendUnique(std::vector<std::string> &to,
                   const std::vector<std::string> &from) {
   for (const auto &value : from) {
     if (std::find(to.begin(), to.end(), value) == to.end()) {
@@ -53,23 +54,23 @@ void appendUnique(std::vector<std::string> &to,
   }
 }
 
-std::string resolveProjectionColumnName(const ProjectionItem &item) {
+std::string ResolveProjectionColumnName(const ProjectionItem &item) {
   if (!item.alias.empty()) {
     return item.alias;
   }
-  auto *variable = dynamic_cast<const ast::Variable *>(item.expression);
-  if (variable) {
+  const auto *variable = dynamic_cast<const ast::Variable *>(item.expression);
+  if (variable != nullptr) {
     return variable->name;
   }
   return {};
 }
 
-std::vector<std::string> collectTerminalColumns(const SingleQueryIR &query) {
-  const SingleQueryIR *last = lastQueryPart(&query);
+std::vector<std::string> CollectTerminalColumns(const SingleQueryIR &query) {
+  const SingleQueryIR *last = LastQueryPart(&query);
   std::vector<std::string> columns;
   columns.reserve(last->projection.items.size());
   for (const auto &item : last->projection.items) {
-    const std::string column = resolveProjectionColumnName(item);
+    const std::string column = ResolveProjectionColumnName(item);
     CHECK(!column.empty(), common::InvalidArgumentError,
           "projection item without alias is not supported");
     columns.push_back(column);
@@ -81,93 +82,89 @@ std::vector<std::string> collectTerminalColumns(const SingleQueryIR &query) {
 
 class QueryGraphBuilder {
  public:
-
-  void buildReadingClause(const ast::ReadingClause &clause) {
-    if (auto *match = dynamic_cast<const ast::Match *>(&clause)) {
-      buildMatch(*match);
+  void BuildReadingClause(const ast::ReadingClause &clause) {
+    if (const auto *match = dynamic_cast<const ast::Match *>(&clause)) {
+      BuildMatch(*match);
       return;
     }
-    if (dynamic_cast<const ast::Unwind *>(&clause)) {
-      THROW(common::InvalidArgumentError, makeUnsupportedError("UNWIND"));
+    if (dynamic_cast<const ast::Unwind *>(&clause) != nullptr) {
+      THROW(common::InvalidArgumentError, MakeUnsupportedError("UNWIND"));
     }
-    if (dynamic_cast<const ast::InQueryCall *>(&clause)) {
+    if (dynamic_cast<const ast::InQueryCall *>(&clause) != nullptr) {
       THROW(common::InvalidArgumentError,
-            makeUnsupportedError("procedure call"));
+            MakeUnsupportedError("procedure call"));
     }
-    THROW(common::InvalidArgumentError,
-          makeUnsupportedError("reading clause"));
+    THROW(common::InvalidArgumentError, MakeUnsupportedError("reading clause"));
   }
 
-  void buildMatch(const ast::Match &match) {
+  void BuildMatch(const ast::Match &match) {
     if (!match.pattern) {
       return;
     }
     if (match.optional_match) {
       THROW(common::InvalidArgumentError,
-            makeUnsupportedError("OPTIONAL MATCH"));
+            MakeUnsupportedError("OPTIONAL MATCH"));
     }
-    addPattern(*match.pattern);
+    AddPattern(*match.pattern);
     if (match.where) {
-      addWhere(match.where.get());
+      AddWhere(match.where.get());
     }
   }
 
-  void addWhere(const ast::Expression *where) { graph_.where.push_back(where); }
+  void AddWhere(const ast::Expression *where) { graph_.where.push_back(where); }
 
-  void addPattern(const ast::Pattern &pattern) {
+  void AddPattern(const ast::Pattern &pattern) {
     for (const auto &part : pattern.parts) {
       if (part) {
-        addPatternPart(*part);
+        AddPatternPart(*part);
       }
     }
   }
 
-  void addPatternPart(const ast::PatternPart &part) {
+  void AddPatternPart(const ast::PatternPart &part) {
     if (!part.variable.empty()) {
-      THROW(common::InvalidArgumentError,
-            makeUnsupportedError("named path"));
+      THROW(common::InvalidArgumentError, MakeUnsupportedError("named path"));
     }
     if (part.element) {
-      addPatternElement(*part.element);
+      AddPatternElement(*part.element);
     }
   }
 
-  QueryGraph release() { return std::move(graph_); }
+  QueryGraph Release() { return std::move(graph_); }
 
  private:
-  void addPatternElement(const ast::PatternElement &element) {
+  void AddPatternElement(const ast::PatternElement &element) {
     if (!element.node_pattern) {
       return;
     }
-    std::string left = addNode(*element.node_pattern);
+    std::string left = AddNode(*element.node_pattern);
     for (const auto &link : element.chain) {
       if (!link.second) {
         continue;
       }
-      std::string right = addNode(*link.second);
+      std::string right = AddNode(*link.second);
       if (link.first) {
-        addRelationship(*link.first, left, right);
+        AddRelationship(*link.first, left, right);
       }
       left = right;
     }
   }
 
-  std::string addNode(const ast::NodePattern &node) {
+  std::string AddNode(const ast::NodePattern &node) {
     CHECK(!node.variable.empty(), common::InvalidArgumentError,
-          makeUnsupportedError("anonymous node"));
+          MakeUnsupportedError("anonymous node"));
     graph_.nodes.insert(node.variable);
     return node.variable;
   }
 
-  void addRelationship(const ast::RelationshipPattern &pattern,
-                       const std::string &left,
-                       const std::string &right) {
+  void AddRelationship(const ast::RelationshipPattern &pattern,
+                       const std::string &left, const std::string &right) {
     const ast::RelationshipDetail *detail = pattern.detail.get();
     CHECK(detail && !detail->variable.empty(), common::InvalidArgumentError,
-          makeUnsupportedError("anonymous relationship"));
+          MakeUnsupportedError("anonymous relationship"));
     if (detail->range) {
       THROW(common::InvalidArgumentError,
-            makeUnsupportedError("variable length relationship"));
+            MakeUnsupportedError("variable length relationship"));
     }
 
     QueryGraph::Relationship relationship;
@@ -190,14 +187,14 @@ class QueryGraphBuilder {
 };
 
 template <typename Derived>
-const Derived& cast_ast(const ast::ASTNode& stmt) {
-  return static_cast<const Derived&>(stmt);
+const Derived &CastAst(const ast::ASTNode &stmt) {
+  return static_cast<const Derived &>(stmt);
 }
 
 SingleQueryIR::SingleQueryIR(const SingleQueryIR &other)
     : query_graph(other.query_graph),
       projection(other.projection),
-      tail(cloneTail(other.tail)) {}
+      tail(CloneTail(other.tail)) {}
 
 SingleQueryIR &SingleQueryIR::operator=(const SingleQueryIR &other) {
   if (this == &other) {
@@ -205,28 +202,28 @@ SingleQueryIR &SingleQueryIR::operator=(const SingleQueryIR &other) {
   }
   query_graph = other.query_graph;
   projection = other.projection;
-  tail = cloneTail(other.tail);
+  tail = CloneTail(other.tail);
   return *this;
 }
 
-const SingleQueryIR *SingleQueryIR::last() const { return lastQueryPart(this); }
+const SingleQueryIR *SingleQueryIR::last() const { return LastQueryPart(this); }
 
-SingleQueryIR *SingleQueryIR::last() { return lastQueryPart(this); }
+SingleQueryIR *SingleQueryIR::last() { return LastQueryPart(this); }
 
 namespace {
 
-void checkNoUpdatingClauses(
+void CheckNoUpdatingClauses(
     const std::vector<std::unique_ptr<ast::UpdatingClause>> &updating_clauses) {
   if (!updating_clauses.empty()) {
     THROW(common::InvalidArgumentError,
-          makeUnsupportedError("updating clause"));
+          MakeUnsupportedError("updating clause"));
   }
 }
 
-std::vector<UnionColumnMapping> buildUnionColumnMappings(
+std::vector<UnionColumnMapping> BuildUnionColumnMappings(
     const SingleQueryIR &main_query, const SingleQueryIR &branch_query) {
-  const auto main_columns = collectTerminalColumns(main_query);
-  const auto branch_columns = collectTerminalColumns(branch_query);
+  const auto main_columns = CollectTerminalColumns(main_query);
+  const auto branch_columns = CollectTerminalColumns(branch_query);
   CHECK(main_columns.size() == branch_columns.size(),
         common::InvalidArgumentError,
         "UNION branches must return the same number of columns");
@@ -245,95 +242,98 @@ std::vector<UnionColumnMapping> buildUnionColumnMappings(
 
 class QueryIRBuilder {
  public:
-  QueryIR build(const ast::Statement &statement) {
+  QueryIR Build(const ast::Statement &statement) {
     switch (statement.node_type) {
       case ast::ASTNodeType::RegularQuery: {
-        return buildRegularQuery(cast_ast<ast::RegularQuery>(statement));
+        return BuildRegularQuery(CastAst<ast::RegularQuery>(statement));
       }
       default: {
-        THROW(common::InvalidArgumentError, makeUnsupportedError("query type"));
+        THROW(common::InvalidArgumentError, MakeUnsupportedError("query type"));
       }
     }
   }
 
  private:
-  QueryIR buildRegularQuery(const ast::RegularQuery &query) {
+  QueryIR BuildRegularQuery(const ast::RegularQuery &query) {
     CHECK(query.single_query, common::InvalidArgumentError,
-          makeMissingError("single query"));
+          MakeMissingError("single query"));
 
     QueryIR query_ir;
-    query_ir.regular.main = buildSingleQuery(*query.single_query);
+    query_ir.regular.main = BuildSingleQuery(*query.single_query);
 
     query_ir.regular.unions.reserve(query.unions.size());
     for (const auto &part : query.unions) {
       CHECK(part && part->query, common::InvalidArgumentError,
-            makeMissingError("UNION branch query"));
+            MakeMissingError("UNION branch query"));
 
       UnionBranch branch;
       branch.all = part->all;
-      branch.query = buildSingleQuery(*part->query);
+      branch.query = BuildSingleQuery(*part->query);
       branch.mappings =
-          buildUnionColumnMappings(query_ir.regular.main, branch.query);
+          BuildUnionColumnMappings(query_ir.regular.main, branch.query);
       query_ir.regular.unions.push_back(std::move(branch));
     }
 
     return query_ir;
   }
 
-  SingleQueryIR buildSingleQuery(const ast::SingleQuery &query) {
+  SingleQueryIR BuildSingleQuery(const ast::SingleQuery &query) {
     switch (query.node_type) {
       case ast::ASTNodeType::SinglePartQuery: {
-        return buildSinglePartQuery(cast_ast<ast::SinglePartQuery>(query));
+        return BuildSinglePartQuery(CastAst<ast::SinglePartQuery>(query));
       }
       case ast::ASTNodeType::MultiPartQuery: {
-        return buildMultiPartQuery(cast_ast<ast::MultiPartQuery>(query));
+        return BuildMultiPartQuery(CastAst<ast::MultiPartQuery>(query));
       }
       default: {
-        THROW(common::InvalidArgumentError, makeUnsupportedError("single query type"));
+        THROW(common::InvalidArgumentError,
+              MakeUnsupportedError("single query type"));
       }
     }
   }
 
-  SingleQueryIR buildSinglePartQuery(const ast::SinglePartQuery &query) {
-    checkNoUpdatingClauses(query.updating_clauses);
-    return buildQuerySegment(query.reading_clauses, query.return_clause.get());
+  SingleQueryIR BuildSinglePartQuery(const ast::SinglePartQuery &query) {
+    CheckNoUpdatingClauses(query.updating_clauses);
+    return BuildQuerySegment(query.reading_clauses, query.return_clause.get());
   }
 
-  SingleQueryIR buildMultiPartQuery(const ast::MultiPartQuery &query) {
+  SingleQueryIR BuildMultiPartQuery(const ast::MultiPartQuery &query) {
     CHECK(query.final_single_part_query, common::InvalidArgumentError,
-          makeMissingError("final single query"));
+          MakeMissingError("final single query"));
 
     SingleQueryIR root;
     SingleQueryIR *current_segment = &root;
-    for (auto &part : query.parts) {
-      checkNoUpdatingClauses(part.updating_clauses);
+    for (const auto &part : query.parts) {
+      CheckNoUpdatingClauses(part.updating_clauses);
       CHECK(part.with_clause, common::InvalidArgumentError,
-            makeMissingError("WITH clause"));
-      *current_segment = buildQuerySegment(part.reading_clauses, part.with_clause.get());
+            MakeMissingError("WITH clause"));
+      *current_segment =
+          BuildQuerySegment(part.reading_clauses, part.with_clause.get());
       current_segment->tail = std::make_unique<SingleQueryIR>();
       current_segment = current_segment->tail.get();
     }
 
-    *current_segment = buildSinglePartQuery(*query.final_single_part_query);
+    *current_segment = BuildSinglePartQuery(*query.final_single_part_query);
     return root;
   }
 
-  Projection buildProjectionClause(
+  Projection BuildProjectionClause(
       const ast::ProjectionClause *projection_clause) {
     Projection projection;
-    if (!projection_clause) {
+    if (projection_clause == nullptr) {
       return projection;
     }
     if (projection_clause->body) {
-      projection = buildProjectionBody(*projection_clause->body);
+      projection = BuildProjectionBody(*projection_clause->body);
     }
-    if (auto *with_clause = dynamic_cast<const ast::With *>(projection_clause)) {
+    if (const auto *with_clause =
+            dynamic_cast<const ast::With *>(projection_clause)) {
       projection.where = with_clause->where.get();
     }
     return projection;
   }
 
-  SingleQueryIR buildQuerySegment(
+  SingleQueryIR BuildQuerySegment(
       const std::vector<std::unique_ptr<ast::ReadingClause>> &reading,
       const ast::ProjectionClause *projection) {
     SingleQueryIR ir;
@@ -342,17 +342,17 @@ class QueryIRBuilder {
       if (!clause) {
         continue;
       }
-      builder.buildReadingClause(*clause);
+      builder.BuildReadingClause(*clause);
     }
 
-    ir.query_graph = builder.release();
-    ir.projection = buildProjectionClause(projection);
+    ir.query_graph = builder.Release();
+    ir.projection = BuildProjectionClause(projection);
     return ir;
   }
 
-  Projection buildProjectionBody(const ast::ProjectionBody &body) {
+  static Projection BuildProjectionBody(const ast::ProjectionBody &body) {
     CHECK(!body.star, common::InvalidArgumentError,
-          makeUnsupportedError("projection star before rewrite"));
+          MakeUnsupportedError("projection star before rewrite"));
 
     Projection projection;
     projection.distinct = body.distinct;
@@ -387,7 +387,7 @@ class QueryIRBuilder {
 
 QueryIR buildStatement(const ast::Statement &statement) {
   QueryIRBuilder builder;
-  return builder.build(statement);
+  return builder.Build(statement);
 }
 
 }  // namespace ir

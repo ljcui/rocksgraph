@@ -6,8 +6,6 @@
 
 namespace ast {
 
-std::string expressionToString(const Expression &expr);
-
 namespace {
 
 enum Precedence {
@@ -28,7 +26,7 @@ struct ExprText {
   int prec = kPrimary;
 };
 
-std::string join(const std::vector<std::string> &items,
+std::string Join(const std::vector<std::string> &items,
                  const std::string &sep) {
   std::string out;
   for (size_t i = 0; i < items.size(); ++i) {
@@ -40,7 +38,7 @@ std::string join(const std::vector<std::string> &items,
   return out;
 }
 
-std::string escapeStringLiteral(const std::string &value) {
+std::string EscapeStringLiteral(const std::string &value) {
   std::string out;
   out.reserve(value.size() + 2);
   out.push_back('\'');
@@ -54,7 +52,7 @@ std::string escapeStringLiteral(const std::string &value) {
   return out;
 }
 
-std::string wrapIfNeeded(const ExprText &child, int parent_prec,
+std::string WrapIfNeeded(const ExprText &child, int parent_prec,
                          bool wrap_equal) {
   if (child.text.empty()) {
     return {};
@@ -65,62 +63,61 @@ std::string wrapIfNeeded(const ExprText &child, int parent_prec,
   return child.text;
 }
 
-ExprText expressionText(const Expression &expr);
-std::string patternToString(const Pattern &pattern);
-std::string patternPartToString(const PatternPart &part);
-std::string patternElementToString(const PatternElement &element);
-std::string relationshipsPatternToString(const RelationshipsPattern &pattern);
-std::string nodePatternToString(const NodePattern &node);
-std::string relationshipPatternToString(const RelationshipPattern &pattern);
-std::string relationshipDetailToString(const RelationshipDetail &detail);
-std::string propertiesToString(const Properties &properties);
-std::string projectionBodyToString(const ProjectionBody &body);
-std::string regularQueryToString(const RegularQuery &query);
+ExprText ExpressionText(const Expression &expr);
+std::string PatternToString(const Pattern &pattern);
+std::string PatternPartToString(const PatternPart &part);
+std::string PatternElementToString(const PatternElement &element);
+std::string RelationshipsPatternToString(const RelationshipsPattern &pattern);
+std::string NodePatternToString(const NodePattern &node);
+std::string RelationshipPatternToString(const RelationshipPattern &pattern);
+std::string RelationshipDetailToString(const RelationshipDetail &detail);
+std::string PropertiesToString(const Properties &properties);
+std::string ProjectionBodyToString(const ProjectionBody &body);
+std::string RegularQueryToString(const RegularQuery &query);
 
-ExprText renderBinary(const Expression *left, const Expression *right, int prec,
+ExprText RenderBinary(const Expression *left, const Expression *right, int prec,
                       const std::string &op, bool wrap_equal_left = false,
                       bool wrap_equal_right = true) {
-  if (!left || !right) {
+  if ((left == nullptr) || (right == nullptr)) {
     return {};
   }
-  const ExprText left_text = expressionText(*left);
-  const ExprText right_text = expressionText(*right);
+  const ExprText left_text = ExpressionText(*left);
+  const ExprText right_text = ExpressionText(*right);
   const std::string left_rendered =
-      wrapIfNeeded(left_text, prec, wrap_equal_left);
+      WrapIfNeeded(left_text, prec, wrap_equal_left);
   const std::string right_rendered =
-      wrapIfNeeded(right_text, prec, wrap_equal_right);
+      WrapIfNeeded(right_text, prec, wrap_equal_right);
   if (left_rendered.empty() || right_rendered.empty()) {
     return {};
   }
   return {left_rendered + " " + op + " " + right_rendered, prec};
 }
 
-ExprText renderUnary(const Expression *operand, int prec,
+ExprText RenderUnary(const Expression *operand, int prec,
                      const std::string &prefix) {
-  if (!operand) {
+  if (operand == nullptr) {
     return {};
   }
-  const ExprText operand_text = expressionText(*operand);
-  const std::string operand_rendered =
-      wrapIfNeeded(operand_text, prec, false);
+  const ExprText operand_text = ExpressionText(*operand);
+  const std::string operand_rendered = WrapIfNeeded(operand_text, prec, false);
   if (operand_rendered.empty()) {
     return {};
   }
   return {prefix + operand_rendered, prec};
 }
 
-ExprText expressionText(const Expression &expr) {
+ExprText ExpressionText(const Expression &expr) {
   if (const auto *node = dynamic_cast<const OrExpression *>(&expr)) {
-    return renderBinary(node->left.get(), node->right.get(), kOr, "OR");
+    return RenderBinary(node->left.get(), node->right.get(), kOr, "OR");
   }
   if (const auto *node = dynamic_cast<const XorExpression *>(&expr)) {
-    return renderBinary(node->left.get(), node->right.get(), kXor, "XOR");
+    return RenderBinary(node->left.get(), node->right.get(), kXor, "XOR");
   }
   if (const auto *node = dynamic_cast<const AndExpression *>(&expr)) {
-    return renderBinary(node->left.get(), node->right.get(), kAnd, "AND");
+    return RenderBinary(node->left.get(), node->right.get(), kAnd, "AND");
   }
   if (const auto *node = dynamic_cast<const ComparisonExpression *>(&expr)) {
-    return renderBinary(node->left.get(), node->right.get(), kComparison,
+    return RenderBinary(node->left.get(), node->right.get(), kComparison,
                         node->op);
   }
   if (const auto *node =
@@ -145,48 +142,48 @@ ExprText expressionText(const Expression &expr) {
     return {out, kComparison};
   }
   if (const auto *node = dynamic_cast<const AddExpression *>(&expr)) {
-    return renderBinary(node->left.get(), node->right.get(), kAdd, "+");
+    return RenderBinary(node->left.get(), node->right.get(), kAdd, "+");
   }
   if (const auto *node = dynamic_cast<const SubtractExpression *>(&expr)) {
-    return renderBinary(node->left.get(), node->right.get(), kAdd, "-");
+    return RenderBinary(node->left.get(), node->right.get(), kAdd, "-");
   }
   if (const auto *node = dynamic_cast<const MultiplyExpression *>(&expr)) {
-    return renderBinary(node->left.get(), node->right.get(), kMultiply, "*");
+    return RenderBinary(node->left.get(), node->right.get(), kMultiply, "*");
   }
   if (const auto *node = dynamic_cast<const DivideExpression *>(&expr)) {
-    return renderBinary(node->left.get(), node->right.get(), kMultiply, "/");
+    return RenderBinary(node->left.get(), node->right.get(), kMultiply, "/");
   }
   if (const auto *node = dynamic_cast<const ModuloExpression *>(&expr)) {
-    return renderBinary(node->left.get(), node->right.get(), kMultiply, "%");
+    return RenderBinary(node->left.get(), node->right.get(), kMultiply, "%");
   }
   if (const auto *node = dynamic_cast<const PowerExpression *>(&expr)) {
-    return renderBinary(node->left.get(), node->right.get(), kPower, "^", true,
+    return RenderBinary(node->left.get(), node->right.get(), kPower, "^", true,
                         false);
   }
   if (const auto *node = dynamic_cast<const NotExpression *>(&expr)) {
-    return renderUnary(node->operand.get(), kUnary, "NOT ");
+    return RenderUnary(node->operand.get(), kUnary, "NOT ");
   }
   if (const auto *node = dynamic_cast<const UnaryPlusExpression *>(&expr)) {
-    return renderUnary(node->operand.get(), kUnary, "+");
+    return RenderUnary(node->operand.get(), kUnary, "+");
   }
   if (const auto *node = dynamic_cast<const UnaryMinusExpression *>(&expr)) {
-    return renderUnary(node->operand.get(), kUnary, "-");
+    return RenderUnary(node->operand.get(), kUnary, "-");
   }
   if (const auto *node =
           dynamic_cast<const StringPredicateExpression *>(&expr)) {
-    return renderBinary(node->left.get(), node->right.get(), kComparison,
+    return RenderBinary(node->left.get(), node->right.get(), kComparison,
                         node->op);
   }
   if (const auto *node = dynamic_cast<const ListPredicateExpression *>(&expr)) {
-    return renderBinary(node->element.get(), node->list.get(), kComparison,
+    return RenderBinary(node->element.get(), node->list.get(), kComparison,
                         "IN");
   }
   if (const auto *node = dynamic_cast<const NullPredicateExpression *>(&expr)) {
     if (!node->operand) {
       return {};
     }
-    const ExprText operand = expressionText(*node->operand);
-    const std::string operand_text = wrapIfNeeded(operand, kComparison, false);
+    const ExprText operand = ExpressionText(*node->operand);
+    const std::string operand_text = WrapIfNeeded(operand, kComparison, false);
     if (operand_text.empty()) {
       return {};
     }
@@ -198,8 +195,8 @@ ExprText expressionText(const Expression &expr) {
     if (!node->expr || node->labels.empty()) {
       return {};
     }
-    const ExprText base = expressionText(*node->expr);
-    const std::string base_text = wrapIfNeeded(base, kPostfix, false);
+    const ExprText base = ExpressionText(*node->expr);
+    const std::string base_text = WrapIfNeeded(base, kPostfix, false);
     if (base_text.empty()) {
       return {};
     }
@@ -219,9 +216,9 @@ ExprText expressionText(const Expression &expr) {
     return {std::to_string(node->value), kPrimary};
   }
   if (const auto *node = dynamic_cast<const StringLiteral *>(&expr)) {
-    return {escapeStringLiteral(node->value), kPrimary};
+    return {EscapeStringLiteral(node->value), kPrimary};
   }
-  if (dynamic_cast<const NullLiteral *>(&expr)) {
+  if (dynamic_cast<const NullLiteral *>(&expr) != nullptr) {
     return {"NULL", kPrimary};
   }
   if (const auto *node = dynamic_cast<const ListLiteral *>(&expr)) {
@@ -237,7 +234,7 @@ ExprText expressionText(const Expression &expr) {
       }
       elements.push_back(text);
     }
-    return {"[" + join(elements, ", ") + "]", kPrimary};
+    return {"[" + Join(elements, ", ") + "]", kPrimary};
   }
   if (const auto *node = dynamic_cast<const MapLiteral *>(&expr)) {
     std::vector<std::string> entries;
@@ -252,7 +249,7 @@ ExprText expressionText(const Expression &expr) {
       }
       entries.push_back(entry.first + ": " + value);
     }
-    return {"{" + join(entries, ", ") + "}", kPrimary};
+    return {"{" + Join(entries, ", ") + "}", kPrimary};
   }
   if (const auto *node = dynamic_cast<const Variable *>(&expr)) {
     return {node->name, kPrimary};
@@ -267,8 +264,8 @@ ExprText expressionText(const Expression &expr) {
     if (!node->object || node->property_key.empty()) {
       return {};
     }
-    const ExprText base = expressionText(*node->object);
-    const std::string base_text = wrapIfNeeded(base, kPostfix, false);
+    const ExprText base = ExpressionText(*node->object);
+    const std::string base_text = WrapIfNeeded(base, kPostfix, false);
     if (base_text.empty()) {
       return {};
     }
@@ -278,8 +275,8 @@ ExprText expressionText(const Expression &expr) {
     if (!node->list || !node->index) {
       return {};
     }
-    const ExprText list = expressionText(*node->list);
-    const std::string list_text = wrapIfNeeded(list, kPostfix, false);
+    const ExprText list = ExpressionText(*node->list);
+    const std::string list_text = WrapIfNeeded(list, kPostfix, false);
     if (list_text.empty()) {
       return {};
     }
@@ -293,8 +290,8 @@ ExprText expressionText(const Expression &expr) {
     if (!node->list) {
       return {};
     }
-    const ExprText list = expressionText(*node->list);
-    const std::string list_text = wrapIfNeeded(list, kPostfix, false);
+    const ExprText list = ExpressionText(*node->list);
+    const std::string list_text = WrapIfNeeded(list, kPostfix, false);
     if (list_text.empty()) {
       return {};
     }
@@ -330,7 +327,7 @@ ExprText expressionText(const Expression &expr) {
       }
       args.push_back(arg_text);
     }
-    std::string arg_text = join(args, ", ");
+    std::string arg_text = Join(args, ", ");
     if (node->distinct) {
       if (!arg_text.empty()) {
         arg_text = "DISTINCT " + arg_text;
@@ -340,7 +337,7 @@ ExprText expressionText(const Expression &expr) {
     }
     return {node->function_name + "(" + arg_text + ")", kPrimary};
   }
-  if (dynamic_cast<const CountStarExpression *>(&expr)) {
+  if (dynamic_cast<const CountStarExpression *>(&expr) != nullptr) {
     return {"count(*)", kPrimary};
   }
   if (const auto *node = dynamic_cast<const CaseExpression *>(&expr)) {
@@ -414,7 +411,7 @@ ExprText expressionText(const Expression &expr) {
       return {};
     }
     const std::string pattern_text =
-        relationshipsPatternToString(*node->relationships_pattern);
+        RelationshipsPatternToString(*node->relationships_pattern);
     if (pattern_text.empty()) {
       return {};
     }
@@ -443,7 +440,7 @@ ExprText expressionText(const Expression &expr) {
       return {};
     }
     const std::string pattern_text =
-        relationshipsPatternToString(*node->relationships_pattern);
+        RelationshipsPatternToString(*node->relationships_pattern);
     if (pattern_text.empty()) {
       return {};
     }
@@ -528,7 +525,7 @@ ExprText expressionText(const Expression &expr) {
   if (const auto *node = dynamic_cast<const ExistentialSubquery *>(&expr)) {
     std::string out = "EXISTS { ";
     if (node->query) {
-      const std::string query_text = regularQueryToString(*node->query);
+      const std::string query_text = RegularQueryToString(*node->query);
       if (query_text.empty()) {
         return {};
       }
@@ -537,7 +534,7 @@ ExprText expressionText(const Expression &expr) {
       return {out, kPrimary};
     }
     if (node->pattern) {
-      const std::string pattern_text = patternToString(*node->pattern);
+      const std::string pattern_text = PatternToString(*node->pattern);
       if (pattern_text.empty()) {
         return {};
       }
@@ -557,7 +554,7 @@ ExprText expressionText(const Expression &expr) {
   return {};
 }
 
-std::string propertiesToString(const Properties &properties) {
+std::string PropertiesToString(const Properties &properties) {
   if (properties.map) {
     return expressionToString(*properties.map);
   }
@@ -570,7 +567,7 @@ std::string propertiesToString(const Properties &properties) {
   return {};
 }
 
-std::string nodePatternToString(const NodePattern &node) {
+std::string NodePatternToString(const NodePattern &node) {
   std::string out = "(";
   if (!node.variable.empty()) {
     out += node.variable;
@@ -579,7 +576,7 @@ std::string nodePatternToString(const NodePattern &node) {
     out += ":" + label;
   }
   if (node.properties) {
-    const std::string props = propertiesToString(*node.properties);
+    const std::string props = PropertiesToString(*node.properties);
     if (props.empty()) {
       return {};
     }
@@ -592,13 +589,13 @@ std::string nodePatternToString(const NodePattern &node) {
   return out;
 }
 
-std::string relationshipDetailToString(const RelationshipDetail &detail) {
+std::string RelationshipDetailToString(const RelationshipDetail &detail) {
   std::string out;
   if (!detail.variable.empty()) {
     out += detail.variable;
   }
   if (!detail.types.empty()) {
-    out += ":" + join(detail.types, "|");
+    out += ":" + Join(detail.types, "|");
   }
   if (detail.range) {
     std::string range = "*";
@@ -614,7 +611,7 @@ std::string relationshipDetailToString(const RelationshipDetail &detail) {
     out += range;
   }
   if (detail.properties) {
-    const std::string props = propertiesToString(*detail.properties);
+    const std::string props = PropertiesToString(*detail.properties);
     if (props.empty()) {
       return {};
     }
@@ -626,12 +623,12 @@ std::string relationshipDetailToString(const RelationshipDetail &detail) {
   return "[" + out + "]";
 }
 
-std::string relationshipPatternToString(const RelationshipPattern &pattern) {
+std::string RelationshipPatternToString(const RelationshipPattern &pattern) {
   const std::string left = pattern.left_arrow ? "<-" : "-";
   const std::string right = pattern.right_arrow ? "->" : "-";
   std::string middle;
   if (pattern.detail) {
-    middle = relationshipDetailToString(*pattern.detail);
+    middle = RelationshipDetailToString(*pattern.detail);
     if (middle.empty()) {
       return {};
     }
@@ -639,11 +636,11 @@ std::string relationshipPatternToString(const RelationshipPattern &pattern) {
   return left + middle + right;
 }
 
-std::string patternElementToString(const PatternElement &element) {
+std::string PatternElementToString(const PatternElement &element) {
   if (!element.node_pattern) {
     return {};
   }
-  std::string out = nodePatternToString(*element.node_pattern);
+  std::string out = NodePatternToString(*element.node_pattern);
   if (out.empty()) {
     return {};
   }
@@ -651,8 +648,8 @@ std::string patternElementToString(const PatternElement &element) {
     if (!link.first || !link.second) {
       return {};
     }
-    const std::string rel = relationshipPatternToString(*link.first);
-    const std::string node = nodePatternToString(*link.second);
+    const std::string rel = RelationshipPatternToString(*link.first);
+    const std::string node = NodePatternToString(*link.second);
     if (rel.empty() || node.empty()) {
       return {};
     }
@@ -661,11 +658,11 @@ std::string patternElementToString(const PatternElement &element) {
   return out;
 }
 
-std::string relationshipsPatternToString(const RelationshipsPattern &pattern) {
+std::string RelationshipsPatternToString(const RelationshipsPattern &pattern) {
   if (!pattern.node_pattern) {
     return {};
   }
-  std::string out = nodePatternToString(*pattern.node_pattern);
+  std::string out = NodePatternToString(*pattern.node_pattern);
   if (out.empty()) {
     return {};
   }
@@ -673,8 +670,8 @@ std::string relationshipsPatternToString(const RelationshipsPattern &pattern) {
     if (!link.first || !link.second) {
       return {};
     }
-    const std::string rel = relationshipPatternToString(*link.first);
-    const std::string node = nodePatternToString(*link.second);
+    const std::string rel = RelationshipPatternToString(*link.first);
+    const std::string node = NodePatternToString(*link.second);
     if (rel.empty() || node.empty()) {
       return {};
     }
@@ -683,11 +680,11 @@ std::string relationshipsPatternToString(const RelationshipsPattern &pattern) {
   return out;
 }
 
-std::string patternPartToString(const PatternPart &part) {
+std::string PatternPartToString(const PatternPart &part) {
   if (!part.element) {
     return {};
   }
-  const std::string element = patternElementToString(*part.element);
+  const std::string element = PatternElementToString(*part.element);
   if (element.empty()) {
     return {};
   }
@@ -697,23 +694,23 @@ std::string patternPartToString(const PatternPart &part) {
   return part.variable + " = " + element;
 }
 
-std::string patternToString(const Pattern &pattern) {
+std::string PatternToString(const Pattern &pattern) {
   std::vector<std::string> parts;
   parts.reserve(pattern.parts.size());
   for (const auto &part : pattern.parts) {
     if (!part) {
       return {};
     }
-    const std::string text = patternPartToString(*part);
+    const std::string text = PatternPartToString(*part);
     if (text.empty()) {
       return {};
     }
     parts.push_back(text);
   }
-  return join(parts, ", ");
+  return Join(parts, ", ");
 }
 
-std::string projectionItemToString(const ProjectionItem &item) {
+std::string ProjectionItemToString(const ProjectionItem &item) {
   if (!item.expression) {
     return {};
   }
@@ -727,7 +724,7 @@ std::string projectionItemToString(const ProjectionItem &item) {
   return out;
 }
 
-std::string sortItemToString(const SortItem &item) {
+std::string SortItemToString(const SortItem &item) {
   if (!item.expression) {
     return {};
   }
@@ -741,7 +738,7 @@ std::string sortItemToString(const SortItem &item) {
   return out;
 }
 
-std::string projectionBodyToString(const ProjectionBody &body) {
+std::string ProjectionBodyToString(const ProjectionBody &body) {
   std::string items_text;
   if (body.star) {
     items_text = "*";
@@ -753,7 +750,7 @@ std::string projectionBodyToString(const ProjectionBody &body) {
       if (!item) {
         return {};
       }
-      const std::string text = projectionItemToString(*item);
+      const std::string text = ProjectionItemToString(*item);
       if (text.empty()) {
         return {};
       }
@@ -762,7 +759,7 @@ std::string projectionBodyToString(const ProjectionBody &body) {
     if (!items_text.empty()) {
       items_text += ", ";
     }
-    items_text += join(items, ", ");
+    items_text += Join(items, ", ");
   }
   if (items_text.empty()) {
     return {};
@@ -780,13 +777,13 @@ std::string projectionBodyToString(const ProjectionBody &body) {
       if (!item) {
         return {};
       }
-      const std::string text = sortItemToString(*item);
+      const std::string text = SortItemToString(*item);
       if (text.empty()) {
         return {};
       }
       order_items.push_back(text);
     }
-    out += " ORDER BY " + join(order_items, ", ");
+    out += " ORDER BY " + Join(order_items, ", ");
   }
   if (body.skip) {
     const std::string skip = expressionToString(*body.skip);
@@ -805,7 +802,7 @@ std::string projectionBodyToString(const ProjectionBody &body) {
   return out;
 }
 
-std::string setItemToString(const SetItem &item) {
+std::string SetItemToString(const SetItem &item) {
   if (!item.target) {
     return {};
   }
@@ -841,13 +838,13 @@ std::string setItemToString(const SetItem &item) {
       if (item.labels.empty()) {
         return {};
       }
-      return target + ":" + join(item.labels, ":");
+      return target + ":" + Join(item.labels, ":");
     }
   }
   return {};
 }
 
-std::string removeItemToString(const RemoveItem &item) {
+std::string RemoveItemToString(const RemoveItem &item) {
   if (!item.target) {
     return {};
   }
@@ -862,17 +859,17 @@ std::string removeItemToString(const RemoveItem &item) {
       if (item.labels.empty()) {
         return {};
       }
-      return target + ":" + join(item.labels, ":");
+      return target + ":" + Join(item.labels, ":");
   }
   return {};
 }
 
-std::string readingClauseToString(const ReadingClause &clause) {
+std::string ReadingClauseToString(const ReadingClause &clause) {
   if (const auto *match = dynamic_cast<const Match *>(&clause)) {
     if (!match->pattern) {
       return {};
     }
-    const std::string pattern = patternToString(*match->pattern);
+    const std::string pattern = PatternToString(*match->pattern);
     if (pattern.empty()) {
       return {};
     }
@@ -911,7 +908,7 @@ std::string readingClauseToString(const ReadingClause &clause) {
       args.push_back(text);
     }
     std::string out =
-        "CALL " + call->procedure_name + "(" + join(args, ", ") + ")";
+        "CALL " + call->procedure_name + "(" + Join(args, ", ") + ")";
     if (!call->yield_items.empty()) {
       std::vector<std::string> items;
       items.reserve(call->yield_items.size());
@@ -922,7 +919,7 @@ std::string readingClauseToString(const ReadingClause &clause) {
           items.push_back(item.variable);
         }
       }
-      out += " YIELD " + join(items, ", ");
+      out += " YIELD " + Join(items, ", ");
     }
     if (call->yield_where) {
       const std::string where_text = expressionToString(*call->yield_where);
@@ -936,12 +933,12 @@ std::string readingClauseToString(const ReadingClause &clause) {
   return {};
 }
 
-std::string updatingClauseToString(const UpdatingClause &clause) {
+std::string UpdatingClauseToString(const UpdatingClause &clause) {
   if (const auto *create = dynamic_cast<const Create *>(&clause)) {
     if (!create->pattern) {
       return {};
     }
-    const std::string pattern = patternToString(*create->pattern);
+    const std::string pattern = PatternToString(*create->pattern);
     if (pattern.empty()) {
       return {};
     }
@@ -951,7 +948,7 @@ std::string updatingClauseToString(const UpdatingClause &clause) {
     if (!merge->pattern_part) {
       return {};
     }
-    const std::string part = patternPartToString(*merge->pattern_part);
+    const std::string part = PatternPartToString(*merge->pattern_part);
     if (part.empty()) {
       return {};
     }
@@ -966,14 +963,14 @@ std::string updatingClauseToString(const UpdatingClause &clause) {
         if (!item) {
           return {};
         }
-        const std::string text = setItemToString(*item);
+        const std::string text = SetItemToString(*item);
         if (text.empty()) {
           return {};
         }
         items.push_back(text);
       }
       out += action.first ? " ON MATCH SET " : " ON CREATE SET ";
-      out += join(items, ", ");
+      out += Join(items, ", ");
     }
     return out;
   }
@@ -994,7 +991,7 @@ std::string updatingClauseToString(const UpdatingClause &clause) {
       items.push_back(text);
     }
     return std::string(del->detach ? "DETACH DELETE " : "DELETE ") +
-           join(items, ", ");
+           Join(items, ", ");
   }
   if (const auto *set = dynamic_cast<const Set *>(&clause)) {
     if (set->items.empty()) {
@@ -1006,13 +1003,13 @@ std::string updatingClauseToString(const UpdatingClause &clause) {
       if (!item) {
         return {};
       }
-      const std::string text = setItemToString(*item);
+      const std::string text = SetItemToString(*item);
       if (text.empty()) {
         return {};
       }
       items.push_back(text);
     }
-    return "SET " + join(items, ", ");
+    return "SET " + Join(items, ", ");
   }
   if (const auto *remove = dynamic_cast<const Remove *>(&clause)) {
     if (remove->items.empty()) {
@@ -1024,22 +1021,22 @@ std::string updatingClauseToString(const UpdatingClause &clause) {
       if (!item) {
         return {};
       }
-      const std::string text = removeItemToString(*item);
+      const std::string text = RemoveItemToString(*item);
       if (text.empty()) {
         return {};
       }
       items.push_back(text);
     }
-    return "REMOVE " + join(items, ", ");
+    return "REMOVE " + Join(items, ", ");
   }
   return {};
 }
 
-std::string projectionClauseToString(const ProjectionClause &clause) {
+std::string ProjectionClauseToString(const ProjectionClause &clause) {
   if (!clause.body) {
     return {};
   }
-  const std::string body = projectionBodyToString(*clause.body);
+  const std::string body = ProjectionBodyToString(*clause.body);
   if (body.empty()) {
     return {};
   }
@@ -1054,13 +1051,13 @@ std::string projectionClauseToString(const ProjectionClause &clause) {
     }
     return out;
   }
-  if (dynamic_cast<const Return *>(&clause)) {
+  if (dynamic_cast<const Return *>(&clause) != nullptr) {
     return "RETURN " + body;
   }
   return {};
 }
 
-std::string singlePartQueryToString(const SinglePartQuery &query) {
+std::string SinglePartQueryToString(const SinglePartQuery &query) {
   std::vector<std::string> parts;
   parts.reserve(query.reading_clauses.size() + query.updating_clauses.size() +
                 1);
@@ -1068,7 +1065,7 @@ std::string singlePartQueryToString(const SinglePartQuery &query) {
     if (!clause) {
       return {};
     }
-    const std::string text = readingClauseToString(*clause);
+    const std::string text = ReadingClauseToString(*clause);
     if (text.empty()) {
       return {};
     }
@@ -1078,23 +1075,23 @@ std::string singlePartQueryToString(const SinglePartQuery &query) {
     if (!clause) {
       return {};
     }
-    const std::string text = updatingClauseToString(*clause);
+    const std::string text = UpdatingClauseToString(*clause);
     if (text.empty()) {
       return {};
     }
     parts.push_back(text);
   }
   if (query.return_clause) {
-    const std::string text = projectionClauseToString(*query.return_clause);
+    const std::string text = ProjectionClauseToString(*query.return_clause);
     if (text.empty()) {
       return {};
     }
     parts.push_back(text);
   }
-  return join(parts, " ");
+  return Join(parts, " ");
 }
 
-std::string multiPartQueryToString(const MultiPartQuery &query) {
+std::string MultiPartQueryToString(const MultiPartQuery &query) {
   std::vector<std::string> parts;
   for (const auto &part : query.parts) {
     std::vector<std::string> segment;
@@ -1102,7 +1099,7 @@ std::string multiPartQueryToString(const MultiPartQuery &query) {
       if (!clause) {
         return {};
       }
-      const std::string text = readingClauseToString(*clause);
+      const std::string text = ReadingClauseToString(*clause);
       if (text.empty()) {
         return {};
       }
@@ -1112,7 +1109,7 @@ std::string multiPartQueryToString(const MultiPartQuery &query) {
       if (!clause) {
         return {};
       }
-      const std::string text = updatingClauseToString(*clause);
+      const std::string text = UpdatingClauseToString(*clause);
       if (text.empty()) {
         return {};
       }
@@ -1121,40 +1118,40 @@ std::string multiPartQueryToString(const MultiPartQuery &query) {
     if (!part.with_clause) {
       return {};
     }
-    const std::string with_text = projectionClauseToString(*part.with_clause);
+    const std::string with_text = ProjectionClauseToString(*part.with_clause);
     if (with_text.empty()) {
       return {};
     }
     segment.push_back(with_text);
-    parts.push_back(join(segment, " "));
+    parts.push_back(Join(segment, " "));
   }
   if (!query.final_single_part_query) {
     return {};
   }
   const std::string final_part =
-      singlePartQueryToString(*query.final_single_part_query);
+      SinglePartQueryToString(*query.final_single_part_query);
   if (final_part.empty()) {
     return {};
   }
   parts.push_back(final_part);
-  return join(parts, " ");
+  return Join(parts, " ");
 }
 
-std::string singleQueryToString(const SingleQuery &query) {
+std::string SingleQueryToString(const SingleQuery &query) {
   if (const auto *single = dynamic_cast<const SinglePartQuery *>(&query)) {
-    return singlePartQueryToString(*single);
+    return SinglePartQueryToString(*single);
   }
   if (const auto *multi = dynamic_cast<const MultiPartQuery *>(&query)) {
-    return multiPartQueryToString(*multi);
+    return MultiPartQueryToString(*multi);
   }
   return {};
 }
 
-std::string regularQueryToString(const RegularQuery &query) {
+std::string RegularQueryToString(const RegularQuery &query) {
   if (!query.single_query) {
     return {};
   }
-  std::string out = singleQueryToString(*query.single_query);
+  std::string out = SingleQueryToString(*query.single_query);
   if (out.empty()) {
     return {};
   }
@@ -1162,7 +1159,7 @@ std::string regularQueryToString(const RegularQuery &query) {
     if (!part || !part->query) {
       return {};
     }
-    const std::string sub = singleQueryToString(*part->query);
+    const std::string sub = SingleQueryToString(*part->query);
     if (sub.empty()) {
       return {};
     }
@@ -1175,7 +1172,7 @@ std::string regularQueryToString(const RegularQuery &query) {
 }  // namespace
 
 std::string expressionToString(const Expression &expr) {
-  return expressionText(expr).text;
+  return ExpressionText(expr).text;
 }
 
 }  // namespace ast

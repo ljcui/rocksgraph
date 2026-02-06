@@ -2,16 +2,15 @@
 #include <string>
 #include <vector>
 
-#include "gflags/gflags.h"
-#include "spdlog/spdlog.h"
-
 #include "ast/ast_builder.h"
 #include "ast/ast_exception.h"
 #include "ast/ast_printer.h"
+#include "gflags/gflags.h"
+#include "spdlog/spdlog.h"
 
 DEFINE_bool(rewrite, false, "Rewrite the cypher statement before printing.");
 
-std::string joinArgs(const std::vector<std::string> &parts) {
+std::string JoinArgs(const std::vector<std::string> &parts) {
   std::string out;
   for (size_t i = 0; i < parts.size(); ++i) {
     if (i > 0) {
@@ -22,7 +21,7 @@ std::string joinArgs(const std::vector<std::string> &parts) {
   return out;
 }
 
-void printMinimalUsage() {
+void PrintMinimalUsage() {
   const auto info = gflags::GetCommandLineFlagInfoOrDie("rewrite");
   std::cerr << gflags::ProgramUsage() << "\n\n"
             << "  -" << info.name << " (" << info.description
@@ -32,13 +31,12 @@ void printMinimalUsage() {
 
 int main(int argc, char **argv) {
   using common::Exception;
-  gflags::SetUsageMessage(
-      "Usage:\n  ast_dump [--rewrite] [--] <cypher...>");
+  gflags::SetUsageMessage("Usage:\n  ast_dump [--rewrite] [--] <cypher...>");
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
   if (argc <= 1) {
     spdlog::error("Missing cypher statement.");
-    printMinimalUsage();
+    PrintMinimalUsage();
     return 1;
   }
 
@@ -47,7 +45,7 @@ int main(int argc, char **argv) {
   for (int i = 1; i < argc; ++i) {
     parts.emplace_back(argv[i]);
   }
-  std::string input = joinArgs(parts);
+  std::string input = JoinArgs(parts);
 
   try {
     auto statement = FLAGS_rewrite ? ast::parseCypherAndRewrite(input)

@@ -10,7 +10,7 @@ namespace {
 
 class NameCollector : public ASTRewriter {
  public:
-  void collect(ASTNode &node) {
+  void Collect(ASTNode &node) {
     names.clear();
     rewrite(node);
   }
@@ -18,80 +18,80 @@ class NameCollector : public ASTRewriter {
   std::unordered_set<std::string> names;
 
  private:
-  void addName(const std::string &name) {
+  void AddName(const std::string &name) {
     if (!name.empty()) {
       names.insert(name);
     }
   }
 
-  void visit(Variable &node) override { addName(node.name); }
+  void visit(Variable &node) override { AddName(node.name); }
 
   void visit(NodePattern &node) override {
-    addName(node.variable);
+    AddName(node.variable);
     ASTRewriter::visit(node);
   }
 
   void visit(RelationshipDetail &node) override {
-    addName(node.variable);
+    AddName(node.variable);
     ASTRewriter::visit(node);
   }
 
   void visit(PatternPart &node) override {
-    addName(node.variable);
+    AddName(node.variable);
     ASTRewriter::visit(node);
   }
 
   void visit(ProjectionItem &node) override {
-    addName(node.alias);
+    AddName(node.alias);
     ASTRewriter::visit(node);
   }
 
   void visit(StandaloneCall &node) override {
     for (const auto &item : node.yield_items) {
-      addName(item.variable);
+      AddName(item.variable);
     }
     ASTRewriter::visit(node);
   }
 
   void visit(Unwind &node) override {
-    addName(node.variable);
+    AddName(node.variable);
     ASTRewriter::visit(node);
   }
 
   void visit(InQueryCall &node) override {
     for (const auto &item : node.yield_items) {
-      addName(item.variable);
+      AddName(item.variable);
     }
     ASTRewriter::visit(node);
   }
 
   void visit(ListComprehension &node) override {
-    addName(node.variable);
+    AddName(node.variable);
     ASTRewriter::visit(node);
   }
 
   void visit(PatternComprehension &node) override {
-    addName(node.variable);
+    AddName(node.variable);
     ASTRewriter::visit(node);
   }
 
   void visit(AllQuantifier &node) override {
-    addName(node.variable);
+    AddName(node.variable);
     ASTRewriter::visit(node);
   }
 
   void visit(AnyQuantifier &node) override {
-    addName(node.variable);
+    AddName(node.variable);
     ASTRewriter::visit(node);
   }
 
   void visit(NoneQuantifier &node) override {
-    addName(node.variable);
+    AddName(node.variable);
     ASTRewriter::visit(node);
   }
 
   void visit(SingleQuantifier &node) override {
-    addName(node.variable);
+    AddName(node.variable);
     ASTRewriter::visit(node);
   }
 };
@@ -153,7 +153,7 @@ void AnonymousPatternNameRewriter::prepare(ASTNode &node) {
     return;
   }
   NameCollector collector;
-  collector.collect(node);
+  collector.Collect(node);
   used_names_ = std::move(collector.names);
   prepared_ = true;
 }

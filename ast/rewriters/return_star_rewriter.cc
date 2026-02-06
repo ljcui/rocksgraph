@@ -17,9 +17,9 @@ void ReturnStarRewriter::Scope::add(const std::string &name) {
 }
 
 const ReturnStarRewriter::Scope &ReturnStarRewriter::currentScope() const {
-  static const Scope empty;
+  static const Scope kEmpty;
   if (scope_stack_.empty()) {
-    return empty;
+    return kEmpty;
   }
   return scope_stack_.back();
 }
@@ -194,17 +194,17 @@ void ReturnStarRewriter::collectFromRelationshipsPattern(
 }
 
 void ReturnStarRewriter::collectFromNodePattern(const NodePattern &node,
-                                                Scope &scope) const {
+                                                Scope &scope) {
   scope.add(node.variable);
 }
 
 void ReturnStarRewriter::collectFromRelationshipDetail(
-    const RelationshipDetail &detail, Scope &scope) const {
+    const RelationshipDetail &detail, Scope &scope) {
   scope.add(detail.variable);
 }
 
 void ReturnStarRewriter::collectFromProjectionItem(const ProjectionItem &item,
-                                                   Scope &scope) const {
+                                                   Scope &scope) {
   if (!item.alias.empty()) {
     scope.add(item.alias);
     return;

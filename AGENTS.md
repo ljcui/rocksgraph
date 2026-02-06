@@ -6,7 +6,7 @@
 - 命令行解析使用 gflags；日志打印使用 spdlog。
 
 ## 项目结构与模块组织
-- `ast/`：Cypher 语法（`Cypher.g4`）、生成的解析器/词法器源码，以及 AST 工具（builder、printer、rewriter、equality）。
+- `ast/`：Cypher 语法（`ast/cypher/Cypher.g4`）、生成的解析器/词法器源码，以及 AST 工具（builder、printer、rewriter、equality）。
 - `value/`：Value 值系统与数据类型定义（标量、集合、图元素、时空/空间类型）。
 - `tests/`：GoogleTest 单元测试（例如 `*_test.cc`）。
 - `tools/`：开发工具（如 `ast_dump`）。
@@ -34,7 +34,7 @@
 - 建议针对单一 AST 功能或重写行为编写聚焦测试；当前无覆盖率门槛。
 
 ## 生成代码与语法变更
-- `ast/Cypher*.cc/.h` 由 `ast/Cypher.g4` 生成。
+- `ast/cypher/Cypher*.cc/.h` 由 `ast/cypher/Cypher.g4` 生成。
 - 避免手工修改生成文件；语法变更后用本地 ANTLR 流程重新生成。
 
 ## Git 忽略项

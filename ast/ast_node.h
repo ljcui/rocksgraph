@@ -258,7 +258,9 @@ class ComparisonExpression : public Expression {
 
 class ComparisonChainExpression : public Expression {
  public:
-  ComparisonChainExpression() { node_type = ASTNodeType::ComparisonChainExpression; }
+  ComparisonChainExpression() {
+    node_type = ASTNodeType::ComparisonChainExpression;
+  }
   std::unique_ptr<Expression> left;
   std::vector<std::pair<std::string, std::unique_ptr<Expression>>> rights;
   void validate() const { assert(!rights.empty()); }
@@ -332,7 +334,9 @@ class UnaryMinusExpression : public UnaryExpression {
 // ============================================
 class StringPredicateExpression : public Expression {
  public:
-  StringPredicateExpression() { node_type = ASTNodeType::StringPredicateExpression; }
+  StringPredicateExpression() {
+    node_type = ASTNodeType::StringPredicateExpression;
+  }
   std::unique_ptr<Expression> left;
   std::string op;  // STARTS WITH, ENDS WITH, CONTAINS
   std::unique_ptr<Expression> right;
@@ -341,7 +345,9 @@ class StringPredicateExpression : public Expression {
 
 class ListPredicateExpression : public Expression {
  public:
-  ListPredicateExpression() { node_type = ASTNodeType::ListPredicateExpression; }
+  ListPredicateExpression() {
+    node_type = ASTNodeType::ListPredicateExpression;
+  }
   std::unique_ptr<Expression> element;
   std::unique_ptr<Expression> list;
   void accept(ASTVisitor& visitor) override;
@@ -349,7 +355,9 @@ class ListPredicateExpression : public Expression {
 
 class LabelPredicateExpression : public Expression {
  public:
-  LabelPredicateExpression() { node_type = ASTNodeType::LabelPredicateExpression; }
+  LabelPredicateExpression() {
+    node_type = ASTNodeType::LabelPredicateExpression;
+  }
   std::unique_ptr<Expression> expr;
   std::vector<std::string> labels;
   void validate() const { assert(!labels.empty()); }
@@ -358,7 +366,9 @@ class LabelPredicateExpression : public Expression {
 
 class NullPredicateExpression : public Expression {
  public:
-  NullPredicateExpression() { node_type = ASTNodeType::NullPredicateExpression; }
+  NullPredicateExpression() {
+    node_type = ASTNodeType::NullPredicateExpression;
+  }
   std::unique_ptr<Expression> operand;
   bool is_null = true;  // IS NULL or IS NOT NULL
   void accept(ASTVisitor& visitor) override;
@@ -502,7 +512,9 @@ class CaseExpression : public Expression {
 
 class ParenthesizedExpression : public Expression {
  public:
-  ParenthesizedExpression() { node_type = ASTNodeType::ParenthesizedExpression; }
+  ParenthesizedExpression() {
+    node_type = ASTNodeType::ParenthesizedExpression;
+  }
   std::unique_ptr<Expression> expr;
   void accept(ASTVisitor& visitor) override;
 };
@@ -532,7 +544,9 @@ class PatternComprehension : public Expression {
 
 class PatternPredicateExpression : public Expression {
  public:
-  PatternPredicateExpression() { node_type = ASTNodeType::PatternPredicateExpression; }
+  PatternPredicateExpression() {
+    node_type = ASTNodeType::PatternPredicateExpression;
+  }
   std::unique_ptr<RelationshipsPattern> relationships_pattern;
   void accept(ASTVisitor& visitor) override;
 };

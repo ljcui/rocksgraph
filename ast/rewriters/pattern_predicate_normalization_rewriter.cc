@@ -5,25 +5,25 @@
 namespace ast {
 namespace {
 
-std::unique_ptr<Expression> makeVariable(const std::string &name) {
+std::unique_ptr<Expression> MakeVariable(const std::string &name) {
   auto node = std::make_unique<Variable>();
   node->name = name;
   return node;
 }
 
-std::unique_ptr<Expression> makeLabelPredicate(
+std::unique_ptr<Expression> MakeLabelPredicate(
     const std::string &name, std::vector<std::string> labels) {
   auto node = std::make_unique<LabelPredicateExpression>();
-  node->expr = makeVariable(name);
+  node->expr = MakeVariable(name);
   node->labels = std::move(labels);
   return node;
 }
 
-std::unique_ptr<Expression> makePropertyEquals(
+std::unique_ptr<Expression> MakePropertyEquals(
     const std::string &name, const std::string &key,
     std::unique_ptr<Expression> value) {
   auto prop = std::make_unique<PropertyExpression>();
-  prop->object = makeVariable(name);
+  prop->object = MakeVariable(name);
   prop->property_key = key;
 
   auto node = std::make_unique<ComparisonExpression>();
@@ -33,7 +33,7 @@ std::unique_ptr<Expression> makePropertyEquals(
   return node;
 }
 
-std::unique_ptr<Expression> combineAnd(std::unique_ptr<Expression> left,
+std::unique_ptr<Expression> CombineAnd(std::unique_ptr<Expression> left,
                                        std::unique_ptr<Expression> right) {
   if (!left) {
     return right;
@@ -47,7 +47,7 @@ std::unique_ptr<Expression> combineAnd(std::unique_ptr<Expression> left,
   return node;
 }
 
-std::unique_ptr<Expression> combineOr(std::unique_ptr<Expression> left,
+std::unique_ptr<Expression> CombineOr(std::unique_ptr<Expression> left,
                                       std::unique_ptr<Expression> right) {
   if (!left) {
     return right;
@@ -61,13 +61,13 @@ std::unique_ptr<Expression> combineOr(std::unique_ptr<Expression> left,
   return node;
 }
 
-void collectFromNodePattern(NodePattern &node,
+void CollectFromNodePattern(NodePattern &node,
                             std::vector<std::unique_ptr<Expression>> &preds) {
   if (node.variable.empty()) {
     return;
   }
   if (!node.labels.empty()) {
-    preds.push_back(makeLabelPredicate(node.variable, std::move(node.labels)));
+    preds.push_back(MakeLabelPredicate(node.variable, std::move(node.labels)));
     node.labels.clear();
   }
   if (!node.properties || !node.properties->map) {
@@ -75,13 +75,13 @@ void collectFromNodePattern(NodePattern &node,
   }
   auto entries = std::move(node.properties->map->entries);
   for (auto &entry : entries) {
-    preds.push_back(
-        makePropertyEquals(node.variable, entry.first, std::move(entry.second)));
+    preds.push_back(MakePropertyEquals(node.variable, entry.first,
+                                       std::move(entry.second)));
   }
   node.properties.reset();
 }
 
-void collectFromRelationshipDetail(
+void CollectFromRelationshipDetail(
     RelationshipDetail &detail,
     std::vector<std::unique_ptr<Expression>> &preds) {
   if (detail.variable.empty()) {
@@ -92,14 +92,14 @@ void collectFromRelationshipDetail(
     if (detail.types.size() == 1) {
       std::vector<std::string> label;
       label.push_back(std::move(detail.types.front()));
-      type_predicate = makeLabelPredicate(detail.variable, std::move(label));
+      type_predicate = MakeLabelPredicate(detail.variable, std::move(label));
     } else {
       for (auto &type : detail.types) {
         std::vector<std::string> label;
         label.push_back(std::move(type));
         type_predicate =
-            combineOr(std::move(type_predicate),
-                      makeLabelPredicate(detail.variable, std::move(label)));
+            CombineOr(std::move(type_predicate),
+                      MakeLabelPredicate(detail.variable, std::move(label)));
       }
     }
     detail.types.clear();
@@ -112,51 +112,50 @@ void collectFromRelationshipDetail(
   }
   auto entries = std::move(detail.properties->map->entries);
   for (auto &entry : entries) {
-    preds.push_back(makePropertyEquals(detail.variable, entry.first,
+    preds.push_back(MakePropertyEquals(detail.variable, entry.first,
                                        std::move(entry.second)));
   }
   detail.properties.reset();
 }
 
-void collectFromRelationshipPattern(
+void CollectFromRelationshipPattern(
     RelationshipPattern &pattern,
     std::vector<std::unique_ptr<Expression>> &preds) {
   if (!pattern.detail) {
     return;
   }
-  collectFromRelationshipDetail(*pattern.detail, preds);
+  CollectFromRelationshipDetail(*pattern.detail, preds);
 }
 
-void collectFromPatternElement(
-    PatternElement &element,
-    std::vector<std::unique_ptr<Expression>> &preds) {
+void CollectFromPatternElement(
+    PatternElement &element, std::vector<std::unique_ptr<Expression>> &preds) {
   if (element.node_pattern) {
-    collectFromNodePattern(*element.node_pattern, preds);
+    CollectFromNodePattern(*element.node_pattern, preds);
   }
   for (auto &link : element.chain) {
     if (link.first) {
-      collectFromRelationshipPattern(*link.first, preds);
+      CollectFromRelationshipPattern(*link.first, preds);
     }
     if (link.second) {
-      collectFromNodePattern(*link.second, preds);
+      CollectFromNodePattern(*link.second, preds);
     }
   }
 }
 
-void collectFromPattern(Pattern &pattern,
+void CollectFromPattern(Pattern &pattern,
                         std::vector<std::unique_ptr<Expression>> &preds) {
   for (auto &part : pattern.parts) {
     if (part && part->element) {
-      collectFromPatternElement(*part->element, preds);
+      CollectFromPatternElement(*part->element, preds);
     }
   }
 }
 
-std::unique_ptr<Expression> combinePredicates(
+std::unique_ptr<Expression> CombinePredicates(
     std::vector<std::unique_ptr<Expression>> &preds) {
   std::unique_ptr<Expression> combined;
   for (auto &pred : preds) {
-    combined = combineAnd(std::move(combined), std::move(pred));
+    combined = CombineAnd(std::move(combined), std::move(pred));
   }
   return combined;
 }
@@ -169,12 +168,12 @@ void PatternPredicateNormalizationRewriter::visit(Match &node) {
     return;
   }
   std::vector<std::unique_ptr<Expression>> predicates;
-  collectFromPattern(*node.pattern, predicates);
+  CollectFromPattern(*node.pattern, predicates);
   if (predicates.empty()) {
     return;
   }
-  auto combined = combinePredicates(predicates);
-  node.where = combineAnd(std::move(combined), std::move(node.where));
+  auto combined = CombinePredicates(predicates);
+  node.where = CombineAnd(std::move(combined), std::move(node.where));
 }
 
 }  // namespace ast

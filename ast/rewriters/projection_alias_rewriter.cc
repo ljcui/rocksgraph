@@ -7,7 +7,7 @@
 namespace ast {
 namespace {
 
-bool fillAliasFromExpression(ProjectionItem &item) {
+bool FillAliasFromExpression(ProjectionItem &item) {
   if (!item.alias.empty() || !item.expression) {
     return false;
   }
@@ -25,7 +25,7 @@ void ProjectionAliasRewriter::visit(ProjectionBody &node) {
   ASTRewriter::visit(node);
   for (const auto &item : node.items) {
     if (item) {
-      fillAliasFromExpression(*item);
+      FillAliasFromExpression(*item);
     }
   }
 }

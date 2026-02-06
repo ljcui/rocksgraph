@@ -6,11 +6,11 @@
 #include <utility>
 #include <vector>
 
-#include "CypherLexer.h"
-#include "CypherParser.h"
 #include "antlr4-runtime.h"
 #include "ast_exception.h"
 #include "common/exception.h"
+#include "cypher/CypherLexer.h"
+#include "cypher/CypherParser.h"
 #include "rewriters/rewriter_pipeline.h"
 #include "semantic_validator.h"
 
@@ -25,19 +25,19 @@ class ErrorCollector : public antlr4::BaseErrorListener {
   std::vector<std::string> errors;
 
   void syntaxError(antlr4::Recognizer *recognizer,
-                   antlr4::Token *offendingSymbol, size_t line,
-                   size_t charPositionInLine, const std::string &msg,
+                   antlr4::Token *offending_symbol, size_t line,
+                   size_t char_position_in_line, const std::string &msg,
                    std::exception_ptr e) override {
     (void)recognizer;
-    (void)offendingSymbol;
+    (void)offending_symbol;
     (void)e;
     std::ostringstream oss;
-    oss << "line " << line << ":" << charPositionInLine << " " << msg;
+    oss << "line " << line << ":" << char_position_in_line << " " << msg;
     errors.push_back(oss.str());
   }
 };
 
-static std::string unescapeSymbolicName(const std::string &text) {
+std::string UnescapeSymbolicName(const std::string &text) {
   if (text.empty()) {
     return text;
   }
@@ -60,7 +60,7 @@ static std::string unescapeSymbolicName(const std::string &text) {
   return out;
 }
 
-static int64_t parseIntegerLiteral(const std::string &text) {
+int64_t ParseIntegerLiteral(const std::string &text) {
   int base = 10;
   size_t start = 0;
   if (text.size() > 2 && (text[0] == '0') &&
@@ -75,7 +75,7 @@ static int64_t parseIntegerLiteral(const std::string &text) {
   return std::stoll(text.substr(start), nullptr, base);
 }
 
-static void appendUtf8(uint32_t codepoint, std::string &out) {
+void AppendUtf8(uint32_t codepoint, std::string &out) {
   if (codepoint <= 0x7F) {
     out.push_back(static_cast<char>(codepoint));
   } else if (codepoint <= 0x7FF) {
@@ -93,7 +93,7 @@ static void appendUtf8(uint32_t codepoint, std::string &out) {
   }
 }
 
-static std::string parseStringLiteral(const std::string &text) {
+std::string ParseStringLiteral(const std::string &text) {
   if (text.size() < 2) {
     return text;
   }
@@ -162,7 +162,7 @@ static std::string parseStringLiteral(const std::string &text) {
           }
         }
         i += len;
-        appendUtf8(codepoint, out);
+        AppendUtf8(codepoint, out);
         break;
       }
       default:
@@ -176,87 +176,87 @@ static std::string parseStringLiteral(const std::string &text) {
 
 class ASTBuilder {
  public:
-  std::unique_ptr<Statement> buildStatement(
+  std::unique_ptr<Statement> BuildStatement(
       CypherParser::OC_StatementContext *ctx) {
-    if (!ctx) {
+    if (ctx == nullptr) {
       return nullptr;
     }
-    auto query = buildQuery(ctx->oC_Query());
+    auto query = BuildQuery(ctx->oC_Query());
     return std::unique_ptr<Statement>(query.release());
   }
 
-  std::unique_ptr<Query> buildQuery(CypherParser::OC_QueryContext *ctx) {
-    if (!ctx) {
+  std::unique_ptr<Query> BuildQuery(CypherParser::OC_QueryContext *ctx) {
+    if (ctx == nullptr) {
       return nullptr;
     }
-    if (ctx->oC_RegularQuery()) {
-      return buildRegularQuery(ctx->oC_RegularQuery());
+    if (ctx->oC_RegularQuery() != nullptr) {
+      return BuildRegularQuery(ctx->oC_RegularQuery());
     }
-    if (ctx->oC_StandaloneCall()) {
-      return buildStandaloneCall(ctx->oC_StandaloneCall());
+    if (ctx->oC_StandaloneCall() != nullptr) {
+      return BuildStandaloneCall(ctx->oC_StandaloneCall());
     }
     return nullptr;
   }
 
-  std::unique_ptr<RegularQuery> buildRegularQuery(
+  std::unique_ptr<RegularQuery> BuildRegularQuery(
       CypherParser::OC_RegularQueryContext *ctx) {
-    if (!ctx) {
+    if (ctx == nullptr) {
       return nullptr;
     }
     auto node = std::make_unique<RegularQuery>();
-    node->single_query = buildSingleQuery(ctx->oC_SingleQuery());
+    node->single_query = BuildSingleQuery(ctx->oC_SingleQuery());
     for (auto *u : ctx->oC_Union()) {
-      node->unions.push_back(buildUnionPart(u));
+      node->unions.push_back(BuildUnionPart(u));
     }
     return node;
   }
 
-  std::unique_ptr<UnionPart> buildUnionPart(
+  std::unique_ptr<UnionPart> BuildUnionPart(
       CypherParser::OC_UnionContext *ctx) {
-    if (!ctx) {
+    if (ctx == nullptr) {
       return nullptr;
     }
     auto node = std::make_unique<UnionPart>();
     node->all = ctx->ALL() != nullptr;
-    node->query = buildSingleQuery(ctx->oC_SingleQuery());
+    node->query = BuildSingleQuery(ctx->oC_SingleQuery());
     return node;
   }
 
-  std::unique_ptr<SingleQuery> buildSingleQuery(
+  std::unique_ptr<SingleQuery> BuildSingleQuery(
       CypherParser::OC_SingleQueryContext *ctx) {
-    if (!ctx) {
+    if (ctx == nullptr) {
       return nullptr;
     }
-    if (ctx->oC_SinglePartQuery()) {
-      return buildSinglePartQuery(ctx->oC_SinglePartQuery());
+    if (ctx->oC_SinglePartQuery() != nullptr) {
+      return BuildSinglePartQuery(ctx->oC_SinglePartQuery());
     }
-    if (ctx->oC_MultiPartQuery()) {
-      return buildMultiPartQuery(ctx->oC_MultiPartQuery());
+    if (ctx->oC_MultiPartQuery() != nullptr) {
+      return BuildMultiPartQuery(ctx->oC_MultiPartQuery());
     }
     return nullptr;
   }
 
-  std::unique_ptr<SinglePartQuery> buildSinglePartQuery(
+  std::unique_ptr<SinglePartQuery> BuildSinglePartQuery(
       CypherParser::OC_SinglePartQueryContext *ctx) {
-    if (!ctx) {
+    if (ctx == nullptr) {
       return nullptr;
     }
     auto node = std::make_unique<SinglePartQuery>();
     for (auto *rc : ctx->oC_ReadingClause()) {
-      node->reading_clauses.push_back(buildReadingClause(rc));
+      node->reading_clauses.push_back(BuildReadingClause(rc));
     }
     for (auto *uc : ctx->oC_UpdatingClause()) {
-      node->updating_clauses.push_back(buildUpdatingClause(uc));
+      node->updating_clauses.push_back(BuildUpdatingClause(uc));
     }
-    if (ctx->oC_Return()) {
-      node->return_clause = buildReturn(ctx->oC_Return());
+    if (ctx->oC_Return() != nullptr) {
+      node->return_clause = BuildReturn(ctx->oC_Return());
     }
     return node;
   }
 
-  std::unique_ptr<MultiPartQuery> buildMultiPartQuery(
+  std::unique_ptr<MultiPartQuery> BuildMultiPartQuery(
       CypherParser::OC_MultiPartQueryContext *ctx) {
-    if (!ctx) {
+    if (ctx == nullptr) {
       return nullptr;
     }
     auto node = std::make_unique<MultiPartQuery>();
@@ -265,19 +265,19 @@ class ASTBuilder {
     for (auto *child : ctx->children) {
       if (auto *rc =
               dynamic_cast<CypherParser::OC_ReadingClauseContext *>(child)) {
-        reading.push_back(buildReadingClause(rc));
+        reading.push_back(BuildReadingClause(rc));
         continue;
       }
       if (auto *uc =
               dynamic_cast<CypherParser::OC_UpdatingClauseContext *>(child)) {
-        updating.push_back(buildUpdatingClause(uc));
+        updating.push_back(BuildUpdatingClause(uc));
         continue;
       }
       if (auto *wc = dynamic_cast<CypherParser::OC_WithContext *>(child)) {
         MultiPartQuery::WithPart part;
         part.reading_clauses = std::move(reading);
         part.updating_clauses = std::move(updating);
-        part.with_clause = buildWith(wc);
+        part.with_clause = BuildWith(wc);
         node->parts.push_back(std::move(part));
         reading.clear();
         updating.clear();
@@ -285,100 +285,100 @@ class ASTBuilder {
       }
       if (auto *spq =
               dynamic_cast<CypherParser::OC_SinglePartQueryContext *>(child)) {
-        node->final_single_part_query = buildSinglePartQuery(spq);
+        node->final_single_part_query = BuildSinglePartQuery(spq);
       }
     }
     return node;
   }
 
-  std::unique_ptr<ReadingClause> buildReadingClause(
+  std::unique_ptr<ReadingClause> BuildReadingClause(
       CypherParser::OC_ReadingClauseContext *ctx) {
-    if (!ctx) {
+    if (ctx == nullptr) {
       return nullptr;
     }
-    if (ctx->oC_Match()) {
-      return buildMatch(ctx->oC_Match());
+    if (ctx->oC_Match() != nullptr) {
+      return BuildMatch(ctx->oC_Match());
     }
-    if (ctx->oC_Unwind()) {
-      return buildUnwind(ctx->oC_Unwind());
+    if (ctx->oC_Unwind() != nullptr) {
+      return BuildUnwind(ctx->oC_Unwind());
     }
-    if (ctx->oC_InQueryCall()) {
-      return buildInQueryCall(ctx->oC_InQueryCall());
+    if (ctx->oC_InQueryCall() != nullptr) {
+      return BuildInQueryCall(ctx->oC_InQueryCall());
     }
     return nullptr;
   }
 
-  std::unique_ptr<UpdatingClause> buildUpdatingClause(
+  std::unique_ptr<UpdatingClause> BuildUpdatingClause(
       CypherParser::OC_UpdatingClauseContext *ctx) {
-    if (!ctx) {
+    if (ctx == nullptr) {
       return nullptr;
     }
-    if (ctx->oC_Create()) {
-      return buildCreate(ctx->oC_Create());
+    if (ctx->oC_Create() != nullptr) {
+      return BuildCreate(ctx->oC_Create());
     }
-    if (ctx->oC_Merge()) {
-      return buildMerge(ctx->oC_Merge());
+    if (ctx->oC_Merge() != nullptr) {
+      return BuildMerge(ctx->oC_Merge());
     }
-    if (ctx->oC_Delete()) {
-      return buildDelete(ctx->oC_Delete());
+    if (ctx->oC_Delete() != nullptr) {
+      return BuildDelete(ctx->oC_Delete());
     }
-    if (ctx->oC_Set()) {
-      return buildSet(ctx->oC_Set());
+    if (ctx->oC_Set() != nullptr) {
+      return BuildSet(ctx->oC_Set());
     }
-    if (ctx->oC_Remove()) {
-      return buildRemove(ctx->oC_Remove());
+    if (ctx->oC_Remove() != nullptr) {
+      return BuildRemove(ctx->oC_Remove());
     }
     return nullptr;
   }
 
-  std::unique_ptr<Match> buildMatch(CypherParser::OC_MatchContext *ctx) {
+  std::unique_ptr<Match> BuildMatch(CypherParser::OC_MatchContext *ctx) {
     auto node = std::make_unique<Match>();
     node->optional_match = ctx->OPTIONAL() != nullptr;
-    node->pattern = buildPattern(ctx->oC_Pattern());
-    if (ctx->oC_Where()) {
-      node->where = buildExpression(ctx->oC_Where()->oC_Expression());
+    node->pattern = BuildPattern(ctx->oC_Pattern());
+    if (ctx->oC_Where() != nullptr) {
+      node->where = BuildExpression(ctx->oC_Where()->oC_Expression());
     }
     return node;
   }
 
-  std::unique_ptr<Unwind> buildUnwind(CypherParser::OC_UnwindContext *ctx) {
+  std::unique_ptr<Unwind> BuildUnwind(CypherParser::OC_UnwindContext *ctx) {
     auto node = std::make_unique<Unwind>();
-    node->expression = buildExpression(ctx->oC_Expression());
-    node->variable = parseVariable(ctx->oC_Variable());
+    node->expression = BuildExpression(ctx->oC_Expression());
+    node->variable = ParseVariable(ctx->oC_Variable());
     return node;
   }
 
-  std::unique_ptr<InQueryCall> buildInQueryCall(
+  std::unique_ptr<InQueryCall> BuildInQueryCall(
       CypherParser::OC_InQueryCallContext *ctx) {
     auto node = std::make_unique<InQueryCall>();
     auto *call = ctx->oC_ExplicitProcedureInvocation();
-    node->procedure_name = parseProcedureName(call->oC_ProcedureName());
+    node->procedure_name = ParseProcedureName(call->oC_ProcedureName());
     for (auto *arg : call->oC_Expression()) {
-      node->arguments.push_back(buildExpression(arg));
+      node->arguments.push_back(BuildExpression(arg));
     }
-    if (ctx->oC_YieldItems()) {
-      parseYieldItems(ctx->oC_YieldItems(), node->yield_items,
+    if (ctx->oC_YieldItems() != nullptr) {
+      ParseYieldItems(ctx->oC_YieldItems(), node->yield_items,
                       node->yield_where);
     }
     return node;
   }
 
-  std::unique_ptr<StandaloneCall> buildStandaloneCall(
+  std::unique_ptr<StandaloneCall> BuildStandaloneCall(
       CypherParser::OC_StandaloneCallContext *ctx) {
     auto node = std::make_unique<StandaloneCall>();
-    if (ctx->oC_ExplicitProcedureInvocation()) {
+    if (ctx->oC_ExplicitProcedureInvocation() != nullptr) {
       auto *call = ctx->oC_ExplicitProcedureInvocation();
-      node->procedure_name = parseProcedureName(call->oC_ProcedureName());
+      node->procedure_name = ParseProcedureName(call->oC_ProcedureName());
       for (auto *arg : call->oC_Expression()) {
-        node->arguments.push_back(buildExpression(arg));
+        node->arguments.push_back(BuildExpression(arg));
       }
-    } else if (ctx->oC_ImplicitProcedureInvocation()) {
+    } else if (ctx->oC_ImplicitProcedureInvocation() != nullptr) {
       auto *call = ctx->oC_ImplicitProcedureInvocation();
-      node->procedure_name = parseProcedureName(call->oC_ProcedureName());
+      node->procedure_name = ParseProcedureName(call->oC_ProcedureName());
     }
-    if (ctx->YIELD()) {
-      if (ctx->oC_YieldItems()) {
-        parseYieldItems(ctx->oC_YieldItems(), node->yield_items,
+    if (ctx->YIELD() != nullptr) {
+      if (ctx->oC_YieldItems() != nullptr) {
+        ParseYieldItems(ctx->oC_YieldItems(), node->yield_items,
                         node->yield_where);
       } else {
         node->yield_star = true;
@@ -387,240 +387,240 @@ class ASTBuilder {
     return node;
   }
 
-  std::unique_ptr<Create> buildCreate(CypherParser::OC_CreateContext *ctx) {
+  std::unique_ptr<Create> BuildCreate(CypherParser::OC_CreateContext *ctx) {
     auto node = std::make_unique<Create>();
-    node->pattern = buildPattern(ctx->oC_Pattern());
+    node->pattern = BuildPattern(ctx->oC_Pattern());
     return node;
   }
 
-  std::unique_ptr<Merge> buildMerge(CypherParser::OC_MergeContext *ctx) {
+  std::unique_ptr<Merge> BuildMerge(CypherParser::OC_MergeContext *ctx) {
     auto node = std::make_unique<Merge>();
-    node->pattern_part = buildPatternPart(ctx->oC_PatternPart());
+    node->pattern_part = BuildPatternPart(ctx->oC_PatternPart());
     for (auto *action : ctx->oC_MergeAction()) {
       bool on_match = action->MATCH() != nullptr;
-      node->actions.emplace_back(on_match, buildSet(action->oC_Set()));
+      node->actions.emplace_back(on_match, BuildSet(action->oC_Set()));
     }
     return node;
   }
 
-  std::unique_ptr<Delete> buildDelete(CypherParser::OC_DeleteContext *ctx) {
+  std::unique_ptr<Delete> BuildDelete(CypherParser::OC_DeleteContext *ctx) {
     auto node = std::make_unique<Delete>();
     node->detach = ctx->DETACH() != nullptr;
     for (auto *expr : ctx->oC_Expression()) {
-      node->expressions.push_back(buildExpression(expr));
+      node->expressions.push_back(BuildExpression(expr));
     }
     return node;
   }
 
-  std::unique_ptr<Set> buildSet(CypherParser::OC_SetContext *ctx) {
+  std::unique_ptr<Set> BuildSet(CypherParser::OC_SetContext *ctx) {
     auto node = std::make_unique<Set>();
     for (auto *item : ctx->oC_SetItem()) {
-      node->items.push_back(buildSetItem(item));
+      node->items.push_back(BuildSetItem(item));
     }
     return node;
   }
 
-  std::unique_ptr<SetItem> buildSetItem(CypherParser::OC_SetItemContext *ctx) {
+  std::unique_ptr<SetItem> BuildSetItem(CypherParser::OC_SetItemContext *ctx) {
     auto node = std::make_unique<SetItem>();
-    if (ctx->oC_PropertyExpression()) {
+    if (ctx->oC_PropertyExpression() != nullptr) {
       node->type = SetItem::Type::Property;
-      node->target = buildPropertyExpression(ctx->oC_PropertyExpression());
-      node->value = buildExpression(ctx->oC_Expression());
+      node->target = BuildPropertyExpression(ctx->oC_PropertyExpression());
+      node->value = BuildExpression(ctx->oC_Expression());
       node->plus_equal = false;
       return node;
     }
-    if (ctx->oC_NodeLabels()) {
+    if (ctx->oC_NodeLabels() != nullptr) {
       node->type = SetItem::Type::Labels;
-      node->target = buildVariableExpression(ctx->oC_Variable());
-      node->labels = buildNodeLabels(ctx->oC_NodeLabels());
+      node->target = BuildVariableExpression(ctx->oC_Variable());
+      node->labels = BuildNodeLabels(ctx->oC_NodeLabels());
       node->plus_equal = false;
       return node;
     }
     node->type = SetItem::Type::Variable;
-    node->target = buildVariableExpression(ctx->oC_Variable());
-    node->value = buildExpression(ctx->oC_Expression());
-    node->plus_equal = hasOperator(ctx, "+=");
+    node->target = BuildVariableExpression(ctx->oC_Variable());
+    node->value = BuildExpression(ctx->oC_Expression());
+    node->plus_equal = HasOperator(ctx, "+=");
     return node;
   }
 
-  std::unique_ptr<Remove> buildRemove(CypherParser::OC_RemoveContext *ctx) {
+  std::unique_ptr<Remove> BuildRemove(CypherParser::OC_RemoveContext *ctx) {
     auto node = std::make_unique<Remove>();
     for (auto *item : ctx->oC_RemoveItem()) {
-      node->items.push_back(buildRemoveItem(item));
+      node->items.push_back(BuildRemoveItem(item));
     }
     return node;
   }
 
-  std::unique_ptr<RemoveItem> buildRemoveItem(
+  std::unique_ptr<RemoveItem> BuildRemoveItem(
       CypherParser::OC_RemoveItemContext *ctx) {
     auto node = std::make_unique<RemoveItem>();
-    if (ctx->oC_PropertyExpression()) {
+    if (ctx->oC_PropertyExpression() != nullptr) {
       node->type = RemoveItem::Type::Property;
-      node->target = buildPropertyExpression(ctx->oC_PropertyExpression());
+      node->target = BuildPropertyExpression(ctx->oC_PropertyExpression());
       return node;
     }
     node->type = RemoveItem::Type::Labels;
-    node->target = buildVariableExpression(ctx->oC_Variable());
-    node->labels = buildNodeLabels(ctx->oC_NodeLabels());
+    node->target = BuildVariableExpression(ctx->oC_Variable());
+    node->labels = BuildNodeLabels(ctx->oC_NodeLabels());
     return node;
   }
 
-  std::unique_ptr<With> buildWith(CypherParser::OC_WithContext *ctx) {
+  std::unique_ptr<With> BuildWith(CypherParser::OC_WithContext *ctx) {
     auto node = std::make_unique<With>();
-    node->body = buildProjectionBody(ctx->oC_ProjectionBody());
-    if (ctx->oC_Where()) {
-      node->where = buildExpression(ctx->oC_Where()->oC_Expression());
+    node->body = BuildProjectionBody(ctx->oC_ProjectionBody());
+    if (ctx->oC_Where() != nullptr) {
+      node->where = BuildExpression(ctx->oC_Where()->oC_Expression());
     }
     return node;
   }
 
-  std::unique_ptr<Return> buildReturn(CypherParser::OC_ReturnContext *ctx) {
+  std::unique_ptr<Return> BuildReturn(CypherParser::OC_ReturnContext *ctx) {
     auto node = std::make_unique<Return>();
-    node->body = buildProjectionBody(ctx->oC_ProjectionBody());
+    node->body = BuildProjectionBody(ctx->oC_ProjectionBody());
     return node;
   }
 
-  std::unique_ptr<ProjectionBody> buildProjectionBody(
+  std::unique_ptr<ProjectionBody> BuildProjectionBody(
       CypherParser::OC_ProjectionBodyContext *ctx) {
     auto node = std::make_unique<ProjectionBody>();
     node->distinct = ctx->DISTINCT() != nullptr;
     auto *items_ctx = ctx->oC_ProjectionItems();
-    if (items_ctx) {
-      node->star = hasStar(items_ctx);
+    if (items_ctx != nullptr) {
+      node->star = HasStar(items_ctx);
       for (auto *item : items_ctx->oC_ProjectionItem()) {
-        node->items.push_back(buildProjectionItem(item));
+        node->items.push_back(BuildProjectionItem(item));
       }
     }
-    if (ctx->oC_Order()) {
+    if (ctx->oC_Order() != nullptr) {
       for (auto *item : ctx->oC_Order()->oC_SortItem()) {
-        node->order_by.push_back(buildSortItem(item));
+        node->order_by.push_back(BuildSortItem(item));
       }
     }
-    if (ctx->oC_Skip()) {
-      node->skip = buildExpression(ctx->oC_Skip()->oC_Expression());
+    if (ctx->oC_Skip() != nullptr) {
+      node->skip = BuildExpression(ctx->oC_Skip()->oC_Expression());
     }
-    if (ctx->oC_Limit()) {
-      node->limit = buildExpression(ctx->oC_Limit()->oC_Expression());
+    if (ctx->oC_Limit() != nullptr) {
+      node->limit = BuildExpression(ctx->oC_Limit()->oC_Expression());
     }
     return node;
   }
 
-  std::unique_ptr<ProjectionItem> buildProjectionItem(
+  std::unique_ptr<ProjectionItem> BuildProjectionItem(
       CypherParser::OC_ProjectionItemContext *ctx) {
     auto node = std::make_unique<ProjectionItem>();
-    node->expression = buildExpression(ctx->oC_Expression());
-    if (ctx->oC_Variable()) {
-      node->alias = parseVariable(ctx->oC_Variable());
+    node->expression = BuildExpression(ctx->oC_Expression());
+    if (ctx->oC_Variable() != nullptr) {
+      node->alias = ParseVariable(ctx->oC_Variable());
     }
     return node;
   }
 
-  std::unique_ptr<SortItem> buildSortItem(
+  std::unique_ptr<SortItem> BuildSortItem(
       CypherParser::OC_SortItemContext *ctx) {
     auto node = std::make_unique<SortItem>();
-    node->expression = buildExpression(ctx->oC_Expression());
-    if (ctx->ASC() || ctx->ASCENDING()) {
+    node->expression = BuildExpression(ctx->oC_Expression());
+    if ((ctx->ASC() != nullptr) || (ctx->ASCENDING() != nullptr)) {
       node->ascending = true;
     }
-    if (ctx->DESC() || ctx->DESCENDING()) {
+    if ((ctx->DESC() != nullptr) || (ctx->DESCENDING() != nullptr)) {
       node->ascending = false;
     }
     return node;
   }
 
-  std::unique_ptr<Pattern> buildPattern(CypherParser::OC_PatternContext *ctx) {
+  std::unique_ptr<Pattern> BuildPattern(CypherParser::OC_PatternContext *ctx) {
     auto node = std::make_unique<Pattern>();
     for (auto *part : ctx->oC_PatternPart()) {
-      node->parts.push_back(buildPatternPart(part));
+      node->parts.push_back(BuildPatternPart(part));
     }
     return node;
   }
 
-  std::unique_ptr<PatternPart> buildPatternPart(
+  std::unique_ptr<PatternPart> BuildPatternPart(
       CypherParser::OC_PatternPartContext *ctx) {
     auto node = std::make_unique<PatternPart>();
-    if (ctx->oC_Variable()) {
-      node->variable = parseVariable(ctx->oC_Variable());
+    if (ctx->oC_Variable() != nullptr) {
+      node->variable = ParseVariable(ctx->oC_Variable());
     }
-    node->element = buildPatternElement(
+    node->element = BuildPatternElement(
         ctx->oC_AnonymousPatternPart()->oC_PatternElement());
     return node;
   }
 
-  std::unique_ptr<PatternElement> buildPatternElement(
+  std::unique_ptr<PatternElement> BuildPatternElement(
       CypherParser::OC_PatternElementContext *ctx) {
-    if (ctx->oC_PatternElement()) {
-      return buildPatternElement(ctx->oC_PatternElement());
+    if (ctx->oC_PatternElement() != nullptr) {
+      return BuildPatternElement(ctx->oC_PatternElement());
     }
     auto node = std::make_unique<PatternElement>();
-    node->node_pattern = buildNodePattern(ctx->oC_NodePattern());
+    node->node_pattern = BuildNodePattern(ctx->oC_NodePattern());
     for (auto *chain_ctx : ctx->oC_PatternElementChain()) {
-      auto rel = buildRelationshipPattern(chain_ctx->oC_RelationshipPattern());
-      auto np = buildNodePattern(chain_ctx->oC_NodePattern());
+      auto rel = BuildRelationshipPattern(chain_ctx->oC_RelationshipPattern());
+      auto np = BuildNodePattern(chain_ctx->oC_NodePattern());
       node->chain.emplace_back(std::move(rel), std::move(np));
     }
     return node;
   }
 
-  std::unique_ptr<RelationshipsPattern> buildRelationshipsPattern(
+  std::unique_ptr<RelationshipsPattern> BuildRelationshipsPattern(
       CypherParser::OC_RelationshipsPatternContext *ctx) {
     auto node = std::make_unique<RelationshipsPattern>();
-    node->node_pattern = buildNodePattern(ctx->oC_NodePattern());
+    node->node_pattern = BuildNodePattern(ctx->oC_NodePattern());
     for (auto *chain_ctx : ctx->oC_PatternElementChain()) {
-      auto rel = buildRelationshipPattern(chain_ctx->oC_RelationshipPattern());
-      auto np = buildNodePattern(chain_ctx->oC_NodePattern());
+      auto rel = BuildRelationshipPattern(chain_ctx->oC_RelationshipPattern());
+      auto np = BuildNodePattern(chain_ctx->oC_NodePattern());
       node->chain.emplace_back(std::move(rel), std::move(np));
     }
     return node;
   }
 
-  std::unique_ptr<NodePattern> buildNodePattern(
+  std::unique_ptr<NodePattern> BuildNodePattern(
       CypherParser::OC_NodePatternContext *ctx) {
     auto node = std::make_unique<NodePattern>();
-    if (ctx->oC_Variable()) {
-      node->variable = parseVariable(ctx->oC_Variable());
+    if (ctx->oC_Variable() != nullptr) {
+      node->variable = ParseVariable(ctx->oC_Variable());
     }
-    if (ctx->oC_NodeLabels()) {
-      node->labels = buildNodeLabels(ctx->oC_NodeLabels());
+    if (ctx->oC_NodeLabels() != nullptr) {
+      node->labels = BuildNodeLabels(ctx->oC_NodeLabels());
     }
-    if (ctx->oC_Properties()) {
-      node->properties = buildProperties(ctx->oC_Properties());
+    if (ctx->oC_Properties() != nullptr) {
+      node->properties = BuildProperties(ctx->oC_Properties());
     }
     return node;
   }
 
-  std::unique_ptr<RelationshipPattern> buildRelationshipPattern(
+  std::unique_ptr<RelationshipPattern> BuildRelationshipPattern(
       CypherParser::OC_RelationshipPatternContext *ctx) {
     auto node = std::make_unique<RelationshipPattern>();
     node->left_arrow = ctx->oC_LeftArrowHead() != nullptr;
     node->right_arrow = ctx->oC_RightArrowHead() != nullptr;
-    if (ctx->oC_RelationshipDetail()) {
-      node->detail = buildRelationshipDetail(ctx->oC_RelationshipDetail());
+    if (ctx->oC_RelationshipDetail() != nullptr) {
+      node->detail = BuildRelationshipDetail(ctx->oC_RelationshipDetail());
     }
     return node;
   }
 
-  std::unique_ptr<RelationshipDetail> buildRelationshipDetail(
+  std::unique_ptr<RelationshipDetail> BuildRelationshipDetail(
       CypherParser::OC_RelationshipDetailContext *ctx) {
     auto node = std::make_unique<RelationshipDetail>();
-    if (ctx->oC_Variable()) {
-      node->variable = parseVariable(ctx->oC_Variable());
+    if (ctx->oC_Variable() != nullptr) {
+      node->variable = ParseVariable(ctx->oC_Variable());
     }
-    if (ctx->oC_RelationshipTypes()) {
+    if (ctx->oC_RelationshipTypes() != nullptr) {
       for (auto *rt : ctx->oC_RelationshipTypes()->oC_RelTypeName()) {
-        node->types.push_back(parseSchemaName(rt->oC_SchemaName()));
+        node->types.push_back(ParseSchemaName(rt->oC_SchemaName()));
       }
     }
-    if (ctx->oC_RangeLiteral()) {
-      node->range = buildRangeLiteral(ctx->oC_RangeLiteral());
+    if (ctx->oC_RangeLiteral() != nullptr) {
+      node->range = BuildRangeLiteral(ctx->oC_RangeLiteral());
     }
-    if (ctx->oC_Properties()) {
-      node->properties = buildProperties(ctx->oC_Properties());
+    if (ctx->oC_Properties() != nullptr) {
+      node->properties = BuildProperties(ctx->oC_Properties());
     }
     return node;
   }
 
-  RelationshipDetail::RangeLiteral buildRangeLiteral(
+  static RelationshipDetail::RangeLiteral BuildRangeLiteral(
       CypherParser::OC_RangeLiteralContext *ctx) {
     RelationshipDetail::RangeLiteral range;
     int dot_index = -1;
@@ -634,78 +634,78 @@ class ASTBuilder {
       return range;
     }
     if (dot_index < 0) {
-      range.min = parseIntegerLiteral(ctx->oC_IntegerLiteral(0)->getText());
+      range.min = ParseIntegerLiteral(ctx->oC_IntegerLiteral(0)->getText());
       return range;
     }
     for (auto *lit : ctx->oC_IntegerLiteral()) {
       int tok_index = static_cast<int>(lit->getStart()->getTokenIndex());
       if (tok_index < dot_index) {
-        range.min = parseIntegerLiteral(lit->getText());
+        range.min = ParseIntegerLiteral(lit->getText());
       } else {
-        range.max = parseIntegerLiteral(lit->getText());
+        range.max = ParseIntegerLiteral(lit->getText());
       }
     }
     return range;
   }
 
-  std::unique_ptr<Properties> buildProperties(
+  std::unique_ptr<Properties> BuildProperties(
       CypherParser::OC_PropertiesContext *ctx) {
     auto node = std::make_unique<Properties>();
-    if (ctx->oC_MapLiteral()) {
-      node->map = buildMapLiteral(ctx->oC_MapLiteral());
-    } else if (ctx->oC_Parameter()) {
-      node->parameter = buildParameter(ctx->oC_Parameter());
+    if (ctx->oC_MapLiteral() != nullptr) {
+      node->map = BuildMapLiteral(ctx->oC_MapLiteral());
+    } else if (ctx->oC_Parameter() != nullptr) {
+      node->parameter = BuildParameter(ctx->oC_Parameter());
     }
     return node;
   }
 
-  std::unique_ptr<Expression> buildExpression(
+  std::unique_ptr<Expression> BuildExpression(
       CypherParser::OC_ExpressionContext *ctx) {
-    return buildOrExpression(ctx->oC_OrExpression());
+    return BuildOrExpression(ctx->oC_OrExpression());
   }
 
-  std::unique_ptr<Expression> buildOrExpression(
+  std::unique_ptr<Expression> BuildOrExpression(
       CypherParser::OC_OrExpressionContext *ctx) {
     auto parts = ctx->oC_XorExpression();
-    auto expr = buildXorExpression(parts[0]);
+    auto expr = BuildXorExpression(parts[0]);
     for (size_t i = 1; i < parts.size(); ++i) {
       auto node = std::make_unique<OrExpression>();
       node->left = std::move(expr);
-      node->right = buildXorExpression(parts[i]);
+      node->right = BuildXorExpression(parts[i]);
       expr = std::move(node);
     }
     return expr;
   }
 
-  std::unique_ptr<Expression> buildXorExpression(
+  std::unique_ptr<Expression> BuildXorExpression(
       CypherParser::OC_XorExpressionContext *ctx) {
     auto parts = ctx->oC_AndExpression();
-    auto expr = buildAndExpression(parts[0]);
+    auto expr = BuildAndExpression(parts[0]);
     for (size_t i = 1; i < parts.size(); ++i) {
       auto node = std::make_unique<XorExpression>();
       node->left = std::move(expr);
-      node->right = buildAndExpression(parts[i]);
+      node->right = BuildAndExpression(parts[i]);
       expr = std::move(node);
     }
     return expr;
   }
 
-  std::unique_ptr<Expression> buildAndExpression(
+  std::unique_ptr<Expression> BuildAndExpression(
       CypherParser::OC_AndExpressionContext *ctx) {
     auto parts = ctx->oC_NotExpression();
-    auto expr = buildNotExpression(parts[0]);
+    auto expr = BuildNotExpression(parts[0]);
     for (size_t i = 1; i < parts.size(); ++i) {
       auto node = std::make_unique<AndExpression>();
       node->left = std::move(expr);
-      node->right = buildNotExpression(parts[i]);
+      node->right = BuildNotExpression(parts[i]);
       expr = std::move(node);
     }
     return expr;
   }
 
-  std::unique_ptr<Expression> buildNotExpression(
+  std::unique_ptr<Expression> BuildNotExpression(
       CypherParser::OC_NotExpressionContext *ctx) {
-    auto expr = buildComparisonExpression(ctx->oC_ComparisonExpression());
+    auto expr = BuildComparisonExpression(ctx->oC_ComparisonExpression());
     for (size_t i = 0; i < ctx->NOT().size(); ++i) {
       auto node = std::make_unique<NotExpression>();
       node->operand = std::move(expr);
@@ -714,9 +714,9 @@ class ASTBuilder {
     return expr;
   }
 
-  std::unique_ptr<Expression> buildComparisonExpression(
+  std::unique_ptr<Expression> BuildComparisonExpression(
       CypherParser::OC_ComparisonExpressionContext *ctx) {
-    auto left = buildStringListNullPredicateExpression(
+    auto left = BuildStringListNullPredicateExpression(
         ctx->oC_StringListNullPredicateExpression());
     auto parts = ctx->oC_PartialComparisonExpression();
     if (parts.empty()) {
@@ -725,8 +725,8 @@ class ASTBuilder {
     if (parts.size() == 1) {
       auto node = std::make_unique<ComparisonExpression>();
       node->left = std::move(left);
-      node->op = extractComparisonOp(parts[0]);
-      node->right = buildStringListNullPredicateExpression(
+      node->op = ExtractComparisonOp(parts[0]);
+      node->right = BuildStringListNullPredicateExpression(
           parts[0]->oC_StringListNullPredicateExpression());
       return node;
     }
@@ -734,24 +734,24 @@ class ASTBuilder {
     node->left = std::move(left);
     for (auto *part : parts) {
       node->rights.emplace_back(
-          extractComparisonOp(part),
-          buildStringListNullPredicateExpression(
+          ExtractComparisonOp(part),
+          BuildStringListNullPredicateExpression(
               part->oC_StringListNullPredicateExpression()));
     }
     return node;
   }
 
-  std::unique_ptr<Expression> buildStringListNullPredicateExpression(
+  std::unique_ptr<Expression> BuildStringListNullPredicateExpression(
       CypherParser::OC_StringListNullPredicateExpressionContext *ctx) {
-    auto expr = buildAddOrSubtractExpression(ctx->oC_AddOrSubtractExpression());
+    auto expr = BuildAddOrSubtractExpression(ctx->oC_AddOrSubtractExpression());
     for (auto *child : ctx->children) {
       if (auto *string_pred =
               dynamic_cast<CypherParser::OC_StringPredicateExpressionContext *>(
                   child)) {
         auto node = std::make_unique<StringPredicateExpression>();
         node->left = std::move(expr);
-        node->op = extractStringPredicateOp(string_pred);
-        node->right = buildAddOrSubtractExpression(
+        node->op = ExtractStringPredicateOp(string_pred);
+        node->right = BuildAddOrSubtractExpression(
             string_pred->oC_AddOrSubtractExpression());
         expr = std::move(node);
         continue;
@@ -761,7 +761,7 @@ class ASTBuilder {
                   child)) {
         auto node = std::make_unique<ListPredicateExpression>();
         node->element = std::move(expr);
-        node->list = buildAddOrSubtractExpression(
+        node->list = BuildAddOrSubtractExpression(
             list_pred->oC_AddOrSubtractExpression());
         expr = std::move(node);
         continue;
@@ -771,7 +771,7 @@ class ASTBuilder {
                   child)) {
         auto node = std::make_unique<NullPredicateExpression>();
         node->operand = std::move(expr);
-        node->is_null = !hasOperator(null_pred, "NOT");
+        node->is_null = !HasOperator(null_pred, "NOT");
         expr = std::move(node);
         continue;
       }
@@ -779,14 +779,14 @@ class ASTBuilder {
     return expr;
   }
 
-  std::unique_ptr<Expression> buildAddOrSubtractExpression(
+  std::unique_ptr<Expression> BuildAddOrSubtractExpression(
       CypherParser::OC_AddOrSubtractExpressionContext *ctx) {
     auto parts = ctx->oC_MultiplyDivideModuloExpression();
-    auto expr = buildMultiplyDivideModuloExpression(parts[0]);
+    auto expr = BuildMultiplyDivideModuloExpression(parts[0]);
     size_t expr_index = 1;
     for (auto *child : ctx->children) {
       if (child->getText() == "+" || child->getText() == "-") {
-        auto rhs = buildMultiplyDivideModuloExpression(parts[expr_index++]);
+        auto rhs = BuildMultiplyDivideModuloExpression(parts[expr_index++]);
         if (child->getText() == "+") {
           auto node = std::make_unique<AddExpression>();
           node->left = std::move(expr);
@@ -803,15 +803,15 @@ class ASTBuilder {
     return expr;
   }
 
-  std::unique_ptr<Expression> buildMultiplyDivideModuloExpression(
+  std::unique_ptr<Expression> BuildMultiplyDivideModuloExpression(
       CypherParser::OC_MultiplyDivideModuloExpressionContext *ctx) {
     auto parts = ctx->oC_PowerOfExpression();
-    auto expr = buildPowerOfExpression(parts[0]);
+    auto expr = BuildPowerOfExpression(parts[0]);
     size_t expr_index = 1;
     for (auto *child : ctx->children) {
       const std::string text = child->getText();
       if (text == "*" || text == "/" || text == "%") {
-        auto rhs = buildPowerOfExpression(parts[expr_index++]);
+        auto rhs = BuildPowerOfExpression(parts[expr_index++]);
         if (text == "*") {
           auto node = std::make_unique<MultiplyExpression>();
           node->left = std::move(expr);
@@ -833,22 +833,22 @@ class ASTBuilder {
     return expr;
   }
 
-  std::unique_ptr<Expression> buildPowerOfExpression(
+  std::unique_ptr<Expression> BuildPowerOfExpression(
       CypherParser::OC_PowerOfExpressionContext *ctx) {
     auto parts = ctx->oC_UnaryAddOrSubtractExpression();
-    auto expr = buildUnaryAddOrSubtractExpression(parts[0]);
+    auto expr = BuildUnaryAddOrSubtractExpression(parts[0]);
     for (size_t i = 1; i < parts.size(); ++i) {
       auto node = std::make_unique<PowerExpression>();
       node->left = std::move(expr);
-      node->right = buildUnaryAddOrSubtractExpression(parts[i]);
+      node->right = BuildUnaryAddOrSubtractExpression(parts[i]);
       expr = std::move(node);
     }
     return expr;
   }
 
-  std::unique_ptr<Expression> buildUnaryAddOrSubtractExpression(
+  std::unique_ptr<Expression> BuildUnaryAddOrSubtractExpression(
       CypherParser::OC_UnaryAddOrSubtractExpressionContext *ctx) {
-    auto base = buildNonArithmeticOperatorExpression(
+    auto base = BuildNonArithmeticOperatorExpression(
         ctx->oC_NonArithmeticOperatorExpression());
     if (!ctx->children.empty()) {
       const std::string op = ctx->children.front()->getText();
@@ -866,162 +866,162 @@ class ASTBuilder {
     return base;
   }
 
-  std::unique_ptr<Expression> buildNonArithmeticOperatorExpression(
+  std::unique_ptr<Expression> BuildNonArithmeticOperatorExpression(
       CypherParser::OC_NonArithmeticOperatorExpressionContext *ctx) {
-    auto expr = buildAtom(ctx->oC_Atom());
+    auto expr = BuildAtom(ctx->oC_Atom());
     for (auto *child : ctx->children) {
       if (auto *list_op =
               dynamic_cast<CypherParser::OC_ListOperatorExpressionContext *>(
                   child)) {
-        expr = applyListOperator(std::move(expr), list_op);
+        expr = ApplyListOperator(std::move(expr), list_op);
       } else if (auto *prop =
                      dynamic_cast<CypherParser::OC_PropertyLookupContext *>(
                          child)) {
-        expr = applyPropertyLookup(std::move(expr), prop);
+        expr = ApplyPropertyLookup(std::move(expr), prop);
       }
     }
-    if (ctx->oC_NodeLabels()) {
+    if (ctx->oC_NodeLabels() != nullptr) {
       auto label_node = std::make_unique<LabelPredicateExpression>();
       label_node->expr = std::move(expr);
-      label_node->labels = buildNodeLabels(ctx->oC_NodeLabels());
+      label_node->labels = BuildNodeLabels(ctx->oC_NodeLabels());
       expr = std::move(label_node);
     }
     return expr;
   }
 
-  std::unique_ptr<Expression> buildAtom(CypherParser::OC_AtomContext *ctx) {
-    if (ctx->oC_Literal()) {
-      return buildLiteral(ctx->oC_Literal());
+  std::unique_ptr<Expression> BuildAtom(CypherParser::OC_AtomContext *ctx) {
+    if (ctx->oC_Literal() != nullptr) {
+      return BuildLiteral(ctx->oC_Literal());
     }
-    if (ctx->oC_Parameter()) {
-      return buildParameter(ctx->oC_Parameter());
+    if (ctx->oC_Parameter() != nullptr) {
+      return BuildParameter(ctx->oC_Parameter());
     }
-    if (ctx->oC_CaseExpression()) {
-      return buildCaseExpression(ctx->oC_CaseExpression());
+    if (ctx->oC_CaseExpression() != nullptr) {
+      return BuildCaseExpression(ctx->oC_CaseExpression());
     }
-    if (ctx->COUNT()) {
+    if (ctx->COUNT() != nullptr) {
       return std::make_unique<CountStarExpression>();
     }
-    if (ctx->oC_ListComprehension()) {
-      return buildListComprehension(ctx->oC_ListComprehension());
+    if (ctx->oC_ListComprehension() != nullptr) {
+      return BuildListComprehension(ctx->oC_ListComprehension());
     }
-    if (ctx->oC_PatternComprehension()) {
-      return buildPatternComprehension(ctx->oC_PatternComprehension());
+    if (ctx->oC_PatternComprehension() != nullptr) {
+      return BuildPatternComprehension(ctx->oC_PatternComprehension());
     }
-    if (ctx->oC_Quantifier()) {
-      return buildQuantifier(ctx->oC_Quantifier());
+    if (ctx->oC_Quantifier() != nullptr) {
+      return BuildQuantifier(ctx->oC_Quantifier());
     }
-    if (ctx->oC_PatternPredicate()) {
+    if (ctx->oC_PatternPredicate() != nullptr) {
       auto node = std::make_unique<PatternPredicateExpression>();
-      node->relationships_pattern = buildRelationshipsPattern(
+      node->relationships_pattern = BuildRelationshipsPattern(
           ctx->oC_PatternPredicate()->oC_RelationshipsPattern());
       return node;
     }
-    if (ctx->oC_ParenthesizedExpression()) {
+    if (ctx->oC_ParenthesizedExpression() != nullptr) {
       auto node = std::make_unique<ParenthesizedExpression>();
       node->expr =
-          buildExpression(ctx->oC_ParenthesizedExpression()->oC_Expression());
+          BuildExpression(ctx->oC_ParenthesizedExpression()->oC_Expression());
       return node;
     }
-    if (ctx->oC_FunctionInvocation()) {
-      return buildFunctionInvocation(ctx->oC_FunctionInvocation());
+    if (ctx->oC_FunctionInvocation() != nullptr) {
+      return BuildFunctionInvocation(ctx->oC_FunctionInvocation());
     }
-    if (ctx->oC_ExistentialSubquery()) {
-      return buildExistentialSubquery(ctx->oC_ExistentialSubquery());
+    if (ctx->oC_ExistentialSubquery() != nullptr) {
+      return BuildExistentialSubquery(ctx->oC_ExistentialSubquery());
     }
-    if (ctx->oC_Variable()) {
-      return buildVariableExpression(ctx->oC_Variable());
+    if (ctx->oC_Variable() != nullptr) {
+      return BuildVariableExpression(ctx->oC_Variable());
     }
     return nullptr;
   }
 
-  std::unique_ptr<Literal> buildLiteral(CypherParser::OC_LiteralContext *ctx) {
-    if (ctx->oC_BooleanLiteral()) {
+  std::unique_ptr<Literal> BuildLiteral(CypherParser::OC_LiteralContext *ctx) {
+    if (ctx->oC_BooleanLiteral() != nullptr) {
       auto node = std::make_unique<BooleanLiteral>();
       node->value = ctx->oC_BooleanLiteral()->TRUE() != nullptr;
       return node;
     }
-    if (ctx->NULL_()) {
+    if (ctx->NULL_() != nullptr) {
       return std::make_unique<NullLiteral>();
     }
-    if (ctx->oC_NumberLiteral()) {
-      if (ctx->oC_NumberLiteral()->oC_DoubleLiteral()) {
+    if (ctx->oC_NumberLiteral() != nullptr) {
+      if (ctx->oC_NumberLiteral()->oC_DoubleLiteral() != nullptr) {
         auto node = std::make_unique<DoubleLiteral>();
         node->value =
             std::stod(ctx->oC_NumberLiteral()->oC_DoubleLiteral()->getText());
         return node;
       }
-      if (ctx->oC_NumberLiteral()->oC_IntegerLiteral()) {
+      if (ctx->oC_NumberLiteral()->oC_IntegerLiteral() != nullptr) {
         auto node = std::make_unique<IntegerLiteral>();
-        node->value = parseIntegerLiteral(
+        node->value = ParseIntegerLiteral(
             ctx->oC_NumberLiteral()->oC_IntegerLiteral()->getText());
         return node;
       }
     }
-    if (ctx->StringLiteral()) {
+    if (ctx->StringLiteral() != nullptr) {
       auto node = std::make_unique<StringLiteral>();
-      node->value = parseStringLiteral(ctx->StringLiteral()->getText());
+      node->value = ParseStringLiteral(ctx->StringLiteral()->getText());
       return node;
     }
-    if (ctx->oC_ListLiteral()) {
+    if (ctx->oC_ListLiteral() != nullptr) {
       auto node = std::make_unique<ListLiteral>();
       for (auto *expr : ctx->oC_ListLiteral()->oC_Expression()) {
-        node->elements.push_back(buildExpression(expr));
+        node->elements.push_back(BuildExpression(expr));
       }
       return node;
     }
-    if (ctx->oC_MapLiteral()) {
-      return buildMapLiteral(ctx->oC_MapLiteral());
+    if (ctx->oC_MapLiteral() != nullptr) {
+      return BuildMapLiteral(ctx->oC_MapLiteral());
     }
     return nullptr;
   }
 
-  std::unique_ptr<MapLiteral> buildMapLiteral(
+  std::unique_ptr<MapLiteral> BuildMapLiteral(
       CypherParser::OC_MapLiteralContext *ctx) {
     auto node = std::make_unique<MapLiteral>();
     auto keys = ctx->oC_PropertyKeyName();
     auto values = ctx->oC_Expression();
     const size_t count = std::min(keys.size(), values.size());
     for (size_t i = 0; i < count; ++i) {
-      node->entries.emplace_back(parsePropertyKeyName(keys[i]),
-                                 buildExpression(values[i]));
+      node->entries.emplace_back(ParsePropertyKeyName(keys[i]),
+                                 BuildExpression(values[i]));
     }
     return node;
   }
 
-  std::unique_ptr<Parameter> buildParameter(
+  std::unique_ptr<Parameter> BuildParameter(
       CypherParser::OC_ParameterContext *ctx) {
     auto node = std::make_unique<Parameter>();
-    if (ctx->oC_SymbolicName()) {
-      node->name = parseSymbolicName(ctx->oC_SymbolicName());
-    } else if (ctx->DecimalInteger()) {
+    if (ctx->oC_SymbolicName() != nullptr) {
+      node->name = ParseSymbolicName(ctx->oC_SymbolicName());
+    } else if (ctx->DecimalInteger() != nullptr) {
       node->name = ctx->DecimalInteger()->getText();
     }
     return node;
   }
 
-  std::unique_ptr<Expression> buildPropertyExpression(
+  std::unique_ptr<Expression> BuildPropertyExpression(
       CypherParser::OC_PropertyExpressionContext *ctx) {
-    auto expr = buildAtom(ctx->oC_Atom());
+    auto expr = BuildAtom(ctx->oC_Atom());
     for (auto *lookup : ctx->oC_PropertyLookup()) {
-      expr = applyPropertyLookup(std::move(expr), lookup);
+      expr = ApplyPropertyLookup(std::move(expr), lookup);
     }
     return expr;
   }
 
-  std::unique_ptr<Variable> buildVariableExpression(
+  std::unique_ptr<Variable> BuildVariableExpression(
       CypherParser::OC_VariableContext *ctx) {
     auto node = std::make_unique<Variable>();
-    node->name = parseVariable(ctx);
+    node->name = ParseVariable(ctx);
     return node;
   }
 
-  std::unique_ptr<Expression> buildCaseExpression(
+  std::unique_ptr<Expression> BuildCaseExpression(
       CypherParser::OC_CaseExpressionContext *ctx) {
     auto node = std::make_unique<CaseExpression>();
     for (auto *alt : ctx->oC_CaseAlternative()) {
-      auto when_expr = buildExpression(alt->oC_Expression(0));
-      auto then_expr = buildExpression(alt->oC_Expression(1));
+      auto when_expr = BuildExpression(alt->oC_Expression(0));
+      auto then_expr = BuildExpression(alt->oC_Expression(1));
       node->alternatives.emplace_back(std::move(when_expr),
                                       std::move(then_expr));
     }
@@ -1032,116 +1032,116 @@ class ASTBuilder {
       }
     }
     if (parent_exprs.size() == 1) {
-      if (ctx->ELSE()) {
-        node->else_expr = buildExpression(parent_exprs[0]);
+      if (ctx->ELSE() != nullptr) {
+        node->else_expr = BuildExpression(parent_exprs[0]);
       } else {
-        node->test = buildExpression(parent_exprs[0]);
+        node->test = BuildExpression(parent_exprs[0]);
       }
     } else if (parent_exprs.size() >= 2) {
       auto *first = parent_exprs[0];
       auto *second = parent_exprs[1];
       if (first->getStart()->getTokenIndex() <
           second->getStart()->getTokenIndex()) {
-        node->test = buildExpression(first);
-        node->else_expr = buildExpression(second);
+        node->test = BuildExpression(first);
+        node->else_expr = BuildExpression(second);
       } else {
-        node->test = buildExpression(second);
-        node->else_expr = buildExpression(first);
+        node->test = BuildExpression(second);
+        node->else_expr = BuildExpression(first);
       }
     }
     return node;
   }
 
-  std::unique_ptr<Expression> buildListComprehension(
+  std::unique_ptr<Expression> BuildListComprehension(
       CypherParser::OC_ListComprehensionContext *ctx) {
     auto node = std::make_unique<ListComprehension>();
     auto *filter = ctx->oC_FilterExpression();
     auto *id_in_coll = filter->oC_IdInColl();
-    node->variable = parseVariable(id_in_coll->oC_Variable());
-    node->list_expr = buildExpression(id_in_coll->oC_Expression());
-    if (filter->oC_Where()) {
-      node->where_expr = buildExpression(filter->oC_Where()->oC_Expression());
+    node->variable = ParseVariable(id_in_coll->oC_Variable());
+    node->list_expr = BuildExpression(id_in_coll->oC_Expression());
+    if (filter->oC_Where() != nullptr) {
+      node->where_expr = BuildExpression(filter->oC_Where()->oC_Expression());
     }
-    if (ctx->oC_Expression()) {
-      node->eval_expr = buildExpression(ctx->oC_Expression());
+    if (ctx->oC_Expression() != nullptr) {
+      node->eval_expr = BuildExpression(ctx->oC_Expression());
     }
     return node;
   }
 
-  std::unique_ptr<Expression> buildPatternComprehension(
+  std::unique_ptr<Expression> BuildPatternComprehension(
       CypherParser::OC_PatternComprehensionContext *ctx) {
     auto node = std::make_unique<PatternComprehension>();
-    if (ctx->oC_Variable()) {
-      node->variable = parseVariable(ctx->oC_Variable());
+    if (ctx->oC_Variable() != nullptr) {
+      node->variable = ParseVariable(ctx->oC_Variable());
     }
     node->relationships_pattern =
-        buildRelationshipsPattern(ctx->oC_RelationshipsPattern());
-    if (ctx->oC_Where()) {
-      node->where_expr = buildExpression(ctx->oC_Where()->oC_Expression());
+        BuildRelationshipsPattern(ctx->oC_RelationshipsPattern());
+    if (ctx->oC_Where() != nullptr) {
+      node->where_expr = BuildExpression(ctx->oC_Where()->oC_Expression());
     }
-    node->eval_expr = buildExpression(ctx->oC_Expression());
+    node->eval_expr = BuildExpression(ctx->oC_Expression());
     return node;
   }
 
-  std::unique_ptr<Expression> buildQuantifier(
+  std::unique_ptr<Expression> BuildQuantifier(
       CypherParser::OC_QuantifierContext *ctx) {
     auto *filter = ctx->oC_FilterExpression();
     auto *id_in_coll = filter->oC_IdInColl();
     std::unique_ptr<Quantifier> node;
-    if (ctx->ALL()) {
+    if (ctx->ALL() != nullptr) {
       node = std::make_unique<AllQuantifier>();
-    } else if (ctx->ANY()) {
+    } else if (ctx->ANY() != nullptr) {
       node = std::make_unique<AnyQuantifier>();
-    } else if (ctx->NONE()) {
+    } else if (ctx->NONE() != nullptr) {
       node = std::make_unique<NoneQuantifier>();
     } else {
       node = std::make_unique<SingleQuantifier>();
     }
-    node->variable = parseVariable(id_in_coll->oC_Variable());
-    node->list_expr = buildExpression(id_in_coll->oC_Expression());
-    if (filter->oC_Where()) {
-      node->predicate = buildExpression(filter->oC_Where()->oC_Expression());
+    node->variable = ParseVariable(id_in_coll->oC_Variable());
+    node->list_expr = BuildExpression(id_in_coll->oC_Expression());
+    if (filter->oC_Where() != nullptr) {
+      node->predicate = BuildExpression(filter->oC_Where()->oC_Expression());
     }
     return node;
   }
 
-  std::unique_ptr<Expression> buildFunctionInvocation(
+  std::unique_ptr<Expression> BuildFunctionInvocation(
       CypherParser::OC_FunctionInvocationContext *ctx) {
     auto node = std::make_unique<FunctionInvocation>();
     node->function_name =
-        parseQualifiedName(ctx->oC_FunctionName()->oC_Namespace(),
+        ParseQualifiedName(ctx->oC_FunctionName()->oC_Namespace(),
                            ctx->oC_FunctionName()->oC_SymbolicName());
     node->distinct = ctx->DISTINCT() != nullptr;
     for (auto *expr : ctx->oC_Expression()) {
-      node->arguments.push_back(buildExpression(expr));
+      node->arguments.push_back(BuildExpression(expr));
     }
     return node;
   }
 
-  std::unique_ptr<Expression> buildExistentialSubquery(
+  std::unique_ptr<Expression> BuildExistentialSubquery(
       CypherParser::OC_ExistentialSubqueryContext *ctx) {
     auto node = std::make_unique<ExistentialSubquery>();
-    if (ctx->oC_RegularQuery()) {
-      node->query = buildRegularQuery(ctx->oC_RegularQuery());
-    } else if (ctx->oC_Pattern()) {
-      node->pattern = buildPattern(ctx->oC_Pattern());
-      if (ctx->oC_Where()) {
-        node->where_expr = buildExpression(ctx->oC_Where()->oC_Expression());
+    if (ctx->oC_RegularQuery() != nullptr) {
+      node->query = BuildRegularQuery(ctx->oC_RegularQuery());
+    } else if (ctx->oC_Pattern() != nullptr) {
+      node->pattern = BuildPattern(ctx->oC_Pattern());
+      if (ctx->oC_Where() != nullptr) {
+        node->where_expr = BuildExpression(ctx->oC_Where()->oC_Expression());
       }
     }
     return node;
   }
 
-  std::unique_ptr<Expression> applyPropertyLookup(
+  std::unique_ptr<Expression> ApplyPropertyLookup(
       std::unique_ptr<Expression> base,
       CypherParser::OC_PropertyLookupContext *ctx) {
     auto node = std::make_unique<PropertyExpression>();
     node->object = std::move(base);
-    node->property_key = parsePropertyKeyName(ctx->oC_PropertyKeyName());
+    node->property_key = ParsePropertyKeyName(ctx->oC_PropertyKeyName());
     return node;
   }
 
-  std::unique_ptr<Expression> applyListOperator(
+  std::unique_ptr<Expression> ApplyListOperator(
       std::unique_ptr<Expression> base,
       CypherParser::OC_ListOperatorExpressionContext *ctx) {
     bool is_slice = false;
@@ -1156,7 +1156,7 @@ class ASTBuilder {
     if (!is_slice) {
       auto node = std::make_unique<ListIndexExpression>();
       node->list = std::move(base);
-      node->index = buildExpression(ctx->oC_Expression(0));
+      node->index = BuildExpression(ctx->oC_Expression(0));
       return node;
     }
     auto node = std::make_unique<ListSliceExpression>();
@@ -1166,86 +1166,87 @@ class ASTBuilder {
       auto *expr_ctx = exprs[0];
       int tok_index = static_cast<int>(expr_ctx->getStart()->getTokenIndex());
       if (dot_index >= 0 && tok_index < dot_index) {
-        node->start_index = buildExpression(expr_ctx);
+        node->start_index = BuildExpression(expr_ctx);
       } else {
-        node->end_index = buildExpression(expr_ctx);
+        node->end_index = BuildExpression(expr_ctx);
       }
     } else if (exprs.size() >= 2) {
-      node->start_index = buildExpression(exprs[0]);
-      node->end_index = buildExpression(exprs[1]);
+      node->start_index = BuildExpression(exprs[0]);
+      node->end_index = BuildExpression(exprs[1]);
     }
     return node;
   }
 
-  std::vector<std::string> buildNodeLabels(
+  std::vector<std::string> BuildNodeLabels(
       CypherParser::OC_NodeLabelsContext *ctx) {
     std::vector<std::string> labels;
     for (auto *label : ctx->oC_NodeLabel()) {
-      labels.push_back(parseSchemaName(label->oC_LabelName()->oC_SchemaName()));
+      labels.push_back(ParseSchemaName(label->oC_LabelName()->oC_SchemaName()));
     }
     return labels;
   }
 
-  std::string parseSymbolicName(CypherParser::OC_SymbolicNameContext *ctx) {
-    if (!ctx) {
+  static std::string ParseSymbolicName(
+      CypherParser::OC_SymbolicNameContext *ctx) {
+    if (ctx == nullptr) {
       return {};
     }
-    return unescapeSymbolicName(ctx->getText());
+    return UnescapeSymbolicName(ctx->getText());
   }
 
-  std::string parseSchemaName(CypherParser::OC_SchemaNameContext *ctx) {
-    if (ctx->oC_SymbolicName()) {
-      return parseSymbolicName(ctx->oC_SymbolicName());
+  std::string ParseSchemaName(CypherParser::OC_SchemaNameContext *ctx) {
+    if (ctx->oC_SymbolicName() != nullptr) {
+      return ParseSymbolicName(ctx->oC_SymbolicName());
     }
-    if (ctx->oC_ReservedWord()) {
+    if (ctx->oC_ReservedWord() != nullptr) {
       return ctx->oC_ReservedWord()->getText();
     }
     return {};
   }
 
-  std::string parsePropertyKeyName(
+  std::string ParsePropertyKeyName(
       CypherParser::OC_PropertyKeyNameContext *ctx) {
-    return parseSchemaName(ctx->oC_SchemaName());
+    return ParseSchemaName(ctx->oC_SchemaName());
   }
 
-  std::string parseVariable(CypherParser::OC_VariableContext *ctx) {
-    return parseSymbolicName(ctx->oC_SymbolicName());
+  std::string ParseVariable(CypherParser::OC_VariableContext *ctx) {
+    return ParseSymbolicName(ctx->oC_SymbolicName());
   }
 
-  std::string parseProcedureName(CypherParser::OC_ProcedureNameContext *ctx) {
-    return parseQualifiedName(ctx->oC_Namespace(), ctx->oC_SymbolicName());
+  std::string ParseProcedureName(CypherParser::OC_ProcedureNameContext *ctx) {
+    return ParseQualifiedName(ctx->oC_Namespace(), ctx->oC_SymbolicName());
   }
 
-  std::string parseQualifiedName(CypherParser::OC_NamespaceContext *ns,
+  std::string ParseQualifiedName(CypherParser::OC_NamespaceContext *ns,
                                  CypherParser::OC_SymbolicNameContext *name) {
     std::string out;
-    if (ns) {
+    if (ns != nullptr) {
       for (auto *sym : ns->oC_SymbolicName()) {
         if (!out.empty()) {
           out.push_back('.');
         }
-        out += parseSymbolicName(sym);
+        out += ParseSymbolicName(sym);
       }
     }
     if (!out.empty()) {
       out.push_back('.');
     }
-    out += parseSymbolicName(name);
+    out += ParseSymbolicName(name);
     return out;
   }
 
-  std::string extractComparisonOp(
+  static std::string ExtractComparisonOp(
       CypherParser::OC_PartialComparisonExpressionContext *ctx) {
-    if (!ctx || ctx->children.empty()) {
+    if ((ctx == nullptr) || ctx->children.empty()) {
       return {};
     }
     return ctx->children.front()->getText();
   }
 
-  std::string extractStringPredicateOp(
+  static std::string ExtractStringPredicateOp(
       CypherParser::OC_StringPredicateExpressionContext *ctx) {
     for (auto *child : ctx->children) {
-      const std::string text = toUpperAscii(child->getText());
+      const std::string text = ToUpperAscii(child->getText());
       if (text == "STARTS" || text == "ENDS") {
         return text + " WITH";
       }
@@ -1256,24 +1257,24 @@ class ASTBuilder {
     return "CONTAINS";
   }
 
-  void parseYieldItems(CypherParser::OC_YieldItemsContext *ctx,
+  void ParseYieldItems(CypherParser::OC_YieldItemsContext *ctx,
                        std::vector<StandaloneCall::YieldItem> &items,
                        std::unique_ptr<Expression> &where_expr) {
     for (auto *item_ctx : ctx->oC_YieldItem()) {
       StandaloneCall::YieldItem item;
-      if (item_ctx->oC_ProcedureResultField()) {
-        item.result_field = parseSymbolicName(
+      if (item_ctx->oC_ProcedureResultField() != nullptr) {
+        item.result_field = ParseSymbolicName(
             item_ctx->oC_ProcedureResultField()->oC_SymbolicName());
       }
-      item.variable = parseVariable(item_ctx->oC_Variable());
+      item.variable = ParseVariable(item_ctx->oC_Variable());
       items.push_back(std::move(item));
     }
-    if (ctx->oC_Where()) {
-      where_expr = buildExpression(ctx->oC_Where()->oC_Expression());
+    if (ctx->oC_Where() != nullptr) {
+      where_expr = BuildExpression(ctx->oC_Where()->oC_Expression());
     }
   }
 
-  static std::string toUpperAscii(const std::string &text) {
+  static std::string ToUpperAscii(const std::string &text) {
     std::string out;
     out.reserve(text.size());
     for (char c : text) {
@@ -1286,18 +1287,19 @@ class ASTBuilder {
     return out;
   }
 
-  bool hasOperator(antlr4::ParserRuleContext *ctx, const std::string &op) {
-    const std::string op_upper = toUpperAscii(op);
+  static bool HasOperator(antlr4::ParserRuleContext *ctx,
+                          const std::string &op) {
+    const std::string op_upper = ToUpperAscii(op);
     for (auto *child : ctx->children) {
-      if (toUpperAscii(child->getText()) == op_upper) {
+      if (ToUpperAscii(child->getText()) == op_upper) {
         return true;
       }
     }
     return false;
   }
 
-  bool hasStar(CypherParser::OC_ProjectionItemsContext *ctx) {
-    if (!ctx) {
+  static bool HasStar(CypherParser::OC_ProjectionItemsContext *ctx) {
+    if (ctx == nullptr) {
       return false;
     }
     for (auto *child : ctx->children) {
@@ -1327,13 +1329,13 @@ std::unique_ptr<Statement> parseCypher(const std::string &input) {
   if (!errors.errors.empty()) {
     THROW(ParseError, std::move(errors.errors));
   }
-  if (!tree || !tree->oC_Statement()) {
+  if ((tree == nullptr) || (tree->oC_Statement() == nullptr)) {
     std::vector<std::string> parse_errors;
     parse_errors.emplace_back("failed to parse statement");
     THROW(ParseError, std::move(parse_errors));
   }
   ASTBuilder builder;
-  auto statement = builder.buildStatement(tree->oC_Statement());
+  auto statement = builder.BuildStatement(tree->oC_Statement());
   if (!statement) {
     THROW(InternalError, "failed to build AST");
   }

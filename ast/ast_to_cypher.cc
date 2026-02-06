@@ -12,7 +12,7 @@ namespace {
 
 class CypherPrinter : public ASTVisitor {
  public:
-  std::string print(ASTNode &node) {
+  std::string Print(ASTNode &node) {
     stack_.clear();
     node.accept(*this);
     if (stack_.empty()) {
@@ -25,83 +25,83 @@ class CypherPrinter : public ASTVisitor {
 
   void visit(Statement &node) override {
     (void)node;
-    push("");
+    Push("");
   }
 
   void visit(Query &node) override {
     (void)node;
-    push("");
+    Push("");
   }
 
   void visit(RegularQuery &node) override {
     std::vector<std::string> parts;
-    auto main = renderMaybe(node.single_query);
+    auto main = RenderMaybe(node.single_query);
     if (!main.empty()) {
       parts.push_back(std::move(main));
     }
     for (const auto &part : node.unions) {
-      auto piece = renderMaybe(part);
+      auto piece = RenderMaybe(part);
       if (!piece.empty()) {
         parts.push_back(std::move(piece));
       }
     }
-    push(join(parts, " "));
+    Push(Join(parts, " "));
   }
 
   void visit(StandaloneCall &node) override {
     std::string out = "CALL ";
-    out += renderQualifiedName(node.procedure_name);
+    out += RenderQualifiedName(node.procedure_name);
     out += "(";
-    out += join(renderList(node.arguments), ", ");
+    out += Join(RenderList(node.arguments), ", ");
     out += ")";
     if (node.yield_star) {
       out += " YIELD *";
     } else if (!node.yield_items.empty()) {
       out += " YIELD ";
-      out += join(renderYieldItems(node.yield_items), ", ");
+      out += Join(RenderYieldItems(node.yield_items), ", ");
       if (node.yield_where) {
         out += " WHERE ";
-        out += renderMaybe(node.yield_where);
+        out += RenderMaybe(node.yield_where);
       }
     }
-    push(out);
+    Push(out);
   }
 
   void visit(SingleQuery &node) override {
     (void)node;
-    push("");
+    Push("");
   }
 
   void visit(SinglePartQuery &node) override {
     std::vector<std::string> clauses;
-    appendClauses(clauses, node.reading_clauses);
-    appendClauses(clauses, node.updating_clauses);
-    auto ret = renderMaybe(node.return_clause);
+    AppendClauses(clauses, node.reading_clauses);
+    AppendClauses(clauses, node.updating_clauses);
+    auto ret = RenderMaybe(node.return_clause);
     if (!ret.empty()) {
       clauses.push_back(std::move(ret));
     }
-    push(join(clauses, " "));
+    Push(Join(clauses, " "));
   }
 
   void visit(MultiPartQuery &node) override {
     std::vector<std::string> clauses;
     for (const auto &part : node.parts) {
       std::vector<std::string> with_part;
-      appendClauses(with_part, part.reading_clauses);
-      appendClauses(with_part, part.updating_clauses);
-      auto with_clause = renderMaybe(part.with_clause);
+      AppendClauses(with_part, part.reading_clauses);
+      AppendClauses(with_part, part.updating_clauses);
+      auto with_clause = RenderMaybe(part.with_clause);
       if (!with_clause.empty()) {
         with_part.push_back(std::move(with_clause));
       }
       if (!with_part.empty()) {
-        clauses.push_back(join(with_part, " "));
+        clauses.push_back(Join(with_part, " "));
       }
     }
-    auto final_part = renderMaybe(node.final_single_part_query);
+    auto final_part = RenderMaybe(node.final_single_part_query);
     if (!final_part.empty()) {
       clauses.push_back(std::move(final_part));
     }
-    push(join(clauses, " "));
+    Push(Join(clauses, " "));
   }
 
   void visit(UnionPart &node) override {
@@ -109,382 +109,382 @@ class CypherPrinter : public ASTVisitor {
     if (node.all) {
       out += " ALL";
     }
-    auto query = renderMaybe(node.query);
+    auto query = RenderMaybe(node.query);
     if (!query.empty()) {
       out += " ";
       out += std::move(query);
     }
-    push(out);
+    Push(out);
   }
 
   void visit(Expression &node) override {
     (void)node;
-    push("");
+    Push("");
   }
 
   void visit(BinaryExpression &node) override {
     (void)node;
-    push("");
+    Push("");
   }
 
   void visit(OrExpression &node) override {
-    push(wrapBinary("OR", node.left, node.right));
+    Push(WrapBinary("OR", node.left, node.right));
   }
 
   void visit(XorExpression &node) override {
-    push(wrapBinary("XOR", node.left, node.right));
+    Push(WrapBinary("XOR", node.left, node.right));
   }
 
   void visit(AndExpression &node) override {
-    push(wrapBinary("AND", node.left, node.right));
+    Push(WrapBinary("AND", node.left, node.right));
   }
 
   void visit(ComparisonExpression &node) override {
-    auto left = renderMaybe(node.left);
-    auto right = renderMaybe(node.right);
-    push(wrap(left + " " + node.op + " " + right));
+    auto left = RenderMaybe(node.left);
+    auto right = RenderMaybe(node.right);
+    Push(Wrap(left + " " + node.op + " " + right));
   }
 
   void visit(ComparisonChainExpression &node) override {
-    auto left = renderMaybe(node.left);
+    auto left = RenderMaybe(node.left);
     std::ostringstream oss;
     oss << left;
     for (const auto &entry : node.rights) {
-      oss << " " << entry.first << " " << renderMaybe(entry.second);
+      oss << " " << entry.first << " " << RenderMaybe(entry.second);
     }
-    push(wrap(oss.str()));
+    Push(Wrap(oss.str()));
   }
 
   void visit(AddExpression &node) override {
-    push(wrapBinary("+", node.left, node.right));
+    Push(WrapBinary("+", node.left, node.right));
   }
 
   void visit(SubtractExpression &node) override {
-    push(wrapBinary("-", node.left, node.right));
+    Push(WrapBinary("-", node.left, node.right));
   }
 
   void visit(MultiplyExpression &node) override {
-    push(wrapBinary("*", node.left, node.right));
+    Push(WrapBinary("*", node.left, node.right));
   }
 
   void visit(DivideExpression &node) override {
-    push(wrapBinary("/", node.left, node.right));
+    Push(WrapBinary("/", node.left, node.right));
   }
 
   void visit(ModuloExpression &node) override {
-    push(wrapBinary("%", node.left, node.right));
+    Push(WrapBinary("%", node.left, node.right));
   }
 
   void visit(PowerExpression &node) override {
-    push(wrapBinary("^", node.left, node.right));
+    Push(WrapBinary("^", node.left, node.right));
   }
 
   void visit(UnaryExpression &node) override {
     (void)node;
-    push("");
+    Push("");
   }
 
   void visit(NotExpression &node) override {
-    auto operand = renderMaybe(node.operand);
-    push(wrap(std::string("NOT ") + operand));
+    auto operand = RenderMaybe(node.operand);
+    Push(Wrap(std::string("NOT ") + operand));
   }
 
   void visit(UnaryPlusExpression &node) override {
-    auto operand = renderMaybe(node.operand);
-    push(wrap(std::string("+") + operand));
+    auto operand = RenderMaybe(node.operand);
+    Push(Wrap(std::string("+") + operand));
   }
 
   void visit(UnaryMinusExpression &node) override {
-    auto operand = renderMaybe(node.operand);
-    push(wrap(std::string("-") + operand));
+    auto operand = RenderMaybe(node.operand);
+    Push(Wrap(std::string("-") + operand));
   }
 
   void visit(StringPredicateExpression &node) override {
-    auto left = renderMaybe(node.left);
-    auto right = renderMaybe(node.right);
-    push(wrap(left + " " + node.op + " " + right));
+    auto left = RenderMaybe(node.left);
+    auto right = RenderMaybe(node.right);
+    Push(Wrap(left + " " + node.op + " " + right));
   }
 
   void visit(ListPredicateExpression &node) override {
-    auto element = renderMaybe(node.element);
-    auto list = renderMaybe(node.list);
-    push(wrap(element + " IN " + list));
+    auto element = RenderMaybe(node.element);
+    auto list = RenderMaybe(node.list);
+    Push(Wrap(element + " IN " + list));
   }
 
   void visit(LabelPredicateExpression &node) override {
-    auto expr = renderMaybe(node.expr);
+    auto expr = RenderMaybe(node.expr);
     std::ostringstream oss;
     oss << expr;
     for (const auto &label : node.labels) {
-      oss << ":" << renderSymbolicName(label);
+      oss << ":" << RenderSymbolicName(label);
     }
-    push(oss.str());
+    Push(oss.str());
   }
 
   void visit(NullPredicateExpression &node) override {
-    auto operand = renderMaybe(node.operand);
+    auto operand = RenderMaybe(node.operand);
     if (node.is_null) {
-      push(wrap(operand + " IS NULL"));
+      Push(Wrap(operand + " IS NULL"));
     } else {
-      push(wrap(operand + " IS NOT NULL"));
+      Push(Wrap(operand + " IS NOT NULL"));
     }
   }
 
   void visit(Literal &node) override {
     (void)node;
-    push("");
+    Push("");
   }
 
   void visit(BooleanLiteral &node) override {
-    push(node.value ? "true" : "false");
+    Push(node.value ? "true" : "false");
   }
 
   void visit(IntegerLiteral &node) override {
-    push(std::to_string(node.value));
+    Push(std::to_string(node.value));
   }
 
   void visit(DoubleLiteral &node) override {
     std::ostringstream oss;
     oss << node.value;
-    push(oss.str());
+    Push(oss.str());
   }
 
   void visit(StringLiteral &node) override {
     std::string out = "'";
-    out += escapeStringLiteral(node.value);
+    out += EscapeStringLiteral(node.value);
     out += "'";
-    push(out);
+    Push(out);
   }
 
   void visit(NullLiteral &node) override {
     (void)node;
-    push("NULL");
+    Push("NULL");
   }
 
   void visit(ListLiteral &node) override {
     std::string out = "[";
-    out += join(renderList(node.elements), ", ");
+    out += Join(RenderList(node.elements), ", ");
     out += "]";
-    push(out);
+    Push(out);
   }
 
   void visit(MapLiteral &node) override {
     std::vector<std::string> entries;
     entries.reserve(node.entries.size());
     for (const auto &entry : node.entries) {
-      std::string item = renderSymbolicName(entry.first);
+      std::string item = RenderSymbolicName(entry.first);
       item += ": ";
-      item += renderMaybe(entry.second);
+      item += RenderMaybe(entry.second);
       entries.push_back(std::move(item));
     }
     std::string out = "{";
-    out += join(entries, ", ");
+    out += Join(entries, ", ");
     out += "}";
-    push(out);
+    Push(out);
   }
 
   void visit(Properties &node) override {
     if (node.map) {
-      push(renderMaybe(node.map));
+      Push(RenderMaybe(node.map));
       return;
     }
-    push(renderMaybe(node.parameter));
+    Push(RenderMaybe(node.parameter));
   }
 
-  void visit(Variable &node) override { push(renderSymbolicName(node.name)); }
+  void visit(Variable &node) override { Push(RenderSymbolicName(node.name)); }
 
   void visit(Parameter &node) override {
-    if (isDecimal(node.name)) {
-      push("$" + node.name);
+    if (IsDecimal(node.name)) {
+      Push("$" + node.name);
       return;
     }
-    push("$" + renderSymbolicName(node.name));
+    Push("$" + RenderSymbolicName(node.name));
   }
 
   void visit(PropertyExpression &node) override {
-    auto object = renderMaybe(node.object);
+    auto object = RenderMaybe(node.object);
     std::string out = object;
     out += ".";
-    out += renderSymbolicName(node.property_key);
-    push(out);
+    out += RenderSymbolicName(node.property_key);
+    Push(out);
   }
 
   void visit(ListIndexExpression &node) override {
-    auto list = renderMaybe(node.list);
-    auto index = renderMaybe(node.index);
+    auto list = RenderMaybe(node.list);
+    auto index = RenderMaybe(node.index);
     std::string out = list + "[" + index + "]";
-    push(out);
+    Push(out);
   }
 
   void visit(ListSliceExpression &node) override {
-    auto list = renderMaybe(node.list);
-    auto start = renderMaybe(node.start_index);
-    auto end = renderMaybe(node.end_index);
+    auto list = RenderMaybe(node.list);
+    auto start = RenderMaybe(node.start_index);
+    auto end = RenderMaybe(node.end_index);
     std::string out = list + "[" + start + ".." + end + "]";
-    push(out);
+    Push(out);
   }
 
   void visit(FunctionInvocation &node) override {
-    std::string out = renderQualifiedName(node.function_name);
+    std::string out = RenderQualifiedName(node.function_name);
     out += "(";
     if (node.distinct) {
       out += "DISTINCT ";
     }
-    out += join(renderList(node.arguments), ", ");
+    out += Join(RenderList(node.arguments), ", ");
     out += ")";
-    push(out);
+    Push(out);
   }
 
   void visit(CountStarExpression &node) override {
     (void)node;
-    push("count(*)");
+    Push("count(*)");
   }
 
   void visit(CaseExpression &node) override {
     std::ostringstream oss;
     oss << "CASE";
     if (node.test) {
-      oss << " " << renderMaybe(node.test);
+      oss << " " << RenderMaybe(node.test);
     }
     for (const auto &alt : node.alternatives) {
-      oss << " WHEN " << renderMaybe(alt.first);
-      oss << " THEN " << renderMaybe(alt.second);
+      oss << " WHEN " << RenderMaybe(alt.first);
+      oss << " THEN " << RenderMaybe(alt.second);
     }
     if (node.else_expr) {
-      oss << " ELSE " << renderMaybe(node.else_expr);
+      oss << " ELSE " << RenderMaybe(node.else_expr);
     }
     oss << " END";
-    push(oss.str());
+    Push(oss.str());
   }
 
   void visit(ParenthesizedExpression &node) override {
-    push(wrap(renderMaybe(node.expr)));
+    Push(Wrap(RenderMaybe(node.expr)));
   }
 
   void visit(ListComprehension &node) override {
     std::string out = "[";
     out +=
-        renderFilterExpression(node.variable, node.list_expr, node.where_expr);
+        RenderFilterExpression(node.variable, node.list_expr, node.where_expr);
     if (node.eval_expr) {
       out += " | ";
-      out += renderMaybe(node.eval_expr);
+      out += RenderMaybe(node.eval_expr);
     }
     out += "]";
-    push(out);
+    Push(out);
   }
 
   void visit(PatternComprehension &node) override {
     std::string out = "[";
     if (!node.variable.empty()) {
-      out += renderSymbolicName(node.variable);
+      out += RenderSymbolicName(node.variable);
       out += " = ";
     }
-    out += renderMaybe(node.relationships_pattern);
+    out += RenderMaybe(node.relationships_pattern);
     if (node.where_expr) {
       out += " WHERE ";
-      out += renderMaybe(node.where_expr);
+      out += RenderMaybe(node.where_expr);
     }
     out += " | ";
-    out += renderMaybe(node.eval_expr);
+    out += RenderMaybe(node.eval_expr);
     out += "]";
-    push(out);
+    Push(out);
   }
 
   void visit(PatternPredicateExpression &node) override {
-    push(renderMaybe(node.relationships_pattern));
+    Push(RenderMaybe(node.relationships_pattern));
   }
 
   void visit(Quantifier &node) override {
-    push(renderFilterExpression(node.variable, node.list_expr, node.predicate));
+    Push(RenderFilterExpression(node.variable, node.list_expr, node.predicate));
   }
 
   void visit(AllQuantifier &node) override {
-    push(renderQuantifier("ALL", node));
+    Push(RenderQuantifier("ALL", node));
   }
 
   void visit(AnyQuantifier &node) override {
-    push(renderQuantifier("ANY", node));
+    Push(RenderQuantifier("ANY", node));
   }
 
   void visit(NoneQuantifier &node) override {
-    push(renderQuantifier("NONE", node));
+    Push(RenderQuantifier("NONE", node));
   }
 
   void visit(SingleQuantifier &node) override {
-    push(renderQuantifier("SINGLE", node));
+    Push(RenderQuantifier("SINGLE", node));
   }
 
   void visit(ExistentialSubquery &node) override {
     std::string out = "EXISTS { ";
     if (node.query) {
-      out += renderMaybe(node.query);
+      out += RenderMaybe(node.query);
     } else {
-      out += renderMaybe(node.pattern);
+      out += RenderMaybe(node.pattern);
       if (node.where_expr) {
         out += " WHERE ";
-        out += renderMaybe(node.where_expr);
+        out += RenderMaybe(node.where_expr);
       }
     }
     out += " }";
-    push(out);
+    Push(out);
   }
 
   void visit(Pattern &node) override {
-    std::string out = join(renderList(node.parts), ", ");
-    push(out);
+    std::string out = Join(RenderList(node.parts), ", ");
+    Push(out);
   }
 
   void visit(PatternPart &node) override {
-    auto element = renderMaybe(node.element);
+    auto element = RenderMaybe(node.element);
     if (node.variable.empty()) {
-      push(element);
+      Push(element);
       return;
     }
-    std::string out = renderSymbolicName(node.variable);
+    std::string out = RenderSymbolicName(node.variable);
     out += " = ";
     out += element;
-    push(out);
+    Push(out);
   }
 
   void visit(PatternElement &node) override {
     std::ostringstream oss;
-    oss << renderMaybe(node.node_pattern);
+    oss << RenderMaybe(node.node_pattern);
     for (const auto &entry : node.chain) {
-      oss << renderMaybe(entry.first);
-      oss << renderMaybe(entry.second);
+      oss << RenderMaybe(entry.first);
+      oss << RenderMaybe(entry.second);
     }
-    push(oss.str());
+    Push(oss.str());
   }
 
   void visit(RelationshipsPattern &node) override {
     std::ostringstream oss;
-    oss << renderMaybe(node.node_pattern);
+    oss << RenderMaybe(node.node_pattern);
     for (const auto &entry : node.chain) {
-      oss << renderMaybe(entry.first);
-      oss << renderMaybe(entry.second);
+      oss << RenderMaybe(entry.first);
+      oss << RenderMaybe(entry.second);
     }
-    push(oss.str());
+    Push(oss.str());
   }
 
   void visit(NodePattern &node) override {
     std::string out = "(";
     std::string inside;
     if (!node.variable.empty()) {
-      inside += renderSymbolicName(node.variable);
+      inside += RenderSymbolicName(node.variable);
     }
     for (const auto &label : node.labels) {
       inside += ":";
-      inside += renderSymbolicName(label);
+      inside += RenderSymbolicName(label);
     }
     if (node.properties) {
       if (!inside.empty()) {
         inside += " ";
       }
-      inside += renderMaybe(node.properties);
+      inside += RenderMaybe(node.properties);
     }
     out += inside;
     out += ")";
-    push(out);
+    Push(out);
   }
 
   void visit(RelationshipPattern &node) override {
@@ -492,17 +492,17 @@ class CypherPrinter : public ASTVisitor {
     out += node.left_arrow ? "<-" : "-";
     if (node.detail) {
       out += "[";
-      out += renderMaybe(node.detail);
+      out += RenderMaybe(node.detail);
       out += "]";
     }
     out += node.right_arrow ? "->" : "-";
-    push(out);
+    Push(out);
   }
 
   void visit(RelationshipDetail &node) override {
     std::string out;
     if (!node.variable.empty()) {
-      out += renderSymbolicName(node.variable);
+      out += RenderSymbolicName(node.variable);
     }
     if (!node.types.empty()) {
       out += ":";
@@ -510,7 +510,7 @@ class CypherPrinter : public ASTVisitor {
         if (i > 0) {
           out += "|";
         }
-        out += renderSymbolicName(node.types[i]);
+        out += RenderSymbolicName(node.types[i]);
       }
     }
     if (node.range) {
@@ -527,119 +527,119 @@ class CypherPrinter : public ASTVisitor {
       if (!out.empty()) {
         out += " ";
       }
-      out += renderMaybe(node.properties);
+      out += RenderMaybe(node.properties);
     }
-    push(out);
+    Push(out);
   }
 
   void visit(Clause &node) override {
     (void)node;
-    push("");
+    Push("");
   }
 
   void visit(ReadingClause &node) override {
     (void)node;
-    push("");
+    Push("");
   }
 
   void visit(Match &node) override {
     std::string out = node.optional_match ? "OPTIONAL MATCH " : "MATCH ";
-    out += renderMaybe(node.pattern);
+    out += RenderMaybe(node.pattern);
     if (node.where) {
       out += " WHERE ";
-      out += renderMaybe(node.where);
+      out += RenderMaybe(node.where);
     }
-    push(out);
+    Push(out);
   }
 
   void visit(Unwind &node) override {
     std::string out = "UNWIND ";
-    out += renderMaybe(node.expression);
+    out += RenderMaybe(node.expression);
     out += " AS ";
-    out += renderSymbolicName(node.variable);
-    push(out);
+    out += RenderSymbolicName(node.variable);
+    Push(out);
   }
 
   void visit(InQueryCall &node) override {
     std::string out = "CALL ";
-    out += renderQualifiedName(node.procedure_name);
+    out += RenderQualifiedName(node.procedure_name);
     out += "(";
-    out += join(renderList(node.arguments), ", ");
+    out += Join(RenderList(node.arguments), ", ");
     out += ")";
     if (!node.yield_items.empty()) {
       out += " YIELD ";
-      out += join(renderYieldItems(node.yield_items), ", ");
+      out += Join(RenderYieldItems(node.yield_items), ", ");
       if (node.yield_where) {
         out += " WHERE ";
-        out += renderMaybe(node.yield_where);
+        out += RenderMaybe(node.yield_where);
       }
     }
-    push(out);
+    Push(out);
   }
 
   void visit(UpdatingClause &node) override {
     (void)node;
-    push("");
+    Push("");
   }
 
   void visit(Create &node) override {
     std::string out = "CREATE ";
-    out += renderMaybe(node.pattern);
-    push(out);
+    out += RenderMaybe(node.pattern);
+    Push(out);
   }
 
   void visit(Merge &node) override {
     std::string out = "MERGE ";
-    out += renderMaybe(node.pattern_part);
+    out += RenderMaybe(node.pattern_part);
     for (const auto &action : node.actions) {
       out += action.first ? " ON MATCH " : " ON CREATE ";
-      out += renderMaybe(action.second);
+      out += RenderMaybe(action.second);
     }
-    push(out);
+    Push(out);
   }
 
   void visit(Delete &node) override {
     std::string out = node.detach ? "DETACH DELETE " : "DELETE ";
-    out += join(renderList(node.expressions), ", ");
-    push(out);
+    out += Join(RenderList(node.expressions), ", ");
+    Push(out);
   }
 
   void visit(Set &node) override {
     std::string out = "SET ";
-    out += join(renderList(node.items), ", ");
-    push(out);
+    out += Join(RenderList(node.items), ", ");
+    Push(out);
   }
 
   void visit(SetItem &node) override {
-    std::string target = renderMaybe(node.target);
+    std::string target = RenderMaybe(node.target);
     std::string out;
     switch (node.type) {
       case SetItem::Type::Property:
-        out = target + " = " + renderMaybe(node.value);
+        out = target + " = " + RenderMaybe(node.value);
         break;
       case SetItem::Type::Variable:
         out = target + (node.plus_equal ? " += " : " = ") +
-              renderMaybe(node.value);
+              RenderMaybe(node.value);
         break;
       case SetItem::Type::Labels:
         out = target;
         for (const auto &label : node.labels) {
           out += ":";
-          out += renderSymbolicName(label);
+          out += RenderSymbolicName(label);
         }
         break;
     }
-    push(out);
+    Push(out);
   }
 
   void visit(Remove &node) override {
     std::string out = "REMOVE ";
-    out += join(renderList(node.items), ", ");
-    push(out);
+    out += Join(RenderList(node.items), ", ");
+    Push(out);
   }
 
   void visit(RemoveItem &node) override {
-    std::string target = renderMaybe(node.target);
+    std::string target = RenderMaybe(node.target);
     std::string out;
     switch (node.type) {
       case RemoveItem::Type::Property:
@@ -649,16 +649,16 @@ class CypherPrinter : public ASTVisitor {
         out = target;
         for (const auto &label : node.labels) {
           out += ":";
-          out += renderSymbolicName(label);
+          out += RenderSymbolicName(label);
         }
         break;
     }
-    push(out);
+    Push(out);
   }
 
   void visit(ProjectionClause &node) override {
     (void)node;
-    push("");
+    Push("");
   }
 
   void visit(ProjectionBody &node) override {
@@ -669,60 +669,60 @@ class CypherPrinter : public ASTVisitor {
     if (node.star) {
       out += "*";
     } else {
-      out += join(renderList(node.items), ", ");
+      out += Join(RenderList(node.items), ", ");
     }
     if (!node.order_by.empty()) {
       out += " ORDER BY ";
-      out += join(renderList(node.order_by), ", ");
+      out += Join(RenderList(node.order_by), ", ");
     }
     if (node.skip) {
       out += " SKIP ";
-      out += renderMaybe(node.skip);
+      out += RenderMaybe(node.skip);
     }
     if (node.limit) {
       out += " LIMIT ";
-      out += renderMaybe(node.limit);
+      out += RenderMaybe(node.limit);
     }
-    push(out);
+    Push(out);
   }
 
   void visit(ProjectionItem &node) override {
-    std::string out = renderMaybe(node.expression);
+    std::string out = RenderMaybe(node.expression);
     if (!node.alias.empty()) {
       out += " AS ";
-      out += renderSymbolicName(node.alias);
+      out += RenderSymbolicName(node.alias);
     }
-    push(out);
+    Push(out);
   }
 
   void visit(SortItem &node) override {
-    std::string out = renderMaybe(node.expression);
+    std::string out = RenderMaybe(node.expression);
     out += node.ascending ? " ASC" : " DESC";
-    push(out);
+    Push(out);
   }
 
   void visit(With &node) override {
     std::string out = "WITH ";
-    out += renderMaybe(node.body);
+    out += RenderMaybe(node.body);
     if (node.where) {
       out += " WHERE ";
-      out += renderMaybe(node.where);
+      out += RenderMaybe(node.where);
     }
-    push(out);
+    Push(out);
   }
 
   void visit(Return &node) override {
     std::string out = "RETURN ";
-    out += renderMaybe(node.body);
-    push(out);
+    out += RenderMaybe(node.body);
+    Push(out);
   }
 
  private:
   std::vector<std::string> stack_;
 
-  void push(std::string value) { stack_.push_back(std::move(value)); }
+  void Push(std::string value) { stack_.push_back(std::move(value)); }
 
-  std::string pop() {
+  std::string Pop() {
     assert(!stack_.empty());
     std::string out = std::move(stack_.back());
     stack_.pop_back();
@@ -730,21 +730,21 @@ class CypherPrinter : public ASTVisitor {
   }
 
   template <typename T>
-  std::string renderMaybe(const std::unique_ptr<T> &ptr) {
+  std::string RenderMaybe(const std::unique_ptr<T> &ptr) {
     if (!ptr) {
       return {};
     }
     ptr->accept(*this);
-    return pop();
+    return Pop();
   }
 
   template <typename T>
-  std::vector<std::string> renderList(
+  std::vector<std::string> RenderList(
       const std::vector<std::unique_ptr<T>> &items) {
     std::vector<std::string> out;
     out.reserve(items.size());
     for (const auto &item : items) {
-      auto rendered = renderMaybe(item);
+      auto rendered = RenderMaybe(item);
       if (!rendered.empty()) {
         out.push_back(std::move(rendered));
       }
@@ -753,33 +753,33 @@ class CypherPrinter : public ASTVisitor {
   }
 
   template <typename T>
-  void appendClauses(std::vector<std::string> &out,
+  void AppendClauses(std::vector<std::string> &out,
                      const std::vector<std::unique_ptr<T>> &clauses) {
     for (const auto &clause : clauses) {
-      auto rendered = renderMaybe(clause);
+      auto rendered = RenderMaybe(clause);
       if (!rendered.empty()) {
         out.push_back(std::move(rendered));
       }
     }
   }
 
-  std::vector<std::string> renderYieldItems(
+  static std::vector<std::string> RenderYieldItems(
       const std::vector<StandaloneCall::YieldItem> &items) {
     std::vector<std::string> out;
     out.reserve(items.size());
     for (const auto &item : items) {
       std::string rendered;
       if (item.result_field) {
-        rendered += renderSymbolicName(*item.result_field);
+        rendered += RenderSymbolicName(*item.result_field);
         rendered += " AS ";
       }
-      rendered += renderSymbolicName(item.variable);
+      rendered += RenderSymbolicName(item.variable);
       out.push_back(std::move(rendered));
     }
     return out;
   }
 
-  static std::string join(const std::vector<std::string> &items,
+  static std::string Join(const std::vector<std::string> &items,
                           const std::string &sep) {
     std::ostringstream oss;
     for (size_t i = 0; i < items.size(); ++i) {
@@ -791,66 +791,66 @@ class CypherPrinter : public ASTVisitor {
     return oss.str();
   }
 
-  static std::string wrap(const std::string &text) { return "(" + text + ")"; }
+  static std::string Wrap(const std::string &text) { return "(" + text + ")"; }
 
-  std::string wrapBinary(const std::string &op,
+  std::string WrapBinary(const std::string &op,
                          const std::unique_ptr<Expression> &left,
                          const std::unique_ptr<Expression> &right) {
-    auto lhs = renderMaybe(left);
-    auto rhs = renderMaybe(right);
-    return wrap(lhs + " " + op + " " + rhs);
+    auto lhs = RenderMaybe(left);
+    auto rhs = RenderMaybe(right);
+    return Wrap(lhs + " " + op + " " + rhs);
   }
 
-  std::string renderFilterExpression(const std::string &variable,
+  std::string RenderFilterExpression(const std::string &variable,
                                      const std::unique_ptr<Expression> &list,
                                      const std::unique_ptr<Expression> &where) {
-    std::string out = renderSymbolicName(variable);
+    std::string out = RenderSymbolicName(variable);
     out += " IN ";
-    out += renderMaybe(list);
+    out += RenderMaybe(list);
     if (where) {
       out += " WHERE ";
-      out += renderMaybe(where);
+      out += RenderMaybe(where);
     }
     return out;
   }
 
-  std::string renderQuantifier(const std::string &keyword,
+  std::string RenderQuantifier(const std::string &keyword,
                                const Quantifier &node) {
     std::string out = keyword;
     out += "(";
     out +=
-        renderFilterExpression(node.variable, node.list_expr, node.predicate);
+        RenderFilterExpression(node.variable, node.list_expr, node.predicate);
     out += ")";
     return out;
   }
 
-  static bool isAsciiLetter(char c) {
+  static bool IsAsciiLetter(char c) {
     return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
   }
 
-  static bool isAsciiDigit(char c) { return c >= '0' && c <= '9'; }
+  static bool IsAsciiDigit(char c) { return c >= '0' && c <= '9'; }
 
-  static bool isSimpleSymbolicName(const std::string &name) {
+  static bool IsSimpleSymbolicName(const std::string &name) {
     if (name.empty()) {
       return false;
     }
-    const unsigned char first = static_cast<unsigned char>(name.front());
-    if (!(isAsciiLetter(static_cast<char>(first)) || first == '_')) {
+    const auto first = static_cast<unsigned char>(name.front());
+    if (!IsAsciiLetter(static_cast<char>(first)) && first != '_') {
       return false;
     }
     for (char c : name) {
       if (static_cast<unsigned char>(c) >= 0x80) {
         return false;
       }
-      if (!(isAsciiLetter(c) || isAsciiDigit(c) || c == '_')) {
+      if (!IsAsciiLetter(c) && !IsAsciiDigit(c) && c != '_') {
         return false;
       }
     }
     return true;
   }
 
-  static std::string escapeSymbolicName(const std::string &name) {
-    if (isSimpleSymbolicName(name)) {
+  static std::string EscapeSymbolicName(const std::string &name) {
+    if (IsSimpleSymbolicName(name)) {
       return name;
     }
     std::string out;
@@ -866,11 +866,11 @@ class CypherPrinter : public ASTVisitor {
     return out;
   }
 
-  static std::string renderSymbolicName(const std::string &name) {
-    return escapeSymbolicName(name);
+  static std::string RenderSymbolicName(const std::string &name) {
+    return EscapeSymbolicName(name);
   }
 
-  static std::string renderQualifiedName(const std::string &name) {
+  static std::string RenderQualifiedName(const std::string &name) {
     if (name.empty()) {
       return {};
     }
@@ -883,24 +883,24 @@ class CypherPrinter : public ASTVisitor {
       }
     }
     for (auto &part : parts) {
-      part = renderSymbolicName(part);
+      part = RenderSymbolicName(part);
     }
-    return join(parts, ".");
+    return Join(parts, ".");
   }
 
-  static bool isDecimal(const std::string &text) {
+  static bool IsDecimal(const std::string &text) {
     if (text.empty()) {
       return false;
     }
     for (char c : text) {
-      if (!isAsciiDigit(c)) {
+      if (!IsAsciiDigit(c)) {
         return false;
       }
     }
     return true;
   }
 
-  static std::string escapeStringLiteral(const std::string &value) {
+  static std::string EscapeStringLiteral(const std::string &value) {
     std::string out;
     out.reserve(value.size());
     for (char c : value) {
@@ -927,7 +927,7 @@ class CypherPrinter : public ASTVisitor {
           out += "\\f";
           break;
         default: {
-          unsigned char uc = static_cast<unsigned char>(c);
+          auto uc = static_cast<unsigned char>(c);
           if (uc < 0x20) {
             char buf[7];
             std::snprintf(buf, sizeof(buf), "\\u%04X", uc);
@@ -947,7 +947,7 @@ class CypherPrinter : public ASTVisitor {
 
 std::string toCypher(ASTNode &node) {
   CypherPrinter printer;
-  return printer.print(node);
+  return printer.Print(node);
 }
 
 }  // namespace ast

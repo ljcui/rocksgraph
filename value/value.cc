@@ -7,14 +7,14 @@ namespace rg {
 
 namespace {
 
-bool ptrEqual(const Value::NodePtr &left, const Value::NodePtr &right) {
+bool PtrEqual(const Value::NodePtr &left, const Value::NodePtr &right) {
   if (!left || !right) {
     return left == right;
   }
   return *left == *right;
 }
 
-bool ptrEqual(const Value::RelationshipPtr &left,
+bool PtrEqual(const Value::RelationshipPtr &left,
               const Value::RelationshipPtr &right) {
   if (!left || !right) {
     return left == right;
@@ -22,9 +22,9 @@ bool ptrEqual(const Value::RelationshipPtr &left,
   return *left == *right;
 }
 
-void appendValue(std::ostringstream &oss, const Value &value);
+void AppendValue(std::ostringstream &oss, const Value &value);
 
-void appendStringList(std::ostringstream &oss,
+void AppendStringList(std::ostringstream &oss,
                       const std::vector<std::string> &items) {
   oss << '[';
   for (size_t i = 0; i < items.size(); ++i) {
@@ -36,18 +36,18 @@ void appendStringList(std::ostringstream &oss,
   oss << ']';
 }
 
-void appendValueList(std::ostringstream &oss, const Value::List &items) {
+void AppendValueList(std::ostringstream &oss, const Value::List &items) {
   oss << '[';
   for (size_t i = 0; i < items.size(); ++i) {
     if (i > 0) {
       oss << ", ";
     }
-    appendValue(oss, items[i]);
+    AppendValue(oss, items[i]);
   }
   oss << ']';
 }
 
-void appendValueMap(std::ostringstream &oss, const Value::Map &items) {
+void AppendValueMap(std::ostringstream &oss, const Value::Map &items) {
   oss << '{';
   bool first = true;
   for (const auto &entry : items) {
@@ -56,28 +56,28 @@ void appendValueMap(std::ostringstream &oss, const Value::Map &items) {
     }
     first = false;
     oss << entry.first << ": ";
-    appendValue(oss, entry.second);
+    AppendValue(oss, entry.second);
   }
   oss << '}';
 }
 
-void appendNode(std::ostringstream &oss, const Node &node) {
+void AppendNode(std::ostringstream &oss, const Node &node) {
   oss << "Node{id=" << node.id << ", labels=";
-  appendStringList(oss, node.labels);
+  AppendStringList(oss, node.labels);
   oss << ", properties=";
-  appendValueMap(oss, node.properties);
+  AppendValueMap(oss, node.properties);
   oss << '}';
 }
 
-void appendRelationship(std::ostringstream &oss, const Relationship &rel) {
+void AppendRelationship(std::ostringstream &oss, const Relationship &rel) {
   oss << "Relationship{id=" << rel.id << ", start=" << rel.start_node_id
       << ", end=" << rel.end_node_id << ", type=" << rel.type
       << ", properties=";
-  appendValueMap(oss, rel.properties);
+  AppendValueMap(oss, rel.properties);
   oss << '}';
 }
 
-void appendPath(std::ostringstream &oss, const Path &path) {
+void AppendPath(std::ostringstream &oss, const Path &path) {
   oss << "Path{nodes=";
   oss << '[';
   for (size_t i = 0; i < path.nodes.size(); ++i) {
@@ -85,7 +85,7 @@ void appendPath(std::ostringstream &oss, const Path &path) {
       oss << ", ";
     }
     if (path.nodes[i]) {
-      appendNode(oss, *path.nodes[i]);
+      AppendNode(oss, *path.nodes[i]);
     } else {
       oss << "null";
     }
@@ -97,7 +97,7 @@ void appendPath(std::ostringstream &oss, const Path &path) {
       oss << ", ";
     }
     if (path.relationships[i]) {
-      appendRelationship(oss, *path.relationships[i]);
+      AppendRelationship(oss, *path.relationships[i]);
     } else {
       oss << "null";
     }
@@ -105,7 +105,7 @@ void appendPath(std::ostringstream &oss, const Path &path) {
   oss << "]}";
 }
 
-void appendValue(std::ostringstream &oss, const Value &value) {
+void AppendValue(std::ostringstream &oss, const Value &value) {
   switch (value.type()) {
     case ValueType::kNull:
       oss << "null";
@@ -123,19 +123,19 @@ void appendValue(std::ostringstream &oss, const Value &value) {
       oss << '"' << value.as_string() << '"';
       break;
     case ValueType::kList:
-      appendValueList(oss, value.as_list());
+      AppendValueList(oss, value.as_list());
       break;
     case ValueType::kMap:
-      appendValueMap(oss, value.as_map());
+      AppendValueMap(oss, value.as_map());
       break;
     case ValueType::kNode:
-      appendNode(oss, value.as_node());
+      AppendNode(oss, value.as_node());
       break;
     case ValueType::kRelationship:
-      appendRelationship(oss, value.as_relationship());
+      AppendRelationship(oss, value.as_relationship());
       break;
     case ValueType::kPath:
-      appendPath(oss, value.as_path());
+      AppendPath(oss, value.as_path());
       break;
     case ValueType::kDate: {
       const auto &date = value.as_date();
@@ -201,7 +201,7 @@ void appendValue(std::ostringstream &oss, const Value &value) {
 
 Value::Value() : storage_(std::monostate{}) {}
 
-Value Value::Null() { return Value(); }
+Value Value::Null() { return {}; }
 
 Value::Value(bool value) : storage_(value) {}
 
@@ -215,7 +215,7 @@ Value::Value(std::string value) : storage_(std::move(value)) {}
 
 Value::Value(const char *value) {
   assert(value != nullptr);
-  storage_ = value ? std::string(value) : std::string();
+  storage_ = (value != nullptr) ? std::string(value) : std::string();
 }
 
 Value::Value(List value) : storage_(std::move(value)) {}
@@ -475,7 +475,7 @@ const Point &Value::as_point() const {
 
 std::string Value::ToString() const {
   std::ostringstream oss;
-  appendValue(oss, *this);
+  AppendValue(oss, *this);
   return oss.str();
 }
 
@@ -501,12 +501,12 @@ bool Value::operator==(const Value &other) const {
     case ValueType::kNode: {
       const auto &left = std::get<NodePtr>(storage_);
       const auto &right = std::get<NodePtr>(other.storage_);
-      return ptrEqual(left, right);
+      return PtrEqual(left, right);
     }
     case ValueType::kRelationship: {
       const auto &left = std::get<RelationshipPtr>(storage_);
       const auto &right = std::get<RelationshipPtr>(other.storage_);
-      return ptrEqual(left, right);
+      return PtrEqual(left, right);
     }
     case ValueType::kPath:
       return as_path() == other.as_path();
@@ -549,12 +549,12 @@ bool operator==(const Path &left, const Path &right) {
     return false;
   }
   for (size_t i = 0; i < left.nodes.size(); ++i) {
-    if (!ptrEqual(left.nodes[i], right.nodes[i])) {
+    if (!PtrEqual(left.nodes[i], right.nodes[i])) {
       return false;
     }
   }
   for (size_t i = 0; i < left.relationships.size(); ++i) {
-    if (!ptrEqual(left.relationships[i], right.relationships[i])) {
+    if (!PtrEqual(left.relationships[i], right.relationships[i])) {
       return false;
     }
   }

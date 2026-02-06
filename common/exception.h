@@ -54,11 +54,11 @@ class Exception : public std::runtime_error {
   int line_ = 0;
 };
 
-#define DEFINE_EXCEPTION(name, base)                           \
-  class name : public base {                                   \
-   public:                                                     \
-    name(std::string message, const char *file, int line,      \
-         const char *function)                                \
+#define DEFINE_EXCEPTION(name, base)                               \
+  class name : public base {                                       \
+   public:                                                         \
+    name(std::string message, const char *file, int line,          \
+         const char *function)                                     \
         : base(#name, std::move(message), file, line, function) {} \
   }
 

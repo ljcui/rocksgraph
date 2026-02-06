@@ -12,7 +12,7 @@ bool ASTEqual::equal(const ASTNode *left, const ASTNode *right) {
   if (left == right) {
     return true;
   }
-  if (!left || !right) {
+  if ((left == nullptr) || (right == nullptr)) {
     return false;
   }
   if (typeid(*left) != typeid(*right)) {
@@ -119,11 +119,14 @@ bool ASTEqual::equal(const ASTNode *left, const ASTNode *right) {
   return false;
 }
 
-bool ASTEqual::equalStatement(const Statement &, const Statement &) {
+bool ASTEqual::equalStatement(const Statement & /*unused*/,
+                              const Statement & /*unused*/) {
   return true;
 }
 
-bool ASTEqual::equalQuery(const Query &, const Query &) { return true; }
+bool ASTEqual::equalQuery(const Query & /*unused*/, const Query & /*unused*/) {
+  return true;
+}
 
 bool ASTEqual::equalRegularQuery(const RegularQuery &left,
                                  const RegularQuery &right) {
@@ -155,7 +158,8 @@ bool ASTEqual::equalStandaloneCall(const StandaloneCall &left,
   return equalPtr(left.yield_where, right.yield_where);
 }
 
-bool ASTEqual::equalSingleQuery(const SingleQuery &, const SingleQuery &) {
+bool ASTEqual::equalSingleQuery(const SingleQuery & /*unused*/,
+                                const SingleQuery & /*unused*/) {
   return true;
 }
 
@@ -187,7 +191,8 @@ bool ASTEqual::equalUnionPart(const UnionPart &left, const UnionPart &right) {
   return left.all == right.all && equalPtr(left.query, right.query);
 }
 
-bool ASTEqual::equalExpression(const Expression &, const Expression &) {
+bool ASTEqual::equalExpression(const Expression & /*unused*/,
+                               const Expression & /*unused*/) {
   return true;
 }
 
@@ -311,7 +316,10 @@ bool ASTEqual::equalNullPredicateExpression(
   return left.is_null == right.is_null && equalPtr(left.operand, right.operand);
 }
 
-bool ASTEqual::equalLiteral(const Literal &, const Literal &) { return true; }
+bool ASTEqual::equalLiteral(const Literal & /*unused*/,
+                            const Literal & /*unused*/) {
+  return true;
+}
 
 bool ASTEqual::equalBooleanLiteral(const BooleanLiteral &left,
                                    const BooleanLiteral &right) {
@@ -333,7 +341,8 @@ bool ASTEqual::equalStringLiteral(const StringLiteral &left,
   return left.value == right.value;
 }
 
-bool ASTEqual::equalNullLiteral(const NullLiteral &, const NullLiteral &) {
+bool ASTEqual::equalNullLiteral(const NullLiteral & /*unused*/,
+                                const NullLiteral & /*unused*/) {
   return true;
 }
 
@@ -397,8 +406,9 @@ bool ASTEqual::equalFunctionInvocation(const FunctionInvocation &left,
          equalList(left.arguments, right.arguments);
 }
 
-bool ASTEqual::equalCountStarExpression(const CountStarExpression &,
-                                        const CountStarExpression &) {
+bool ASTEqual::equalCountStarExpression(
+    const CountStarExpression & /*unused*/,
+    const CountStarExpression & /*unused*/) {
   return true;
 }
 
@@ -553,10 +563,13 @@ bool ASTEqual::equalRelationshipDetail(const RelationshipDetail &left,
   return equalPtr(left.properties, right.properties);
 }
 
-bool ASTEqual::equalClause(const Clause &, const Clause &) { return true; }
+bool ASTEqual::equalClause(const Clause & /*unused*/,
+                           const Clause & /*unused*/) {
+  return true;
+}
 
-bool ASTEqual::equalReadingClause(const ReadingClause &,
-                                  const ReadingClause &) {
+bool ASTEqual::equalReadingClause(const ReadingClause & /*unused*/,
+                                  const ReadingClause & /*unused*/) {
   return true;
 }
 
@@ -592,8 +605,8 @@ bool ASTEqual::equalInQueryCall(const InQueryCall &left,
   return equalPtr(left.yield_where, right.yield_where);
 }
 
-bool ASTEqual::equalUpdatingClause(const UpdatingClause &,
-                                   const UpdatingClause &) {
+bool ASTEqual::equalUpdatingClause(const UpdatingClause & /*unused*/,
+                                   const UpdatingClause & /*unused*/) {
   return true;
 }
 

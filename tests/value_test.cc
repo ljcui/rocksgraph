@@ -29,7 +29,7 @@ TEST(ValueTest, ListAndMapTypes) {
   rg::Value list_value(list);
 
   EXPECT_TRUE(list_value.is_list());
-  ASSERT_EQ(list_value.as_list().size(), 3u);
+  ASSERT_EQ(list_value.as_list().size(), 3U);
   EXPECT_EQ(list_value.as_list()[0], rg::Value(1));
   EXPECT_EQ(list_value.as_list()[1], rg::Value("two"));
 
@@ -37,7 +37,7 @@ TEST(ValueTest, ListAndMapTypes) {
   rg::Value map_value(map);
 
   EXPECT_TRUE(map_value.is_map());
-  ASSERT_EQ(map_value.as_map().size(), 2u);
+  ASSERT_EQ(map_value.as_map().size(), 2U);
   EXPECT_EQ(map_value.as_map().at("a"), rg::Value(1));
   EXPECT_EQ(map_value.as_map().at("b"), list_value);
 }
@@ -70,7 +70,7 @@ TEST(ValueTest, GraphTypes) {
 
   EXPECT_EQ(node_value.as_node().id, 7);
   EXPECT_EQ(rel_value.as_relationship().type, "KNOWS");
-  EXPECT_EQ(path_value.as_path().nodes.size(), 1u);
+  EXPECT_EQ(path_value.as_path().nodes.size(), 1U);
 
   rg::Value node_value_copy(std::make_shared<rg::Node>(*node));
   EXPECT_EQ(node_value, node_value_copy);

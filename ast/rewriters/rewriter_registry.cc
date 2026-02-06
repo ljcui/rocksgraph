@@ -1,14 +1,14 @@
 #include "rewriter_registry.h"
 
-#include "anonymous_pattern_name_rewriter.h"
 #include "add_uniqueness_predicates_rewriter.h"
+#include "anonymous_pattern_name_rewriter.h"
 #include "comparison_chain_rewriter.h"
 #include "count_star_rewriter.h"
 #include "existential_subquery_rewriter.h"
 #include "order_by_alias_rewriter.h"
 #include "parenthesized_expression_rewriter.h"
-#include "pattern_predicate_rewriter.h"
 #include "pattern_predicate_normalization_rewriter.h"
+#include "pattern_predicate_rewriter.h"
 #include "projection_alias_rewriter.h"
 #include "return_star_rewriter.h"
 
@@ -32,8 +32,7 @@ std::vector<std::unique_ptr<ASTRewriter>> makeDefaultRewriters() {
   rewriters.emplace_back(
       std::make_unique<PatternPredicateNormalizationRewriter>());
   // Add relationship uniqueness predicates for trail semantics.
-  rewriters.emplace_back(
-      std::make_unique<AddUniquenessPredicatesRewriter>());
+  rewriters.emplace_back(std::make_unique<AddUniquenessPredicatesRewriter>());
   return rewriters;
 }
 

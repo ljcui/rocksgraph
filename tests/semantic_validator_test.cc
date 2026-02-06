@@ -8,7 +8,7 @@
 
 namespace {
 
-bool hasError(const std::vector<std::string> &errors,
+bool HasError(const std::vector<std::string> &errors,
               const std::string &expected) {
   return std::find(errors.begin(), errors.end(), expected) != errors.end();
 }
@@ -20,7 +20,7 @@ TEST(SemanticValidatorTest, UndefinedReturnVariable) {
     (void)ast::parseCypher("MATCH (n) RETURN m");
     FAIL() << "expected semantic error";
   } catch (const ast::SemanticError &e) {
-    EXPECT_TRUE(hasError(e.errors(), "undefined variable: m"));
+    EXPECT_TRUE(HasError(e.errors(), "undefined variable: m"));
   } catch (const ast::ParseError &e) {
     FAIL() << "unexpected parse error: " << e.what();
   }
@@ -33,7 +33,7 @@ TEST(SemanticValidatorTest, WithProjectionScopes) {
     (void)ast::parseCypher("MATCH (n) WITH n AS m RETURN n");
     FAIL() << "expected semantic error";
   } catch (const ast::SemanticError &e) {
-    EXPECT_TRUE(hasError(e.errors(), "undefined variable: n"));
+    EXPECT_TRUE(HasError(e.errors(), "undefined variable: n"));
   } catch (const ast::ParseError &e) {
     FAIL() << "unexpected parse error: " << e.what();
   }

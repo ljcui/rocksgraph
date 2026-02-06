@@ -5,13 +5,50 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Choose the type of build." FORCE)
 endif()
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+option(ROCKSGRAPH_ENABLE_CLANG_TIDY "Enable clang-tidy checks." OFF)
+if(ROCKSGRAPH_ENABLE_CLANG_TIDY)
+    find_program(CLANG_TIDY_BIN NAMES clang-tidy)
+    if(CLANG_TIDY_BIN)
+        set(CMAKE_CXX_CLANG_TIDY
+                ${CLANG_TIDY_BIN}
+                -p=${CMAKE_BINARY_DIR}
+        )
+    else()
+        message(WARNING "ROCKSGRAPH_ENABLE_CLANG_TIDY is ON, but clang-tidy was not found.")
+    endif()
+endif()
+
+set(ROCKSGRAPH_CLANG_TIDY_FILE_REGEX "^(?!.*ast/cypher/).*$")
+find_program(RUN_CLANG_TIDY_BIN NAMES run-clang-tidy run-clang-tidy.py)
+if(RUN_CLANG_TIDY_BIN)
+    add_custom_target(clang_tidy
+            COMMAND ${RUN_CLANG_TIDY_BIN} -p ${CMAKE_BINARY_DIR} -j 8 ${ROCKSGRAPH_CLANG_TIDY_FILE_REGEX}
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+            COMMENT "Run clang-tidy checks (excluding ast/cypher)."
+            VERBATIM
+    )
+    add_custom_target(clang_tidy_fix
+            COMMAND ${RUN_CLANG_TIDY_BIN} -p ${CMAKE_BINARY_DIR} -j 8 -fix -format ${ROCKSGRAPH_CLANG_TIDY_FILE_REGEX}
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+            COMMENT "Run clang-tidy and apply automatic fixes (excluding ast/cypher)."
+            VERBATIM
+    )
+else()
+    message(STATUS "run-clang-tidy not found, clang_tidy and clang_tidy_fix targets are disabled.")
+endif()
+
 set(GENERATED_SOURCES
-        ast/CypherLexer.cc
-        ast/CypherParser.cc
-        ast/CypherVisitor.cc
+        ast/cypher/CypherLexer.cc
+        ast/cypher/CypherParser.cc
+        ast/cypher/CypherVisitor.cc
 )
+if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.27")
+    set_source_files_properties(${GENERATED_SOURCES} PROPERTIES SKIP_LINTING ON)
+endif()
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 find_package(ANTLR4Runtime REQUIRED)

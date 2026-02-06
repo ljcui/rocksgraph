@@ -12,7 +12,8 @@ void PatternPredicateRewriter::rewriteExpression(
   ASTRewriter::rewriteExpression(expr);
   auto *pattern_predicate =
       dynamic_cast<PatternPredicateExpression *>(expr.get());
-  if (!pattern_predicate || !pattern_predicate->relationships_pattern) {
+  if ((pattern_predicate == nullptr) ||
+      !pattern_predicate->relationships_pattern) {
     return;
   }
 

@@ -14,7 +14,7 @@ void ComparisonChainRewriter::rewriteExpression(
   }
   ASTRewriter::rewriteExpression(expr);
   auto *chain = dynamic_cast<ComparisonChainExpression *>(expr.get());
-  if (!chain || chain->rights.empty()) {
+  if ((chain == nullptr) || chain->rights.empty()) {
     return;
   }
   auto left = std::move(chain->left);

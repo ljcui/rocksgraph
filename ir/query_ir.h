@@ -11,11 +11,7 @@
 namespace ir {
 
 struct QueryGraph {
-  enum class Direction {
-    INCOMING,
-    OUTGOING,
-    BOTH
-  };
+  enum class Direction { INCOMING, OUTGOING, BOTH };
 
   struct Relationship {
     std::string name;

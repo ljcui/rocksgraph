@@ -21,7 +21,7 @@ struct RelationshipConnection {
   std::vector<SingleRelationship> inner_relationships;
 };
 
-bool hasTypeOverlap(const SingleRelationship &lhs,
+bool HasTypeOverlap(const SingleRelationship &lhs,
                     const SingleRelationship &rhs) {
   if (lhs.types.empty() || rhs.types.empty()) {
     return true;
@@ -33,24 +33,24 @@ bool hasTypeOverlap(const SingleRelationship &lhs,
                      });
 }
 
-bool isAlwaysDifferent(const SingleRelationship &lhs,
+bool IsAlwaysDifferent(const SingleRelationship &lhs,
                        const SingleRelationship &rhs) {
-  return !hasTypeOverlap(lhs, rhs);
+  return !HasTypeOverlap(lhs, rhs);
 }
 
-std::unique_ptr<Expression> makeVariable(const std::string &name) {
+std::unique_ptr<Expression> MakeVariable(const std::string &name) {
   auto node = std::make_unique<Variable>();
   node->name = name;
   return node;
 }
 
-std::unique_ptr<Expression> makeBooleanLiteral(bool value) {
+std::unique_ptr<Expression> MakeBooleanLiteral(bool value) {
   auto node = std::make_unique<BooleanLiteral>();
   node->value = value;
   return node;
 }
 
-std::unique_ptr<Expression> makeAnd(std::unique_ptr<Expression> left,
+std::unique_ptr<Expression> MakeAnd(std::unique_ptr<Expression> left,
                                     std::unique_ptr<Expression> right) {
   if (!left) {
     return right;
@@ -64,22 +64,22 @@ std::unique_ptr<Expression> makeAnd(std::unique_ptr<Expression> left,
   return node;
 }
 
-std::unique_ptr<Expression> makeNot(std::unique_ptr<Expression> operand) {
+std::unique_ptr<Expression> MakeNot(std::unique_ptr<Expression> operand) {
   auto node = std::make_unique<NotExpression>();
   node->operand = std::move(operand);
   return node;
 }
 
-std::unique_ptr<Expression> makeNotEquals(const std::string &left,
+std::unique_ptr<Expression> MakeNotEquals(const std::string &left,
                                           const std::string &right) {
   auto eq = std::make_unique<ComparisonExpression>();
-  eq->left = makeVariable(left);
+  eq->left = MakeVariable(left);
   eq->op = "=";
-  eq->right = makeVariable(right);
-  return makeNot(std::move(eq));
+  eq->right = MakeVariable(right);
+  return MakeNot(std::move(eq));
 }
 
-std::unique_ptr<Expression> makeIn(std::unique_ptr<Expression> element,
+std::unique_ptr<Expression> MakeIn(std::unique_ptr<Expression> element,
                                    std::unique_ptr<Expression> list) {
   auto node = std::make_unique<ListPredicateExpression>();
   node->element = std::move(element);
@@ -87,31 +87,31 @@ std::unique_ptr<Expression> makeIn(std::unique_ptr<Expression> element,
   return node;
 }
 
-std::unique_ptr<Expression> makeRelationshipListExpression(
+std::unique_ptr<Expression> MakeRelationshipListExpression(
     const std::vector<std::string> &relationship_names) {
   if (relationship_names.empty()) {
     return nullptr;
   }
-  std::unique_ptr<Expression> list = makeVariable(relationship_names.front());
+  std::unique_ptr<Expression> list = MakeVariable(relationship_names.front());
   for (size_t i = 1; i < relationship_names.size(); ++i) {
     auto add = std::make_unique<AddExpression>();
     add->left = std::move(list);
-    add->right = makeVariable(relationship_names[i]);
+    add->right = MakeVariable(relationship_names[i]);
     list = std::move(add);
   }
   return list;
 }
 
-std::unique_ptr<Expression> combinePredicates(
+std::unique_ptr<Expression> CombinePredicates(
     std::vector<std::unique_ptr<Expression>> &predicates) {
   std::unique_ptr<Expression> combined;
   for (auto &predicate : predicates) {
-    combined = makeAnd(std::move(combined), std::move(predicate));
+    combined = MakeAnd(std::move(combined), std::move(predicate));
   }
   return combined;
 }
 
-std::vector<RelationshipConnection> collectConnectionsFromPattern(
+std::vector<RelationshipConnection> CollectConnectionsFromPattern(
     const Pattern &pattern) {
   std::vector<RelationshipConnection> connections;
   for (const auto &part : pattern.parts) {
@@ -141,7 +141,7 @@ std::vector<RelationshipConnection> collectConnectionsFromPattern(
   return connections;
 }
 
-std::unordered_set<std::string> collectRelationshipNames(
+std::unordered_set<std::string> CollectRelationshipNames(
     const std::vector<RelationshipConnection> &connections) {
   std::unordered_set<std::string> names;
   for (const auto &connection : connections) {
@@ -152,18 +152,18 @@ std::unordered_set<std::string> collectRelationshipNames(
   return names;
 }
 
-const SingleRelationship &asSingle(const RelationshipConnection &connection) {
+const SingleRelationship &AsSingle(const RelationshipConnection &connection) {
   return connection.inner_relationships.front();
 }
 
-std::vector<std::string> collectOverlappingNames(
+std::vector<std::string> CollectOverlappingNames(
     const std::vector<SingleRelationship> &lhs,
     const std::vector<SingleRelationship> &rhs) {
   std::vector<std::string> overlapping;
   for (const auto &left_rel : lhs) {
     const bool overlaps = std::any_of(
         rhs.begin(), rhs.end(), [&](const SingleRelationship &right_rel) {
-          return !isAlwaysDifferent(left_rel, right_rel);
+          return !IsAlwaysDifferent(left_rel, right_rel);
         });
     if (overlaps) {
       overlapping.push_back(left_rel.name);
@@ -172,7 +172,7 @@ std::vector<std::string> collectOverlappingNames(
   return overlapping;
 }
 
-bool hasSameName(const std::vector<std::string> &lhs,
+bool HasSameName(const std::vector<std::string> &lhs,
                  const std::vector<std::string> &rhs) {
   if (lhs.empty() || rhs.empty()) {
     return false;
@@ -183,7 +183,7 @@ bool hasSameName(const std::vector<std::string> &lhs,
   });
 }
 
-std::vector<std::string> relationshipNames(
+std::vector<std::string> RelationshipNames(
     const std::vector<SingleRelationship> &relationships) {
   std::vector<std::string> names;
   names.reserve(relationships.size());
@@ -201,14 +201,14 @@ void AddUniquenessPredicatesRewriter::visit(Match &node) {
     return;
   }
 
-  auto connections = collectConnectionsFromPattern(*node.pattern);
+  auto connections = CollectConnectionsFromPattern(*node.pattern);
   if (connections.empty()) {
     return;
   }
 
-  auto used_names = collectRelationshipNames(connections);
+  auto used_names = CollectRelationshipNames(connections);
   next_temp_id_ = 0;
-  auto freshTempName = [&]() {
+  auto fresh_temp_name = [&]() {
     for (;;) {
       std::string candidate = "__uniq_rel_" + std::to_string(next_temp_id_++);
       if (used_names.insert(candidate).second) {
@@ -225,68 +225,68 @@ void AddUniquenessPredicatesRewriter::visit(Match &node) {
       const auto &rhs = connections[j];
 
       if (!lhs.is_group && !rhs.is_group) {
-        const auto &lhs_rel = asSingle(lhs);
-        const auto &rhs_rel = asSingle(rhs);
+        const auto &lhs_rel = AsSingle(lhs);
+        const auto &rhs_rel = AsSingle(rhs);
         if (lhs_rel.name == rhs_rel.name) {
-          predicates.push_back(makeBooleanLiteral(false));
+          predicates.push_back(MakeBooleanLiteral(false));
           continue;
         }
-        if (!isAlwaysDifferent(lhs_rel, rhs_rel)) {
-          predicates.push_back(makeNotEquals(lhs_rel.name, rhs_rel.name));
+        if (!IsAlwaysDifferent(lhs_rel, rhs_rel)) {
+          predicates.push_back(MakeNotEquals(lhs_rel.name, rhs_rel.name));
         }
         continue;
       }
 
       if (!lhs.is_group && rhs.is_group) {
-        const auto &lhs_rel = asSingle(lhs);
+        const auto &lhs_rel = AsSingle(lhs);
         std::vector<std::string> overlap_list;
         for (const auto &inner_rel : rhs.inner_relationships) {
-          if (!isAlwaysDifferent(lhs_rel, inner_rel)) {
+          if (!IsAlwaysDifferent(lhs_rel, inner_rel)) {
             overlap_list.push_back(inner_rel.name);
           }
         }
         if (!overlap_list.empty()) {
-          predicates.push_back(makeNot(makeIn(
-              makeVariable(lhs_rel.name),
-              makeRelationshipListExpression(overlap_list))));
+          predicates.push_back(
+              MakeNot(MakeIn(MakeVariable(lhs_rel.name),
+                             MakeRelationshipListExpression(overlap_list))));
         }
         continue;
       }
 
       if (lhs.is_group && !rhs.is_group) {
-        const auto &rhs_rel = asSingle(rhs);
+        const auto &rhs_rel = AsSingle(rhs);
         std::vector<std::string> overlap_list;
         for (const auto &inner_rel : lhs.inner_relationships) {
-          if (!isAlwaysDifferent(rhs_rel, inner_rel)) {
+          if (!IsAlwaysDifferent(rhs_rel, inner_rel)) {
             overlap_list.push_back(inner_rel.name);
           }
         }
         if (!overlap_list.empty()) {
-          predicates.push_back(makeNot(makeIn(
-              makeVariable(rhs_rel.name),
-              makeRelationshipListExpression(overlap_list))));
+          predicates.push_back(
+              MakeNot(MakeIn(MakeVariable(rhs_rel.name),
+                             MakeRelationshipListExpression(overlap_list))));
         }
         continue;
       }
 
-      auto lhs_overlap = collectOverlappingNames(lhs.inner_relationships,
+      auto lhs_overlap = CollectOverlappingNames(lhs.inner_relationships,
                                                  rhs.inner_relationships);
-      auto rhs_overlap = collectOverlappingNames(rhs.inner_relationships,
+      auto rhs_overlap = CollectOverlappingNames(rhs.inner_relationships,
                                                  lhs.inner_relationships);
       if (lhs_overlap.empty() || rhs_overlap.empty()) {
         continue;
       }
 
-      if (hasSameName(lhs_overlap, rhs_overlap) &&
+      if (HasSameName(lhs_overlap, rhs_overlap) &&
           !(lhs.can_be_empty || rhs.can_be_empty)) {
-        predicates.push_back(makeBooleanLiteral(false));
+        predicates.push_back(MakeBooleanLiteral(false));
       } else {
-        std::string outer_var = freshTempName();
-        auto in_predicate = makeIn(makeVariable(outer_var),
-                                   makeRelationshipListExpression(rhs_overlap));
+        std::string outer_var = fresh_temp_name();
+        auto in_predicate = MakeIn(MakeVariable(outer_var),
+                                   MakeRelationshipListExpression(rhs_overlap));
         auto disjoint = std::make_unique<NoneQuantifier>();
         disjoint->variable = outer_var;
-        disjoint->list_expr = makeRelationshipListExpression(lhs_overlap);
+        disjoint->list_expr = MakeRelationshipListExpression(lhs_overlap);
         disjoint->predicate = std::move(in_predicate);
         predicates.push_back(std::move(disjoint));
       }
@@ -297,23 +297,23 @@ void AddUniquenessPredicatesRewriter::visit(Match &node) {
     if (!connection.is_group) {
       continue;
     }
-    const auto group_names = relationshipNames(connection.inner_relationships);
-    std::string all_var = freshTempName();
-    std::string single_var = freshTempName();
+    const auto group_names = RelationshipNames(connection.inner_relationships);
+    std::string all_var = fresh_temp_name();
+    std::string single_var = fresh_temp_name();
 
     auto equals = std::make_unique<ComparisonExpression>();
-    equals->left = makeVariable(all_var);
+    equals->left = MakeVariable(all_var);
     equals->op = "=";
-    equals->right = makeVariable(single_var);
+    equals->right = MakeVariable(single_var);
 
     auto single = std::make_unique<SingleQuantifier>();
     single->variable = single_var;
-    single->list_expr = makeRelationshipListExpression(group_names);
+    single->list_expr = MakeRelationshipListExpression(group_names);
     single->predicate = std::move(equals);
 
     auto all = std::make_unique<AllQuantifier>();
     all->variable = all_var;
-    all->list_expr = makeRelationshipListExpression(group_names);
+    all->list_expr = MakeRelationshipListExpression(group_names);
     all->predicate = std::move(single);
     predicates.push_back(std::move(all));
   }
@@ -322,8 +322,8 @@ void AddUniquenessPredicatesRewriter::visit(Match &node) {
     return;
   }
 
-  auto uniqueness_predicate = combinePredicates(predicates);
-  node.where = makeAnd(std::move(uniqueness_predicate), std::move(node.where));
+  auto uniqueness_predicate = CombinePredicates(predicates);
+  node.where = MakeAnd(std::move(uniqueness_predicate), std::move(node.where));
 }
 
 }  // namespace ast
