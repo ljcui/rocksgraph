@@ -1,5 +1,3 @@
-#include "planner/planner_query.h"
-
 #include <algorithm>
 #include <memory>
 #include <string>
@@ -8,8 +6,9 @@
 #include <vector>
 
 #include "common/exception.h"
+#include "ir/query_ir.h"
 
-namespace planner {
+namespace ir {
 
 namespace {
 
@@ -157,15 +156,6 @@ class QueryGraphBuilder {
     CHECK(!node.variable.empty(), common::InvalidArgumentError,
           makeUnsupportedError("anonymous node"));
     graph_.nodes.insert(node.variable);
-    QueryGraph::Node &node_info = graph_.node_info[node.variable];
-    appendUnique(node_info.labels, node.labels);
-    if (node.properties) {
-      CHECK(node_info.properties == nullptr ||
-                node_info.properties == node.properties.get(),
-            common::InvalidArgumentError,
-            "conflicting properties for the same node variable");
-      node_info.properties = node.properties.get();
-    }
     return node.variable;
   }
 
@@ -184,7 +174,7 @@ class QueryGraphBuilder {
     relationship.name = detail->variable;
     relationship.left_node = left;
     relationship.right_node = right;
-    relationship.types = detail->types;
+    relationship.types = {detail->types.begin(), detail->types.end()};
     relationship.properties = detail->properties.get();
     if (pattern.left_arrow) {
       relationship.direction = QueryGraph::Direction::INCOMING;
@@ -253,9 +243,9 @@ std::vector<UnionColumnMapping> buildUnionColumnMappings(
   return mappings;
 }
 
-class PlannerQueryBuilder {
+class QueryIRBuilder {
  public:
-  PlannerQuery build(const ast::Statement &statement) {
+  QueryIR build(const ast::Statement &statement) {
     switch (statement.node_type) {
       case ast::ASTNodeType::RegularQuery: {
         return buildRegularQuery(cast_ast<ast::RegularQuery>(statement));
@@ -267,14 +257,14 @@ class PlannerQueryBuilder {
   }
 
  private:
-  PlannerQuery buildRegularQuery(const ast::RegularQuery &query) {
+  QueryIR buildRegularQuery(const ast::RegularQuery &query) {
     CHECK(query.single_query, common::InvalidArgumentError,
           makeMissingError("single query"));
 
-    PlannerQuery planner_query;
-    planner_query.regular.main = buildSingleQuery(*query.single_query);
+    QueryIR query_ir;
+    query_ir.regular.main = buildSingleQuery(*query.single_query);
 
-    planner_query.regular.unions.reserve(query.unions.size());
+    query_ir.regular.unions.reserve(query.unions.size());
     for (const auto &part : query.unions) {
       CHECK(part && part->query, common::InvalidArgumentError,
             makeMissingError("UNION branch query"));
@@ -283,11 +273,11 @@ class PlannerQueryBuilder {
       branch.all = part->all;
       branch.query = buildSingleQuery(*part->query);
       branch.mappings =
-          buildUnionColumnMappings(planner_query.regular.main, branch.query);
-      planner_query.regular.unions.push_back(std::move(branch));
+          buildUnionColumnMappings(query_ir.regular.main, branch.query);
+      query_ir.regular.unions.push_back(std::move(branch));
     }
 
-    return planner_query;
+    return query_ir;
   }
 
   SingleQueryIR buildSingleQuery(const ast::SingleQuery &query) {
@@ -395,9 +385,9 @@ class PlannerQueryBuilder {
 
 }  // namespace
 
-PlannerQuery buildPlannerQuery(const ast::Statement &statement) {
-  PlannerQueryBuilder builder;
+QueryIR buildStatement(const ast::Statement &statement) {
+  QueryIRBuilder builder;
   return builder.build(statement);
 }
 
-}  // namespace planner
+}  // namespace ir

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <memory>
-#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -9,7 +8,7 @@
 
 #include "ast/ast_node.h"
 
-namespace planner {
+namespace ir {
 
 struct QueryGraph {
   enum class Direction {
@@ -18,22 +17,16 @@ struct QueryGraph {
     BOTH
   };
 
-  struct Node {
-    std::vector<std::string> labels;
-    const ast::Properties *properties = nullptr;
-  };
-
   struct Relationship {
     std::string name;
     std::string left_node;
     std::string right_node;
     Direction direction = Direction::BOTH;
-    std::vector<std::string> types;
+    std::unordered_set<std::string> types;
     const ast::Properties *properties = nullptr;
   };
 
   std::unordered_set<std::string> nodes;
-  std::unordered_map<std::string, Node> node_info;
   std::vector<Relationship> relationships;
   std::vector<const ast::Expression *> where;
 };
@@ -90,10 +83,10 @@ struct RegularQueryIR {
   std::vector<UnionBranch> unions;
 };
 
-struct PlannerQuery {
+struct QueryIR {
   RegularQueryIR regular;
 };
 
-PlannerQuery buildPlannerQuery(const ast::Statement &statement);
+QueryIR buildStatement(const ast::Statement &statement);
 
-}  // namespace planner
+}  // namespace ir

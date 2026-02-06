@@ -192,8 +192,8 @@ set_target_properties(semantic_validator_test PROPERTIES BUILD_RPATH "/usr/local
 add_test(NAME semantic_validator_test COMMAND semantic_validator_test)
 
 add_executable(planner_query_test
-    tests/planner_query_test.cc
-    planner/planner_query.cc
+        tests/query_ir_test.cc
+        ir/query_ir.cc
     ast/ast_builder.cc
     ast/ast_clone.cc
     ast/ast_equal.cc

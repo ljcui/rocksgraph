@@ -6,7 +6,7 @@
 #include "ast/ast_builder.h"
 #include "ast/ast_exception.h"
 #include "common/exception.h"
-#include "planner/planner_query.h"
+#include "ir/query_ir.h"
 
 namespace {
 
@@ -36,25 +36,20 @@ TEST(PlannerQueryTest, BuildsGraphFromMatch) {
       "WHERE a.age > 30 RETURN a, b");
   ASSERT_TRUE(statement);
 
-  planner::PlannerQuery planner_query = planner::buildPlannerQuery(*statement);
-  const planner::SingleQueryIR &main = planner_query.regular.main;
+  ir::QueryIR planner_query = ir::buildStatement(*statement);
+  const ir::SingleQueryIR &main = planner_query.regular.main;
 
   EXPECT_EQ(main.tail, nullptr);
   EXPECT_TRUE(contains(main.query_graph.nodes, "a"));
   EXPECT_TRUE(contains(main.query_graph.nodes, "b"));
   EXPECT_EQ(main.query_graph.where.size(), 1U);
 
-  const auto node_info_it = main.query_graph.node_info.find("a");
-  ASSERT_NE(node_info_it, main.query_graph.node_info.end());
-  EXPECT_TRUE(node_info_it->second.labels.empty());
-  EXPECT_EQ(node_info_it->second.properties, nullptr);
-
   ASSERT_EQ(main.query_graph.relationships.size(), 1U);
   const auto &relationship = main.query_graph.relationships[0];
   EXPECT_EQ(relationship.name, "r");
   EXPECT_EQ(relationship.left_node, "a");
   EXPECT_EQ(relationship.right_node, "b");
-  EXPECT_EQ(relationship.direction, planner::QueryGraph::Direction::OUTGOING);
+  EXPECT_EQ(relationship.direction, ir::QueryGraph::Direction::OUTGOING);
   EXPECT_TRUE(relationship.types.empty());
 
   EXPECT_FALSE(main.projection.distinct);
@@ -72,8 +67,8 @@ TEST(PlannerQueryTest, AcceptsAnonymousPatternAfterRewrite) {
   auto statement = parseOrFail("MATCH ()-[]->() RETURN 1");
   ASSERT_TRUE(statement);
 
-  planner::PlannerQuery planner_query = planner::buildPlannerQuery(*statement);
-  const planner::SingleQueryIR &main = planner_query.regular.main;
+  ir::QueryIR planner_query = ir::buildStatement(*statement);
+  const ir::SingleQueryIR &main = planner_query.regular.main;
 
   EXPECT_EQ(main.query_graph.nodes.size(), 2U);
   ASSERT_EQ(main.query_graph.relationships.size(), 1U);
@@ -93,11 +88,11 @@ TEST(PlannerQueryTest, BuildsTailForMultiPartQuery) {
       "MATCH (n)-[r:KNOWS]->(m) RETURN n, m");
   ASSERT_TRUE(statement);
 
-  planner::PlannerQuery planner_query = planner::buildPlannerQuery(*statement);
-  const planner::SingleQueryIR &first = planner_query.regular.main;
+  ir::QueryIR planner_query = ir::buildStatement(*statement);
+  const ir::SingleQueryIR &first = planner_query.regular.main;
 
   ASSERT_TRUE(first.tail);
-  const planner::SingleQueryIR &second = *first.tail;
+  const ir::SingleQueryIR &second = *first.tail;
 
   EXPECT_TRUE(contains(first.query_graph.nodes, "n"));
   EXPECT_EQ(first.query_graph.where.size(), 1U);
@@ -120,10 +115,10 @@ TEST(PlannerQueryTest, BuildsUnionMappings) {
       parseOrFail("MATCH (n) RETURN n AS x UNION MATCH (m) RETURN m AS y");
   ASSERT_TRUE(statement);
 
-  planner::PlannerQuery planner_query = planner::buildPlannerQuery(*statement);
+  ir::QueryIR planner_query = ir::buildStatement(*statement);
   ASSERT_EQ(planner_query.regular.unions.size(), 1U);
 
-  const planner::UnionBranch &branch = planner_query.regular.unions[0];
+  const ir::UnionBranch &branch = planner_query.regular.unions[0];
   EXPECT_FALSE(branch.all);
   ASSERT_EQ(branch.mappings.size(), 1U);
   EXPECT_EQ(branch.mappings[0].output, "x");
@@ -135,10 +130,10 @@ TEST(PlannerQueryTest, BuildsUnionAllBranch) {
   auto statement = parseOrFail("RETURN 1 AS a UNION ALL RETURN 2 AS b");
   ASSERT_TRUE(statement);
 
-  planner::PlannerQuery planner_query = planner::buildPlannerQuery(*statement);
+  ir::QueryIR planner_query = ir::buildStatement(*statement);
   ASSERT_EQ(planner_query.regular.unions.size(), 1U);
 
-  const planner::UnionBranch &branch = planner_query.regular.unions[0];
+  const ir::UnionBranch &branch = planner_query.regular.unions[0];
   EXPECT_TRUE(branch.all);
   ASSERT_EQ(branch.mappings.size(), 1U);
   EXPECT_EQ(branch.mappings[0].output, "a");
@@ -152,7 +147,7 @@ TEST(PlannerQueryTest, RejectsUnionColumnCountMismatch) {
 
   EXPECT_THROW(
       {
-        (void)planner::buildPlannerQuery(*statement);
+        (void)ir::buildStatement(*statement);
       },
       common::InvalidArgumentError);
 }
@@ -161,8 +156,8 @@ TEST(PlannerQueryTest, CopySingleQueryIRDeeplyCopiesTail) {
   auto statement = parseOrFail("MATCH (n) WITH n RETURN n");
   ASSERT_TRUE(statement);
 
-  planner::PlannerQuery planner_query = planner::buildPlannerQuery(*statement);
-  planner::SingleQueryIR copy = planner_query.regular.main;
+  ir::QueryIR planner_query = ir::buildStatement(*statement);
+  ir::SingleQueryIR copy = planner_query.regular.main;
 
   ASSERT_TRUE(planner_query.regular.main.tail);
   ASSERT_TRUE(copy.tail);
