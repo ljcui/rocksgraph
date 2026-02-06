@@ -39,6 +39,7 @@ add_executable(rg-server
         ast/ast_walker.cc
         ast/semantic_validator.cc
         ast/rewriters/anonymous_pattern_name_rewriter.cc
+        ast/rewriters/add_uniqueness_predicates_rewriter.cc
         ast/rewriters/comparison_chain_rewriter.cc
         ast/rewriters/count_star_rewriter.cc
         ast/rewriters/existential_subquery_rewriter.cc
@@ -68,6 +69,7 @@ add_executable(ast_dump
     ast/ast_walker.cc
     ast/semantic_validator.cc
     ast/rewriters/anonymous_pattern_name_rewriter.cc
+    ast/rewriters/add_uniqueness_predicates_rewriter.cc
     ast/rewriters/comparison_chain_rewriter.cc
     ast/rewriters/count_star_rewriter.cc
     ast/rewriters/existential_subquery_rewriter.cc
@@ -100,6 +102,7 @@ add_executable(ast_rewriter_test
     ast/ast_walker.cc
     ast/semantic_validator.cc
     ast/rewriters/anonymous_pattern_name_rewriter.cc
+    ast/rewriters/add_uniqueness_predicates_rewriter.cc
     ast/rewriters/comparison_chain_rewriter.cc
     ast/rewriters/count_star_rewriter.cc
     ast/rewriters/existential_subquery_rewriter.cc
@@ -130,6 +133,7 @@ add_executable(ast_to_cypher_test
     ast/ast_walker.cc
     ast/semantic_validator.cc
     ast/rewriters/anonymous_pattern_name_rewriter.cc
+    ast/rewriters/add_uniqueness_predicates_rewriter.cc
     ast/rewriters/comparison_chain_rewriter.cc
     ast/rewriters/count_star_rewriter.cc
     ast/rewriters/existential_subquery_rewriter.cc
@@ -168,6 +172,7 @@ add_executable(semantic_validator_test
     ast/ast_walker.cc
     ast/semantic_validator.cc
     ast/rewriters/anonymous_pattern_name_rewriter.cc
+    ast/rewriters/add_uniqueness_predicates_rewriter.cc
     ast/rewriters/comparison_chain_rewriter.cc
     ast/rewriters/count_star_rewriter.cc
     ast/rewriters/existential_subquery_rewriter.cc
@@ -199,6 +204,7 @@ add_executable(planner_query_test
     ast/ast_walker.cc
     ast/semantic_validator.cc
     ast/rewriters/anonymous_pattern_name_rewriter.cc
+    ast/rewriters/add_uniqueness_predicates_rewriter.cc
     ast/rewriters/comparison_chain_rewriter.cc
     ast/rewriters/count_star_rewriter.cc
     ast/rewriters/existential_subquery_rewriter.cc
