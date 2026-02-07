@@ -7,6 +7,6 @@
 
 namespace ast {
 
-std::vector<std::unique_ptr<ASTRewriter>> makeDefaultRewriters();
+std::vector<std::unique_ptr<ASTRewriter>> MakeDefaultRewriters();
 
 }  // namespace ast

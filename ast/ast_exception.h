@@ -17,7 +17,7 @@ class ErrorListException : public Exception {
       : Exception(type, JoinErrors(errors), file, line, function),
         errors_(std::move(errors)) {}
 
-  const std::vector<std::string> &errors() const noexcept { return errors_; }
+  [[nodiscard]] const std::vector<std::string> &Errors() const noexcept { return errors_; }
 
  private:
   static std::string JoinErrors(const std::vector<std::string> &errors) {

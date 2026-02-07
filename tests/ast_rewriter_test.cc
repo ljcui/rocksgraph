@@ -22,7 +22,7 @@ namespace {
 
 std::unique_ptr<ast::Statement> ParseOrFail(const std::string &query) {
   try {
-    return ast::parseCypher(query);
+    return ast::ParseCypher(query);
   } catch (const ast::ParseError &e) {
     ADD_FAILURE() << "parse errors for query: " << query
                   << " message: " << e.what();
@@ -200,7 +200,7 @@ TEST(RewriterPipelineTest, DefaultPipelineUsesReturnStar) {
   auto statement = ParseOrFail("MATCH (n) RETURN *");
   auto expected_statement = ParseOrFail("MATCH (n) RETURN n");
 
-  ast::applyDefaultRewriters(*statement);
+  ast::ApplyDefaultRewriters(*statement);
 
   EXPECT_TRUE(ast::ASTEqual::Equal(statement.get(), expected_statement.get()))
       << "rewrite mismatch for pipeline";
@@ -208,7 +208,7 @@ TEST(RewriterPipelineTest, DefaultPipelineUsesReturnStar) {
 
 TEST(RewriterPipelineTest, ParseAndRewriteUsesDefaultPipeline) {
   std::unique_ptr<ast::Statement> statement;
-  ASSERT_NO_THROW(statement = ast::parseCypherAndRewrite("MATCH (n) RETURN *"));
+  ASSERT_NO_THROW(statement = ast::ParseCypherAndRewrite("MATCH (n) RETURN *"));
   auto expected_statement = ParseOrFail("MATCH (n) RETURN n");
 
   EXPECT_TRUE(ast::ASTEqual::Equal(statement.get(), expected_statement.get()))
@@ -220,7 +220,7 @@ TEST(RewriterPipelineTest, DefaultPipelineAddsUniquenessPredicates) {
   auto expected_statement = ParseOrFail(
       "MATCH (a)-[r1]->(b)-[r2]->(c) WHERE NOT r1 = r2 RETURN a, r1, b, r2, c");
 
-  ast::applyDefaultRewriters(*statement);
+  ast::ApplyDefaultRewriters(*statement);
 
   EXPECT_TRUE(ast::ASTEqual::Equal(statement.get(), expected_statement.get()))
       << "rewrite mismatch for uniqueness in pipeline";
@@ -231,7 +231,7 @@ TEST(RewriterPipelineTest, DefaultPipelineAddsFalseForRepeatedRelationship) {
   auto expected_statement =
       ParseOrFail("MATCH (a)-[r]->(b)-[r]->(c) WHERE false RETURN a, r, b, c");
 
-  ast::applyDefaultRewriters(*statement);
+  ast::ApplyDefaultRewriters(*statement);
 
   EXPECT_TRUE(ast::ASTEqual::Equal(statement.get(), expected_statement.get()))
       << "rewrite mismatch for repeated relationship variable";
@@ -250,7 +250,7 @@ TEST(RewriterPipelineTest,
       "= __uniq_rel_3)) "
       "RETURN a, r, b, c");
 
-  ast::applyDefaultRewriters(*statement);
+  ast::ApplyDefaultRewriters(*statement);
 
   EXPECT_TRUE(ast::ASTEqual::Equal(statement.get(), expected_statement.get()))
       << "rewrite mismatch for repeated non-empty var-length relationship";

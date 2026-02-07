@@ -17,23 +17,23 @@ bool HasError(const std::vector<std::string> &errors,
 
 TEST(SemanticValidatorTest, UndefinedReturnVariable) {
   try {
-    (void)ast::parseCypher("MATCH (n) RETURN m");
+    (void)ast::ParseCypher("MATCH (n) RETURN m");
     FAIL() << "expected semantic error";
   } catch (const ast::SemanticError &e) {
-    EXPECT_TRUE(HasError(e.errors(), "undefined variable: m"));
+    EXPECT_TRUE(HasError(e.Errors(), "undefined variable: m"));
   } catch (const ast::ParseError &e) {
     FAIL() << "unexpected parse error: " << e.what();
   }
 }
 
 TEST(SemanticValidatorTest, WithProjectionScopes) {
-  EXPECT_NO_THROW(ast::parseCypher("MATCH (n) WITH n AS m RETURN m"));
+  EXPECT_NO_THROW(ast::ParseCypher("MATCH (n) WITH n AS m RETURN m"));
 
   try {
-    (void)ast::parseCypher("MATCH (n) WITH n AS m RETURN n");
+    (void)ast::ParseCypher("MATCH (n) WITH n AS m RETURN n");
     FAIL() << "expected semantic error";
   } catch (const ast::SemanticError &e) {
-    EXPECT_TRUE(HasError(e.errors(), "undefined variable: n"));
+    EXPECT_TRUE(HasError(e.Errors(), "undefined variable: n"));
   } catch (const ast::ParseError &e) {
     FAIL() << "unexpected parse error: " << e.what();
   }
@@ -41,5 +41,5 @@ TEST(SemanticValidatorTest, WithProjectionScopes) {
 
 TEST(SemanticValidatorTest, ComprehensionUsesOuterScope) {
   EXPECT_NO_THROW(
-      ast::parseCypher("MATCH (n) RETURN [x IN [1,2] WHERE x > n.age | x]"));
+      ast::ParseCypher("MATCH (n) RETURN [x IN [1,2] WHERE x > n.age | x]"));
 }

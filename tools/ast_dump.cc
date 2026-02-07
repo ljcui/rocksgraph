@@ -48,17 +48,17 @@ int main(int argc, char **argv) {
   std::string input = JoinArgs(parts);
 
   try {
-    auto statement = FLAGS_rewrite ? ast::parseCypherAndRewrite(input)
-                                   : ast::parseCypher(input);
+    auto statement = FLAGS_rewrite ? ast::ParseCypherAndRewrite(input)
+                                   : ast::ParseCypher(input);
     ast::ASTPrinter printer(std::cout);
     printer.Print(*statement);
     return 0;
   } catch (const ast::ParseError &e) {
-    for (const auto &err : e.errors()) {
+    for (const auto &err : e.Errors()) {
       spdlog::error("Parse error: {}", err);
     }
   } catch (const ast::SemanticError &e) {
-    for (const auto &err : e.errors()) {
+    for (const auto &err : e.Errors()) {
       spdlog::error("Semantic error: {}", err);
     }
   } catch (const Exception &e) {

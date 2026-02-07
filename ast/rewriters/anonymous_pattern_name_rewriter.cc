@@ -99,38 +99,38 @@ class NameCollector : public ASTRewriter {
 }  // namespace
 
 void AnonymousPatternNameRewriter::Visit(RegularQuery &node) {
-  prepare(node);
+  Prepare(node);
   ASTRewriter::Visit(node);
 }
 
 void AnonymousPatternNameRewriter::Visit(StandaloneCall &node) {
-  prepare(node);
+  Prepare(node);
   ASTRewriter::Visit(node);
 }
 
 void AnonymousPatternNameRewriter::Visit(Pattern &node) {
-  prepare(node);
+  Prepare(node);
   ASTRewriter::Visit(node);
 }
 
 void AnonymousPatternNameRewriter::Visit(RelationshipsPattern &node) {
-  prepare(node);
+  Prepare(node);
   ASTRewriter::Visit(node);
 }
 
 void AnonymousPatternNameRewriter::Visit(NodePattern &node) {
   if (!prepared_) {
-    prepare(node);
+    Prepare(node);
   }
   if (node.variable.empty()) {
-    node.variable = nextAnonymousName();
+    node.variable = NextAnonymousName();
   }
   ASTRewriter::Visit(node);
 }
 
 void AnonymousPatternNameRewriter::Visit(RelationshipPattern &node) {
   if (!prepared_) {
-    prepare(node);
+    Prepare(node);
   }
   if (!node.detail) {
     node.detail = std::make_unique<RelationshipDetail>();
@@ -140,15 +140,15 @@ void AnonymousPatternNameRewriter::Visit(RelationshipPattern &node) {
 
 void AnonymousPatternNameRewriter::Visit(RelationshipDetail &node) {
   if (!prepared_) {
-    prepare(node);
+    Prepare(node);
   }
   if (node.variable.empty()) {
-    node.variable = nextAnonymousName();
+    node.variable = NextAnonymousName();
   }
   ASTRewriter::Visit(node);
 }
 
-void AnonymousPatternNameRewriter::prepare(ASTNode &node) {
+void AnonymousPatternNameRewriter::Prepare(ASTNode &node) {
   if (prepared_) {
     return;
   }
@@ -158,7 +158,7 @@ void AnonymousPatternNameRewriter::prepare(ASTNode &node) {
   prepared_ = true;
 }
 
-std::string AnonymousPatternNameRewriter::nextAnonymousName() {
+std::string AnonymousPatternNameRewriter::NextAnonymousName() {
   for (;;) {
     std::string name = "anon_" + std::to_string(next_id_++);
     if (used_names_.insert(name).second) {

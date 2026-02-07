@@ -13,6 +13,7 @@ Checks: >
   -readability-suspicious-call-argument,
   -readability-use-anyofallof,
   -readability-simplify-boolean-expr,
+  -bugprone-macro-parentheses,
   -readability-magic-numbers
 WarningsAsErrors: '*'
 HeaderFilterRegex: '^((?!ast/cypher/).)*$'

@@ -7,7 +7,7 @@ void ReturnStarRewriter::Rewrite(ASTNode &node) {
   ASTRewriter::Rewrite(node);
 }
 
-void ReturnStarRewriter::Scope::add(const std::string &name) {
+void ReturnStarRewriter::Scope::Add(const std::string &name) {
   if (name.empty()) {
     return;
   }
@@ -16,7 +16,7 @@ void ReturnStarRewriter::Scope::add(const std::string &name) {
   }
 }
 
-const ReturnStarRewriter::Scope &ReturnStarRewriter::currentScope() const {
+const ReturnStarRewriter::Scope &ReturnStarRewriter::CurrentScope() const {
   static const Scope kEmpty;
   if (scope_stack_.empty()) {
     return kEmpty;
@@ -25,12 +25,12 @@ const ReturnStarRewriter::Scope &ReturnStarRewriter::currentScope() const {
 }
 
 void ReturnStarRewriter::Visit(SinglePartQuery &node) {
-  Scope scope = currentScope();
+  Scope scope = CurrentScope();
   for (const auto &clause : node.reading_clauses) {
-    collectFromReadingClause(*clause, scope);
+    CollectFromReadingClause(*clause, scope);
   }
   for (const auto &clause : node.updating_clauses) {
-    collectFromUpdatingClause(*clause, scope);
+    CollectFromUpdatingClause(*clause, scope);
   }
 
   scope_stack_.push_back(scope);
@@ -41,14 +41,14 @@ void ReturnStarRewriter::Visit(SinglePartQuery &node) {
 }
 
 void ReturnStarRewriter::Visit(MultiPartQuery &node) {
-  Scope scope = currentScope();
+  Scope scope = CurrentScope();
   for (auto &part : node.parts) {
     Scope part_scope = scope;
     for (const auto &clause : part.reading_clauses) {
-      collectFromReadingClause(*clause, part_scope);
+      CollectFromReadingClause(*clause, part_scope);
     }
     for (const auto &clause : part.updating_clauses) {
-      collectFromUpdatingClause(*clause, part_scope);
+      CollectFromUpdatingClause(*clause, part_scope);
     }
 
     scope_stack_.push_back(part_scope);
@@ -58,7 +58,7 @@ void ReturnStarRewriter::Visit(MultiPartQuery &node) {
     scope_stack_.pop_back();
 
     if (part.with_clause && part.with_clause->body) {
-      scope = scopeFromProjection(*part.with_clause->body, part_scope);
+      scope = ScopeFromProjection(*part.with_clause->body, part_scope);
     } else {
       scope = part_scope;
     }
@@ -70,26 +70,26 @@ void ReturnStarRewriter::Visit(MultiPartQuery &node) {
 }
 
 void ReturnStarRewriter::Visit(ProjectionBody &node) {
-  expandStar(node);
+  ExpandStar(node);
   ASTRewriter::Visit(node);
 }
 
-ReturnStarRewriter::Scope ReturnStarRewriter::scopeFromProjection(
+ReturnStarRewriter::Scope ReturnStarRewriter::ScopeFromProjection(
     const ProjectionBody &body, const Scope &fallback) const {
   Scope scope = body.star ? fallback : Scope{};
   for (const auto &item : body.items) {
     if (item) {
-      collectFromProjectionItem(*item, scope);
+      CollectFromProjectionItem(*item, scope);
     }
   }
   return scope;
 }
 
-void ReturnStarRewriter::expandStar(ProjectionBody &body) {
+void ReturnStarRewriter::ExpandStar(ProjectionBody &body) {
   if (!body.star) {
     return;
   }
-  const Scope &scope = currentScope();
+  const Scope &scope = CurrentScope();
   if (scope.order.empty()) {
     return;
   }
@@ -110,107 +110,107 @@ void ReturnStarRewriter::expandStar(ProjectionBody &body) {
   body.star = false;
 }
 
-void ReturnStarRewriter::collectFromReadingClause(const ReadingClause &clause,
+void ReturnStarRewriter::CollectFromReadingClause(const ReadingClause &clause,
                                                   Scope &scope) const {
   if (const auto *match = dynamic_cast<const Match *>(&clause)) {
     if (match->pattern) {
-      collectFromPattern(*match->pattern, scope);
+      CollectFromPattern(*match->pattern, scope);
     }
     return;
   }
   if (const auto *unwind = dynamic_cast<const Unwind *>(&clause)) {
-    scope.add(unwind->variable);
+    scope.Add(unwind->variable);
     return;
   }
   if (const auto *call = dynamic_cast<const InQueryCall *>(&clause)) {
     for (const auto &item : call->yield_items) {
-      scope.add(item.variable);
+      scope.Add(item.variable);
     }
     return;
   }
 }
 
-void ReturnStarRewriter::collectFromUpdatingClause(const UpdatingClause &clause,
+void ReturnStarRewriter::CollectFromUpdatingClause(const UpdatingClause &clause,
                                                    Scope &scope) const {
   if (const auto *create = dynamic_cast<const Create *>(&clause)) {
     if (create->pattern) {
-      collectFromPattern(*create->pattern, scope);
+      CollectFromPattern(*create->pattern, scope);
     }
     return;
   }
   if (const auto *merge = dynamic_cast<const Merge *>(&clause)) {
     if (merge->pattern_part) {
-      collectFromPatternPart(*merge->pattern_part, scope);
+      CollectFromPatternPart(*merge->pattern_part, scope);
     }
     return;
   }
 }
 
-void ReturnStarRewriter::collectFromPattern(const Pattern &pattern,
+void ReturnStarRewriter::CollectFromPattern(const Pattern &pattern,
                                             Scope &scope) const {
   for (const auto &part : pattern.parts) {
     if (part) {
-      collectFromPatternPart(*part, scope);
+      CollectFromPatternPart(*part, scope);
     }
   }
 }
 
-void ReturnStarRewriter::collectFromPatternPart(const PatternPart &part,
+void ReturnStarRewriter::CollectFromPatternPart(const PatternPart &part,
                                                 Scope &scope) const {
-  scope.add(part.variable);
+  scope.Add(part.variable);
   if (part.element) {
-    collectFromPatternElement(*part.element, scope);
+    CollectFromPatternElement(*part.element, scope);
   }
 }
 
-void ReturnStarRewriter::collectFromPatternElement(
+void ReturnStarRewriter::CollectFromPatternElement(
     const PatternElement &element, Scope &scope) const {
   if (element.node_pattern) {
-    collectFromNodePattern(*element.node_pattern, scope);
+    CollectFromNodePattern(*element.node_pattern, scope);
   }
   for (const auto &link : element.chain) {
     if (link.first && link.first->detail) {
-      collectFromRelationshipDetail(*link.first->detail, scope);
+      CollectFromRelationshipDetail(*link.first->detail, scope);
     }
     if (link.second) {
-      collectFromNodePattern(*link.second, scope);
+      CollectFromNodePattern(*link.second, scope);
     }
   }
 }
 
-void ReturnStarRewriter::collectFromRelationshipsPattern(
+void ReturnStarRewriter::CollectFromRelationshipsPattern(
     const RelationshipsPattern &pattern, Scope &scope) const {
   if (pattern.node_pattern) {
-    collectFromNodePattern(*pattern.node_pattern, scope);
+    CollectFromNodePattern(*pattern.node_pattern, scope);
   }
   for (const auto &link : pattern.chain) {
     if (link.first && link.first->detail) {
-      collectFromRelationshipDetail(*link.first->detail, scope);
+      CollectFromRelationshipDetail(*link.first->detail, scope);
     }
     if (link.second) {
-      collectFromNodePattern(*link.second, scope);
+      CollectFromNodePattern(*link.second, scope);
     }
   }
 }
 
-void ReturnStarRewriter::collectFromNodePattern(const NodePattern &node,
+void ReturnStarRewriter::CollectFromNodePattern(const NodePattern &node,
                                                 Scope &scope) {
-  scope.add(node.variable);
+  scope.Add(node.variable);
 }
 
-void ReturnStarRewriter::collectFromRelationshipDetail(
+void ReturnStarRewriter::CollectFromRelationshipDetail(
     const RelationshipDetail &detail, Scope &scope) {
-  scope.add(detail.variable);
+  scope.Add(detail.variable);
 }
 
-void ReturnStarRewriter::collectFromProjectionItem(const ProjectionItem &item,
+void ReturnStarRewriter::CollectFromProjectionItem(const ProjectionItem &item,
                                                    Scope &scope) {
   if (!item.alias.empty()) {
-    scope.add(item.alias);
+    scope.Add(item.alias);
     return;
   }
   if (const auto *var = dynamic_cast<const Variable *>(item.expression.get())) {
-    scope.add(var->name);
+    scope.Add(var->name);
   }
 }
 

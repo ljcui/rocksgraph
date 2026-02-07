@@ -21,28 +21,28 @@ class ReturnStarRewriter : public ASTRewriter {
     std::vector<std::string> order;
     std::unordered_set<std::string> names;
 
-    void add(const std::string &name);
+    void Add(const std::string &name);
   };
 
-  const Scope &currentScope() const;
-  Scope scopeFromProjection(const ProjectionBody &body,
+   [[nodiscard]] const Scope &CurrentScope() const;
+  Scope ScopeFromProjection(const ProjectionBody &body,
                             const Scope &fallback) const;
-  void expandStar(ProjectionBody &body);
+  void ExpandStar(ProjectionBody &body);
 
-  void collectFromReadingClause(const ReadingClause &clause,
+  void CollectFromReadingClause(const ReadingClause &clause,
                                 Scope &scope) const;
-  void collectFromUpdatingClause(const UpdatingClause &clause,
+  void CollectFromUpdatingClause(const UpdatingClause &clause,
                                  Scope &scope) const;
-  void collectFromPattern(const Pattern &pattern, Scope &scope) const;
-  void collectFromPatternPart(const PatternPart &part, Scope &scope) const;
-  void collectFromPatternElement(const PatternElement &element,
+  void CollectFromPattern(const Pattern &pattern, Scope &scope) const;
+  void CollectFromPatternPart(const PatternPart &part, Scope &scope) const;
+  void CollectFromPatternElement(const PatternElement &element,
                                  Scope &scope) const;
-  void collectFromRelationshipsPattern(const RelationshipsPattern &pattern,
+  void CollectFromRelationshipsPattern(const RelationshipsPattern &pattern,
                                        Scope &scope) const;
-  static void collectFromNodePattern(const NodePattern &node, Scope &scope);
-  static void collectFromRelationshipDetail(const RelationshipDetail &detail,
+  static void CollectFromNodePattern(const NodePattern &node, Scope &scope);
+  static void CollectFromRelationshipDetail(const RelationshipDetail &detail,
                                             Scope &scope);
-  static void collectFromProjectionItem(const ProjectionItem &item,
+  static void CollectFromProjectionItem(const ProjectionItem &item,
                                         Scope &scope);
 
   std::vector<Scope> scope_stack_;

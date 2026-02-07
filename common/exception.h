@@ -11,35 +11,35 @@ class Exception : public std::runtime_error {
   Exception(const char *type, std::string message, const char *file, int line,
             const char *function)
       : std::runtime_error(BuildWhat(type, message, file, line, function)),
-        type_(type ? type : "Exception"),
+        type_(type != nullptr ? type : "Exception"),
         message_(std::move(message)),
-        file_(file ? file : ""),
-        function_(function ? function : ""),
+        file_(file != nullptr ? file : ""),
+        function_(function != nullptr ? function : ""),
         line_(line) {}
 
-  const std::string &type() const noexcept { return type_; }
-  const std::string &message() const noexcept { return message_; }
-  const std::string &file() const noexcept { return file_; }
-  const std::string &function() const noexcept { return function_; }
-  int line() const noexcept { return line_; }
+  [[nodiscard]] const std::string &Type() const noexcept { return type_; }
+  [[nodiscard]] const std::string &Message() const noexcept { return message_; }
+  [[nodiscard]] const std::string &File() const noexcept { return file_; }
+  [[nodiscard]] const std::string &Function() const noexcept { return function_; }
+  [[nodiscard]] int Line() const noexcept { return line_; }
 
  private:
   static std::string BuildWhat(const char *type, const std::string &message,
                                const char *file, int line,
                                const char *function) {
     std::string out;
-    const char *type_name = type ? type : "Exception";
+    const char *type_name = type != nullptr ? type : "Exception";
     out.append(type_name);
     if (!message.empty()) {
       out.append(": ");
       out.append(message);
     }
-    if (file && *file) {
+    if (file != nullptr && *file != '\0') {
       out.append(" @ ");
       out.append(file);
       out.push_back(':');
       out.append(std::to_string(line));
-      if (function && *function) {
+      if (function != nullptr && *function != '\0') {
         out.push_back(' ');
         out.append(function);
       }

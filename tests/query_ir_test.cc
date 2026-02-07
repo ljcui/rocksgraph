@@ -13,7 +13,7 @@ namespace {
 
 std::unique_ptr<ast::Statement> ParseOrFail(const std::string &query) {
   try {
-    return ast::parseCypherAndRewrite(query);
+    return ast::ParseCypherAndRewrite(query);
   } catch (const ast::ParseError &e) {
     ADD_FAILURE() << "parse errors for query: " << query
                   << " message: " << e.what();

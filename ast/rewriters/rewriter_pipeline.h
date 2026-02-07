@@ -20,7 +20,7 @@ class RewriterPipeline {
   std::vector<std::unique_ptr<ASTRewriter>> rewriters_;
 };
 
-RewriterPipeline makeDefaultRewriterPipeline();
-void applyDefaultRewriters(ASTNode &node);
+RewriterPipeline MakeDefaultRewriterPipeline();
+void ApplyDefaultRewriters(ASTNode &node);
 
 }  // namespace ast

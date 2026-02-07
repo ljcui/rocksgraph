@@ -22,12 +22,12 @@ void RewriterPipeline::Run(ASTNode &node) {
   }
 }
 
-RewriterPipeline makeDefaultRewriterPipeline() {
-  return RewriterPipeline(makeDefaultRewriters());
+RewriterPipeline MakeDefaultRewriterPipeline() {
+  return RewriterPipeline(MakeDefaultRewriters());
 }
 
-void applyDefaultRewriters(ASTNode &node) {
-  auto pipeline = makeDefaultRewriterPipeline();
+void ApplyDefaultRewriters(ASTNode &node) {
+  auto pipeline = MakeDefaultRewriterPipeline();
   pipeline.Run(node);
 }
 

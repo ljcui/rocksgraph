@@ -18,8 +18,8 @@ class AnonymousPatternNameRewriter : public ASTRewriter {
   void Visit(RelationshipDetail &node) override;
 
  private:
-  void prepare(ASTNode &node);
-  std::string nextAnonymousName();
+  void Prepare(ASTNode &node);
+  std::string NextAnonymousName();
 
   bool prepared_ = false;
   std::unordered_set<std::string> used_names_;

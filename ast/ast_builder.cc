@@ -1313,7 +1313,7 @@ class ASTBuilder {
 
 }  // namespace
 
-std::unique_ptr<Statement> parseCypher(const std::string &input) {
+std::unique_ptr<Statement> ParseCypher(const std::string &input) {
   antlr4::ANTLRInputStream input_stream(input);
   CypherLexer lexer(&input_stream);
   antlr4::CommonTokenStream tokens(&lexer);
@@ -1343,9 +1343,9 @@ std::unique_ptr<Statement> parseCypher(const std::string &input) {
   return statement;
 }
 
-std::unique_ptr<Statement> parseCypherAndRewrite(const std::string &input) {
-  auto statement = parseCypher(input);
-  applyDefaultRewriters(*statement);
+std::unique_ptr<Statement> ParseCypherAndRewrite(const std::string &input) {
+  auto statement = ParseCypher(input);
+  ApplyDefaultRewriters(*statement);
   return statement;
 }
 

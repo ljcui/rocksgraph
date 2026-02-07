@@ -14,7 +14,7 @@
 
 namespace ast {
 
-std::vector<std::unique_ptr<ASTRewriter>> makeDefaultRewriters() {
+std::vector<std::unique_ptr<ASTRewriter>> MakeDefaultRewriters() {
   std::vector<std::unique_ptr<ASTRewriter>> rewriters;
   // Normalize expression forms before scope-dependent rewrites.
   rewriters.emplace_back(std::make_unique<ParenthesizedExpressionRewriter>());
