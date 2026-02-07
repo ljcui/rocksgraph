@@ -5,7 +5,6 @@
 #include "ast/ast_builder.h"
 #include "ast/ast_equal.h"
 #include "ast/ast_exception.h"
-#include "ast/rewriters/add_uniqueness_predicates_rewriter.h"
 #include "ast/rewriters/anonymous_pattern_name_rewriter.h"
 #include "ast/rewriters/comparison_chain_rewriter.h"
 #include "ast/rewriters/count_star_rewriter.h"
@@ -17,6 +16,7 @@
 #include "ast/rewriters/projection_alias_rewriter.h"
 #include "ast/rewriters/return_star_rewriter.h"
 #include "ast/rewriters/rewriter_pipeline.h"
+#include "ast/rewriters/uniqueness_predicates_rewriter.h"
 
 namespace {
 

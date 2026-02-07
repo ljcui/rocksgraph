@@ -1,6 +1,5 @@
 #include "rewriter_registry.h"
 
-#include "add_uniqueness_predicates_rewriter.h"
 #include "anonymous_pattern_name_rewriter.h"
 #include "comparison_chain_rewriter.h"
 #include "count_star_rewriter.h"
@@ -11,6 +10,7 @@
 #include "pattern_predicate_rewriter.h"
 #include "projection_alias_rewriter.h"
 #include "return_star_rewriter.h"
+#include "uniqueness_predicates_rewriter.h"
 
 namespace ast {
 

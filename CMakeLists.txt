@@ -107,7 +107,7 @@ add_executable(
   ast/ast_walker.cc
   ast/semantic_validator.cc
   ast/rewriters/anonymous_pattern_name_rewriter.cc
-  ast/rewriters/add_uniqueness_predicates_rewriter.cc
+        ast/rewriters/uniqueness_predicates_rewriter.cc
   ast/rewriters/comparison_chain_rewriter.cc
   ast/rewriters/count_star_rewriter.cc
   ast/rewriters/existential_subquery_rewriter.cc
@@ -137,7 +137,7 @@ add_executable(
   ast/ast_walker.cc
   ast/semantic_validator.cc
   ast/rewriters/anonymous_pattern_name_rewriter.cc
-  ast/rewriters/add_uniqueness_predicates_rewriter.cc
+        ast/rewriters/uniqueness_predicates_rewriter.cc
   ast/rewriters/comparison_chain_rewriter.cc
   ast/rewriters/count_star_rewriter.cc
   ast/rewriters/existential_subquery_rewriter.cc
@@ -171,7 +171,7 @@ add_executable(
   ast/ast_walker.cc
   ast/semantic_validator.cc
   ast/rewriters/anonymous_pattern_name_rewriter.cc
-  ast/rewriters/add_uniqueness_predicates_rewriter.cc
+        ast/rewriters/uniqueness_predicates_rewriter.cc
   ast/rewriters/comparison_chain_rewriter.cc
   ast/rewriters/count_star_rewriter.cc
   ast/rewriters/existential_subquery_rewriter.cc
@@ -204,7 +204,7 @@ add_executable(
   ast/ast_walker.cc
   ast/semantic_validator.cc
   ast/rewriters/anonymous_pattern_name_rewriter.cc
-  ast/rewriters/add_uniqueness_predicates_rewriter.cc
+        ast/rewriters/uniqueness_predicates_rewriter.cc
   ast/rewriters/comparison_chain_rewriter.cc
   ast/rewriters/count_star_rewriter.cc
   ast/rewriters/existential_subquery_rewriter.cc
@@ -243,7 +243,7 @@ add_executable(
   ast/ast_walker.cc
   ast/semantic_validator.cc
   ast/rewriters/anonymous_pattern_name_rewriter.cc
-  ast/rewriters/add_uniqueness_predicates_rewriter.cc
+        ast/rewriters/uniqueness_predicates_rewriter.cc
   ast/rewriters/comparison_chain_rewriter.cc
   ast/rewriters/count_star_rewriter.cc
   ast/rewriters/existential_subquery_rewriter.cc
@@ -278,7 +278,7 @@ add_executable(
   ast/ast_walker.cc
   ast/semantic_validator.cc
   ast/rewriters/anonymous_pattern_name_rewriter.cc
-  ast/rewriters/add_uniqueness_predicates_rewriter.cc
+        ast/rewriters/uniqueness_predicates_rewriter.cc
   ast/rewriters/comparison_chain_rewriter.cc
   ast/rewriters/count_star_rewriter.cc
   ast/rewriters/existential_subquery_rewriter.cc
