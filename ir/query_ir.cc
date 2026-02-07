@@ -4,9 +4,12 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
+#include "ast/ast_const_walker.h"
+#include "ast/expression_to_string.h"
 #include "common/exception.h"
 
 namespace ir {
@@ -19,6 +22,75 @@ std::string MakeUnsupportedError(std::string_view feature) {
 
 std::string MakeMissingError(std::string_view subject) {
   return "missing " + std::string(subject);
+}
+
+const ast::Expression *UnwrapParenthesized(const ast::Expression *expression) {
+  const ast::Expression *unwrapped = expression;
+  while (unwrapped != nullptr) {
+    const auto *parenthesized =
+        dynamic_cast<const ast::ParenthesizedExpression *>(unwrapped);
+    if (parenthesized == nullptr || !parenthesized->expr) {
+      break;
+    }
+    unwrapped = parenthesized->expr.get();
+  }
+  return unwrapped;
+}
+
+const ast::AndExpression *RequireConjunctiveWhere(
+    const ast::Expression *expression) {
+  const ast::Expression *unwrapped = UnwrapParenthesized(expression);
+  const auto *and_expression =
+      dynamic_cast<const ast::AndExpression *>(unwrapped);
+  if (and_expression == nullptr) {
+    THROW(common::InvalidArgumentError,
+          MakeUnsupportedError("WHERE without AND expression"));
+  }
+  return and_expression;
+}
+
+void SplitConjunctivePredicates(const ast::Expression *expression,
+                                std::vector<const ast::Expression *> *output) {
+  const ast::Expression *unwrapped = UnwrapParenthesized(expression);
+  if (unwrapped == nullptr) {
+    return;
+  }
+  const auto *and_expression =
+      dynamic_cast<const ast::AndExpression *>(unwrapped);
+  if (and_expression != nullptr) {
+    SplitConjunctivePredicates(and_expression->left.get(), output);
+    SplitConjunctivePredicates(and_expression->right.get(), output);
+    return;
+  }
+  output->push_back(unwrapped);
+}
+
+class VariableDependencyCollector : public ast::ASTConstWalker {
+ public:
+  explicit VariableDependencyCollector(
+      std::unordered_set<std::string> *dependencies)
+      : dependencies_(dependencies) {
+    CHECK(dependencies_ != nullptr, common::InternalError,
+          "dependencies output is null");
+  }
+
+  void Collect(const ast::Expression &expression) { expression.Accept(*this); }
+
+ protected:
+  void Visit(const ast::Variable &node) override {
+    dependencies_->emplace(node.name);
+  }
+
+ private:
+  std::unordered_set<std::string> *dependencies_;
+};
+
+std::unordered_set<std::string> CollectDependencies(
+    const ast::Expression &expression) {
+  std::unordered_set<std::string> dependencies;
+  VariableDependencyCollector collector(&dependencies);
+  collector.Collect(expression);
+  return dependencies;
 }
 
 std::unique_ptr<SingleQueryIR> CloneTail(
@@ -111,7 +183,26 @@ class QueryGraphBuilder {
     }
   }
 
-  void AddWhere(const ast::Expression *where) { graph_.where.push_back(where); }
+  void AddWhere(const ast::Expression *where) {
+    const ast::AndExpression *conjunctive_where =
+        RequireConjunctiveWhere(where);
+
+    std::vector<const ast::Expression *> predicates;
+    SplitConjunctivePredicates(conjunctive_where, &predicates);
+    for (const ast::Expression *predicate : predicates) {
+      CHECK(predicate != nullptr, common::InvalidArgumentError,
+            "null WHERE predicate is not supported");
+      const std::string predicate_key = ast::ExpressionToString(*predicate);
+      if (!predicate_key.empty() && !where_keys_.insert(predicate_key).second) {
+        continue;
+      }
+
+      QueryGraph::WherePredicate where_predicate;
+      where_predicate.expression = predicate;
+      where_predicate.dependencies = CollectDependencies(*predicate);
+      graph_.where.push_back(std::move(where_predicate));
+    }
+  }
 
   void AddPattern(const ast::Pattern &pattern) {
     for (const auto &part : pattern.parts) {
@@ -135,7 +226,7 @@ class QueryGraphBuilder {
  private:
   void AddPatternElement(const ast::PatternElement &element) {
     if (!element.node_pattern) {
-      return;
+      THROW(common::InternalError, "node_pattern is null");
     }
     std::string left = AddNode(*element.node_pattern);
     for (const auto &link : element.chain) {
@@ -184,6 +275,7 @@ class QueryGraphBuilder {
   }
 
   QueryGraph graph_;
+  std::unordered_set<std::string> where_keys_;
 };
 
 template <typename Derived>

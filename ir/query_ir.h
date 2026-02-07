@@ -13,6 +13,11 @@ namespace ir {
 struct QueryGraph {
   enum class Direction { kIncoming, kOutgoing, kBoth };
 
+  struct WherePredicate {
+    const ast::Expression *expression = nullptr;
+    std::unordered_set<std::string> dependencies;
+  };
+
   struct Relationship {
     std::string name;
     std::string left_node;
@@ -24,7 +29,7 @@ struct QueryGraph {
 
   std::unordered_set<std::string> nodes;
   std::vector<Relationship> relationships;
-  std::vector<const ast::Expression *> where;
+  std::vector<WherePredicate> where;
 };
 
 struct ProjectionItem {

@@ -2,11 +2,15 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 #include "ast/ast_builder.h"
 #include "ast/ast_exception.h"
+#include "ast/expression_to_string.h"
 #include "common/exception.h"
 
 namespace {
@@ -29,6 +33,18 @@ bool Contains(const std::unordered_set<std::string> &set,
   return set.find(value) != set.end();
 }
 
+std::unordered_map<std::string, std::unordered_set<std::string>>
+WhereDependenciesByExpression(const ir::QueryGraph &query_graph) {
+  std::unordered_map<std::string, std::unordered_set<std::string>> result;
+  for (const auto &predicate : query_graph.where) {
+    CHECK(predicate.expression != nullptr, common::InvalidArgumentError,
+          "null WHERE predicate in QueryGraph");
+    result.emplace(ast::ExpressionToString(*predicate.expression),
+                   predicate.dependencies);
+  }
+  return result;
+}
+
 }  // namespace
 
 TEST(PlannerQueryTest, BuildsGraphFromMatch) {
@@ -43,7 +59,14 @@ TEST(PlannerQueryTest, BuildsGraphFromMatch) {
   EXPECT_EQ(main.tail, nullptr);
   EXPECT_TRUE(Contains(main.query_graph.nodes, "a"));
   EXPECT_TRUE(Contains(main.query_graph.nodes, "b"));
-  EXPECT_EQ(main.query_graph.where.size(), 1U);
+  EXPECT_EQ(main.query_graph.where.size(), 4U);
+
+  const auto where_dependencies =
+      WhereDependenciesByExpression(main.query_graph);
+  EXPECT_TRUE(Contains(where_dependencies.at("a:Person"), "a"));
+  EXPECT_TRUE(Contains(where_dependencies.at("a.name = 'Alice'"), "a"));
+  EXPECT_TRUE(Contains(where_dependencies.at("r:KNOWS"), "r"));
+  EXPECT_TRUE(Contains(where_dependencies.at("a.age > 30"), "a"));
 
   ASSERT_EQ(main.query_graph.relationships.size(), 1U);
   const auto &relationship = main.query_graph.relationships[0];
@@ -85,8 +108,8 @@ TEST(PlannerQueryTest, AcceptsAnonymousPatternAfterRewrite) {
 
 TEST(PlannerQueryTest, BuildsTailForMultiPartQuery) {
   auto statement = ParseOrFail(
-      "MATCH (n:Person) WITH n WHERE n.age > 30 "
-      "MATCH (n)-[r:KNOWS]->(m) RETURN n, m");
+      "MATCH (n:Person) WHERE true WITH n WHERE n.age > 30 "
+      "MATCH (n)-[r:KNOWS]->(m) WHERE true RETURN n, m");
   ASSERT_TRUE(statement);
 
   ir::QueryIR planner_query = ir::BuildStatement(*statement);
@@ -96,7 +119,12 @@ TEST(PlannerQueryTest, BuildsTailForMultiPartQuery) {
   const ir::SingleQueryIR &second = *first.tail;
 
   EXPECT_TRUE(Contains(first.query_graph.nodes, "n"));
-  EXPECT_EQ(first.query_graph.where.size(), 1U);
+  EXPECT_EQ(first.query_graph.where.size(), 2U);
+  const auto first_where_dependencies =
+      WhereDependenciesByExpression(first.query_graph);
+  EXPECT_TRUE(Contains(first_where_dependencies.at("n:Person"), "n"));
+  EXPECT_TRUE(first_where_dependencies.contains("true"));
+
   ASSERT_EQ(first.projection.items.size(), 1U);
   EXPECT_EQ(first.projection.items[0].alias, "n");
   EXPECT_NE(first.projection.where, nullptr);
@@ -105,10 +133,58 @@ TEST(PlannerQueryTest, BuildsTailForMultiPartQuery) {
   EXPECT_TRUE(Contains(second.query_graph.nodes, "m"));
   ASSERT_EQ(second.query_graph.relationships.size(), 1U);
   EXPECT_EQ(second.query_graph.relationships[0].name, "r");
+  EXPECT_EQ(second.query_graph.where.size(), 2U);
+  const auto second_where_dependencies =
+      WhereDependenciesByExpression(second.query_graph);
+  EXPECT_TRUE(Contains(second_where_dependencies.at("r:KNOWS"), "r"));
+  EXPECT_TRUE(second_where_dependencies.contains("true"));
+
   ASSERT_EQ(second.projection.items.size(), 2U);
   EXPECT_EQ(second.projection.items[0].alias, "n");
   EXPECT_EQ(second.projection.items[1].alias, "m");
   EXPECT_EQ(second.tail, nullptr);
+}
+
+TEST(PlannerQueryTest, SplitsConjunctiveWhereIntoPredicates) {
+  auto statement = ParseOrFail(
+      "MATCH (n) WHERE n.age > 30 AND (n.name = 'Alice' AND n.active = true) "
+      "RETURN n");
+  ASSERT_TRUE(statement);
+
+  ir::QueryIR planner_query = ir::BuildStatement(*statement);
+  const ir::SingleQueryIR &main = planner_query.regular.main;
+
+  EXPECT_EQ(main.query_graph.where.size(), 3U);
+  const auto where_dependencies =
+      WhereDependenciesByExpression(main.query_graph);
+  EXPECT_TRUE(Contains(where_dependencies.at("n.age > 30"), "n"));
+  EXPECT_TRUE(Contains(where_dependencies.at("n.name = 'Alice'"), "n"));
+  EXPECT_TRUE(Contains(where_dependencies.at("n.active = true"), "n"));
+}
+
+TEST(PlannerQueryTest, RejectsNonConjunctiveWhereExpression) {
+  auto statement = ParseOrFail("MATCH (n) WHERE n.age > 30 RETURN n");
+  ASSERT_TRUE(statement);
+
+  EXPECT_THROW(
+      { (void)ir::BuildStatement(*statement); }, common::InvalidArgumentError);
+}
+
+TEST(PlannerQueryTest, DeduplicatesRepeatedWherePredicatesAcrossMatches) {
+  auto statement = ParseOrFail(
+      "MATCH (n)-[r:KNOWS]->(m) WHERE n.age > 30 "
+      "MATCH (n)-[r:KNOWS]->(m) WHERE n.age > 30 "
+      "RETURN n, m");
+  ASSERT_TRUE(statement);
+
+  ir::QueryIR planner_query = ir::BuildStatement(*statement);
+  const ir::SingleQueryIR &main = planner_query.regular.main;
+
+  EXPECT_EQ(main.query_graph.where.size(), 2U);
+  const auto where_dependencies =
+      WhereDependenciesByExpression(main.query_graph);
+  EXPECT_TRUE(Contains(where_dependencies.at("n.age > 30"), "n"));
+  EXPECT_TRUE(Contains(where_dependencies.at("r:KNOWS"), "r"));
 }
 
 TEST(PlannerQueryTest, BuildsUnionMappings) {

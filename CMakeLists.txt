@@ -99,6 +99,7 @@ add_executable(
   main.cc
   ast/ast_builder.cc
   ast/ast_clone.cc
+  ast/ast_const_walker.cc
   ast/ast_equal.cc
   ast/ast_printer.cc
   ast/ast_to_cypher.cc
@@ -130,6 +131,7 @@ add_executable(
   tools/ast_dump.cc
   ast/ast_builder.cc
   ast/ast_clone.cc
+  ast/ast_const_walker.cc
   ast/ast_equal.cc
   ast/ast_printer.cc
   ast/expression_to_string.cc
@@ -163,6 +165,7 @@ add_executable(
   tests/ast_rewriter_test.cc
   ast/ast_builder.cc
   ast/ast_clone.cc
+  ast/ast_const_walker.cc
   ast/ast_equal.cc
   ast/ast_printer.cc
   ast/ast_to_cypher.cc
@@ -196,6 +199,7 @@ add_executable(
   tests/ast_to_cypher_test.cc
   ast/ast_builder.cc
   ast/ast_clone.cc
+  ast/ast_const_walker.cc
   ast/ast_equal.cc
   ast/ast_printer.cc
   ast/ast_to_cypher.cc
@@ -241,6 +245,7 @@ add_executable(
   tests/semantic_validator_test.cc
   ast/ast_builder.cc
   ast/ast_clone.cc
+  ast/ast_const_walker.cc
   ast/ast_equal.cc
   ast/ast_printer.cc
   ast/ast_to_cypher.cc
@@ -276,6 +281,7 @@ add_executable(
   ir/query_ir.cc
   ast/ast_builder.cc
   ast/ast_clone.cc
+  ast/ast_const_walker.cc
   ast/ast_equal.cc
   ast/ast_printer.cc
   ast/ast_to_cypher.cc

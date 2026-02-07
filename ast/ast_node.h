@@ -8,7 +8,7 @@
 #include <string_view>
 #include <vector>
 
-#include "ast_visitor.h"
+#include "ast_const_visitor.h"
 
 namespace ast {
 
@@ -293,6 +293,9 @@ class ASTNode {
   ASTNodeCategory category = ASTNodeCategory::kUnknown;
   virtual ~ASTNode() = default;
   virtual void Accept(ASTVisitor& visitor) = 0;
+  virtual void Accept(ASTConstVisitor& visitor) const {
+    const_cast<ASTNode*>(this)->Accept(static_cast<ASTVisitor&>(visitor));
+  }
 };
 
 // ============================================
