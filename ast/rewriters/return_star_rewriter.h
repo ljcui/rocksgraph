@@ -24,7 +24,7 @@ class ReturnStarRewriter : public ASTRewriter {
     void Add(const std::string &name);
   };
 
-   [[nodiscard]] const Scope &CurrentScope() const;
+  [[nodiscard]] const Scope &CurrentScope() const;
   Scope ScopeFromProjection(const ProjectionBody &body,
                             const Scope &fallback) const;
   void ExpandStar(ProjectionBody &body);

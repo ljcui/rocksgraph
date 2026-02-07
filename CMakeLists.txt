@@ -13,19 +13,37 @@ set(ROCKSGRAPH_CLANG_TIDY_FILE_REGEX "^(?!.*ast/cypher/).*$")
 find_program(RUN_CLANG_TIDY_BIN NAMES run-clang-tidy run-clang-tidy.py)
 if(RUN_CLANG_TIDY_BIN)
     add_custom_target(clang_tidy
-            COMMAND ${RUN_CLANG_TIDY_BIN} -p ${CMAKE_BINARY_DIR} -header-filter=.* -j 8 ${ROCKSGRAPH_CLANG_TIDY_FILE_REGEX}
+            COMMAND ${RUN_CLANG_TIDY_BIN} -p ${CMAKE_BINARY_DIR} -j 8 ${ROCKSGRAPH_CLANG_TIDY_FILE_REGEX}
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
             COMMENT "Run clang-tidy checks (excluding ast/cypher)."
             VERBATIM
     )
     add_custom_target(clang_tidy_fix
-            COMMAND ${RUN_CLANG_TIDY_BIN} -p ${CMAKE_BINARY_DIR} -header-filter=.* -j 8 -fix -format ${ROCKSGRAPH_CLANG_TIDY_FILE_REGEX}
+            COMMAND ${RUN_CLANG_TIDY_BIN} -p ${CMAKE_BINARY_DIR} -j 8 -fix -format ${ROCKSGRAPH_CLANG_TIDY_FILE_REGEX}
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
             COMMENT "Run clang-tidy and apply automatic fixes (excluding ast/cypher)."
             VERBATIM
     )
 else()
     message(STATUS "run-clang-tidy not found, clang_tidy and clang_tidy_fix targets are disabled.")
+endif()
+
+find_program(CLANG_FORMAT_BIN NAMES clang-format)
+if(CLANG_FORMAT_BIN)
+    file(GLOB_RECURSE ROCKSGRAPH_FORMAT_FILES CONFIGURE_DEPENDS
+            ${CMAKE_SOURCE_DIR}/*.h
+            ${CMAKE_SOURCE_DIR}/*.cc
+    )
+    list(FILTER ROCKSGRAPH_FORMAT_FILES EXCLUDE REGEX "^${CMAKE_SOURCE_DIR}/(build|cmake-build-debug)/")
+    list(FILTER ROCKSGRAPH_FORMAT_FILES EXCLUDE REGEX "^${CMAKE_SOURCE_DIR}/ast/cypher/Cypher.*\\.(cc|h)$")
+    add_custom_target(format
+            COMMAND ${CLANG_FORMAT_BIN} -i -style=file ${ROCKSGRAPH_FORMAT_FILES}
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+            COMMENT "Format C++ sources with clang-format."
+            VERBATIM
+    )
+else()
+    message(STATUS "clang-format not found, format target is disabled.")
 endif()
 
 set(GENERATED_SOURCES

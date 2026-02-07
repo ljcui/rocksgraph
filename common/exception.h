@@ -20,7 +20,9 @@ class Exception : public std::runtime_error {
   [[nodiscard]] const std::string &Type() const noexcept { return type_; }
   [[nodiscard]] const std::string &Message() const noexcept { return message_; }
   [[nodiscard]] const std::string &File() const noexcept { return file_; }
-  [[nodiscard]] const std::string &Function() const noexcept { return function_; }
+  [[nodiscard]] const std::string &Function() const noexcept {
+    return function_;
+  }
   [[nodiscard]] int Line() const noexcept { return line_; }
 
  private:
