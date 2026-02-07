@@ -15,6 +15,10 @@ void ASTPrinter::Line(const std::string &text) {
   out_ << text << "\n";
 }
 
+void ASTPrinter::LineNodeType(const ASTNode &node) {
+  Line(std::string(ToString(node.node_type)));
+}
+
 void ASTPrinter::Indent() { ++indent_; }
 
 void ASTPrinter::Dedent() {
@@ -23,18 +27,12 @@ void ASTPrinter::Dedent() {
   }
 }
 
-void ASTPrinter::Visit(Statement &node) {
-  (void)node;
-  Line("Statement");
-}
+void ASTPrinter::Visit(Statement &node) { LineNodeType(node); }
 
-void ASTPrinter::Visit(Query &node) {
-  (void)node;
-  Line("Query");
-}
+void ASTPrinter::Visit(Query &node) { LineNodeType(node); }
 
 void ASTPrinter::Visit(RegularQuery &node) {
-  Line("RegularQuery");
+  LineNodeType(node);
   Indent();
   VisitMaybe(node.single_query);
   for (const auto &part : node.unions) {
@@ -45,7 +43,7 @@ void ASTPrinter::Visit(RegularQuery &node) {
 
 void ASTPrinter::Visit(StandaloneCall &node) {
   std::ostringstream oss;
-  oss << "StandaloneCall procedure=" << node.procedure_name;
+  oss << ToString(node.node_type) << " procedure=" << node.procedure_name;
   if (node.yield_star) {
     oss << " yield=*";
   }
@@ -67,13 +65,10 @@ void ASTPrinter::Visit(StandaloneCall &node) {
   Dedent();
 }
 
-void ASTPrinter::Visit(SingleQuery &node) {
-  (void)node;
-  Line("SingleQuery");
-}
+void ASTPrinter::Visit(SingleQuery &node) { LineNodeType(node); }
 
 void ASTPrinter::Visit(SinglePartQuery &node) {
-  Line("SinglePartQuery");
+  LineNodeType(node);
   Indent();
   for (const auto &rc : node.reading_clauses) {
     VisitMaybe(rc);
@@ -86,7 +81,7 @@ void ASTPrinter::Visit(SinglePartQuery &node) {
 }
 
 void ASTPrinter::Visit(MultiPartQuery &node) {
-  Line("MultiPartQuery");
+  LineNodeType(node);
   Indent();
   for (const auto &part : node.parts) {
     Line("WithPart");
@@ -106,17 +101,14 @@ void ASTPrinter::Visit(MultiPartQuery &node) {
 
 void ASTPrinter::Visit(UnionPart &node) {
   std::ostringstream oss;
-  oss << "UnionPart all=" << (node.all ? "true" : "false");
+  oss << ToString(node.node_type) << " all=" << (node.all ? "true" : "false");
   Line(oss.str());
   Indent();
   VisitMaybe(node.query);
   Dedent();
 }
 
-void ASTPrinter::Visit(Expression &node) {
-  (void)node;
-  Line("Expression");
-}
+void ASTPrinter::Visit(Expression &node) { LineNodeType(node); }
 
 void ASTPrinter::Visit(BinaryExpression &node) {
   Line("BinaryExpression");
@@ -127,7 +119,7 @@ void ASTPrinter::Visit(BinaryExpression &node) {
 }
 
 void ASTPrinter::Visit(OrExpression &node) {
-  Line("OrExpression");
+  LineNodeType(node);
   Indent();
   VisitMaybe(node.left);
   VisitMaybe(node.right);
@@ -135,7 +127,7 @@ void ASTPrinter::Visit(OrExpression &node) {
 }
 
 void ASTPrinter::Visit(XorExpression &node) {
-  Line("XorExpression");
+  LineNodeType(node);
   Indent();
   VisitMaybe(node.left);
   VisitMaybe(node.right);
@@ -143,7 +135,7 @@ void ASTPrinter::Visit(XorExpression &node) {
 }
 
 void ASTPrinter::Visit(AndExpression &node) {
-  Line("AndExpression");
+  LineNodeType(node);
   Indent();
   VisitMaybe(node.left);
   VisitMaybe(node.right);
@@ -152,7 +144,7 @@ void ASTPrinter::Visit(AndExpression &node) {
 
 void ASTPrinter::Visit(ComparisonExpression &node) {
   std::ostringstream oss;
-  oss << "ComparisonExpression op=" << node.op;
+  oss << ToString(node.node_type) << " op=" << node.op;
   Line(oss.str());
   Indent();
   VisitMaybe(node.left);
@@ -161,7 +153,7 @@ void ASTPrinter::Visit(ComparisonExpression &node) {
 }
 
 void ASTPrinter::Visit(ComparisonChainExpression &node) {
-  Line("ComparisonChainExpression");
+  LineNodeType(node);
   Indent();
   VisitMaybe(node.left);
   for (const auto &entry : node.rights) {
@@ -176,7 +168,7 @@ void ASTPrinter::Visit(ComparisonChainExpression &node) {
 }
 
 void ASTPrinter::Visit(AddExpression &node) {
-  Line("AddExpression");
+  LineNodeType(node);
   Indent();
   VisitMaybe(node.left);
   VisitMaybe(node.right);
@@ -184,7 +176,7 @@ void ASTPrinter::Visit(AddExpression &node) {
 }
 
 void ASTPrinter::Visit(SubtractExpression &node) {
-  Line("SubtractExpression");
+  LineNodeType(node);
   Indent();
   VisitMaybe(node.left);
   VisitMaybe(node.right);
@@ -192,7 +184,7 @@ void ASTPrinter::Visit(SubtractExpression &node) {
 }
 
 void ASTPrinter::Visit(MultiplyExpression &node) {
-  Line("MultiplyExpression");
+  LineNodeType(node);
   Indent();
   VisitMaybe(node.left);
   VisitMaybe(node.right);
@@ -200,7 +192,7 @@ void ASTPrinter::Visit(MultiplyExpression &node) {
 }
 
 void ASTPrinter::Visit(DivideExpression &node) {
-  Line("DivideExpression");
+  LineNodeType(node);
   Indent();
   VisitMaybe(node.left);
   VisitMaybe(node.right);
@@ -208,7 +200,7 @@ void ASTPrinter::Visit(DivideExpression &node) {
 }
 
 void ASTPrinter::Visit(ModuloExpression &node) {
-  Line("ModuloExpression");
+  LineNodeType(node);
   Indent();
   VisitMaybe(node.left);
   VisitMaybe(node.right);
@@ -216,7 +208,7 @@ void ASTPrinter::Visit(ModuloExpression &node) {
 }
 
 void ASTPrinter::Visit(PowerExpression &node) {
-  Line("PowerExpression");
+  LineNodeType(node);
   Indent();
   VisitMaybe(node.left);
   VisitMaybe(node.right);
@@ -231,21 +223,21 @@ void ASTPrinter::Visit(UnaryExpression &node) {
 }
 
 void ASTPrinter::Visit(NotExpression &node) {
-  Line("NotExpression");
+  LineNodeType(node);
   Indent();
   VisitMaybe(node.operand);
   Dedent();
 }
 
 void ASTPrinter::Visit(UnaryPlusExpression &node) {
-  Line("UnaryPlusExpression");
+  LineNodeType(node);
   Indent();
   VisitMaybe(node.operand);
   Dedent();
 }
 
 void ASTPrinter::Visit(UnaryMinusExpression &node) {
-  Line("UnaryMinusExpression");
+  LineNodeType(node);
   Indent();
   VisitMaybe(node.operand);
   Dedent();
@@ -253,7 +245,7 @@ void ASTPrinter::Visit(UnaryMinusExpression &node) {
 
 void ASTPrinter::Visit(StringPredicateExpression &node) {
   std::ostringstream oss;
-  oss << "StringPredicateExpression op=" << node.op;
+  oss << ToString(node.node_type) << " op=" << node.op;
   Line(oss.str());
   Indent();
   VisitMaybe(node.left);
@@ -271,7 +263,7 @@ void ASTPrinter::Visit(ListPredicateExpression &node) {
 
 void ASTPrinter::Visit(LabelPredicateExpression &node) {
   std::ostringstream oss;
-  oss << "LabelPredicateExpression labels=";
+  oss << ToString(node.node_type) << " labels=";
   for (size_t i = 0; i < node.labels.size(); ++i) {
     if (i > 0) {
       oss << ",";
@@ -286,48 +278,45 @@ void ASTPrinter::Visit(LabelPredicateExpression &node) {
 
 void ASTPrinter::Visit(NullPredicateExpression &node) {
   std::ostringstream oss;
-  oss << "NullPredicateExpression is_null="
-      << (node.is_null ? "true" : "false");
+  oss << ToString(node.node_type)
+      << " is_null=" << (node.is_null ? "true" : "false");
   Line(oss.str());
   Indent();
   VisitMaybe(node.operand);
   Dedent();
 }
 
-void ASTPrinter::Visit(Literal &node) {
-  (void)node;
-  Line("Literal");
-}
+void ASTPrinter::Visit(Literal &node) { LineNodeType(node); }
 
 void ASTPrinter::Visit(BooleanLiteral &node) {
-  Line(std::string("BooleanLiteral value=") + (node.value ? "true" : "false"));
+  std::ostringstream oss;
+  oss << ToString(node.node_type)
+      << " value=" << (node.value ? "true" : "false");
+  Line(oss.str());
 }
 
 void ASTPrinter::Visit(IntegerLiteral &node) {
   std::ostringstream oss;
-  oss << "IntegerLiteral value=" << node.value;
+  oss << ToString(node.node_type) << " value=" << node.value;
   Line(oss.str());
 }
 
 void ASTPrinter::Visit(DoubleLiteral &node) {
   std::ostringstream oss;
-  oss << "DoubleLiteral value=" << node.value;
+  oss << ToString(node.node_type) << " value=" << node.value;
   Line(oss.str());
 }
 
 void ASTPrinter::Visit(StringLiteral &node) {
   std::ostringstream oss;
-  oss << "StringLiteral value=\"" << node.value << "\"";
+  oss << ToString(node.node_type) << " value=\"" << node.value << "\"";
   Line(oss.str());
 }
 
-void ASTPrinter::Visit(NullLiteral &node) {
-  (void)node;
-  Line("NullLiteral");
-}
+void ASTPrinter::Visit(NullLiteral &node) { LineNodeType(node); }
 
 void ASTPrinter::Visit(ListLiteral &node) {
-  Line("ListLiteral");
+  LineNodeType(node);
   Indent();
   for (const auto &elem : node.elements) {
     VisitMaybe(elem);
@@ -336,7 +325,7 @@ void ASTPrinter::Visit(ListLiteral &node) {
 }
 
 void ASTPrinter::Visit(MapLiteral &node) {
-  Line("MapLiteral");
+  LineNodeType(node);
   Indent();
   for (const auto &entry : node.entries) {
     std::ostringstream oss;
@@ -350,7 +339,7 @@ void ASTPrinter::Visit(MapLiteral &node) {
 }
 
 void ASTPrinter::Visit(Properties &node) {
-  Line("Properties");
+  LineNodeType(node);
   Indent();
   VisitMaybe(node.map);
   VisitMaybe(node.parameter);
@@ -358,16 +347,20 @@ void ASTPrinter::Visit(Properties &node) {
 }
 
 void ASTPrinter::Visit(Variable &node) {
-  Line(std::string("Variable name=") + node.name);
+  std::ostringstream oss;
+  oss << ToString(node.node_type) << " name=" << node.name;
+  Line(oss.str());
 }
 
 void ASTPrinter::Visit(Parameter &node) {
-  Line(std::string("Parameter name=") + node.name);
+  std::ostringstream oss;
+  oss << ToString(node.node_type) << " name=" << node.name;
+  Line(oss.str());
 }
 
 void ASTPrinter::Visit(PropertyExpression &node) {
   std::ostringstream oss;
-  oss << "PropertyExpression key=" << node.property_key;
+  oss << ToString(node.node_type) << " key=" << node.property_key;
   Line(oss.str());
   Indent();
   VisitMaybe(node.object);
@@ -375,7 +368,7 @@ void ASTPrinter::Visit(PropertyExpression &node) {
 }
 
 void ASTPrinter::Visit(ListIndexExpression &node) {
-  Line("ListIndexExpression");
+  LineNodeType(node);
   Indent();
   VisitMaybe(node.list);
   VisitMaybe(node.index);
@@ -383,7 +376,7 @@ void ASTPrinter::Visit(ListIndexExpression &node) {
 }
 
 void ASTPrinter::Visit(ListSliceExpression &node) {
-  Line("ListSliceExpression");
+  LineNodeType(node);
   Indent();
   VisitMaybe(node.list);
   if (node.start_index) {
@@ -403,7 +396,7 @@ void ASTPrinter::Visit(ListSliceExpression &node) {
 
 void ASTPrinter::Visit(FunctionInvocation &node) {
   std::ostringstream oss;
-  oss << "FunctionInvocation name=" << node.function_name
+  oss << ToString(node.node_type) << " name=" << node.function_name
       << " distinct=" << (node.distinct ? "true" : "false");
   Line(oss.str());
   Indent();
@@ -413,13 +406,10 @@ void ASTPrinter::Visit(FunctionInvocation &node) {
   Dedent();
 }
 
-void ASTPrinter::Visit(CountStarExpression &node) {
-  (void)node;
-  Line("CountStarExpression");
-}
+void ASTPrinter::Visit(CountStarExpression &node) { LineNodeType(node); }
 
 void ASTPrinter::Visit(CaseExpression &node) {
-  Line("CaseExpression");
+  LineNodeType(node);
   Indent();
   if (node.test) {
     Line("Test");
@@ -450,7 +440,7 @@ void ASTPrinter::Visit(CaseExpression &node) {
 }
 
 void ASTPrinter::Visit(ParenthesizedExpression &node) {
-  Line("ParenthesizedExpression");
+  LineNodeType(node);
   Indent();
   VisitMaybe(node.expr);
   Dedent();
@@ -458,7 +448,7 @@ void ASTPrinter::Visit(ParenthesizedExpression &node) {
 
 void ASTPrinter::Visit(ListComprehension &node) {
   std::ostringstream oss;
-  oss << "ListComprehension variable=" << node.variable;
+  oss << ToString(node.node_type) << " variable=" << node.variable;
   Line(oss.str());
   Indent();
   Line("List");
@@ -482,7 +472,7 @@ void ASTPrinter::Visit(ListComprehension &node) {
 
 void ASTPrinter::Visit(PatternComprehension &node) {
   std::ostringstream oss;
-  oss << "PatternComprehension variable=" << node.variable;
+  oss << ToString(node.node_type) << " variable=" << node.variable;
   Line(oss.str());
   Indent();
   VisitMaybe(node.relationships_pattern);
@@ -500,7 +490,7 @@ void ASTPrinter::Visit(PatternComprehension &node) {
 }
 
 void ASTPrinter::Visit(PatternPredicateExpression &node) {
-  Line("PatternPredicateExpression");
+  LineNodeType(node);
   Indent();
   VisitMaybe(node.relationships_pattern);
   Dedent();
@@ -508,7 +498,7 @@ void ASTPrinter::Visit(PatternPredicateExpression &node) {
 
 void ASTPrinter::Visit(Quantifier &node) {
   std::ostringstream oss;
-  oss << "Quantifier variable=" << node.variable;
+  oss << ToString(node.node_type) << " variable=" << node.variable;
   Line(oss.str());
   Indent();
   Line("List");
@@ -525,7 +515,7 @@ void ASTPrinter::Visit(Quantifier &node) {
 }
 
 void ASTPrinter::Visit(AllQuantifier &node) {
-  Line("AllQuantifier");
+  LineNodeType(node);
   Indent();
   Quantifier &base = node;
   Visit(base);
@@ -533,7 +523,7 @@ void ASTPrinter::Visit(AllQuantifier &node) {
 }
 
 void ASTPrinter::Visit(AnyQuantifier &node) {
-  Line("AnyQuantifier");
+  LineNodeType(node);
   Indent();
   Quantifier &base = node;
   Visit(base);
@@ -541,7 +531,7 @@ void ASTPrinter::Visit(AnyQuantifier &node) {
 }
 
 void ASTPrinter::Visit(NoneQuantifier &node) {
-  Line("NoneQuantifier");
+  LineNodeType(node);
   Indent();
   Quantifier &base = node;
   Visit(base);
@@ -549,7 +539,7 @@ void ASTPrinter::Visit(NoneQuantifier &node) {
 }
 
 void ASTPrinter::Visit(SingleQuantifier &node) {
-  Line("SingleQuantifier");
+  LineNodeType(node);
   Indent();
   Quantifier &base = node;
   Visit(base);
@@ -557,7 +547,7 @@ void ASTPrinter::Visit(SingleQuantifier &node) {
 }
 
 void ASTPrinter::Visit(ExistentialSubquery &node) {
-  Line("ExistentialSubquery");
+  LineNodeType(node);
   Indent();
   VisitMaybe(node.query);
   VisitMaybe(node.pattern);
@@ -566,7 +556,7 @@ void ASTPrinter::Visit(ExistentialSubquery &node) {
 }
 
 void ASTPrinter::Visit(Pattern &node) {
-  Line("Pattern");
+  LineNodeType(node);
   Indent();
   for (const auto &part : node.parts) {
     VisitMaybe(part);
@@ -576,7 +566,7 @@ void ASTPrinter::Visit(Pattern &node) {
 
 void ASTPrinter::Visit(PatternPart &node) {
   std::ostringstream oss;
-  oss << "PatternPart";
+  oss << ToString(node.node_type);
   if (!node.variable.empty()) {
     oss << " variable=" << node.variable;
   }
@@ -587,7 +577,7 @@ void ASTPrinter::Visit(PatternPart &node) {
 }
 
 void ASTPrinter::Visit(PatternElement &node) {
-  Line("PatternElement");
+  LineNodeType(node);
   Indent();
   VisitMaybe(node.node_pattern);
   for (const auto &entry : node.chain) {
@@ -601,7 +591,7 @@ void ASTPrinter::Visit(PatternElement &node) {
 }
 
 void ASTPrinter::Visit(RelationshipsPattern &node) {
-  Line("RelationshipsPattern");
+  LineNodeType(node);
   Indent();
   VisitMaybe(node.node_pattern);
   for (const auto &entry : node.chain) {
@@ -616,7 +606,7 @@ void ASTPrinter::Visit(RelationshipsPattern &node) {
 
 void ASTPrinter::Visit(NodePattern &node) {
   std::ostringstream oss;
-  oss << "NodePattern";
+  oss << ToString(node.node_type);
   if (!node.variable.empty()) {
     oss << " variable=" << node.variable;
   }
@@ -637,7 +627,8 @@ void ASTPrinter::Visit(NodePattern &node) {
 
 void ASTPrinter::Visit(RelationshipPattern &node) {
   std::ostringstream oss;
-  oss << "RelationshipPattern left=" << (node.left_arrow ? "true" : "false")
+  oss << ToString(node.node_type)
+      << " left=" << (node.left_arrow ? "true" : "false")
       << " right=" << (node.right_arrow ? "true" : "false");
   Line(oss.str());
   Indent();
@@ -647,7 +638,7 @@ void ASTPrinter::Visit(RelationshipPattern &node) {
 
 void ASTPrinter::Visit(RelationshipDetail &node) {
   std::ostringstream oss;
-  oss << "RelationshipDetail";
+  oss << ToString(node.node_type);
   if (!node.variable.empty()) {
     oss << " variable=" << node.variable;
   }
@@ -676,19 +667,14 @@ void ASTPrinter::Visit(RelationshipDetail &node) {
   Dedent();
 }
 
-void ASTPrinter::Visit(Clause &node) {
-  (void)node;
-  Line("Clause");
-}
+void ASTPrinter::Visit(Clause &node) { LineNodeType(node); }
 
-void ASTPrinter::Visit(ReadingClause &node) {
-  (void)node;
-  Line("ReadingClause");
-}
+void ASTPrinter::Visit(ReadingClause &node) { LineNodeType(node); }
 
 void ASTPrinter::Visit(Match &node) {
   std::ostringstream oss;
-  oss << "Match optional=" << (node.optional_match ? "true" : "false");
+  oss << ToString(node.node_type)
+      << " optional=" << (node.optional_match ? "true" : "false");
   Line(oss.str());
   Indent();
   VisitMaybe(node.pattern);
@@ -698,7 +684,7 @@ void ASTPrinter::Visit(Match &node) {
 
 void ASTPrinter::Visit(Unwind &node) {
   std::ostringstream oss;
-  oss << "Unwind variable=" << node.variable;
+  oss << ToString(node.node_type) << " variable=" << node.variable;
   Line(oss.str());
   Indent();
   VisitMaybe(node.expression);
@@ -707,7 +693,7 @@ void ASTPrinter::Visit(Unwind &node) {
 
 void ASTPrinter::Visit(InQueryCall &node) {
   std::ostringstream oss;
-  oss << "InQueryCall procedure=" << node.procedure_name;
+  oss << ToString(node.node_type) << " procedure=" << node.procedure_name;
   Line(oss.str());
   Indent();
   for (const auto &arg : node.arguments) {
@@ -726,20 +712,17 @@ void ASTPrinter::Visit(InQueryCall &node) {
   Dedent();
 }
 
-void ASTPrinter::Visit(UpdatingClause &node) {
-  (void)node;
-  Line("UpdatingClause");
-}
+void ASTPrinter::Visit(UpdatingClause &node) { LineNodeType(node); }
 
 void ASTPrinter::Visit(Create &node) {
-  Line("Create");
+  LineNodeType(node);
   Indent();
   VisitMaybe(node.pattern);
   Dedent();
 }
 
 void ASTPrinter::Visit(Merge &node) {
-  Line("Merge");
+  LineNodeType(node);
   Indent();
   VisitMaybe(node.pattern_part);
   for (const auto &action : node.actions) {
@@ -755,7 +738,8 @@ void ASTPrinter::Visit(Merge &node) {
 
 void ASTPrinter::Visit(Delete &node) {
   std::ostringstream oss;
-  oss << "Delete detach=" << (node.detach ? "true" : "false");
+  oss << ToString(node.node_type)
+      << " detach=" << (node.detach ? "true" : "false");
   Line(oss.str());
   Indent();
   for (const auto &expr : node.expressions) {
@@ -765,7 +749,7 @@ void ASTPrinter::Visit(Delete &node) {
 }
 
 void ASTPrinter::Visit(Set &node) {
-  Line("Set");
+  LineNodeType(node);
   Indent();
   for (const auto &item : node.items) {
     VisitMaybe(item);
@@ -775,18 +759,7 @@ void ASTPrinter::Visit(Set &node) {
 
 void ASTPrinter::Visit(SetItem &node) {
   std::ostringstream oss;
-  oss << "SetItem type=";
-  switch (node.type) {
-    case SetItem::Type::kProperty:
-      oss << "Property";
-      break;
-    case SetItem::Type::kVariable:
-      oss << "Variable";
-      break;
-    case SetItem::Type::kLabels:
-      oss << "Labels";
-      break;
-  }
+  oss << ToString(node.node_type) << " type=" << node.type;
   if (node.plus_equal) {
     oss << " plus_equal=true";
   }
@@ -807,7 +780,7 @@ void ASTPrinter::Visit(SetItem &node) {
 }
 
 void ASTPrinter::Visit(Remove &node) {
-  Line("Remove");
+  LineNodeType(node);
   Indent();
   for (const auto &item : node.items) {
     VisitMaybe(item);
@@ -817,15 +790,7 @@ void ASTPrinter::Visit(Remove &node) {
 
 void ASTPrinter::Visit(RemoveItem &node) {
   std::ostringstream oss;
-  oss << "RemoveItem type=";
-  switch (node.type) {
-    case RemoveItem::Type::kProperty:
-      oss << "Property";
-      break;
-    case RemoveItem::Type::kLabels:
-      oss << "Labels";
-      break;
-  }
+  oss << ToString(node.node_type) << " type=" << node.type;
   if (!node.labels.empty()) {
     oss << " labels=";
     for (size_t i = 0; i < node.labels.size(); ++i) {
@@ -841,14 +806,12 @@ void ASTPrinter::Visit(RemoveItem &node) {
   Dedent();
 }
 
-void ASTPrinter::Visit(ProjectionClause &node) {
-  (void)node;
-  Line("ProjectionClause");
-}
+void ASTPrinter::Visit(ProjectionClause &node) { LineNodeType(node); }
 
 void ASTPrinter::Visit(ProjectionBody &node) {
   std::ostringstream oss;
-  oss << "ProjectionBody distinct=" << (node.distinct ? "true" : "false")
+  oss << ToString(node.node_type)
+      << " distinct=" << (node.distinct ? "true" : "false")
       << " star=" << (node.star ? "true" : "false");
   Line(oss.str());
   Indent();
@@ -865,7 +828,7 @@ void ASTPrinter::Visit(ProjectionBody &node) {
 
 void ASTPrinter::Visit(ProjectionItem &node) {
   std::ostringstream oss;
-  oss << "ProjectionItem";
+  oss << ToString(node.node_type);
   if (!node.alias.empty()) {
     oss << " alias=" << node.alias;
   }
@@ -877,7 +840,8 @@ void ASTPrinter::Visit(ProjectionItem &node) {
 
 void ASTPrinter::Visit(SortItem &node) {
   std::ostringstream oss;
-  oss << "SortItem ascending=" << (node.ascending ? "true" : "false");
+  oss << ToString(node.node_type)
+      << " ascending=" << (node.ascending ? "true" : "false");
   Line(oss.str());
   Indent();
   VisitMaybe(node.expression);
@@ -885,7 +849,7 @@ void ASTPrinter::Visit(SortItem &node) {
 }
 
 void ASTPrinter::Visit(With &node) {
-  Line("With");
+  LineNodeType(node);
   Indent();
   VisitMaybe(node.body);
   VisitMaybe(node.where);
@@ -893,7 +857,7 @@ void ASTPrinter::Visit(With &node) {
 }
 
 void ASTPrinter::Visit(Return &node) {
-  Line("Return");
+  LineNodeType(node);
   Indent();
   VisitMaybe(node.body);
   Dedent();

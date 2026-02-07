@@ -230,6 +230,12 @@ target_include_directories(value_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(value_test GTest::gtest_main)
 add_test(NAME value_test COMMAND value_test)
 
+add_executable(ast_node_type_test tests/ast_node_type_test.cc)
+target_include_directories(ast_node_type_test
+                           PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(ast_node_type_test GTest::gtest_main)
+add_test(NAME ast_node_type_test COMMAND ast_node_type_test)
+
 add_executable(
   semantic_validator_test
   tests/semantic_validator_test.cc

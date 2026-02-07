@@ -101,6 +101,7 @@ class ASTPrinter : public ASTVisitor {
 
  private:
   void Line(const std::string &text);
+  void LineNodeType(const ASTNode &node);
   void Indent();
   void Dedent();
 

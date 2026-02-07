@@ -3,7 +3,9 @@
 #include <cassert>
 #include <memory>
 #include <optional>
+#include <ostream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "ast_visitor.h"
@@ -103,12 +105,184 @@ enum class ASTNodeType {
   kReturn,
 };
 
+inline constexpr std::string_view ToString(ASTNodeType node_type) {
+  switch (node_type) {
+    case ASTNodeType::kUnknown:
+      return "Unknown";
+    case ASTNodeType::kSinglePartQuery:
+      return "SinglePartQuery";
+    case ASTNodeType::kMultiPartQuery:
+      return "MultiPartQuery";
+    case ASTNodeType::kUnionPart:
+      return "UnionPart";
+    case ASTNodeType::kRegularQuery:
+      return "RegularQuery";
+    case ASTNodeType::kStandaloneCall:
+      return "StandaloneCall";
+    case ASTNodeType::kOrExpression:
+      return "OrExpression";
+    case ASTNodeType::kXorExpression:
+      return "XorExpression";
+    case ASTNodeType::kAndExpression:
+      return "AndExpression";
+    case ASTNodeType::kComparisonExpression:
+      return "ComparisonExpression";
+    case ASTNodeType::kComparisonChainExpression:
+      return "ComparisonChainExpression";
+    case ASTNodeType::kAddExpression:
+      return "AddExpression";
+    case ASTNodeType::kSubtractExpression:
+      return "SubtractExpression";
+    case ASTNodeType::kMultiplyExpression:
+      return "MultiplyExpression";
+    case ASTNodeType::kDivideExpression:
+      return "DivideExpression";
+    case ASTNodeType::kModuloExpression:
+      return "ModuloExpression";
+    case ASTNodeType::kPowerExpression:
+      return "PowerExpression";
+    case ASTNodeType::kNotExpression:
+      return "NotExpression";
+    case ASTNodeType::kUnaryPlusExpression:
+      return "UnaryPlusExpression";
+    case ASTNodeType::kUnaryMinusExpression:
+      return "UnaryMinusExpression";
+    case ASTNodeType::kStringPredicateExpression:
+      return "StringPredicateExpression";
+    case ASTNodeType::kListPredicateExpression:
+      return "ListPredicateExpression";
+    case ASTNodeType::kLabelPredicateExpression:
+      return "LabelPredicateExpression";
+    case ASTNodeType::kNullPredicateExpression:
+      return "NullPredicateExpression";
+    case ASTNodeType::kBooleanLiteral:
+      return "BooleanLiteral";
+    case ASTNodeType::kIntegerLiteral:
+      return "IntegerLiteral";
+    case ASTNodeType::kDoubleLiteral:
+      return "DoubleLiteral";
+    case ASTNodeType::kStringLiteral:
+      return "StringLiteral";
+    case ASTNodeType::kNullLiteral:
+      return "NullLiteral";
+    case ASTNodeType::kListLiteral:
+      return "ListLiteral";
+    case ASTNodeType::kMapLiteral:
+      return "MapLiteral";
+    case ASTNodeType::kProperties:
+      return "Properties";
+    case ASTNodeType::kVariable:
+      return "Variable";
+    case ASTNodeType::kParameter:
+      return "Parameter";
+    case ASTNodeType::kPropertyExpression:
+      return "PropertyExpression";
+    case ASTNodeType::kListIndexExpression:
+      return "ListIndexExpression";
+    case ASTNodeType::kListSliceExpression:
+      return "ListSliceExpression";
+    case ASTNodeType::kFunctionInvocation:
+      return "FunctionInvocation";
+    case ASTNodeType::kCountStarExpression:
+      return "CountStarExpression";
+    case ASTNodeType::kCaseExpression:
+      return "CaseExpression";
+    case ASTNodeType::kParenthesizedExpression:
+      return "ParenthesizedExpression";
+    case ASTNodeType::kListComprehension:
+      return "ListComprehension";
+    case ASTNodeType::kPatternComprehension:
+      return "PatternComprehension";
+    case ASTNodeType::kPatternPredicateExpression:
+      return "PatternPredicateExpression";
+    case ASTNodeType::kAllQuantifier:
+      return "AllQuantifier";
+    case ASTNodeType::kAnyQuantifier:
+      return "AnyQuantifier";
+    case ASTNodeType::kNoneQuantifier:
+      return "NoneQuantifier";
+    case ASTNodeType::kSingleQuantifier:
+      return "SingleQuantifier";
+    case ASTNodeType::kExistentialSubquery:
+      return "ExistentialSubquery";
+    case ASTNodeType::kPattern:
+      return "Pattern";
+    case ASTNodeType::kPatternPart:
+      return "PatternPart";
+    case ASTNodeType::kPatternElement:
+      return "PatternElement";
+    case ASTNodeType::kRelationshipsPattern:
+      return "RelationshipsPattern";
+    case ASTNodeType::kNodePattern:
+      return "NodePattern";
+    case ASTNodeType::kRelationshipPattern:
+      return "RelationshipPattern";
+    case ASTNodeType::kRelationshipDetail:
+      return "RelationshipDetail";
+    case ASTNodeType::kMatch:
+      return "Match";
+    case ASTNodeType::kUnwind:
+      return "Unwind";
+    case ASTNodeType::kInQueryCall:
+      return "InQueryCall";
+    case ASTNodeType::kCreate:
+      return "Create";
+    case ASTNodeType::kMerge:
+      return "Merge";
+    case ASTNodeType::kDelete:
+      return "Delete";
+    case ASTNodeType::kSetItem:
+      return "SetItem";
+    case ASTNodeType::kSet:
+      return "Set";
+    case ASTNodeType::kRemoveItem:
+      return "RemoveItem";
+    case ASTNodeType::kRemove:
+      return "Remove";
+    case ASTNodeType::kSortItem:
+      return "SortItem";
+    case ASTNodeType::kProjectionItem:
+      return "ProjectionItem";
+    case ASTNodeType::kProjectionBody:
+      return "ProjectionBody";
+    case ASTNodeType::kWith:
+      return "With";
+    case ASTNodeType::kReturn:
+      return "Return";
+  }
+  return "Unknown";
+}
+
+inline std::ostream& operator<<(std::ostream& out, ASTNodeType node_type) {
+  out << ToString(node_type);
+  return out;
+}
+
 enum class ASTNodeCategory {
   kUnknown,
   kExpression,
   kClause,
   kPattern,
 };
+
+inline constexpr std::string_view ToString(ASTNodeCategory category) {
+  switch (category) {
+    case ASTNodeCategory::kUnknown:
+      return "Unknown";
+    case ASTNodeCategory::kExpression:
+      return "Expression";
+    case ASTNodeCategory::kClause:
+      return "Clause";
+    case ASTNodeCategory::kPattern:
+      return "Pattern";
+  }
+  return "Unknown";
+}
+
+inline std::ostream& operator<<(std::ostream& out, ASTNodeCategory category) {
+  out << ToString(category);
+  return out;
+}
 
 // ============================================
 // Base node
@@ -812,6 +986,23 @@ class SetItem : public ASTNode {
   void Accept(ASTVisitor& visitor) override;
 };
 
+inline constexpr std::string_view ToString(SetItem::Type type) {
+  switch (type) {
+    case SetItem::Type::kProperty:
+      return "Property";
+    case SetItem::Type::kVariable:
+      return "Variable";
+    case SetItem::Type::kLabels:
+      return "Labels";
+  }
+  return "Unknown";
+}
+
+inline std::ostream& operator<<(std::ostream& out, SetItem::Type type) {
+  out << ToString(type);
+  return out;
+}
+
 class Set : public UpdatingClause {
  public:
   Set() { node_type = ASTNodeType::kSet; }
@@ -841,6 +1032,21 @@ class RemoveItem : public ASTNode {
   }
   void Accept(ASTVisitor& visitor) override;
 };
+
+inline constexpr std::string_view ToString(RemoveItem::Type type) {
+  switch (type) {
+    case RemoveItem::Type::kProperty:
+      return "Property";
+    case RemoveItem::Type::kLabels:
+      return "Labels";
+  }
+  return "Unknown";
+}
+
+inline std::ostream& operator<<(std::ostream& out, RemoveItem::Type type) {
+  out << ToString(type);
+  return out;
+}
 
 class Remove : public UpdatingClause {
  public:
