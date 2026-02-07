@@ -24,7 +24,6 @@ struct QueryGraph {
     std::string right_node;
     Direction direction = Direction::kBoth;
     std::unordered_set<std::string> types;
-    const ast::Properties *properties = nullptr;
   };
 
   std::unordered_set<std::string> nodes;

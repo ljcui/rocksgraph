@@ -184,11 +184,12 @@ class QueryGraphBuilder {
   }
 
   void AddWhere(const ast::Expression *where) {
-    const ast::AndExpression *conjunctive_where =
-        RequireConjunctiveWhere(where);
-
+    CHECK(where != nullptr, common::InvalidArgumentError,
+          "WHERE predicate is null");
+    CHECK(where->Is(ast::ASTNodeType::kAndExpression),
+          common::InvalidArgumentError, "WHERE predicate is not AND");
     std::vector<const ast::Expression *> predicates;
-    SplitConjunctivePredicates(conjunctive_where, &predicates);
+    SplitConjunctivePredicates(where, &predicates);
     for (const ast::Expression *predicate : predicates) {
       CHECK(predicate != nullptr, common::InvalidArgumentError,
             "null WHERE predicate is not supported");
@@ -244,6 +245,10 @@ class QueryGraphBuilder {
   std::string AddNode(const ast::NodePattern &node) {
     CHECK(!node.variable.empty(), common::InvalidArgumentError,
           MakeUnsupportedError("anonymous node"));
+    CHECK(node.labels.empty(), common::InvalidArgumentError,
+          MakeUnsupportedError("node with labels"));
+    CHECK(!node.properties, common::InvalidArgumentError,
+          MakeUnsupportedError("node with properties"));
     graph_.nodes.insert(node.variable);
     return node.variable;
   }
@@ -253,17 +258,18 @@ class QueryGraphBuilder {
     const ast::RelationshipDetail *detail = pattern.detail.get();
     CHECK(detail && !detail->variable.empty(), common::InvalidArgumentError,
           MakeUnsupportedError("anonymous relationship"));
-    if (detail->range) {
-      THROW(common::InvalidArgumentError,
-            MakeUnsupportedError("variable length relationship"));
-    }
+    CHECK(!detail->range, common::InvalidArgumentError,
+          MakeUnsupportedError("variable length relationship"));
+    CHECK(!detail->types.empty(), common::InvalidArgumentError,
+          MakeUnsupportedError("relationship with labels"));
+    CHECK(!detail->properties, common::InvalidArgumentError,
+          MakeUnsupportedError("relationship with properties"));
 
     QueryGraph::Relationship relationship;
     relationship.name = detail->variable;
     relationship.left_node = left;
     relationship.right_node = right;
     relationship.types = {detail->types.begin(), detail->types.end()};
-    relationship.properties = detail->properties.get();
     if (pattern.left_arrow) {
       relationship.direction = QueryGraph::Direction::kIncoming;
     } else if (pattern.right_arrow) {

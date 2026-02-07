@@ -19,6 +19,14 @@ TEST(ASTNodeTypeToStringTest, SupportsOstreamOutput) {
   EXPECT_EQ(out.str(), "FunctionInvocation");
 }
 
+TEST(ASTNodeTypeHelperTest, WorksForReferenceAndPointer) {
+  ast::AndExpression expression;
+  const ast::Expression *expression_ptr = &expression;
+  EXPECT_TRUE(expression.Is(ast::ASTNodeType::kAndExpression));
+  EXPECT_TRUE(expression_ptr->Is(ast::ASTNodeType::kAndExpression));
+  EXPECT_FALSE(expression_ptr->Is(ast::ASTNodeType::kOrExpression));
+}
+
 TEST(ASTNodeCategoryToStringTest, BasicCategories) {
   EXPECT_EQ(ast::ToString(ast::ASTNodeCategory::kUnknown), "Unknown");
   EXPECT_EQ(ast::ToString(ast::ASTNodeCategory::kExpression), "Expression");

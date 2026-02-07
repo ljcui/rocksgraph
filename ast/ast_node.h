@@ -292,6 +292,9 @@ class ASTNode {
   ASTNodeType node_type = ASTNodeType::kUnknown;
   ASTNodeCategory category = ASTNodeCategory::kUnknown;
   virtual ~ASTNode() = default;
+  [[nodiscard]] constexpr bool Is(ASTNodeType expected_type) const {
+    return node_type == expected_type;
+  }
   virtual void Accept(ASTVisitor& visitor) = 0;
   virtual void Accept(ASTConstVisitor& visitor) const {
     const_cast<ASTNode*>(this)->Accept(static_cast<ASTVisitor&>(visitor));
