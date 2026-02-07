@@ -11,7 +11,7 @@ bool FillAliasFromExpression(ProjectionItem &item) {
   if (!item.alias.empty() || !item.expression) {
     return false;
   }
-  const std::string text = expressionToString(*item.expression);
+  const std::string text = ExpressionToString(*item.expression);
   if (text.empty()) {
     return false;
   }
@@ -21,8 +21,8 @@ bool FillAliasFromExpression(ProjectionItem &item) {
 
 }  // namespace
 
-void ProjectionAliasRewriter::visit(ProjectionBody &node) {
-  ASTRewriter::visit(node);
+void ProjectionAliasRewriter::Visit(ProjectionBody &node) {
+  ASTRewriter::Visit(node);
   for (const auto &item : node.items) {
     if (item) {
       FillAliasFromExpression(*item);

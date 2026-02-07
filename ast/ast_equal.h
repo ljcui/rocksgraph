@@ -8,185 +8,185 @@ namespace ast {
 
 class ASTEqual {
  public:
-  static bool equal(const ASTNode *left, const ASTNode *right);
-  static bool equal(const ASTNode &left, const ASTNode &right);
+  static bool Equal(const ASTNode *left, const ASTNode *right);
+  static bool Equal(const ASTNode &left, const ASTNode &right);
 
  private:
   template <typename T>
-  static bool equalPtr(const std::unique_ptr<T> &left,
+  static bool EqualPtr(const std::unique_ptr<T> &left,
                        const std::unique_ptr<T> &right) {
     if (!left || !right) {
       return left == right;
     }
-    return equal(left.get(), right.get());
+    return Equal(left.get(), right.get());
   }
 
   template <typename T>
-  static bool equalList(const std::vector<std::unique_ptr<T>> &left,
+  static bool EqualList(const std::vector<std::unique_ptr<T>> &left,
                         const std::vector<std::unique_ptr<T>> &right) {
     if (left.size() != right.size()) {
       return false;
     }
     for (size_t i = 0; i < left.size(); ++i) {
-      if (!equalPtr(left[i], right[i])) {
+      if (!EqualPtr(left[i], right[i])) {
         return false;
       }
     }
     return true;
   }
 
-  static bool equalStatement(const Statement &left, const Statement &right);
-  static bool equalQuery(const Query &left, const Query &right);
-  static bool equalRegularQuery(const RegularQuery &left,
+  static bool EqualStatement(const Statement &left, const Statement &right);
+  static bool EqualQuery(const Query &left, const Query &right);
+  static bool EqualRegularQuery(const RegularQuery &left,
                                 const RegularQuery &right);
-  static bool equalStandaloneCall(const StandaloneCall &left,
+  static bool EqualStandaloneCall(const StandaloneCall &left,
                                   const StandaloneCall &right);
-  static bool equalSingleQuery(const SingleQuery &left,
+  static bool EqualSingleQuery(const SingleQuery &left,
                                const SingleQuery &right);
-  static bool equalSinglePartQuery(const SinglePartQuery &left,
+  static bool EqualSinglePartQuery(const SinglePartQuery &left,
                                    const SinglePartQuery &right);
-  static bool equalMultiPartQuery(const MultiPartQuery &left,
+  static bool EqualMultiPartQuery(const MultiPartQuery &left,
                                   const MultiPartQuery &right);
-  static bool equalUnionPart(const UnionPart &left, const UnionPart &right);
+  static bool EqualUnionPart(const UnionPart &left, const UnionPart &right);
 
-  static bool equalExpression(const Expression &left, const Expression &right);
-  static bool equalBinaryExpression(const BinaryExpression &left,
+  static bool EqualExpression(const Expression &left, const Expression &right);
+  static bool EqualBinaryExpression(const BinaryExpression &left,
                                     const BinaryExpression &right);
-  static bool equalOrExpression(const OrExpression &left,
+  static bool EqualOrExpression(const OrExpression &left,
                                 const OrExpression &right);
-  static bool equalXorExpression(const XorExpression &left,
+  static bool EqualXorExpression(const XorExpression &left,
                                  const XorExpression &right);
-  static bool equalAndExpression(const AndExpression &left,
+  static bool EqualAndExpression(const AndExpression &left,
                                  const AndExpression &right);
-  static bool equalComparisonExpression(const ComparisonExpression &left,
+  static bool EqualComparisonExpression(const ComparisonExpression &left,
                                         const ComparisonExpression &right);
-  static bool equalComparisonChainExpression(
+  static bool EqualComparisonChainExpression(
       const ComparisonChainExpression &left,
       const ComparisonChainExpression &right);
-  static bool equalAddExpression(const AddExpression &left,
+  static bool EqualAddExpression(const AddExpression &left,
                                  const AddExpression &right);
-  static bool equalSubtractExpression(const SubtractExpression &left,
+  static bool EqualSubtractExpression(const SubtractExpression &left,
                                       const SubtractExpression &right);
-  static bool equalMultiplyExpression(const MultiplyExpression &left,
+  static bool EqualMultiplyExpression(const MultiplyExpression &left,
                                       const MultiplyExpression &right);
-  static bool equalDivideExpression(const DivideExpression &left,
+  static bool EqualDivideExpression(const DivideExpression &left,
                                     const DivideExpression &right);
-  static bool equalModuloExpression(const ModuloExpression &left,
+  static bool EqualModuloExpression(const ModuloExpression &left,
                                     const ModuloExpression &right);
-  static bool equalPowerExpression(const PowerExpression &left,
+  static bool EqualPowerExpression(const PowerExpression &left,
                                    const PowerExpression &right);
-  static bool equalUnaryExpression(const UnaryExpression &left,
+  static bool EqualUnaryExpression(const UnaryExpression &left,
                                    const UnaryExpression &right);
-  static bool equalNotExpression(const NotExpression &left,
+  static bool EqualNotExpression(const NotExpression &left,
                                  const NotExpression &right);
-  static bool equalUnaryPlusExpression(const UnaryPlusExpression &left,
+  static bool EqualUnaryPlusExpression(const UnaryPlusExpression &left,
                                        const UnaryPlusExpression &right);
-  static bool equalUnaryMinusExpression(const UnaryMinusExpression &left,
+  static bool EqualUnaryMinusExpression(const UnaryMinusExpression &left,
                                         const UnaryMinusExpression &right);
-  static bool equalStringPredicateExpression(
+  static bool EqualStringPredicateExpression(
       const StringPredicateExpression &left,
       const StringPredicateExpression &right);
-  static bool equalListPredicateExpression(
+  static bool EqualListPredicateExpression(
       const ListPredicateExpression &left,
       const ListPredicateExpression &right);
-  static bool equalLabelPredicateExpression(
+  static bool EqualLabelPredicateExpression(
       const LabelPredicateExpression &left,
       const LabelPredicateExpression &right);
-  static bool equalNullPredicateExpression(
+  static bool EqualNullPredicateExpression(
       const NullPredicateExpression &left,
       const NullPredicateExpression &right);
 
-  static bool equalLiteral(const Literal &left, const Literal &right);
-  static bool equalBooleanLiteral(const BooleanLiteral &left,
+  static bool EqualLiteral(const Literal &left, const Literal &right);
+  static bool EqualBooleanLiteral(const BooleanLiteral &left,
                                   const BooleanLiteral &right);
-  static bool equalIntegerLiteral(const IntegerLiteral &left,
+  static bool EqualIntegerLiteral(const IntegerLiteral &left,
                                   const IntegerLiteral &right);
-  static bool equalDoubleLiteral(const DoubleLiteral &left,
+  static bool EqualDoubleLiteral(const DoubleLiteral &left,
                                  const DoubleLiteral &right);
-  static bool equalStringLiteral(const StringLiteral &left,
+  static bool EqualStringLiteral(const StringLiteral &left,
                                  const StringLiteral &right);
-  static bool equalNullLiteral(const NullLiteral &left,
+  static bool EqualNullLiteral(const NullLiteral &left,
                                const NullLiteral &right);
-  static bool equalListLiteral(const ListLiteral &left,
+  static bool EqualListLiteral(const ListLiteral &left,
                                const ListLiteral &right);
-  static bool equalMapLiteral(const MapLiteral &left, const MapLiteral &right);
-  static bool equalProperties(const Properties &left, const Properties &right);
+  static bool EqualMapLiteral(const MapLiteral &left, const MapLiteral &right);
+  static bool EqualProperties(const Properties &left, const Properties &right);
 
-  static bool equalVariable(const Variable &left, const Variable &right);
-  static bool equalParameter(const Parameter &left, const Parameter &right);
-  static bool equalPropertyExpression(const PropertyExpression &left,
+  static bool EqualVariable(const Variable &left, const Variable &right);
+  static bool EqualParameter(const Parameter &left, const Parameter &right);
+  static bool EqualPropertyExpression(const PropertyExpression &left,
                                       const PropertyExpression &right);
-  static bool equalListIndexExpression(const ListIndexExpression &left,
+  static bool EqualListIndexExpression(const ListIndexExpression &left,
                                        const ListIndexExpression &right);
-  static bool equalListSliceExpression(const ListSliceExpression &left,
+  static bool EqualListSliceExpression(const ListSliceExpression &left,
                                        const ListSliceExpression &right);
-  static bool equalFunctionInvocation(const FunctionInvocation &left,
+  static bool EqualFunctionInvocation(const FunctionInvocation &left,
                                       const FunctionInvocation &right);
-  static bool equalCountStarExpression(const CountStarExpression &left,
+  static bool EqualCountStarExpression(const CountStarExpression &left,
                                        const CountStarExpression &right);
-  static bool equalCaseExpression(const CaseExpression &left,
+  static bool EqualCaseExpression(const CaseExpression &left,
                                   const CaseExpression &right);
-  static bool equalParenthesizedExpression(
+  static bool EqualParenthesizedExpression(
       const ParenthesizedExpression &left,
       const ParenthesizedExpression &right);
-  static bool equalListComprehension(const ListComprehension &left,
+  static bool EqualListComprehension(const ListComprehension &left,
                                      const ListComprehension &right);
-  static bool equalPatternComprehension(const PatternComprehension &left,
+  static bool EqualPatternComprehension(const PatternComprehension &left,
                                         const PatternComprehension &right);
-  static bool equalPatternPredicateExpression(
+  static bool EqualPatternPredicateExpression(
       const PatternPredicateExpression &left,
       const PatternPredicateExpression &right);
-  static bool equalQuantifier(const Quantifier &left, const Quantifier &right);
-  static bool equalAllQuantifier(const AllQuantifier &left,
+  static bool EqualQuantifier(const Quantifier &left, const Quantifier &right);
+  static bool EqualAllQuantifier(const AllQuantifier &left,
                                  const AllQuantifier &right);
-  static bool equalAnyQuantifier(const AnyQuantifier &left,
+  static bool EqualAnyQuantifier(const AnyQuantifier &left,
                                  const AnyQuantifier &right);
-  static bool equalNoneQuantifier(const NoneQuantifier &left,
+  static bool EqualNoneQuantifier(const NoneQuantifier &left,
                                   const NoneQuantifier &right);
-  static bool equalSingleQuantifier(const SingleQuantifier &left,
+  static bool EqualSingleQuantifier(const SingleQuantifier &left,
                                     const SingleQuantifier &right);
-  static bool equalExistentialSubquery(const ExistentialSubquery &left,
+  static bool EqualExistentialSubquery(const ExistentialSubquery &left,
                                        const ExistentialSubquery &right);
 
-  static bool equalPattern(const Pattern &left, const Pattern &right);
-  static bool equalPatternPart(const PatternPart &left,
+  static bool EqualPattern(const Pattern &left, const Pattern &right);
+  static bool EqualPatternPart(const PatternPart &left,
                                const PatternPart &right);
-  static bool equalPatternElement(const PatternElement &left,
+  static bool EqualPatternElement(const PatternElement &left,
                                   const PatternElement &right);
-  static bool equalRelationshipsPattern(const RelationshipsPattern &left,
+  static bool EqualRelationshipsPattern(const RelationshipsPattern &left,
                                         const RelationshipsPattern &right);
-  static bool equalNodePattern(const NodePattern &left,
+  static bool EqualNodePattern(const NodePattern &left,
                                const NodePattern &right);
-  static bool equalRelationshipPattern(const RelationshipPattern &left,
+  static bool EqualRelationshipPattern(const RelationshipPattern &left,
                                        const RelationshipPattern &right);
-  static bool equalRelationshipDetail(const RelationshipDetail &left,
+  static bool EqualRelationshipDetail(const RelationshipDetail &left,
                                       const RelationshipDetail &right);
 
-  static bool equalClause(const Clause &left, const Clause &right);
-  static bool equalReadingClause(const ReadingClause &left,
+  static bool EqualClause(const Clause &left, const Clause &right);
+  static bool EqualReadingClause(const ReadingClause &left,
                                  const ReadingClause &right);
-  static bool equalMatch(const Match &left, const Match &right);
-  static bool equalUnwind(const Unwind &left, const Unwind &right);
-  static bool equalInQueryCall(const InQueryCall &left,
+  static bool EqualMatch(const Match &left, const Match &right);
+  static bool EqualUnwind(const Unwind &left, const Unwind &right);
+  static bool EqualInQueryCall(const InQueryCall &left,
                                const InQueryCall &right);
-  static bool equalUpdatingClause(const UpdatingClause &left,
+  static bool EqualUpdatingClause(const UpdatingClause &left,
                                   const UpdatingClause &right);
-  static bool equalCreate(const Create &left, const Create &right);
-  static bool equalMerge(const Merge &left, const Merge &right);
-  static bool equalDelete(const Delete &left, const Delete &right);
-  static bool equalSet(const Set &left, const Set &right);
-  static bool equalSetItem(const SetItem &left, const SetItem &right);
-  static bool equalRemove(const Remove &left, const Remove &right);
-  static bool equalRemoveItem(const RemoveItem &left, const RemoveItem &right);
-  static bool equalProjectionClause(const ProjectionClause &left,
+  static bool EqualCreate(const Create &left, const Create &right);
+  static bool EqualMerge(const Merge &left, const Merge &right);
+  static bool EqualDelete(const Delete &left, const Delete &right);
+  static bool EqualSet(const Set &left, const Set &right);
+  static bool EqualSetItem(const SetItem &left, const SetItem &right);
+  static bool EqualRemove(const Remove &left, const Remove &right);
+  static bool EqualRemoveItem(const RemoveItem &left, const RemoveItem &right);
+  static bool EqualProjectionClause(const ProjectionClause &left,
                                     const ProjectionClause &right);
-  static bool equalProjectionBody(const ProjectionBody &left,
+  static bool EqualProjectionBody(const ProjectionBody &left,
                                   const ProjectionBody &right);
-  static bool equalProjectionItem(const ProjectionItem &left,
+  static bool EqualProjectionItem(const ProjectionItem &left,
                                   const ProjectionItem &right);
-  static bool equalSortItem(const SortItem &left, const SortItem &right);
-  static bool equalWith(const With &left, const With &right);
-  static bool equalReturn(const Return &left, const Return &right);
+  static bool EqualSortItem(const SortItem &left, const SortItem &right);
+  static bool EqualWith(const With &left, const With &right);
+  static bool EqualReturn(const Return &left, const Return &right);
 };
 
 }  // namespace ast

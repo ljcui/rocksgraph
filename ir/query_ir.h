@@ -11,13 +11,13 @@
 namespace ir {
 
 struct QueryGraph {
-  enum class Direction { INCOMING, OUTGOING, BOTH };
+  enum class Direction { kIncoming, kOutgoing, kBoth };
 
   struct Relationship {
     std::string name;
     std::string left_node;
     std::string right_node;
-    Direction direction = Direction::BOTH;
+    Direction direction = Direction::kBoth;
     std::unordered_set<std::string> types;
     const ast::Properties *properties = nullptr;
   };
@@ -58,8 +58,8 @@ struct SingleQueryIR {
   SingleQueryIR &operator=(SingleQueryIR &&other) noexcept = default;
   ~SingleQueryIR() = default;
 
-  const SingleQueryIR *last() const;
-  SingleQueryIR *last();
+  [[nodiscard]] const SingleQueryIR *Last() const;
+  SingleQueryIR *Last();
 };
 
 struct UnionColumnMapping {
@@ -83,6 +83,6 @@ struct QueryIR {
   RegularQueryIR regular;
 };
 
-QueryIR buildStatement(const ast::Statement &statement);
+QueryIR BuildStatement(const ast::Statement &statement);
 
 }  // namespace ir

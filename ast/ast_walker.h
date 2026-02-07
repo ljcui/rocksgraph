@@ -10,118 +10,118 @@ namespace ast {
 // Subclasses override visit methods to observe or collect information.
 class ASTWalker : public ASTVisitor {
  public:
-  void walk(ASTNode &node);
+  void Walk(ASTNode &node);
 
  protected:
-  void walkMaybe(std::unique_ptr<Expression> &ptr) {
+  void WalkMaybe(std::unique_ptr<Expression> &ptr) {
     if (ptr) {
-      walkExpression(ptr);
+      WalkExpression(ptr);
     }
   }
 
   template <typename T>
-  void walkMaybe(std::unique_ptr<T> &ptr) {
+  void WalkMaybe(std::unique_ptr<T> &ptr) {
     if (ptr) {
-      ptr->accept(*this);
+      ptr->Accept(*this);
     }
   }
 
   template <typename T>
-  void walkList(std::vector<std::unique_ptr<T>> &list) {
+  void WalkList(std::vector<std::unique_ptr<T>> &list) {
     for (auto &item : list) {
-      walkMaybe(item);
+      WalkMaybe(item);
     }
   }
 
-  virtual void walkExpression(std::unique_ptr<Expression> &expr);
+  virtual void WalkExpression(std::unique_ptr<Expression> &expr);
 
-  void visit(Statement &node) override;
-  void visit(Query &node) override;
-  void visit(RegularQuery &node) override;
-  void visit(StandaloneCall &node) override;
-  void visit(SingleQuery &node) override;
-  void visit(SinglePartQuery &node) override;
-  void visit(MultiPartQuery &node) override;
-  void visit(UnionPart &node) override;
+  void Visit(Statement &node) override;
+  void Visit(Query &node) override;
+  void Visit(RegularQuery &node) override;
+  void Visit(StandaloneCall &node) override;
+  void Visit(SingleQuery &node) override;
+  void Visit(SinglePartQuery &node) override;
+  void Visit(MultiPartQuery &node) override;
+  void Visit(UnionPart &node) override;
 
-  void visit(Expression &node) override;
-  void visit(BinaryExpression &node) override;
-  void visit(OrExpression &node) override;
-  void visit(XorExpression &node) override;
-  void visit(AndExpression &node) override;
-  void visit(ComparisonExpression &node) override;
-  void visit(ComparisonChainExpression &node) override;
-  void visit(AddExpression &node) override;
-  void visit(SubtractExpression &node) override;
-  void visit(MultiplyExpression &node) override;
-  void visit(DivideExpression &node) override;
-  void visit(ModuloExpression &node) override;
-  void visit(PowerExpression &node) override;
-  void visit(UnaryExpression &node) override;
-  void visit(NotExpression &node) override;
-  void visit(UnaryPlusExpression &node) override;
-  void visit(UnaryMinusExpression &node) override;
-  void visit(StringPredicateExpression &node) override;
-  void visit(ListPredicateExpression &node) override;
-  void visit(LabelPredicateExpression &node) override;
-  void visit(NullPredicateExpression &node) override;
+  void Visit(Expression &node) override;
+  void Visit(BinaryExpression &node) override;
+  void Visit(OrExpression &node) override;
+  void Visit(XorExpression &node) override;
+  void Visit(AndExpression &node) override;
+  void Visit(ComparisonExpression &node) override;
+  void Visit(ComparisonChainExpression &node) override;
+  void Visit(AddExpression &node) override;
+  void Visit(SubtractExpression &node) override;
+  void Visit(MultiplyExpression &node) override;
+  void Visit(DivideExpression &node) override;
+  void Visit(ModuloExpression &node) override;
+  void Visit(PowerExpression &node) override;
+  void Visit(UnaryExpression &node) override;
+  void Visit(NotExpression &node) override;
+  void Visit(UnaryPlusExpression &node) override;
+  void Visit(UnaryMinusExpression &node) override;
+  void Visit(StringPredicateExpression &node) override;
+  void Visit(ListPredicateExpression &node) override;
+  void Visit(LabelPredicateExpression &node) override;
+  void Visit(NullPredicateExpression &node) override;
 
-  void visit(Literal &node) override;
-  void visit(BooleanLiteral &node) override;
-  void visit(IntegerLiteral &node) override;
-  void visit(DoubleLiteral &node) override;
-  void visit(StringLiteral &node) override;
-  void visit(NullLiteral &node) override;
-  void visit(ListLiteral &node) override;
-  void visit(MapLiteral &node) override;
-  void visit(Properties &node) override;
+  void Visit(Literal &node) override;
+  void Visit(BooleanLiteral &node) override;
+  void Visit(IntegerLiteral &node) override;
+  void Visit(DoubleLiteral &node) override;
+  void Visit(StringLiteral &node) override;
+  void Visit(NullLiteral &node) override;
+  void Visit(ListLiteral &node) override;
+  void Visit(MapLiteral &node) override;
+  void Visit(Properties &node) override;
 
-  void visit(Variable &node) override;
-  void visit(Parameter &node) override;
-  void visit(PropertyExpression &node) override;
-  void visit(ListIndexExpression &node) override;
-  void visit(ListSliceExpression &node) override;
-  void visit(FunctionInvocation &node) override;
-  void visit(CountStarExpression &node) override;
-  void visit(CaseExpression &node) override;
-  void visit(ParenthesizedExpression &node) override;
-  void visit(ListComprehension &node) override;
-  void visit(PatternComprehension &node) override;
-  void visit(PatternPredicateExpression &node) override;
-  void visit(Quantifier &node) override;
-  void visit(AllQuantifier &node) override;
-  void visit(AnyQuantifier &node) override;
-  void visit(NoneQuantifier &node) override;
-  void visit(SingleQuantifier &node) override;
-  void visit(ExistentialSubquery &node) override;
+  void Visit(Variable &node) override;
+  void Visit(Parameter &node) override;
+  void Visit(PropertyExpression &node) override;
+  void Visit(ListIndexExpression &node) override;
+  void Visit(ListSliceExpression &node) override;
+  void Visit(FunctionInvocation &node) override;
+  void Visit(CountStarExpression &node) override;
+  void Visit(CaseExpression &node) override;
+  void Visit(ParenthesizedExpression &node) override;
+  void Visit(ListComprehension &node) override;
+  void Visit(PatternComprehension &node) override;
+  void Visit(PatternPredicateExpression &node) override;
+  void Visit(Quantifier &node) override;
+  void Visit(AllQuantifier &node) override;
+  void Visit(AnyQuantifier &node) override;
+  void Visit(NoneQuantifier &node) override;
+  void Visit(SingleQuantifier &node) override;
+  void Visit(ExistentialSubquery &node) override;
 
-  void visit(Pattern &node) override;
-  void visit(PatternPart &node) override;
-  void visit(PatternElement &node) override;
-  void visit(RelationshipsPattern &node) override;
-  void visit(NodePattern &node) override;
-  void visit(RelationshipPattern &node) override;
-  void visit(RelationshipDetail &node) override;
+  void Visit(Pattern &node) override;
+  void Visit(PatternPart &node) override;
+  void Visit(PatternElement &node) override;
+  void Visit(RelationshipsPattern &node) override;
+  void Visit(NodePattern &node) override;
+  void Visit(RelationshipPattern &node) override;
+  void Visit(RelationshipDetail &node) override;
 
-  void visit(Clause &node) override;
-  void visit(ReadingClause &node) override;
-  void visit(Match &node) override;
-  void visit(Unwind &node) override;
-  void visit(InQueryCall &node) override;
-  void visit(UpdatingClause &node) override;
-  void visit(Create &node) override;
-  void visit(Merge &node) override;
-  void visit(Delete &node) override;
-  void visit(Set &node) override;
-  void visit(SetItem &node) override;
-  void visit(Remove &node) override;
-  void visit(RemoveItem &node) override;
-  void visit(ProjectionClause &node) override;
-  void visit(ProjectionBody &node) override;
-  void visit(ProjectionItem &node) override;
-  void visit(SortItem &node) override;
-  void visit(With &node) override;
-  void visit(Return &node) override;
+  void Visit(Clause &node) override;
+  void Visit(ReadingClause &node) override;
+  void Visit(Match &node) override;
+  void Visit(Unwind &node) override;
+  void Visit(InQueryCall &node) override;
+  void Visit(UpdatingClause &node) override;
+  void Visit(Create &node) override;
+  void Visit(Merge &node) override;
+  void Visit(Delete &node) override;
+  void Visit(Set &node) override;
+  void Visit(SetItem &node) override;
+  void Visit(Remove &node) override;
+  void Visit(RemoveItem &node) override;
+  void Visit(ProjectionClause &node) override;
+  void Visit(ProjectionBody &node) override;
+  void Visit(ProjectionItem &node) override;
+  void Visit(SortItem &node) override;
+  void Visit(With &node) override;
+  void Visit(Return &node) override;
 };
 
 }  // namespace ast

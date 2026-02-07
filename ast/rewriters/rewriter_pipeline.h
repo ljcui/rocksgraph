@@ -13,8 +13,8 @@ class RewriterPipeline {
   explicit RewriterPipeline(
       std::vector<std::unique_ptr<ASTRewriter>> rewriters);
 
-  void add(std::unique_ptr<ASTRewriter> rewriter);
-  void run(ASTNode &node);
+  void Add(std::unique_ptr<ASTRewriter> rewriter);
+  void Run(ASTNode &node);
 
  private:
   std::vector<std::unique_ptr<ASTRewriter>> rewriters_;

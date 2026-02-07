@@ -9,12 +9,12 @@ namespace ast {
 
 class ReturnStarRewriter : public ASTRewriter {
  public:
-  void rewrite(ASTNode &node);
+  void Rewrite(ASTNode &node);
 
  protected:
-  void visit(SinglePartQuery &node) override;
-  void visit(MultiPartQuery &node) override;
-  void visit(ProjectionBody &node) override;
+  void Visit(SinglePartQuery &node) override;
+  void Visit(MultiPartQuery &node) override;
+  void Visit(ProjectionBody &node) override;
 
  private:
   struct Scope {

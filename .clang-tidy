@@ -6,6 +6,13 @@ Checks: >
   modernize-*,
   readability-*,
   -modernize-use-trailing-return-type,
+  -readability-identifier-length,
+  -readability-function-cognitive-complexity,
+  -readability-convert-member-functions-to-static,
+  -bugprone-easily-swappable-parameters,
+  -readability-suspicious-call-argument,
+  -readability-use-anyofallof,
+  -readability-simplify-boolean-expr,
   -readability-magic-numbers
 WarningsAsErrors: '*'
 HeaderFilterRegex: '^((?!ast/cypher/).)*$'

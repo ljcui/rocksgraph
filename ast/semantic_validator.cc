@@ -19,16 +19,16 @@ class SemanticValidator : public ASTWalker {
     scope_stack_.clear();
     scope_stack_.emplace_back();
     reported_.clear();
-    walk(node);
+    Walk(node);
     scope_stack_.clear();
   }
 
  protected:
-  void visit(RegularQuery &node) override {
+  void Visit(RegularQuery &node) override {
     const Scope base = CurrentScope();
     if (node.single_query) {
       PushScope(base);
-      walkMaybe(node.single_query);
+      WalkMaybe(node.single_query);
       PopScope();
     }
     for (auto &part : node.unions) {
@@ -36,13 +36,13 @@ class SemanticValidator : public ASTWalker {
         continue;
       }
       PushScope(base);
-      walkMaybe(part->query);
+      WalkMaybe(part->query);
       PopScope();
     }
   }
 
-  void visit(StandaloneCall &node) override {
-    walkList(node.arguments);
+  void Visit(StandaloneCall &node) override {
+    WalkList(node.arguments);
 
     Scope yield_scope = CurrentScope();
     if (!node.yield_star) {
@@ -56,7 +56,7 @@ class SemanticValidator : public ASTWalker {
       if (node.yield_star) {
         allow_any_depth_++;
       }
-      walkMaybe(node.yield_where);
+      WalkMaybe(node.yield_where);
       if (node.yield_star) {
         allow_any_depth_--;
       }
@@ -66,20 +66,20 @@ class SemanticValidator : public ASTWalker {
     ReplaceCurrentScope(yield_scope);
   }
 
-  void visit(Match &node) override {
+  void Visit(Match &node) override {
     if (node.pattern) {
       CollectFromPattern(*node.pattern, CurrentScope());
     }
-    ASTWalker::visit(node);
+    ASTWalker::Visit(node);
   }
 
-  void visit(Unwind &node) override {
-    ASTWalker::visit(node);
+  void Visit(Unwind &node) override {
+    ASTWalker::Visit(node);
     Define(node.variable);
   }
 
-  void visit(InQueryCall &node) override {
-    walkList(node.arguments);
+  void Visit(InQueryCall &node) override {
+    WalkList(node.arguments);
 
     Scope yield_scope = CurrentScope();
     for (const auto &item : node.yield_items) {
@@ -88,108 +88,108 @@ class SemanticValidator : public ASTWalker {
 
     if (node.yield_where) {
       PushScope(yield_scope);
-      walkMaybe(node.yield_where);
+      WalkMaybe(node.yield_where);
       PopScope();
     }
 
     ReplaceCurrentScope(yield_scope);
   }
 
-  void visit(Create &node) override {
+  void Visit(Create &node) override {
     if (node.pattern) {
       CollectFromPattern(*node.pattern, CurrentScope());
     }
-    ASTWalker::visit(node);
+    ASTWalker::Visit(node);
   }
 
-  void visit(Merge &node) override {
+  void Visit(Merge &node) override {
     if (node.pattern_part) {
       CollectFromPatternPart(*node.pattern_part, CurrentScope());
     }
-    ASTWalker::visit(node);
+    ASTWalker::Visit(node);
   }
 
-  void visit(ProjectionBody &node) override {
+  void Visit(ProjectionBody &node) override {
     const Scope pre = CurrentScope();
     for (auto &item : node.items) {
-      walkMaybe(item);
+      WalkMaybe(item);
     }
 
     const Scope projected = ScopeFromProjection(node, pre);
     const Scope order_scope = MergeScopes(pre, projected);
 
     PushScope(order_scope);
-    walkList(node.order_by);
-    walkMaybe(node.skip);
-    walkMaybe(node.limit);
+    WalkList(node.order_by);
+    WalkMaybe(node.skip);
+    WalkMaybe(node.limit);
     PopScope();
   }
 
-  void visit(With &node) override {
+  void Visit(With &node) override {
     if (!node.body) {
       return;
     }
     const Scope pre = CurrentScope();
-    node.body->accept(*this);
+    node.body->Accept(*this);
 
     const Scope projected = ScopeFromProjection(*node.body, pre);
     ReplaceCurrentScope(projected);
-    walkMaybe(node.where);
+    WalkMaybe(node.where);
   }
 
-  void visit(ListComprehension &node) override {
-    walkMaybe(node.list_expr);
+  void Visit(ListComprehension &node) override {
+    WalkMaybe(node.list_expr);
 
     PushScope(CurrentScope());
     Define(node.variable);
-    walkMaybe(node.where_expr);
-    walkMaybe(node.eval_expr);
+    WalkMaybe(node.where_expr);
+    WalkMaybe(node.eval_expr);
     PopScope();
   }
 
-  void visit(PatternComprehension &node) override {
+  void Visit(PatternComprehension &node) override {
     PushScope(CurrentScope());
     Define(node.variable);
     if (node.relationships_pattern) {
       CollectFromRelationshipsPattern(*node.relationships_pattern,
                                       CurrentScope());
     }
-    ASTWalker::visit(node);
+    ASTWalker::Visit(node);
     PopScope();
   }
 
-  void visit(PatternPredicateExpression &node) override {
+  void Visit(PatternPredicateExpression &node) override {
     PushScope(CurrentScope());
     if (node.relationships_pattern) {
       CollectFromRelationshipsPattern(*node.relationships_pattern,
                                       CurrentScope());
     }
-    ASTWalker::visit(node);
+    ASTWalker::Visit(node);
     PopScope();
   }
 
-  void visit(AllQuantifier &node) override { ValidateQuantifier(node); }
-  void visit(AnyQuantifier &node) override { ValidateQuantifier(node); }
-  void visit(NoneQuantifier &node) override { ValidateQuantifier(node); }
-  void visit(SingleQuantifier &node) override { ValidateQuantifier(node); }
+  void Visit(AllQuantifier &node) override { ValidateQuantifier(node); }
+  void Visit(AnyQuantifier &node) override { ValidateQuantifier(node); }
+  void Visit(NoneQuantifier &node) override { ValidateQuantifier(node); }
+  void Visit(SingleQuantifier &node) override { ValidateQuantifier(node); }
 
-  void visit(ExistentialSubquery &node) override {
+  void Visit(ExistentialSubquery &node) override {
     if (node.query) {
       PushScope(CurrentScope());
-      walkMaybe(node.query);
+      WalkMaybe(node.query);
       PopScope();
       return;
     }
     if (node.pattern) {
       PushScope(CurrentScope());
       CollectFromPattern(*node.pattern, CurrentScope());
-      walkMaybe(node.pattern);
-      walkMaybe(node.where_expr);
+      WalkMaybe(node.pattern);
+      WalkMaybe(node.where_expr);
       PopScope();
     }
   }
 
-  void visit(Variable &node) override {
+  void Visit(Variable &node) override {
     if (allow_any_depth_ > 0) {
       return;
     }
@@ -211,13 +211,15 @@ class SemanticValidator : public ASTWalker {
       }
     }
 
-    bool Contains(const std::string &name) const {
+    [[nodiscard]] bool Contains(const std::string &name) const {
       return names.find(name) != names.end();
     }
   };
 
   Scope &CurrentScope() { return scope_stack_.back(); }
-  const Scope &CurrentScope() const { return scope_stack_.back(); }
+  [[nodiscard]] const Scope &CurrentScope() const {
+    return scope_stack_.back();
+  }
 
   void PushScope(const Scope &scope) { scope_stack_.push_back(scope); }
   void PushEmptyScope() { scope_stack_.emplace_back(); }
@@ -227,7 +229,7 @@ class SemanticValidator : public ASTWalker {
 
   void ReplaceCurrentScope(const Scope &scope) { scope_stack_.back() = scope; }
 
-  bool IsDefined(const std::string &name) const {
+  [[nodiscard]] bool IsDefined(const std::string &name) const {
     for (const auto &it : std::ranges::reverse_view(scope_stack_)) {
       if (it.Contains(name)) {
         return true;
@@ -314,8 +316,8 @@ class SemanticValidator : public ASTWalker {
     }
   }
 
-  Scope ScopeFromProjection(const ProjectionBody &body,
-                            const Scope &fallback) const {
+  [[nodiscard]] Scope ScopeFromProjection(const ProjectionBody &body,
+                                          const Scope &fallback) const {
     Scope scope = body.star ? fallback : Scope{};
     for (const auto &item : body.items) {
       if (item) {
@@ -326,10 +328,10 @@ class SemanticValidator : public ASTWalker {
   }
 
   void ValidateQuantifier(Quantifier &node) {
-    walkMaybe(node.list_expr);
+    WalkMaybe(node.list_expr);
     PushScope(CurrentScope());
     Define(node.variable);
-    walkMaybe(node.predicate);
+    WalkMaybe(node.predicate);
     PopScope();
   }
 
@@ -341,7 +343,7 @@ class SemanticValidator : public ASTWalker {
 
 }  // namespace
 
-void validateStatement(ASTNode &node) {
+void ValidateStatement(ASTNode &node) {
   std::vector<std::string> errors;
   SemanticValidator validator(errors);
   validator.Validate(node);

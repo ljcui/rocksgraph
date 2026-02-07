@@ -162,8 +162,8 @@ std::unique_ptr<Expression> CombinePredicates(
 
 }  // namespace
 
-void PatternPredicateNormalizationRewriter::visit(Match &node) {
-  ASTRewriter::visit(node);
+void PatternPredicateNormalizationRewriter::Visit(Match &node) {
+  ASTRewriter::Visit(node);
   if (!node.pattern) {
     return;
   }

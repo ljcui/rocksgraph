@@ -6,7 +6,7 @@ namespace ast {
 
 class PatternPredicateNormalizationRewriter : public ASTRewriter {
  protected:
-  void visit(Match &node) override;
+  void Visit(Match &node) override;
 };
 
 }  // namespace ast

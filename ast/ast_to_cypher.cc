@@ -1,5 +1,6 @@
 #include "ast_to_cypher.h"
 
+#include <array>
 #include <cassert>
 #include <cctype>
 #include <cstdio>
@@ -14,7 +15,7 @@ class CypherPrinter : public ASTVisitor {
  public:
   std::string Print(ASTNode &node) {
     stack_.clear();
-    node.accept(*this);
+    node.Accept(*this);
     if (stack_.empty()) {
       return {};
     }
@@ -23,17 +24,17 @@ class CypherPrinter : public ASTVisitor {
     return out;
   }
 
-  void visit(Statement &node) override {
+  void Visit(Statement &node) override {
     (void)node;
     Push("");
   }
 
-  void visit(Query &node) override {
+  void Visit(Query &node) override {
     (void)node;
     Push("");
   }
 
-  void visit(RegularQuery &node) override {
+  void Visit(RegularQuery &node) override {
     std::vector<std::string> parts;
     auto main = RenderMaybe(node.single_query);
     if (!main.empty()) {
@@ -48,7 +49,7 @@ class CypherPrinter : public ASTVisitor {
     Push(Join(parts, " "));
   }
 
-  void visit(StandaloneCall &node) override {
+  void Visit(StandaloneCall &node) override {
     std::string out = "CALL ";
     out += RenderQualifiedName(node.procedure_name);
     out += "(";
@@ -67,12 +68,12 @@ class CypherPrinter : public ASTVisitor {
     Push(out);
   }
 
-  void visit(SingleQuery &node) override {
+  void Visit(SingleQuery &node) override {
     (void)node;
     Push("");
   }
 
-  void visit(SinglePartQuery &node) override {
+  void Visit(SinglePartQuery &node) override {
     std::vector<std::string> clauses;
     AppendClauses(clauses, node.reading_clauses);
     AppendClauses(clauses, node.updating_clauses);
@@ -83,7 +84,7 @@ class CypherPrinter : public ASTVisitor {
     Push(Join(clauses, " "));
   }
 
-  void visit(MultiPartQuery &node) override {
+  void Visit(MultiPartQuery &node) override {
     std::vector<std::string> clauses;
     for (const auto &part : node.parts) {
       std::vector<std::string> with_part;
@@ -104,7 +105,7 @@ class CypherPrinter : public ASTVisitor {
     Push(Join(clauses, " "));
   }
 
-  void visit(UnionPart &node) override {
+  void Visit(UnionPart &node) override {
     std::string out = "UNION";
     if (node.all) {
       out += " ALL";
@@ -117,35 +118,35 @@ class CypherPrinter : public ASTVisitor {
     Push(out);
   }
 
-  void visit(Expression &node) override {
+  void Visit(Expression &node) override {
     (void)node;
     Push("");
   }
 
-  void visit(BinaryExpression &node) override {
+  void Visit(BinaryExpression &node) override {
     (void)node;
     Push("");
   }
 
-  void visit(OrExpression &node) override {
+  void Visit(OrExpression &node) override {
     Push(WrapBinary("OR", node.left, node.right));
   }
 
-  void visit(XorExpression &node) override {
+  void Visit(XorExpression &node) override {
     Push(WrapBinary("XOR", node.left, node.right));
   }
 
-  void visit(AndExpression &node) override {
+  void Visit(AndExpression &node) override {
     Push(WrapBinary("AND", node.left, node.right));
   }
 
-  void visit(ComparisonExpression &node) override {
+  void Visit(ComparisonExpression &node) override {
     auto left = RenderMaybe(node.left);
     auto right = RenderMaybe(node.right);
     Push(Wrap(left + " " + node.op + " " + right));
   }
 
-  void visit(ComparisonChainExpression &node) override {
+  void Visit(ComparisonChainExpression &node) override {
     auto left = RenderMaybe(node.left);
     std::ostringstream oss;
     oss << left;
@@ -155,63 +156,63 @@ class CypherPrinter : public ASTVisitor {
     Push(Wrap(oss.str()));
   }
 
-  void visit(AddExpression &node) override {
+  void Visit(AddExpression &node) override {
     Push(WrapBinary("+", node.left, node.right));
   }
 
-  void visit(SubtractExpression &node) override {
+  void Visit(SubtractExpression &node) override {
     Push(WrapBinary("-", node.left, node.right));
   }
 
-  void visit(MultiplyExpression &node) override {
+  void Visit(MultiplyExpression &node) override {
     Push(WrapBinary("*", node.left, node.right));
   }
 
-  void visit(DivideExpression &node) override {
+  void Visit(DivideExpression &node) override {
     Push(WrapBinary("/", node.left, node.right));
   }
 
-  void visit(ModuloExpression &node) override {
+  void Visit(ModuloExpression &node) override {
     Push(WrapBinary("%", node.left, node.right));
   }
 
-  void visit(PowerExpression &node) override {
+  void Visit(PowerExpression &node) override {
     Push(WrapBinary("^", node.left, node.right));
   }
 
-  void visit(UnaryExpression &node) override {
+  void Visit(UnaryExpression &node) override {
     (void)node;
     Push("");
   }
 
-  void visit(NotExpression &node) override {
+  void Visit(NotExpression &node) override {
     auto operand = RenderMaybe(node.operand);
     Push(Wrap(std::string("NOT ") + operand));
   }
 
-  void visit(UnaryPlusExpression &node) override {
+  void Visit(UnaryPlusExpression &node) override {
     auto operand = RenderMaybe(node.operand);
     Push(Wrap(std::string("+") + operand));
   }
 
-  void visit(UnaryMinusExpression &node) override {
+  void Visit(UnaryMinusExpression &node) override {
     auto operand = RenderMaybe(node.operand);
     Push(Wrap(std::string("-") + operand));
   }
 
-  void visit(StringPredicateExpression &node) override {
+  void Visit(StringPredicateExpression &node) override {
     auto left = RenderMaybe(node.left);
     auto right = RenderMaybe(node.right);
     Push(Wrap(left + " " + node.op + " " + right));
   }
 
-  void visit(ListPredicateExpression &node) override {
+  void Visit(ListPredicateExpression &node) override {
     auto element = RenderMaybe(node.element);
     auto list = RenderMaybe(node.list);
     Push(Wrap(element + " IN " + list));
   }
 
-  void visit(LabelPredicateExpression &node) override {
+  void Visit(LabelPredicateExpression &node) override {
     auto expr = RenderMaybe(node.expr);
     std::ostringstream oss;
     oss << expr;
@@ -221,7 +222,7 @@ class CypherPrinter : public ASTVisitor {
     Push(oss.str());
   }
 
-  void visit(NullPredicateExpression &node) override {
+  void Visit(NullPredicateExpression &node) override {
     auto operand = RenderMaybe(node.operand);
     if (node.is_null) {
       Push(Wrap(operand + " IS NULL"));
@@ -230,45 +231,45 @@ class CypherPrinter : public ASTVisitor {
     }
   }
 
-  void visit(Literal &node) override {
+  void Visit(Literal &node) override {
     (void)node;
     Push("");
   }
 
-  void visit(BooleanLiteral &node) override {
+  void Visit(BooleanLiteral &node) override {
     Push(node.value ? "true" : "false");
   }
 
-  void visit(IntegerLiteral &node) override {
+  void Visit(IntegerLiteral &node) override {
     Push(std::to_string(node.value));
   }
 
-  void visit(DoubleLiteral &node) override {
+  void Visit(DoubleLiteral &node) override {
     std::ostringstream oss;
     oss << node.value;
     Push(oss.str());
   }
 
-  void visit(StringLiteral &node) override {
+  void Visit(StringLiteral &node) override {
     std::string out = "'";
     out += EscapeStringLiteral(node.value);
     out += "'";
     Push(out);
   }
 
-  void visit(NullLiteral &node) override {
+  void Visit(NullLiteral &node) override {
     (void)node;
     Push("NULL");
   }
 
-  void visit(ListLiteral &node) override {
+  void Visit(ListLiteral &node) override {
     std::string out = "[";
     out += Join(RenderList(node.elements), ", ");
     out += "]";
     Push(out);
   }
 
-  void visit(MapLiteral &node) override {
+  void Visit(MapLiteral &node) override {
     std::vector<std::string> entries;
     entries.reserve(node.entries.size());
     for (const auto &entry : node.entries) {
@@ -283,7 +284,7 @@ class CypherPrinter : public ASTVisitor {
     Push(out);
   }
 
-  void visit(Properties &node) override {
+  void Visit(Properties &node) override {
     if (node.map) {
       Push(RenderMaybe(node.map));
       return;
@@ -291,9 +292,9 @@ class CypherPrinter : public ASTVisitor {
     Push(RenderMaybe(node.parameter));
   }
 
-  void visit(Variable &node) override { Push(RenderSymbolicName(node.name)); }
+  void Visit(Variable &node) override { Push(RenderSymbolicName(node.name)); }
 
-  void visit(Parameter &node) override {
+  void Visit(Parameter &node) override {
     if (IsDecimal(node.name)) {
       Push("$" + node.name);
       return;
@@ -301,7 +302,7 @@ class CypherPrinter : public ASTVisitor {
     Push("$" + RenderSymbolicName(node.name));
   }
 
-  void visit(PropertyExpression &node) override {
+  void Visit(PropertyExpression &node) override {
     auto object = RenderMaybe(node.object);
     std::string out = object;
     out += ".";
@@ -309,14 +310,14 @@ class CypherPrinter : public ASTVisitor {
     Push(out);
   }
 
-  void visit(ListIndexExpression &node) override {
+  void Visit(ListIndexExpression &node) override {
     auto list = RenderMaybe(node.list);
     auto index = RenderMaybe(node.index);
     std::string out = list + "[" + index + "]";
     Push(out);
   }
 
-  void visit(ListSliceExpression &node) override {
+  void Visit(ListSliceExpression &node) override {
     auto list = RenderMaybe(node.list);
     auto start = RenderMaybe(node.start_index);
     auto end = RenderMaybe(node.end_index);
@@ -324,7 +325,7 @@ class CypherPrinter : public ASTVisitor {
     Push(out);
   }
 
-  void visit(FunctionInvocation &node) override {
+  void Visit(FunctionInvocation &node) override {
     std::string out = RenderQualifiedName(node.function_name);
     out += "(";
     if (node.distinct) {
@@ -335,12 +336,12 @@ class CypherPrinter : public ASTVisitor {
     Push(out);
   }
 
-  void visit(CountStarExpression &node) override {
+  void Visit(CountStarExpression &node) override {
     (void)node;
     Push("count(*)");
   }
 
-  void visit(CaseExpression &node) override {
+  void Visit(CaseExpression &node) override {
     std::ostringstream oss;
     oss << "CASE";
     if (node.test) {
@@ -357,11 +358,11 @@ class CypherPrinter : public ASTVisitor {
     Push(oss.str());
   }
 
-  void visit(ParenthesizedExpression &node) override {
+  void Visit(ParenthesizedExpression &node) override {
     Push(Wrap(RenderMaybe(node.expr)));
   }
 
-  void visit(ListComprehension &node) override {
+  void Visit(ListComprehension &node) override {
     std::string out = "[";
     out +=
         RenderFilterExpression(node.variable, node.list_expr, node.where_expr);
@@ -373,7 +374,7 @@ class CypherPrinter : public ASTVisitor {
     Push(out);
   }
 
-  void visit(PatternComprehension &node) override {
+  void Visit(PatternComprehension &node) override {
     std::string out = "[";
     if (!node.variable.empty()) {
       out += RenderSymbolicName(node.variable);
@@ -390,31 +391,31 @@ class CypherPrinter : public ASTVisitor {
     Push(out);
   }
 
-  void visit(PatternPredicateExpression &node) override {
+  void Visit(PatternPredicateExpression &node) override {
     Push(RenderMaybe(node.relationships_pattern));
   }
 
-  void visit(Quantifier &node) override {
+  void Visit(Quantifier &node) override {
     Push(RenderFilterExpression(node.variable, node.list_expr, node.predicate));
   }
 
-  void visit(AllQuantifier &node) override {
+  void Visit(AllQuantifier &node) override {
     Push(RenderQuantifier("ALL", node));
   }
 
-  void visit(AnyQuantifier &node) override {
+  void Visit(AnyQuantifier &node) override {
     Push(RenderQuantifier("ANY", node));
   }
 
-  void visit(NoneQuantifier &node) override {
+  void Visit(NoneQuantifier &node) override {
     Push(RenderQuantifier("NONE", node));
   }
 
-  void visit(SingleQuantifier &node) override {
+  void Visit(SingleQuantifier &node) override {
     Push(RenderQuantifier("SINGLE", node));
   }
 
-  void visit(ExistentialSubquery &node) override {
+  void Visit(ExistentialSubquery &node) override {
     std::string out = "EXISTS { ";
     if (node.query) {
       out += RenderMaybe(node.query);
@@ -429,12 +430,12 @@ class CypherPrinter : public ASTVisitor {
     Push(out);
   }
 
-  void visit(Pattern &node) override {
+  void Visit(Pattern &node) override {
     std::string out = Join(RenderList(node.parts), ", ");
     Push(out);
   }
 
-  void visit(PatternPart &node) override {
+  void Visit(PatternPart &node) override {
     auto element = RenderMaybe(node.element);
     if (node.variable.empty()) {
       Push(element);
@@ -446,7 +447,7 @@ class CypherPrinter : public ASTVisitor {
     Push(out);
   }
 
-  void visit(PatternElement &node) override {
+  void Visit(PatternElement &node) override {
     std::ostringstream oss;
     oss << RenderMaybe(node.node_pattern);
     for (const auto &entry : node.chain) {
@@ -456,7 +457,7 @@ class CypherPrinter : public ASTVisitor {
     Push(oss.str());
   }
 
-  void visit(RelationshipsPattern &node) override {
+  void Visit(RelationshipsPattern &node) override {
     std::ostringstream oss;
     oss << RenderMaybe(node.node_pattern);
     for (const auto &entry : node.chain) {
@@ -466,7 +467,7 @@ class CypherPrinter : public ASTVisitor {
     Push(oss.str());
   }
 
-  void visit(NodePattern &node) override {
+  void Visit(NodePattern &node) override {
     std::string out = "(";
     std::string inside;
     if (!node.variable.empty()) {
@@ -487,7 +488,7 @@ class CypherPrinter : public ASTVisitor {
     Push(out);
   }
 
-  void visit(RelationshipPattern &node) override {
+  void Visit(RelationshipPattern &node) override {
     std::string out;
     out += node.left_arrow ? "<-" : "-";
     if (node.detail) {
@@ -499,7 +500,7 @@ class CypherPrinter : public ASTVisitor {
     Push(out);
   }
 
-  void visit(RelationshipDetail &node) override {
+  void Visit(RelationshipDetail &node) override {
     std::string out;
     if (!node.variable.empty()) {
       out += RenderSymbolicName(node.variable);
@@ -532,17 +533,17 @@ class CypherPrinter : public ASTVisitor {
     Push(out);
   }
 
-  void visit(Clause &node) override {
+  void Visit(Clause &node) override {
     (void)node;
     Push("");
   }
 
-  void visit(ReadingClause &node) override {
+  void Visit(ReadingClause &node) override {
     (void)node;
     Push("");
   }
 
-  void visit(Match &node) override {
+  void Visit(Match &node) override {
     std::string out = node.optional_match ? "OPTIONAL MATCH " : "MATCH ";
     out += RenderMaybe(node.pattern);
     if (node.where) {
@@ -552,7 +553,7 @@ class CypherPrinter : public ASTVisitor {
     Push(out);
   }
 
-  void visit(Unwind &node) override {
+  void Visit(Unwind &node) override {
     std::string out = "UNWIND ";
     out += RenderMaybe(node.expression);
     out += " AS ";
@@ -560,7 +561,7 @@ class CypherPrinter : public ASTVisitor {
     Push(out);
   }
 
-  void visit(InQueryCall &node) override {
+  void Visit(InQueryCall &node) override {
     std::string out = "CALL ";
     out += RenderQualifiedName(node.procedure_name);
     out += "(";
@@ -577,18 +578,18 @@ class CypherPrinter : public ASTVisitor {
     Push(out);
   }
 
-  void visit(UpdatingClause &node) override {
+  void Visit(UpdatingClause &node) override {
     (void)node;
     Push("");
   }
 
-  void visit(Create &node) override {
+  void Visit(Create &node) override {
     std::string out = "CREATE ";
     out += RenderMaybe(node.pattern);
     Push(out);
   }
 
-  void visit(Merge &node) override {
+  void Visit(Merge &node) override {
     std::string out = "MERGE ";
     out += RenderMaybe(node.pattern_part);
     for (const auto &action : node.actions) {
@@ -598,30 +599,30 @@ class CypherPrinter : public ASTVisitor {
     Push(out);
   }
 
-  void visit(Delete &node) override {
+  void Visit(Delete &node) override {
     std::string out = node.detach ? "DETACH DELETE " : "DELETE ";
     out += Join(RenderList(node.expressions), ", ");
     Push(out);
   }
 
-  void visit(Set &node) override {
+  void Visit(Set &node) override {
     std::string out = "SET ";
     out += Join(RenderList(node.items), ", ");
     Push(out);
   }
 
-  void visit(SetItem &node) override {
+  void Visit(SetItem &node) override {
     std::string target = RenderMaybe(node.target);
     std::string out;
     switch (node.type) {
-      case SetItem::Type::Property:
+      case SetItem::Type::kProperty:
         out = target + " = " + RenderMaybe(node.value);
         break;
-      case SetItem::Type::Variable:
+      case SetItem::Type::kVariable:
         out = target + (node.plus_equal ? " += " : " = ") +
               RenderMaybe(node.value);
         break;
-      case SetItem::Type::Labels:
+      case SetItem::Type::kLabels:
         out = target;
         for (const auto &label : node.labels) {
           out += ":";
@@ -632,20 +633,20 @@ class CypherPrinter : public ASTVisitor {
     Push(out);
   }
 
-  void visit(Remove &node) override {
+  void Visit(Remove &node) override {
     std::string out = "REMOVE ";
     out += Join(RenderList(node.items), ", ");
     Push(out);
   }
 
-  void visit(RemoveItem &node) override {
+  void Visit(RemoveItem &node) override {
     std::string target = RenderMaybe(node.target);
     std::string out;
     switch (node.type) {
-      case RemoveItem::Type::Property:
+      case RemoveItem::Type::kProperty:
         out = target;
         break;
-      case RemoveItem::Type::Labels:
+      case RemoveItem::Type::kLabels:
         out = target;
         for (const auto &label : node.labels) {
           out += ":";
@@ -656,12 +657,12 @@ class CypherPrinter : public ASTVisitor {
     Push(out);
   }
 
-  void visit(ProjectionClause &node) override {
+  void Visit(ProjectionClause &node) override {
     (void)node;
     Push("");
   }
 
-  void visit(ProjectionBody &node) override {
+  void Visit(ProjectionBody &node) override {
     std::string out;
     if (node.distinct) {
       out += "DISTINCT ";
@@ -686,7 +687,7 @@ class CypherPrinter : public ASTVisitor {
     Push(out);
   }
 
-  void visit(ProjectionItem &node) override {
+  void Visit(ProjectionItem &node) override {
     std::string out = RenderMaybe(node.expression);
     if (!node.alias.empty()) {
       out += " AS ";
@@ -695,13 +696,13 @@ class CypherPrinter : public ASTVisitor {
     Push(out);
   }
 
-  void visit(SortItem &node) override {
+  void Visit(SortItem &node) override {
     std::string out = RenderMaybe(node.expression);
     out += node.ascending ? " ASC" : " DESC";
     Push(out);
   }
 
-  void visit(With &node) override {
+  void Visit(With &node) override {
     std::string out = "WITH ";
     out += RenderMaybe(node.body);
     if (node.where) {
@@ -711,7 +712,7 @@ class CypherPrinter : public ASTVisitor {
     Push(out);
   }
 
-  void visit(Return &node) override {
+  void Visit(Return &node) override {
     std::string out = "RETURN ";
     out += RenderMaybe(node.body);
     Push(out);
@@ -734,7 +735,7 @@ class CypherPrinter : public ASTVisitor {
     if (!ptr) {
       return {};
     }
-    ptr->accept(*this);
+    ptr->Accept(*this);
     return Pop();
   }
 
@@ -929,9 +930,9 @@ class CypherPrinter : public ASTVisitor {
         default: {
           auto uc = static_cast<unsigned char>(c);
           if (uc < 0x20) {
-            char buf[7];
-            std::snprintf(buf, sizeof(buf), "\\u%04X", uc);
-            out += buf;
+            std::array<char, 7> buf{};
+            std::snprintf(buf.data(), buf.size(), "\\u%04X", uc);
+            out += buf.data();
           } else {
             out.push_back(c);
           }
@@ -945,7 +946,7 @@ class CypherPrinter : public ASTVisitor {
 
 }  // namespace
 
-std::string toCypher(ASTNode &node) {
+std::string ToCypher(ASTNode &node) {
   CypherPrinter printer;
   return printer.Print(node);
 }

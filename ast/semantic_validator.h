@@ -4,6 +4,6 @@
 
 namespace ast {
 
-void validateStatement(ASTNode &node);
+void ValidateStatement(ASTNode &node);
 
 }  // namespace ast

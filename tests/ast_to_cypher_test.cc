@@ -12,7 +12,7 @@ namespace {
 std::string ToCypherOrFail(const std::string &query) {
   try {
     auto statement = ast::parseCypher(query);
-    return ast::toCypher(*statement);
+    return ast::ToCypher(*statement);
   } catch (const ast::ParseError &e) {
     ADD_FAILURE() << "parse errors for query: " << query
                   << " message: " << e.what();

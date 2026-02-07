@@ -10,24 +10,24 @@ namespace ast {
 // Override rewriteExpression when you need to replace an expression node.
 class ASTRewriter : public ASTWalker {
  public:
-  void rewrite(ASTNode &node);
+  void Rewrite(ASTNode &node);
 
  protected:
-  void rewriteMaybe(std::unique_ptr<Expression> &ptr) { walkMaybe(ptr); }
+  void RewriteMaybe(std::unique_ptr<Expression> &ptr) { WalkMaybe(ptr); }
 
   template <typename T>
-  void rewriteMaybe(std::unique_ptr<T> &ptr) {
-    walkMaybe(ptr);
+  void RewriteMaybe(std::unique_ptr<T> &ptr) {
+    WalkMaybe(ptr);
   }
 
   template <typename T>
-  void rewriteList(std::vector<std::unique_ptr<T>> &list) {
-    walkList(list);
+  void RewriteList(std::vector<std::unique_ptr<T>> &list) {
+    WalkList(list);
   }
 
-  virtual void rewriteExpression(std::unique_ptr<Expression> &expr);
+  virtual void RewriteExpression(std::unique_ptr<Expression> &expr);
 
-  void walkExpression(std::unique_ptr<Expression> &expr) override;
+  void WalkExpression(std::unique_ptr<Expression> &expr) override;
 };
 
 }  // namespace ast

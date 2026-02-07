@@ -4,12 +4,12 @@
 
 namespace ast {
 
-void PatternPredicateRewriter::rewriteExpression(
+void PatternPredicateRewriter::RewriteExpression(
     std::unique_ptr<Expression> &expr) {
   if (!expr) {
     return;
   }
-  ASTRewriter::rewriteExpression(expr);
+  ASTRewriter::RewriteExpression(expr);
   auto *pattern_predicate =
       dynamic_cast<PatternPredicateExpression *>(expr.get());
   if ((pattern_predicate == nullptr) ||

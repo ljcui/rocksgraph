@@ -9,13 +9,13 @@ namespace ast {
 
 class AnonymousPatternNameRewriter : public ASTRewriter {
  public:
-  void visit(RegularQuery &node) override;
-  void visit(StandaloneCall &node) override;
-  void visit(Pattern &node) override;
-  void visit(RelationshipsPattern &node) override;
-  void visit(NodePattern &node) override;
-  void visit(RelationshipPattern &node) override;
-  void visit(RelationshipDetail &node) override;
+  void Visit(RegularQuery &node) override;
+  void Visit(StandaloneCall &node) override;
+  void Visit(Pattern &node) override;
+  void Visit(RelationshipsPattern &node) override;
+  void Visit(NodePattern &node) override;
+  void Visit(RelationshipPattern &node) override;
+  void Visit(RelationshipDetail &node) override;
 
  private:
   void prepare(ASTNode &node);

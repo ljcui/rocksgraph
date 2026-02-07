@@ -6,6 +6,6 @@
 
 namespace ast {
 
-std::string expressionToString(const Expression &expr);
+std::string ExpressionToString(const Expression &expr);
 
 }  // namespace ast

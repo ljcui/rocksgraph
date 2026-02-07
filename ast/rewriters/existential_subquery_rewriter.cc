@@ -4,12 +4,12 @@
 
 namespace ast {
 
-void ExistentialSubqueryRewriter::rewriteExpression(
+void ExistentialSubqueryRewriter::RewriteExpression(
     std::unique_ptr<Expression> &expr) {
   if (!expr) {
     return;
   }
-  ASTRewriter::rewriteExpression(expr);
+  ASTRewriter::RewriteExpression(expr);
   auto *subquery = dynamic_cast<ExistentialSubquery *>(expr.get());
   if ((subquery == nullptr) || !subquery->pattern || subquery->query) {
     return;

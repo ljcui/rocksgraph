@@ -2,12 +2,12 @@
 
 namespace ast {
 
-void ParenthesizedExpressionRewriter::rewriteExpression(
+void ParenthesizedExpressionRewriter::RewriteExpression(
     std::unique_ptr<Expression> &expr) {
   if (!expr) {
     return;
   }
-  ASTRewriter::rewriteExpression(expr);
+  ASTRewriter::RewriteExpression(expr);
   while (auto *paren = dynamic_cast<ParenthesizedExpression *>(expr.get())) {
     if (!paren->expr) {
       return;

@@ -7,12 +7,12 @@
 
 namespace ast {
 
-void ComparisonChainRewriter::rewriteExpression(
+void ComparisonChainRewriter::RewriteExpression(
     std::unique_ptr<Expression> &expr) {
   if (!expr) {
     return;
   }
-  ASTRewriter::rewriteExpression(expr);
+  ASTRewriter::RewriteExpression(expr);
   auto *chain = dynamic_cast<ComparisonChainExpression *>(expr.get());
   if ((chain == nullptr) || chain->rights.empty()) {
     return;
@@ -30,7 +30,7 @@ void ComparisonChainRewriter::rewriteExpression(
     comparison->left = std::move(current_left);
     comparison->op = entry.first;
     if (i + 1 < rights.size()) {
-      comparison->right = cloneExpression(*entry.second);
+      comparison->right = CloneExpression(*entry.second);
       current_left = std::move(entry.second);
     } else {
       comparison->right = std::move(entry.second);

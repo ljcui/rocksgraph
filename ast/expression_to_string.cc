@@ -125,7 +125,7 @@ ExprText ExpressionText(const Expression &expr) {
     if (!node->left || node->rights.empty()) {
       return {};
     }
-    std::string out = expressionToString(*node->left);
+    std::string out = ExpressionToString(*node->left);
     if (out.empty()) {
       return {};
     }
@@ -133,7 +133,7 @@ ExprText ExpressionText(const Expression &expr) {
       if (!entry.second) {
         return {};
       }
-      const std::string right = expressionToString(*entry.second);
+      const std::string right = ExpressionToString(*entry.second);
       if (right.empty()) {
         return {};
       }
@@ -228,7 +228,7 @@ ExprText ExpressionText(const Expression &expr) {
       if (!elem) {
         return {};
       }
-      const std::string text = expressionToString(*elem);
+      const std::string text = ExpressionToString(*elem);
       if (text.empty()) {
         return {};
       }
@@ -243,7 +243,7 @@ ExprText ExpressionText(const Expression &expr) {
       if (!entry.second) {
         return {};
       }
-      const std::string value = expressionToString(*entry.second);
+      const std::string value = ExpressionToString(*entry.second);
       if (value.empty()) {
         return {};
       }
@@ -280,7 +280,7 @@ ExprText ExpressionText(const Expression &expr) {
     if (list_text.empty()) {
       return {};
     }
-    const std::string index = expressionToString(*node->index);
+    const std::string index = ExpressionToString(*node->index);
     if (index.empty()) {
       return {};
     }
@@ -298,13 +298,13 @@ ExprText ExpressionText(const Expression &expr) {
     std::string start_text;
     std::string end_text;
     if (node->start_index) {
-      start_text = expressionToString(*node->start_index);
+      start_text = ExpressionToString(*node->start_index);
       if (start_text.empty()) {
         return {};
       }
     }
     if (node->end_index) {
-      end_text = expressionToString(*node->end_index);
+      end_text = ExpressionToString(*node->end_index);
       if (end_text.empty()) {
         return {};
       }
@@ -321,7 +321,7 @@ ExprText ExpressionText(const Expression &expr) {
       if (!arg) {
         return {};
       }
-      const std::string arg_text = expressionToString(*arg);
+      const std::string arg_text = ExpressionToString(*arg);
       if (arg_text.empty()) {
         return {};
       }
@@ -343,7 +343,7 @@ ExprText ExpressionText(const Expression &expr) {
   if (const auto *node = dynamic_cast<const CaseExpression *>(&expr)) {
     std::string out = "CASE";
     if (node->test) {
-      const std::string test = expressionToString(*node->test);
+      const std::string test = ExpressionToString(*node->test);
       if (test.empty()) {
         return {};
       }
@@ -353,15 +353,15 @@ ExprText ExpressionText(const Expression &expr) {
       if (!alt.first || !alt.second) {
         return {};
       }
-      const std::string when_text = expressionToString(*alt.first);
-      const std::string then_text = expressionToString(*alt.second);
+      const std::string when_text = ExpressionToString(*alt.first);
+      const std::string then_text = ExpressionToString(*alt.second);
       if (when_text.empty() || then_text.empty()) {
         return {};
       }
       out += " WHEN " + when_text + " THEN " + then_text;
     }
     if (node->else_expr) {
-      const std::string else_text = expressionToString(*node->else_expr);
+      const std::string else_text = ExpressionToString(*node->else_expr);
       if (else_text.empty()) {
         return {};
       }
@@ -374,7 +374,7 @@ ExprText ExpressionText(const Expression &expr) {
     if (!node->expr) {
       return {};
     }
-    const std::string inner = expressionToString(*node->expr);
+    const std::string inner = ExpressionToString(*node->expr);
     if (inner.empty()) {
       return {};
     }
@@ -384,20 +384,20 @@ ExprText ExpressionText(const Expression &expr) {
     if (!node->list_expr) {
       return {};
     }
-    const std::string list_text = expressionToString(*node->list_expr);
+    const std::string list_text = ExpressionToString(*node->list_expr);
     if (list_text.empty()) {
       return {};
     }
     std::string out = "[" + node->variable + " IN " + list_text;
     if (node->where_expr) {
-      const std::string where_text = expressionToString(*node->where_expr);
+      const std::string where_text = ExpressionToString(*node->where_expr);
       if (where_text.empty()) {
         return {};
       }
       out += " WHERE " + where_text;
     }
     if (node->eval_expr) {
-      const std::string eval_text = expressionToString(*node->eval_expr);
+      const std::string eval_text = ExpressionToString(*node->eval_expr);
       if (eval_text.empty()) {
         return {};
       }
@@ -421,13 +421,13 @@ ExprText ExpressionText(const Expression &expr) {
     }
     out += pattern_text;
     if (node->where_expr) {
-      const std::string where_text = expressionToString(*node->where_expr);
+      const std::string where_text = ExpressionToString(*node->where_expr);
       if (where_text.empty()) {
         return {};
       }
       out += " WHERE " + where_text;
     }
-    const std::string eval_text = expressionToString(*node->eval_expr);
+    const std::string eval_text = ExpressionToString(*node->eval_expr);
     if (eval_text.empty()) {
       return {};
     }
@@ -450,13 +450,13 @@ ExprText ExpressionText(const Expression &expr) {
     if (!node->list_expr) {
       return {};
     }
-    const std::string list_text = expressionToString(*node->list_expr);
+    const std::string list_text = ExpressionToString(*node->list_expr);
     if (list_text.empty()) {
       return {};
     }
     std::string out = "ALL(" + node->variable + " IN " + list_text;
     if (node->predicate) {
-      const std::string pred_text = expressionToString(*node->predicate);
+      const std::string pred_text = ExpressionToString(*node->predicate);
       if (pred_text.empty()) {
         return {};
       }
@@ -469,13 +469,13 @@ ExprText ExpressionText(const Expression &expr) {
     if (!node->list_expr) {
       return {};
     }
-    const std::string list_text = expressionToString(*node->list_expr);
+    const std::string list_text = ExpressionToString(*node->list_expr);
     if (list_text.empty()) {
       return {};
     }
     std::string out = "ANY(" + node->variable + " IN " + list_text;
     if (node->predicate) {
-      const std::string pred_text = expressionToString(*node->predicate);
+      const std::string pred_text = ExpressionToString(*node->predicate);
       if (pred_text.empty()) {
         return {};
       }
@@ -488,13 +488,13 @@ ExprText ExpressionText(const Expression &expr) {
     if (!node->list_expr) {
       return {};
     }
-    const std::string list_text = expressionToString(*node->list_expr);
+    const std::string list_text = ExpressionToString(*node->list_expr);
     if (list_text.empty()) {
       return {};
     }
     std::string out = "NONE(" + node->variable + " IN " + list_text;
     if (node->predicate) {
-      const std::string pred_text = expressionToString(*node->predicate);
+      const std::string pred_text = ExpressionToString(*node->predicate);
       if (pred_text.empty()) {
         return {};
       }
@@ -507,13 +507,13 @@ ExprText ExpressionText(const Expression &expr) {
     if (!node->list_expr) {
       return {};
     }
-    const std::string list_text = expressionToString(*node->list_expr);
+    const std::string list_text = ExpressionToString(*node->list_expr);
     if (list_text.empty()) {
       return {};
     }
     std::string out = "SINGLE(" + node->variable + " IN " + list_text;
     if (node->predicate) {
-      const std::string pred_text = expressionToString(*node->predicate);
+      const std::string pred_text = ExpressionToString(*node->predicate);
       if (pred_text.empty()) {
         return {};
       }
@@ -540,7 +540,7 @@ ExprText ExpressionText(const Expression &expr) {
       }
       out += pattern_text;
       if (node->where_expr) {
-        const std::string where_text = expressionToString(*node->where_expr);
+        const std::string where_text = ExpressionToString(*node->where_expr);
         if (where_text.empty()) {
           return {};
         }
@@ -556,7 +556,7 @@ ExprText ExpressionText(const Expression &expr) {
 
 std::string PropertiesToString(const Properties &properties) {
   if (properties.map) {
-    return expressionToString(*properties.map);
+    return ExpressionToString(*properties.map);
   }
   if (properties.parameter) {
     if (properties.parameter->name.empty()) {
@@ -714,7 +714,7 @@ std::string ProjectionItemToString(const ProjectionItem &item) {
   if (!item.expression) {
     return {};
   }
-  std::string out = expressionToString(*item.expression);
+  std::string out = ExpressionToString(*item.expression);
   if (out.empty()) {
     return {};
   }
@@ -728,7 +728,7 @@ std::string SortItemToString(const SortItem &item) {
   if (!item.expression) {
     return {};
   }
-  std::string out = expressionToString(*item.expression);
+  std::string out = ExpressionToString(*item.expression);
   if (out.empty()) {
     return {};
   }
@@ -786,14 +786,14 @@ std::string ProjectionBodyToString(const ProjectionBody &body) {
     out += " ORDER BY " + Join(order_items, ", ");
   }
   if (body.skip) {
-    const std::string skip = expressionToString(*body.skip);
+    const std::string skip = ExpressionToString(*body.skip);
     if (skip.empty()) {
       return {};
     }
     out += " SKIP " + skip;
   }
   if (body.limit) {
-    const std::string limit = expressionToString(*body.limit);
+    const std::string limit = ExpressionToString(*body.limit);
     if (limit.empty()) {
       return {};
     }
@@ -806,26 +806,26 @@ std::string SetItemToString(const SetItem &item) {
   if (!item.target) {
     return {};
   }
-  const std::string target = expressionToString(*item.target);
+  const std::string target = ExpressionToString(*item.target);
   if (target.empty()) {
     return {};
   }
   switch (item.type) {
-    case SetItem::Type::Property: {
+    case SetItem::Type::kProperty: {
       if (!item.value) {
         return {};
       }
-      const std::string value = expressionToString(*item.value);
+      const std::string value = ExpressionToString(*item.value);
       if (value.empty()) {
         return {};
       }
       return target + " = " + value;
     }
-    case SetItem::Type::Variable: {
+    case SetItem::Type::kVariable: {
       if (!item.value) {
         return {};
       }
-      const std::string value = expressionToString(*item.value);
+      const std::string value = ExpressionToString(*item.value);
       if (value.empty()) {
         return {};
       }
@@ -834,7 +834,7 @@ std::string SetItemToString(const SetItem &item) {
       }
       return target + " = " + value;
     }
-    case SetItem::Type::Labels: {
+    case SetItem::Type::kLabels: {
       if (item.labels.empty()) {
         return {};
       }
@@ -848,14 +848,14 @@ std::string RemoveItemToString(const RemoveItem &item) {
   if (!item.target) {
     return {};
   }
-  const std::string target = expressionToString(*item.target);
+  const std::string target = ExpressionToString(*item.target);
   if (target.empty()) {
     return {};
   }
   switch (item.type) {
-    case RemoveItem::Type::Property:
+    case RemoveItem::Type::kProperty:
       return target;
-    case RemoveItem::Type::Labels:
+    case RemoveItem::Type::kLabels:
       if (item.labels.empty()) {
         return {};
       }
@@ -876,7 +876,7 @@ std::string ReadingClauseToString(const ReadingClause &clause) {
     std::string out = match->optional_match ? "OPTIONAL MATCH " : "MATCH ";
     out += pattern;
     if (match->where) {
-      const std::string where_text = expressionToString(*match->where);
+      const std::string where_text = ExpressionToString(*match->where);
       if (where_text.empty()) {
         return {};
       }
@@ -888,7 +888,7 @@ std::string ReadingClauseToString(const ReadingClause &clause) {
     if (!unwind->expression) {
       return {};
     }
-    const std::string expr = expressionToString(*unwind->expression);
+    const std::string expr = ExpressionToString(*unwind->expression);
     if (expr.empty()) {
       return {};
     }
@@ -901,7 +901,7 @@ std::string ReadingClauseToString(const ReadingClause &clause) {
       if (!arg) {
         return {};
       }
-      const std::string text = expressionToString(*arg);
+      const std::string text = ExpressionToString(*arg);
       if (text.empty()) {
         return {};
       }
@@ -922,7 +922,7 @@ std::string ReadingClauseToString(const ReadingClause &clause) {
       out += " YIELD " + Join(items, ", ");
     }
     if (call->yield_where) {
-      const std::string where_text = expressionToString(*call->yield_where);
+      const std::string where_text = ExpressionToString(*call->yield_where);
       if (where_text.empty()) {
         return {};
       }
@@ -984,7 +984,7 @@ std::string UpdatingClauseToString(const UpdatingClause &clause) {
       if (!expr) {
         return {};
       }
-      const std::string text = expressionToString(*expr);
+      const std::string text = ExpressionToString(*expr);
       if (text.empty()) {
         return {};
       }
@@ -1043,7 +1043,7 @@ std::string ProjectionClauseToString(const ProjectionClause &clause) {
   if (const auto *with = dynamic_cast<const With *>(&clause)) {
     std::string out = "WITH " + body;
     if (with->where) {
-      const std::string where_text = expressionToString(*with->where);
+      const std::string where_text = ExpressionToString(*with->where);
       if (where_text.empty()) {
         return {};
       }
@@ -1171,7 +1171,7 @@ std::string RegularQueryToString(const RegularQuery &query) {
 
 }  // namespace
 
-std::string expressionToString(const Expression &expr) {
+std::string ExpressionToString(const Expression &expr) {
   return ExpressionText(expr).text;
 }
 

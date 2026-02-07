@@ -6,7 +6,7 @@ namespace ast {
 
 class AddUniquenessPredicatesRewriter : public ASTRewriter {
  public:
-  void visit(Match &node) override;
+  void Visit(Match &node) override;
 
  private:
   int next_temp_id_ = 0;

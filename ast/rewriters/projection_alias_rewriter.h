@@ -6,7 +6,7 @@ namespace ast {
 
 class ProjectionAliasRewriter : public ASTRewriter {
  protected:
-  void visit(ProjectionBody &node) override;
+  void Visit(ProjectionBody &node) override;
 };
 
 }  // namespace ast

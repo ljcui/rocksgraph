@@ -106,65 +106,65 @@ void AppendPath(std::ostringstream &oss, const Path &path) {
 }
 
 void AppendValue(std::ostringstream &oss, const Value &value) {
-  switch (value.type()) {
+  switch (value.Type()) {
     case ValueType::kNull:
       oss << "null";
       break;
     case ValueType::kBool:
-      oss << (value.as_bool() ? "true" : "false");
+      oss << (value.AsBool() ? "true" : "false");
       break;
     case ValueType::kInteger:
-      oss << value.as_integer();
+      oss << value.AsInteger();
       break;
     case ValueType::kDouble:
-      oss << value.as_double();
+      oss << value.AsDouble();
       break;
     case ValueType::kString:
-      oss << '"' << value.as_string() << '"';
+      oss << '"' << value.AsString() << '"';
       break;
     case ValueType::kList:
-      AppendValueList(oss, value.as_list());
+      AppendValueList(oss, value.AsList());
       break;
     case ValueType::kMap:
-      AppendValueMap(oss, value.as_map());
+      AppendValueMap(oss, value.AsMap());
       break;
     case ValueType::kNode:
-      AppendNode(oss, value.as_node());
+      AppendNode(oss, value.AsNode());
       break;
     case ValueType::kRelationship:
-      AppendRelationship(oss, value.as_relationship());
+      AppendRelationship(oss, value.AsRelationship());
       break;
     case ValueType::kPath:
-      AppendPath(oss, value.as_path());
+      AppendPath(oss, value.AsPath());
       break;
     case ValueType::kDate: {
-      const auto &date = value.as_date();
+      const auto &date = value.AsDate();
       oss << "Date{" << date.year << '-' << date.month << '-' << date.day
           << '}';
       break;
     }
     case ValueType::kLocalTime: {
-      const auto &local_time = value.as_local_time();
+      const auto &local_time = value.AsLocalTime();
       oss << "LocalTime{" << local_time.hour << ':' << local_time.minute << ':'
           << local_time.second << '.' << local_time.nanosecond << '}';
       break;
     }
     case ValueType::kTime: {
-      const auto &time = value.as_time();
+      const auto &time = value.AsTime();
       oss << "Time{" << time.local_time.hour << ':' << time.local_time.minute
           << ':' << time.local_time.second << '.' << time.local_time.nanosecond
           << ", offset=" << time.utc_offset_seconds << '}';
       break;
     }
     case ValueType::kLocalDateTime: {
-      const auto &dt = value.as_local_date_time();
+      const auto &dt = value.AsLocalDateTime();
       oss << "LocalDateTime{" << dt.date.year << '-' << dt.date.month << '-'
           << dt.date.day << 'T' << dt.time.hour << ':' << dt.time.minute << ':'
           << dt.time.second << '.' << dt.time.nanosecond << '}';
       break;
     }
     case ValueType::kDateTime: {
-      const auto &dt = value.as_date_time();
+      const auto &dt = value.AsDateTime();
       oss << "DateTime{" << dt.local_date_time.date.year << '-'
           << dt.local_date_time.date.month << '-' << dt.local_date_time.date.day
           << 'T' << dt.local_date_time.time.hour << ':'
@@ -175,14 +175,14 @@ void AppendValue(std::ostringstream &oss, const Value &value) {
       break;
     }
     case ValueType::kDuration: {
-      const auto &duration = value.as_duration();
+      const auto &duration = value.AsDuration();
       oss << "Duration{months=" << duration.months << ", days=" << duration.days
           << ", seconds=" << duration.seconds
           << ", nanoseconds=" << duration.nanoseconds << '}';
       break;
     }
     case ValueType::kPoint: {
-      const auto &point = value.as_point();
+      const auto &point = value.AsPoint();
       oss << "Point{srid=" << point.srid << ", coordinates=";
       oss << '[';
       for (size_t i = 0; i < point.coordinates.size(); ++i) {
@@ -248,7 +248,7 @@ Value::Value(Duration value) : storage_(value) {}
 
 Value::Value(Point value) : storage_(std::move(value)) {}
 
-ValueType Value::type() const {
+ValueType Value::Type() const {
   if (std::holds_alternative<std::monostate>(storage_)) {
     return ValueType::kNull;
   }
@@ -300,176 +300,172 @@ ValueType Value::type() const {
   return ValueType::kPoint;
 }
 
-bool Value::is_null() const {
+bool Value::IsNull() const {
   return std::holds_alternative<std::monostate>(storage_);
 }
 
-bool Value::is_bool() const { return std::holds_alternative<bool>(storage_); }
+bool Value::IsBool() const { return std::holds_alternative<bool>(storage_); }
 
-bool Value::is_integer() const {
+bool Value::IsInteger() const {
   return std::holds_alternative<int64_t>(storage_);
 }
 
-bool Value::is_double() const {
+bool Value::IsDouble() const {
   return std::holds_alternative<double>(storage_);
 }
 
-bool Value::is_string() const {
+bool Value::IsString() const {
   return std::holds_alternative<std::string>(storage_);
 }
 
-bool Value::is_list() const { return std::holds_alternative<List>(storage_); }
+bool Value::IsList() const { return std::holds_alternative<List>(storage_); }
 
-bool Value::is_map() const { return std::holds_alternative<Map>(storage_); }
+bool Value::IsMap() const { return std::holds_alternative<Map>(storage_); }
 
-bool Value::is_node() const {
-  return std::holds_alternative<NodePtr>(storage_);
-}
+bool Value::IsNode() const { return std::holds_alternative<NodePtr>(storage_); }
 
-bool Value::is_relationship() const {
+bool Value::IsRelationship() const {
   return std::holds_alternative<RelationshipPtr>(storage_);
 }
 
-bool Value::is_path() const {
-  return std::holds_alternative<PathPtr>(storage_);
-}
+bool Value::IsPath() const { return std::holds_alternative<PathPtr>(storage_); }
 
-bool Value::is_date() const { return std::holds_alternative<Date>(storage_); }
+bool Value::IsDate() const { return std::holds_alternative<Date>(storage_); }
 
-bool Value::is_local_time() const {
+bool Value::IsLocalTime() const {
   return std::holds_alternative<LocalTime>(storage_);
 }
 
-bool Value::is_time() const { return std::holds_alternative<Time>(storage_); }
+bool Value::IsTime() const { return std::holds_alternative<Time>(storage_); }
 
-bool Value::is_local_date_time() const {
+bool Value::IsLocalDateTime() const {
   return std::holds_alternative<LocalDateTime>(storage_);
 }
 
-bool Value::is_date_time() const {
+bool Value::IsDateTime() const {
   return std::holds_alternative<DateTime>(storage_);
 }
 
-bool Value::is_duration() const {
+bool Value::IsDuration() const {
   return std::holds_alternative<Duration>(storage_);
 }
 
-bool Value::is_point() const { return std::holds_alternative<Point>(storage_); }
+bool Value::IsPoint() const { return std::holds_alternative<Point>(storage_); }
 
-bool Value::as_bool() const {
-  assert(is_bool());
+bool Value::AsBool() const {
+  assert(IsBool());
   return std::get<bool>(storage_);
 }
 
-int64_t Value::as_integer() const {
-  assert(is_integer());
+int64_t Value::AsInteger() const {
+  assert(IsInteger());
   return std::get<int64_t>(storage_);
 }
 
-double Value::as_double() const {
-  assert(is_double());
+double Value::AsDouble() const {
+  assert(IsDouble());
   return std::get<double>(storage_);
 }
 
-const std::string &Value::as_string() const {
-  assert(is_string());
+const std::string &Value::AsString() const {
+  assert(IsString());
   return std::get<std::string>(storage_);
 }
 
-const Value::List &Value::as_list() const {
-  assert(is_list());
+const Value::List &Value::AsList() const {
+  assert(IsList());
   return std::get<List>(storage_);
 }
 
-Value::List &Value::as_list() {
-  assert(is_list());
+Value::List &Value::AsList() {
+  assert(IsList());
   return std::get<List>(storage_);
 }
 
-const Value::Map &Value::as_map() const {
-  assert(is_map());
+const Value::Map &Value::AsMap() const {
+  assert(IsMap());
   return std::get<Map>(storage_);
 }
 
-Value::Map &Value::as_map() {
-  assert(is_map());
+Value::Map &Value::AsMap() {
+  assert(IsMap());
   return std::get<Map>(storage_);
 }
 
-const Node &Value::as_node() const {
-  assert(is_node());
+const Node &Value::AsNode() const {
+  assert(IsNode());
   const auto &ptr = std::get<NodePtr>(storage_);
   assert(ptr != nullptr);
   return *ptr;
 }
 
-Node &Value::as_node() {
-  assert(is_node());
+Node &Value::AsNode() {
+  assert(IsNode());
   auto &ptr = std::get<NodePtr>(storage_);
   assert(ptr != nullptr);
   return *ptr;
 }
 
-const Relationship &Value::as_relationship() const {
-  assert(is_relationship());
+const Relationship &Value::AsRelationship() const {
+  assert(IsRelationship());
   const auto &ptr = std::get<RelationshipPtr>(storage_);
   assert(ptr != nullptr);
   return *ptr;
 }
 
-Relationship &Value::as_relationship() {
-  assert(is_relationship());
+Relationship &Value::AsRelationship() {
+  assert(IsRelationship());
   auto &ptr = std::get<RelationshipPtr>(storage_);
   assert(ptr != nullptr);
   return *ptr;
 }
 
-const Path &Value::as_path() const {
-  assert(is_path());
+const Path &Value::AsPath() const {
+  assert(IsPath());
   const auto &ptr = std::get<PathPtr>(storage_);
   assert(ptr != nullptr);
   return *ptr;
 }
 
-Path &Value::as_path() {
-  assert(is_path());
+Path &Value::AsPath() {
+  assert(IsPath());
   auto &ptr = std::get<PathPtr>(storage_);
   assert(ptr != nullptr);
   return *ptr;
 }
 
-const Date &Value::as_date() const {
-  assert(is_date());
+const Date &Value::AsDate() const {
+  assert(IsDate());
   return std::get<Date>(storage_);
 }
 
-const LocalTime &Value::as_local_time() const {
-  assert(is_local_time());
+const LocalTime &Value::AsLocalTime() const {
+  assert(IsLocalTime());
   return std::get<LocalTime>(storage_);
 }
 
-const Time &Value::as_time() const {
-  assert(is_time());
+const Time &Value::AsTime() const {
+  assert(IsTime());
   return std::get<Time>(storage_);
 }
 
-const LocalDateTime &Value::as_local_date_time() const {
-  assert(is_local_date_time());
+const LocalDateTime &Value::AsLocalDateTime() const {
+  assert(IsLocalDateTime());
   return std::get<LocalDateTime>(storage_);
 }
 
-const DateTime &Value::as_date_time() const {
-  assert(is_date_time());
+const DateTime &Value::AsDateTime() const {
+  assert(IsDateTime());
   return std::get<DateTime>(storage_);
 }
 
-const Duration &Value::as_duration() const {
-  assert(is_duration());
+const Duration &Value::AsDuration() const {
+  assert(IsDuration());
   return std::get<Duration>(storage_);
 }
 
-const Point &Value::as_point() const {
-  assert(is_point());
+const Point &Value::AsPoint() const {
+  assert(IsPoint());
   return std::get<Point>(storage_);
 }
 
@@ -480,24 +476,24 @@ std::string Value::ToString() const {
 }
 
 bool Value::operator==(const Value &other) const {
-  if (type() != other.type()) {
+  if (Type() != other.Type()) {
     return false;
   }
-  switch (type()) {
+  switch (Type()) {
     case ValueType::kNull:
       return true;
     case ValueType::kBool:
-      return as_bool() == other.as_bool();
+      return AsBool() == other.AsBool();
     case ValueType::kInteger:
-      return as_integer() == other.as_integer();
+      return AsInteger() == other.AsInteger();
     case ValueType::kDouble:
-      return as_double() == other.as_double();
+      return AsDouble() == other.AsDouble();
     case ValueType::kString:
-      return as_string() == other.as_string();
+      return AsString() == other.AsString();
     case ValueType::kList:
-      return as_list() == other.as_list();
+      return AsList() == other.AsList();
     case ValueType::kMap:
-      return as_map() == other.as_map();
+      return AsMap() == other.AsMap();
     case ValueType::kNode: {
       const auto &left = std::get<NodePtr>(storage_);
       const auto &right = std::get<NodePtr>(other.storage_);
@@ -509,21 +505,21 @@ bool Value::operator==(const Value &other) const {
       return PtrEqual(left, right);
     }
     case ValueType::kPath:
-      return as_path() == other.as_path();
+      return AsPath() == other.AsPath();
     case ValueType::kDate:
-      return as_date() == other.as_date();
+      return AsDate() == other.AsDate();
     case ValueType::kLocalTime:
-      return as_local_time() == other.as_local_time();
+      return AsLocalTime() == other.AsLocalTime();
     case ValueType::kTime:
-      return as_time() == other.as_time();
+      return AsTime() == other.AsTime();
     case ValueType::kLocalDateTime:
-      return as_local_date_time() == other.as_local_date_time();
+      return AsLocalDateTime() == other.AsLocalDateTime();
     case ValueType::kDateTime:
-      return as_date_time() == other.as_date_time();
+      return AsDateTime() == other.AsDateTime();
     case ValueType::kDuration:
-      return as_duration() == other.as_duration();
+      return AsDuration() == other.AsDuration();
     case ValueType::kPoint:
-      return as_point() == other.as_point();
+      return AsPoint() == other.AsPoint();
   }
   return false;
 }

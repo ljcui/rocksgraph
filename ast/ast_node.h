@@ -30,84 +30,84 @@ class Properties;
 class Parameter;
 
 enum class ASTNodeType {
-  Unknown,
-  SinglePartQuery,
-  MultiPartQuery,
-  UnionPart,
-  RegularQuery,
-  StandaloneCall,
-  OrExpression,
-  XorExpression,
-  AndExpression,
-  ComparisonExpression,
-  ComparisonChainExpression,
-  AddExpression,
-  SubtractExpression,
-  MultiplyExpression,
-  DivideExpression,
-  ModuloExpression,
-  PowerExpression,
-  NotExpression,
-  UnaryPlusExpression,
-  UnaryMinusExpression,
-  StringPredicateExpression,
-  ListPredicateExpression,
-  LabelPredicateExpression,
-  NullPredicateExpression,
-  BooleanLiteral,
-  IntegerLiteral,
-  DoubleLiteral,
-  StringLiteral,
-  NullLiteral,
-  ListLiteral,
-  MapLiteral,
-  Properties,
-  Variable,
-  Parameter,
-  PropertyExpression,
-  ListIndexExpression,
-  ListSliceExpression,
-  FunctionInvocation,
-  CountStarExpression,
-  CaseExpression,
-  ParenthesizedExpression,
-  ListComprehension,
-  PatternComprehension,
-  PatternPredicateExpression,
-  AllQuantifier,
-  AnyQuantifier,
-  NoneQuantifier,
-  SingleQuantifier,
-  ExistentialSubquery,
-  Pattern,
-  PatternPart,
-  PatternElement,
-  RelationshipsPattern,
-  NodePattern,
-  RelationshipPattern,
-  RelationshipDetail,
-  Match,
-  Unwind,
-  InQueryCall,
-  Create,
-  Merge,
-  Delete,
-  SetItem,
-  Set,
-  RemoveItem,
-  Remove,
-  SortItem,
-  ProjectionItem,
-  ProjectionBody,
-  With,
-  Return,
+  kUnknown,
+  kSinglePartQuery,
+  kMultiPartQuery,
+  kUnionPart,
+  kRegularQuery,
+  kStandaloneCall,
+  kOrExpression,
+  kXorExpression,
+  kAndExpression,
+  kComparisonExpression,
+  kComparisonChainExpression,
+  kAddExpression,
+  kSubtractExpression,
+  kMultiplyExpression,
+  kDivideExpression,
+  kModuloExpression,
+  kPowerExpression,
+  kNotExpression,
+  kUnaryPlusExpression,
+  kUnaryMinusExpression,
+  kStringPredicateExpression,
+  kListPredicateExpression,
+  kLabelPredicateExpression,
+  kNullPredicateExpression,
+  kBooleanLiteral,
+  kIntegerLiteral,
+  kDoubleLiteral,
+  kStringLiteral,
+  kNullLiteral,
+  kListLiteral,
+  kMapLiteral,
+  kProperties,
+  kVariable,
+  kParameter,
+  kPropertyExpression,
+  kListIndexExpression,
+  kListSliceExpression,
+  kFunctionInvocation,
+  kCountStarExpression,
+  kCaseExpression,
+  kParenthesizedExpression,
+  kListComprehension,
+  kPatternComprehension,
+  kPatternPredicateExpression,
+  kAllQuantifier,
+  kAnyQuantifier,
+  kNoneQuantifier,
+  kSingleQuantifier,
+  kExistentialSubquery,
+  kPattern,
+  kPatternPart,
+  kPatternElement,
+  kRelationshipsPattern,
+  kNodePattern,
+  kRelationshipPattern,
+  kRelationshipDetail,
+  kMatch,
+  kUnwind,
+  kInQueryCall,
+  kCreate,
+  kMerge,
+  kDelete,
+  kSetItem,
+  kSet,
+  kRemoveItem,
+  kRemove,
+  kSortItem,
+  kProjectionItem,
+  kProjectionBody,
+  kWith,
+  kReturn,
 };
 
 enum class ASTNodeCategory {
-  Unknown,
-  Expression,
-  Clause,
-  Pattern,
+  kUnknown,
+  kExpression,
+  kClause,
+  kPattern,
 };
 
 // ============================================
@@ -115,10 +115,10 @@ enum class ASTNodeCategory {
 // ============================================
 class ASTNode {
  public:
-  ASTNodeType node_type = ASTNodeType::Unknown;
-  ASTNodeCategory category = ASTNodeCategory::Unknown;
+  ASTNodeType node_type = ASTNodeType::kUnknown;
+  ASTNodeCategory category = ASTNodeCategory::kUnknown;
   virtual ~ASTNode() = default;
-  virtual void accept(ASTVisitor& visitor) = 0;
+  virtual void Accept(ASTVisitor& visitor) = 0;
 };
 
 // ============================================
@@ -141,21 +141,21 @@ class SingleQuery : public ASTNode {
 
 class SinglePartQuery : public SingleQuery {
  public:
-  SinglePartQuery() { node_type = ASTNodeType::SinglePartQuery; }
+  SinglePartQuery() { node_type = ASTNodeType::kSinglePartQuery; }
   std::vector<std::unique_ptr<ReadingClause>> reading_clauses;
   std::vector<std::unique_ptr<UpdatingClause>> updating_clauses;
   std::unique_ptr<Return> return_clause;
-  void validate() const {
+  void Validate() const {
     if (updating_clauses.empty()) {
       assert(return_clause);
     }
   }
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class MultiPartQuery : public SingleQuery {
  public:
-  MultiPartQuery() { node_type = ASTNodeType::MultiPartQuery; }
+  MultiPartQuery() { node_type = ASTNodeType::kMultiPartQuery; }
   struct WithPart {
     std::vector<std::unique_ptr<ReadingClause>> reading_clauses;
     std::vector<std::unique_ptr<UpdatingClause>> updating_clauses;
@@ -163,35 +163,35 @@ class MultiPartQuery : public SingleQuery {
   };
   std::vector<WithPart> parts;
   std::unique_ptr<SinglePartQuery> final_single_part_query;
-  void validate() const {
+  void Validate() const {
     assert(!parts.empty());
     for (const auto& part : parts) {
       assert(part.with_clause);
     }
     assert(final_single_part_query);
   }
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class UnionPart : public ASTNode {
  public:
-  UnionPart() { node_type = ASTNodeType::UnionPart; }
+  UnionPart() { node_type = ASTNodeType::kUnionPart; }
   bool all = false;
   std::unique_ptr<SingleQuery> query;
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class RegularQuery : public Query {
  public:
-  RegularQuery() { node_type = ASTNodeType::RegularQuery; }
+  RegularQuery() { node_type = ASTNodeType::kRegularQuery; }
   std::unique_ptr<SingleQuery> single_query;
   std::vector<std::unique_ptr<UnionPart>> unions;
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class StandaloneCall : public Query {
  public:
-  StandaloneCall() { node_type = ASTNodeType::StandaloneCall; }
+  StandaloneCall() { node_type = ASTNodeType::kStandaloneCall; }
   std::string procedure_name;
   std::vector<std::unique_ptr<Expression>> arguments;
   struct YieldItem {
@@ -201,7 +201,7 @@ class StandaloneCall : public Query {
   std::vector<YieldItem> yield_items;
   bool yield_star = false;
   std::unique_ptr<Expression> yield_where;
-  void validate() const {
+  void Validate() const {
     if (yield_star) {
       assert(yield_items.empty());
       assert(!yield_where);
@@ -209,7 +209,7 @@ class StandaloneCall : public Query {
       assert(!yield_where);
     }
   }
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 // ============================================
@@ -217,7 +217,7 @@ class StandaloneCall : public Query {
 // ============================================
 class Expression : public ASTNode {
  protected:
-  Expression() { category = ASTNodeCategory::Expression; }
+  Expression() { category = ASTNodeCategory::kExpression; }
 };
 
 // ============================================
@@ -231,76 +231,76 @@ class BinaryExpression : public Expression {
 
 class OrExpression : public BinaryExpression {
  public:
-  OrExpression() { node_type = ASTNodeType::OrExpression; }
-  void accept(ASTVisitor& visitor) override;
+  OrExpression() { node_type = ASTNodeType::kOrExpression; }
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class XorExpression : public BinaryExpression {
  public:
-  XorExpression() { node_type = ASTNodeType::XorExpression; }
-  void accept(ASTVisitor& visitor) override;
+  XorExpression() { node_type = ASTNodeType::kXorExpression; }
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class AndExpression : public BinaryExpression {
  public:
-  AndExpression() { node_type = ASTNodeType::AndExpression; }
-  void accept(ASTVisitor& visitor) override;
+  AndExpression() { node_type = ASTNodeType::kAndExpression; }
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class ComparisonExpression : public Expression {
  public:
-  ComparisonExpression() { node_type = ASTNodeType::ComparisonExpression; }
+  ComparisonExpression() { node_type = ASTNodeType::kComparisonExpression; }
   std::unique_ptr<Expression> left;
   std::string op;  // =, <>, <, >, <=, >=
   std::unique_ptr<Expression> right;
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class ComparisonChainExpression : public Expression {
  public:
   ComparisonChainExpression() {
-    node_type = ASTNodeType::ComparisonChainExpression;
+    node_type = ASTNodeType::kComparisonChainExpression;
   }
   std::unique_ptr<Expression> left;
   std::vector<std::pair<std::string, std::unique_ptr<Expression>>> rights;
-  void validate() const { assert(!rights.empty()); }
-  void accept(ASTVisitor& visitor) override;
+  void Validate() const { assert(!rights.empty()); }
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class AddExpression : public BinaryExpression {
  public:
-  AddExpression() { node_type = ASTNodeType::AddExpression; }
-  void accept(ASTVisitor& visitor) override;
+  AddExpression() { node_type = ASTNodeType::kAddExpression; }
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class SubtractExpression : public BinaryExpression {
  public:
-  SubtractExpression() { node_type = ASTNodeType::SubtractExpression; }
-  void accept(ASTVisitor& visitor) override;
+  SubtractExpression() { node_type = ASTNodeType::kSubtractExpression; }
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class MultiplyExpression : public BinaryExpression {
  public:
-  MultiplyExpression() { node_type = ASTNodeType::MultiplyExpression; }
-  void accept(ASTVisitor& visitor) override;
+  MultiplyExpression() { node_type = ASTNodeType::kMultiplyExpression; }
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class DivideExpression : public BinaryExpression {
  public:
-  DivideExpression() { node_type = ASTNodeType::DivideExpression; }
-  void accept(ASTVisitor& visitor) override;
+  DivideExpression() { node_type = ASTNodeType::kDivideExpression; }
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class ModuloExpression : public BinaryExpression {
  public:
-  ModuloExpression() { node_type = ASTNodeType::ModuloExpression; }
-  void accept(ASTVisitor& visitor) override;
+  ModuloExpression() { node_type = ASTNodeType::kModuloExpression; }
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class PowerExpression : public BinaryExpression {
  public:
-  PowerExpression() { node_type = ASTNodeType::PowerExpression; }
-  void accept(ASTVisitor& visitor) override;
+  PowerExpression() { node_type = ASTNodeType::kPowerExpression; }
+  void Accept(ASTVisitor& visitor) override;
 };
 
 // ============================================
@@ -313,20 +313,20 @@ class UnaryExpression : public Expression {
 
 class NotExpression : public UnaryExpression {
  public:
-  NotExpression() { node_type = ASTNodeType::NotExpression; }
-  void accept(ASTVisitor& visitor) override;
+  NotExpression() { node_type = ASTNodeType::kNotExpression; }
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class UnaryPlusExpression : public UnaryExpression {
  public:
-  UnaryPlusExpression() { node_type = ASTNodeType::UnaryPlusExpression; }
-  void accept(ASTVisitor& visitor) override;
+  UnaryPlusExpression() { node_type = ASTNodeType::kUnaryPlusExpression; }
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class UnaryMinusExpression : public UnaryExpression {
  public:
-  UnaryMinusExpression() { node_type = ASTNodeType::UnaryMinusExpression; }
-  void accept(ASTVisitor& visitor) override;
+  UnaryMinusExpression() { node_type = ASTNodeType::kUnaryMinusExpression; }
+  void Accept(ASTVisitor& visitor) override;
 };
 
 // ============================================
@@ -335,43 +335,43 @@ class UnaryMinusExpression : public UnaryExpression {
 class StringPredicateExpression : public Expression {
  public:
   StringPredicateExpression() {
-    node_type = ASTNodeType::StringPredicateExpression;
+    node_type = ASTNodeType::kStringPredicateExpression;
   }
   std::unique_ptr<Expression> left;
   std::string op;  // STARTS WITH, ENDS WITH, CONTAINS
   std::unique_ptr<Expression> right;
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class ListPredicateExpression : public Expression {
  public:
   ListPredicateExpression() {
-    node_type = ASTNodeType::ListPredicateExpression;
+    node_type = ASTNodeType::kListPredicateExpression;
   }
   std::unique_ptr<Expression> element;
   std::unique_ptr<Expression> list;
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class LabelPredicateExpression : public Expression {
  public:
   LabelPredicateExpression() {
-    node_type = ASTNodeType::LabelPredicateExpression;
+    node_type = ASTNodeType::kLabelPredicateExpression;
   }
   std::unique_ptr<Expression> expr;
   std::vector<std::string> labels;
-  void validate() const { assert(!labels.empty()); }
-  void accept(ASTVisitor& visitor) override;
+  void Validate() const { assert(!labels.empty()); }
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class NullPredicateExpression : public Expression {
  public:
   NullPredicateExpression() {
-    node_type = ASTNodeType::NullPredicateExpression;
+    node_type = ASTNodeType::kNullPredicateExpression;
   }
   std::unique_ptr<Expression> operand;
   bool is_null = true;  // IS NULL or IS NOT NULL
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 // ============================================
@@ -384,59 +384,59 @@ class Literal : public Expression {
 
 class BooleanLiteral : public Literal {
  public:
-  BooleanLiteral() { node_type = ASTNodeType::BooleanLiteral; }
+  BooleanLiteral() { node_type = ASTNodeType::kBooleanLiteral; }
   bool value = false;
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class IntegerLiteral : public Literal {
  public:
-  IntegerLiteral() { node_type = ASTNodeType::IntegerLiteral; }
+  IntegerLiteral() { node_type = ASTNodeType::kIntegerLiteral; }
   int64_t value = 0;
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class DoubleLiteral : public Literal {
  public:
-  DoubleLiteral() { node_type = ASTNodeType::DoubleLiteral; }
+  DoubleLiteral() { node_type = ASTNodeType::kDoubleLiteral; }
   double value = 0.0;
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class StringLiteral : public Literal {
  public:
-  StringLiteral() { node_type = ASTNodeType::StringLiteral; }
+  StringLiteral() { node_type = ASTNodeType::kStringLiteral; }
   std::string value;
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class NullLiteral : public Literal {
  public:
-  NullLiteral() { node_type = ASTNodeType::NullLiteral; }
-  void accept(ASTVisitor& visitor) override;
+  NullLiteral() { node_type = ASTNodeType::kNullLiteral; }
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class ListLiteral : public Literal {
  public:
-  ListLiteral() { node_type = ASTNodeType::ListLiteral; }
+  ListLiteral() { node_type = ASTNodeType::kListLiteral; }
   std::vector<std::unique_ptr<Expression>> elements;
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class MapLiteral : public Literal {
  public:
-  MapLiteral() { node_type = ASTNodeType::MapLiteral; }
+  MapLiteral() { node_type = ASTNodeType::kMapLiteral; }
   std::vector<std::pair<std::string, std::unique_ptr<Expression>>> entries;
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class Properties : public ASTNode {
  public:
-  Properties() { node_type = ASTNodeType::Properties; }
+  Properties() { node_type = ASTNodeType::kProperties; }
   std::unique_ptr<MapLiteral> map;
   std::unique_ptr<Parameter> parameter;
-  void validate() const { assert((map && !parameter) || (!map && parameter)); }
-  void accept(ASTVisitor& visitor) override;
+  void Validate() const { assert((map && !parameter) || (!map && parameter)); }
+  void Accept(ASTVisitor& visitor) override;
 };
 
 // ============================================
@@ -444,79 +444,79 @@ class Properties : public ASTNode {
 // ============================================
 class Variable : public Expression {
  public:
-  Variable() { node_type = ASTNodeType::Variable; }
+  Variable() { node_type = ASTNodeType::kVariable; }
   std::string name;
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class Parameter : public Expression {
  public:
-  Parameter() { node_type = ASTNodeType::Parameter; }
+  Parameter() { node_type = ASTNodeType::kParameter; }
   std::string name;
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class PropertyExpression : public Expression {
  public:
-  PropertyExpression() { node_type = ASTNodeType::PropertyExpression; }
+  PropertyExpression() { node_type = ASTNodeType::kPropertyExpression; }
   std::unique_ptr<Expression> object;
   std::string property_key;
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class ListIndexExpression : public Expression {
  public:
-  ListIndexExpression() { node_type = ASTNodeType::ListIndexExpression; }
+  ListIndexExpression() { node_type = ASTNodeType::kListIndexExpression; }
   std::unique_ptr<Expression> list;
   std::unique_ptr<Expression> index;
-  void validate() const { assert(list && index); }
-  void accept(ASTVisitor& visitor) override;
+  void Validate() const { assert(list && index); }
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class ListSliceExpression : public Expression {
  public:
-  ListSliceExpression() { node_type = ASTNodeType::ListSliceExpression; }
+  ListSliceExpression() { node_type = ASTNodeType::kListSliceExpression; }
   std::unique_ptr<Expression> list;
   std::unique_ptr<Expression> start_index;  // optional
   std::unique_ptr<Expression> end_index;    // optional
-  void validate() const { assert(list); }
-  void accept(ASTVisitor& visitor) override;
+  void Validate() const { assert(list); }
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class FunctionInvocation : public Expression {
  public:
-  FunctionInvocation() { node_type = ASTNodeType::FunctionInvocation; }
+  FunctionInvocation() { node_type = ASTNodeType::kFunctionInvocation; }
   std::string function_name;
   bool distinct = false;
   std::vector<std::unique_ptr<Expression>> arguments;
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class CountStarExpression : public Expression {
  public:
-  CountStarExpression() { node_type = ASTNodeType::CountStarExpression; }
-  void accept(ASTVisitor& visitor) override;
+  CountStarExpression() { node_type = ASTNodeType::kCountStarExpression; }
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class CaseExpression : public Expression {
  public:
-  CaseExpression() { node_type = ASTNodeType::CaseExpression; }
+  CaseExpression() { node_type = ASTNodeType::kCaseExpression; }
   std::unique_ptr<Expression> test;  // for simple CASE
   std::vector<
       std::pair<std::unique_ptr<Expression>, std::unique_ptr<Expression>>>
       alternatives;
   std::unique_ptr<Expression> else_expr;
-  void validate() const { assert(!alternatives.empty()); }
-  void accept(ASTVisitor& visitor) override;
+  void Validate() const { assert(!alternatives.empty()); }
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class ParenthesizedExpression : public Expression {
  public:
   ParenthesizedExpression() {
-    node_type = ASTNodeType::ParenthesizedExpression;
+    node_type = ASTNodeType::kParenthesizedExpression;
   }
   std::unique_ptr<Expression> expr;
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 // ============================================
@@ -524,31 +524,31 @@ class ParenthesizedExpression : public Expression {
 // ============================================
 class ListComprehension : public Expression {
  public:
-  ListComprehension() { node_type = ASTNodeType::ListComprehension; }
+  ListComprehension() { node_type = ASTNodeType::kListComprehension; }
   std::string variable;
   std::unique_ptr<Expression> list_expr;
   std::unique_ptr<Expression> where_expr;
   std::unique_ptr<Expression> eval_expr;
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class PatternComprehension : public Expression {
  public:
-  PatternComprehension() { node_type = ASTNodeType::PatternComprehension; }
+  PatternComprehension() { node_type = ASTNodeType::kPatternComprehension; }
   std::string variable;
   std::unique_ptr<RelationshipsPattern> relationships_pattern;
   std::unique_ptr<Expression> where_expr;
   std::unique_ptr<Expression> eval_expr;
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class PatternPredicateExpression : public Expression {
  public:
   PatternPredicateExpression() {
-    node_type = ASTNodeType::PatternPredicateExpression;
+    node_type = ASTNodeType::kPatternPredicateExpression;
   }
   std::unique_ptr<RelationshipsPattern> relationships_pattern;
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 // ============================================
@@ -563,26 +563,26 @@ class Quantifier : public Expression {
 
 class AllQuantifier : public Quantifier {
  public:
-  AllQuantifier() { node_type = ASTNodeType::AllQuantifier; }
-  void accept(ASTVisitor& visitor) override;
+  AllQuantifier() { node_type = ASTNodeType::kAllQuantifier; }
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class AnyQuantifier : public Quantifier {
  public:
-  AnyQuantifier() { node_type = ASTNodeType::AnyQuantifier; }
-  void accept(ASTVisitor& visitor) override;
+  AnyQuantifier() { node_type = ASTNodeType::kAnyQuantifier; }
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class NoneQuantifier : public Quantifier {
  public:
-  NoneQuantifier() { node_type = ASTNodeType::NoneQuantifier; }
-  void accept(ASTVisitor& visitor) override;
+  NoneQuantifier() { node_type = ASTNodeType::kNoneQuantifier; }
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class SingleQuantifier : public Quantifier {
  public:
-  SingleQuantifier() { node_type = ASTNodeType::SingleQuantifier; }
-  void accept(ASTVisitor& visitor) override;
+  SingleQuantifier() { node_type = ASTNodeType::kSingleQuantifier; }
+  void Accept(ASTVisitor& visitor) override;
 };
 
 // ============================================
@@ -590,11 +590,11 @@ class SingleQuantifier : public Quantifier {
 // ============================================
 class ExistentialSubquery : public Expression {
  public:
-  ExistentialSubquery() { node_type = ASTNodeType::ExistentialSubquery; }
+  ExistentialSubquery() { node_type = ASTNodeType::kExistentialSubquery; }
   std::unique_ptr<RegularQuery> query;
   std::unique_ptr<Pattern> pattern;
   std::unique_ptr<Expression> where_expr;
-  void validate() const {
+  void Validate() const {
     const bool has_query = static_cast<bool>(query);
     const bool has_pattern = static_cast<bool>(pattern);
     assert(has_query ^ has_pattern);
@@ -602,7 +602,7 @@ class ExistentialSubquery : public Expression {
       assert(!where_expr);
     }
   }
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 // ============================================
@@ -611,86 +611,86 @@ class ExistentialSubquery : public Expression {
 class Pattern : public ASTNode {
  public:
   Pattern() {
-    node_type = ASTNodeType::Pattern;
-    category = ASTNodeCategory::Pattern;
+    node_type = ASTNodeType::kPattern;
+    category = ASTNodeCategory::kPattern;
   }
   std::vector<std::unique_ptr<PatternPart>> parts;
-  void validate() const { assert(!parts.empty()); }
-  void accept(ASTVisitor& visitor) override;
+  void Validate() const { assert(!parts.empty()); }
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class PatternPart : public ASTNode {
  public:
   PatternPart() {
-    node_type = ASTNodeType::PatternPart;
-    category = ASTNodeCategory::Pattern;
+    node_type = ASTNodeType::kPatternPart;
+    category = ASTNodeCategory::kPattern;
   }
   std::string variable;
   std::unique_ptr<PatternElement> element;
-  void validate() const { assert(element); }
-  void accept(ASTVisitor& visitor) override;
+  void Validate() const { assert(element); }
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class PatternElement : public ASTNode {
  public:
   PatternElement() {
-    node_type = ASTNodeType::PatternElement;
-    category = ASTNodeCategory::Pattern;
+    node_type = ASTNodeType::kPatternElement;
+    category = ASTNodeCategory::kPattern;
   }
   std::unique_ptr<NodePattern> node_pattern;
   std::vector<std::pair<std::unique_ptr<RelationshipPattern>,
                         std::unique_ptr<NodePattern>>>
       chain;
-  void validate() const { assert(node_pattern); }
-  void accept(ASTVisitor& visitor) override;
+  void Validate() const { assert(node_pattern); }
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class RelationshipsPattern : public ASTNode {
  public:
   RelationshipsPattern() {
-    node_type = ASTNodeType::RelationshipsPattern;
-    category = ASTNodeCategory::Pattern;
+    node_type = ASTNodeType::kRelationshipsPattern;
+    category = ASTNodeCategory::kPattern;
   }
   std::unique_ptr<NodePattern> node_pattern;
   std::vector<std::pair<std::unique_ptr<RelationshipPattern>,
                         std::unique_ptr<NodePattern>>>
       chain;  // must be non-empty to satisfy grammar
-  void validate() const {
+  void Validate() const {
     assert(node_pattern);
     assert(!chain.empty());
   }
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class NodePattern : public ASTNode {
  public:
   NodePattern() {
-    node_type = ASTNodeType::NodePattern;
-    category = ASTNodeCategory::Pattern;
+    node_type = ASTNodeType::kNodePattern;
+    category = ASTNodeCategory::kPattern;
   }
   std::string variable;
   std::vector<std::string> labels;
   std::unique_ptr<Properties> properties;
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class RelationshipPattern : public ASTNode {
  public:
   RelationshipPattern() {
-    node_type = ASTNodeType::RelationshipPattern;
-    category = ASTNodeCategory::Pattern;
+    node_type = ASTNodeType::kRelationshipPattern;
+    category = ASTNodeCategory::kPattern;
   }
   bool left_arrow = false;
   bool right_arrow = false;
   std::unique_ptr<RelationshipDetail> detail;
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class RelationshipDetail : public ASTNode {
  public:
   RelationshipDetail() {
-    node_type = ASTNodeType::RelationshipDetail;
-    category = ASTNodeCategory::Pattern;
+    node_type = ASTNodeType::kRelationshipDetail;
+    category = ASTNodeCategory::kPattern;
   }
   struct RangeLiteral {
     std::optional<int> min;
@@ -700,7 +700,7 @@ class RelationshipDetail : public ASTNode {
   std::vector<std::string> types;
   std::optional<RangeLiteral> range;  // *min..max
   std::unique_ptr<Properties> properties;
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 // ============================================
@@ -708,7 +708,7 @@ class RelationshipDetail : public ASTNode {
 // ============================================
 class Clause : public ASTNode {
  protected:
-  Clause() { category = ASTNodeCategory::Clause; }
+  Clause() { category = ASTNodeCategory::kClause; }
 };
 
 // Reading clauses
@@ -719,30 +719,30 @@ class ReadingClause : public Clause {
 
 class Match : public ReadingClause {
  public:
-  Match() { node_type = ASTNodeType::Match; }
+  Match() { node_type = ASTNodeType::kMatch; }
   bool optional_match = false;
   std::unique_ptr<Pattern> pattern;
   std::unique_ptr<Expression> where;
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class Unwind : public ReadingClause {
  public:
-  Unwind() { node_type = ASTNodeType::Unwind; }
+  Unwind() { node_type = ASTNodeType::kUnwind; }
   std::unique_ptr<Expression> expression;
   std::string variable;
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class InQueryCall : public ReadingClause {
  public:
-  InQueryCall() { node_type = ASTNodeType::InQueryCall; }
+  InQueryCall() { node_type = ASTNodeType::kInQueryCall; }
   std::string procedure_name;
   std::vector<std::unique_ptr<Expression>> arguments;
   std::vector<StandaloneCall::YieldItem> yield_items;
   std::unique_ptr<Expression> yield_where;
-  void validate() const { assert(!yield_where || !yield_items.empty()); }
-  void accept(ASTVisitor& visitor) override;
+  void Validate() const { assert(!yield_where || !yield_items.empty()); }
+  void Accept(ASTVisitor& visitor) override;
 };
 
 // Updating clauses
@@ -753,52 +753,52 @@ class UpdatingClause : public Clause {
 
 class Create : public UpdatingClause {
  public:
-  Create() { node_type = ASTNodeType::Create; }
+  Create() { node_type = ASTNodeType::kCreate; }
   std::unique_ptr<Pattern> pattern;
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class Merge : public UpdatingClause {
  public:
-  Merge() { node_type = ASTNodeType::Merge; }
+  Merge() { node_type = ASTNodeType::kMerge; }
   std::unique_ptr<PatternPart> pattern_part;
   std::vector<std::pair<bool, std::unique_ptr<Set>>>
       actions;  // bool: true=ON MATCH, false=ON CREATE
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class Delete : public UpdatingClause {
  public:
-  Delete() { node_type = ASTNodeType::Delete; }
+  Delete() { node_type = ASTNodeType::kDelete; }
   bool detach = false;
   std::vector<std::unique_ptr<Expression>> expressions;
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class SetItem : public ASTNode {
  public:
-  SetItem() { node_type = ASTNodeType::SetItem; }
-  enum class Type { Property, Variable, Labels };
+  SetItem() { node_type = ASTNodeType::kSetItem; }
+  enum class Type { kProperty, kVariable, kLabels };
   Type type;
   std::unique_ptr<Expression> target;
   std::unique_ptr<Expression> value;
   std::vector<std::string> labels;
   bool plus_equal = false;
-  void validate() const {
+  void Validate() const {
     assert(target);
     switch (type) {
-      case Type::Property:
+      case Type::kProperty:
         assert(dynamic_cast<PropertyExpression*>(target.get()));
         assert(value);
         assert(!plus_equal);
         assert(labels.empty());
         break;
-      case Type::Variable:
+      case Type::kVariable:
         assert(dynamic_cast<Variable*>(target.get()));
         assert(value);
         assert(labels.empty());
         break;
-      case Type::Labels:
+      case Type::kLabels:
         assert(dynamic_cast<Variable*>(target.get()));
         assert(!value);
         assert(!labels.empty());
@@ -806,77 +806,77 @@ class SetItem : public ASTNode {
         break;
     }
     if (plus_equal) {
-      assert(type == Type::Variable);
+      assert(type == Type::kVariable);
     }
   }
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class Set : public UpdatingClause {
  public:
-  Set() { node_type = ASTNodeType::Set; }
+  Set() { node_type = ASTNodeType::kSet; }
   std::vector<std::unique_ptr<SetItem>> items;
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class RemoveItem : public ASTNode {
  public:
-  RemoveItem() { node_type = ASTNodeType::RemoveItem; }
-  enum class Type { Property, Labels };
+  RemoveItem() { node_type = ASTNodeType::kRemoveItem; }
+  enum class Type { kProperty, kLabels };
   Type type;
   std::unique_ptr<Expression> target;
   std::vector<std::string> labels;
-  void validate() const {
+  void Validate() const {
     assert(target);
     switch (type) {
-      case Type::Property:
+      case Type::kProperty:
         assert(dynamic_cast<PropertyExpression*>(target.get()));
         assert(labels.empty());
         break;
-      case Type::Labels:
+      case Type::kLabels:
         assert(dynamic_cast<Variable*>(target.get()));
         assert(!labels.empty());
         break;
     }
   }
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class Remove : public UpdatingClause {
  public:
-  Remove() { node_type = ASTNodeType::Remove; }
+  Remove() { node_type = ASTNodeType::kRemove; }
   std::vector<std::unique_ptr<RemoveItem>> items;
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 // Projection clauses
 class SortItem : public ASTNode {
  public:
-  SortItem() { node_type = ASTNodeType::SortItem; }
+  SortItem() { node_type = ASTNodeType::kSortItem; }
   std::unique_ptr<Expression> expression;
   bool ascending = true;
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class ProjectionItem : public ASTNode {
  public:
-  ProjectionItem() { node_type = ASTNodeType::ProjectionItem; }
+  ProjectionItem() { node_type = ASTNodeType::kProjectionItem; }
   std::unique_ptr<Expression> expression;
   std::string alias;
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class ProjectionBody : public ASTNode {
  public:
-  ProjectionBody() { node_type = ASTNodeType::ProjectionBody; }
+  ProjectionBody() { node_type = ASTNodeType::kProjectionBody; }
   bool distinct = false;
   bool star = false;
   std::vector<std::unique_ptr<ProjectionItem>> items;
   std::vector<std::unique_ptr<SortItem>> order_by;
   std::unique_ptr<Expression> skip;
   std::unique_ptr<Expression> limit;
-  void validate() const { assert(star || !items.empty()); }
-  void accept(ASTVisitor& visitor) override;
+  void Validate() const { assert(star || !items.empty()); }
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class ProjectionClause : public Clause {
@@ -886,212 +886,212 @@ class ProjectionClause : public Clause {
 
 class With : public ProjectionClause {
  public:
-  With() { node_type = ASTNodeType::With; }
+  With() { node_type = ASTNodeType::kWith; }
   std::unique_ptr<Expression> where;
-  void accept(ASTVisitor& visitor) override;
+  void Accept(ASTVisitor& visitor) override;
 };
 
 class Return : public ProjectionClause {
  public:
-  Return() { node_type = ASTNodeType::Return; }
-  void accept(ASTVisitor& visitor) override;
+  Return() { node_type = ASTNodeType::kReturn; }
+  void Accept(ASTVisitor& visitor) override;
 };
 
 // ============================================
 // accept implementations
 // ============================================
-inline void RegularQuery::accept(ASTVisitor& visitor) { visitor.visit(*this); }
-inline void StandaloneCall::accept(ASTVisitor& visitor) {
-  validate();
-  visitor.visit(*this);
+inline void RegularQuery::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
+inline void StandaloneCall::Accept(ASTVisitor& visitor) {
+  Validate();
+  visitor.Visit(*this);
 }
-inline void SinglePartQuery::accept(ASTVisitor& visitor) {
-  validate();
-  visitor.visit(*this);
+inline void SinglePartQuery::Accept(ASTVisitor& visitor) {
+  Validate();
+  visitor.Visit(*this);
 }
-inline void MultiPartQuery::accept(ASTVisitor& visitor) {
-  validate();
-  visitor.visit(*this);
+inline void MultiPartQuery::Accept(ASTVisitor& visitor) {
+  Validate();
+  visitor.Visit(*this);
 }
-inline void UnionPart::accept(ASTVisitor& visitor) { visitor.visit(*this); }
+inline void UnionPart::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
 
-inline void OrExpression::accept(ASTVisitor& visitor) { visitor.visit(*this); }
-inline void XorExpression::accept(ASTVisitor& visitor) { visitor.visit(*this); }
-inline void AndExpression::accept(ASTVisitor& visitor) { visitor.visit(*this); }
-inline void ComparisonExpression::accept(ASTVisitor& visitor) {
-  visitor.visit(*this);
+inline void OrExpression::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
+inline void XorExpression::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
+inline void AndExpression::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
+inline void ComparisonExpression::Accept(ASTVisitor& visitor) {
+  visitor.Visit(*this);
 }
-inline void ComparisonChainExpression::accept(ASTVisitor& visitor) {
-  validate();
-  visitor.visit(*this);
+inline void ComparisonChainExpression::Accept(ASTVisitor& visitor) {
+  Validate();
+  visitor.Visit(*this);
 }
-inline void AddExpression::accept(ASTVisitor& visitor) { visitor.visit(*this); }
-inline void SubtractExpression::accept(ASTVisitor& visitor) {
-  visitor.visit(*this);
+inline void AddExpression::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
+inline void SubtractExpression::Accept(ASTVisitor& visitor) {
+  visitor.Visit(*this);
 }
-inline void MultiplyExpression::accept(ASTVisitor& visitor) {
-  visitor.visit(*this);
+inline void MultiplyExpression::Accept(ASTVisitor& visitor) {
+  visitor.Visit(*this);
 }
-inline void DivideExpression::accept(ASTVisitor& visitor) {
-  visitor.visit(*this);
+inline void DivideExpression::Accept(ASTVisitor& visitor) {
+  visitor.Visit(*this);
 }
-inline void ModuloExpression::accept(ASTVisitor& visitor) {
-  visitor.visit(*this);
+inline void ModuloExpression::Accept(ASTVisitor& visitor) {
+  visitor.Visit(*this);
 }
-inline void PowerExpression::accept(ASTVisitor& visitor) {
-  visitor.visit(*this);
+inline void PowerExpression::Accept(ASTVisitor& visitor) {
+  visitor.Visit(*this);
 }
-inline void NotExpression::accept(ASTVisitor& visitor) { visitor.visit(*this); }
-inline void UnaryPlusExpression::accept(ASTVisitor& visitor) {
-  visitor.visit(*this);
+inline void NotExpression::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
+inline void UnaryPlusExpression::Accept(ASTVisitor& visitor) {
+  visitor.Visit(*this);
 }
-inline void UnaryMinusExpression::accept(ASTVisitor& visitor) {
-  visitor.visit(*this);
+inline void UnaryMinusExpression::Accept(ASTVisitor& visitor) {
+  visitor.Visit(*this);
 }
-inline void StringPredicateExpression::accept(ASTVisitor& visitor) {
-  visitor.visit(*this);
+inline void StringPredicateExpression::Accept(ASTVisitor& visitor) {
+  visitor.Visit(*this);
 }
-inline void ListPredicateExpression::accept(ASTVisitor& visitor) {
-  visitor.visit(*this);
+inline void ListPredicateExpression::Accept(ASTVisitor& visitor) {
+  visitor.Visit(*this);
 }
-inline void LabelPredicateExpression::accept(ASTVisitor& visitor) {
-  validate();
-  visitor.visit(*this);
+inline void LabelPredicateExpression::Accept(ASTVisitor& visitor) {
+  Validate();
+  visitor.Visit(*this);
 }
-inline void NullPredicateExpression::accept(ASTVisitor& visitor) {
-  visitor.visit(*this);
-}
-
-inline void BooleanLiteral::accept(ASTVisitor& visitor) {
-  visitor.visit(*this);
-}
-inline void IntegerLiteral::accept(ASTVisitor& visitor) {
-  visitor.visit(*this);
-}
-inline void DoubleLiteral::accept(ASTVisitor& visitor) { visitor.visit(*this); }
-inline void StringLiteral::accept(ASTVisitor& visitor) { visitor.visit(*this); }
-inline void NullLiteral::accept(ASTVisitor& visitor) { visitor.visit(*this); }
-inline void ListLiteral::accept(ASTVisitor& visitor) { visitor.visit(*this); }
-inline void MapLiteral::accept(ASTVisitor& visitor) { visitor.visit(*this); }
-inline void Properties::accept(ASTVisitor& visitor) {
-  validate();
-  visitor.visit(*this);
+inline void NullPredicateExpression::Accept(ASTVisitor& visitor) {
+  visitor.Visit(*this);
 }
 
-inline void Variable::accept(ASTVisitor& visitor) { visitor.visit(*this); }
-inline void Parameter::accept(ASTVisitor& visitor) { visitor.visit(*this); }
-inline void PropertyExpression::accept(ASTVisitor& visitor) {
-  visitor.visit(*this);
+inline void BooleanLiteral::Accept(ASTVisitor& visitor) {
+  visitor.Visit(*this);
 }
-inline void ListIndexExpression::accept(ASTVisitor& visitor) {
-  validate();
-  visitor.visit(*this);
+inline void IntegerLiteral::Accept(ASTVisitor& visitor) {
+  visitor.Visit(*this);
 }
-inline void ListSliceExpression::accept(ASTVisitor& visitor) {
-  validate();
-  visitor.visit(*this);
+inline void DoubleLiteral::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
+inline void StringLiteral::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
+inline void NullLiteral::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
+inline void ListLiteral::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
+inline void MapLiteral::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
+inline void Properties::Accept(ASTVisitor& visitor) {
+  Validate();
+  visitor.Visit(*this);
 }
-inline void FunctionInvocation::accept(ASTVisitor& visitor) {
-  visitor.visit(*this);
+
+inline void Variable::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
+inline void Parameter::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
+inline void PropertyExpression::Accept(ASTVisitor& visitor) {
+  visitor.Visit(*this);
 }
-inline void CountStarExpression::accept(ASTVisitor& visitor) {
-  visitor.visit(*this);
+inline void ListIndexExpression::Accept(ASTVisitor& visitor) {
+  Validate();
+  visitor.Visit(*this);
 }
-inline void CaseExpression::accept(ASTVisitor& visitor) {
-  validate();
-  visitor.visit(*this);
+inline void ListSliceExpression::Accept(ASTVisitor& visitor) {
+  Validate();
+  visitor.Visit(*this);
 }
-inline void ParenthesizedExpression::accept(ASTVisitor& visitor) {
-  visitor.visit(*this);
+inline void FunctionInvocation::Accept(ASTVisitor& visitor) {
+  visitor.Visit(*this);
 }
-inline void ListComprehension::accept(ASTVisitor& visitor) {
-  visitor.visit(*this);
+inline void CountStarExpression::Accept(ASTVisitor& visitor) {
+  visitor.Visit(*this);
 }
-inline void PatternComprehension::accept(ASTVisitor& visitor) {
+inline void CaseExpression::Accept(ASTVisitor& visitor) {
+  Validate();
+  visitor.Visit(*this);
+}
+inline void ParenthesizedExpression::Accept(ASTVisitor& visitor) {
+  visitor.Visit(*this);
+}
+inline void ListComprehension::Accept(ASTVisitor& visitor) {
+  visitor.Visit(*this);
+}
+inline void PatternComprehension::Accept(ASTVisitor& visitor) {
   if (relationships_pattern) {
-    relationships_pattern->validate();
+    relationships_pattern->Validate();
   }
-  visitor.visit(*this);
+  visitor.Visit(*this);
 }
-inline void PatternPredicateExpression::accept(ASTVisitor& visitor) {
+inline void PatternPredicateExpression::Accept(ASTVisitor& visitor) {
   if (relationships_pattern) {
-    relationships_pattern->validate();
+    relationships_pattern->Validate();
   }
-  visitor.visit(*this);
+  visitor.Visit(*this);
 }
-inline void AllQuantifier::accept(ASTVisitor& visitor) { visitor.visit(*this); }
-inline void AnyQuantifier::accept(ASTVisitor& visitor) { visitor.visit(*this); }
-inline void NoneQuantifier::accept(ASTVisitor& visitor) {
-  visitor.visit(*this);
+inline void AllQuantifier::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
+inline void AnyQuantifier::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
+inline void NoneQuantifier::Accept(ASTVisitor& visitor) {
+  visitor.Visit(*this);
 }
-inline void SingleQuantifier::accept(ASTVisitor& visitor) {
-  visitor.visit(*this);
+inline void SingleQuantifier::Accept(ASTVisitor& visitor) {
+  visitor.Visit(*this);
 }
-inline void ExistentialSubquery::accept(ASTVisitor& visitor) {
-  validate();
-  visitor.visit(*this);
+inline void ExistentialSubquery::Accept(ASTVisitor& visitor) {
+  Validate();
+  visitor.Visit(*this);
 }
 
-inline void Pattern::accept(ASTVisitor& visitor) {
-  validate();
-  visitor.visit(*this);
+inline void Pattern::Accept(ASTVisitor& visitor) {
+  Validate();
+  visitor.Visit(*this);
 }
-inline void PatternPart::accept(ASTVisitor& visitor) {
-  validate();
-  visitor.visit(*this);
+inline void PatternPart::Accept(ASTVisitor& visitor) {
+  Validate();
+  visitor.Visit(*this);
 }
-inline void PatternElement::accept(ASTVisitor& visitor) {
-  validate();
-  visitor.visit(*this);
+inline void PatternElement::Accept(ASTVisitor& visitor) {
+  Validate();
+  visitor.Visit(*this);
 }
-inline void RelationshipsPattern::accept(ASTVisitor& visitor) {
-  validate();
-  visitor.visit(*this);
+inline void RelationshipsPattern::Accept(ASTVisitor& visitor) {
+  Validate();
+  visitor.Visit(*this);
 }
-inline void RelationshipPattern::accept(ASTVisitor& visitor) {
-  visitor.visit(*this);
+inline void RelationshipPattern::Accept(ASTVisitor& visitor) {
+  visitor.Visit(*this);
 }
-inline void NodePattern::accept(ASTVisitor& visitor) {
+inline void NodePattern::Accept(ASTVisitor& visitor) {
   if (properties) {
-    properties->validate();
+    properties->Validate();
   }
-  visitor.visit(*this);
+  visitor.Visit(*this);
 }
-inline void RelationshipDetail::accept(ASTVisitor& visitor) {
+inline void RelationshipDetail::Accept(ASTVisitor& visitor) {
   if (properties) {
-    properties->validate();
+    properties->Validate();
   }
-  visitor.visit(*this);
+  visitor.Visit(*this);
 }
 
-inline void Match::accept(ASTVisitor& visitor) { visitor.visit(*this); }
-inline void Unwind::accept(ASTVisitor& visitor) { visitor.visit(*this); }
-inline void InQueryCall::accept(ASTVisitor& visitor) {
-  validate();
-  visitor.visit(*this);
+inline void Match::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
+inline void Unwind::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
+inline void InQueryCall::Accept(ASTVisitor& visitor) {
+  Validate();
+  visitor.Visit(*this);
 }
-inline void Create::accept(ASTVisitor& visitor) { visitor.visit(*this); }
-inline void Merge::accept(ASTVisitor& visitor) { visitor.visit(*this); }
-inline void Delete::accept(ASTVisitor& visitor) { visitor.visit(*this); }
-inline void Set::accept(ASTVisitor& visitor) { visitor.visit(*this); }
-inline void SetItem::accept(ASTVisitor& visitor) {
-  validate();
-  visitor.visit(*this);
+inline void Create::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
+inline void Merge::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
+inline void Delete::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
+inline void Set::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
+inline void SetItem::Accept(ASTVisitor& visitor) {
+  Validate();
+  visitor.Visit(*this);
 }
-inline void Remove::accept(ASTVisitor& visitor) { visitor.visit(*this); }
-inline void RemoveItem::accept(ASTVisitor& visitor) {
-  validate();
-  visitor.visit(*this);
+inline void Remove::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
+inline void RemoveItem::Accept(ASTVisitor& visitor) {
+  Validate();
+  visitor.Visit(*this);
 }
-inline void ProjectionBody::accept(ASTVisitor& visitor) {
-  validate();
-  visitor.visit(*this);
+inline void ProjectionBody::Accept(ASTVisitor& visitor) {
+  Validate();
+  visitor.Visit(*this);
 }
-inline void ProjectionItem::accept(ASTVisitor& visitor) {
-  visitor.visit(*this);
+inline void ProjectionItem::Accept(ASTVisitor& visitor) {
+  visitor.Visit(*this);
 }
-inline void SortItem::accept(ASTVisitor& visitor) { visitor.visit(*this); }
-inline void With::accept(ASTVisitor& visitor) { visitor.visit(*this); }
-inline void Return::accept(ASTVisitor& visitor) { visitor.visit(*this); }
+inline void SortItem::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
+inline void With::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
+inline void Return::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
 
 }  // namespace ast

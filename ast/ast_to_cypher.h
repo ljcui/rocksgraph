@@ -7,6 +7,6 @@
 namespace ast {
 
 // Convert AST back to a Cypher string.
-std::string toCypher(ASTNode &node);
+std::string ToCypher(ASTNode &node);
 
 }  // namespace ast

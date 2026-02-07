@@ -40,9 +40,9 @@ void ExpectRewriteEqualsWith(const std::string &input,
   auto expected_statement = ParseOrFail(expected);
 
   Rewriter rewriter;
-  rewriter.rewrite(*statement);
+  rewriter.Rewrite(*statement);
 
-  EXPECT_TRUE(ast::ASTEqual::equal(statement.get(), expected_statement.get()))
+  EXPECT_TRUE(ast::ASTEqual::Equal(statement.get(), expected_statement.get()))
       << "rewrite mismatch for input: " << input;
 }
 
@@ -202,7 +202,7 @@ TEST(RewriterPipelineTest, DefaultPipelineUsesReturnStar) {
 
   ast::applyDefaultRewriters(*statement);
 
-  EXPECT_TRUE(ast::ASTEqual::equal(statement.get(), expected_statement.get()))
+  EXPECT_TRUE(ast::ASTEqual::Equal(statement.get(), expected_statement.get()))
       << "rewrite mismatch for pipeline";
 }
 
@@ -211,7 +211,7 @@ TEST(RewriterPipelineTest, ParseAndRewriteUsesDefaultPipeline) {
   ASSERT_NO_THROW(statement = ast::parseCypherAndRewrite("MATCH (n) RETURN *"));
   auto expected_statement = ParseOrFail("MATCH (n) RETURN n");
 
-  EXPECT_TRUE(ast::ASTEqual::equal(statement.get(), expected_statement.get()))
+  EXPECT_TRUE(ast::ASTEqual::Equal(statement.get(), expected_statement.get()))
       << "rewrite mismatch for parseCypherAndRewrite";
 }
 
@@ -222,7 +222,7 @@ TEST(RewriterPipelineTest, DefaultPipelineAddsUniquenessPredicates) {
 
   ast::applyDefaultRewriters(*statement);
 
-  EXPECT_TRUE(ast::ASTEqual::equal(statement.get(), expected_statement.get()))
+  EXPECT_TRUE(ast::ASTEqual::Equal(statement.get(), expected_statement.get()))
       << "rewrite mismatch for uniqueness in pipeline";
 }
 
@@ -233,7 +233,7 @@ TEST(RewriterPipelineTest, DefaultPipelineAddsFalseForRepeatedRelationship) {
 
   ast::applyDefaultRewriters(*statement);
 
-  EXPECT_TRUE(ast::ASTEqual::equal(statement.get(), expected_statement.get()))
+  EXPECT_TRUE(ast::ASTEqual::Equal(statement.get(), expected_statement.get()))
       << "rewrite mismatch for repeated relationship variable";
 }
 
@@ -252,6 +252,6 @@ TEST(RewriterPipelineTest,
 
   ast::applyDefaultRewriters(*statement);
 
-  EXPECT_TRUE(ast::ASTEqual::equal(statement.get(), expected_statement.get()))
+  EXPECT_TRUE(ast::ASTEqual::Equal(statement.get(), expected_statement.get()))
       << "rewrite mismatch for repeated non-empty var-length relationship";
 }

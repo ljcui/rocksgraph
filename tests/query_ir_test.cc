@@ -37,7 +37,7 @@ TEST(PlannerQueryTest, BuildsGraphFromMatch) {
       "WHERE a.age > 30 RETURN a, b");
   ASSERT_TRUE(statement);
 
-  ir::QueryIR planner_query = ir::buildStatement(*statement);
+  ir::QueryIR planner_query = ir::BuildStatement(*statement);
   const ir::SingleQueryIR &main = planner_query.regular.main;
 
   EXPECT_EQ(main.tail, nullptr);
@@ -50,7 +50,7 @@ TEST(PlannerQueryTest, BuildsGraphFromMatch) {
   EXPECT_EQ(relationship.name, "r");
   EXPECT_EQ(relationship.left_node, "a");
   EXPECT_EQ(relationship.right_node, "b");
-  EXPECT_EQ(relationship.direction, ir::QueryGraph::Direction::OUTGOING);
+  EXPECT_EQ(relationship.direction, ir::QueryGraph::Direction::kOutgoing);
   EXPECT_TRUE(relationship.types.empty());
 
   EXPECT_FALSE(main.projection.distinct);
@@ -68,7 +68,7 @@ TEST(PlannerQueryTest, AcceptsAnonymousPatternAfterRewrite) {
   auto statement = ParseOrFail("MATCH ()-[]->() RETURN 1");
   ASSERT_TRUE(statement);
 
-  ir::QueryIR planner_query = ir::buildStatement(*statement);
+  ir::QueryIR planner_query = ir::BuildStatement(*statement);
   const ir::SingleQueryIR &main = planner_query.regular.main;
 
   EXPECT_EQ(main.query_graph.nodes.size(), 2U);
@@ -89,7 +89,7 @@ TEST(PlannerQueryTest, BuildsTailForMultiPartQuery) {
       "MATCH (n)-[r:KNOWS]->(m) RETURN n, m");
   ASSERT_TRUE(statement);
 
-  ir::QueryIR planner_query = ir::buildStatement(*statement);
+  ir::QueryIR planner_query = ir::BuildStatement(*statement);
   const ir::SingleQueryIR &first = planner_query.regular.main;
 
   ASSERT_TRUE(first.tail);
@@ -116,7 +116,7 @@ TEST(PlannerQueryTest, BuildsUnionMappings) {
       ParseOrFail("MATCH (n) RETURN n AS x UNION MATCH (m) RETURN m AS y");
   ASSERT_TRUE(statement);
 
-  ir::QueryIR planner_query = ir::buildStatement(*statement);
+  ir::QueryIR planner_query = ir::BuildStatement(*statement);
   ASSERT_EQ(planner_query.regular.unions.size(), 1U);
 
   const ir::UnionBranch &branch = planner_query.regular.unions[0];
@@ -131,7 +131,7 @@ TEST(PlannerQueryTest, BuildsUnionAllBranch) {
   auto statement = ParseOrFail("RETURN 1 AS a UNION ALL RETURN 2 AS b");
   ASSERT_TRUE(statement);
 
-  ir::QueryIR planner_query = ir::buildStatement(*statement);
+  ir::QueryIR planner_query = ir::BuildStatement(*statement);
   ASSERT_EQ(planner_query.regular.unions.size(), 1U);
 
   const ir::UnionBranch &branch = planner_query.regular.unions[0];
@@ -147,14 +147,14 @@ TEST(PlannerQueryTest, RejectsUnionColumnCountMismatch) {
   ASSERT_TRUE(statement);
 
   EXPECT_THROW(
-      { (void)ir::buildStatement(*statement); }, common::InvalidArgumentError);
+      { (void)ir::BuildStatement(*statement); }, common::InvalidArgumentError);
 }
 
 TEST(PlannerQueryTest, CopySingleQueryIRDeeplyCopiesTail) {
   auto statement = ParseOrFail("MATCH (n) WITH n RETURN n");
   ASSERT_TRUE(statement);
 
-  ir::QueryIR planner_query = ir::buildStatement(*statement);
+  ir::QueryIR planner_query = ir::BuildStatement(*statement);
   ir::SingleQueryIR copy = planner_query.regular.main;
 
   ASSERT_TRUE(planner_query.regular.main.tail);

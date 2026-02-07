@@ -423,20 +423,20 @@ class ASTBuilder {
   std::unique_ptr<SetItem> BuildSetItem(CypherParser::OC_SetItemContext *ctx) {
     auto node = std::make_unique<SetItem>();
     if (ctx->oC_PropertyExpression() != nullptr) {
-      node->type = SetItem::Type::Property;
+      node->type = SetItem::Type::kProperty;
       node->target = BuildPropertyExpression(ctx->oC_PropertyExpression());
       node->value = BuildExpression(ctx->oC_Expression());
       node->plus_equal = false;
       return node;
     }
     if (ctx->oC_NodeLabels() != nullptr) {
-      node->type = SetItem::Type::Labels;
+      node->type = SetItem::Type::kLabels;
       node->target = BuildVariableExpression(ctx->oC_Variable());
       node->labels = BuildNodeLabels(ctx->oC_NodeLabels());
       node->plus_equal = false;
       return node;
     }
-    node->type = SetItem::Type::Variable;
+    node->type = SetItem::Type::kVariable;
     node->target = BuildVariableExpression(ctx->oC_Variable());
     node->value = BuildExpression(ctx->oC_Expression());
     node->plus_equal = HasOperator(ctx, "+=");
@@ -455,11 +455,11 @@ class ASTBuilder {
       CypherParser::OC_RemoveItemContext *ctx) {
     auto node = std::make_unique<RemoveItem>();
     if (ctx->oC_PropertyExpression() != nullptr) {
-      node->type = RemoveItem::Type::Property;
+      node->type = RemoveItem::Type::kProperty;
       node->target = BuildPropertyExpression(ctx->oC_PropertyExpression());
       return node;
     }
-    node->type = RemoveItem::Type::Labels;
+    node->type = RemoveItem::Type::kLabels;
     node->target = BuildVariableExpression(ctx->oC_Variable());
     node->labels = BuildNodeLabels(ctx->oC_NodeLabels());
     return node;
@@ -1339,7 +1339,7 @@ std::unique_ptr<Statement> parseCypher(const std::string &input) {
   if (!statement) {
     THROW(InternalError, "failed to build AST");
   }
-  validateStatement(*statement);
+  ValidateStatement(*statement);
   return statement;
 }
 

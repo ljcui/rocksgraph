@@ -6,7 +6,7 @@ namespace ast {
 
 class ComparisonChainRewriter : public ASTRewriter {
  protected:
-  void rewriteExpression(std::unique_ptr<Expression> &expr) override;
+  void RewriteExpression(std::unique_ptr<Expression> &expr) override;
 };
 
 }  // namespace ast

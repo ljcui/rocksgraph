@@ -2,16 +2,16 @@
 
 namespace ast {
 
-void ASTRewriter::rewrite(ASTNode &node) { walk(node); }
+void ASTRewriter::Rewrite(ASTNode &node) { Walk(node); }
 
-void ASTRewriter::rewriteExpression(std::unique_ptr<Expression> &expr) {
+void ASTRewriter::RewriteExpression(std::unique_ptr<Expression> &expr) {
   if (expr) {
-    expr->accept(*this);
+    expr->Accept(*this);
   }
 }
 
-void ASTRewriter::walkExpression(std::unique_ptr<Expression> &expr) {
-  rewriteExpression(expr);
+void ASTRewriter::WalkExpression(std::unique_ptr<Expression> &expr) {
+  RewriteExpression(expr);
 }
 
 }  // namespace ast

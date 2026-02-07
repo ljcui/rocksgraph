@@ -2,11 +2,11 @@
 
 namespace ast {
 
-void CountStarRewriter::rewriteExpression(std::unique_ptr<Expression> &expr) {
+void CountStarRewriter::RewriteExpression(std::unique_ptr<Expression> &expr) {
   if (!expr) {
     return;
   }
-  ASTRewriter::rewriteExpression(expr);
+  ASTRewriter::RewriteExpression(expr);
   if (dynamic_cast<CountStarExpression *>(expr.get()) == nullptr) {
     return;
   }

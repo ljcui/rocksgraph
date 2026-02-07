@@ -174,11 +174,11 @@ class QueryGraphBuilder {
     relationship.types = {detail->types.begin(), detail->types.end()};
     relationship.properties = detail->properties.get();
     if (pattern.left_arrow) {
-      relationship.direction = QueryGraph::Direction::INCOMING;
+      relationship.direction = QueryGraph::Direction::kIncoming;
     } else if (pattern.right_arrow) {
-      relationship.direction = QueryGraph::Direction::OUTGOING;
+      relationship.direction = QueryGraph::Direction::kOutgoing;
     } else {
-      relationship.direction = QueryGraph::Direction::BOTH;
+      relationship.direction = QueryGraph::Direction::kBoth;
     }
     graph_.relationships.push_back(std::move(relationship));
   }
@@ -206,9 +206,9 @@ SingleQueryIR &SingleQueryIR::operator=(const SingleQueryIR &other) {
   return *this;
 }
 
-const SingleQueryIR *SingleQueryIR::last() const { return LastQueryPart(this); }
+const SingleQueryIR *SingleQueryIR::Last() const { return LastQueryPart(this); }
 
-SingleQueryIR *SingleQueryIR::last() { return LastQueryPart(this); }
+SingleQueryIR *SingleQueryIR::Last() { return LastQueryPart(this); }
 
 namespace {
 
@@ -244,7 +244,7 @@ class QueryIRBuilder {
  public:
   QueryIR Build(const ast::Statement &statement) {
     switch (statement.node_type) {
-      case ast::ASTNodeType::RegularQuery: {
+      case ast::ASTNodeType::kRegularQuery: {
         return BuildRegularQuery(CastAst<ast::RegularQuery>(statement));
       }
       default: {
@@ -279,10 +279,10 @@ class QueryIRBuilder {
 
   SingleQueryIR BuildSingleQuery(const ast::SingleQuery &query) {
     switch (query.node_type) {
-      case ast::ASTNodeType::SinglePartQuery: {
+      case ast::ASTNodeType::kSinglePartQuery: {
         return BuildSinglePartQuery(CastAst<ast::SinglePartQuery>(query));
       }
-      case ast::ASTNodeType::MultiPartQuery: {
+      case ast::ASTNodeType::kMultiPartQuery: {
         return BuildMultiPartQuery(CastAst<ast::MultiPartQuery>(query));
       }
       default: {
@@ -385,7 +385,7 @@ class QueryIRBuilder {
 
 }  // namespace
 
-QueryIR buildStatement(const ast::Statement &statement) {
+QueryIR BuildStatement(const ast::Statement &statement) {
   QueryIRBuilder builder;
   return builder.Build(statement);
 }

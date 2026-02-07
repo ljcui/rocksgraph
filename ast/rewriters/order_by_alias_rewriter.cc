@@ -8,8 +8,8 @@
 
 namespace ast {
 
-void OrderByAliasRewriter::visit(ProjectionBody &node) {
-  ASTRewriter::visit(node);
+void OrderByAliasRewriter::Visit(ProjectionBody &node) {
+  ASTRewriter::Visit(node);
   if (node.items.empty() || node.order_by.empty()) {
     return;
   }
@@ -51,7 +51,7 @@ void OrderByAliasRewriter::visit(ProjectionBody &node) {
     }
 
     for (const auto &alias : aliases) {
-      if (ASTEqual::equal(sort_item->expression.get(), alias.expression)) {
+      if (ASTEqual::Equal(sort_item->expression.get(), alias.expression)) {
         auto var = std::make_unique<Variable>();
         var->name = *alias.alias;
         sort_item->expression = std::move(var);

@@ -2,9 +2,9 @@
 
 namespace ast {
 
-void ReturnStarRewriter::rewrite(ASTNode &node) {
+void ReturnStarRewriter::Rewrite(ASTNode &node) {
   scope_stack_.clear();
-  ASTRewriter::rewrite(node);
+  ASTRewriter::Rewrite(node);
 }
 
 void ReturnStarRewriter::Scope::add(const std::string &name) {
@@ -24,7 +24,7 @@ const ReturnStarRewriter::Scope &ReturnStarRewriter::currentScope() const {
   return scope_stack_.back();
 }
 
-void ReturnStarRewriter::visit(SinglePartQuery &node) {
+void ReturnStarRewriter::Visit(SinglePartQuery &node) {
   Scope scope = currentScope();
   for (const auto &clause : node.reading_clauses) {
     collectFromReadingClause(*clause, scope);
@@ -34,13 +34,13 @@ void ReturnStarRewriter::visit(SinglePartQuery &node) {
   }
 
   scope_stack_.push_back(scope);
-  rewriteList(node.reading_clauses);
-  rewriteList(node.updating_clauses);
-  rewriteMaybe(node.return_clause);
+  RewriteList(node.reading_clauses);
+  RewriteList(node.updating_clauses);
+  RewriteMaybe(node.return_clause);
   scope_stack_.pop_back();
 }
 
-void ReturnStarRewriter::visit(MultiPartQuery &node) {
+void ReturnStarRewriter::Visit(MultiPartQuery &node) {
   Scope scope = currentScope();
   for (auto &part : node.parts) {
     Scope part_scope = scope;
@@ -52,9 +52,9 @@ void ReturnStarRewriter::visit(MultiPartQuery &node) {
     }
 
     scope_stack_.push_back(part_scope);
-    rewriteList(part.reading_clauses);
-    rewriteList(part.updating_clauses);
-    rewriteMaybe(part.with_clause);
+    RewriteList(part.reading_clauses);
+    RewriteList(part.updating_clauses);
+    RewriteMaybe(part.with_clause);
     scope_stack_.pop_back();
 
     if (part.with_clause && part.with_clause->body) {
@@ -65,13 +65,13 @@ void ReturnStarRewriter::visit(MultiPartQuery &node) {
   }
 
   scope_stack_.push_back(scope);
-  rewriteMaybe(node.final_single_part_query);
+  RewriteMaybe(node.final_single_part_query);
   scope_stack_.pop_back();
 }
 
-void ReturnStarRewriter::visit(ProjectionBody &node) {
+void ReturnStarRewriter::Visit(ProjectionBody &node) {
   expandStar(node);
-  ASTRewriter::visit(node);
+  ASTRewriter::Visit(node);
 }
 
 ReturnStarRewriter::Scope ReturnStarRewriter::scopeFromProjection(

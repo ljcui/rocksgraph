@@ -631,7 +631,7 @@ std::unique_ptr<RegularQuery> CloneRegularQuery(const RegularQuery &query) {
 
 }  // namespace
 
-std::unique_ptr<Expression> cloneExpression(const Expression &expr) {
+std::unique_ptr<Expression> CloneExpression(const Expression &expr) {
   return CloneExpressionImpl(expr);
 }
 

@@ -195,8 +195,8 @@ std::vector<std::string> RelationshipNames(
 
 }  // namespace
 
-void AddUniquenessPredicatesRewriter::visit(Match &node) {
-  ASTRewriter::visit(node);
+void AddUniquenessPredicatesRewriter::Visit(Match &node) {
+  ASTRewriter::Visit(node);
   if (!node.pattern) {
     return;
   }

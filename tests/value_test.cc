@@ -4,42 +4,42 @@
 
 TEST(ValueTest, ScalarTypes) {
   rg::Value null_value;
-  EXPECT_TRUE(null_value.is_null());
-  EXPECT_EQ(null_value.type(), rg::ValueType::kNull);
+  EXPECT_TRUE(null_value.IsNull());
+  EXPECT_EQ(null_value.Type(), rg::ValueType::kNull);
 
   rg::Value bool_value(true);
-  EXPECT_TRUE(bool_value.is_bool());
-  EXPECT_EQ(bool_value.as_bool(), true);
+  EXPECT_TRUE(bool_value.IsBool());
+  EXPECT_EQ(bool_value.AsBool(), true);
 
   rg::Value int_value(42);
-  EXPECT_TRUE(int_value.is_integer());
-  EXPECT_EQ(int_value.as_integer(), 42);
+  EXPECT_TRUE(int_value.IsInteger());
+  EXPECT_EQ(int_value.AsInteger(), 42);
 
   rg::Value double_value(3.5);
-  EXPECT_TRUE(double_value.is_double());
-  EXPECT_DOUBLE_EQ(double_value.as_double(), 3.5);
+  EXPECT_TRUE(double_value.IsDouble());
+  EXPECT_DOUBLE_EQ(double_value.AsDouble(), 3.5);
 
   rg::Value string_value("rocks");
-  EXPECT_TRUE(string_value.is_string());
-  EXPECT_EQ(string_value.as_string(), "rocks");
+  EXPECT_TRUE(string_value.IsString());
+  EXPECT_EQ(string_value.AsString(), "rocks");
 }
 
 TEST(ValueTest, ListAndMapTypes) {
   rg::Value::List list{rg::Value(1), rg::Value("two"), rg::Value(3.0)};
   rg::Value list_value(list);
 
-  EXPECT_TRUE(list_value.is_list());
-  ASSERT_EQ(list_value.as_list().size(), 3U);
-  EXPECT_EQ(list_value.as_list()[0], rg::Value(1));
-  EXPECT_EQ(list_value.as_list()[1], rg::Value("two"));
+  EXPECT_TRUE(list_value.IsList());
+  ASSERT_EQ(list_value.AsList().size(), 3U);
+  EXPECT_EQ(list_value.AsList()[0], rg::Value(1));
+  EXPECT_EQ(list_value.AsList()[1], rg::Value("two"));
 
   rg::Value::Map map{{"a", rg::Value(1)}, {"b", list_value}};
   rg::Value map_value(map);
 
-  EXPECT_TRUE(map_value.is_map());
-  ASSERT_EQ(map_value.as_map().size(), 2U);
-  EXPECT_EQ(map_value.as_map().at("a"), rg::Value(1));
-  EXPECT_EQ(map_value.as_map().at("b"), list_value);
+  EXPECT_TRUE(map_value.IsMap());
+  ASSERT_EQ(map_value.AsMap().size(), 2U);
+  EXPECT_EQ(map_value.AsMap().at("a"), rg::Value(1));
+  EXPECT_EQ(map_value.AsMap().at("b"), list_value);
 }
 
 TEST(ValueTest, GraphTypes) {
@@ -64,13 +64,13 @@ TEST(ValueTest, GraphTypes) {
   rg::Value rel_value(rel);
   rg::Value path_value(path);
 
-  EXPECT_TRUE(node_value.is_node());
-  EXPECT_TRUE(rel_value.is_relationship());
-  EXPECT_TRUE(path_value.is_path());
+  EXPECT_TRUE(node_value.IsNode());
+  EXPECT_TRUE(rel_value.IsRelationship());
+  EXPECT_TRUE(path_value.IsPath());
 
-  EXPECT_EQ(node_value.as_node().id, 7);
-  EXPECT_EQ(rel_value.as_relationship().type, "KNOWS");
-  EXPECT_EQ(path_value.as_path().nodes.size(), 1U);
+  EXPECT_EQ(node_value.AsNode().id, 7);
+  EXPECT_EQ(rel_value.AsRelationship().type, "KNOWS");
+  EXPECT_EQ(path_value.AsPath().nodes.size(), 1U);
 
   rg::Value node_value_copy(std::make_shared<rg::Node>(*node));
   EXPECT_EQ(node_value, node_value_copy);
@@ -90,18 +90,18 @@ TEST(ValueTest, TemporalAndSpatialTypes) {
   rg::Value duration_value(duration);
   rg::Value point_value(point);
 
-  EXPECT_TRUE(date_value.is_date());
-  EXPECT_TRUE(time_value.is_time());
-  EXPECT_TRUE(duration_value.is_duration());
-  EXPECT_TRUE(point_value.is_point());
+  EXPECT_TRUE(date_value.IsDate());
+  EXPECT_TRUE(time_value.IsTime());
+  EXPECT_TRUE(duration_value.IsDuration());
+  EXPECT_TRUE(point_value.IsPoint());
 
-  EXPECT_EQ(date_value.as_date(), date);
-  EXPECT_EQ(time_value.as_time(), time);
-  EXPECT_EQ(duration_value.as_duration(), duration);
-  EXPECT_EQ(point_value.as_point(), point);
+  EXPECT_EQ(date_value.AsDate(), date);
+  EXPECT_EQ(time_value.AsTime(), time);
+  EXPECT_EQ(duration_value.AsDuration(), duration);
+  EXPECT_EQ(point_value.AsPoint(), point);
 
   rg::Value local_date_time_value(local_date_time);
   rg::Value date_time_value(date_time);
-  EXPECT_TRUE(local_date_time_value.is_local_date_time());
-  EXPECT_TRUE(date_time_value.is_date_time());
+  EXPECT_TRUE(local_date_time_value.IsLocalDateTime());
+  EXPECT_TRUE(date_time_value.IsDateTime());
 }

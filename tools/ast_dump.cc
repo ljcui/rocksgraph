@@ -51,7 +51,7 @@ int main(int argc, char **argv) {
     auto statement = FLAGS_rewrite ? ast::parseCypherAndRewrite(input)
                                    : ast::parseCypher(input);
     ast::ASTPrinter printer(std::cout);
-    printer.print(*statement);
+    printer.Print(*statement);
     return 0;
   } catch (const ast::ParseError &e) {
     for (const auto &err : e.errors()) {
