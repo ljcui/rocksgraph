@@ -171,13 +171,12 @@ class QueryGraphBuilder {
   }
 
   void BuildMatch(const ast::Match &match) {
-    if (!match.pattern) {
-      return;
-    }
     if (match.optional_match) {
       THROW(common::InvalidArgumentError,
             MakeUnsupportedError("OPTIONAL MATCH"));
     }
+    CHECK(match.pattern != nullptr, common::InvalidArgumentError,
+          MakeMissingError("MATCH pattern"));
     AddPattern(*match.pattern);
     if (match.where) {
       AddWhere(match.where.get());
@@ -207,10 +206,12 @@ class QueryGraphBuilder {
   }
 
   void AddPattern(const ast::Pattern &pattern) {
+    CHECK(!pattern.parts.empty(), common::InvalidArgumentError,
+          MakeMissingError("pattern part"));
     for (const auto &part : pattern.parts) {
-      if (part) {
-        AddPatternPart(*part);
-      }
+      CHECK(part != nullptr, common::InvalidArgumentError,
+            MakeMissingError("pattern part"));
+      AddPatternPart(*part);
     }
   }
 
@@ -218,9 +219,9 @@ class QueryGraphBuilder {
     if (!part.variable.empty()) {
       THROW(common::InvalidArgumentError, MakeUnsupportedError("named path"));
     }
-    if (part.element) {
-      AddPatternElement(*part.element);
-    }
+    CHECK(part.element != nullptr, common::InvalidArgumentError,
+          MakeMissingError("pattern element"));
+    AddPatternElement(*part.element);
   }
 
   QueryGraph Release() { return std::move(graph_); }
@@ -232,13 +233,12 @@ class QueryGraphBuilder {
     }
     std::string left = AddNode(*element.node_pattern);
     for (const auto &link : element.chain) {
-      if (!link.second) {
-        continue;
-      }
+      CHECK(link.first != nullptr, common::InvalidArgumentError,
+            MakeMissingError("relationship pattern"));
+      CHECK(link.second != nullptr, common::InvalidArgumentError,
+            MakeMissingError("node pattern"));
       std::string right = AddNode(*link.second);
-      if (link.first) {
-        AddRelationship(*link.first, left, right);
-      }
+      AddRelationship(*link.first, left, right);
       left = right;
     }
   }
@@ -388,6 +388,8 @@ class QueryIRBuilder {
 
   SingleQueryIR BuildSinglePartQuery(const ast::SinglePartQuery &query) {
     CheckNoUpdatingClauses(query.updating_clauses);
+    CHECK(query.return_clause, common::InvalidArgumentError,
+          MakeMissingError("RETURN clause"));
     return BuildQuerySegment(query.reading_clauses, query.return_clause.get());
   }
 
@@ -417,9 +419,9 @@ class QueryIRBuilder {
     if (projection_clause == nullptr) {
       return projection;
     }
-    if (projection_clause->body) {
-      projection = BuildProjectionBody(*projection_clause->body);
-    }
+    CHECK(projection_clause->body, common::InvalidArgumentError,
+          MakeMissingError("projection body"));
+    projection = BuildProjectionBody(*projection_clause->body);
     if (projection_clause->Is(ast::ASTNodeType::kWith)) {
       const auto *with_clause = ast::CastAst<ast::With>(projection_clause);
       projection.where = with_clause->where.get();
@@ -433,9 +435,8 @@ class QueryIRBuilder {
     SingleQueryIR ir;
     QueryGraphBuilder builder;
     for (const auto &clause : reading) {
-      if (!clause) {
-        continue;
-      }
+      CHECK(clause != nullptr, common::InvalidArgumentError,
+            MakeMissingError("reading clause"));
       builder.BuildReadingClause(*clause);
     }
 
@@ -455,6 +456,8 @@ class QueryIRBuilder {
     for (const auto &item : body.items) {
       CHECK(item, common::InvalidArgumentError,
             "null projection item is not supported");
+      CHECK(item->expression, common::InvalidArgumentError,
+            MakeMissingError("projection item expression"));
       ProjectionItem projection_item;
       projection_item.expression = item->expression.get();
       projection_item.alias = item->alias;
@@ -465,6 +468,8 @@ class QueryIRBuilder {
     for (const auto &item : body.order_by) {
       CHECK(item, common::InvalidArgumentError,
             "null sort item is not supported");
+      CHECK(item->expression, common::InvalidArgumentError,
+            MakeMissingError("sort expression"));
       SortItem sort_item;
       sort_item.expression = item->expression.get();
       sort_item.ascending = item->ascending;
