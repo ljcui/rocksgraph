@@ -6,6 +6,7 @@
 
 #include "ast_exception.h"
 #include "ast_walker.h"
+#include "common/exception.h"
 
 namespace ast {
 namespace {
@@ -126,9 +127,7 @@ class SemanticValidator : public ASTWalker {
   }
 
   void Visit(With &node) override {
-    if (!node.body) {
-      return;
-    }
+    CHECK(node.body != nullptr, common::InternalError, "WITH body is null");
     const Scope pre = CurrentScope();
     node.body->Accept(*this);
 

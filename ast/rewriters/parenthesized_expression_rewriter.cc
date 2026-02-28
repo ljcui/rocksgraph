@@ -1,5 +1,7 @@
 #include "parenthesized_expression_rewriter.h"
 
+#include "common/exception.h"
+
 namespace ast {
 
 void ParenthesizedExpressionRewriter::RewriteExpression(
@@ -10,9 +12,8 @@ void ParenthesizedExpressionRewriter::RewriteExpression(
   ASTRewriter::RewriteExpression(expr);
   while (expr && expr->Is(ASTNodeType::kParenthesizedExpression)) {
     auto *paren = CastAst<ParenthesizedExpression>(expr.get());
-    if (!paren->expr) {
-      return;
-    }
+    CHECK(paren->expr != nullptr, common::InvalidArgumentError,
+          "parenthesized expression is null");
     expr = std::move(paren->expr);
   }
 }

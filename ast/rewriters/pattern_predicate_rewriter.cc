@@ -2,6 +2,8 @@
 
 #include <utility>
 
+#include "common/exception.h"
+
 namespace ast {
 
 void PatternPredicateRewriter::RewriteExpression(
@@ -14,9 +16,9 @@ void PatternPredicateRewriter::RewriteExpression(
     return;
   }
   auto *pattern_predicate = CastAst<PatternPredicateExpression>(expr.get());
-  if (!pattern_predicate->relationships_pattern) {
-    return;
-  }
+  CHECK(pattern_predicate->relationships_pattern != nullptr,
+        common::InvalidArgumentError,
+        "pattern predicate relationships pattern is null");
 
   auto relationships = std::move(pattern_predicate->relationships_pattern);
   auto element = std::make_unique<PatternElement>();

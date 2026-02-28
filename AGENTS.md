@@ -47,6 +47,7 @@
   - 在 `tests/ast_rewriter_test.cc` 增加正反用例。
 - `ir::BuildStatement` 当前只覆盖部分语义（以 RegularQuery/只读场景为主）；新增 IR 能力时需同步扩展异常与测试断言。
 - 异常分层：通用异常放 `common/exception.h`；AST 解析/语义异常放 `ast/ast_exception.h`。
+- 不变量检查约定：对按语法/重写流程保证存在的关键字段（如 `ParenthesizedExpression::expr`）必须使用 `CHECK` 直接失败并报错，禁止使用 `break/continue/return` 静默吞掉异常状态后继续执行；仅对可恢复的输入问题使用 `THROW(common::InvalidArgumentError, ...)`。
 
 ## 测试规范
 - 新增测试放在 `tests/`，命名为 `*_test.cc`。

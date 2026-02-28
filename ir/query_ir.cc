@@ -30,9 +30,8 @@ const ast::Expression *UnwrapParenthesized(const ast::Expression *expression) {
          unwrapped->Is(ast::ASTNodeType::kParenthesizedExpression)) {
     const auto *parenthesized =
         ast::CastAst<ast::ParenthesizedExpression>(unwrapped);
-    if (!parenthesized->expr) {
-      break;
-    }
+    CHECK(parenthesized->expr != nullptr, common::InvalidArgumentError,
+          "parenthesized expression is null");
     unwrapped = parenthesized->expr.get();
   }
   return unwrapped;
@@ -52,9 +51,8 @@ const ast::AndExpression *RequireConjunctiveWhere(
 void SplitConjunctivePredicates(const ast::Expression *expression,
                                 std::vector<const ast::Expression *> *output) {
   const ast::Expression *unwrapped = UnwrapParenthesized(expression);
-  if (unwrapped == nullptr) {
-    return;
-  }
+  CHECK(unwrapped != nullptr, common::InvalidArgumentError,
+        "null WHERE predicate is not supported");
   if (unwrapped->Is(ast::ASTNodeType::kAndExpression)) {
     const auto *and_expression = ast::CastAst<ast::AndExpression>(unwrapped);
     SplitConjunctivePredicates(and_expression->left.get(), output);
