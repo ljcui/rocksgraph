@@ -189,7 +189,7 @@ TEST(PlannerQueryTest, DeduplicatesRepeatedWherePredicatesAcrossMatches) {
 
 TEST(PlannerQueryTest, BuildsUnionMappings) {
   auto statement =
-      ParseOrFail("MATCH (n) RETURN n AS x UNION MATCH (m) RETURN m AS y");
+      ParseOrFail("MATCH (n) RETURN n AS x UNION MATCH (m) RETURN m AS x");
   ASSERT_TRUE(statement);
 
   ir::QueryIR planner_query = ir::BuildStatement(*statement);
@@ -200,11 +200,11 @@ TEST(PlannerQueryTest, BuildsUnionMappings) {
   ASSERT_EQ(branch.mappings.size(), 1U);
   EXPECT_EQ(branch.mappings[0].output, "x");
   EXPECT_EQ(branch.mappings[0].from_main, "x");
-  EXPECT_EQ(branch.mappings[0].from_branch, "y");
+  EXPECT_EQ(branch.mappings[0].from_branch, "x");
 }
 
 TEST(PlannerQueryTest, BuildsUnionAllBranch) {
-  auto statement = ParseOrFail("RETURN 1 AS a UNION ALL RETURN 2 AS b");
+  auto statement = ParseOrFail("RETURN 1 AS a UNION ALL RETURN 2 AS a");
   ASSERT_TRUE(statement);
 
   ir::QueryIR planner_query = ir::BuildStatement(*statement);
@@ -215,11 +215,19 @@ TEST(PlannerQueryTest, BuildsUnionAllBranch) {
   ASSERT_EQ(branch.mappings.size(), 1U);
   EXPECT_EQ(branch.mappings[0].output, "a");
   EXPECT_EQ(branch.mappings[0].from_main, "a");
-  EXPECT_EQ(branch.mappings[0].from_branch, "b");
+  EXPECT_EQ(branch.mappings[0].from_branch, "a");
 }
 
 TEST(PlannerQueryTest, RejectsUnionColumnCountMismatch) {
   auto statement = ParseOrFail("RETURN 1 AS a UNION RETURN 1 AS b, 2 AS c");
+  ASSERT_TRUE(statement);
+
+  EXPECT_THROW(
+      { (void)ir::BuildStatement(*statement); }, common::InvalidArgumentError);
+}
+
+TEST(PlannerQueryTest, RejectsUnionColumnNameMismatch) {
+  auto statement = ParseOrFail("RETURN 1 AS a UNION RETURN 1 AS b");
   ASSERT_TRUE(statement);
 
   EXPECT_THROW(

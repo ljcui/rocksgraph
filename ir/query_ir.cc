@@ -327,6 +327,9 @@ std::vector<UnionColumnMapping> BuildUnionColumnMappings(
   std::vector<UnionColumnMapping> mappings;
   mappings.reserve(main_columns.size());
   for (size_t index = 0; index < main_columns.size(); ++index) {
+    CHECK(main_columns[index] == branch_columns[index],
+          common::InvalidArgumentError,
+          "UNION branches must return the same column names by position");
     UnionColumnMapping mapping;
     mapping.output = main_columns[index];
     mapping.from_main = main_columns[index];
