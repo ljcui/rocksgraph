@@ -310,8 +310,8 @@ class SemanticValidator : public ASTWalker {
       scope.Add(item.alias);
       return;
     }
-    if (const auto *var =
-            dynamic_cast<const Variable *>(item.expression.get())) {
+    if (item.expression && item.expression->Is(ASTNodeType::kVariable)) {
+      const auto *var = static_cast<const Variable *>(item.expression.get());
       scope.Add(var->name);
     }
   }

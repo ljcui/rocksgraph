@@ -1,7 +1,5 @@
 #include "ast_equal.h"
 
-#include <typeinfo>
-
 namespace ast {
 
 bool ASTEqual::Equal(const ASTNode &left, const ASTNode &right) {
@@ -15,108 +13,120 @@ bool ASTEqual::Equal(const ASTNode *left, const ASTNode *right) {
   if ((left == nullptr) || (right == nullptr)) {
     return false;
   }
-  if (typeid(*left) != typeid(*right)) {
+  if (left->node_type != right->node_type) {
     return false;
   }
 
-#define AST_EQUAL_TYPE(Type, Func)                  \
-  if (typeid(*left) == typeid(Type)) {              \
-    return Func(static_cast<const Type &>(*left),   \
-                static_cast<const Type &>(*right)); \
+#define AST_EQUAL_CASE(NodeType, Type, Func)      \
+  case ASTNodeType::NodeType:                     \
+    return Func(static_cast<const Type &>(*left), \
+                static_cast<const Type &>(*right))
+
+  switch (left->node_type) {
+    AST_EQUAL_CASE(kRegularQuery, RegularQuery, EqualRegularQuery);
+    AST_EQUAL_CASE(kStandaloneCall, StandaloneCall, EqualStandaloneCall);
+    AST_EQUAL_CASE(kSinglePartQuery, SinglePartQuery, EqualSinglePartQuery);
+    AST_EQUAL_CASE(kMultiPartQuery, MultiPartQuery, EqualMultiPartQuery);
+    AST_EQUAL_CASE(kUnionPart, UnionPart, EqualUnionPart);
+
+    AST_EQUAL_CASE(kOrExpression, OrExpression, EqualOrExpression);
+    AST_EQUAL_CASE(kXorExpression, XorExpression, EqualXorExpression);
+    AST_EQUAL_CASE(kAndExpression, AndExpression, EqualAndExpression);
+    AST_EQUAL_CASE(kComparisonExpression, ComparisonExpression,
+                   EqualComparisonExpression);
+    AST_EQUAL_CASE(kComparisonChainExpression, ComparisonChainExpression,
+                   EqualComparisonChainExpression);
+    AST_EQUAL_CASE(kAddExpression, AddExpression, EqualAddExpression);
+    AST_EQUAL_CASE(kSubtractExpression, SubtractExpression,
+                   EqualSubtractExpression);
+    AST_EQUAL_CASE(kMultiplyExpression, MultiplyExpression,
+                   EqualMultiplyExpression);
+    AST_EQUAL_CASE(kDivideExpression, DivideExpression, EqualDivideExpression);
+    AST_EQUAL_CASE(kModuloExpression, ModuloExpression, EqualModuloExpression);
+    AST_EQUAL_CASE(kPowerExpression, PowerExpression, EqualPowerExpression);
+    AST_EQUAL_CASE(kNotExpression, NotExpression, EqualNotExpression);
+    AST_EQUAL_CASE(kUnaryPlusExpression, UnaryPlusExpression,
+                   EqualUnaryPlusExpression);
+    AST_EQUAL_CASE(kUnaryMinusExpression, UnaryMinusExpression,
+                   EqualUnaryMinusExpression);
+    AST_EQUAL_CASE(kStringPredicateExpression, StringPredicateExpression,
+                   EqualStringPredicateExpression);
+    AST_EQUAL_CASE(kListPredicateExpression, ListPredicateExpression,
+                   EqualListPredicateExpression);
+    AST_EQUAL_CASE(kLabelPredicateExpression, LabelPredicateExpression,
+                   EqualLabelPredicateExpression);
+    AST_EQUAL_CASE(kNullPredicateExpression, NullPredicateExpression,
+                   EqualNullPredicateExpression);
+
+    AST_EQUAL_CASE(kBooleanLiteral, BooleanLiteral, EqualBooleanLiteral);
+    AST_EQUAL_CASE(kIntegerLiteral, IntegerLiteral, EqualIntegerLiteral);
+    AST_EQUAL_CASE(kDoubleLiteral, DoubleLiteral, EqualDoubleLiteral);
+    AST_EQUAL_CASE(kStringLiteral, StringLiteral, EqualStringLiteral);
+    AST_EQUAL_CASE(kNullLiteral, NullLiteral, EqualNullLiteral);
+    AST_EQUAL_CASE(kListLiteral, ListLiteral, EqualListLiteral);
+    AST_EQUAL_CASE(kMapLiteral, MapLiteral, EqualMapLiteral);
+    AST_EQUAL_CASE(kProperties, Properties, EqualProperties);
+
+    AST_EQUAL_CASE(kVariable, Variable, EqualVariable);
+    AST_EQUAL_CASE(kParameter, Parameter, EqualParameter);
+    AST_EQUAL_CASE(kPropertyExpression, PropertyExpression,
+                   EqualPropertyExpression);
+    AST_EQUAL_CASE(kListIndexExpression, ListIndexExpression,
+                   EqualListIndexExpression);
+    AST_EQUAL_CASE(kListSliceExpression, ListSliceExpression,
+                   EqualListSliceExpression);
+    AST_EQUAL_CASE(kFunctionInvocation, FunctionInvocation,
+                   EqualFunctionInvocation);
+    AST_EQUAL_CASE(kCountStarExpression, CountStarExpression,
+                   EqualCountStarExpression);
+    AST_EQUAL_CASE(kCaseExpression, CaseExpression, EqualCaseExpression);
+    AST_EQUAL_CASE(kParenthesizedExpression, ParenthesizedExpression,
+                   EqualParenthesizedExpression);
+    AST_EQUAL_CASE(kListComprehension, ListComprehension,
+                   EqualListComprehension);
+    AST_EQUAL_CASE(kPatternComprehension, PatternComprehension,
+                   EqualPatternComprehension);
+    AST_EQUAL_CASE(kPatternPredicateExpression, PatternPredicateExpression,
+                   EqualPatternPredicateExpression);
+    AST_EQUAL_CASE(kAllQuantifier, AllQuantifier, EqualAllQuantifier);
+    AST_EQUAL_CASE(kAnyQuantifier, AnyQuantifier, EqualAnyQuantifier);
+    AST_EQUAL_CASE(kNoneQuantifier, NoneQuantifier, EqualNoneQuantifier);
+    AST_EQUAL_CASE(kSingleQuantifier, SingleQuantifier, EqualSingleQuantifier);
+    AST_EQUAL_CASE(kExistentialSubquery, ExistentialSubquery,
+                   EqualExistentialSubquery);
+
+    AST_EQUAL_CASE(kPattern, Pattern, EqualPattern);
+    AST_EQUAL_CASE(kPatternPart, PatternPart, EqualPatternPart);
+    AST_EQUAL_CASE(kPatternElement, PatternElement, EqualPatternElement);
+    AST_EQUAL_CASE(kRelationshipsPattern, RelationshipsPattern,
+                   EqualRelationshipsPattern);
+    AST_EQUAL_CASE(kNodePattern, NodePattern, EqualNodePattern);
+    AST_EQUAL_CASE(kRelationshipPattern, RelationshipPattern,
+                   EqualRelationshipPattern);
+    AST_EQUAL_CASE(kRelationshipDetail, RelationshipDetail,
+                   EqualRelationshipDetail);
+
+    AST_EQUAL_CASE(kMatch, Match, EqualMatch);
+    AST_EQUAL_CASE(kUnwind, Unwind, EqualUnwind);
+    AST_EQUAL_CASE(kInQueryCall, InQueryCall, EqualInQueryCall);
+    AST_EQUAL_CASE(kCreate, Create, EqualCreate);
+    AST_EQUAL_CASE(kMerge, Merge, EqualMerge);
+    AST_EQUAL_CASE(kDelete, Delete, EqualDelete);
+    AST_EQUAL_CASE(kSet, Set, EqualSet);
+    AST_EQUAL_CASE(kSetItem, SetItem, EqualSetItem);
+    AST_EQUAL_CASE(kRemove, Remove, EqualRemove);
+    AST_EQUAL_CASE(kRemoveItem, RemoveItem, EqualRemoveItem);
+    AST_EQUAL_CASE(kProjectionBody, ProjectionBody, EqualProjectionBody);
+    AST_EQUAL_CASE(kProjectionItem, ProjectionItem, EqualProjectionItem);
+    AST_EQUAL_CASE(kSortItem, SortItem, EqualSortItem);
+    AST_EQUAL_CASE(kWith, With, EqualWith);
+    AST_EQUAL_CASE(kReturn, Return, EqualReturn);
+
+    default:
+      return false;
   }
 
-  AST_EQUAL_TYPE(RegularQuery, EqualRegularQuery)
-  AST_EQUAL_TYPE(StandaloneCall, EqualStandaloneCall)
-  AST_EQUAL_TYPE(SinglePartQuery, EqualSinglePartQuery)
-  AST_EQUAL_TYPE(MultiPartQuery, EqualMultiPartQuery)
-  AST_EQUAL_TYPE(UnionPart, EqualUnionPart)
-
-  AST_EQUAL_TYPE(OrExpression, EqualOrExpression)
-  AST_EQUAL_TYPE(XorExpression, EqualXorExpression)
-  AST_EQUAL_TYPE(AndExpression, EqualAndExpression)
-  AST_EQUAL_TYPE(ComparisonExpression, EqualComparisonExpression)
-  AST_EQUAL_TYPE(ComparisonChainExpression, EqualComparisonChainExpression)
-  AST_EQUAL_TYPE(AddExpression, EqualAddExpression)
-  AST_EQUAL_TYPE(SubtractExpression, EqualSubtractExpression)
-  AST_EQUAL_TYPE(MultiplyExpression, EqualMultiplyExpression)
-  AST_EQUAL_TYPE(DivideExpression, EqualDivideExpression)
-  AST_EQUAL_TYPE(ModuloExpression, EqualModuloExpression)
-  AST_EQUAL_TYPE(PowerExpression, EqualPowerExpression)
-  AST_EQUAL_TYPE(NotExpression, EqualNotExpression)
-  AST_EQUAL_TYPE(UnaryPlusExpression, EqualUnaryPlusExpression)
-  AST_EQUAL_TYPE(UnaryMinusExpression, EqualUnaryMinusExpression)
-  AST_EQUAL_TYPE(StringPredicateExpression, EqualStringPredicateExpression)
-  AST_EQUAL_TYPE(ListPredicateExpression, EqualListPredicateExpression)
-  AST_EQUAL_TYPE(LabelPredicateExpression, EqualLabelPredicateExpression)
-  AST_EQUAL_TYPE(NullPredicateExpression, EqualNullPredicateExpression)
-
-  AST_EQUAL_TYPE(BooleanLiteral, EqualBooleanLiteral)
-  AST_EQUAL_TYPE(IntegerLiteral, EqualIntegerLiteral)
-  AST_EQUAL_TYPE(DoubleLiteral, EqualDoubleLiteral)
-  AST_EQUAL_TYPE(StringLiteral, EqualStringLiteral)
-  AST_EQUAL_TYPE(NullLiteral, EqualNullLiteral)
-  AST_EQUAL_TYPE(ListLiteral, EqualListLiteral)
-  AST_EQUAL_TYPE(MapLiteral, EqualMapLiteral)
-  AST_EQUAL_TYPE(Properties, EqualProperties)
-
-  AST_EQUAL_TYPE(Variable, EqualVariable)
-  AST_EQUAL_TYPE(Parameter, EqualParameter)
-  AST_EQUAL_TYPE(PropertyExpression, EqualPropertyExpression)
-  AST_EQUAL_TYPE(ListIndexExpression, EqualListIndexExpression)
-  AST_EQUAL_TYPE(ListSliceExpression, EqualListSliceExpression)
-  AST_EQUAL_TYPE(FunctionInvocation, EqualFunctionInvocation)
-  AST_EQUAL_TYPE(CountStarExpression, EqualCountStarExpression)
-  AST_EQUAL_TYPE(CaseExpression, EqualCaseExpression)
-  AST_EQUAL_TYPE(ParenthesizedExpression, EqualParenthesizedExpression)
-  AST_EQUAL_TYPE(ListComprehension, EqualListComprehension)
-  AST_EQUAL_TYPE(PatternComprehension, EqualPatternComprehension)
-  AST_EQUAL_TYPE(PatternPredicateExpression, EqualPatternPredicateExpression)
-  AST_EQUAL_TYPE(AllQuantifier, EqualAllQuantifier)
-  AST_EQUAL_TYPE(AnyQuantifier, EqualAnyQuantifier)
-  AST_EQUAL_TYPE(NoneQuantifier, EqualNoneQuantifier)
-  AST_EQUAL_TYPE(SingleQuantifier, EqualSingleQuantifier)
-  AST_EQUAL_TYPE(ExistentialSubquery, EqualExistentialSubquery)
-
-  AST_EQUAL_TYPE(Pattern, EqualPattern)
-  AST_EQUAL_TYPE(PatternPart, EqualPatternPart)
-  AST_EQUAL_TYPE(PatternElement, EqualPatternElement)
-  AST_EQUAL_TYPE(RelationshipsPattern, EqualRelationshipsPattern)
-  AST_EQUAL_TYPE(NodePattern, EqualNodePattern)
-  AST_EQUAL_TYPE(RelationshipPattern, EqualRelationshipPattern)
-  AST_EQUAL_TYPE(RelationshipDetail, EqualRelationshipDetail)
-
-  AST_EQUAL_TYPE(Match, EqualMatch)
-  AST_EQUAL_TYPE(Unwind, EqualUnwind)
-  AST_EQUAL_TYPE(InQueryCall, EqualInQueryCall)
-  AST_EQUAL_TYPE(Create, EqualCreate)
-  AST_EQUAL_TYPE(Merge, EqualMerge)
-  AST_EQUAL_TYPE(Delete, EqualDelete)
-  AST_EQUAL_TYPE(Set, EqualSet)
-  AST_EQUAL_TYPE(SetItem, EqualSetItem)
-  AST_EQUAL_TYPE(Remove, EqualRemove)
-  AST_EQUAL_TYPE(RemoveItem, EqualRemoveItem)
-  AST_EQUAL_TYPE(ProjectionBody, EqualProjectionBody)
-  AST_EQUAL_TYPE(ProjectionItem, EqualProjectionItem)
-  AST_EQUAL_TYPE(SortItem, EqualSortItem)
-  AST_EQUAL_TYPE(With, EqualWith)
-  AST_EQUAL_TYPE(Return, EqualReturn)
-
-  AST_EQUAL_TYPE(Statement, EqualStatement)
-  AST_EQUAL_TYPE(Query, EqualQuery)
-  AST_EQUAL_TYPE(SingleQuery, EqualSingleQuery)
-  AST_EQUAL_TYPE(Expression, EqualExpression)
-  AST_EQUAL_TYPE(BinaryExpression, EqualBinaryExpression)
-  AST_EQUAL_TYPE(UnaryExpression, EqualUnaryExpression)
-  AST_EQUAL_TYPE(Literal, EqualLiteral)
-  AST_EQUAL_TYPE(Quantifier, EqualQuantifier)
-  AST_EQUAL_TYPE(Clause, EqualClause)
-  AST_EQUAL_TYPE(ReadingClause, EqualReadingClause)
-  AST_EQUAL_TYPE(UpdatingClause, EqualUpdatingClause)
-  AST_EQUAL_TYPE(ProjectionClause, EqualProjectionClause)
-
-#undef AST_EQUAL_TYPE
-
-  return false;
+#undef AST_EQUAL_CASE
 }
 
 bool ASTEqual::EqualStatement(const Statement & /*unused*/,

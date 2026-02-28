@@ -26,10 +26,11 @@ std::string MakeMissingError(std::string_view subject) {
 
 const ast::Expression *UnwrapParenthesized(const ast::Expression *expression) {
   const ast::Expression *unwrapped = expression;
-  while (unwrapped != nullptr) {
+  while (unwrapped != nullptr &&
+         unwrapped->Is(ast::ASTNodeType::kParenthesizedExpression)) {
     const auto *parenthesized =
-        dynamic_cast<const ast::ParenthesizedExpression *>(unwrapped);
-    if (parenthesized == nullptr || !parenthesized->expr) {
+        static_cast<const ast::ParenthesizedExpression *>(unwrapped);
+    if (!parenthesized->expr) {
       break;
     }
     unwrapped = parenthesized->expr.get();
@@ -40,13 +41,12 @@ const ast::Expression *UnwrapParenthesized(const ast::Expression *expression) {
 const ast::AndExpression *RequireConjunctiveWhere(
     const ast::Expression *expression) {
   const ast::Expression *unwrapped = UnwrapParenthesized(expression);
-  const auto *and_expression =
-      dynamic_cast<const ast::AndExpression *>(unwrapped);
-  if (and_expression == nullptr) {
+  if (unwrapped == nullptr ||
+      !unwrapped->Is(ast::ASTNodeType::kAndExpression)) {
     THROW(common::InvalidArgumentError,
           MakeUnsupportedError("WHERE without AND expression"));
   }
-  return and_expression;
+  return static_cast<const ast::AndExpression *>(unwrapped);
 }
 
 void SplitConjunctivePredicates(const ast::Expression *expression,
@@ -55,9 +55,9 @@ void SplitConjunctivePredicates(const ast::Expression *expression,
   if (unwrapped == nullptr) {
     return;
   }
-  const auto *and_expression =
-      dynamic_cast<const ast::AndExpression *>(unwrapped);
-  if (and_expression != nullptr) {
+  if (unwrapped->Is(ast::ASTNodeType::kAndExpression)) {
+    const auto *and_expression =
+        static_cast<const ast::AndExpression *>(unwrapped);
     SplitConjunctivePredicates(and_expression->left.get(), output);
     SplitConjunctivePredicates(and_expression->right.get(), output);
     return;
@@ -130,8 +130,9 @@ std::string ResolveProjectionColumnName(const ProjectionItem &item) {
   if (!item.alias.empty()) {
     return item.alias;
   }
-  const auto *variable = dynamic_cast<const ast::Variable *>(item.expression);
-  if (variable != nullptr) {
+  if (item.expression != nullptr &&
+      item.expression->Is(ast::ASTNodeType::kVariable)) {
+    const auto *variable = static_cast<const ast::Variable *>(item.expression);
     return variable->name;
   }
   return {};
@@ -155,16 +156,17 @@ std::vector<std::string> CollectTerminalColumns(const SingleQueryIR &query) {
 class QueryGraphBuilder {
  public:
   void BuildReadingClause(const ast::ReadingClause &clause) {
-    if (const auto *match = dynamic_cast<const ast::Match *>(&clause)) {
-      BuildMatch(*match);
-      return;
-    }
-    if (dynamic_cast<const ast::Unwind *>(&clause) != nullptr) {
-      THROW(common::InvalidArgumentError, MakeUnsupportedError("UNWIND"));
-    }
-    if (dynamic_cast<const ast::InQueryCall *>(&clause) != nullptr) {
-      THROW(common::InvalidArgumentError,
-            MakeUnsupportedError("procedure call"));
+    switch (clause.node_type) {
+      case ast::ASTNodeType::kMatch:
+        BuildMatch(static_cast<const ast::Match &>(clause));
+        return;
+      case ast::ASTNodeType::kUnwind:
+        THROW(common::InvalidArgumentError, MakeUnsupportedError("UNWIND"));
+      case ast::ASTNodeType::kInQueryCall:
+        THROW(common::InvalidArgumentError,
+              MakeUnsupportedError("procedure call"));
+      default:
+        break;
     }
     THROW(common::InvalidArgumentError, MakeUnsupportedError("reading clause"));
   }
@@ -260,7 +262,7 @@ class QueryGraphBuilder {
           MakeUnsupportedError("anonymous relationship"));
     CHECK(!detail->range, common::InvalidArgumentError,
           MakeUnsupportedError("variable length relationship"));
-    CHECK(!detail->types.empty(), common::InvalidArgumentError,
+    CHECK(detail->types.empty(), common::InvalidArgumentError,
           MakeUnsupportedError("relationship with labels"));
     CHECK(!detail->properties, common::InvalidArgumentError,
           MakeUnsupportedError("relationship with properties"));
@@ -424,8 +426,9 @@ class QueryIRBuilder {
     if (projection_clause->body) {
       projection = BuildProjectionBody(*projection_clause->body);
     }
-    if (const auto *with_clause =
-            dynamic_cast<const ast::With *>(projection_clause)) {
+    if (projection_clause->Is(ast::ASTNodeType::kWith)) {
+      const auto *with_clause =
+          static_cast<const ast::With *>(projection_clause);
       projection.where = with_clause->where.get();
     }
     return projection;

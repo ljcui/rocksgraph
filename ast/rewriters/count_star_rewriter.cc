@@ -7,7 +7,7 @@ void CountStarRewriter::RewriteExpression(std::unique_ptr<Expression> &expr) {
     return;
   }
   ASTRewriter::RewriteExpression(expr);
-  if (dynamic_cast<CountStarExpression *>(expr.get()) == nullptr) {
+  if (!expr->Is(ASTNodeType::kCountStarExpression)) {
     return;
   }
 

@@ -10,8 +10,11 @@ void ExistentialSubqueryRewriter::RewriteExpression(
     return;
   }
   ASTRewriter::RewriteExpression(expr);
-  auto *subquery = dynamic_cast<ExistentialSubquery *>(expr.get());
-  if ((subquery == nullptr) || !subquery->pattern || subquery->query) {
+  if (!expr->Is(ASTNodeType::kExistentialSubquery)) {
+    return;
+  }
+  auto *subquery = static_cast<ExistentialSubquery *>(expr.get());
+  if (!subquery->pattern || subquery->query) {
     return;
   }
 

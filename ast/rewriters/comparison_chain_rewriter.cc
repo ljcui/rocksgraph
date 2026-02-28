@@ -13,8 +13,11 @@ void ComparisonChainRewriter::RewriteExpression(
     return;
   }
   ASTRewriter::RewriteExpression(expr);
-  auto *chain = dynamic_cast<ComparisonChainExpression *>(expr.get());
-  if ((chain == nullptr) || chain->rights.empty()) {
+  if (!expr->Is(ASTNodeType::kComparisonChainExpression)) {
+    return;
+  }
+  auto *chain = static_cast<ComparisonChainExpression *>(expr.get());
+  if (chain->rights.empty()) {
     return;
   }
   auto left = std::move(chain->left);

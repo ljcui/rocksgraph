@@ -1,11 +1,11 @@
+#include "uniqueness_predicates_rewriter.h"
+
 #include <algorithm>
 #include <memory>
 #include <string>
 #include <unordered_set>
 #include <utility>
 #include <vector>
-
-#include "uniqueness_predicates_rewriter.h"
 
 namespace ast {
 namespace {

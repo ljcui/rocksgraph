@@ -112,37 +112,50 @@ void ReturnStarRewriter::ExpandStar(ProjectionBody &body) {
 
 void ReturnStarRewriter::CollectFromReadingClause(const ReadingClause &clause,
                                                   Scope &scope) const {
-  if (const auto *match = dynamic_cast<const Match *>(&clause)) {
-    if (match->pattern) {
-      CollectFromPattern(*match->pattern, scope);
+  switch (clause.node_type) {
+    case ASTNodeType::kMatch: {
+      const auto &match = static_cast<const Match &>(clause);
+      if (match.pattern) {
+        CollectFromPattern(*match.pattern, scope);
+      }
+      return;
     }
-    return;
-  }
-  if (const auto *unwind = dynamic_cast<const Unwind *>(&clause)) {
-    scope.Add(unwind->variable);
-    return;
-  }
-  if (const auto *call = dynamic_cast<const InQueryCall *>(&clause)) {
-    for (const auto &item : call->yield_items) {
-      scope.Add(item.variable);
+    case ASTNodeType::kUnwind: {
+      const auto &unwind = static_cast<const Unwind &>(clause);
+      scope.Add(unwind.variable);
+      return;
     }
-    return;
+    case ASTNodeType::kInQueryCall: {
+      const auto &call = static_cast<const InQueryCall &>(clause);
+      for (const auto &item : call.yield_items) {
+        scope.Add(item.variable);
+      }
+      return;
+    }
+    default:
+      return;
   }
 }
 
 void ReturnStarRewriter::CollectFromUpdatingClause(const UpdatingClause &clause,
                                                    Scope &scope) const {
-  if (const auto *create = dynamic_cast<const Create *>(&clause)) {
-    if (create->pattern) {
-      CollectFromPattern(*create->pattern, scope);
+  switch (clause.node_type) {
+    case ASTNodeType::kCreate: {
+      const auto &create = static_cast<const Create &>(clause);
+      if (create.pattern) {
+        CollectFromPattern(*create.pattern, scope);
+      }
+      return;
     }
-    return;
-  }
-  if (const auto *merge = dynamic_cast<const Merge *>(&clause)) {
-    if (merge->pattern_part) {
-      CollectFromPatternPart(*merge->pattern_part, scope);
+    case ASTNodeType::kMerge: {
+      const auto &merge = static_cast<const Merge &>(clause);
+      if (merge.pattern_part) {
+        CollectFromPatternPart(*merge.pattern_part, scope);
+      }
+      return;
     }
-    return;
+    default:
+      return;
   }
 }
 
@@ -209,7 +222,8 @@ void ReturnStarRewriter::CollectFromProjectionItem(const ProjectionItem &item,
     scope.Add(item.alias);
     return;
   }
-  if (const auto *var = dynamic_cast<const Variable *>(item.expression.get())) {
+  if (item.expression && item.expression->Is(ASTNodeType::kVariable)) {
+    const auto *var = static_cast<const Variable *>(item.expression.get());
     scope.Add(var->name);
   }
 }

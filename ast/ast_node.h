@@ -968,18 +968,18 @@ class SetItem : public ASTNode {
     assert(target);
     switch (type) {
       case Type::kProperty:
-        assert(dynamic_cast<PropertyExpression*>(target.get()));
+        assert(target->Is(ASTNodeType::kPropertyExpression));
         assert(value);
         assert(!plus_equal);
         assert(labels.empty());
         break;
       case Type::kVariable:
-        assert(dynamic_cast<Variable*>(target.get()));
+        assert(target->Is(ASTNodeType::kVariable));
         assert(value);
         assert(labels.empty());
         break;
       case Type::kLabels:
-        assert(dynamic_cast<Variable*>(target.get()));
+        assert(target->Is(ASTNodeType::kVariable));
         assert(!value);
         assert(!labels.empty());
         assert(!plus_equal);
@@ -1027,11 +1027,11 @@ class RemoveItem : public ASTNode {
     assert(target);
     switch (type) {
       case Type::kProperty:
-        assert(dynamic_cast<PropertyExpression*>(target.get()));
+        assert(target->Is(ASTNodeType::kPropertyExpression));
         assert(labels.empty());
         break;
       case Type::kLabels:
-        assert(dynamic_cast<Variable*>(target.get()));
+        assert(target->Is(ASTNodeType::kVariable));
         assert(!labels.empty());
         break;
     }

@@ -107,451 +107,489 @@ ExprText RenderUnary(const Expression *operand, int prec,
 }
 
 ExprText ExpressionText(const Expression &expr) {
-  if (const auto *node = dynamic_cast<const OrExpression *>(&expr)) {
-    return RenderBinary(node->left.get(), node->right.get(), kOr, "OR");
-  }
-  if (const auto *node = dynamic_cast<const XorExpression *>(&expr)) {
-    return RenderBinary(node->left.get(), node->right.get(), kXor, "XOR");
-  }
-  if (const auto *node = dynamic_cast<const AndExpression *>(&expr)) {
-    return RenderBinary(node->left.get(), node->right.get(), kAnd, "AND");
-  }
-  if (const auto *node = dynamic_cast<const ComparisonExpression *>(&expr)) {
-    return RenderBinary(node->left.get(), node->right.get(), kComparison,
-                        node->op);
-  }
-  if (const auto *node =
-          dynamic_cast<const ComparisonChainExpression *>(&expr)) {
-    if (!node->left || node->rights.empty()) {
-      return {};
+  switch (expr.node_type) {
+    case ASTNodeType::kOrExpression: {
+      const auto &node = static_cast<const OrExpression &>(expr);
+      return RenderBinary(node.left.get(), node.right.get(), kOr, "OR");
     }
-    std::string out = ExpressionToString(*node->left);
-    if (out.empty()) {
-      return {};
+    case ASTNodeType::kXorExpression: {
+      const auto &node = static_cast<const XorExpression &>(expr);
+      return RenderBinary(node.left.get(), node.right.get(), kXor, "XOR");
     }
-    for (const auto &entry : node->rights) {
-      if (!entry.second) {
+    case ASTNodeType::kAndExpression: {
+      const auto &node = static_cast<const AndExpression &>(expr);
+      return RenderBinary(node.left.get(), node.right.get(), kAnd, "AND");
+    }
+    case ASTNodeType::kComparisonExpression: {
+      const auto &node = static_cast<const ComparisonExpression &>(expr);
+      return RenderBinary(node.left.get(), node.right.get(), kComparison,
+                          node.op);
+    }
+    case ASTNodeType::kComparisonChainExpression: {
+      const auto &node = static_cast<const ComparisonChainExpression &>(expr);
+      if (!node.left || node.rights.empty()) {
         return {};
       }
-      const std::string right = ExpressionToString(*entry.second);
-      if (right.empty()) {
+      std::string out = ExpressionToString(*node.left);
+      if (out.empty()) {
         return {};
       }
-      out += " " + entry.first + " " + right;
+      for (const auto &entry : node.rights) {
+        if (!entry.second) {
+          return {};
+        }
+        const std::string right = ExpressionToString(*entry.second);
+        if (right.empty()) {
+          return {};
+        }
+        out += " " + entry.first + " " + right;
+      }
+      return {out, kComparison};
     }
-    return {out, kComparison};
-  }
-  if (const auto *node = dynamic_cast<const AddExpression *>(&expr)) {
-    return RenderBinary(node->left.get(), node->right.get(), kAdd, "+");
-  }
-  if (const auto *node = dynamic_cast<const SubtractExpression *>(&expr)) {
-    return RenderBinary(node->left.get(), node->right.get(), kAdd, "-");
-  }
-  if (const auto *node = dynamic_cast<const MultiplyExpression *>(&expr)) {
-    return RenderBinary(node->left.get(), node->right.get(), kMultiply, "*");
-  }
-  if (const auto *node = dynamic_cast<const DivideExpression *>(&expr)) {
-    return RenderBinary(node->left.get(), node->right.get(), kMultiply, "/");
-  }
-  if (const auto *node = dynamic_cast<const ModuloExpression *>(&expr)) {
-    return RenderBinary(node->left.get(), node->right.get(), kMultiply, "%");
-  }
-  if (const auto *node = dynamic_cast<const PowerExpression *>(&expr)) {
-    return RenderBinary(node->left.get(), node->right.get(), kPower, "^", true,
-                        false);
-  }
-  if (const auto *node = dynamic_cast<const NotExpression *>(&expr)) {
-    return RenderUnary(node->operand.get(), kUnary, "NOT ");
-  }
-  if (const auto *node = dynamic_cast<const UnaryPlusExpression *>(&expr)) {
-    return RenderUnary(node->operand.get(), kUnary, "+");
-  }
-  if (const auto *node = dynamic_cast<const UnaryMinusExpression *>(&expr)) {
-    return RenderUnary(node->operand.get(), kUnary, "-");
-  }
-  if (const auto *node =
-          dynamic_cast<const StringPredicateExpression *>(&expr)) {
-    return RenderBinary(node->left.get(), node->right.get(), kComparison,
-                        node->op);
-  }
-  if (const auto *node = dynamic_cast<const ListPredicateExpression *>(&expr)) {
-    return RenderBinary(node->element.get(), node->list.get(), kComparison,
-                        "IN");
-  }
-  if (const auto *node = dynamic_cast<const NullPredicateExpression *>(&expr)) {
-    if (!node->operand) {
-      return {};
+    case ASTNodeType::kAddExpression: {
+      const auto &node = static_cast<const AddExpression &>(expr);
+      return RenderBinary(node.left.get(), node.right.get(), kAdd, "+");
     }
-    const ExprText operand = ExpressionText(*node->operand);
-    const std::string operand_text = WrapIfNeeded(operand, kComparison, false);
-    if (operand_text.empty()) {
-      return {};
+    case ASTNodeType::kSubtractExpression: {
+      const auto &node = static_cast<const SubtractExpression &>(expr);
+      return RenderBinary(node.left.get(), node.right.get(), kAdd, "-");
     }
-    return {operand_text + (node->is_null ? " IS NULL" : " IS NOT NULL"),
-            kComparison};
-  }
-  if (const auto *node =
-          dynamic_cast<const LabelPredicateExpression *>(&expr)) {
-    if (!node->expr || node->labels.empty()) {
-      return {};
+    case ASTNodeType::kMultiplyExpression: {
+      const auto &node = static_cast<const MultiplyExpression &>(expr);
+      return RenderBinary(node.left.get(), node.right.get(), kMultiply, "*");
     }
-    const ExprText base = ExpressionText(*node->expr);
-    const std::string base_text = WrapIfNeeded(base, kPostfix, false);
-    if (base_text.empty()) {
-      return {};
+    case ASTNodeType::kDivideExpression: {
+      const auto &node = static_cast<const DivideExpression &>(expr);
+      return RenderBinary(node.left.get(), node.right.get(), kMultiply, "/");
     }
-    std::string out = base_text;
-    for (const auto &label : node->labels) {
-      out += ":" + label;
+    case ASTNodeType::kModuloExpression: {
+      const auto &node = static_cast<const ModuloExpression &>(expr);
+      return RenderBinary(node.left.get(), node.right.get(), kMultiply, "%");
     }
-    return {out, kPostfix};
-  }
-  if (const auto *node = dynamic_cast<const BooleanLiteral *>(&expr)) {
-    return {node->value ? "true" : "false", kPrimary};
-  }
-  if (const auto *node = dynamic_cast<const IntegerLiteral *>(&expr)) {
-    return {std::to_string(node->value), kPrimary};
-  }
-  if (const auto *node = dynamic_cast<const DoubleLiteral *>(&expr)) {
-    return {std::to_string(node->value), kPrimary};
-  }
-  if (const auto *node = dynamic_cast<const StringLiteral *>(&expr)) {
-    return {EscapeStringLiteral(node->value), kPrimary};
-  }
-  if (dynamic_cast<const NullLiteral *>(&expr) != nullptr) {
-    return {"NULL", kPrimary};
-  }
-  if (const auto *node = dynamic_cast<const ListLiteral *>(&expr)) {
-    std::vector<std::string> elements;
-    elements.reserve(node->elements.size());
-    for (const auto &elem : node->elements) {
-      if (!elem) {
+    case ASTNodeType::kPowerExpression: {
+      const auto &node = static_cast<const PowerExpression &>(expr);
+      return RenderBinary(node.left.get(), node.right.get(), kPower, "^", true,
+                          false);
+    }
+    case ASTNodeType::kNotExpression: {
+      const auto &node = static_cast<const NotExpression &>(expr);
+      return RenderUnary(node.operand.get(), kUnary, "NOT ");
+    }
+    case ASTNodeType::kUnaryPlusExpression: {
+      const auto &node = static_cast<const UnaryPlusExpression &>(expr);
+      return RenderUnary(node.operand.get(), kUnary, "+");
+    }
+    case ASTNodeType::kUnaryMinusExpression: {
+      const auto &node = static_cast<const UnaryMinusExpression &>(expr);
+      return RenderUnary(node.operand.get(), kUnary, "-");
+    }
+    case ASTNodeType::kStringPredicateExpression: {
+      const auto &node = static_cast<const StringPredicateExpression &>(expr);
+      return RenderBinary(node.left.get(), node.right.get(), kComparison,
+                          node.op);
+    }
+    case ASTNodeType::kListPredicateExpression: {
+      const auto &node = static_cast<const ListPredicateExpression &>(expr);
+      return RenderBinary(node.element.get(), node.list.get(), kComparison,
+                          "IN");
+    }
+    case ASTNodeType::kNullPredicateExpression: {
+      const auto &node = static_cast<const NullPredicateExpression &>(expr);
+      if (!node.operand) {
         return {};
       }
-      const std::string text = ExpressionToString(*elem);
-      if (text.empty()) {
+      const ExprText operand = ExpressionText(*node.operand);
+      const std::string operand_text =
+          WrapIfNeeded(operand, kComparison, false);
+      if (operand_text.empty()) {
         return {};
       }
-      elements.push_back(text);
+      return {operand_text + (node.is_null ? " IS NULL" : " IS NOT NULL"),
+              kComparison};
     }
-    return {"[" + Join(elements, ", ") + "]", kPrimary};
-  }
-  if (const auto *node = dynamic_cast<const MapLiteral *>(&expr)) {
-    std::vector<std::string> entries;
-    entries.reserve(node->entries.size());
-    for (const auto &entry : node->entries) {
-      if (!entry.second) {
+    case ASTNodeType::kLabelPredicateExpression: {
+      const auto &node = static_cast<const LabelPredicateExpression &>(expr);
+      if (!node.expr || node.labels.empty()) {
         return {};
       }
-      const std::string value = ExpressionToString(*entry.second);
-      if (value.empty()) {
+      const ExprText base = ExpressionText(*node.expr);
+      const std::string base_text = WrapIfNeeded(base, kPostfix, false);
+      if (base_text.empty()) {
         return {};
       }
-      entries.push_back(entry.first + ": " + value);
+      std::string out = base_text;
+      for (const auto &label : node.labels) {
+        out += ":" + label;
+      }
+      return {out, kPostfix};
     }
-    return {"{" + Join(entries, ", ") + "}", kPrimary};
-  }
-  if (const auto *node = dynamic_cast<const Variable *>(&expr)) {
-    return {node->name, kPrimary};
-  }
-  if (const auto *node = dynamic_cast<const Parameter *>(&expr)) {
-    if (node->name.empty()) {
-      return {};
+    case ASTNodeType::kBooleanLiteral: {
+      const auto &node = static_cast<const BooleanLiteral &>(expr);
+      return {node.value ? "true" : "false", kPrimary};
     }
-    return {"$" + node->name, kPrimary};
-  }
-  if (const auto *node = dynamic_cast<const PropertyExpression *>(&expr)) {
-    if (!node->object || node->property_key.empty()) {
-      return {};
+    case ASTNodeType::kIntegerLiteral: {
+      const auto &node = static_cast<const IntegerLiteral &>(expr);
+      return {std::to_string(node.value), kPrimary};
     }
-    const ExprText base = ExpressionText(*node->object);
-    const std::string base_text = WrapIfNeeded(base, kPostfix, false);
-    if (base_text.empty()) {
-      return {};
+    case ASTNodeType::kDoubleLiteral: {
+      const auto &node = static_cast<const DoubleLiteral &>(expr);
+      return {std::to_string(node.value), kPrimary};
     }
-    return {base_text + "." + node->property_key, kPostfix};
-  }
-  if (const auto *node = dynamic_cast<const ListIndexExpression *>(&expr)) {
-    if (!node->list || !node->index) {
-      return {};
+    case ASTNodeType::kStringLiteral: {
+      const auto &node = static_cast<const StringLiteral &>(expr);
+      return {EscapeStringLiteral(node.value), kPrimary};
     }
-    const ExprText list = ExpressionText(*node->list);
-    const std::string list_text = WrapIfNeeded(list, kPostfix, false);
-    if (list_text.empty()) {
-      return {};
+    case ASTNodeType::kNullLiteral:
+      return {"NULL", kPrimary};
+    case ASTNodeType::kListLiteral: {
+      const auto &node = static_cast<const ListLiteral &>(expr);
+      std::vector<std::string> elements;
+      elements.reserve(node.elements.size());
+      for (const auto &elem : node.elements) {
+        if (!elem) {
+          return {};
+        }
+        const std::string text = ExpressionToString(*elem);
+        if (text.empty()) {
+          return {};
+        }
+        elements.push_back(text);
+      }
+      return {"[" + Join(elements, ", ") + "]", kPrimary};
     }
-    const std::string index = ExpressionToString(*node->index);
-    if (index.empty()) {
-      return {};
+    case ASTNodeType::kMapLiteral: {
+      const auto &node = static_cast<const MapLiteral &>(expr);
+      std::vector<std::string> entries;
+      entries.reserve(node.entries.size());
+      for (const auto &entry : node.entries) {
+        if (!entry.second) {
+          return {};
+        }
+        const std::string value = ExpressionToString(*entry.second);
+        if (value.empty()) {
+          return {};
+        }
+        entries.push_back(entry.first + ": " + value);
+      }
+      return {"{" + Join(entries, ", ") + "}", kPrimary};
     }
-    return {list_text + "[" + index + "]", kPostfix};
-  }
-  if (const auto *node = dynamic_cast<const ListSliceExpression *>(&expr)) {
-    if (!node->list) {
-      return {};
+    case ASTNodeType::kVariable: {
+      const auto &node = static_cast<const Variable &>(expr);
+      return {node.name, kPrimary};
     }
-    const ExprText list = ExpressionText(*node->list);
-    const std::string list_text = WrapIfNeeded(list, kPostfix, false);
-    if (list_text.empty()) {
-      return {};
-    }
-    std::string start_text;
-    std::string end_text;
-    if (node->start_index) {
-      start_text = ExpressionToString(*node->start_index);
-      if (start_text.empty()) {
+    case ASTNodeType::kParameter: {
+      const auto &node = static_cast<const Parameter &>(expr);
+      if (node.name.empty()) {
         return {};
       }
+      return {"$" + node.name, kPrimary};
     }
-    if (node->end_index) {
-      end_text = ExpressionToString(*node->end_index);
-      if (end_text.empty()) {
+    case ASTNodeType::kPropertyExpression: {
+      const auto &node = static_cast<const PropertyExpression &>(expr);
+      if (!node.object || node.property_key.empty()) {
         return {};
       }
-    }
-    return {list_text + "[" + start_text + ".." + end_text + "]", kPostfix};
-  }
-  if (const auto *node = dynamic_cast<const FunctionInvocation *>(&expr)) {
-    if (node->function_name.empty()) {
-      return {};
-    }
-    std::vector<std::string> args;
-    args.reserve(node->arguments.size());
-    for (const auto &arg : node->arguments) {
-      if (!arg) {
+      const ExprText base = ExpressionText(*node.object);
+      const std::string base_text = WrapIfNeeded(base, kPostfix, false);
+      if (base_text.empty()) {
         return {};
       }
-      const std::string arg_text = ExpressionToString(*arg);
-      if (arg_text.empty()) {
+      return {base_text + "." + node.property_key, kPostfix};
+    }
+    case ASTNodeType::kListIndexExpression: {
+      const auto &node = static_cast<const ListIndexExpression &>(expr);
+      if (!node.list || !node.index) {
         return {};
       }
-      args.push_back(arg_text);
-    }
-    std::string arg_text = Join(args, ", ");
-    if (node->distinct) {
-      if (!arg_text.empty()) {
-        arg_text = "DISTINCT " + arg_text;
-      } else {
-        arg_text = "DISTINCT";
-      }
-    }
-    return {node->function_name + "(" + arg_text + ")", kPrimary};
-  }
-  if (dynamic_cast<const CountStarExpression *>(&expr) != nullptr) {
-    return {"count(*)", kPrimary};
-  }
-  if (const auto *node = dynamic_cast<const CaseExpression *>(&expr)) {
-    std::string out = "CASE";
-    if (node->test) {
-      const std::string test = ExpressionToString(*node->test);
-      if (test.empty()) {
+      const ExprText list = ExpressionText(*node.list);
+      const std::string list_text = WrapIfNeeded(list, kPostfix, false);
+      if (list_text.empty()) {
         return {};
       }
-      out += " " + test;
-    }
-    for (const auto &alt : node->alternatives) {
-      if (!alt.first || !alt.second) {
+      const std::string index = ExpressionToString(*node.index);
+      if (index.empty()) {
         return {};
       }
-      const std::string when_text = ExpressionToString(*alt.first);
-      const std::string then_text = ExpressionToString(*alt.second);
-      if (when_text.empty() || then_text.empty()) {
+      return {list_text + "[" + index + "]", kPostfix};
+    }
+    case ASTNodeType::kListSliceExpression: {
+      const auto &node = static_cast<const ListSliceExpression &>(expr);
+      if (!node.list) {
         return {};
       }
-      out += " WHEN " + when_text + " THEN " + then_text;
-    }
-    if (node->else_expr) {
-      const std::string else_text = ExpressionToString(*node->else_expr);
-      if (else_text.empty()) {
+      const ExprText list = ExpressionText(*node.list);
+      const std::string list_text = WrapIfNeeded(list, kPostfix, false);
+      if (list_text.empty()) {
         return {};
       }
-      out += " ELSE " + else_text;
+      std::string start_text;
+      std::string end_text;
+      if (node.start_index) {
+        start_text = ExpressionToString(*node.start_index);
+        if (start_text.empty()) {
+          return {};
+        }
+      }
+      if (node.end_index) {
+        end_text = ExpressionToString(*node.end_index);
+        if (end_text.empty()) {
+          return {};
+        }
+      }
+      return {list_text + "[" + start_text + ".." + end_text + "]", kPostfix};
     }
-    out += " END";
-    return {out, kPrimary};
-  }
-  if (const auto *node = dynamic_cast<const ParenthesizedExpression *>(&expr)) {
-    if (!node->expr) {
-      return {};
-    }
-    const std::string inner = ExpressionToString(*node->expr);
-    if (inner.empty()) {
-      return {};
-    }
-    return {"(" + inner + ")", kPrimary};
-  }
-  if (const auto *node = dynamic_cast<const ListComprehension *>(&expr)) {
-    if (!node->list_expr) {
-      return {};
-    }
-    const std::string list_text = ExpressionToString(*node->list_expr);
-    if (list_text.empty()) {
-      return {};
-    }
-    std::string out = "[" + node->variable + " IN " + list_text;
-    if (node->where_expr) {
-      const std::string where_text = ExpressionToString(*node->where_expr);
-      if (where_text.empty()) {
+    case ASTNodeType::kFunctionInvocation: {
+      const auto &node = static_cast<const FunctionInvocation &>(expr);
+      if (node.function_name.empty()) {
         return {};
       }
-      out += " WHERE " + where_text;
-    }
-    if (node->eval_expr) {
-      const std::string eval_text = ExpressionToString(*node->eval_expr);
-      if (eval_text.empty()) {
-        return {};
+      std::vector<std::string> args;
+      args.reserve(node.arguments.size());
+      for (const auto &arg : node.arguments) {
+        if (!arg) {
+          return {};
+        }
+        const std::string arg_text = ExpressionToString(*arg);
+        if (arg_text.empty()) {
+          return {};
+        }
+        args.push_back(arg_text);
       }
-      out += " | " + eval_text;
-    }
-    out += "]";
-    return {out, kPrimary};
-  }
-  if (const auto *node = dynamic_cast<const PatternComprehension *>(&expr)) {
-    if (!node->relationships_pattern || !node->eval_expr) {
-      return {};
-    }
-    const std::string pattern_text =
-        RelationshipsPatternToString(*node->relationships_pattern);
-    if (pattern_text.empty()) {
-      return {};
-    }
-    std::string out = "[";
-    if (!node->variable.empty()) {
-      out += node->variable + " = ";
-    }
-    out += pattern_text;
-    if (node->where_expr) {
-      const std::string where_text = ExpressionToString(*node->where_expr);
-      if (where_text.empty()) {
-        return {};
+      std::string arg_text = Join(args, ", ");
+      if (node.distinct) {
+        if (!arg_text.empty()) {
+          arg_text = "DISTINCT " + arg_text;
+        } else {
+          arg_text = "DISTINCT";
+        }
       }
-      out += " WHERE " + where_text;
+      return {node.function_name + "(" + arg_text + ")", kPrimary};
     }
-    const std::string eval_text = ExpressionToString(*node->eval_expr);
-    if (eval_text.empty()) {
-      return {};
-    }
-    out += " | " + eval_text + "]";
-    return {out, kPrimary};
-  }
-  if (const auto *node =
-          dynamic_cast<const PatternPredicateExpression *>(&expr)) {
-    if (!node->relationships_pattern) {
-      return {};
-    }
-    const std::string pattern_text =
-        RelationshipsPatternToString(*node->relationships_pattern);
-    if (pattern_text.empty()) {
-      return {};
-    }
-    return {pattern_text, kPrimary};
-  }
-  if (const auto *node = dynamic_cast<const AllQuantifier *>(&expr)) {
-    if (!node->list_expr) {
-      return {};
-    }
-    const std::string list_text = ExpressionToString(*node->list_expr);
-    if (list_text.empty()) {
-      return {};
-    }
-    std::string out = "ALL(" + node->variable + " IN " + list_text;
-    if (node->predicate) {
-      const std::string pred_text = ExpressionToString(*node->predicate);
-      if (pred_text.empty()) {
-        return {};
+    case ASTNodeType::kCountStarExpression:
+      return {"count(*)", kPrimary};
+    case ASTNodeType::kCaseExpression: {
+      const auto &node = static_cast<const CaseExpression &>(expr);
+      std::string out = "CASE";
+      if (node.test) {
+        const std::string test = ExpressionToString(*node.test);
+        if (test.empty()) {
+          return {};
+        }
+        out += " " + test;
       }
-      out += " WHERE " + pred_text;
-    }
-    out += ")";
-    return {out, kPrimary};
-  }
-  if (const auto *node = dynamic_cast<const AnyQuantifier *>(&expr)) {
-    if (!node->list_expr) {
-      return {};
-    }
-    const std::string list_text = ExpressionToString(*node->list_expr);
-    if (list_text.empty()) {
-      return {};
-    }
-    std::string out = "ANY(" + node->variable + " IN " + list_text;
-    if (node->predicate) {
-      const std::string pred_text = ExpressionToString(*node->predicate);
-      if (pred_text.empty()) {
-        return {};
+      for (const auto &alt : node.alternatives) {
+        if (!alt.first || !alt.second) {
+          return {};
+        }
+        const std::string when_text = ExpressionToString(*alt.first);
+        const std::string then_text = ExpressionToString(*alt.second);
+        if (when_text.empty() || then_text.empty()) {
+          return {};
+        }
+        out += " WHEN " + when_text + " THEN " + then_text;
       }
-      out += " WHERE " + pred_text;
-    }
-    out += ")";
-    return {out, kPrimary};
-  }
-  if (const auto *node = dynamic_cast<const NoneQuantifier *>(&expr)) {
-    if (!node->list_expr) {
-      return {};
-    }
-    const std::string list_text = ExpressionToString(*node->list_expr);
-    if (list_text.empty()) {
-      return {};
-    }
-    std::string out = "NONE(" + node->variable + " IN " + list_text;
-    if (node->predicate) {
-      const std::string pred_text = ExpressionToString(*node->predicate);
-      if (pred_text.empty()) {
-        return {};
+      if (node.else_expr) {
+        const std::string else_text = ExpressionToString(*node.else_expr);
+        if (else_text.empty()) {
+          return {};
+        }
+        out += " ELSE " + else_text;
       }
-      out += " WHERE " + pred_text;
-    }
-    out += ")";
-    return {out, kPrimary};
-  }
-  if (const auto *node = dynamic_cast<const SingleQuantifier *>(&expr)) {
-    if (!node->list_expr) {
-      return {};
-    }
-    const std::string list_text = ExpressionToString(*node->list_expr);
-    if (list_text.empty()) {
-      return {};
-    }
-    std::string out = "SINGLE(" + node->variable + " IN " + list_text;
-    if (node->predicate) {
-      const std::string pred_text = ExpressionToString(*node->predicate);
-      if (pred_text.empty()) {
-        return {};
-      }
-      out += " WHERE " + pred_text;
-    }
-    out += ")";
-    return {out, kPrimary};
-  }
-  if (const auto *node = dynamic_cast<const ExistentialSubquery *>(&expr)) {
-    std::string out = "EXISTS { ";
-    if (node->query) {
-      const std::string query_text = RegularQueryToString(*node->query);
-      if (query_text.empty()) {
-        return {};
-      }
-      out += query_text;
-      out += " }";
+      out += " END";
       return {out, kPrimary};
     }
-    if (node->pattern) {
-      const std::string pattern_text = PatternToString(*node->pattern);
-      if (pattern_text.empty()) {
+    case ASTNodeType::kParenthesizedExpression: {
+      const auto &node = static_cast<const ParenthesizedExpression &>(expr);
+      if (!node.expr) {
         return {};
       }
-      out += pattern_text;
-      if (node->where_expr) {
-        const std::string where_text = ExpressionToString(*node->where_expr);
+      const std::string inner = ExpressionToString(*node.expr);
+      if (inner.empty()) {
+        return {};
+      }
+      return {"(" + inner + ")", kPrimary};
+    }
+    case ASTNodeType::kListComprehension: {
+      const auto &node = static_cast<const ListComprehension &>(expr);
+      if (!node.list_expr) {
+        return {};
+      }
+      const std::string list_text = ExpressionToString(*node.list_expr);
+      if (list_text.empty()) {
+        return {};
+      }
+      std::string out = "[" + node.variable + " IN " + list_text;
+      if (node.where_expr) {
+        const std::string where_text = ExpressionToString(*node.where_expr);
         if (where_text.empty()) {
           return {};
         }
         out += " WHERE " + where_text;
       }
-      out += " }";
+      if (node.eval_expr) {
+        const std::string eval_text = ExpressionToString(*node.eval_expr);
+        if (eval_text.empty()) {
+          return {};
+        }
+        out += " | " + eval_text;
+      }
+      out += "]";
       return {out, kPrimary};
     }
-    return {};
+    case ASTNodeType::kPatternComprehension: {
+      const auto &node = static_cast<const PatternComprehension &>(expr);
+      if (!node.relationships_pattern || !node.eval_expr) {
+        return {};
+      }
+      const std::string pattern_text =
+          RelationshipsPatternToString(*node.relationships_pattern);
+      if (pattern_text.empty()) {
+        return {};
+      }
+      std::string out = "[";
+      if (!node.variable.empty()) {
+        out += node.variable + " = ";
+      }
+      out += pattern_text;
+      if (node.where_expr) {
+        const std::string where_text = ExpressionToString(*node.where_expr);
+        if (where_text.empty()) {
+          return {};
+        }
+        out += " WHERE " + where_text;
+      }
+      const std::string eval_text = ExpressionToString(*node.eval_expr);
+      if (eval_text.empty()) {
+        return {};
+      }
+      out += " | " + eval_text + "]";
+      return {out, kPrimary};
+    }
+    case ASTNodeType::kPatternPredicateExpression: {
+      const auto &node = static_cast<const PatternPredicateExpression &>(expr);
+      if (!node.relationships_pattern) {
+        return {};
+      }
+      const std::string pattern_text =
+          RelationshipsPatternToString(*node.relationships_pattern);
+      if (pattern_text.empty()) {
+        return {};
+      }
+      return {pattern_text, kPrimary};
+    }
+    case ASTNodeType::kAllQuantifier: {
+      const auto &node = static_cast<const AllQuantifier &>(expr);
+      if (!node.list_expr) {
+        return {};
+      }
+      const std::string list_text = ExpressionToString(*node.list_expr);
+      if (list_text.empty()) {
+        return {};
+      }
+      std::string out = "ALL(" + node.variable + " IN " + list_text;
+      if (node.predicate) {
+        const std::string pred_text = ExpressionToString(*node.predicate);
+        if (pred_text.empty()) {
+          return {};
+        }
+        out += " WHERE " + pred_text;
+      }
+      out += ")";
+      return {out, kPrimary};
+    }
+    case ASTNodeType::kAnyQuantifier: {
+      const auto &node = static_cast<const AnyQuantifier &>(expr);
+      if (!node.list_expr) {
+        return {};
+      }
+      const std::string list_text = ExpressionToString(*node.list_expr);
+      if (list_text.empty()) {
+        return {};
+      }
+      std::string out = "ANY(" + node.variable + " IN " + list_text;
+      if (node.predicate) {
+        const std::string pred_text = ExpressionToString(*node.predicate);
+        if (pred_text.empty()) {
+          return {};
+        }
+        out += " WHERE " + pred_text;
+      }
+      out += ")";
+      return {out, kPrimary};
+    }
+    case ASTNodeType::kNoneQuantifier: {
+      const auto &node = static_cast<const NoneQuantifier &>(expr);
+      if (!node.list_expr) {
+        return {};
+      }
+      const std::string list_text = ExpressionToString(*node.list_expr);
+      if (list_text.empty()) {
+        return {};
+      }
+      std::string out = "NONE(" + node.variable + " IN " + list_text;
+      if (node.predicate) {
+        const std::string pred_text = ExpressionToString(*node.predicate);
+        if (pred_text.empty()) {
+          return {};
+        }
+        out += " WHERE " + pred_text;
+      }
+      out += ")";
+      return {out, kPrimary};
+    }
+    case ASTNodeType::kSingleQuantifier: {
+      const auto &node = static_cast<const SingleQuantifier &>(expr);
+      if (!node.list_expr) {
+        return {};
+      }
+      const std::string list_text = ExpressionToString(*node.list_expr);
+      if (list_text.empty()) {
+        return {};
+      }
+      std::string out = "SINGLE(" + node.variable + " IN " + list_text;
+      if (node.predicate) {
+        const std::string pred_text = ExpressionToString(*node.predicate);
+        if (pred_text.empty()) {
+          return {};
+        }
+        out += " WHERE " + pred_text;
+      }
+      out += ")";
+      return {out, kPrimary};
+    }
+    case ASTNodeType::kExistentialSubquery: {
+      const auto &node = static_cast<const ExistentialSubquery &>(expr);
+      std::string out = "EXISTS { ";
+      if (node.query) {
+        const std::string query_text = RegularQueryToString(*node.query);
+        if (query_text.empty()) {
+          return {};
+        }
+        out += query_text;
+        out += " }";
+        return {out, kPrimary};
+      }
+      if (node.pattern) {
+        const std::string pattern_text = PatternToString(*node.pattern);
+        if (pattern_text.empty()) {
+          return {};
+        }
+        out += pattern_text;
+        if (node.where_expr) {
+          const std::string where_text = ExpressionToString(*node.where_expr);
+          if (where_text.empty()) {
+            return {};
+          }
+          out += " WHERE " + where_text;
+        }
+        out += " }";
+        return {out, kPrimary};
+      }
+      return {};
+    }
+    default:
+      return {};
   }
-  return {};
 }
 
 std::string PropertiesToString(const Properties &properties) {
@@ -865,101 +903,152 @@ std::string RemoveItemToString(const RemoveItem &item) {
 }
 
 std::string ReadingClauseToString(const ReadingClause &clause) {
-  if (const auto *match = dynamic_cast<const Match *>(&clause)) {
-    if (!match->pattern) {
-      return {};
-    }
-    const std::string pattern = PatternToString(*match->pattern);
-    if (pattern.empty()) {
-      return {};
-    }
-    std::string out = match->optional_match ? "OPTIONAL MATCH " : "MATCH ";
-    out += pattern;
-    if (match->where) {
-      const std::string where_text = ExpressionToString(*match->where);
-      if (where_text.empty()) {
+  switch (clause.node_type) {
+    case ASTNodeType::kMatch: {
+      const auto &match = static_cast<const Match &>(clause);
+      if (!match.pattern) {
         return {};
       }
-      out += " WHERE " + where_text;
-    }
-    return out;
-  }
-  if (const auto *unwind = dynamic_cast<const Unwind *>(&clause)) {
-    if (!unwind->expression) {
-      return {};
-    }
-    const std::string expr = ExpressionToString(*unwind->expression);
-    if (expr.empty()) {
-      return {};
-    }
-    return "UNWIND " + expr + " AS " + unwind->variable;
-  }
-  if (const auto *call = dynamic_cast<const InQueryCall *>(&clause)) {
-    std::vector<std::string> args;
-    args.reserve(call->arguments.size());
-    for (const auto &arg : call->arguments) {
-      if (!arg) {
+      const std::string pattern = PatternToString(*match.pattern);
+      if (pattern.empty()) {
         return {};
       }
-      const std::string text = ExpressionToString(*arg);
-      if (text.empty()) {
-        return {};
-      }
-      args.push_back(text);
-    }
-    std::string out =
-        "CALL " + call->procedure_name + "(" + Join(args, ", ") + ")";
-    if (!call->yield_items.empty()) {
-      std::vector<std::string> items;
-      items.reserve(call->yield_items.size());
-      for (const auto &item : call->yield_items) {
-        if (item.result_field) {
-          items.push_back(*item.result_field + " AS " + item.variable);
-        } else {
-          items.push_back(item.variable);
+      std::string out = match.optional_match ? "OPTIONAL MATCH " : "MATCH ";
+      out += pattern;
+      if (match.where) {
+        const std::string where_text = ExpressionToString(*match.where);
+        if (where_text.empty()) {
+          return {};
         }
+        out += " WHERE " + where_text;
       }
-      out += " YIELD " + Join(items, ", ");
+      return out;
     }
-    if (call->yield_where) {
-      const std::string where_text = ExpressionToString(*call->yield_where);
-      if (where_text.empty()) {
+    case ASTNodeType::kUnwind: {
+      const auto &unwind = static_cast<const Unwind &>(clause);
+      if (!unwind.expression) {
         return {};
       }
-      out += " WHERE " + where_text;
+      const std::string expr = ExpressionToString(*unwind.expression);
+      if (expr.empty()) {
+        return {};
+      }
+      return "UNWIND " + expr + " AS " + unwind.variable;
     }
-    return out;
+    case ASTNodeType::kInQueryCall: {
+      const auto &call = static_cast<const InQueryCall &>(clause);
+      std::vector<std::string> args;
+      args.reserve(call.arguments.size());
+      for (const auto &arg : call.arguments) {
+        if (!arg) {
+          return {};
+        }
+        const std::string text = ExpressionToString(*arg);
+        if (text.empty()) {
+          return {};
+        }
+        args.push_back(text);
+      }
+      std::string out =
+          "CALL " + call.procedure_name + "(" + Join(args, ", ") + ")";
+      if (!call.yield_items.empty()) {
+        std::vector<std::string> items;
+        items.reserve(call.yield_items.size());
+        for (const auto &item : call.yield_items) {
+          if (item.result_field) {
+            items.push_back(*item.result_field + " AS " + item.variable);
+          } else {
+            items.push_back(item.variable);
+          }
+        }
+        out += " YIELD " + Join(items, ", ");
+      }
+      if (call.yield_where) {
+        const std::string where_text = ExpressionToString(*call.yield_where);
+        if (where_text.empty()) {
+          return {};
+        }
+        out += " WHERE " + where_text;
+      }
+      return out;
+    }
+    default:
+      return {};
   }
-  return {};
 }
 
 std::string UpdatingClauseToString(const UpdatingClause &clause) {
-  if (const auto *create = dynamic_cast<const Create *>(&clause)) {
-    if (!create->pattern) {
-      return {};
+  switch (clause.node_type) {
+    case ASTNodeType::kCreate: {
+      const auto &create = static_cast<const Create &>(clause);
+      if (!create.pattern) {
+        return {};
+      }
+      const std::string pattern = PatternToString(*create.pattern);
+      if (pattern.empty()) {
+        return {};
+      }
+      return "CREATE " + pattern;
     }
-    const std::string pattern = PatternToString(*create->pattern);
-    if (pattern.empty()) {
-      return {};
+    case ASTNodeType::kMerge: {
+      const auto &merge = static_cast<const Merge &>(clause);
+      if (!merge.pattern_part) {
+        return {};
+      }
+      const std::string part = PatternPartToString(*merge.pattern_part);
+      if (part.empty()) {
+        return {};
+      }
+      std::string out = "MERGE " + part;
+      for (const auto &action : merge.actions) {
+        if (!action.second) {
+          return {};
+        }
+        std::vector<std::string> items;
+        items.reserve(action.second->items.size());
+        for (const auto &item : action.second->items) {
+          if (!item) {
+            return {};
+          }
+          const std::string text = SetItemToString(*item);
+          if (text.empty()) {
+            return {};
+          }
+          items.push_back(text);
+        }
+        out += action.first ? " ON MATCH SET " : " ON CREATE SET ";
+        out += Join(items, ", ");
+      }
+      return out;
     }
-    return "CREATE " + pattern;
-  }
-  if (const auto *merge = dynamic_cast<const Merge *>(&clause)) {
-    if (!merge->pattern_part) {
-      return {};
-    }
-    const std::string part = PatternPartToString(*merge->pattern_part);
-    if (part.empty()) {
-      return {};
-    }
-    std::string out = "MERGE " + part;
-    for (const auto &action : merge->actions) {
-      if (!action.second) {
+    case ASTNodeType::kDelete: {
+      const auto &del = static_cast<const Delete &>(clause);
+      if (del.expressions.empty()) {
         return {};
       }
       std::vector<std::string> items;
-      items.reserve(action.second->items.size());
-      for (const auto &item : action.second->items) {
+      items.reserve(del.expressions.size());
+      for (const auto &expr : del.expressions) {
+        if (!expr) {
+          return {};
+        }
+        const std::string text = ExpressionToString(*expr);
+        if (text.empty()) {
+          return {};
+        }
+        items.push_back(text);
+      }
+      return std::string(del.detach ? "DETACH DELETE " : "DELETE ") +
+             Join(items, ", ");
+    }
+    case ASTNodeType::kSet: {
+      const auto &set = static_cast<const Set &>(clause);
+      if (set.items.empty()) {
+        return {};
+      }
+      std::vector<std::string> items;
+      items.reserve(set.items.size());
+      for (const auto &item : set.items) {
         if (!item) {
           return {};
         }
@@ -969,67 +1058,30 @@ std::string UpdatingClauseToString(const UpdatingClause &clause) {
         }
         items.push_back(text);
       }
-      out += action.first ? " ON MATCH SET " : " ON CREATE SET ";
-      out += Join(items, ", ");
+      return "SET " + Join(items, ", ");
     }
-    return out;
-  }
-  if (const auto *del = dynamic_cast<const Delete *>(&clause)) {
-    if (del->expressions.empty()) {
+    case ASTNodeType::kRemove: {
+      const auto &remove = static_cast<const Remove &>(clause);
+      if (remove.items.empty()) {
+        return {};
+      }
+      std::vector<std::string> items;
+      items.reserve(remove.items.size());
+      for (const auto &item : remove.items) {
+        if (!item) {
+          return {};
+        }
+        const std::string text = RemoveItemToString(*item);
+        if (text.empty()) {
+          return {};
+        }
+        items.push_back(text);
+      }
+      return "REMOVE " + Join(items, ", ");
+    }
+    default:
       return {};
-    }
-    std::vector<std::string> items;
-    items.reserve(del->expressions.size());
-    for (const auto &expr : del->expressions) {
-      if (!expr) {
-        return {};
-      }
-      const std::string text = ExpressionToString(*expr);
-      if (text.empty()) {
-        return {};
-      }
-      items.push_back(text);
-    }
-    return std::string(del->detach ? "DETACH DELETE " : "DELETE ") +
-           Join(items, ", ");
   }
-  if (const auto *set = dynamic_cast<const Set *>(&clause)) {
-    if (set->items.empty()) {
-      return {};
-    }
-    std::vector<std::string> items;
-    items.reserve(set->items.size());
-    for (const auto &item : set->items) {
-      if (!item) {
-        return {};
-      }
-      const std::string text = SetItemToString(*item);
-      if (text.empty()) {
-        return {};
-      }
-      items.push_back(text);
-    }
-    return "SET " + Join(items, ", ");
-  }
-  if (const auto *remove = dynamic_cast<const Remove *>(&clause)) {
-    if (remove->items.empty()) {
-      return {};
-    }
-    std::vector<std::string> items;
-    items.reserve(remove->items.size());
-    for (const auto &item : remove->items) {
-      if (!item) {
-        return {};
-      }
-      const std::string text = RemoveItemToString(*item);
-      if (text.empty()) {
-        return {};
-      }
-      items.push_back(text);
-    }
-    return "REMOVE " + Join(items, ", ");
-  }
-  return {};
 }
 
 std::string ProjectionClauseToString(const ProjectionClause &clause) {
@@ -1040,21 +1092,24 @@ std::string ProjectionClauseToString(const ProjectionClause &clause) {
   if (body.empty()) {
     return {};
   }
-  if (const auto *with = dynamic_cast<const With *>(&clause)) {
-    std::string out = "WITH " + body;
-    if (with->where) {
-      const std::string where_text = ExpressionToString(*with->where);
-      if (where_text.empty()) {
-        return {};
+  switch (clause.node_type) {
+    case ASTNodeType::kWith: {
+      const auto &with = static_cast<const With &>(clause);
+      std::string out = "WITH " + body;
+      if (with.where) {
+        const std::string where_text = ExpressionToString(*with.where);
+        if (where_text.empty()) {
+          return {};
+        }
+        out += " WHERE " + where_text;
       }
-      out += " WHERE " + where_text;
+      return out;
     }
-    return out;
+    case ASTNodeType::kReturn:
+      return "RETURN " + body;
+    default:
+      return {};
   }
-  if (dynamic_cast<const Return *>(&clause) != nullptr) {
-    return "RETURN " + body;
-  }
-  return {};
 }
 
 std::string SinglePartQueryToString(const SinglePartQuery &query) {
@@ -1138,13 +1193,15 @@ std::string MultiPartQueryToString(const MultiPartQuery &query) {
 }
 
 std::string SingleQueryToString(const SingleQuery &query) {
-  if (const auto *single = dynamic_cast<const SinglePartQuery *>(&query)) {
-    return SinglePartQueryToString(*single);
+  switch (query.node_type) {
+    case ASTNodeType::kSinglePartQuery:
+      return SinglePartQueryToString(
+          static_cast<const SinglePartQuery &>(query));
+    case ASTNodeType::kMultiPartQuery:
+      return MultiPartQueryToString(static_cast<const MultiPartQuery &>(query));
+    default:
+      return {};
   }
-  if (const auto *multi = dynamic_cast<const MultiPartQuery *>(&query)) {
-    return MultiPartQueryToString(*multi);
-  }
-  return {};
 }
 
 std::string RegularQueryToString(const RegularQuery &query) {

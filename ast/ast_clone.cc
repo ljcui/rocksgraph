@@ -128,215 +128,212 @@ std::unique_ptr<T> CloneQuantifier(const T &node) {
 }
 
 std::unique_ptr<Expression> CloneExpressionImpl(const Expression &expr) {
-  if (const auto *node = dynamic_cast<const OrExpression *>(&expr)) {
-    return CloneBinary(*node);
-  }
-  if (const auto *node = dynamic_cast<const XorExpression *>(&expr)) {
-    return CloneBinary(*node);
-  }
-  if (const auto *node = dynamic_cast<const AndExpression *>(&expr)) {
-    return CloneBinary(*node);
-  }
-  if (const auto *node = dynamic_cast<const ComparisonExpression *>(&expr)) {
-    auto cloned = std::make_unique<ComparisonExpression>();
-    cloned->left = CloneExpressionPtr(node->left);
-    cloned->op = node->op;
-    cloned->right = CloneExpressionPtr(node->right);
-    return cloned;
-  }
-  if (const auto *node =
-          dynamic_cast<const ComparisonChainExpression *>(&expr)) {
-    auto cloned = std::make_unique<ComparisonChainExpression>();
-    cloned->left = CloneExpressionPtr(node->left);
-    cloned->rights.reserve(node->rights.size());
-    for (const auto &entry : node->rights) {
-      cloned->rights.emplace_back(entry.first,
-                                  CloneExpressionPtr(entry.second));
+  switch (expr.node_type) {
+    case ASTNodeType::kOrExpression:
+      return CloneBinary(static_cast<const OrExpression &>(expr));
+    case ASTNodeType::kXorExpression:
+      return CloneBinary(static_cast<const XorExpression &>(expr));
+    case ASTNodeType::kAndExpression:
+      return CloneBinary(static_cast<const AndExpression &>(expr));
+    case ASTNodeType::kComparisonExpression: {
+      const auto &node = static_cast<const ComparisonExpression &>(expr);
+      auto cloned = std::make_unique<ComparisonExpression>();
+      cloned->left = CloneExpressionPtr(node.left);
+      cloned->op = node.op;
+      cloned->right = CloneExpressionPtr(node.right);
+      return cloned;
     }
-    return cloned;
-  }
-  if (const auto *node = dynamic_cast<const AddExpression *>(&expr)) {
-    return CloneBinary(*node);
-  }
-  if (const auto *node = dynamic_cast<const SubtractExpression *>(&expr)) {
-    return CloneBinary(*node);
-  }
-  if (const auto *node = dynamic_cast<const MultiplyExpression *>(&expr)) {
-    return CloneBinary(*node);
-  }
-  if (const auto *node = dynamic_cast<const DivideExpression *>(&expr)) {
-    return CloneBinary(*node);
-  }
-  if (const auto *node = dynamic_cast<const ModuloExpression *>(&expr)) {
-    return CloneBinary(*node);
-  }
-  if (const auto *node = dynamic_cast<const PowerExpression *>(&expr)) {
-    return CloneBinary(*node);
-  }
-  if (const auto *node = dynamic_cast<const NotExpression *>(&expr)) {
-    return CloneUnary(*node);
-  }
-  if (const auto *node = dynamic_cast<const UnaryPlusExpression *>(&expr)) {
-    return CloneUnary(*node);
-  }
-  if (const auto *node = dynamic_cast<const UnaryMinusExpression *>(&expr)) {
-    return CloneUnary(*node);
-  }
-  if (const auto *node =
-          dynamic_cast<const StringPredicateExpression *>(&expr)) {
-    auto cloned = std::make_unique<StringPredicateExpression>();
-    cloned->left = CloneExpressionPtr(node->left);
-    cloned->op = node->op;
-    cloned->right = CloneExpressionPtr(node->right);
-    return cloned;
-  }
-  if (const auto *node = dynamic_cast<const ListPredicateExpression *>(&expr)) {
-    auto cloned = std::make_unique<ListPredicateExpression>();
-    cloned->element = CloneExpressionPtr(node->element);
-    cloned->list = CloneExpressionPtr(node->list);
-    return cloned;
-  }
-  if (const auto *node =
-          dynamic_cast<const LabelPredicateExpression *>(&expr)) {
-    auto cloned = std::make_unique<LabelPredicateExpression>();
-    cloned->expr = CloneExpressionPtr(node->expr);
-    cloned->labels = node->labels;
-    return cloned;
-  }
-  if (const auto *node = dynamic_cast<const NullPredicateExpression *>(&expr)) {
-    auto cloned = std::make_unique<NullPredicateExpression>();
-    cloned->operand = CloneExpressionPtr(node->operand);
-    cloned->is_null = node->is_null;
-    return cloned;
-  }
-  if (const auto *node = dynamic_cast<const BooleanLiteral *>(&expr)) {
-    auto cloned = std::make_unique<BooleanLiteral>();
-    cloned->value = node->value;
-    return cloned;
-  }
-  if (const auto *node = dynamic_cast<const IntegerLiteral *>(&expr)) {
-    auto cloned = std::make_unique<IntegerLiteral>();
-    cloned->value = node->value;
-    return cloned;
-  }
-  if (const auto *node = dynamic_cast<const DoubleLiteral *>(&expr)) {
-    auto cloned = std::make_unique<DoubleLiteral>();
-    cloned->value = node->value;
-    return cloned;
-  }
-  if (const auto *node = dynamic_cast<const StringLiteral *>(&expr)) {
-    auto cloned = std::make_unique<StringLiteral>();
-    cloned->value = node->value;
-    return cloned;
-  }
-  if (dynamic_cast<const NullLiteral *>(&expr) != nullptr) {
-    return std::make_unique<NullLiteral>();
-  }
-  if (const auto *node = dynamic_cast<const ListLiteral *>(&expr)) {
-    return CloneListLiteral(*node);
-  }
-  if (const auto *node = dynamic_cast<const MapLiteral *>(&expr)) {
-    return CloneMapLiteral(*node);
-  }
-  if (const auto *node = dynamic_cast<const Variable *>(&expr)) {
-    return CloneVariable(*node);
-  }
-  if (const auto *node = dynamic_cast<const Parameter *>(&expr)) {
-    return CloneParameter(*node);
-  }
-  if (const auto *node = dynamic_cast<const PropertyExpression *>(&expr)) {
-    auto cloned = std::make_unique<PropertyExpression>();
-    cloned->object = CloneExpressionPtr(node->object);
-    cloned->property_key = node->property_key;
-    return cloned;
-  }
-  if (const auto *node = dynamic_cast<const ListIndexExpression *>(&expr)) {
-    auto cloned = std::make_unique<ListIndexExpression>();
-    cloned->list = CloneExpressionPtr(node->list);
-    cloned->index = CloneExpressionPtr(node->index);
-    return cloned;
-  }
-  if (const auto *node = dynamic_cast<const ListSliceExpression *>(&expr)) {
-    auto cloned = std::make_unique<ListSliceExpression>();
-    cloned->list = CloneExpressionPtr(node->list);
-    cloned->start_index = CloneExpressionPtr(node->start_index);
-    cloned->end_index = CloneExpressionPtr(node->end_index);
-    return cloned;
-  }
-  if (const auto *node = dynamic_cast<const FunctionInvocation *>(&expr)) {
-    auto cloned = std::make_unique<FunctionInvocation>();
-    cloned->function_name = node->function_name;
-    cloned->distinct = node->distinct;
-    cloned->arguments = CloneList(node->arguments, CloneExpressionImpl);
-    return cloned;
-  }
-  if (dynamic_cast<const CountStarExpression *>(&expr) != nullptr) {
-    return std::make_unique<CountStarExpression>();
-  }
-  if (const auto *node = dynamic_cast<const CaseExpression *>(&expr)) {
-    auto cloned = std::make_unique<CaseExpression>();
-    cloned->test = CloneExpressionPtr(node->test);
-    cloned->alternatives.reserve(node->alternatives.size());
-    for (const auto &alt : node->alternatives) {
-      cloned->alternatives.emplace_back(CloneExpressionPtr(alt.first),
-                                        CloneExpressionPtr(alt.second));
+    case ASTNodeType::kComparisonChainExpression: {
+      const auto &node = static_cast<const ComparisonChainExpression &>(expr);
+      auto cloned = std::make_unique<ComparisonChainExpression>();
+      cloned->left = CloneExpressionPtr(node.left);
+      cloned->rights.reserve(node.rights.size());
+      for (const auto &entry : node.rights) {
+        cloned->rights.emplace_back(entry.first,
+                                    CloneExpressionPtr(entry.second));
+      }
+      return cloned;
     }
-    cloned->else_expr = CloneExpressionPtr(node->else_expr);
-    return cloned;
-  }
-  if (const auto *node = dynamic_cast<const ParenthesizedExpression *>(&expr)) {
-    auto cloned = std::make_unique<ParenthesizedExpression>();
-    cloned->expr = CloneExpressionPtr(node->expr);
-    return cloned;
-  }
-  if (const auto *node = dynamic_cast<const ListComprehension *>(&expr)) {
-    auto cloned = std::make_unique<ListComprehension>();
-    cloned->variable = node->variable;
-    cloned->list_expr = CloneExpressionPtr(node->list_expr);
-    cloned->where_expr = CloneExpressionPtr(node->where_expr);
-    cloned->eval_expr = CloneExpressionPtr(node->eval_expr);
-    return cloned;
-  }
-  if (const auto *node = dynamic_cast<const PatternComprehension *>(&expr)) {
-    auto cloned = std::make_unique<PatternComprehension>();
-    cloned->variable = node->variable;
-    cloned->relationships_pattern =
-        CloneRelationshipsPatternPtr(node->relationships_pattern);
-    cloned->where_expr = CloneExpressionPtr(node->where_expr);
-    cloned->eval_expr = CloneExpressionPtr(node->eval_expr);
-    return cloned;
-  }
-  if (const auto *node =
-          dynamic_cast<const PatternPredicateExpression *>(&expr)) {
-    auto cloned = std::make_unique<PatternPredicateExpression>();
-    cloned->relationships_pattern =
-        CloneRelationshipsPatternPtr(node->relationships_pattern);
-    return cloned;
-  }
-  if (const auto *node = dynamic_cast<const AllQuantifier *>(&expr)) {
-    return CloneQuantifier(*node);
-  }
-  if (const auto *node = dynamic_cast<const AnyQuantifier *>(&expr)) {
-    return CloneQuantifier(*node);
-  }
-  if (const auto *node = dynamic_cast<const NoneQuantifier *>(&expr)) {
-    return CloneQuantifier(*node);
-  }
-  if (const auto *node = dynamic_cast<const SingleQuantifier *>(&expr)) {
-    return CloneQuantifier(*node);
-  }
-  if (const auto *node = dynamic_cast<const ExistentialSubquery *>(&expr)) {
-    auto cloned = std::make_unique<ExistentialSubquery>();
-    if (node->query) {
-      cloned->query = CloneRegularQuery(*node->query);
+    case ASTNodeType::kAddExpression:
+      return CloneBinary(static_cast<const AddExpression &>(expr));
+    case ASTNodeType::kSubtractExpression:
+      return CloneBinary(static_cast<const SubtractExpression &>(expr));
+    case ASTNodeType::kMultiplyExpression:
+      return CloneBinary(static_cast<const MultiplyExpression &>(expr));
+    case ASTNodeType::kDivideExpression:
+      return CloneBinary(static_cast<const DivideExpression &>(expr));
+    case ASTNodeType::kModuloExpression:
+      return CloneBinary(static_cast<const ModuloExpression &>(expr));
+    case ASTNodeType::kPowerExpression:
+      return CloneBinary(static_cast<const PowerExpression &>(expr));
+    case ASTNodeType::kNotExpression:
+      return CloneUnary(static_cast<const NotExpression &>(expr));
+    case ASTNodeType::kUnaryPlusExpression:
+      return CloneUnary(static_cast<const UnaryPlusExpression &>(expr));
+    case ASTNodeType::kUnaryMinusExpression:
+      return CloneUnary(static_cast<const UnaryMinusExpression &>(expr));
+    case ASTNodeType::kStringPredicateExpression: {
+      const auto &node = static_cast<const StringPredicateExpression &>(expr);
+      auto cloned = std::make_unique<StringPredicateExpression>();
+      cloned->left = CloneExpressionPtr(node.left);
+      cloned->op = node.op;
+      cloned->right = CloneExpressionPtr(node.right);
+      return cloned;
     }
-    if (node->pattern) {
-      cloned->pattern = ClonePattern(*node->pattern);
+    case ASTNodeType::kListPredicateExpression: {
+      const auto &node = static_cast<const ListPredicateExpression &>(expr);
+      auto cloned = std::make_unique<ListPredicateExpression>();
+      cloned->element = CloneExpressionPtr(node.element);
+      cloned->list = CloneExpressionPtr(node.list);
+      return cloned;
     }
-    cloned->where_expr = CloneExpressionPtr(node->where_expr);
-    return cloned;
+    case ASTNodeType::kLabelPredicateExpression: {
+      const auto &node = static_cast<const LabelPredicateExpression &>(expr);
+      auto cloned = std::make_unique<LabelPredicateExpression>();
+      cloned->expr = CloneExpressionPtr(node.expr);
+      cloned->labels = node.labels;
+      return cloned;
+    }
+    case ASTNodeType::kNullPredicateExpression: {
+      const auto &node = static_cast<const NullPredicateExpression &>(expr);
+      auto cloned = std::make_unique<NullPredicateExpression>();
+      cloned->operand = CloneExpressionPtr(node.operand);
+      cloned->is_null = node.is_null;
+      return cloned;
+    }
+    case ASTNodeType::kBooleanLiteral: {
+      const auto &node = static_cast<const BooleanLiteral &>(expr);
+      auto cloned = std::make_unique<BooleanLiteral>();
+      cloned->value = node.value;
+      return cloned;
+    }
+    case ASTNodeType::kIntegerLiteral: {
+      const auto &node = static_cast<const IntegerLiteral &>(expr);
+      auto cloned = std::make_unique<IntegerLiteral>();
+      cloned->value = node.value;
+      return cloned;
+    }
+    case ASTNodeType::kDoubleLiteral: {
+      const auto &node = static_cast<const DoubleLiteral &>(expr);
+      auto cloned = std::make_unique<DoubleLiteral>();
+      cloned->value = node.value;
+      return cloned;
+    }
+    case ASTNodeType::kStringLiteral: {
+      const auto &node = static_cast<const StringLiteral &>(expr);
+      auto cloned = std::make_unique<StringLiteral>();
+      cloned->value = node.value;
+      return cloned;
+    }
+    case ASTNodeType::kNullLiteral:
+      return std::make_unique<NullLiteral>();
+    case ASTNodeType::kListLiteral:
+      return CloneListLiteral(static_cast<const ListLiteral &>(expr));
+    case ASTNodeType::kMapLiteral:
+      return CloneMapLiteral(static_cast<const MapLiteral &>(expr));
+    case ASTNodeType::kVariable:
+      return CloneVariable(static_cast<const Variable &>(expr));
+    case ASTNodeType::kParameter:
+      return CloneParameter(static_cast<const Parameter &>(expr));
+    case ASTNodeType::kPropertyExpression: {
+      const auto &node = static_cast<const PropertyExpression &>(expr);
+      auto cloned = std::make_unique<PropertyExpression>();
+      cloned->object = CloneExpressionPtr(node.object);
+      cloned->property_key = node.property_key;
+      return cloned;
+    }
+    case ASTNodeType::kListIndexExpression: {
+      const auto &node = static_cast<const ListIndexExpression &>(expr);
+      auto cloned = std::make_unique<ListIndexExpression>();
+      cloned->list = CloneExpressionPtr(node.list);
+      cloned->index = CloneExpressionPtr(node.index);
+      return cloned;
+    }
+    case ASTNodeType::kListSliceExpression: {
+      const auto &node = static_cast<const ListSliceExpression &>(expr);
+      auto cloned = std::make_unique<ListSliceExpression>();
+      cloned->list = CloneExpressionPtr(node.list);
+      cloned->start_index = CloneExpressionPtr(node.start_index);
+      cloned->end_index = CloneExpressionPtr(node.end_index);
+      return cloned;
+    }
+    case ASTNodeType::kFunctionInvocation: {
+      const auto &node = static_cast<const FunctionInvocation &>(expr);
+      auto cloned = std::make_unique<FunctionInvocation>();
+      cloned->function_name = node.function_name;
+      cloned->distinct = node.distinct;
+      cloned->arguments = CloneList(node.arguments, CloneExpressionImpl);
+      return cloned;
+    }
+    case ASTNodeType::kCountStarExpression:
+      return std::make_unique<CountStarExpression>();
+    case ASTNodeType::kCaseExpression: {
+      const auto &node = static_cast<const CaseExpression &>(expr);
+      auto cloned = std::make_unique<CaseExpression>();
+      cloned->test = CloneExpressionPtr(node.test);
+      cloned->alternatives.reserve(node.alternatives.size());
+      for (const auto &alt : node.alternatives) {
+        cloned->alternatives.emplace_back(CloneExpressionPtr(alt.first),
+                                          CloneExpressionPtr(alt.second));
+      }
+      cloned->else_expr = CloneExpressionPtr(node.else_expr);
+      return cloned;
+    }
+    case ASTNodeType::kParenthesizedExpression: {
+      const auto &node = static_cast<const ParenthesizedExpression &>(expr);
+      auto cloned = std::make_unique<ParenthesizedExpression>();
+      cloned->expr = CloneExpressionPtr(node.expr);
+      return cloned;
+    }
+    case ASTNodeType::kListComprehension: {
+      const auto &node = static_cast<const ListComprehension &>(expr);
+      auto cloned = std::make_unique<ListComprehension>();
+      cloned->variable = node.variable;
+      cloned->list_expr = CloneExpressionPtr(node.list_expr);
+      cloned->where_expr = CloneExpressionPtr(node.where_expr);
+      cloned->eval_expr = CloneExpressionPtr(node.eval_expr);
+      return cloned;
+    }
+    case ASTNodeType::kPatternComprehension: {
+      const auto &node = static_cast<const PatternComprehension &>(expr);
+      auto cloned = std::make_unique<PatternComprehension>();
+      cloned->variable = node.variable;
+      cloned->relationships_pattern =
+          CloneRelationshipsPatternPtr(node.relationships_pattern);
+      cloned->where_expr = CloneExpressionPtr(node.where_expr);
+      cloned->eval_expr = CloneExpressionPtr(node.eval_expr);
+      return cloned;
+    }
+    case ASTNodeType::kPatternPredicateExpression: {
+      const auto &node = static_cast<const PatternPredicateExpression &>(expr);
+      auto cloned = std::make_unique<PatternPredicateExpression>();
+      cloned->relationships_pattern =
+          CloneRelationshipsPatternPtr(node.relationships_pattern);
+      return cloned;
+    }
+    case ASTNodeType::kAllQuantifier:
+      return CloneQuantifier(static_cast<const AllQuantifier &>(expr));
+    case ASTNodeType::kAnyQuantifier:
+      return CloneQuantifier(static_cast<const AnyQuantifier &>(expr));
+    case ASTNodeType::kNoneQuantifier:
+      return CloneQuantifier(static_cast<const NoneQuantifier &>(expr));
+    case ASTNodeType::kSingleQuantifier:
+      return CloneQuantifier(static_cast<const SingleQuantifier &>(expr));
+    case ASTNodeType::kExistentialSubquery: {
+      const auto &node = static_cast<const ExistentialSubquery &>(expr);
+      auto cloned = std::make_unique<ExistentialSubquery>();
+      if (node.query) {
+        cloned->query = CloneRegularQuery(*node.query);
+      }
+      if (node.pattern) {
+        cloned->pattern = ClonePattern(*node.pattern);
+      }
+      cloned->where_expr = CloneExpressionPtr(node.where_expr);
+      return cloned;
+    }
+    default:
+      THROW(InternalError, "Unsupported Expression type for clone");
   }
-  THROW(InternalError, "Unsupported Expression type for clone");
 }
 
 std::unique_ptr<ListLiteral> CloneListLiteral(const ListLiteral &list) {
@@ -450,16 +447,16 @@ std::unique_ptr<InQueryCall> CloneInQueryCall(const InQueryCall &call) {
 }
 
 std::unique_ptr<ReadingClause> CloneReadingClause(const ReadingClause &clause) {
-  if (const auto *node = dynamic_cast<const Match *>(&clause)) {
-    return CloneMatch(*node);
+  switch (clause.node_type) {
+    case ASTNodeType::kMatch:
+      return CloneMatch(static_cast<const Match &>(clause));
+    case ASTNodeType::kUnwind:
+      return CloneUnwind(static_cast<const Unwind &>(clause));
+    case ASTNodeType::kInQueryCall:
+      return CloneInQueryCall(static_cast<const InQueryCall &>(clause));
+    default:
+      THROW(InternalError, "Unsupported ReadingClause type for clone");
   }
-  if (const auto *node = dynamic_cast<const Unwind *>(&clause)) {
-    return CloneUnwind(*node);
-  }
-  if (const auto *node = dynamic_cast<const InQueryCall *>(&clause)) {
-    return CloneInQueryCall(*node);
-  }
-  THROW(InternalError, "Unsupported ReadingClause type for clone");
 }
 
 std::unique_ptr<Create> CloneCreate(const Create &create) {
@@ -518,22 +515,20 @@ std::unique_ptr<Remove> CloneRemove(const Remove &remove) {
 
 std::unique_ptr<UpdatingClause> CloneUpdatingClause(
     const UpdatingClause &clause) {
-  if (const auto *node = dynamic_cast<const Create *>(&clause)) {
-    return CloneCreate(*node);
+  switch (clause.node_type) {
+    case ASTNodeType::kCreate:
+      return CloneCreate(static_cast<const Create &>(clause));
+    case ASTNodeType::kMerge:
+      return CloneMerge(static_cast<const Merge &>(clause));
+    case ASTNodeType::kDelete:
+      return CloneDelete(static_cast<const Delete &>(clause));
+    case ASTNodeType::kSet:
+      return CloneSet(static_cast<const Set &>(clause));
+    case ASTNodeType::kRemove:
+      return CloneRemove(static_cast<const Remove &>(clause));
+    default:
+      THROW(InternalError, "Unsupported UpdatingClause type for clone");
   }
-  if (const auto *node = dynamic_cast<const Merge *>(&clause)) {
-    return CloneMerge(*node);
-  }
-  if (const auto *node = dynamic_cast<const Delete *>(&clause)) {
-    return CloneDelete(*node);
-  }
-  if (const auto *node = dynamic_cast<const Set *>(&clause)) {
-    return CloneSet(*node);
-  }
-  if (const auto *node = dynamic_cast<const Remove *>(&clause)) {
-    return CloneRemove(*node);
-  }
-  THROW(InternalError, "Unsupported UpdatingClause type for clone");
 }
 
 std::unique_ptr<ProjectionItem> CloneProjectionItem(
@@ -606,13 +601,14 @@ std::unique_ptr<MultiPartQuery> CloneMultiPartQuery(
 }
 
 std::unique_ptr<SingleQuery> CloneSingleQuery(const SingleQuery &query) {
-  if (const auto *node = dynamic_cast<const SinglePartQuery *>(&query)) {
-    return CloneSinglePartQuery(*node);
+  switch (query.node_type) {
+    case ASTNodeType::kSinglePartQuery:
+      return CloneSinglePartQuery(static_cast<const SinglePartQuery &>(query));
+    case ASTNodeType::kMultiPartQuery:
+      return CloneMultiPartQuery(static_cast<const MultiPartQuery &>(query));
+    default:
+      THROW(InternalError, "Unsupported SingleQuery type for clone");
   }
-  if (const auto *node = dynamic_cast<const MultiPartQuery *>(&query)) {
-    return CloneMultiPartQuery(*node);
-  }
-  THROW(InternalError, "Unsupported SingleQuery type for clone");
 }
 
 std::unique_ptr<UnionPart> CloneUnionPart(const UnionPart &part) {

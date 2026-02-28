@@ -8,7 +8,8 @@ void ParenthesizedExpressionRewriter::RewriteExpression(
     return;
   }
   ASTRewriter::RewriteExpression(expr);
-  while (auto *paren = dynamic_cast<ParenthesizedExpression *>(expr.get())) {
+  while (expr && expr->Is(ASTNodeType::kParenthesizedExpression)) {
+    auto *paren = static_cast<ParenthesizedExpression *>(expr.get());
     if (!paren->expr) {
       return;
     }
