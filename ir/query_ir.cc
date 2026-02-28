@@ -50,6 +50,7 @@ const ast::AndExpression *RequireConjunctiveWhere(
 
 void SplitConjunctivePredicates(const ast::Expression *expression,
                                 std::vector<const ast::Expression *> *output) {
+  CHECK(output != nullptr, common::InternalError, "predicate output is null");
   const ast::Expression *unwrapped = UnwrapParenthesized(expression);
   CHECK(unwrapped != nullptr, common::InvalidArgumentError,
         "null WHERE predicate is not supported");
@@ -75,6 +76,8 @@ class VariableDependencyCollector : public ast::ASTConstWalker {
 
  protected:
   void Visit(const ast::Variable &node) override {
+    CHECK(!node.name.empty(), common::InvalidArgumentError,
+          "variable dependency name is empty");
     dependencies_->emplace(node.name);
   }
 
@@ -186,11 +189,15 @@ class QueryGraphBuilder {
           common::InvalidArgumentError, "WHERE predicate is not AND");
     std::vector<const ast::Expression *> predicates;
     SplitConjunctivePredicates(where, &predicates);
+    CHECK(!predicates.empty(), common::InvalidArgumentError,
+          "WHERE predicate list is empty");
     for (const ast::Expression *predicate : predicates) {
       CHECK(predicate != nullptr, common::InvalidArgumentError,
             "null WHERE predicate is not supported");
       const std::string predicate_key = ast::ExpressionToString(*predicate);
-      if (!predicate_key.empty() && !where_keys_.insert(predicate_key).second) {
+      CHECK(!predicate_key.empty(), common::InvalidArgumentError,
+            "failed to stringify WHERE predicate");
+      if (!where_keys_.insert(predicate_key).second) {
         continue;
       }
 
@@ -409,10 +416,9 @@ class QueryIRBuilder {
 
   Projection BuildProjectionClause(
       const ast::ProjectionClause *projection_clause) {
+    CHECK(projection_clause != nullptr, common::InvalidArgumentError,
+          Missing("projection clause"));
     Projection projection;
-    if (projection_clause == nullptr) {
-      return projection;
-    }
     CHECK(projection_clause->body, common::InvalidArgumentError,
           Missing("projection body"));
     projection = BuildProjectionBody(*projection_clause->body);
@@ -426,6 +432,8 @@ class QueryIRBuilder {
   SingleQueryIR BuildQuerySegment(
       const std::vector<std::unique_ptr<ast::ReadingClause>> &reading,
       const ast::ProjectionClause *projection) {
+    CHECK(projection != nullptr, common::InvalidArgumentError,
+          Missing("projection clause"));
     SingleQueryIR ir;
     QueryGraphBuilder builder;
     for (const auto &clause : reading) {
@@ -455,6 +463,8 @@ class QueryIRBuilder {
       ProjectionItem projection_item;
       projection_item.expression = item->expression.get();
       projection_item.alias = item->alias;
+      CHECK(!projection_item.alias.empty(), common::InvalidArgumentError,
+            "projection item alias is empty after rewrite");
       projection.items.push_back(std::move(projection_item));
     }
 
