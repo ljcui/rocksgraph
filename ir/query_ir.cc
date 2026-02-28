@@ -16,11 +16,11 @@ namespace ir {
 
 namespace {
 
-std::string MakeUnsupportedError(std::string_view feature) {
+std::string Unsupported(std::string_view feature) {
   return std::string(feature) + " is not supported";
 }
 
-std::string MakeMissingError(std::string_view subject) {
+std::string Missing(std::string_view subject) {
   return "missing " + std::string(subject);
 }
 
@@ -44,7 +44,7 @@ const ast::AndExpression *RequireConjunctiveWhere(
   if (unwrapped == nullptr ||
       !unwrapped->Is(ast::ASTNodeType::kAndExpression)) {
     THROW(common::InvalidArgumentError,
-          MakeUnsupportedError("WHERE without AND expression"));
+          Unsupported("WHERE without AND expression"));
   }
   return ast::CastAst<ast::AndExpression>(unwrapped);
 }
@@ -160,23 +160,21 @@ class QueryGraphBuilder {
         BuildMatch(ast::CastAst<ast::Match>(clause));
         return;
       case ast::ASTNodeType::kUnwind:
-        THROW(common::InvalidArgumentError, MakeUnsupportedError("UNWIND"));
+        THROW(common::InvalidArgumentError, Unsupported("UNWIND"));
       case ast::ASTNodeType::kInQueryCall:
-        THROW(common::InvalidArgumentError,
-              MakeUnsupportedError("procedure call"));
+        THROW(common::InvalidArgumentError, Unsupported("procedure call"));
       default:
         break;
     }
-    THROW(common::InvalidArgumentError, MakeUnsupportedError("reading clause"));
+    THROW(common::InvalidArgumentError, Unsupported("reading clause"));
   }
 
   void BuildMatch(const ast::Match &match) {
     if (match.optional_match) {
-      THROW(common::InvalidArgumentError,
-            MakeUnsupportedError("OPTIONAL MATCH"));
+      THROW(common::InvalidArgumentError, Unsupported("OPTIONAL MATCH"));
     }
     CHECK(match.pattern != nullptr, common::InvalidArgumentError,
-          MakeMissingError("MATCH pattern"));
+          Missing("MATCH pattern"));
     AddPattern(*match.pattern);
     if (match.where) {
       AddWhere(match.where.get());
@@ -207,20 +205,20 @@ class QueryGraphBuilder {
 
   void AddPattern(const ast::Pattern &pattern) {
     CHECK(!pattern.parts.empty(), common::InvalidArgumentError,
-          MakeMissingError("pattern part"));
+          Missing("pattern part"));
     for (const auto &part : pattern.parts) {
       CHECK(part != nullptr, common::InvalidArgumentError,
-            MakeMissingError("pattern part"));
+            Missing("pattern part"));
       AddPatternPart(*part);
     }
   }
 
   void AddPatternPart(const ast::PatternPart &part) {
     if (!part.variable.empty()) {
-      THROW(common::InvalidArgumentError, MakeUnsupportedError("named path"));
+      THROW(common::InvalidArgumentError, Unsupported("named path"));
     }
     CHECK(part.element != nullptr, common::InvalidArgumentError,
-          MakeMissingError("pattern element"));
+          Missing("pattern element"));
     AddPatternElement(*part.element);
   }
 
@@ -234,9 +232,9 @@ class QueryGraphBuilder {
     std::string left = AddNode(*element.node_pattern);
     for (const auto &link : element.chain) {
       CHECK(link.first != nullptr, common::InvalidArgumentError,
-            MakeMissingError("relationship pattern"));
+            Missing("relationship pattern"));
       CHECK(link.second != nullptr, common::InvalidArgumentError,
-            MakeMissingError("node pattern"));
+            Missing("node pattern"));
       std::string right = AddNode(*link.second);
       AddRelationship(*link.first, left, right);
       left = right;
@@ -245,11 +243,11 @@ class QueryGraphBuilder {
 
   std::string AddNode(const ast::NodePattern &node) {
     CHECK(!node.variable.empty(), common::InvalidArgumentError,
-          MakeUnsupportedError("anonymous node"));
+          Unsupported("anonymous node"));
     CHECK(node.labels.empty(), common::InvalidArgumentError,
-          MakeUnsupportedError("node with labels"));
+          Unsupported("node with labels"));
     CHECK(!node.properties, common::InvalidArgumentError,
-          MakeUnsupportedError("node with properties"));
+          Unsupported("node with properties"));
     graph_.nodes.insert(node.variable);
     return node.variable;
   }
@@ -258,13 +256,13 @@ class QueryGraphBuilder {
                        const std::string &left, const std::string &right) {
     const ast::RelationshipDetail *detail = pattern.detail.get();
     CHECK(detail && !detail->variable.empty(), common::InvalidArgumentError,
-          MakeUnsupportedError("anonymous relationship"));
+          Unsupported("anonymous relationship"));
     CHECK(!detail->range, common::InvalidArgumentError,
-          MakeUnsupportedError("variable length relationship"));
+          Unsupported("variable length relationship"));
     CHECK(detail->types.empty(), common::InvalidArgumentError,
-          MakeUnsupportedError("relationship with labels"));
+          Unsupported("relationship with labels"));
     CHECK(!detail->properties, common::InvalidArgumentError,
-          MakeUnsupportedError("relationship with properties"));
+          Unsupported("relationship with properties"));
 
     QueryGraph::Relationship relationship;
     relationship.name = detail->variable;
@@ -309,8 +307,7 @@ namespace {
 void CheckNoUpdatingClauses(
     const std::vector<std::unique_ptr<ast::UpdatingClause>> &updating_clauses) {
   if (!updating_clauses.empty()) {
-    THROW(common::InvalidArgumentError,
-          MakeUnsupportedError("updating clause"));
+    THROW(common::InvalidArgumentError, Unsupported("updating clause"));
   }
 }
 
@@ -342,7 +339,7 @@ class QueryIRBuilder {
         return BuildRegularQuery(ast::CastAst<ast::RegularQuery>(statement));
       }
       default: {
-        THROW(common::InvalidArgumentError, MakeUnsupportedError("query type"));
+        THROW(common::InvalidArgumentError, Unsupported("query type"));
       }
     }
   }
@@ -350,7 +347,7 @@ class QueryIRBuilder {
  private:
   QueryIR BuildRegularQuery(const ast::RegularQuery &query) {
     CHECK(query.single_query, common::InvalidArgumentError,
-          MakeMissingError("single query"));
+          Missing("single query"));
 
     QueryIR query_ir;
     query_ir.regular.main = BuildSingleQuery(*query.single_query);
@@ -358,7 +355,7 @@ class QueryIRBuilder {
     query_ir.regular.unions.reserve(query.unions.size());
     for (const auto &part : query.unions) {
       CHECK(part && part->query, common::InvalidArgumentError,
-            MakeMissingError("UNION branch query"));
+            Missing("UNION branch query"));
 
       UnionBranch branch;
       branch.all = part->all;
@@ -380,8 +377,7 @@ class QueryIRBuilder {
         return BuildMultiPartQuery(ast::CastAst<ast::MultiPartQuery>(query));
       }
       default: {
-        THROW(common::InvalidArgumentError,
-              MakeUnsupportedError("single query type"));
+        THROW(common::InvalidArgumentError, Unsupported("single query type"));
       }
     }
   }
@@ -389,20 +385,20 @@ class QueryIRBuilder {
   SingleQueryIR BuildSinglePartQuery(const ast::SinglePartQuery &query) {
     CheckNoUpdatingClauses(query.updating_clauses);
     CHECK(query.return_clause, common::InvalidArgumentError,
-          MakeMissingError("RETURN clause"));
+          Missing("RETURN clause"));
     return BuildQuerySegment(query.reading_clauses, query.return_clause.get());
   }
 
   SingleQueryIR BuildMultiPartQuery(const ast::MultiPartQuery &query) {
     CHECK(query.final_single_part_query, common::InvalidArgumentError,
-          MakeMissingError("final single query"));
+          Missing("final single query"));
 
     SingleQueryIR root;
     SingleQueryIR *current_segment = &root;
     for (const auto &part : query.parts) {
       CheckNoUpdatingClauses(part.updating_clauses);
       CHECK(part.with_clause, common::InvalidArgumentError,
-            MakeMissingError("WITH clause"));
+            Missing("WITH clause"));
       *current_segment =
           BuildQuerySegment(part.reading_clauses, part.with_clause.get());
       current_segment->tail = std::make_unique<SingleQueryIR>();
@@ -420,7 +416,7 @@ class QueryIRBuilder {
       return projection;
     }
     CHECK(projection_clause->body, common::InvalidArgumentError,
-          MakeMissingError("projection body"));
+          Missing("projection body"));
     projection = BuildProjectionBody(*projection_clause->body);
     if (projection_clause->Is(ast::ASTNodeType::kWith)) {
       const auto *with_clause = ast::CastAst<ast::With>(projection_clause);
@@ -436,7 +432,7 @@ class QueryIRBuilder {
     QueryGraphBuilder builder;
     for (const auto &clause : reading) {
       CHECK(clause != nullptr, common::InvalidArgumentError,
-            MakeMissingError("reading clause"));
+            Missing("reading clause"));
       builder.BuildReadingClause(*clause);
     }
 
@@ -447,7 +443,7 @@ class QueryIRBuilder {
 
   static Projection BuildProjectionBody(const ast::ProjectionBody &body) {
     CHECK(!body.star, common::InvalidArgumentError,
-          MakeUnsupportedError("projection star before rewrite"));
+          Unsupported("projection star before rewrite"));
 
     Projection projection;
     projection.distinct = body.distinct;
@@ -457,7 +453,7 @@ class QueryIRBuilder {
       CHECK(item, common::InvalidArgumentError,
             "null projection item is not supported");
       CHECK(item->expression, common::InvalidArgumentError,
-            MakeMissingError("projection item expression"));
+            Missing("projection item expression"));
       ProjectionItem projection_item;
       projection_item.expression = item->expression.get();
       projection_item.alias = item->alias;
@@ -469,7 +465,7 @@ class QueryIRBuilder {
       CHECK(item, common::InvalidArgumentError,
             "null sort item is not supported");
       CHECK(item->expression, common::InvalidArgumentError,
-            MakeMissingError("sort expression"));
+            Missing("sort expression"));
       SortItem sort_item;
       sort_item.expression = item->expression.get();
       sort_item.ascending = item->ascending;
