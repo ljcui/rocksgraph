@@ -6,6 +6,7 @@
 #include <ostream>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 #include "ast_const_visitor.h"
@@ -300,6 +301,24 @@ class ASTNode {
     const_cast<ASTNode*>(this)->Accept(static_cast<ASTVisitor&>(visitor));
   }
 };
+
+template <typename Derived, typename Base>
+[[nodiscard]] constexpr auto* CastAst(Base* node) {
+  static_assert(std::is_base_of_v<ASTNode, std::remove_cv_t<Base>>);
+  static_assert(std::is_base_of_v<ASTNode, std::remove_cv_t<Derived>>);
+  using Result =
+      std::conditional_t<std::is_const_v<Base>, const Derived, Derived>;
+  return static_cast<Result*>(node);
+}
+
+template <typename Derived, typename Base>
+[[nodiscard]] constexpr auto& CastAst(Base& node) {
+  static_assert(std::is_base_of_v<ASTNode, std::remove_cv_t<Base>>);
+  static_assert(std::is_base_of_v<ASTNode, std::remove_cv_t<Derived>>);
+  using Result =
+      std::conditional_t<std::is_const_v<Base>, const Derived, Derived>;
+  return static_cast<Result&>(node);
+}
 
 // ============================================
 // Top-level statements and queries

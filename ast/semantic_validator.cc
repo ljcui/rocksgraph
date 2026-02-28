@@ -311,7 +311,7 @@ class SemanticValidator : public ASTWalker {
       return;
     }
     if (item.expression && item.expression->Is(ASTNodeType::kVariable)) {
-      const auto *var = static_cast<const Variable *>(item.expression.get());
+      const auto *var = CastAst<Variable>(item.expression.get());
       scope.Add(var->name);
     }
   }

@@ -37,8 +37,7 @@ void OrderByAliasRewriter::Visit(ProjectionBody &node) {
       continue;
     }
     if (sort_item->expression->Is(ASTNodeType::kVariable)) {
-      const auto *var =
-          static_cast<const Variable *>(sort_item->expression.get());
+      const auto *var = CastAst<Variable>(sort_item->expression.get());
       bool matches_alias = false;
       for (const auto &alias : aliases) {
         if (var->name == *alias.alias) {

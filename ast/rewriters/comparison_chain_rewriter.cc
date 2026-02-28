@@ -16,7 +16,7 @@ void ComparisonChainRewriter::RewriteExpression(
   if (!expr->Is(ASTNodeType::kComparisonChainExpression)) {
     return;
   }
-  auto *chain = static_cast<ComparisonChainExpression *>(expr.get());
+  auto *chain = CastAst<ComparisonChainExpression>(expr.get());
   if (chain->rights.empty()) {
     return;
   }

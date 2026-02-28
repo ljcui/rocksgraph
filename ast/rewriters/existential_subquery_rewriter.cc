@@ -13,7 +13,7 @@ void ExistentialSubqueryRewriter::RewriteExpression(
   if (!expr->Is(ASTNodeType::kExistentialSubquery)) {
     return;
   }
-  auto *subquery = static_cast<ExistentialSubquery *>(expr.get());
+  auto *subquery = CastAst<ExistentialSubquery>(expr.get());
   if (!subquery->pattern || subquery->query) {
     return;
   }

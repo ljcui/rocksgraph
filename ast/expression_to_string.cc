@@ -109,24 +109,24 @@ ExprText RenderUnary(const Expression *operand, int prec,
 ExprText ExpressionText(const Expression &expr) {
   switch (expr.node_type) {
     case ASTNodeType::kOrExpression: {
-      const auto &node = static_cast<const OrExpression &>(expr);
+      const auto &node = CastAst<OrExpression>(expr);
       return RenderBinary(node.left.get(), node.right.get(), kOr, "OR");
     }
     case ASTNodeType::kXorExpression: {
-      const auto &node = static_cast<const XorExpression &>(expr);
+      const auto &node = CastAst<XorExpression>(expr);
       return RenderBinary(node.left.get(), node.right.get(), kXor, "XOR");
     }
     case ASTNodeType::kAndExpression: {
-      const auto &node = static_cast<const AndExpression &>(expr);
+      const auto &node = CastAst<AndExpression>(expr);
       return RenderBinary(node.left.get(), node.right.get(), kAnd, "AND");
     }
     case ASTNodeType::kComparisonExpression: {
-      const auto &node = static_cast<const ComparisonExpression &>(expr);
+      const auto &node = CastAst<ComparisonExpression>(expr);
       return RenderBinary(node.left.get(), node.right.get(), kComparison,
                           node.op);
     }
     case ASTNodeType::kComparisonChainExpression: {
-      const auto &node = static_cast<const ComparisonChainExpression &>(expr);
+      const auto &node = CastAst<ComparisonChainExpression>(expr);
       if (!node.left || node.rights.empty()) {
         return {};
       }
@@ -147,54 +147,54 @@ ExprText ExpressionText(const Expression &expr) {
       return {out, kComparison};
     }
     case ASTNodeType::kAddExpression: {
-      const auto &node = static_cast<const AddExpression &>(expr);
+      const auto &node = CastAst<AddExpression>(expr);
       return RenderBinary(node.left.get(), node.right.get(), kAdd, "+");
     }
     case ASTNodeType::kSubtractExpression: {
-      const auto &node = static_cast<const SubtractExpression &>(expr);
+      const auto &node = CastAst<SubtractExpression>(expr);
       return RenderBinary(node.left.get(), node.right.get(), kAdd, "-");
     }
     case ASTNodeType::kMultiplyExpression: {
-      const auto &node = static_cast<const MultiplyExpression &>(expr);
+      const auto &node = CastAst<MultiplyExpression>(expr);
       return RenderBinary(node.left.get(), node.right.get(), kMultiply, "*");
     }
     case ASTNodeType::kDivideExpression: {
-      const auto &node = static_cast<const DivideExpression &>(expr);
+      const auto &node = CastAst<DivideExpression>(expr);
       return RenderBinary(node.left.get(), node.right.get(), kMultiply, "/");
     }
     case ASTNodeType::kModuloExpression: {
-      const auto &node = static_cast<const ModuloExpression &>(expr);
+      const auto &node = CastAst<ModuloExpression>(expr);
       return RenderBinary(node.left.get(), node.right.get(), kMultiply, "%");
     }
     case ASTNodeType::kPowerExpression: {
-      const auto &node = static_cast<const PowerExpression &>(expr);
+      const auto &node = CastAst<PowerExpression>(expr);
       return RenderBinary(node.left.get(), node.right.get(), kPower, "^", true,
                           false);
     }
     case ASTNodeType::kNotExpression: {
-      const auto &node = static_cast<const NotExpression &>(expr);
+      const auto &node = CastAst<NotExpression>(expr);
       return RenderUnary(node.operand.get(), kUnary, "NOT ");
     }
     case ASTNodeType::kUnaryPlusExpression: {
-      const auto &node = static_cast<const UnaryPlusExpression &>(expr);
+      const auto &node = CastAst<UnaryPlusExpression>(expr);
       return RenderUnary(node.operand.get(), kUnary, "+");
     }
     case ASTNodeType::kUnaryMinusExpression: {
-      const auto &node = static_cast<const UnaryMinusExpression &>(expr);
+      const auto &node = CastAst<UnaryMinusExpression>(expr);
       return RenderUnary(node.operand.get(), kUnary, "-");
     }
     case ASTNodeType::kStringPredicateExpression: {
-      const auto &node = static_cast<const StringPredicateExpression &>(expr);
+      const auto &node = CastAst<StringPredicateExpression>(expr);
       return RenderBinary(node.left.get(), node.right.get(), kComparison,
                           node.op);
     }
     case ASTNodeType::kListPredicateExpression: {
-      const auto &node = static_cast<const ListPredicateExpression &>(expr);
+      const auto &node = CastAst<ListPredicateExpression>(expr);
       return RenderBinary(node.element.get(), node.list.get(), kComparison,
                           "IN");
     }
     case ASTNodeType::kNullPredicateExpression: {
-      const auto &node = static_cast<const NullPredicateExpression &>(expr);
+      const auto &node = CastAst<NullPredicateExpression>(expr);
       if (!node.operand) {
         return {};
       }
@@ -208,7 +208,7 @@ ExprText ExpressionText(const Expression &expr) {
               kComparison};
     }
     case ASTNodeType::kLabelPredicateExpression: {
-      const auto &node = static_cast<const LabelPredicateExpression &>(expr);
+      const auto &node = CastAst<LabelPredicateExpression>(expr);
       if (!node.expr || node.labels.empty()) {
         return {};
       }
@@ -224,25 +224,25 @@ ExprText ExpressionText(const Expression &expr) {
       return {out, kPostfix};
     }
     case ASTNodeType::kBooleanLiteral: {
-      const auto &node = static_cast<const BooleanLiteral &>(expr);
+      const auto &node = CastAst<BooleanLiteral>(expr);
       return {node.value ? "true" : "false", kPrimary};
     }
     case ASTNodeType::kIntegerLiteral: {
-      const auto &node = static_cast<const IntegerLiteral &>(expr);
+      const auto &node = CastAst<IntegerLiteral>(expr);
       return {std::to_string(node.value), kPrimary};
     }
     case ASTNodeType::kDoubleLiteral: {
-      const auto &node = static_cast<const DoubleLiteral &>(expr);
+      const auto &node = CastAst<DoubleLiteral>(expr);
       return {std::to_string(node.value), kPrimary};
     }
     case ASTNodeType::kStringLiteral: {
-      const auto &node = static_cast<const StringLiteral &>(expr);
+      const auto &node = CastAst<StringLiteral>(expr);
       return {EscapeStringLiteral(node.value), kPrimary};
     }
     case ASTNodeType::kNullLiteral:
       return {"NULL", kPrimary};
     case ASTNodeType::kListLiteral: {
-      const auto &node = static_cast<const ListLiteral &>(expr);
+      const auto &node = CastAst<ListLiteral>(expr);
       std::vector<std::string> elements;
       elements.reserve(node.elements.size());
       for (const auto &elem : node.elements) {
@@ -258,7 +258,7 @@ ExprText ExpressionText(const Expression &expr) {
       return {"[" + Join(elements, ", ") + "]", kPrimary};
     }
     case ASTNodeType::kMapLiteral: {
-      const auto &node = static_cast<const MapLiteral &>(expr);
+      const auto &node = CastAst<MapLiteral>(expr);
       std::vector<std::string> entries;
       entries.reserve(node.entries.size());
       for (const auto &entry : node.entries) {
@@ -274,18 +274,18 @@ ExprText ExpressionText(const Expression &expr) {
       return {"{" + Join(entries, ", ") + "}", kPrimary};
     }
     case ASTNodeType::kVariable: {
-      const auto &node = static_cast<const Variable &>(expr);
+      const auto &node = CastAst<Variable>(expr);
       return {node.name, kPrimary};
     }
     case ASTNodeType::kParameter: {
-      const auto &node = static_cast<const Parameter &>(expr);
+      const auto &node = CastAst<Parameter>(expr);
       if (node.name.empty()) {
         return {};
       }
       return {"$" + node.name, kPrimary};
     }
     case ASTNodeType::kPropertyExpression: {
-      const auto &node = static_cast<const PropertyExpression &>(expr);
+      const auto &node = CastAst<PropertyExpression>(expr);
       if (!node.object || node.property_key.empty()) {
         return {};
       }
@@ -297,7 +297,7 @@ ExprText ExpressionText(const Expression &expr) {
       return {base_text + "." + node.property_key, kPostfix};
     }
     case ASTNodeType::kListIndexExpression: {
-      const auto &node = static_cast<const ListIndexExpression &>(expr);
+      const auto &node = CastAst<ListIndexExpression>(expr);
       if (!node.list || !node.index) {
         return {};
       }
@@ -313,7 +313,7 @@ ExprText ExpressionText(const Expression &expr) {
       return {list_text + "[" + index + "]", kPostfix};
     }
     case ASTNodeType::kListSliceExpression: {
-      const auto &node = static_cast<const ListSliceExpression &>(expr);
+      const auto &node = CastAst<ListSliceExpression>(expr);
       if (!node.list) {
         return {};
       }
@@ -339,7 +339,7 @@ ExprText ExpressionText(const Expression &expr) {
       return {list_text + "[" + start_text + ".." + end_text + "]", kPostfix};
     }
     case ASTNodeType::kFunctionInvocation: {
-      const auto &node = static_cast<const FunctionInvocation &>(expr);
+      const auto &node = CastAst<FunctionInvocation>(expr);
       if (node.function_name.empty()) {
         return {};
       }
@@ -368,7 +368,7 @@ ExprText ExpressionText(const Expression &expr) {
     case ASTNodeType::kCountStarExpression:
       return {"count(*)", kPrimary};
     case ASTNodeType::kCaseExpression: {
-      const auto &node = static_cast<const CaseExpression &>(expr);
+      const auto &node = CastAst<CaseExpression>(expr);
       std::string out = "CASE";
       if (node.test) {
         const std::string test = ExpressionToString(*node.test);
@@ -399,7 +399,7 @@ ExprText ExpressionText(const Expression &expr) {
       return {out, kPrimary};
     }
     case ASTNodeType::kParenthesizedExpression: {
-      const auto &node = static_cast<const ParenthesizedExpression &>(expr);
+      const auto &node = CastAst<ParenthesizedExpression>(expr);
       if (!node.expr) {
         return {};
       }
@@ -410,7 +410,7 @@ ExprText ExpressionText(const Expression &expr) {
       return {"(" + inner + ")", kPrimary};
     }
     case ASTNodeType::kListComprehension: {
-      const auto &node = static_cast<const ListComprehension &>(expr);
+      const auto &node = CastAst<ListComprehension>(expr);
       if (!node.list_expr) {
         return {};
       }
@@ -437,7 +437,7 @@ ExprText ExpressionText(const Expression &expr) {
       return {out, kPrimary};
     }
     case ASTNodeType::kPatternComprehension: {
-      const auto &node = static_cast<const PatternComprehension &>(expr);
+      const auto &node = CastAst<PatternComprehension>(expr);
       if (!node.relationships_pattern || !node.eval_expr) {
         return {};
       }
@@ -466,7 +466,7 @@ ExprText ExpressionText(const Expression &expr) {
       return {out, kPrimary};
     }
     case ASTNodeType::kPatternPredicateExpression: {
-      const auto &node = static_cast<const PatternPredicateExpression &>(expr);
+      const auto &node = CastAst<PatternPredicateExpression>(expr);
       if (!node.relationships_pattern) {
         return {};
       }
@@ -478,7 +478,7 @@ ExprText ExpressionText(const Expression &expr) {
       return {pattern_text, kPrimary};
     }
     case ASTNodeType::kAllQuantifier: {
-      const auto &node = static_cast<const AllQuantifier &>(expr);
+      const auto &node = CastAst<AllQuantifier>(expr);
       if (!node.list_expr) {
         return {};
       }
@@ -498,7 +498,7 @@ ExprText ExpressionText(const Expression &expr) {
       return {out, kPrimary};
     }
     case ASTNodeType::kAnyQuantifier: {
-      const auto &node = static_cast<const AnyQuantifier &>(expr);
+      const auto &node = CastAst<AnyQuantifier>(expr);
       if (!node.list_expr) {
         return {};
       }
@@ -518,7 +518,7 @@ ExprText ExpressionText(const Expression &expr) {
       return {out, kPrimary};
     }
     case ASTNodeType::kNoneQuantifier: {
-      const auto &node = static_cast<const NoneQuantifier &>(expr);
+      const auto &node = CastAst<NoneQuantifier>(expr);
       if (!node.list_expr) {
         return {};
       }
@@ -538,7 +538,7 @@ ExprText ExpressionText(const Expression &expr) {
       return {out, kPrimary};
     }
     case ASTNodeType::kSingleQuantifier: {
-      const auto &node = static_cast<const SingleQuantifier &>(expr);
+      const auto &node = CastAst<SingleQuantifier>(expr);
       if (!node.list_expr) {
         return {};
       }
@@ -558,7 +558,7 @@ ExprText ExpressionText(const Expression &expr) {
       return {out, kPrimary};
     }
     case ASTNodeType::kExistentialSubquery: {
-      const auto &node = static_cast<const ExistentialSubquery &>(expr);
+      const auto &node = CastAst<ExistentialSubquery>(expr);
       std::string out = "EXISTS { ";
       if (node.query) {
         const std::string query_text = RegularQueryToString(*node.query);
@@ -905,7 +905,7 @@ std::string RemoveItemToString(const RemoveItem &item) {
 std::string ReadingClauseToString(const ReadingClause &clause) {
   switch (clause.node_type) {
     case ASTNodeType::kMatch: {
-      const auto &match = static_cast<const Match &>(clause);
+      const auto &match = CastAst<Match>(clause);
       if (!match.pattern) {
         return {};
       }
@@ -925,7 +925,7 @@ std::string ReadingClauseToString(const ReadingClause &clause) {
       return out;
     }
     case ASTNodeType::kUnwind: {
-      const auto &unwind = static_cast<const Unwind &>(clause);
+      const auto &unwind = CastAst<Unwind>(clause);
       if (!unwind.expression) {
         return {};
       }
@@ -936,7 +936,7 @@ std::string ReadingClauseToString(const ReadingClause &clause) {
       return "UNWIND " + expr + " AS " + unwind.variable;
     }
     case ASTNodeType::kInQueryCall: {
-      const auto &call = static_cast<const InQueryCall &>(clause);
+      const auto &call = CastAst<InQueryCall>(clause);
       std::vector<std::string> args;
       args.reserve(call.arguments.size());
       for (const auto &arg : call.arguments) {
@@ -980,7 +980,7 @@ std::string ReadingClauseToString(const ReadingClause &clause) {
 std::string UpdatingClauseToString(const UpdatingClause &clause) {
   switch (clause.node_type) {
     case ASTNodeType::kCreate: {
-      const auto &create = static_cast<const Create &>(clause);
+      const auto &create = CastAst<Create>(clause);
       if (!create.pattern) {
         return {};
       }
@@ -991,7 +991,7 @@ std::string UpdatingClauseToString(const UpdatingClause &clause) {
       return "CREATE " + pattern;
     }
     case ASTNodeType::kMerge: {
-      const auto &merge = static_cast<const Merge &>(clause);
+      const auto &merge = CastAst<Merge>(clause);
       if (!merge.pattern_part) {
         return {};
       }
@@ -1022,7 +1022,7 @@ std::string UpdatingClauseToString(const UpdatingClause &clause) {
       return out;
     }
     case ASTNodeType::kDelete: {
-      const auto &del = static_cast<const Delete &>(clause);
+      const auto &del = CastAst<Delete>(clause);
       if (del.expressions.empty()) {
         return {};
       }
@@ -1042,7 +1042,7 @@ std::string UpdatingClauseToString(const UpdatingClause &clause) {
              Join(items, ", ");
     }
     case ASTNodeType::kSet: {
-      const auto &set = static_cast<const Set &>(clause);
+      const auto &set = CastAst<Set>(clause);
       if (set.items.empty()) {
         return {};
       }
@@ -1061,7 +1061,7 @@ std::string UpdatingClauseToString(const UpdatingClause &clause) {
       return "SET " + Join(items, ", ");
     }
     case ASTNodeType::kRemove: {
-      const auto &remove = static_cast<const Remove &>(clause);
+      const auto &remove = CastAst<Remove>(clause);
       if (remove.items.empty()) {
         return {};
       }
@@ -1094,7 +1094,7 @@ std::string ProjectionClauseToString(const ProjectionClause &clause) {
   }
   switch (clause.node_type) {
     case ASTNodeType::kWith: {
-      const auto &with = static_cast<const With &>(clause);
+      const auto &with = CastAst<With>(clause);
       std::string out = "WITH " + body;
       if (with.where) {
         const std::string where_text = ExpressionToString(*with.where);
@@ -1195,10 +1195,9 @@ std::string MultiPartQueryToString(const MultiPartQuery &query) {
 std::string SingleQueryToString(const SingleQuery &query) {
   switch (query.node_type) {
     case ASTNodeType::kSinglePartQuery:
-      return SinglePartQueryToString(
-          static_cast<const SinglePartQuery &>(query));
+      return SinglePartQueryToString(CastAst<SinglePartQuery>(query));
     case ASTNodeType::kMultiPartQuery:
-      return MultiPartQueryToString(static_cast<const MultiPartQuery &>(query));
+      return MultiPartQueryToString(CastAst<MultiPartQuery>(query));
     default:
       return {};
   }

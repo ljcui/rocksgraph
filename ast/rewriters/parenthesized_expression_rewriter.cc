@@ -9,7 +9,7 @@ void ParenthesizedExpressionRewriter::RewriteExpression(
   }
   ASTRewriter::RewriteExpression(expr);
   while (expr && expr->Is(ASTNodeType::kParenthesizedExpression)) {
-    auto *paren = static_cast<ParenthesizedExpression *>(expr.get());
+    auto *paren = CastAst<ParenthesizedExpression>(expr.get());
     if (!paren->expr) {
       return;
     }

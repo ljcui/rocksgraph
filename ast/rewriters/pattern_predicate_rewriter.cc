@@ -13,8 +13,7 @@ void PatternPredicateRewriter::RewriteExpression(
   if (!expr->Is(ASTNodeType::kPatternPredicateExpression)) {
     return;
   }
-  auto *pattern_predicate =
-      static_cast<PatternPredicateExpression *>(expr.get());
+  auto *pattern_predicate = CastAst<PatternPredicateExpression>(expr.get());
   if (!pattern_predicate->relationships_pattern) {
     return;
   }

@@ -29,7 +29,7 @@ const ast::Expression *UnwrapParenthesized(const ast::Expression *expression) {
   while (unwrapped != nullptr &&
          unwrapped->Is(ast::ASTNodeType::kParenthesizedExpression)) {
     const auto *parenthesized =
-        static_cast<const ast::ParenthesizedExpression *>(unwrapped);
+        ast::CastAst<ast::ParenthesizedExpression>(unwrapped);
     if (!parenthesized->expr) {
       break;
     }
@@ -46,7 +46,7 @@ const ast::AndExpression *RequireConjunctiveWhere(
     THROW(common::InvalidArgumentError,
           MakeUnsupportedError("WHERE without AND expression"));
   }
-  return static_cast<const ast::AndExpression *>(unwrapped);
+  return ast::CastAst<ast::AndExpression>(unwrapped);
 }
 
 void SplitConjunctivePredicates(const ast::Expression *expression,
@@ -56,8 +56,7 @@ void SplitConjunctivePredicates(const ast::Expression *expression,
     return;
   }
   if (unwrapped->Is(ast::ASTNodeType::kAndExpression)) {
-    const auto *and_expression =
-        static_cast<const ast::AndExpression *>(unwrapped);
+    const auto *and_expression = ast::CastAst<ast::AndExpression>(unwrapped);
     SplitConjunctivePredicates(and_expression->left.get(), output);
     SplitConjunctivePredicates(and_expression->right.get(), output);
     return;
@@ -132,7 +131,7 @@ std::string ResolveProjectionColumnName(const ProjectionItem &item) {
   }
   if (item.expression != nullptr &&
       item.expression->Is(ast::ASTNodeType::kVariable)) {
-    const auto *variable = static_cast<const ast::Variable *>(item.expression);
+    const auto *variable = ast::CastAst<ast::Variable>(item.expression);
     return variable->name;
   }
   return {};
@@ -158,7 +157,7 @@ class QueryGraphBuilder {
   void BuildReadingClause(const ast::ReadingClause &clause) {
     switch (clause.node_type) {
       case ast::ASTNodeType::kMatch:
-        BuildMatch(static_cast<const ast::Match &>(clause));
+        BuildMatch(ast::CastAst<ast::Match>(clause));
         return;
       case ast::ASTNodeType::kUnwind:
         THROW(common::InvalidArgumentError, MakeUnsupportedError("UNWIND"));
@@ -286,11 +285,6 @@ class QueryGraphBuilder {
   std::unordered_set<std::string> where_keys_;
 };
 
-template <typename Derived>
-const Derived &CastAst(const ast::ASTNode &stmt) {
-  return static_cast<const Derived &>(stmt);
-}
-
 SingleQueryIR::SingleQueryIR(const SingleQueryIR &other)
     : query_graph(other.query_graph),
       projection(other.projection),
@@ -345,7 +339,7 @@ class QueryIRBuilder {
   QueryIR Build(const ast::Statement &statement) {
     switch (statement.node_type) {
       case ast::ASTNodeType::kRegularQuery: {
-        return BuildRegularQuery(CastAst<ast::RegularQuery>(statement));
+        return BuildRegularQuery(ast::CastAst<ast::RegularQuery>(statement));
       }
       default: {
         THROW(common::InvalidArgumentError, MakeUnsupportedError("query type"));
@@ -380,10 +374,10 @@ class QueryIRBuilder {
   SingleQueryIR BuildSingleQuery(const ast::SingleQuery &query) {
     switch (query.node_type) {
       case ast::ASTNodeType::kSinglePartQuery: {
-        return BuildSinglePartQuery(CastAst<ast::SinglePartQuery>(query));
+        return BuildSinglePartQuery(ast::CastAst<ast::SinglePartQuery>(query));
       }
       case ast::ASTNodeType::kMultiPartQuery: {
-        return BuildMultiPartQuery(CastAst<ast::MultiPartQuery>(query));
+        return BuildMultiPartQuery(ast::CastAst<ast::MultiPartQuery>(query));
       }
       default: {
         THROW(common::InvalidArgumentError,
@@ -427,8 +421,7 @@ class QueryIRBuilder {
       projection = BuildProjectionBody(*projection_clause->body);
     }
     if (projection_clause->Is(ast::ASTNodeType::kWith)) {
-      const auto *with_clause =
-          static_cast<const ast::With *>(projection_clause);
+      const auto *with_clause = ast::CastAst<ast::With>(projection_clause);
       projection.where = with_clause->where.get();
     }
     return projection;

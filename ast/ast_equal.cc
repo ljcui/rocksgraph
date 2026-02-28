@@ -17,10 +17,9 @@ bool ASTEqual::Equal(const ASTNode *left, const ASTNode *right) {
     return false;
   }
 
-#define AST_EQUAL_CASE(NodeType, Type, Func)      \
-  case ASTNodeType::NodeType:                     \
-    return Func(static_cast<const Type &>(*left), \
-                static_cast<const Type &>(*right))
+#define AST_EQUAL_CASE(NodeType, Type, Func) \
+  case ASTNodeType::NodeType:                \
+    return Func(CastAst<Type>(*left), CastAst<Type>(*right))
 
   switch (left->node_type) {
     AST_EQUAL_CASE(kRegularQuery, RegularQuery, EqualRegularQuery);
