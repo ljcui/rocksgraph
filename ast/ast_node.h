@@ -1,6 +1,8 @@
 #pragma once
 
+#include <array>
 #include <cassert>
+#include <cstddef>
 #include <memory>
 #include <optional>
 #include <ostream>
@@ -32,227 +34,103 @@ class RelationshipsPattern;
 class Properties;
 class Parameter;
 
+#define AST_NODE_TYPE_LIST(X)                                  \
+  X(kUnknown, "Unknown")                                       \
+  X(kSinglePartQuery, "SinglePartQuery")                       \
+  X(kMultiPartQuery, "MultiPartQuery")                         \
+  X(kUnionPart, "UnionPart")                                   \
+  X(kRegularQuery, "RegularQuery")                             \
+  X(kStandaloneCall, "StandaloneCall")                         \
+  X(kOrExpression, "OrExpression")                             \
+  X(kXorExpression, "XorExpression")                           \
+  X(kAndExpression, "AndExpression")                           \
+  X(kComparisonExpression, "ComparisonExpression")             \
+  X(kComparisonChainExpression, "ComparisonChainExpression")   \
+  X(kAddExpression, "AddExpression")                           \
+  X(kSubtractExpression, "SubtractExpression")                 \
+  X(kMultiplyExpression, "MultiplyExpression")                 \
+  X(kDivideExpression, "DivideExpression")                     \
+  X(kModuloExpression, "ModuloExpression")                     \
+  X(kPowerExpression, "PowerExpression")                       \
+  X(kNotExpression, "NotExpression")                           \
+  X(kUnaryPlusExpression, "UnaryPlusExpression")               \
+  X(kUnaryMinusExpression, "UnaryMinusExpression")             \
+  X(kStringPredicateExpression, "StringPredicateExpression")   \
+  X(kListPredicateExpression, "ListPredicateExpression")       \
+  X(kLabelPredicateExpression, "LabelPredicateExpression")     \
+  X(kNullPredicateExpression, "NullPredicateExpression")       \
+  X(kBooleanLiteral, "BooleanLiteral")                         \
+  X(kIntegerLiteral, "IntegerLiteral")                         \
+  X(kDoubleLiteral, "DoubleLiteral")                           \
+  X(kStringLiteral, "StringLiteral")                           \
+  X(kNullLiteral, "NullLiteral")                               \
+  X(kListLiteral, "ListLiteral")                               \
+  X(kMapLiteral, "MapLiteral")                                 \
+  X(kProperties, "Properties")                                 \
+  X(kVariable, "Variable")                                     \
+  X(kParameter, "Parameter")                                   \
+  X(kPropertyExpression, "PropertyExpression")                 \
+  X(kListIndexExpression, "ListIndexExpression")               \
+  X(kListSliceExpression, "ListSliceExpression")               \
+  X(kFunctionInvocation, "FunctionInvocation")                 \
+  X(kCountStarExpression, "CountStarExpression")               \
+  X(kCaseExpression, "CaseExpression")                         \
+  X(kParenthesizedExpression, "ParenthesizedExpression")       \
+  X(kListComprehension, "ListComprehension")                   \
+  X(kPatternComprehension, "PatternComprehension")             \
+  X(kPatternPredicateExpression, "PatternPredicateExpression") \
+  X(kAllQuantifier, "AllQuantifier")                           \
+  X(kAnyQuantifier, "AnyQuantifier")                           \
+  X(kNoneQuantifier, "NoneQuantifier")                         \
+  X(kSingleQuantifier, "SingleQuantifier")                     \
+  X(kExistentialSubquery, "ExistentialSubquery")               \
+  X(kPattern, "Pattern")                                       \
+  X(kPatternPart, "PatternPart")                               \
+  X(kPatternElement, "PatternElement")                         \
+  X(kRelationshipsPattern, "RelationshipsPattern")             \
+  X(kNodePattern, "NodePattern")                               \
+  X(kRelationshipPattern, "RelationshipPattern")               \
+  X(kRelationshipDetail, "RelationshipDetail")                 \
+  X(kMatch, "Match")                                           \
+  X(kUnwind, "Unwind")                                         \
+  X(kInQueryCall, "InQueryCall")                               \
+  X(kCreate, "Create")                                         \
+  X(kMerge, "Merge")                                           \
+  X(kDelete, "Delete")                                         \
+  X(kSetItem, "SetItem")                                       \
+  X(kSet, "Set")                                               \
+  X(kRemoveItem, "RemoveItem")                                 \
+  X(kRemove, "Remove")                                         \
+  X(kSortItem, "SortItem")                                     \
+  X(kProjectionItem, "ProjectionItem")                         \
+  X(kProjectionBody, "ProjectionBody")                         \
+  X(kWith, "With")                                             \
+  X(kReturn, "Return")
+
 enum class ASTNodeType {
-  kUnknown,
-  kSinglePartQuery,
-  kMultiPartQuery,
-  kUnionPart,
-  kRegularQuery,
-  kStandaloneCall,
-  kOrExpression,
-  kXorExpression,
-  kAndExpression,
-  kComparisonExpression,
-  kComparisonChainExpression,
-  kAddExpression,
-  kSubtractExpression,
-  kMultiplyExpression,
-  kDivideExpression,
-  kModuloExpression,
-  kPowerExpression,
-  kNotExpression,
-  kUnaryPlusExpression,
-  kUnaryMinusExpression,
-  kStringPredicateExpression,
-  kListPredicateExpression,
-  kLabelPredicateExpression,
-  kNullPredicateExpression,
-  kBooleanLiteral,
-  kIntegerLiteral,
-  kDoubleLiteral,
-  kStringLiteral,
-  kNullLiteral,
-  kListLiteral,
-  kMapLiteral,
-  kProperties,
-  kVariable,
-  kParameter,
-  kPropertyExpression,
-  kListIndexExpression,
-  kListSliceExpression,
-  kFunctionInvocation,
-  kCountStarExpression,
-  kCaseExpression,
-  kParenthesizedExpression,
-  kListComprehension,
-  kPatternComprehension,
-  kPatternPredicateExpression,
-  kAllQuantifier,
-  kAnyQuantifier,
-  kNoneQuantifier,
-  kSingleQuantifier,
-  kExistentialSubquery,
-  kPattern,
-  kPatternPart,
-  kPatternElement,
-  kRelationshipsPattern,
-  kNodePattern,
-  kRelationshipPattern,
-  kRelationshipDetail,
-  kMatch,
-  kUnwind,
-  kInQueryCall,
-  kCreate,
-  kMerge,
-  kDelete,
-  kSetItem,
-  kSet,
-  kRemoveItem,
-  kRemove,
-  kSortItem,
-  kProjectionItem,
-  kProjectionBody,
-  kWith,
-  kReturn,
+#define AST_NODE_TYPE_ENUM(name, text) name,
+  AST_NODE_TYPE_LIST(AST_NODE_TYPE_ENUM)
+#undef AST_NODE_TYPE_ENUM
 };
 
+inline constexpr auto kASTNodeTypeNames = std::array{
+#define AST_NODE_TYPE_NAME(name, text) std::string_view{text},
+    AST_NODE_TYPE_LIST(AST_NODE_TYPE_NAME)
+#undef AST_NODE_TYPE_NAME
+};
+
+static_assert(kASTNodeTypeNames.size() ==
+              static_cast<std::size_t>(ASTNodeType::kReturn) + 1);
+
 inline constexpr std::string_view ToString(ASTNodeType node_type) {
-  switch (node_type) {
-    case ASTNodeType::kUnknown:
-      return "Unknown";
-    case ASTNodeType::kSinglePartQuery:
-      return "SinglePartQuery";
-    case ASTNodeType::kMultiPartQuery:
-      return "MultiPartQuery";
-    case ASTNodeType::kUnionPart:
-      return "UnionPart";
-    case ASTNodeType::kRegularQuery:
-      return "RegularQuery";
-    case ASTNodeType::kStandaloneCall:
-      return "StandaloneCall";
-    case ASTNodeType::kOrExpression:
-      return "OrExpression";
-    case ASTNodeType::kXorExpression:
-      return "XorExpression";
-    case ASTNodeType::kAndExpression:
-      return "AndExpression";
-    case ASTNodeType::kComparisonExpression:
-      return "ComparisonExpression";
-    case ASTNodeType::kComparisonChainExpression:
-      return "ComparisonChainExpression";
-    case ASTNodeType::kAddExpression:
-      return "AddExpression";
-    case ASTNodeType::kSubtractExpression:
-      return "SubtractExpression";
-    case ASTNodeType::kMultiplyExpression:
-      return "MultiplyExpression";
-    case ASTNodeType::kDivideExpression:
-      return "DivideExpression";
-    case ASTNodeType::kModuloExpression:
-      return "ModuloExpression";
-    case ASTNodeType::kPowerExpression:
-      return "PowerExpression";
-    case ASTNodeType::kNotExpression:
-      return "NotExpression";
-    case ASTNodeType::kUnaryPlusExpression:
-      return "UnaryPlusExpression";
-    case ASTNodeType::kUnaryMinusExpression:
-      return "UnaryMinusExpression";
-    case ASTNodeType::kStringPredicateExpression:
-      return "StringPredicateExpression";
-    case ASTNodeType::kListPredicateExpression:
-      return "ListPredicateExpression";
-    case ASTNodeType::kLabelPredicateExpression:
-      return "LabelPredicateExpression";
-    case ASTNodeType::kNullPredicateExpression:
-      return "NullPredicateExpression";
-    case ASTNodeType::kBooleanLiteral:
-      return "BooleanLiteral";
-    case ASTNodeType::kIntegerLiteral:
-      return "IntegerLiteral";
-    case ASTNodeType::kDoubleLiteral:
-      return "DoubleLiteral";
-    case ASTNodeType::kStringLiteral:
-      return "StringLiteral";
-    case ASTNodeType::kNullLiteral:
-      return "NullLiteral";
-    case ASTNodeType::kListLiteral:
-      return "ListLiteral";
-    case ASTNodeType::kMapLiteral:
-      return "MapLiteral";
-    case ASTNodeType::kProperties:
-      return "Properties";
-    case ASTNodeType::kVariable:
-      return "Variable";
-    case ASTNodeType::kParameter:
-      return "Parameter";
-    case ASTNodeType::kPropertyExpression:
-      return "PropertyExpression";
-    case ASTNodeType::kListIndexExpression:
-      return "ListIndexExpression";
-    case ASTNodeType::kListSliceExpression:
-      return "ListSliceExpression";
-    case ASTNodeType::kFunctionInvocation:
-      return "FunctionInvocation";
-    case ASTNodeType::kCountStarExpression:
-      return "CountStarExpression";
-    case ASTNodeType::kCaseExpression:
-      return "CaseExpression";
-    case ASTNodeType::kParenthesizedExpression:
-      return "ParenthesizedExpression";
-    case ASTNodeType::kListComprehension:
-      return "ListComprehension";
-    case ASTNodeType::kPatternComprehension:
-      return "PatternComprehension";
-    case ASTNodeType::kPatternPredicateExpression:
-      return "PatternPredicateExpression";
-    case ASTNodeType::kAllQuantifier:
-      return "AllQuantifier";
-    case ASTNodeType::kAnyQuantifier:
-      return "AnyQuantifier";
-    case ASTNodeType::kNoneQuantifier:
-      return "NoneQuantifier";
-    case ASTNodeType::kSingleQuantifier:
-      return "SingleQuantifier";
-    case ASTNodeType::kExistentialSubquery:
-      return "ExistentialSubquery";
-    case ASTNodeType::kPattern:
-      return "Pattern";
-    case ASTNodeType::kPatternPart:
-      return "PatternPart";
-    case ASTNodeType::kPatternElement:
-      return "PatternElement";
-    case ASTNodeType::kRelationshipsPattern:
-      return "RelationshipsPattern";
-    case ASTNodeType::kNodePattern:
-      return "NodePattern";
-    case ASTNodeType::kRelationshipPattern:
-      return "RelationshipPattern";
-    case ASTNodeType::kRelationshipDetail:
-      return "RelationshipDetail";
-    case ASTNodeType::kMatch:
-      return "Match";
-    case ASTNodeType::kUnwind:
-      return "Unwind";
-    case ASTNodeType::kInQueryCall:
-      return "InQueryCall";
-    case ASTNodeType::kCreate:
-      return "Create";
-    case ASTNodeType::kMerge:
-      return "Merge";
-    case ASTNodeType::kDelete:
-      return "Delete";
-    case ASTNodeType::kSetItem:
-      return "SetItem";
-    case ASTNodeType::kSet:
-      return "Set";
-    case ASTNodeType::kRemoveItem:
-      return "RemoveItem";
-    case ASTNodeType::kRemove:
-      return "Remove";
-    case ASTNodeType::kSortItem:
-      return "SortItem";
-    case ASTNodeType::kProjectionItem:
-      return "ProjectionItem";
-    case ASTNodeType::kProjectionBody:
-      return "ProjectionBody";
-    case ASTNodeType::kWith:
-      return "With";
-    case ASTNodeType::kReturn:
-      return "Return";
+  const auto index = static_cast<std::size_t>(node_type);
+  if (index >= kASTNodeTypeNames.size()) {
+    return "Unknown";
   }
-  return "Unknown";
+  return kASTNodeTypeNames[index];
 }
+
+#undef AST_NODE_TYPE_LIST
 
 inline std::ostream& operator<<(std::ostream& out, ASTNodeType node_type) {
   out << ToString(node_type);
@@ -266,18 +144,22 @@ enum class ASTNodeCategory {
   kPattern,
 };
 
+inline constexpr auto kASTNodeCategoryNames = std::array{
+    std::string_view{"Unknown"},
+    std::string_view{"Expression"},
+    std::string_view{"Clause"},
+    std::string_view{"Pattern"},
+};
+
+static_assert(kASTNodeCategoryNames.size() ==
+              static_cast<std::size_t>(ASTNodeCategory::kPattern) + 1);
+
 inline constexpr std::string_view ToString(ASTNodeCategory category) {
-  switch (category) {
-    case ASTNodeCategory::kUnknown:
-      return "Unknown";
-    case ASTNodeCategory::kExpression:
-      return "Expression";
-    case ASTNodeCategory::kClause:
-      return "Clause";
-    case ASTNodeCategory::kPattern:
-      return "Pattern";
+  const auto index = static_cast<std::size_t>(category);
+  if (index >= kASTNodeCategoryNames.size()) {
+    return "Unknown";
   }
-  return "Unknown";
+  return kASTNodeCategoryNames[index];
 }
 
 inline std::ostream& operator<<(std::ostream& out, ASTNodeCategory category) {
@@ -1012,15 +894,18 @@ class SetItem : public ASTNode {
 };
 
 inline constexpr std::string_view ToString(SetItem::Type type) {
-  switch (type) {
-    case SetItem::Type::kProperty:
-      return "Property";
-    case SetItem::Type::kVariable:
-      return "Variable";
-    case SetItem::Type::kLabels:
-      return "Labels";
+  constexpr auto kSetItemTypeNames = std::array{
+      std::string_view{"Property"},
+      std::string_view{"Variable"},
+      std::string_view{"Labels"},
+  };
+  static_assert(kSetItemTypeNames.size() ==
+                static_cast<std::size_t>(SetItem::Type::kLabels) + 1);
+  const auto index = static_cast<std::size_t>(type);
+  if (index >= kSetItemTypeNames.size()) {
+    return "Unknown";
   }
-  return "Unknown";
+  return kSetItemTypeNames[index];
 }
 
 inline std::ostream& operator<<(std::ostream& out, SetItem::Type type) {
@@ -1059,13 +944,17 @@ class RemoveItem : public ASTNode {
 };
 
 inline constexpr std::string_view ToString(RemoveItem::Type type) {
-  switch (type) {
-    case RemoveItem::Type::kProperty:
-      return "Property";
-    case RemoveItem::Type::kLabels:
-      return "Labels";
+  constexpr auto kRemoveItemTypeNames = std::array{
+      std::string_view{"Property"},
+      std::string_view{"Labels"},
+  };
+  static_assert(kRemoveItemTypeNames.size() ==
+                static_cast<std::size_t>(RemoveItem::Type::kLabels) + 1);
+  const auto index = static_cast<std::size_t>(type);
+  if (index >= kRemoveItemTypeNames.size()) {
+    return "Unknown";
   }
-  return "Unknown";
+  return kRemoveItemTypeNames[index];
 }
 
 inline std::ostream& operator<<(std::ostream& out, RemoveItem::Type type) {
