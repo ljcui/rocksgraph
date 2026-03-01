@@ -68,6 +68,16 @@ TEST(LogicalPlanBinaryTest, CartesianProductUnionsChildSymbols) {
   EXPECT_TRUE(Contains(symbols, "arg"));
 }
 
+TEST(LogicalPlanBinaryTest, NodeHashJoinUnionsChildSymbols) {
+  auto plan = std::make_unique<ir::NodeHashJoin>(
+      std::make_unique<ir::AllNodesScan>("a"),
+      std::make_unique<ir::AllNodesScan>("b"),
+      std::unordered_set<std::string>{"a"});
+  auto symbols = plan->AvailableSymbols();
+  EXPECT_TRUE(Contains(symbols, "a"));
+  EXPECT_TRUE(Contains(symbols, "b"));
+}
+
 TEST(LogicalPlanTreeTest, FlattenAndLeftmostLeafFollowPreOrder) {
   ast::BooleanLiteral predicate;
   predicate.value = true;
@@ -103,5 +113,9 @@ TEST(LogicalPlanValidationTest, RejectsInvalidInputs) {
                common::InvalidArgumentError);
   EXPECT_THROW((void)ir::Project(std::make_unique<ir::Argument>(),
                                  std::vector<ir::ProjectItem>{{nullptr, "x"}}),
+               common::InvalidArgumentError);
+  EXPECT_THROW((void)ir::NodeHashJoin(std::make_unique<ir::AllNodesScan>("a"),
+                                      std::make_unique<ir::AllNodesScan>("b"),
+                                      std::unordered_set<std::string>{}),
                common::InvalidArgumentError);
 }

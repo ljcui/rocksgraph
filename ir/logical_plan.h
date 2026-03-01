@@ -26,6 +26,7 @@ namespace ir {
   X(kLimit, "Limit")                       \
   X(kProduceResult, "ProduceResult")       \
   X(kCartesianProduct, "CartesianProduct") \
+  X(kNodeHashJoin, "NodeHashJoin")         \
   X(kUnion, "Union")
 
 enum class LogicalPlanNodeType {
@@ -231,6 +232,16 @@ struct CartesianProduct final : public LogicalBinaryPlan {
                    std::unique_ptr<LogicalPlan> right);
 
   [[nodiscard]] std::unordered_set<std::string> AvailableSymbols() const final;
+};
+
+struct NodeHashJoin final : public LogicalBinaryPlan {
+  NodeHashJoin(std::unique_ptr<LogicalPlan> left,
+               std::unique_ptr<LogicalPlan> right,
+               std::unordered_set<std::string> join_symbols);
+
+  [[nodiscard]] std::unordered_set<std::string> AvailableSymbols() const final;
+
+  std::unordered_set<std::string> join_symbols;
 };
 
 struct Union final : public LogicalBinaryPlan {

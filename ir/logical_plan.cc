@@ -175,6 +175,20 @@ std::unordered_set<std::string> CartesianProduct::AvailableSymbols() const {
   return UnionSymbols(left->AvailableSymbols(), right->AvailableSymbols());
 }
 
+NodeHashJoin::NodeHashJoin(std::unique_ptr<LogicalPlan> left,
+                           std::unique_ptr<LogicalPlan> right,
+                           std::unordered_set<std::string> join_symbols)
+    : LogicalBinaryPlan(LogicalPlanNodeType::kNodeHashJoin, std::move(left),
+                        std::move(right)),
+      join_symbols(std::move(join_symbols)) {
+  CHECK(!this->join_symbols.empty(), common::InvalidArgumentError,
+        "node hash join symbols are empty");
+}
+
+std::unordered_set<std::string> NodeHashJoin::AvailableSymbols() const {
+  return UnionSymbols(left->AvailableSymbols(), right->AvailableSymbols());
+}
+
 Union::Union(std::unique_ptr<LogicalPlan> left,
              std::unique_ptr<LogicalPlan> right, bool all)
     : LogicalBinaryPlan(LogicalPlanNodeType::kUnion, std::move(left),
