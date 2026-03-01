@@ -234,6 +234,12 @@ target_include_directories(value_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(value_test GTest::gtest_main)
 add_test(NAME value_test COMMAND value_test)
 
+add_executable(logical_plan_test tests/logical_plan_test.cc ir/logical_plan.cc)
+target_include_directories(logical_plan_test
+                           PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(logical_plan_test GTest::gtest_main)
+add_test(NAME logical_plan_test COMMAND logical_plan_test)
+
 add_executable(ast_node_type_test tests/ast_node_type_test.cc)
 target_include_directories(ast_node_type_test
                            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
