@@ -14,7 +14,9 @@
   - `rewriters/`：默认重写流水线与各类 AST Rewriter。
   - `ast_to_cypher.*`、`expression_to_string.*`：表达式/AST 转回 Cypher 文本。
   - `ast_clone.*`、`ast_equal.*`、`ast_walker.*`、`ast_printer.*`：AST 工具层。
-- `ir/`：查询中间表示（`QueryIR`）构建逻辑，当前以读查询规划为主。
+- `ir/`：查询中间表示层。
+  - `query_ir.*`：`QueryIR` 构建逻辑，当前以读查询规划为主。
+  - `logical_plan.*`：逻辑计划节点定义（Leaf/Unary/Binary）与基础树工具（如 `FlattenLogicalPlan`、`LeftmostLeaf`）。
 - `value/`：统一 Value 类型系统（标量、容器、图元素、时空/空间类型）。
 - `common/exception.h`：通用异常定义与 `THROW/CHECK` 宏。
 - `tools/ast_dump.cc`：调试工具，可打印 AST，支持 `--rewrite`。
@@ -26,6 +28,7 @@
 - 全量构建：`cmake --build build -j8`
 - 运行全部测试：`ctest --test-dir build`
 - 运行单测子集：`ctest --test-dir build -R planner_query_test`
+- 运行逻辑计划测试：`ctest --test-dir build -R logical_plan_test`
 - 代码格式化：`cmake --build build --target format`
 - 静态检查：`cmake --build build --target clang_tidy`
 - 工具执行要求：执行构建命令时，`timeout_ms` 最多设置为 30000（30 秒）。
@@ -46,6 +49,7 @@
   - 在 `rewriter_registry.cc` 明确顺序（顺序有语义依赖）；
   - 在 `tests/ast_rewriter_test.cc` 增加正反用例。
 - `ir::BuildStatement` 当前只覆盖部分语义（以 RegularQuery/只读场景为主）；新增 IR 能力时需同步扩展异常与测试断言。
+- `ir::LogicalPlan` 当前作为独立结构层（尚未与 `QueryIR` 自动映射）；新增逻辑计划节点时需同步补充 `AvailableSymbols` 语义与树结构测试。
 - 异常分层：通用异常放 `common/exception.h`；AST 解析/语义异常放 `ast/ast_exception.h`。
 - 不变量检查约定：对按语法/重写流程保证存在的关键字段（如 `ParenthesizedExpression::expr`）必须使用 `CHECK` 直接失败并报错，禁止使用 `break/continue/return` 静默吞掉异常状态后继续执行；仅对可恢复的输入问题使用 `THROW(common::InvalidArgumentError, ...)`。
 
@@ -53,6 +57,7 @@
 - 新增测试放在 `tests/`，命名为 `*_test.cc`。
 - AST 重写测试优先使用“输入 Cypher / 期望 Cypher”并通过 `ASTEqual` 比较。
 - IR 测试需同时覆盖结构字段断言与错误路径（`EXPECT_THROW`）。
+- 逻辑计划测试放在 `tests/logical_plan_test.cc`，优先覆盖：节点类型字符串、符号传播、树遍历顺序与关键不变量校验。
 - 当前无覆盖率门槛，但要求新增功能有对应单测。
 
 ## 生成代码与语法变更
