@@ -66,16 +66,9 @@ struct SingleQueryIR {
   SingleQueryIR *Last();
 };
 
-struct UnionColumnMapping {
-  std::string output;
-  std::string from_main;
-  std::string from_branch;
-};
-
 struct UnionBranch {
   bool all = false;
   SingleQueryIR query;
-  std::vector<UnionColumnMapping> mappings;
 };
 
 struct RegularQueryIR {

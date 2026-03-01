@@ -43,3 +43,42 @@ TEST(SemanticValidatorTest, ComprehensionUsesOuterScope) {
   EXPECT_NO_THROW(
       ast::ParseCypher("MATCH (n) RETURN [x IN [1,2] WHERE x > n.age | x]"));
 }
+
+TEST(SemanticValidatorTest, RejectsUnionColumnCountMismatch) {
+  try {
+    (void)ast::ParseCypher("RETURN 1 AS a UNION RETURN 1 AS b, 2 AS c");
+    FAIL() << "expected semantic error";
+  } catch (const ast::SemanticError &e) {
+    EXPECT_TRUE(HasError(
+        e.Errors(), "UNION branches must return the same number of columns"));
+  } catch (const ast::ParseError &e) {
+    FAIL() << "unexpected parse error: " << e.what();
+  }
+}
+
+TEST(SemanticValidatorTest, RejectsUnionColumnNameMismatch) {
+  try {
+    (void)ast::ParseCypher("RETURN 1 AS a UNION RETURN 1 AS b");
+    FAIL() << "expected semantic error";
+  } catch (const ast::SemanticError &e) {
+    EXPECT_TRUE(HasError(
+        e.Errors(),
+        "UNION branches must return the same column names by position"));
+  } catch (const ast::ParseError &e) {
+    FAIL() << "unexpected parse error: " << e.what();
+  }
+}
+
+TEST(SemanticValidatorTest, RejectsUnionMismatchAfterReturnStarRewrite) {
+  try {
+    (void)ast::ParseCypherAndRewrite(
+        "MATCH (n) RETURN * UNION MATCH (m) RETURN m AS x");
+    FAIL() << "expected semantic error";
+  } catch (const ast::SemanticError &e) {
+    EXPECT_TRUE(HasError(
+        e.Errors(),
+        "UNION branches must return the same column names by position"));
+  } catch (const ast::ParseError &e) {
+    FAIL() << "unexpected parse error: " << e.what();
+  }
+}

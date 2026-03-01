@@ -1346,6 +1346,7 @@ std::unique_ptr<Statement> ParseCypher(const std::string &input) {
 std::unique_ptr<Statement> ParseCypherAndRewrite(const std::string &input) {
   auto statement = ParseCypher(input);
   ApplyDefaultRewriters(*statement);
+  ValidateStatement(*statement);
   return statement;
 }
 

@@ -117,40 +117,6 @@ const SingleQueryIR *LastQueryPart(const SingleQueryIR *query) {
   return current;
 }
 
-void AppendUnique(std::vector<std::string> &to,
-                  const std::vector<std::string> &from) {
-  for (const auto &value : from) {
-    if (std::find(to.begin(), to.end(), value) == to.end()) {
-      to.push_back(value);
-    }
-  }
-}
-
-std::string ResolveProjectionColumnName(const ProjectionItem &item) {
-  if (!item.alias.empty()) {
-    return item.alias;
-  }
-  if (item.expression != nullptr &&
-      item.expression->Is(ast::ASTNodeType::kVariable)) {
-    const auto *variable = ast::CastAst<ast::Variable>(item.expression);
-    return variable->name;
-  }
-  return {};
-}
-
-std::vector<std::string> CollectTerminalColumns(const SingleQueryIR &query) {
-  const SingleQueryIR *last = LastQueryPart(&query);
-  std::vector<std::string> columns;
-  columns.reserve(last->projection.items.size());
-  for (const auto &item : last->projection.items) {
-    const std::string column = ResolveProjectionColumnName(item);
-    CHECK(!column.empty(), common::InvalidArgumentError,
-          "projection item without alias is not supported");
-    columns.push_back(column);
-  }
-  return columns;
-}
-
 }  // namespace
 
 class QueryGraphBuilder {
@@ -316,29 +282,6 @@ void CheckNoUpdatingClauses(
   }
 }
 
-std::vector<UnionColumnMapping> BuildUnionColumnMappings(
-    const SingleQueryIR &main_query, const SingleQueryIR &branch_query) {
-  const auto main_columns = CollectTerminalColumns(main_query);
-  const auto branch_columns = CollectTerminalColumns(branch_query);
-  CHECK(main_columns.size() == branch_columns.size(),
-        common::InvalidArgumentError,
-        "UNION branches must return the same number of columns");
-
-  std::vector<UnionColumnMapping> mappings;
-  mappings.reserve(main_columns.size());
-  for (size_t index = 0; index < main_columns.size(); ++index) {
-    CHECK(main_columns[index] == branch_columns[index],
-          common::InvalidArgumentError,
-          "UNION branches must return the same column names by position");
-    UnionColumnMapping mapping;
-    mapping.output = main_columns[index];
-    mapping.from_main = main_columns[index];
-    mapping.from_branch = branch_columns[index];
-    mappings.push_back(std::move(mapping));
-  }
-  return mappings;
-}
-
 class QueryIRBuilder {
  public:
   QueryIR Build(const ast::Statement &statement) {
@@ -368,8 +311,6 @@ class QueryIRBuilder {
       UnionBranch branch;
       branch.all = part->all;
       branch.query = BuildSingleQuery(*part->query);
-      branch.mappings =
-          BuildUnionColumnMappings(query_ir.regular.main, branch.query);
       query_ir.regular.unions.push_back(std::move(branch));
     }
 

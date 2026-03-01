@@ -1,15 +1,72 @@
 #include "semantic_validator.h"
 
+#include <optional>
 #include <ranges>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
 #include "ast_exception.h"
 #include "ast_walker.h"
 #include "common/exception.h"
+#include "expression_to_string.h"
 
 namespace ast {
 namespace {
+
+const ProjectionBody *TerminalProjectionBody(const SingleQuery &query) {
+  switch (query.node_type) {
+    case ASTNodeType::kSinglePartQuery: {
+      const auto &single = CastAst<SinglePartQuery>(query);
+      CHECK(single.return_clause != nullptr, common::InternalError,
+            "single part query return clause is null");
+      CHECK(single.return_clause->body != nullptr, common::InternalError,
+            "single part query return body is null");
+      return single.return_clause->body.get();
+    }
+    case ASTNodeType::kMultiPartQuery: {
+      const auto &multi = CastAst<MultiPartQuery>(query);
+      CHECK(multi.final_single_part_query != nullptr, common::InternalError,
+            "multi part query final single part is null");
+      CHECK(multi.final_single_part_query->return_clause != nullptr,
+            common::InternalError, "multi part query return clause is null");
+      CHECK(multi.final_single_part_query->return_clause->body != nullptr,
+            common::InternalError, "multi part query return body is null");
+      return multi.final_single_part_query->return_clause->body.get();
+    }
+    default: {
+      THROW(common::InternalError, "unsupported single query type");
+    }
+  }
+}
+
+std::optional<std::vector<std::string>> CollectTerminalColumns(
+    const SingleQuery &query) {
+  const ProjectionBody *body = TerminalProjectionBody(query);
+  CHECK(body != nullptr, common::InternalError,
+        "terminal projection body must not be null");
+  if (body->star) {
+    return std::nullopt;
+  }
+
+  std::vector<std::string> columns;
+  columns.reserve(body->items.size());
+  for (const auto &item : body->items) {
+    CHECK(item != nullptr, common::InternalError, "projection item is null");
+    if (!item->alias.empty()) {
+      columns.push_back(item->alias);
+      continue;
+    }
+
+    CHECK(item->expression != nullptr, common::InternalError,
+          "projection item expression is null");
+    const std::string name = ExpressionToString(*item->expression);
+    CHECK(!name.empty(), common::InternalError,
+          "projection item alias stringify failed");
+    columns.push_back(name);
+  }
+  return columns;
+}
 
 class SemanticValidator : public ASTWalker {
  public:
@@ -40,6 +97,8 @@ class SemanticValidator : public ASTWalker {
       WalkMaybe(part->query);
       PopScope();
     }
+
+    ValidateUnionColumns(node);
   }
 
   void Visit(StandaloneCall &node) override {
@@ -201,6 +260,35 @@ class SemanticValidator : public ASTWalker {
   }
 
  private:
+  void ValidateUnionColumns(const RegularQuery &query) {
+    if (!query.single_query || query.unions.empty()) {
+      return;
+    }
+
+    const auto main_columns = CollectTerminalColumns(*query.single_query);
+    for (const auto &part : query.unions) {
+      if (!part || !part->query) {
+        continue;
+      }
+      const auto branch_columns = CollectTerminalColumns(*part->query);
+      if (!main_columns.has_value() || !branch_columns.has_value()) {
+        continue;
+      }
+      if (main_columns->size() != branch_columns->size()) {
+        errors_.push_back(
+            "UNION branches must return the same number of columns");
+        continue;
+      }
+      for (size_t index = 0; index < main_columns->size(); ++index) {
+        if ((*main_columns)[index] != (*branch_columns)[index]) {
+          errors_.push_back(
+              "UNION branches must return the same column names by position");
+          break;
+        }
+      }
+    }
+  }
+
   struct Scope {
     std::unordered_set<std::string> names;
 
