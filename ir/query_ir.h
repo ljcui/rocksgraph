@@ -50,16 +50,26 @@ struct Projection {
   const ast::Expression *limit = nullptr;
 };
 
-enum class QueryHorizonKind { kProjection };
+struct UnwindHorizon {
+  const ast::Expression *expression = nullptr;
+  std::string alias;
+};
+
+enum class QueryHorizonKind { kProjection, kUnwind };
 
 struct QueryHorizon {
   QueryHorizonKind kind = QueryHorizonKind::kProjection;
   Projection projection;
+  UnwindHorizon unwind;
 
   static QueryHorizon ForProjection(Projection projection);
+  static QueryHorizon ForUnwind(UnwindHorizon unwind);
 
   [[nodiscard]] const Projection &RequireProjection() const;
   Projection &RequireProjection();
+
+  [[nodiscard]] const UnwindHorizon &RequireUnwind() const;
+  UnwindHorizon &RequireUnwind();
 };
 
 struct SingleQueryIR {

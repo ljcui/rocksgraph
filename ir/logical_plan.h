@@ -20,6 +20,7 @@ namespace ir {
   X(kNodeByLabelScan, "NodeByLabelScan")   \
   X(kExpand, "Expand")                     \
   X(kSelection, "Selection")               \
+  X(kUnwind, "Unwind")                     \
   X(kProject, "Project")                   \
   X(kSort, "Sort")                         \
   X(kSkip, "Skip")                         \
@@ -164,6 +165,16 @@ struct Selection final : public LogicalUnaryPlan {
   }
 
   std::vector<const ast::Expression *> predicates;
+};
+
+struct Unwind final : public LogicalUnaryPlan {
+  Unwind(std::unique_ptr<LogicalPlan> source, const ast::Expression *expression,
+         std::string alias);
+
+  [[nodiscard]] std::unordered_set<std::string> AvailableSymbols() const final;
+
+  const ast::Expression *expression = nullptr;
+  std::string alias;
 };
 
 struct ProjectItem {

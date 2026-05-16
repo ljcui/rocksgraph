@@ -106,6 +106,23 @@ Selection::Selection(std::unique_ptr<LogicalPlan> source,
   }
 }
 
+Unwind::Unwind(std::unique_ptr<LogicalPlan> source,
+               const ast::Expression *expression, std::string alias)
+    : LogicalUnaryPlan(LogicalPlanNodeType::kUnwind, std::move(source)),
+      expression(expression),
+      alias(std::move(alias)) {
+  CHECK(this->expression != nullptr, common::InvalidArgumentError,
+        "unwind expression is null");
+  CHECK(!this->alias.empty(), common::InvalidArgumentError,
+        "unwind alias is empty");
+}
+
+std::unordered_set<std::string> Unwind::AvailableSymbols() const {
+  std::unordered_set<std::string> symbols = source->AvailableSymbols();
+  symbols.insert(alias);
+  return symbols;
+}
+
 Project::Project(std::unique_ptr<LogicalPlan> source,
                  std::vector<ProjectItem> items, bool distinct)
     : LogicalUnaryPlan(LogicalPlanNodeType::kProject, std::move(source)),

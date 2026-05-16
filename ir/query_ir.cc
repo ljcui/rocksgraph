@@ -229,6 +229,13 @@ QueryHorizon QueryHorizon::ForProjection(Projection projection) {
   return horizon;
 }
 
+QueryHorizon QueryHorizon::ForUnwind(UnwindHorizon unwind) {
+  QueryHorizon horizon;
+  horizon.kind = QueryHorizonKind::kUnwind;
+  horizon.unwind = std::move(unwind);
+  return horizon;
+}
+
 const Projection &QueryHorizon::RequireProjection() const {
   CHECK(kind == QueryHorizonKind::kProjection, common::InvalidArgumentError,
         Unsupported("query horizon"));
@@ -239,6 +246,18 @@ Projection &QueryHorizon::RequireProjection() {
   CHECK(kind == QueryHorizonKind::kProjection, common::InvalidArgumentError,
         Unsupported("query horizon"));
   return projection;
+}
+
+const UnwindHorizon &QueryHorizon::RequireUnwind() const {
+  CHECK(kind == QueryHorizonKind::kUnwind, common::InvalidArgumentError,
+        Unsupported("query horizon"));
+  return unwind;
+}
+
+UnwindHorizon &QueryHorizon::RequireUnwind() {
+  CHECK(kind == QueryHorizonKind::kUnwind, common::InvalidArgumentError,
+        Unsupported("query horizon"));
+  return unwind;
 }
 
 SingleQueryIR::SingleQueryIR(const SingleQueryIR &other)
@@ -337,6 +356,7 @@ class QueryIRBuilder {
             Missing("WITH clause"));
       *current_segment =
           BuildQuerySegment(part.reading_clauses, part.with_clause.get());
+      current_segment = current_segment->Last();
       current_segment->tail = std::make_unique<SingleQueryIR>();
       current_segment = current_segment->tail.get();
     }
@@ -365,17 +385,28 @@ class QueryIRBuilder {
       const ast::ProjectionClause *projection) {
     CHECK(projection != nullptr, common::InvalidArgumentError,
           Missing("projection clause"));
-    SingleQueryIR ir;
+    SingleQueryIR root;
+    SingleQueryIR *current_segment = &root;
     QueryGraphBuilder builder;
     for (const auto &clause : reading) {
       CHECK(clause != nullptr, common::InvalidArgumentError,
             Missing("reading clause"));
+      if (clause->Is(ast::ASTNodeType::kUnwind)) {
+        current_segment->query_graph = builder.Release();
+        current_segment->horizon = QueryHorizon::ForUnwind(
+            BuildUnwindHorizon(*ast::CastAst<ast::Unwind>(clause.get())));
+        current_segment->tail = std::make_unique<SingleQueryIR>();
+        current_segment = current_segment->tail.get();
+        builder = QueryGraphBuilder();
+        continue;
+      }
       builder.BuildReadingClause(*clause);
     }
 
-    ir.query_graph = builder.Release();
-    ir.horizon = QueryHorizon::ForProjection(BuildProjectionClause(projection));
-    return ir;
+    current_segment->query_graph = builder.Release();
+    current_segment->horizon =
+        QueryHorizon::ForProjection(BuildProjectionClause(projection));
+    return root;
   }
 
   static Projection BuildProjectionBody(const ast::ProjectionBody &body) {
@@ -414,6 +445,18 @@ class QueryIRBuilder {
     projection.skip = body.skip.get();
     projection.limit = body.limit.get();
     return projection;
+  }
+
+  static UnwindHorizon BuildUnwindHorizon(const ast::Unwind &unwind) {
+    CHECK(unwind.expression != nullptr, common::InvalidArgumentError,
+          Missing("UNWIND expression"));
+    CHECK(!unwind.variable.empty(), common::InvalidArgumentError,
+          Missing("UNWIND variable"));
+
+    UnwindHorizon horizon;
+    horizon.expression = unwind.expression.get();
+    horizon.alias = unwind.variable;
+    return horizon;
   }
 };
 

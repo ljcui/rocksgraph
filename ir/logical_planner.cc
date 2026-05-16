@@ -94,6 +94,11 @@ std::unique_ptr<LogicalPlan> CloneLogicalPlan(const LogicalPlan &plan) {
       return std::make_unique<Selection>(CloneLogicalPlan(*typed.source),
                                          typed.predicates);
     }
+    case LogicalPlanNodeType::kUnwind: {
+      const auto &typed = static_cast<const Unwind &>(plan);
+      return std::make_unique<Unwind>(CloneLogicalPlan(*typed.source),
+                                      typed.expression, typed.alias);
+    }
     case LogicalPlanNodeType::kProject: {
       const auto &typed = static_cast<const Project &>(plan);
       return std::make_unique<Project>(CloneLogicalPlan(*typed.source),
@@ -164,6 +169,12 @@ std::unique_ptr<LogicalPlan> BindArgumentInput(
           BindArgumentInput(std::move(typed->source), input_plan),
           typed->predicates);
     }
+    case LogicalPlanNodeType::kUnwind: {
+      auto *typed = static_cast<Unwind *>(plan.get());
+      return std::make_unique<Unwind>(
+          BindArgumentInput(std::move(typed->source), input_plan),
+          typed->expression, typed->alias);
+    }
     case LogicalPlanNodeType::kProject: {
       auto *typed = static_cast<Project *>(plan.get());
       return std::make_unique<Project>(
@@ -227,40 +238,59 @@ std::unique_ptr<LogicalPlan> BuildQueryPartPipeline(
       BuildIDPLogicalPlan(query_part.query_graph, argument_symbols, config.idp);
   CHECK(plan != nullptr, common::InternalError, "IDP output plan is null");
 
-  const Projection &projection = query_part.horizon.RequireProjection();
+  switch (query_part.horizon.kind) {
+    case QueryHorizonKind::kProjection: {
+      const Projection &projection = query_part.horizon.RequireProjection();
 
-  plan = std::make_unique<Project>(
-      std::move(plan), BuildProjectItems(projection), projection.distinct);
-  const auto projection_symbols = plan->AvailableSymbols();
+      plan = std::make_unique<Project>(
+          std::move(plan), BuildProjectItems(projection), projection.distinct);
+      const auto projection_symbols = plan->AvailableSymbols();
 
-  if (projection.where != nullptr) {
-    CheckExpressionDependencies(*projection.where, projection_symbols,
-                                "WITH/RETURN WHERE");
-    plan = std::make_unique<Selection>(
-        std::move(plan),
-        std::vector<const ast::Expression *>{projection.where});
-  }
+      if (projection.where != nullptr) {
+        CheckExpressionDependencies(*projection.where, projection_symbols,
+                                    "WITH/RETURN WHERE");
+        plan = std::make_unique<Selection>(
+            std::move(plan),
+            std::vector<const ast::Expression *>{projection.where});
+      }
 
-  if (!projection.order_by.empty()) {
-    for (const auto &item : projection.order_by) {
-      CHECK(item.expression != nullptr, common::InvalidArgumentError,
-            "order by expression is null");
-      CheckExpressionDependencies(*item.expression, projection_symbols,
-                                  "ORDER BY");
+      if (!projection.order_by.empty()) {
+        for (const auto &item : projection.order_by) {
+          CHECK(item.expression != nullptr, common::InvalidArgumentError,
+                "order by expression is null");
+          CheckExpressionDependencies(*item.expression, projection_symbols,
+                                      "ORDER BY");
+        }
+        plan = std::make_unique<Sort>(std::move(plan),
+                                      BuildOrderItems(projection));
+      }
+
+      if (projection.skip != nullptr) {
+        CheckExpressionDependencies(*projection.skip, projection_symbols,
+                                    "SKIP");
+        plan = std::make_unique<Skip>(std::move(plan), projection.skip);
+      }
+
+      if (projection.limit != nullptr) {
+        CheckExpressionDependencies(*projection.limit, projection_symbols,
+                                    "LIMIT");
+        plan = std::make_unique<Limit>(std::move(plan), projection.limit);
+      }
+      return plan;
     }
-    plan = std::make_unique<Sort>(std::move(plan), BuildOrderItems(projection));
+    case QueryHorizonKind::kUnwind: {
+      const UnwindHorizon &unwind = query_part.horizon.RequireUnwind();
+      CHECK(unwind.expression != nullptr, common::InvalidArgumentError,
+            "UNWIND expression is null");
+      CHECK(!unwind.alias.empty(), common::InvalidArgumentError,
+            "UNWIND alias is empty");
+      CheckExpressionDependencies(*unwind.expression, plan->AvailableSymbols(),
+                                  "UNWIND");
+      return std::make_unique<Unwind>(std::move(plan), unwind.expression,
+                                      unwind.alias);
+    }
   }
-
-  if (projection.skip != nullptr) {
-    CheckExpressionDependencies(*projection.skip, projection_symbols, "SKIP");
-    plan = std::make_unique<Skip>(std::move(plan), projection.skip);
-  }
-
-  if (projection.limit != nullptr) {
-    CheckExpressionDependencies(*projection.limit, projection_symbols, "LIMIT");
-    plan = std::make_unique<Limit>(std::move(plan), projection.limit);
-  }
-  return plan;
+  THROW(common::InternalError, "unknown query horizon kind");
 }
 
 struct PlannedSingleQuery {

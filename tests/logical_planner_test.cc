@@ -95,6 +95,33 @@ TEST(LogicalPlannerTest, SupportsMultiPartQueryWithSymbolPropagation) {
             1U);
 }
 
+TEST(LogicalPlannerTest, SupportsUnwindQuery) {
+  auto statement = ParseOrFail("UNWIND [1, 2] AS x RETURN x");
+  ASSERT_TRUE(statement);
+
+  auto plan = ir::BuildLogicalPlan(*statement);
+  ASSERT_TRUE(plan);
+
+  const auto flattened = ir::FlattenLogicalPlan(*plan);
+  ASSERT_GE(flattened.size(), 4U);
+  EXPECT_EQ(flattened[0]->node_type, ir::LogicalPlanNodeType::kProduceResult);
+  EXPECT_EQ(flattened[1]->node_type, ir::LogicalPlanNodeType::kProject);
+  EXPECT_EQ(CountNodeType(flattened, ir::LogicalPlanNodeType::kUnwind), 1U);
+}
+
+TEST(LogicalPlannerTest, SupportsUnwindAfterMatch) {
+  auto statement = ParseOrFail("MATCH (n) UNWIND [n] AS x RETURN x");
+  ASSERT_TRUE(statement);
+
+  auto plan = ir::BuildLogicalPlan(*statement);
+  ASSERT_TRUE(plan);
+
+  const auto flattened = ir::FlattenLogicalPlan(*plan);
+  EXPECT_EQ(CountNodeType(flattened, ir::LogicalPlanNodeType::kAllNodesScan),
+            1U);
+  EXPECT_EQ(CountNodeType(flattened, ir::LogicalPlanNodeType::kUnwind), 1U);
+}
+
 TEST(LogicalPlannerTest, SupportsUnionQuery) {
   auto statement =
       ParseOrFail("MATCH (n) RETURN n AS x UNION MATCH (m) RETURN m AS x");
@@ -167,6 +194,17 @@ TEST(LogicalPlannerTest, RejectsProjectionWhereDependencyOutOfScope) {
   query_ir.regular.main.horizon.RequireProjection().items.push_back(
       {&one, "x"});
   query_ir.regular.main.horizon.RequireProjection().where = &missing;
+
+  EXPECT_THROW((void)ir::BuildLogicalPlan(query_ir),
+               common::InvalidArgumentError);
+}
+
+TEST(LogicalPlannerTest, RejectsUnwindDependencyOutOfScope) {
+  ast::Variable missing;
+  missing.name = "missing";
+
+  ir::QueryIR query_ir;
+  query_ir.regular.main.horizon = ir::QueryHorizon::ForUnwind({&missing, "x"});
 
   EXPECT_THROW((void)ir::BuildLogicalPlan(query_ir),
                common::InvalidArgumentError);

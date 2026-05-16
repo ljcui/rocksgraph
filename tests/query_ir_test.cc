@@ -145,6 +145,45 @@ TEST(PlannerQueryTest, BuildsTailForMultiPartQuery) {
   EXPECT_EQ(second.tail, nullptr);
 }
 
+TEST(PlannerQueryTest, BuildsUnwindHorizonSegment) {
+  auto statement = ParseOrFail("UNWIND [1, 2] AS x RETURN x");
+  ASSERT_TRUE(statement);
+
+  ir::QueryIR planner_query = ir::BuildStatement(*statement);
+  const ir::SingleQueryIR &unwind_segment = planner_query.regular.main;
+
+  EXPECT_TRUE(unwind_segment.query_graph.nodes.empty());
+  EXPECT_TRUE(unwind_segment.query_graph.relationships.empty());
+  ASSERT_EQ(unwind_segment.horizon.kind, ir::QueryHorizonKind::kUnwind);
+  EXPECT_NE(unwind_segment.horizon.RequireUnwind().expression, nullptr);
+  EXPECT_EQ(unwind_segment.horizon.RequireUnwind().alias, "x");
+
+  ASSERT_TRUE(unwind_segment.tail);
+  const ir::SingleQueryIR &return_segment = *unwind_segment.tail;
+  ASSERT_EQ(return_segment.horizon.kind, ir::QueryHorizonKind::kProjection);
+  ASSERT_EQ(return_segment.horizon.RequireProjection().items.size(), 1U);
+  EXPECT_EQ(return_segment.horizon.RequireProjection().items[0].alias, "x");
+  EXPECT_EQ(return_segment.tail, nullptr);
+}
+
+TEST(PlannerQueryTest, PreservesUnwindSegmentBeforeWithTail) {
+  auto statement = ParseOrFail("UNWIND [1, 2] AS x WITH x RETURN x");
+  ASSERT_TRUE(statement);
+
+  ir::QueryIR planner_query = ir::BuildStatement(*statement);
+  const ir::SingleQueryIR &unwind_segment = planner_query.regular.main;
+  ASSERT_EQ(unwind_segment.horizon.kind, ir::QueryHorizonKind::kUnwind);
+  ASSERT_TRUE(unwind_segment.tail);
+
+  const ir::SingleQueryIR &with_segment = *unwind_segment.tail;
+  ASSERT_EQ(with_segment.horizon.kind, ir::QueryHorizonKind::kProjection);
+  ASSERT_TRUE(with_segment.tail);
+
+  const ir::SingleQueryIR &return_segment = *with_segment.tail;
+  ASSERT_EQ(return_segment.horizon.kind, ir::QueryHorizonKind::kProjection);
+  EXPECT_EQ(return_segment.tail, nullptr);
+}
+
 TEST(PlannerQueryTest, SplitsConjunctiveWhereIntoPredicates) {
   auto statement = ParseOrFail(
       "MATCH (n) WHERE n.age > 30 AND (n.name = 'Alice' AND n.active = true) "

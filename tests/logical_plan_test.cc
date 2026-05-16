@@ -37,7 +37,7 @@ TEST(LogicalPlanLeafTest, AllNodesScanAndNodeByLabelScanExposeSymbols) {
   EXPECT_TRUE(Contains(label_symbols, "m"));
 }
 
-TEST(LogicalPlanUnaryTest, ExpandAndProjectPropagateSymbols) {
+TEST(LogicalPlanUnaryTest, ExpandUnwindAndProjectPropagateSymbols) {
   ast::BooleanLiteral predicate;
   predicate.value = true;
   ast::IntegerLiteral one;
@@ -55,6 +55,15 @@ TEST(LogicalPlanUnaryTest, ExpandAndProjectPropagateSymbols) {
   auto symbols = plan->AvailableSymbols();
   EXPECT_EQ(symbols.size(), 1U);
   EXPECT_TRUE(Contains(symbols, "m"));
+
+  auto unwind = std::make_unique<ir::Unwind>(
+      std::make_unique<ir::AllNodesScan>(
+          "n", std::unordered_set<std::string>{"arg"}),
+      &one, "x");
+  const auto unwind_symbols = unwind->AvailableSymbols();
+  EXPECT_TRUE(Contains(unwind_symbols, "arg"));
+  EXPECT_TRUE(Contains(unwind_symbols, "n"));
+  EXPECT_TRUE(Contains(unwind_symbols, "x"));
 }
 
 TEST(LogicalPlanBinaryTest, CartesianProductUnionsChildSymbols) {
@@ -107,12 +116,19 @@ TEST(LogicalPlanTreeTest, FlattenAndLeftmostLeafFollowPreOrder) {
 }
 
 TEST(LogicalPlanValidationTest, RejectsInvalidInputs) {
+  ast::IntegerLiteral one;
+  one.value = 1;
+
   EXPECT_THROW((void)ir::AllNodesScan("", {}), common::InvalidArgumentError);
   EXPECT_THROW((void)ir::Selection(std::make_unique<ir::Argument>(),
                                    std::vector<const ast::Expression *>{}),
                common::InvalidArgumentError);
   EXPECT_THROW((void)ir::Project(std::make_unique<ir::Argument>(),
                                  std::vector<ir::ProjectItem>{{nullptr, "x"}}),
+               common::InvalidArgumentError);
+  EXPECT_THROW((void)ir::Unwind(std::make_unique<ir::Argument>(), nullptr, "x"),
+               common::InvalidArgumentError);
+  EXPECT_THROW((void)ir::Unwind(std::make_unique<ir::Argument>(), &one, ""),
                common::InvalidArgumentError);
   EXPECT_THROW((void)ir::NodeHashJoin(std::make_unique<ir::AllNodesScan>("a"),
                                       std::make_unique<ir::AllNodesScan>("b"),
