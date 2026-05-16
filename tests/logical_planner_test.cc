@@ -199,6 +199,18 @@ TEST(LogicalPlannerTest, RejectsProjectionWhereDependencyOutOfScope) {
                common::InvalidArgumentError);
 }
 
+TEST(LogicalPlannerTest, RejectsProjectionItemDependencyOutOfScope) {
+  ast::Variable missing;
+  missing.name = "missing";
+
+  ir::QueryIR query_ir;
+  query_ir.regular.main.horizon.RequireProjection().items.push_back(
+      {&missing, "x"});
+
+  EXPECT_THROW((void)ir::BuildLogicalPlan(query_ir),
+               common::InvalidArgumentError);
+}
+
 TEST(LogicalPlannerTest, RejectsUnwindDependencyOutOfScope) {
   ast::Variable missing;
   missing.name = "missing";
