@@ -162,12 +162,46 @@ TEST(PlannerQueryTest, SplitsConjunctiveWhereIntoPredicates) {
   EXPECT_TRUE(Contains(where_dependencies.at("n.active = true"), "n"));
 }
 
-TEST(PlannerQueryTest, RejectsNonConjunctiveWhereExpression) {
+TEST(PlannerQueryTest, AcceptsNonConjunctiveWhereExpression) {
   auto statement = ParseOrFail("MATCH (n) WHERE n.age > 30 RETURN n");
   ASSERT_TRUE(statement);
 
-  EXPECT_THROW(
-      { (void)ir::BuildStatement(*statement); }, common::InvalidArgumentError);
+  ir::QueryIR planner_query = ir::BuildStatement(*statement);
+  const ir::SingleQueryIR &main = planner_query.regular.main;
+
+  ASSERT_EQ(main.query_graph.where.size(), 1U);
+  const auto where_dependencies =
+      WhereDependenciesByExpression(main.query_graph);
+  EXPECT_TRUE(Contains(where_dependencies.at("n.age > 30"), "n"));
+}
+
+TEST(PlannerQueryTest, ExcludesScopedQuantifierVariablesFromDependencies) {
+  auto statement =
+      ParseOrFail("MATCH (n) WHERE ANY(x IN [1, 2] WHERE x = n.age) RETURN n");
+  ASSERT_TRUE(statement);
+
+  ir::QueryIR planner_query = ir::BuildStatement(*statement);
+  const ir::SingleQueryIR &main = planner_query.regular.main;
+
+  ASSERT_EQ(main.query_graph.where.size(), 1U);
+  const auto &dependencies = main.query_graph.where[0].dependencies;
+  EXPECT_TRUE(Contains(dependencies, "n"));
+  EXPECT_FALSE(Contains(dependencies, "x"));
+}
+
+TEST(PlannerQueryTest, TreatsOnlyOuterPatternVariablesAsExistsDependencies) {
+  auto statement = ParseOrFail(
+      "MATCH (n) WHERE EXISTS { MATCH (n)-[r]->(m) RETURN 1 } RETURN n");
+  ASSERT_TRUE(statement);
+
+  ir::QueryIR planner_query = ir::BuildStatement(*statement);
+  const ir::SingleQueryIR &main = planner_query.regular.main;
+
+  ASSERT_EQ(main.query_graph.where.size(), 1U);
+  const auto &dependencies = main.query_graph.where[0].dependencies;
+  EXPECT_TRUE(Contains(dependencies, "n"));
+  EXPECT_FALSE(Contains(dependencies, "r"));
+  EXPECT_FALSE(Contains(dependencies, "m"));
 }
 
 TEST(PlannerQueryTest, DeduplicatesRepeatedWherePredicatesAcrossMatches) {

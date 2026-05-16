@@ -8,7 +8,7 @@
 #include <utility>
 #include <vector>
 
-#include "ast/ast_const_walker.h"
+#include "ast/expression_dependency.h"
 #include "ast/expression_to_string.h"
 #include "common/exception.h"
 
@@ -37,17 +37,6 @@ const ast::Expression *UnwrapParenthesized(const ast::Expression *expression) {
   return unwrapped;
 }
 
-const ast::AndExpression *RequireConjunctiveWhere(
-    const ast::Expression *expression) {
-  const ast::Expression *unwrapped = UnwrapParenthesized(expression);
-  if (unwrapped == nullptr ||
-      !unwrapped->Is(ast::ASTNodeType::kAndExpression)) {
-    THROW(common::InvalidArgumentError,
-          Unsupported("WHERE without AND expression"));
-  }
-  return ast::CastAst<ast::AndExpression>(unwrapped);
-}
-
 void SplitConjunctivePredicates(const ast::Expression *expression,
                                 std::vector<const ast::Expression *> *output) {
   CHECK(output != nullptr, common::InternalError, "predicate output is null");
@@ -61,36 +50,6 @@ void SplitConjunctivePredicates(const ast::Expression *expression,
     return;
   }
   output->push_back(unwrapped);
-}
-
-class VariableDependencyCollector : public ast::ASTConstWalker {
- public:
-  explicit VariableDependencyCollector(
-      std::unordered_set<std::string> *dependencies)
-      : dependencies_(dependencies) {
-    CHECK(dependencies_ != nullptr, common::InternalError,
-          "dependencies output is null");
-  }
-
-  void Collect(const ast::Expression &expression) { expression.Accept(*this); }
-
- protected:
-  void Visit(const ast::Variable &node) override {
-    CHECK(!node.name.empty(), common::InvalidArgumentError,
-          "variable dependency name is empty");
-    dependencies_->emplace(node.name);
-  }
-
- private:
-  std::unordered_set<std::string> *dependencies_;
-};
-
-std::unordered_set<std::string> CollectDependencies(
-    const ast::Expression &expression) {
-  std::unordered_set<std::string> dependencies;
-  VariableDependencyCollector collector(&dependencies);
-  collector.Collect(expression);
-  return dependencies;
 }
 
 std::unique_ptr<SingleQueryIR> CloneTail(
@@ -151,8 +110,6 @@ class QueryGraphBuilder {
   void AddWhere(const ast::Expression *where) {
     CHECK(where != nullptr, common::InvalidArgumentError,
           "WHERE predicate is null");
-    CHECK(where->Is(ast::ASTNodeType::kAndExpression),
-          common::InvalidArgumentError, "WHERE predicate is not AND");
     std::vector<const ast::Expression *> predicates;
     SplitConjunctivePredicates(where, &predicates);
     CHECK(!predicates.empty(), common::InvalidArgumentError,
@@ -169,7 +126,8 @@ class QueryGraphBuilder {
 
       QueryGraph::WherePredicate where_predicate;
       where_predicate.expression = predicate;
-      where_predicate.dependencies = CollectDependencies(*predicate);
+      where_predicate.dependencies =
+          ast::CollectExpressionDependencies(*predicate, CoveredSymbols());
       graph_.where.push_back(std::move(where_predicate));
     }
   }
@@ -196,6 +154,16 @@ class QueryGraphBuilder {
   QueryGraph Release() { return std::move(graph_); }
 
  private:
+  [[nodiscard]] std::unordered_set<std::string> CoveredSymbols() const {
+    std::unordered_set<std::string> symbols = graph_.nodes;
+    for (const auto &relationship : graph_.relationships) {
+      CHECK(!relationship.name.empty(), common::InvalidArgumentError,
+            "relationship variable is empty");
+      symbols.insert(relationship.name);
+    }
+    return symbols;
+  }
+
   void AddPatternElement(const ast::PatternElement &element) {
     if (!element.node_pattern) {
       THROW(common::InternalError, "node_pattern is null");

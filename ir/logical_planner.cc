@@ -7,7 +7,7 @@
 #include <utility>
 #include <vector>
 
-#include "ast/ast_const_walker.h"
+#include "ast/expression_dependency.h"
 #include "common/exception.h"
 
 namespace ir {
@@ -57,41 +57,11 @@ std::vector<OrderItem> BuildOrderItems(const Projection &projection) {
   return items;
 }
 
-class VariableDependencyCollector : public ast::ASTConstWalker {
- public:
-  explicit VariableDependencyCollector(
-      std::unordered_set<std::string> *dependencies)
-      : dependencies_(dependencies) {
-    CHECK(dependencies_ != nullptr, common::InternalError,
-          "dependencies output is null");
-  }
-
-  void Collect(const ast::Expression &expression) { expression.Accept(*this); }
-
- protected:
-  void Visit(const ast::Variable &node) override {
-    CHECK(!node.name.empty(), common::InvalidArgumentError,
-          "variable dependency name is empty");
-    dependencies_->emplace(node.name);
-  }
-
- private:
-  std::unordered_set<std::string> *dependencies_;
-};
-
-std::unordered_set<std::string> CollectDependencies(
-    const ast::Expression &expression) {
-  std::unordered_set<std::string> dependencies;
-  VariableDependencyCollector collector(&dependencies);
-  collector.Collect(expression);
-  return dependencies;
-}
-
 void CheckExpressionDependencies(
     const ast::Expression &expression,
     const std::unordered_set<std::string> &available_symbols,
     std::string_view context) {
-  const auto dependencies = CollectDependencies(expression);
+  const auto dependencies = ast::CollectExpressionDependencies(expression);
   for (const std::string &dependency : dependencies) {
     CHECK(available_symbols.contains(dependency), common::InvalidArgumentError,
           std::string(context) + " dependency is not in scope: " + dependency);
