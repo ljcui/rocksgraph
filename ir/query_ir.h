@@ -50,9 +50,21 @@ struct Projection {
   const ast::Expression *limit = nullptr;
 };
 
+enum class QueryHorizonKind { kProjection };
+
+struct QueryHorizon {
+  QueryHorizonKind kind = QueryHorizonKind::kProjection;
+  Projection projection;
+
+  static QueryHorizon ForProjection(Projection projection);
+
+  [[nodiscard]] const Projection &RequireProjection() const;
+  Projection &RequireProjection();
+};
+
 struct SingleQueryIR {
   QueryGraph query_graph;
-  Projection projection;
+  QueryHorizon horizon;
   std::unique_ptr<SingleQueryIR> tail;
 
   SingleQueryIR() = default;

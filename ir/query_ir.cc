@@ -222,9 +222,28 @@ class QueryGraphBuilder {
   std::unordered_set<std::string> where_keys_;
 };
 
+QueryHorizon QueryHorizon::ForProjection(Projection projection) {
+  QueryHorizon horizon;
+  horizon.kind = QueryHorizonKind::kProjection;
+  horizon.projection = std::move(projection);
+  return horizon;
+}
+
+const Projection &QueryHorizon::RequireProjection() const {
+  CHECK(kind == QueryHorizonKind::kProjection, common::InvalidArgumentError,
+        Unsupported("query horizon"));
+  return projection;
+}
+
+Projection &QueryHorizon::RequireProjection() {
+  CHECK(kind == QueryHorizonKind::kProjection, common::InvalidArgumentError,
+        Unsupported("query horizon"));
+  return projection;
+}
+
 SingleQueryIR::SingleQueryIR(const SingleQueryIR &other)
     : query_graph(other.query_graph),
-      projection(other.projection),
+      horizon(other.horizon),
       tail(CloneTail(other.tail)) {}
 
 SingleQueryIR &SingleQueryIR::operator=(const SingleQueryIR &other) {
@@ -232,7 +251,7 @@ SingleQueryIR &SingleQueryIR::operator=(const SingleQueryIR &other) {
     return *this;
   }
   query_graph = other.query_graph;
-  projection = other.projection;
+  horizon = other.horizon;
   tail = CloneTail(other.tail);
   return *this;
 }
@@ -355,7 +374,7 @@ class QueryIRBuilder {
     }
 
     ir.query_graph = builder.Release();
-    ir.projection = BuildProjectionClause(projection);
+    ir.horizon = QueryHorizon::ForProjection(BuildProjectionClause(projection));
     return ir;
   }
 

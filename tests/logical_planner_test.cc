@@ -146,10 +146,11 @@ TEST(LogicalPlannerTest, RejectsUnionWithDifferentProjectionColumns) {
   two.value = 2;
 
   ir::QueryIR query_ir;
-  query_ir.regular.main.projection.items.push_back({&one, "a"});
+  query_ir.regular.main.horizon.RequireProjection().items.push_back(
+      {&one, "a"});
 
   ir::UnionBranch branch;
-  branch.query.projection.items.push_back({&two, "b"});
+  branch.query.horizon.RequireProjection().items.push_back({&two, "b"});
   query_ir.regular.unions.push_back(std::move(branch));
 
   EXPECT_THROW((void)ir::BuildLogicalPlan(query_ir),
@@ -163,8 +164,9 @@ TEST(LogicalPlannerTest, RejectsProjectionWhereDependencyOutOfScope) {
   missing.name = "missing";
 
   ir::QueryIR query_ir;
-  query_ir.regular.main.projection.items.push_back({&one, "x"});
-  query_ir.regular.main.projection.where = &missing;
+  query_ir.regular.main.horizon.RequireProjection().items.push_back(
+      {&one, "x"});
+  query_ir.regular.main.horizon.RequireProjection().where = &missing;
 
   EXPECT_THROW((void)ir::BuildLogicalPlan(query_ir),
                common::InvalidArgumentError);

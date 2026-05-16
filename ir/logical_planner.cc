@@ -227,41 +227,38 @@ std::unique_ptr<LogicalPlan> BuildQueryPartPipeline(
       BuildIDPLogicalPlan(query_part.query_graph, argument_symbols, config.idp);
   CHECK(plan != nullptr, common::InternalError, "IDP output plan is null");
 
-  plan = std::make_unique<Project>(std::move(plan),
-                                   BuildProjectItems(query_part.projection),
-                                   query_part.projection.distinct);
+  const Projection &projection = query_part.horizon.RequireProjection();
+
+  plan = std::make_unique<Project>(
+      std::move(plan), BuildProjectItems(projection), projection.distinct);
   const auto projection_symbols = plan->AvailableSymbols();
 
-  if (query_part.projection.where != nullptr) {
-    CheckExpressionDependencies(*query_part.projection.where,
-                                projection_symbols, "WITH/RETURN WHERE");
+  if (projection.where != nullptr) {
+    CheckExpressionDependencies(*projection.where, projection_symbols,
+                                "WITH/RETURN WHERE");
     plan = std::make_unique<Selection>(
         std::move(plan),
-        std::vector<const ast::Expression *>{query_part.projection.where});
+        std::vector<const ast::Expression *>{projection.where});
   }
 
-  if (!query_part.projection.order_by.empty()) {
-    for (const auto &item : query_part.projection.order_by) {
+  if (!projection.order_by.empty()) {
+    for (const auto &item : projection.order_by) {
       CHECK(item.expression != nullptr, common::InvalidArgumentError,
             "order by expression is null");
       CheckExpressionDependencies(*item.expression, projection_symbols,
                                   "ORDER BY");
     }
-    plan = std::make_unique<Sort>(std::move(plan),
-                                  BuildOrderItems(query_part.projection));
+    plan = std::make_unique<Sort>(std::move(plan), BuildOrderItems(projection));
   }
 
-  if (query_part.projection.skip != nullptr) {
-    CheckExpressionDependencies(*query_part.projection.skip, projection_symbols,
-                                "SKIP");
-    plan = std::make_unique<Skip>(std::move(plan), query_part.projection.skip);
+  if (projection.skip != nullptr) {
+    CheckExpressionDependencies(*projection.skip, projection_symbols, "SKIP");
+    plan = std::make_unique<Skip>(std::move(plan), projection.skip);
   }
 
-  if (query_part.projection.limit != nullptr) {
-    CheckExpressionDependencies(*query_part.projection.limit,
-                                projection_symbols, "LIMIT");
-    plan =
-        std::make_unique<Limit>(std::move(plan), query_part.projection.limit);
+  if (projection.limit != nullptr) {
+    CheckExpressionDependencies(*projection.limit, projection_symbols, "LIMIT");
+    plan = std::make_unique<Limit>(std::move(plan), projection.limit);
   }
   return plan;
 }
@@ -293,7 +290,8 @@ PlannedSingleQuery PlanSingleQuery(const SingleQueryIR &single_query,
   CHECK(plan != nullptr, common::InternalError, "single query plan is null");
   return PlannedSingleQuery{
       .plan = std::move(plan),
-      .columns = BuildProduceColumns(single_query.Last()->projection)};
+      .columns = BuildProduceColumns(
+          single_query.Last()->horizon.RequireProjection())};
 }
 
 }  // namespace

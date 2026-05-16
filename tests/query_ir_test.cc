@@ -76,13 +76,13 @@ TEST(PlannerQueryTest, BuildsGraphFromMatch) {
   EXPECT_EQ(relationship.direction, ir::QueryGraph::Direction::kOutgoing);
   EXPECT_TRUE(relationship.types.empty());
 
-  EXPECT_FALSE(main.projection.distinct);
-  ASSERT_EQ(main.projection.items.size(), 2U);
-  EXPECT_EQ(main.projection.items[0].alias, "a");
-  EXPECT_EQ(main.projection.items[1].alias, "b");
-  EXPECT_EQ(main.projection.where, nullptr);
-  EXPECT_EQ(main.projection.skip, nullptr);
-  EXPECT_EQ(main.projection.limit, nullptr);
+  EXPECT_FALSE(main.horizon.RequireProjection().distinct);
+  ASSERT_EQ(main.horizon.RequireProjection().items.size(), 2U);
+  EXPECT_EQ(main.horizon.RequireProjection().items[0].alias, "a");
+  EXPECT_EQ(main.horizon.RequireProjection().items[1].alias, "b");
+  EXPECT_EQ(main.horizon.RequireProjection().where, nullptr);
+  EXPECT_EQ(main.horizon.RequireProjection().skip, nullptr);
+  EXPECT_EQ(main.horizon.RequireProjection().limit, nullptr);
 
   EXPECT_TRUE(planner_query.regular.unions.empty());
 }
@@ -102,8 +102,8 @@ TEST(PlannerQueryTest, AcceptsAnonymousPatternAfterRewrite) {
   EXPECT_FALSE(relationship.left_node.empty());
   EXPECT_FALSE(relationship.right_node.empty());
 
-  ASSERT_EQ(main.projection.items.size(), 1U);
-  EXPECT_FALSE(main.projection.items[0].alias.empty());
+  ASSERT_EQ(main.horizon.RequireProjection().items.size(), 1U);
+  EXPECT_FALSE(main.horizon.RequireProjection().items[0].alias.empty());
 }
 
 TEST(PlannerQueryTest, BuildsTailForMultiPartQuery) {
@@ -125,9 +125,9 @@ TEST(PlannerQueryTest, BuildsTailForMultiPartQuery) {
   EXPECT_TRUE(Contains(first_where_dependencies.at("n:Person"), "n"));
   EXPECT_TRUE(first_where_dependencies.contains("true"));
 
-  ASSERT_EQ(first.projection.items.size(), 1U);
-  EXPECT_EQ(first.projection.items[0].alias, "n");
-  EXPECT_NE(first.projection.where, nullptr);
+  ASSERT_EQ(first.horizon.RequireProjection().items.size(), 1U);
+  EXPECT_EQ(first.horizon.RequireProjection().items[0].alias, "n");
+  EXPECT_NE(first.horizon.RequireProjection().where, nullptr);
 
   EXPECT_TRUE(Contains(second.query_graph.nodes, "n"));
   EXPECT_TRUE(Contains(second.query_graph.nodes, "m"));
@@ -139,9 +139,9 @@ TEST(PlannerQueryTest, BuildsTailForMultiPartQuery) {
   EXPECT_TRUE(Contains(second_where_dependencies.at("r:KNOWS"), "r"));
   EXPECT_TRUE(second_where_dependencies.contains("true"));
 
-  ASSERT_EQ(second.projection.items.size(), 2U);
-  EXPECT_EQ(second.projection.items[0].alias, "n");
-  EXPECT_EQ(second.projection.items[1].alias, "m");
+  ASSERT_EQ(second.horizon.RequireProjection().items.size(), 2U);
+  EXPECT_EQ(second.horizon.RequireProjection().items[0].alias, "n");
+  EXPECT_EQ(second.horizon.RequireProjection().items[1].alias, "m");
   EXPECT_EQ(second.tail, nullptr);
 }
 
@@ -255,6 +255,9 @@ TEST(PlannerQueryTest, CopySingleQueryIRDeeplyCopiesTail) {
   ASSERT_TRUE(copy.tail);
   EXPECT_NE(copy.tail.get(), planner_query.regular.main.tail.get());
 
-  copy.tail->projection.items[0].alias = "renamed";
-  EXPECT_EQ(planner_query.regular.main.tail->projection.items[0].alias, "n");
+  copy.tail->horizon.RequireProjection().items[0].alias = "renamed";
+  EXPECT_EQ(planner_query.regular.main.tail->horizon.RequireProjection()
+                .items[0]
+                .alias,
+            "n");
 }
