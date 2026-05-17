@@ -296,6 +296,211 @@ TEST(PlannerQueryPrinterTest, DumpsUnionAll) {
 )");
 }
 
+TEST(PlannerQueryPrinterTest, DumpsInlinePropertySelection) {
+  ExpectPlannerQueryText("MATCH (n {id: 1}) RETURN n", R"(SinglePlannerQuery
+  query_graph:
+    argument_ids: []
+    pattern_nodes: [n]
+    pattern_relationships:
+      []
+    selections:
+      - kind: property_equality
+        expression: n.id = 1
+        dependencies: [n]
+        variable: n
+        property_key: id
+        comparison_op: =
+    optional_matches: 0
+    hints: 0
+    mutating_patterns: 0
+  horizon:
+    projection:
+      distinct: false
+      items:
+        - alias: n
+          expression: n
+      order_by:
+        []
+      where: null
+      skip: null
+      limit: null
+  tail:
+    null
+)");
+}
+
+TEST(PlannerQueryPrinterTest, DumpsExplicitWhereSelection) {
+  ExpectPlannerQueryText("MATCH (n) WHERE n.age > 30 RETURN n",
+                         R"(SinglePlannerQuery
+  query_graph:
+    argument_ids: []
+    pattern_nodes: [n]
+    pattern_relationships:
+      []
+    selections:
+      - kind: property_comparison
+        expression: n.age > 30
+        dependencies: [n]
+        variable: n
+        property_key: age
+        comparison_op: >
+    optional_matches: 0
+    hints: 0
+    mutating_patterns: 0
+  horizon:
+    projection:
+      distinct: false
+      items:
+        - alias: n
+          expression: n
+      order_by:
+        []
+      where: null
+      skip: null
+      limit: null
+  tail:
+    null
+)");
+}
+
+TEST(PlannerQueryPrinterTest, DumpsWithTail) {
+  ExpectPlannerQueryText("MATCH (n) WITH n.name AS name RETURN name",
+                         R"(SinglePlannerQuery
+  query_graph:
+    argument_ids: []
+    pattern_nodes: [n]
+    pattern_relationships:
+      []
+    selections:
+      []
+    optional_matches: 0
+    hints: 0
+    mutating_patterns: 0
+  horizon:
+    projection:
+      distinct: false
+      items:
+        - alias: name
+          expression: n.name
+      order_by:
+        []
+      where: null
+      skip: null
+      limit: null
+  tail:
+    SinglePlannerQuery
+      query_graph:
+        argument_ids: [name]
+        pattern_nodes: []
+        pattern_relationships:
+          []
+        selections:
+          []
+        optional_matches: 0
+        hints: 0
+        mutating_patterns: 0
+      horizon:
+        projection:
+          distinct: false
+          items:
+            - alias: name
+              expression: name
+          order_by:
+            []
+          where: null
+          skip: null
+          limit: null
+      tail:
+        null
+)");
+}
+
+TEST(PlannerQueryPrinterTest, DumpsDistinctProjection) {
+  ExpectPlannerQueryText("MATCH (n) RETURN DISTINCT n", R"(SinglePlannerQuery
+  query_graph:
+    argument_ids: []
+    pattern_nodes: [n]
+    pattern_relationships:
+      []
+    selections:
+      []
+    optional_matches: 0
+    hints: 0
+    mutating_patterns: 0
+  horizon:
+    projection:
+      distinct: true
+      items:
+        - alias: n
+          expression: n
+      order_by:
+        []
+      where: null
+      skip: null
+      limit: null
+  tail:
+    null
+)");
+}
+
+TEST(PlannerQueryPrinterTest, DumpsCountStarRewriteSnapshot) {
+  ExpectPlannerQueryText("MATCH (n) RETURN count(*)", R"(SinglePlannerQuery
+  query_graph:
+    argument_ids: []
+    pattern_nodes: [n]
+    pattern_relationships:
+      []
+    selections:
+      []
+    optional_matches: 0
+    hints: 0
+    mutating_patterns: 0
+  horizon:
+    projection:
+      distinct: false
+      items:
+        - alias: count(1)
+          expression: count(1)
+      order_by:
+        []
+      where: null
+      skip: null
+      limit: null
+  tail:
+    null
+)");
+}
+
+TEST(PlannerQueryPrinterTest, DumpsOrderBySkipLimit) {
+  ExpectPlannerQueryText("MATCH (n) RETURN n ORDER BY n SKIP 1 LIMIT 2",
+                         R"(SinglePlannerQuery
+  query_graph:
+    argument_ids: []
+    pattern_nodes: [n]
+    pattern_relationships:
+      []
+    selections:
+      []
+    optional_matches: 0
+    hints: 0
+    mutating_patterns: 0
+  horizon:
+    projection:
+      distinct: false
+      items:
+        - alias: n
+          expression: n
+      order_by:
+        - expression: n
+          ascending: true
+      where: null
+      skip: 1
+      limit: 2
+  tail:
+    null
+)");
+}
+
 TEST(PlannerQueryTest, BuildsGraphFromMatch) {
   auto statement = ParseOrFail(
       "MATCH (a:Person {name: 'Alice'})-[r:KNOWS]->(b) "
