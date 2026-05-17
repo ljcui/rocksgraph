@@ -793,6 +793,142 @@ TEST(PlannerQueryTest, QueriesSelectionsByStructuredPredicateFields) {
   EXPECT_FALSE(selections.ContainsPropertyPredicate("a", "age", "="));
 }
 
+TEST(PlannerQueryTest, QueryGraphApisExposeCoveredIdsAndAvailability) {
+  auto statement = ParseOrFail(
+      "MATCH p = (a)-[r]->(b) OPTIONAL MATCH (b)-[s]->(c) RETURN a, c");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::QueryGraph &query_graph =
+      planner_query->RequireSingle().query_graph;
+
+  EXPECT_TRUE(query_graph.HasLocalWork());
+  EXPECT_FALSE(query_graph.ContainsUpdates());
+  EXPECT_TRUE(query_graph.ReadOnly());
+  EXPECT_TRUE(query_graph.CouldContainRead());
+
+  const auto covered = query_graph.CoveredIdsForPatterns();
+  EXPECT_TRUE(Contains(covered, "p"));
+  EXPECT_TRUE(Contains(covered, "a"));
+  EXPECT_TRUE(Contains(covered, "r"));
+  EXPECT_TRUE(Contains(covered, "b"));
+  EXPECT_FALSE(Contains(covered, "s"));
+  EXPECT_FALSE(Contains(covered, "c"));
+
+  const auto ids_without_optional =
+      query_graph.IdsWithoutOptionalMatchesOrUpdates();
+  EXPECT_TRUE(Contains(ids_without_optional, "a"));
+  EXPECT_TRUE(Contains(ids_without_optional, "b"));
+  EXPECT_FALSE(Contains(ids_without_optional, "c"));
+
+  const auto local_available = query_graph.LocalAvailableSymbols();
+  EXPECT_TRUE(Contains(local_available, "a"));
+  EXPECT_TRUE(Contains(local_available, "b"));
+  EXPECT_FALSE(Contains(local_available, "c"));
+
+  const auto available = query_graph.AvailableSymbols();
+  EXPECT_TRUE(Contains(available, "a"));
+  EXPECT_TRUE(Contains(available, "b"));
+  EXPECT_TRUE(Contains(available, "s"));
+  EXPECT_TRUE(Contains(available, "c"));
+
+  const auto all_covered = query_graph.AllCoveredIds();
+  EXPECT_TRUE(Contains(all_covered, "p"));
+  EXPECT_TRUE(Contains(all_covered, "r"));
+  EXPECT_TRUE(Contains(all_covered, "s"));
+  EXPECT_TRUE(Contains(all_covered, "c"));
+}
+
+TEST(PlannerQueryTest, QueryGraphApisSummarizeLabelsTypesAndProperties) {
+  auto statement = ParseOrFail(
+      "MATCH (a:Person {name: 'Alice'})-[r:KNOWS]->(b) "
+      "WHERE a.age > 30 AND r:FRIEND AND b.score = 7 "
+      "OPTIONAL MATCH (b:Company {size: 10})-[s:OWNS]->(c) "
+      "RETURN a, b, c");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::QueryGraph &query_graph =
+      planner_query->RequireSingle().query_graph;
+
+  const auto a_labels = query_graph.LabelsOnNode("a");
+  EXPECT_TRUE(Contains(a_labels, "Person"));
+  EXPECT_FALSE(Contains(a_labels, "Company"));
+
+  const auto r_types = query_graph.TypesOnRelationship("r");
+  EXPECT_TRUE(Contains(r_types, "KNOWS"));
+  EXPECT_TRUE(Contains(r_types, "FRIEND"));
+  EXPECT_FALSE(Contains(r_types, "OWNS"));
+
+  const auto a_properties = query_graph.KnownProperties("a");
+  EXPECT_TRUE(Contains(a_properties, "name"));
+  EXPECT_TRUE(Contains(a_properties, "age"));
+  EXPECT_FALSE(Contains(a_properties, "size"));
+
+  const auto b_labels = query_graph.AllPossibleLabelsOnNode("b");
+  EXPECT_TRUE(Contains(b_labels, "Company"));
+
+  const auto s_types = query_graph.AllPossibleTypesOnRelationship("s");
+  EXPECT_TRUE(Contains(s_types, "OWNS"));
+
+  const auto b_properties = query_graph.AllKnownPropertiesOnIdentifier("b");
+  EXPECT_TRUE(Contains(b_properties, "score"));
+  EXPECT_TRUE(Contains(b_properties, "size"));
+}
+
+TEST(PlannerQueryTest, QueryGraphApisFindConnectedComponents) {
+  auto statement =
+      ParseOrFail("MATCH (a)-[r]->(b), (c), (d)-[s]->(e) RETURN a, c, d");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::QueryGraph &query_graph =
+      planner_query->RequireSingle().query_graph;
+
+  const auto components = query_graph.ConnectedComponents();
+  ASSERT_EQ(components.size(), 3U);
+
+  auto ab_component = std::find_if(
+      components.begin(), components.end(), [](const auto &component) {
+        return Contains(component.pattern_nodes, "a") &&
+               Contains(component.pattern_nodes, "b");
+      });
+  ASSERT_NE(ab_component, components.end());
+  ASSERT_EQ(ab_component->pattern_relationship_indices.size(), 1U);
+  EXPECT_EQ(
+      query_graph
+          .pattern_relationships[ab_component->pattern_relationship_indices[0]]
+          .variable,
+      "r");
+  EXPECT_TRUE(Contains(ab_component->covered_ids, "a"));
+  EXPECT_TRUE(Contains(ab_component->covered_ids, "r"));
+  EXPECT_TRUE(Contains(ab_component->covered_ids, "b"));
+
+  auto c_component = std::find_if(
+      components.begin(), components.end(), [](const auto &component) {
+        return Contains(component.pattern_nodes, "c");
+      });
+  ASSERT_NE(c_component, components.end());
+  EXPECT_TRUE(c_component->pattern_relationship_indices.empty());
+  EXPECT_TRUE(Contains(c_component->covered_ids, "c"));
+
+  auto de_component = std::find_if(
+      components.begin(), components.end(), [](const auto &component) {
+        return Contains(component.pattern_nodes, "d") &&
+               Contains(component.pattern_nodes, "e");
+      });
+  ASSERT_NE(de_component, components.end());
+  ASSERT_EQ(de_component->pattern_relationship_indices.size(), 1U);
+  EXPECT_EQ(
+      query_graph
+          .pattern_relationships[de_component->pattern_relationship_indices[0]]
+          .variable,
+      "s");
+}
+
 TEST(PlannerQueryTest, AcceptsAnonymousPatternAfterRewrite) {
   auto statement = ParseOrFail("MATCH ()-[]->() RETURN 1");
   ASSERT_TRUE(statement);

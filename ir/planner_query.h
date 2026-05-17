@@ -116,6 +116,13 @@ struct MutatingPattern {
   std::vector<const ast::RemoveItem *> remove_items;
 };
 
+struct QueryGraphComponent {
+  std::unordered_set<LogicalVariable> pattern_nodes;
+  std::vector<std::size_t> pattern_relationship_indices;
+  std::unordered_set<LogicalVariable> covered_ids;
+  bool touches_arguments = false;
+};
+
 struct QueryGraph {
   std::unordered_set<LogicalVariable> pattern_paths;
   std::unordered_set<LogicalVariable> pattern_nodes;
@@ -125,6 +132,36 @@ struct QueryGraph {
   std::vector<QueryGraph> optional_matches;
   std::vector<Hint> hints;
   std::vector<MutatingPattern> mutating_patterns;
+
+  [[nodiscard]] bool HasLocalWork() const;
+  [[nodiscard]] bool ContainsUpdates() const;
+  [[nodiscard]] bool ReadOnly() const;
+  [[nodiscard]] bool CouldContainRead() const;
+
+  [[nodiscard]] std::unordered_set<LogicalVariable> CoveredIdsForPatterns()
+      const;
+  [[nodiscard]] std::unordered_set<LogicalVariable>
+  IdsWithoutOptionalMatchesOrUpdates() const;
+  [[nodiscard]] std::unordered_set<LogicalVariable> LocalAvailableSymbols()
+      const;
+  [[nodiscard]] std::unordered_set<LogicalVariable> AvailableSymbols() const;
+  [[nodiscard]] std::unordered_set<LogicalVariable> AllCoveredIds() const;
+  [[nodiscard]] std::unordered_set<LogicalVariable> Dependencies() const;
+
+  [[nodiscard]] std::unordered_set<std::string> LabelsOnNode(
+      std::string_view variable) const;
+  [[nodiscard]] std::unordered_set<std::string> TypesOnRelationship(
+      std::string_view variable) const;
+  [[nodiscard]] std::unordered_set<std::string> KnownProperties(
+      std::string_view variable) const;
+  [[nodiscard]] std::unordered_set<std::string> AllPossibleLabelsOnNode(
+      std::string_view variable) const;
+  [[nodiscard]] std::unordered_set<std::string> AllPossibleTypesOnRelationship(
+      std::string_view variable) const;
+  [[nodiscard]] std::unordered_set<std::string> AllKnownPropertiesOnIdentifier(
+      std::string_view variable) const;
+
+  [[nodiscard]] std::vector<QueryGraphComponent> ConnectedComponents() const;
 };
 
 struct ProjectionItem {

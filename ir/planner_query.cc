@@ -4,10 +4,12 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
+#include "ast/expression_dependency.h"
 #include "ast/expression_to_string.h"
 #include "ast/semantic_table.h"
 #include "common/exception.h"
@@ -219,6 +221,150 @@ void AddSymbols(std::unordered_set<std::string> *symbols,
                 const std::unordered_set<std::string> &incoming) {
   CHECK(symbols != nullptr, common::InternalError, "symbol set is null");
   symbols->insert(incoming.begin(), incoming.end());
+}
+
+void AddExpressionDependencySymbols(
+    std::unordered_set<std::string> *dependencies,
+    const ast::Expression *expression) {
+  CHECK(dependencies != nullptr, common::InternalError,
+        "dependency set is null");
+  if (expression == nullptr) {
+    return;
+  }
+  AddSymbols(dependencies, ast::CollectExpressionDependencies(*expression));
+}
+
+void AddPropertiesDependencySymbols(
+    std::unordered_set<std::string> *dependencies,
+    const ast::Properties *properties) {
+  CHECK(dependencies != nullptr, common::InternalError,
+        "dependency set is null");
+  if (properties == nullptr || properties->map == nullptr) {
+    return;
+  }
+  for (const auto &entry : properties->map->entries) {
+    AddExpressionDependencySymbols(dependencies, entry.second.get());
+  }
+}
+
+void AddNodePatternDependencySymbols(
+    std::unordered_set<std::string> *dependencies,
+    const ast::NodePattern *node) {
+  CHECK(dependencies != nullptr, common::InternalError,
+        "dependency set is null");
+  if (node == nullptr) {
+    return;
+  }
+  AddSymbol(dependencies, node->variable);
+  AddPropertiesDependencySymbols(dependencies, node->properties.get());
+}
+
+void AddRelationshipPatternDependencySymbols(
+    std::unordered_set<std::string> *dependencies,
+    const ast::RelationshipPattern *relationship) {
+  CHECK(dependencies != nullptr, common::InternalError,
+        "dependency set is null");
+  if (relationship == nullptr || relationship->detail == nullptr) {
+    return;
+  }
+  AddSymbol(dependencies, relationship->detail->variable);
+  AddPropertiesDependencySymbols(dependencies,
+                                 relationship->detail->properties.get());
+}
+
+void AddPatternElementDependencySymbols(
+    std::unordered_set<std::string> *dependencies,
+    const ast::PatternElement *element) {
+  CHECK(dependencies != nullptr, common::InternalError,
+        "dependency set is null");
+  if (element == nullptr) {
+    return;
+  }
+  AddNodePatternDependencySymbols(dependencies, element->node_pattern.get());
+  for (const auto &link : element->chain) {
+    AddRelationshipPatternDependencySymbols(dependencies, link.first.get());
+    AddNodePatternDependencySymbols(dependencies, link.second.get());
+  }
+}
+
+void AddPatternPartDependencySymbols(
+    std::unordered_set<std::string> *dependencies,
+    const ast::PatternPart *part) {
+  CHECK(dependencies != nullptr, common::InternalError,
+        "dependency set is null");
+  if (part == nullptr) {
+    return;
+  }
+  AddSymbol(dependencies, part->variable);
+  AddPatternElementDependencySymbols(dependencies, part->element.get());
+}
+
+void AddPatternDependencySymbols(std::unordered_set<std::string> *dependencies,
+                                 const ast::Pattern *pattern) {
+  CHECK(dependencies != nullptr, common::InternalError,
+        "dependency set is null");
+  if (pattern == nullptr) {
+    return;
+  }
+  for (const auto &part : pattern->parts) {
+    AddPatternPartDependencySymbols(dependencies, part.get());
+  }
+}
+
+void AddSetDependencySymbols(std::unordered_set<std::string> *dependencies,
+                             const ast::Set *set) {
+  CHECK(dependencies != nullptr, common::InternalError,
+        "dependency set is null");
+  if (set == nullptr) {
+    return;
+  }
+  for (const auto &item : set->items) {
+    if (item == nullptr) {
+      continue;
+    }
+    AddExpressionDependencySymbols(dependencies, item->target.get());
+    AddExpressionDependencySymbols(dependencies, item->value.get());
+  }
+}
+
+std::unordered_set<std::string> MutatingPatternDependencies(
+    const MutatingPattern &mutating_pattern) {
+  std::unordered_set<std::string> dependencies;
+  switch (mutating_pattern.kind) {
+    case MutatingPatternKind::kCreate:
+      AddPatternDependencySymbols(&dependencies, mutating_pattern.pattern);
+      break;
+    case MutatingPatternKind::kMerge:
+      AddPatternPartDependencySymbols(&dependencies,
+                                      mutating_pattern.pattern_part);
+      for (const auto &action : mutating_pattern.merge_actions) {
+        AddSetDependencySymbols(&dependencies, action.set);
+      }
+      break;
+    case MutatingPatternKind::kSet:
+      for (const auto *item : mutating_pattern.set_items) {
+        if (item == nullptr) {
+          continue;
+        }
+        AddExpressionDependencySymbols(&dependencies, item->target.get());
+        AddExpressionDependencySymbols(&dependencies, item->value.get());
+      }
+      break;
+    case MutatingPatternKind::kDelete:
+      for (const auto *expression : mutating_pattern.delete_expressions) {
+        AddExpressionDependencySymbols(&dependencies, expression);
+      }
+      break;
+    case MutatingPatternKind::kRemove:
+      for (const auto *item : mutating_pattern.remove_items) {
+        if (item == nullptr) {
+          continue;
+        }
+        AddExpressionDependencySymbols(&dependencies, item->target.get());
+      }
+      break;
+  }
+  return dependencies;
 }
 
 std::unordered_set<std::string> IntersectSymbols(
@@ -602,6 +748,252 @@ bool Selections::ContainsPropertyPredicate(
   return false;
 }
 
+bool QueryGraph::HasLocalWork() const {
+  return !pattern_paths.empty() || !pattern_nodes.empty() ||
+         !pattern_relationships.empty() || !selections.empty() ||
+         !optional_matches.empty() || !hints.empty() ||
+         !mutating_patterns.empty();
+}
+
+bool QueryGraph::ContainsUpdates() const {
+  if (!mutating_patterns.empty()) {
+    return true;
+  }
+  for (const auto &optional_match : optional_matches) {
+    if (optional_match.ContainsUpdates()) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool QueryGraph::ReadOnly() const { return !ContainsUpdates(); }
+
+bool QueryGraph::CouldContainRead() const {
+  if (!pattern_paths.empty() || !pattern_nodes.empty() ||
+      !pattern_relationships.empty() || !selections.empty()) {
+    return true;
+  }
+  for (const auto &optional_match : optional_matches) {
+    if (optional_match.CouldContainRead()) {
+      return true;
+    }
+  }
+  return false;
+}
+
+std::unordered_set<LogicalVariable> QueryGraph::CoveredIdsForPatterns() const {
+  std::unordered_set<LogicalVariable> symbols = pattern_paths;
+  AddSymbols(&symbols, pattern_nodes);
+  for (const auto &relationship : pattern_relationships) {
+    AddSymbol(&symbols, relationship.variable);
+    AddSymbol(&symbols, relationship.left_node);
+    AddSymbol(&symbols, relationship.right_node);
+  }
+  return symbols;
+}
+
+std::unordered_set<LogicalVariable>
+QueryGraph::IdsWithoutOptionalMatchesOrUpdates() const {
+  std::unordered_set<LogicalVariable> symbols = CoveredIdsForPatterns();
+  AddSymbols(&symbols, argument_ids);
+  return symbols;
+}
+
+std::unordered_set<LogicalVariable> QueryGraph::LocalAvailableSymbols() const {
+  return QueryGraphLocalAvailableSymbols(*this);
+}
+
+std::unordered_set<LogicalVariable> QueryGraph::AvailableSymbols() const {
+  return QueryGraphAvailableSymbols(*this);
+}
+
+std::unordered_set<LogicalVariable> QueryGraph::AllCoveredIds() const {
+  std::unordered_set<LogicalVariable> symbols =
+      IdsWithoutOptionalMatchesOrUpdates();
+  for (const auto &optional_match : optional_matches) {
+    AddSymbols(&symbols, optional_match.AllCoveredIds());
+  }
+  for (const auto &mutating_pattern : mutating_patterns) {
+    AddSymbols(&symbols, MutatingPatternAvailableSymbols(mutating_pattern));
+  }
+  return symbols;
+}
+
+std::unordered_set<LogicalVariable> QueryGraph::Dependencies() const {
+  std::unordered_set<LogicalVariable> dependencies = argument_ids;
+  AddSymbols(&dependencies, CoveredIdsForPatterns());
+  for (const auto &predicate : selections.predicates) {
+    AddSymbols(&dependencies, predicate.dependencies);
+  }
+  for (const auto &optional_match : optional_matches) {
+    AddSymbols(&dependencies, optional_match.Dependencies());
+  }
+  for (const auto &mutating_pattern : mutating_patterns) {
+    AddSymbols(&dependencies, MutatingPatternDependencies(mutating_pattern));
+  }
+  return dependencies;
+}
+
+std::unordered_set<std::string> QueryGraph::LabelsOnNode(
+    std::string_view variable) const {
+  std::unordered_set<std::string> labels;
+  for (const auto *predicate : selections.NodeLabelPredicates(variable)) {
+    for (const auto &label : predicate->labels) {
+      labels.insert(label);
+    }
+  }
+  return labels;
+}
+
+std::unordered_set<std::string> QueryGraph::TypesOnRelationship(
+    std::string_view variable) const {
+  std::unordered_set<std::string> types;
+  for (const auto &relationship : pattern_relationships) {
+    if (!StringEquals(relationship.variable, variable)) {
+      continue;
+    }
+    for (const auto &type : relationship.types) {
+      types.insert(type);
+    }
+  }
+  for (const auto *predicate :
+       selections.RelationshipTypePredicates(variable)) {
+    for (const auto &type : predicate->relationship_types) {
+      types.insert(type);
+    }
+  }
+  return types;
+}
+
+std::unordered_set<std::string> QueryGraph::KnownProperties(
+    std::string_view variable) const {
+  std::unordered_set<std::string> properties;
+  for (const auto &predicate : selections.predicates) {
+    if (IsPropertyPredicateKind(predicate.kind) &&
+        StringEquals(predicate.variable, variable) &&
+        !predicate.property_key.empty()) {
+      properties.insert(predicate.property_key);
+    }
+  }
+  return properties;
+}
+
+std::unordered_set<std::string> QueryGraph::AllPossibleLabelsOnNode(
+    std::string_view variable) const {
+  std::unordered_set<std::string> labels = LabelsOnNode(variable);
+  for (const auto &optional_match : optional_matches) {
+    AddSymbols(&labels, optional_match.AllPossibleLabelsOnNode(variable));
+  }
+  return labels;
+}
+
+std::unordered_set<std::string> QueryGraph::AllPossibleTypesOnRelationship(
+    std::string_view variable) const {
+  std::unordered_set<std::string> types = TypesOnRelationship(variable);
+  for (const auto &optional_match : optional_matches) {
+    AddSymbols(&types, optional_match.AllPossibleTypesOnRelationship(variable));
+  }
+  return types;
+}
+
+std::unordered_set<std::string> QueryGraph::AllKnownPropertiesOnIdentifier(
+    std::string_view variable) const {
+  std::unordered_set<std::string> properties = KnownProperties(variable);
+  for (const auto &optional_match : optional_matches) {
+    AddSymbols(&properties,
+               optional_match.AllKnownPropertiesOnIdentifier(variable));
+  }
+  return properties;
+}
+
+std::vector<QueryGraphComponent> QueryGraph::ConnectedComponents() const {
+  std::unordered_set<LogicalVariable> all_nodes = pattern_nodes;
+  std::unordered_map<LogicalVariable, std::vector<std::size_t>>
+      relationship_indices_by_node;
+  for (std::size_t i = 0; i < pattern_relationships.size(); ++i) {
+    const auto &relationship = pattern_relationships[i];
+    AddSymbol(&all_nodes, relationship.left_node);
+    AddSymbol(&all_nodes, relationship.right_node);
+    if (!relationship.left_node.empty()) {
+      relationship_indices_by_node[relationship.left_node].push_back(i);
+    }
+    if (!relationship.right_node.empty() &&
+        relationship.right_node != relationship.left_node) {
+      relationship_indices_by_node[relationship.right_node].push_back(i);
+    }
+  }
+
+  std::vector<LogicalVariable> start_nodes(all_nodes.begin(), all_nodes.end());
+  std::sort(start_nodes.begin(), start_nodes.end());
+
+  std::unordered_set<LogicalVariable> visited_nodes;
+  std::unordered_set<std::size_t> visited_relationships;
+  std::vector<QueryGraphComponent> components;
+
+  auto add_covered_id = [&](QueryGraphComponent *component,
+                            const LogicalVariable &symbol) {
+    CHECK(component != nullptr, common::InternalError,
+          "query graph component is null");
+    AddSymbol(&component->covered_ids, symbol);
+    if (!symbol.empty() && argument_ids.contains(symbol)) {
+      component->touches_arguments = true;
+    }
+  };
+
+  auto build_component = [&](const LogicalVariable &start_node) {
+    QueryGraphComponent component;
+    std::vector<LogicalVariable> stack;
+    stack.push_back(start_node);
+    while (!stack.empty()) {
+      const LogicalVariable node = stack.back();
+      stack.pop_back();
+      if (!visited_nodes.insert(node).second) {
+        continue;
+      }
+      AddSymbol(&component.pattern_nodes, node);
+      add_covered_id(&component, node);
+
+      const auto found = relationship_indices_by_node.find(node);
+      if (found == relationship_indices_by_node.end()) {
+        continue;
+      }
+      for (std::size_t relationship_index : found->second) {
+        if (!visited_relationships.insert(relationship_index).second) {
+          continue;
+        }
+        component.pattern_relationship_indices.push_back(relationship_index);
+        const auto &relationship = pattern_relationships[relationship_index];
+        add_covered_id(&component, relationship.variable);
+        if (!relationship.left_node.empty() &&
+            !visited_nodes.contains(relationship.left_node)) {
+          stack.push_back(relationship.left_node);
+        }
+        if (!relationship.right_node.empty() &&
+            !visited_nodes.contains(relationship.right_node)) {
+          stack.push_back(relationship.right_node);
+        }
+      }
+    }
+    std::sort(component.pattern_relationship_indices.begin(),
+              component.pattern_relationship_indices.end());
+    components.push_back(std::move(component));
+  };
+
+  for (const auto &node : start_nodes) {
+    if (argument_ids.contains(node) && !visited_nodes.contains(node)) {
+      build_component(node);
+    }
+  }
+  for (const auto &node : start_nodes) {
+    if (!visited_nodes.contains(node)) {
+      build_component(node);
+    }
+  }
+
+  return components;
+}
+
 class PatternConverter {
  public:
   explicit PatternConverter(QueryGraph *graph) : graph_(graph) {
@@ -715,12 +1107,7 @@ class QueryGraphBuilder {
     graph_.mutating_patterns.push_back(BuildMutatingPattern(clause));
   }
 
-  [[nodiscard]] bool HasLocalWork() const {
-    return !graph_.pattern_paths.empty() || !graph_.pattern_nodes.empty() ||
-           !graph_.pattern_relationships.empty() ||
-           !graph_.selections.empty() || !graph_.optional_matches.empty() ||
-           !graph_.hints.empty() || !graph_.mutating_patterns.empty();
-  }
+  [[nodiscard]] bool HasLocalWork() const { return graph_.HasLocalWork(); }
 
   void BuildMatch(const ast::Match &match) {
     if (match.optional_match) {
