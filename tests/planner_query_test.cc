@@ -14,6 +14,7 @@
 #include "ast/ast_exception.h"
 #include "ast/expression_to_string.h"
 #include "common/exception.h"
+#include "ir/planner_query_printer.h"
 
 namespace {
 
@@ -47,7 +48,253 @@ SelectionDependenciesByExpression(const ir::QueryGraph &query_graph) {
   return result;
 }
 
+void ExpectPlannerQueryText(const std::string &query,
+                            const std::string &expected) {
+  auto statement = ParseOrFail(query);
+  ASSERT_TRUE(statement);
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  EXPECT_EQ(ir::PlannerQueryToString(*planner_query), expected);
+}
+
 }  // namespace
+
+TEST(PlannerQueryPrinterTest, DumpsSimpleMatch) {
+  ExpectPlannerQueryText("MATCH (n) RETURN n", R"(SinglePlannerQuery
+  query_graph:
+    argument_ids: []
+    pattern_nodes: [n]
+    pattern_relationships:
+      []
+    selections:
+      []
+    optional_matches: 0
+    hints: 0
+    mutating_patterns: 0
+  horizon:
+    projection:
+      distinct: false
+      items:
+        - alias: n
+          expression: n
+      order_by:
+        []
+      where: null
+      skip: null
+      limit: null
+  tail:
+    null
+)");
+}
+
+TEST(PlannerQueryPrinterTest, DumpsInlineNodePredicateSelection) {
+  ExpectPlannerQueryText("MATCH (n:Person) RETURN n", R"(SinglePlannerQuery
+  query_graph:
+    argument_ids: []
+    pattern_nodes: [n]
+    pattern_relationships:
+      []
+    selections:
+      - kind: node_label
+        expression: n:Person
+        dependencies: [n]
+        variable: n
+        labels: [Person]
+    optional_matches: 0
+    hints: 0
+    mutating_patterns: 0
+  horizon:
+    projection:
+      distinct: false
+      items:
+        - alias: n
+          expression: n
+      order_by:
+        []
+      where: null
+      skip: null
+      limit: null
+  tail:
+    null
+)");
+}
+
+TEST(PlannerQueryPrinterTest, DumpsRelationshipPatternAndTypeSelection) {
+  ExpectPlannerQueryText("MATCH (a)-[r:KNOWS]->(b) RETURN a, b",
+                         R"(SinglePlannerQuery
+  query_graph:
+    argument_ids: []
+    pattern_nodes: [a, b]
+    pattern_relationships:
+      - variable: r
+        left_node: a
+        right_node: b
+        direction: outgoing
+        types: []
+        length: fixed(1)
+    selections:
+      - kind: relationship_type
+        expression: r:KNOWS
+        dependencies: [r]
+        variable: r
+        relationship_types: [KNOWS]
+    optional_matches: 0
+    hints: 0
+    mutating_patterns: 0
+  horizon:
+    projection:
+      distinct: false
+      items:
+        - alias: a
+          expression: a
+        - alias: b
+          expression: b
+      order_by:
+        []
+      where: null
+      skip: null
+      limit: null
+  tail:
+    null
+)");
+}
+
+TEST(PlannerQueryPrinterTest, DumpsVariableLengthRelationship) {
+  ExpectPlannerQueryText("MATCH (a)-[r*1..3]->(b) RETURN r",
+                         R"(SinglePlannerQuery
+  query_graph:
+    argument_ids: []
+    pattern_nodes: [a, b]
+    pattern_relationships:
+      - variable: r
+        left_node: a
+        right_node: b
+        direction: outgoing
+        types: []
+        length: variable(1..3)
+    selections:
+      - kind: generic_expression
+        expression: ALL(__uniq_rel_0 IN r WHERE SINGLE(__uniq_rel_1 IN r WHERE __uniq_rel_0 = __uniq_rel_1))
+        dependencies: [r]
+    optional_matches: 0
+    hints: 0
+    mutating_patterns: 0
+  horizon:
+    projection:
+      distinct: false
+      items:
+        - alias: r
+          expression: r
+      order_by:
+        []
+      where: null
+      skip: null
+      limit: null
+  tail:
+    null
+)");
+}
+
+TEST(PlannerQueryPrinterTest, DumpsUnwindTail) {
+  ExpectPlannerQueryText("UNWIND [1, 2] AS x RETURN x", R"(SinglePlannerQuery
+  query_graph:
+    argument_ids: []
+    pattern_nodes: []
+    pattern_relationships:
+      []
+    selections:
+      []
+    optional_matches: 0
+    hints: 0
+    mutating_patterns: 0
+  horizon:
+    unwind:
+      expression: [1, 2]
+      alias: x
+  tail:
+    SinglePlannerQuery
+      query_graph:
+        argument_ids: [x]
+        pattern_nodes: []
+        pattern_relationships:
+          []
+        selections:
+          []
+        optional_matches: 0
+        hints: 0
+        mutating_patterns: 0
+      horizon:
+        projection:
+          distinct: false
+          items:
+            - alias: x
+              expression: x
+          order_by:
+            []
+          where: null
+          skip: null
+          limit: null
+      tail:
+        null
+)");
+}
+
+TEST(PlannerQueryPrinterTest, DumpsUnionAll) {
+  ExpectPlannerQueryText("RETURN 1 AS x UNION ALL RETURN 2 AS x",
+                         R"(UnionPlannerQuery
+  all: true
+  lhs:
+    SinglePlannerQuery
+      query_graph:
+        argument_ids: []
+        pattern_nodes: []
+        pattern_relationships:
+          []
+        selections:
+          []
+        optional_matches: 0
+        hints: 0
+        mutating_patterns: 0
+      horizon:
+        projection:
+          distinct: false
+          items:
+            - alias: x
+              expression: 1
+          order_by:
+            []
+          where: null
+          skip: null
+          limit: null
+      tail:
+        null
+  rhs:
+    SinglePlannerQuery
+      query_graph:
+        argument_ids: []
+        pattern_nodes: []
+        pattern_relationships:
+          []
+        selections:
+          []
+        optional_matches: 0
+        hints: 0
+        mutating_patterns: 0
+      horizon:
+        projection:
+          distinct: false
+          items:
+            - alias: x
+              expression: 2
+          order_by:
+            []
+          where: null
+          skip: null
+          limit: null
+      tail:
+        null
+)");
+}
 
 TEST(PlannerQueryTest, BuildsGraphFromMatch) {
   auto statement = ParseOrFail(

@@ -127,8 +127,8 @@ target_include_directories(rg-server PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 set_target_properties(rg-server PROPERTIES BUILD_RPATH "/usr/local/lib")
 
 add_executable(
-  ast_dump
-  tools/ast_dump.cc
+  cypher_dump
+  tools/cypher_dump.cc
   ast/ast_builder.cc
   ast/ast_clone.cc
   ast/ast_const_walker.cc
@@ -151,11 +151,13 @@ add_executable(
   ast/rewriters/return_star_rewriter.cc
   ast/rewriters/rewriter_registry.cc
   ast/rewriters/rewriter_pipeline.cc
+  ir/planner_query.cc
+  ir/planner_query_printer.cc
   ${GENERATED_SOURCES})
-target_include_directories(ast_dump PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(ast_dump ANTLR4Runtime::antlr4_runtime ${GFLAGS_TARGET}
-                      ${SPDLOG_TARGET})
-set_target_properties(ast_dump PROPERTIES BUILD_RPATH "/usr/local/lib")
+target_include_directories(cypher_dump PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(cypher_dump ANTLR4Runtime::antlr4_runtime
+                      ${GFLAGS_TARGET} ${SPDLOG_TARGET})
+set_target_properties(cypher_dump PROPERTIES BUILD_RPATH "/usr/local/lib")
 
 enable_testing()
 find_package(GTest REQUIRED)
@@ -279,6 +281,7 @@ add_executable(
   planner_query_test
   tests/planner_query_test.cc
   ir/planner_query.cc
+  ir/planner_query_printer.cc
   ast/ast_builder.cc
   ast/ast_clone.cc
   ast/ast_const_walker.cc
