@@ -171,6 +171,9 @@ class PlannerQueryPrinter {
     Line("query_graph:");
     Indent();
     Line("argument_ids: " + SortedList(query_graph.argument_ids));
+    if (!query_graph.pattern_paths.empty()) {
+      Line("pattern_paths: " + SortedList(query_graph.pattern_paths));
+    }
     Line("pattern_nodes: " + SortedList(query_graph.pattern_nodes));
     PrintRelationships(query_graph.pattern_relationships);
     PrintSelections(query_graph.selections);

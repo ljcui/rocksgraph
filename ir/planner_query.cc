@@ -99,6 +99,8 @@ const ast::ExistentialSubquery *AsExistentialSubquery(
 std::unordered_set<std::string> QueryGraphLocalAvailableSymbols(
     const QueryGraph &query_graph) {
   std::unordered_set<std::string> symbols = query_graph.argument_ids;
+  symbols.insert(query_graph.pattern_paths.begin(),
+                 query_graph.pattern_paths.end());
   symbols.insert(query_graph.pattern_nodes.begin(),
                  query_graph.pattern_nodes.end());
   for (const auto &relationship : query_graph.pattern_relationships) {
@@ -552,7 +554,7 @@ class PatternConverter {
  private:
   void AddPatternPart(const ast::PatternPart &part) {
     if (!part.variable.empty()) {
-      THROW(common::InvalidArgumentError, Unsupported("named path"));
+      graph_->pattern_paths.insert(part.variable);
     }
     CHECK(part.element != nullptr, common::InvalidArgumentError,
           Missing("pattern element"));
@@ -1031,6 +1033,7 @@ class PlannerQueryBuilder {
   std::unordered_set<std::string> QueryGraphDependencies(
       const QueryGraph &query_graph) const {
     std::unordered_set<std::string> dependencies;
+    AddSymbols(&dependencies, query_graph.pattern_paths);
     AddSymbols(&dependencies, query_graph.pattern_nodes);
     for (const auto &relationship : query_graph.pattern_relationships) {
       AddSymbol(&dependencies, relationship.variable);

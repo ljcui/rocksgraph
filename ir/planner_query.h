@@ -93,6 +93,7 @@ struct Hint {};
 struct MutatingPattern {};
 
 struct QueryGraph {
+  std::unordered_set<LogicalVariable> pattern_paths;
   std::unordered_set<LogicalVariable> pattern_nodes;
   std::vector<PatternRelationship> pattern_relationships;
   std::unordered_set<LogicalVariable> argument_ids;

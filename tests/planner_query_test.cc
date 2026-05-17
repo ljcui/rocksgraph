@@ -640,6 +640,48 @@ TEST(PlannerQueryTest, BuildsGraphFromMatch) {
   EXPECT_EQ(planner_query->Kind(), ir::PlannerQueryKind::kSingle);
 }
 
+TEST(PlannerQueryTest, BuildsNamedPathBinding) {
+  auto statement = ParseOrFail("MATCH p = (a)-[r]->(b) RETURN p");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::SinglePlannerQuery &main = planner_query->RequireSingle();
+
+  EXPECT_TRUE(Contains(main.query_graph.pattern_paths, "p"));
+  EXPECT_TRUE(Contains(main.query_graph.pattern_nodes, "a"));
+  EXPECT_TRUE(Contains(main.query_graph.pattern_nodes, "b"));
+  ASSERT_EQ(main.query_graph.pattern_relationships.size(), 1U);
+  EXPECT_EQ(main.query_graph.pattern_relationships[0].variable, "r");
+
+  ASSERT_EQ(main.horizon.kind, ir::QueryHorizonKind::kRegularProjection);
+  const ir::RegularQueryProjection &projection =
+      main.horizon.RequireRegularProjection();
+  ASSERT_EQ(projection.items.size(), 1U);
+  EXPECT_EQ(projection.items[0].alias, "p");
+  ASSERT_NE(projection.items[0].expression, nullptr);
+  EXPECT_EQ(ast::ExpressionToString(*projection.items[0].expression), "p");
+}
+
+TEST(PlannerQueryTest, NarrowsNamedPathTailArgumentIds) {
+  auto statement = ParseOrFail(
+      "MATCH p = (a)-[r]->(b) WITH p, 1 AS unused "
+      "MATCH (c) RETURN p, c");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::SinglePlannerQuery &first = planner_query->RequireSingle();
+  ASSERT_TRUE(first.tail);
+  const ir::SinglePlannerQuery &second = *first.tail;
+
+  EXPECT_TRUE(Contains(second.query_graph.argument_ids, "p"));
+  EXPECT_FALSE(Contains(second.query_graph.argument_ids, "unused"));
+  EXPECT_FALSE(Contains(second.query_graph.argument_ids, "a"));
+  EXPECT_FALSE(Contains(second.query_graph.argument_ids, "r"));
+  EXPECT_FALSE(Contains(second.query_graph.argument_ids, "b"));
+}
+
 TEST(PlannerQueryTest, BuildsRegularProjectionHorizon) {
   auto statement = ParseOrFail("MATCH (n) RETURN n");
   ASSERT_TRUE(statement);
