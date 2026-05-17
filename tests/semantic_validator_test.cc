@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <string>
+#include <vector>
 
 #include "ast/ast_builder.h"
 #include "ast/ast_exception.h"
@@ -11,6 +12,18 @@ namespace {
 bool HasError(const std::vector<std::string> &errors,
               const std::string &expected) {
   return std::find(errors.begin(), errors.end(), expected) != errors.end();
+}
+
+void ExpectSemanticError(const std::string &query,
+                         const std::string &expected_error) {
+  try {
+    (void)ast::ParseCypher(query);
+    FAIL() << "expected semantic error";
+  } catch (const ast::SemanticError &e) {
+    EXPECT_TRUE(HasError(e.Errors(), expected_error));
+  } catch (const ast::ParseError &e) {
+    FAIL() << "unexpected parse error: " << e.what();
+  }
 }
 
 }  // namespace
@@ -81,4 +94,41 @@ TEST(SemanticValidatorTest, RejectsUnionMismatchAfterReturnStarRewrite) {
   } catch (const ast::ParseError &e) {
     FAIL() << "unexpected parse error: " << e.what();
   }
+}
+
+TEST(SemanticValidatorTest, AllowsTopLevelAggregationProjectionItems) {
+  EXPECT_NO_THROW(ast::ParseCypher("MATCH (n) RETURN n, count(*) AS c"));
+  EXPECT_NO_THROW(ast::ParseCypher("MATCH (n) RETURN count(n) AS c"));
+}
+
+TEST(SemanticValidatorTest, RejectsMixedAggregationProjectionExpression) {
+  ExpectSemanticError("MATCH (n) RETURN n + count(*) AS bad",
+                      "aggregation must be a top-level projection item");
+}
+
+TEST(SemanticValidatorTest, RejectsNestedAggregation) {
+  ExpectSemanticError("MATCH (n) RETURN count(sum(n.age)) AS bad",
+                      "nested aggregation is not allowed");
+}
+
+TEST(SemanticValidatorTest, RejectsAggregationInWhere) {
+  ExpectSemanticError("MATCH (n) WHERE count(n) > 1 RETURN n",
+                      "WHERE cannot contain aggregation");
+}
+
+TEST(SemanticValidatorTest, RejectsAggregationInWithWhere) {
+  ExpectSemanticError("MATCH (n) WITH n WHERE count(n) > 1 RETURN n",
+                      "WHERE cannot contain aggregation");
+}
+
+TEST(SemanticValidatorTest, RejectsAggregationInOrderBy) {
+  ExpectSemanticError("MATCH (n) RETURN n ORDER BY count(n)",
+                      "ORDER BY cannot contain aggregation");
+}
+
+TEST(SemanticValidatorTest, RejectsAggregationInPagination) {
+  ExpectSemanticError("RETURN 1 AS x SKIP count(x)",
+                      "SKIP cannot contain aggregation");
+  ExpectSemanticError("RETURN 1 AS x LIMIT count(x)",
+                      "LIMIT cannot contain aggregation");
 }

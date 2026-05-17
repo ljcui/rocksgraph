@@ -1,7 +1,9 @@
 #include "semantic_validator.h"
 
+#include <cctype>
 #include <optional>
 #include <ranges>
+#include <string_view>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -13,6 +15,93 @@
 
 namespace ast {
 namespace {
+
+std::string LowerAscii(std::string_view input) {
+  std::string out;
+  out.reserve(input.size());
+  for (char ch : input) {
+    out.push_back(
+        static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
+  }
+  return out;
+}
+
+bool IsAggregateFunction(std::string_view function_name) {
+  const std::string name = LowerAscii(function_name);
+  static const std::unordered_set<std::string> aggregates = {
+      "avg",
+      "collect",
+      "count",
+      "max",
+      "min",
+      "percentilecont",
+      "percentiledisc",
+      "stdev",
+      "stdevp",
+      "sum",
+  };
+  return aggregates.contains(name);
+}
+
+Expression *UnwrapParenthesized(Expression *expression) {
+  Expression *unwrapped = expression;
+  while (unwrapped != nullptr &&
+         unwrapped->Is(ASTNodeType::kParenthesizedExpression)) {
+    auto *parenthesized = CastAst<ParenthesizedExpression>(unwrapped);
+    CHECK(parenthesized->expr != nullptr, common::InternalError,
+          "parenthesized expression is null");
+    unwrapped = parenthesized->expr.get();
+  }
+  return unwrapped;
+}
+
+class AggregationScanner final : public ASTWalker {
+ public:
+  bool Scan(Expression &expression) {
+    contains_ = false;
+    expression.Accept(*this);
+    return contains_;
+  }
+
+ protected:
+  void Visit(FunctionInvocation &node) override {
+    if (IsAggregateFunction(node.function_name)) {
+      contains_ = true;
+    }
+    ASTWalker::Visit(node);
+  }
+
+  void Visit(CountStarExpression &node) override {
+    (void)node;
+    contains_ = true;
+  }
+
+ private:
+  bool contains_ = false;
+};
+
+bool ContainsAggregation(Expression *expression) {
+  if (expression == nullptr) {
+    return false;
+  }
+  AggregationScanner scanner;
+  return scanner.Scan(*expression);
+}
+
+bool IsTopLevelAggregation(Expression *expression) {
+  Expression *unwrapped = UnwrapParenthesized(expression);
+  if (unwrapped == nullptr) {
+    return false;
+  }
+  if (unwrapped->Is(ASTNodeType::kCountStarExpression)) {
+    return true;
+  }
+  if (!unwrapped->Is(ASTNodeType::kFunctionInvocation)) {
+    return false;
+  }
+  const auto *function = CastAst<FunctionInvocation>(unwrapped);
+  return IsAggregateFunction(function->function_name);
+}
 
 const ProjectionBody *TerminalProjectionBody(const SingleQuery &query) {
   switch (query.node_type) {
@@ -77,6 +166,9 @@ class SemanticValidator : public ASTWalker {
     scope_stack_.clear();
     scope_stack_.emplace_back();
     reported_.clear();
+    reported_semantic_errors_.clear();
+    allow_any_depth_ = 0;
+    aggregation_depth_ = 0;
     Walk(node);
     scope_stack_.clear();
   }
@@ -116,6 +208,7 @@ class SemanticValidator : public ASTWalker {
       if (node.yield_star) {
         allow_any_depth_++;
       }
+      ValidateNoAggregation(node.yield_where.get(), "YIELD WHERE");
       WalkMaybe(node.yield_where);
       if (node.yield_star) {
         allow_any_depth_--;
@@ -130,7 +223,9 @@ class SemanticValidator : public ASTWalker {
     if (node.pattern) {
       CollectFromPattern(*node.pattern, CurrentScope());
     }
-    ASTWalker::Visit(node);
+    WalkMaybe(node.pattern);
+    ValidateNoAggregation(node.where.get(), "WHERE");
+    WalkMaybe(node.where);
   }
 
   void Visit(Unwind &node) override {
@@ -148,6 +243,7 @@ class SemanticValidator : public ASTWalker {
 
     if (node.yield_where) {
       PushScope(yield_scope);
+      ValidateNoAggregation(node.yield_where.get(), "YIELD WHERE");
       WalkMaybe(node.yield_where);
       PopScope();
     }
@@ -170,6 +266,7 @@ class SemanticValidator : public ASTWalker {
   }
 
   void Visit(ProjectionBody &node) override {
+    ValidateProjectionAggregations(node);
     const Scope pre = CurrentScope();
     for (auto &item : node.items) {
       WalkMaybe(item);
@@ -179,8 +276,11 @@ class SemanticValidator : public ASTWalker {
     const Scope order_scope = MergeScopes(pre, projected);
 
     PushScope(order_scope);
+    ValidateNoAggregation(node.order_by, "ORDER BY");
     WalkList(node.order_by);
+    ValidateNoAggregation(node.skip.get(), "SKIP");
     WalkMaybe(node.skip);
+    ValidateNoAggregation(node.limit.get(), "LIMIT");
     WalkMaybe(node.limit);
     PopScope();
   }
@@ -192,6 +292,7 @@ class SemanticValidator : public ASTWalker {
 
     const Scope projected = ScopeFromProjection(*node.body, pre);
     ReplaceCurrentScope(projected);
+    ValidateNoAggregation(node.where.get(), "WHERE");
     WalkMaybe(node.where);
   }
 
@@ -256,6 +357,27 @@ class SemanticValidator : public ASTWalker {
     }
     if (!IsDefined(node.name)) {
       ReportUndefined(node.name);
+    }
+  }
+
+  void Visit(FunctionInvocation &node) override {
+    const bool aggregate = IsAggregateFunction(node.function_name);
+    if (aggregate && aggregation_depth_ > 0) {
+      ReportSemantic("nested aggregation is not allowed");
+    }
+    if (aggregate) {
+      ++aggregation_depth_;
+    }
+    ASTWalker::Visit(node);
+    if (aggregate) {
+      --aggregation_depth_;
+    }
+  }
+
+  void Visit(CountStarExpression &node) override {
+    (void)node;
+    if (aggregation_depth_ > 0) {
+      ReportSemantic("nested aggregation is not allowed");
     }
   }
 
@@ -334,6 +456,41 @@ class SemanticValidator : public ASTWalker {
   void ReportUndefined(const std::string &name) {
     if (reported_.insert(name).second) {
       errors_.push_back("undefined variable: " + name);
+    }
+  }
+
+  void ReportSemantic(std::string message) {
+    if (reported_semantic_errors_.insert(message).second) {
+      errors_.push_back(std::move(message));
+    }
+  }
+
+  void ValidateNoAggregation(Expression *expression, std::string_view context) {
+    if (ContainsAggregation(expression)) {
+      ReportSemantic(std::string(context) + " cannot contain aggregation");
+    }
+  }
+
+  void ValidateNoAggregation(
+      const std::vector<std::unique_ptr<SortItem>> &items,
+      std::string_view context) {
+    for (const auto &item : items) {
+      if (item) {
+        ValidateNoAggregation(item->expression.get(), context);
+      }
+    }
+  }
+
+  void ValidateProjectionAggregations(ProjectionBody &body) {
+    for (const auto &item : body.items) {
+      if (!item || !item->expression) {
+        continue;
+      }
+      Expression *expression = item->expression.get();
+      if (ContainsAggregation(expression) &&
+          !IsTopLevelAggregation(expression)) {
+        ReportSemantic("aggregation must be a top-level projection item");
+      }
     }
   }
 
@@ -424,8 +581,10 @@ class SemanticValidator : public ASTWalker {
 
   std::vector<Scope> scope_stack_;
   std::unordered_set<std::string> reported_;
+  std::unordered_set<std::string> reported_semantic_errors_;
   std::vector<std::string> &errors_;
   int allow_any_depth_ = 0;
+  int aggregation_depth_ = 0;
 };
 
 }  // namespace
