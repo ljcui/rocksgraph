@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -182,8 +183,13 @@ TEST(SemanticTableTest, UsesProcedureSignaturePlaceholdersForYieldTypes) {
 
   EXPECT_EQ(table.KnownProcedureYieldType("db.labels", "label"),
             ast::SemanticVariableType::kScalar);
+  EXPECT_EQ(table.KnownProcedureYieldFields("db.labels"),
+            std::vector<std::string>({"label"}));
+  EXPECT_EQ(table.KnownProcedureReadOnly("db.labels"),
+            std::optional<bool>(true));
   EXPECT_FALSE(
       table.KnownProcedureYieldType("db.labels", "missing").has_value());
+  EXPECT_FALSE(table.KnownProcedureReadOnly("db.unknown").has_value());
   EXPECT_FALSE(
       table.KnownProcedureYieldType("db.unknown", "label").has_value());
   EXPECT_EQ(table.VariableType("labelName"),

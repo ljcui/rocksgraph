@@ -43,6 +43,35 @@ enum class PredicateKind {
 
 class PlannerQuery;
 
+enum class NestedIRExpressionKind {
+  kExists,
+  kList,
+};
+
+struct NestedIRExpression {
+  NestedIRExpressionKind kind = NestedIRExpressionKind::kExists;
+  const ast::Expression *expression = nullptr;
+  std::unordered_set<LogicalVariable> dependencies;
+  std::unique_ptr<PlannerQuery> query;
+  std::string value_variable;
+  std::string collection_variable;
+};
+
+struct PredicateLabelInfo {
+  std::string variable;
+  std::vector<std::string> labels;
+};
+
+struct PredicateRelationshipTypeInfo {
+  std::string variable;
+  std::vector<std::string> relationship_types;
+};
+
+struct PredicatePropertyInfo {
+  std::string variable;
+  std::string property_key;
+};
+
 struct Predicate {
   const ast::Expression *expression = nullptr;
   std::unordered_set<std::string> dependencies;
@@ -52,14 +81,28 @@ struct Predicate {
   std::vector<std::string> labels;
   std::vector<std::string> relationship_types;
   std::string comparison_op;
-  std::unique_ptr<PlannerQuery> subquery;
+  std::vector<PredicateLabelInfo> nested_node_labels;
+  std::vector<PredicateRelationshipTypeInfo> nested_relationship_types;
+  std::vector<PredicatePropertyInfo> nested_properties;
+  std::vector<NestedIRExpression> nested_expressions;
+  PlannerQuery *subquery = nullptr;
+};
+
+struct PropertyInequalityGroup {
+  std::string variable;
+  std::string property_key;
+  std::vector<const Predicate *> lower_bounds;
+  std::vector<const Predicate *> upper_bounds;
 };
 
 struct Selections {
   std::vector<Predicate> predicates;
+  std::unordered_set<std::string> predicate_keys;
 
   [[nodiscard]] bool empty() const { return predicates.empty(); }
   [[nodiscard]] std::size_t size() const { return predicates.size(); }
+
+  bool AddPredicate(Predicate predicate);
 
   [[nodiscard]] std::vector<const Predicate *> PredicatesByKind(
       PredicateKind kind) const;
@@ -67,6 +110,8 @@ struct Selections {
       std::string_view variable) const;
   [[nodiscard]] std::vector<const Predicate *> PredicatesDependingOn(
       std::string_view symbol) const;
+  [[nodiscard]] std::vector<const Predicate *> PredicatesGiven(
+      const std::unordered_set<std::string> &bound_symbols) const;
 
   [[nodiscard]] std::vector<const Predicate *> NodeLabelPredicates(
       std::string_view variable) const;
@@ -87,6 +132,8 @@ struct Selections {
   [[nodiscard]] bool ContainsPropertyPredicate(
       std::string_view variable, std::string_view property_key,
       std::string_view comparison_op) const;
+  [[nodiscard]] std::vector<PropertyInequalityGroup> PropertyInequalityGroups()
+      const;
 };
 
 struct Hint {};
@@ -230,6 +277,7 @@ struct QueryGraph {
   std::unordered_set<LogicalVariable> pattern_nodes;
   std::vector<PatternRelationship> pattern_relationships;
   std::unordered_set<LogicalVariable> argument_ids;
+  std::unordered_set<LogicalVariable> assert_is_node_variables;
   Selections selections;
   std::vector<QueryGraph> optional_matches;
   std::vector<Hint> hints;
@@ -288,15 +336,38 @@ struct RequiredOrder {
   [[nodiscard]] std::size_t size() const { return items.size(); }
 };
 
+struct OrderProjectionMapping {
+  std::string projected_alias;
+  const ast::Expression *source_expression = nullptr;
+};
+
+struct InterestingOrder {
+  RequiredOrder required_order;
+  std::vector<OrderItem> candidates;
+  std::vector<OrderProjectionMapping> reverse_projection;
+
+  [[nodiscard]] bool empty() const {
+    return required_order.empty() && candidates.empty();
+  }
+};
+
 struct Pagination {
   const ast::Expression *skip = nullptr;
   const ast::Expression *limit = nullptr;
 };
 
+enum class ProjectionPosition {
+  kIntermediate,
+  kFinal,
+};
+
 struct QueryProjection {
   RequiredOrder required_order;
+  InterestingOrder interesting_order;
   Selections selections;
   Pagination pagination;
+  ProjectionPosition position = ProjectionPosition::kIntermediate;
+  std::vector<NestedIRExpression> nested_expressions;
 };
 
 struct RegularQueryProjection : QueryProjection {
@@ -317,11 +388,26 @@ struct UnwindHorizon {
   std::string alias;
 };
 
+struct ProcedureYieldItem {
+  std::optional<std::string> result_field;
+  std::string variable;
+};
+
+struct ProcedureCallHorizon {
+  std::string procedure_name;
+  std::vector<const ast::Expression *> arguments;
+  std::vector<ProcedureYieldItem> yield_items;
+  bool yield_star = false;
+  Selections yield_selections;
+  bool read_only = false;
+};
+
 enum class QueryHorizonKind {
   kRegularProjection,
   kDistinctProjection,
   kAggregatingProjection,
   kUnwind,
+  kProcedureCall,
   kPassthrough,
 };
 
@@ -331,12 +417,14 @@ struct QueryHorizon {
   DistinctQueryProjection distinct_projection;
   AggregatingQueryProjection aggregating_projection;
   UnwindHorizon unwind;
+  ProcedureCallHorizon procedure_call;
 
   static QueryHorizon ForRegularProjection(RegularQueryProjection projection);
   static QueryHorizon ForDistinctProjection(DistinctQueryProjection projection);
   static QueryHorizon ForAggregatingProjection(
       AggregatingQueryProjection projection);
   static QueryHorizon ForUnwind(UnwindHorizon unwind);
+  static QueryHorizon ForProcedureCall(ProcedureCallHorizon procedure_call);
   static QueryHorizon ForPassthrough();
 
   [[nodiscard]] const RegularQueryProjection &RequireRegularProjection() const;
@@ -352,6 +440,9 @@ struct QueryHorizon {
 
   [[nodiscard]] const UnwindHorizon &RequireUnwind() const;
   UnwindHorizon &RequireUnwind();
+
+  [[nodiscard]] const ProcedureCallHorizon &RequireProcedureCall() const;
+  ProcedureCallHorizon &RequireProcedureCall();
 };
 
 struct SinglePlannerQuery;
@@ -396,6 +487,13 @@ struct UnionPlannerQuery final : public PlannerQuery {
   std::unique_ptr<PlannerQuery> lhs;
   SinglePlannerQuery rhs;
   bool all = false;
+  bool distinct = true;
+  struct UnionMapping {
+    std::string output_variable;
+    std::string lhs_variable;
+    std::string rhs_variable;
+  };
+  std::vector<UnionMapping> mappings;
 
   UnionPlannerQuery() = default;
 

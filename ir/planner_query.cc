@@ -1,6 +1,7 @@
 #include "ir/planner_query.h"
 
 #include <algorithm>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -9,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "ast/ast_const_walker.h"
 #include "ast/expression_dependency.h"
 #include "ast/expression_to_string.h"
 #include "ast/semantic_table.h"
@@ -96,6 +98,16 @@ const ast::ExistentialSubquery *AsExistentialSubquery(
     return nullptr;
   }
   return ast::CastAst<ast::ExistentialSubquery>(unwrapped);
+}
+
+const ast::PatternPredicateExpression *AsPatternPredicateExpression(
+    const ast::Expression *expression) {
+  const ast::Expression *unwrapped = UnwrapParenthesized(expression);
+  if (unwrapped == nullptr ||
+      !unwrapped->Is(ast::ASTNodeType::kPatternPredicateExpression)) {
+    return nullptr;
+  }
+  return ast::CastAst<ast::PatternPredicateExpression>(unwrapped);
 }
 
 PatternPropertyMap BuildPropertyMap(const ast::Properties *properties) {
@@ -371,6 +383,24 @@ bool IsPropertyPredicateKind(PredicateKind kind) {
          kind == PredicateKind::kPropertyComparison;
 }
 
+bool IsLowerBoundComparison(std::string_view op) {
+  return op == ">" || op == ">=";
+}
+
+bool IsUpperBoundComparison(std::string_view op) {
+  return op == "<" || op == "<=";
+}
+
+bool DependenciesMet(const std::unordered_set<std::string> &dependencies,
+                     const std::unordered_set<std::string> &bound_symbols) {
+  for (const auto &dependency : dependencies) {
+    if (!bound_symbols.contains(dependency)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 std::string_view PredicateKindKey(PredicateKind kind) {
   switch (kind) {
     case PredicateKind::kGenericExpression:
@@ -478,6 +508,86 @@ bool QueryGraphContainsNodeVariable(const QueryGraph *query_graph,
   return query_graph != nullptr && query_graph->pattern_nodes.contains(name);
 }
 
+bool QueryGraphRelationshipCoversVariable(const QueryGraph &query_graph,
+                                          const std::string &name) {
+  for (const auto &relationship : query_graph.pattern_relationships) {
+    if (relationship.variable == name || relationship.left_node == name ||
+        relationship.right_node == name) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void AddAssertIsNodeVariables(QueryGraph *query_graph) {
+  CHECK(query_graph != nullptr, common::InternalError, "query graph is null");
+  for (const auto &node : query_graph->pattern_nodes) {
+    if (query_graph->argument_ids.contains(node) &&
+        !QueryGraphRelationshipCoversVariable(*query_graph, node)) {
+      query_graph->assert_is_node_variables.insert(node);
+    }
+  }
+}
+
+void AddNestedPredicateInfo(Predicate *predicate,
+                            const ast::SemanticTable &semantic_table,
+                            const QueryGraph *query_graph) {
+  CHECK(predicate != nullptr, common::InternalError, "predicate is null");
+  CHECK(predicate->expression != nullptr, common::InvalidArgumentError,
+        "predicate expression is null");
+
+  class Collector final : public ast::ASTConstWalker {
+   public:
+    Collector(Predicate *predicate, const ast::SemanticTable &semantic_table,
+              const QueryGraph *query_graph)
+        : predicate_(predicate),
+          semantic_table_(semantic_table),
+          query_graph_(query_graph) {}
+
+   protected:
+    void Visit(const ast::LabelPredicateExpression &node) override {
+      const ast::Variable *variable = AsVariableExpression(node.expr.get());
+      if (variable != nullptr) {
+        auto variable_type =
+            semantic_table_.VariableTypeAt(node, variable->name);
+        if (!variable_type.has_value()) {
+          variable_type = semantic_table_.VariableType(variable->name);
+        }
+        const bool type_unknown =
+            !variable_type.has_value() ||
+            *variable_type == ast::SemanticVariableType::kUnknown;
+        if (variable_type == ast::SemanticVariableType::kRelationship ||
+            (type_unknown && QueryGraphContainsRelationshipVariable(
+                                 query_graph_, variable->name))) {
+          predicate_->nested_relationship_types.push_back(
+              {.variable = variable->name, .relationship_types = node.labels});
+        } else {
+          predicate_->nested_node_labels.push_back(
+              {.variable = variable->name, .labels = node.labels});
+        }
+      }
+      ast::ASTConstWalker::Visit(node);
+    }
+
+    void Visit(const ast::PropertyExpression &node) override {
+      const ast::Variable *variable = AsVariableExpression(node.object.get());
+      if (variable != nullptr && !node.property_key.empty()) {
+        predicate_->nested_properties.push_back(
+            {.variable = variable->name, .property_key = node.property_key});
+      }
+      ast::ASTConstWalker::Visit(node);
+    }
+
+   private:
+    Predicate *predicate_ = nullptr;
+    const ast::SemanticTable &semantic_table_;
+    const QueryGraph *query_graph_ = nullptr;
+  };
+
+  Collector collector(predicate, semantic_table, query_graph);
+  predicate->expression->Accept(collector);
+}
+
 void ClassifyPredicate(Predicate *predicate,
                        const ast::SemanticTable &semantic_table,
                        const QueryGraph *query_graph) {
@@ -540,7 +650,8 @@ void ClassifyPredicate(Predicate *predicate,
     return;
   }
 
-  if (AsExistentialSubquery(expression) != nullptr) {
+  if (AsExistentialSubquery(expression) != nullptr ||
+      AsPatternPredicateExpression(expression) != nullptr) {
     predicate->kind = PredicateKind::kExistsSubquery;
   }
 }
@@ -568,15 +679,25 @@ void AddSelectionPredicates(const ast::Expression *where,
     selection_predicate.dependencies =
         semantic_table.ExpressionDependencies(*predicate);
     ClassifyPredicate(&selection_predicate, semantic_table, query_graph);
+    AddNestedPredicateInfo(&selection_predicate, semantic_table, query_graph);
     const std::string predicate_key = PredicateKey(selection_predicate);
-    if (!selection_keys->insert(predicate_key).second) {
+    if (!selection_keys->insert(predicate_key).second ||
+        !selections->AddPredicate(std::move(selection_predicate))) {
       continue;
     }
-    selections->predicates.push_back(std::move(selection_predicate));
   }
 }
 
 }  // namespace
+
+bool Selections::AddPredicate(Predicate predicate) {
+  const std::string key = PredicateKey(predicate);
+  if (!predicate_keys.insert(key).second) {
+    return false;
+  }
+  predicates.push_back(std::move(predicate));
+  return true;
+}
 
 std::vector<const Predicate *> Selections::PredicatesByKind(
     PredicateKind kind) const {
@@ -605,6 +726,17 @@ std::vector<const Predicate *> Selections::PredicatesDependingOn(
   std::vector<const Predicate *> result;
   for (const auto &predicate : predicates) {
     if (StringSetContains(predicate.dependencies, symbol)) {
+      result.push_back(&predicate);
+    }
+  }
+  return result;
+}
+
+std::vector<const Predicate *> Selections::PredicatesGiven(
+    const std::unordered_set<std::string> &bound_symbols) const {
+  std::vector<const Predicate *> result;
+  for (const auto &predicate : predicates) {
+    if (DependenciesMet(predicate.dependencies, bound_symbols)) {
       result.push_back(&predicate);
     }
   }
@@ -711,6 +843,39 @@ bool Selections::ContainsPropertyPredicate(
     }
   }
   return false;
+}
+
+std::vector<PropertyInequalityGroup> Selections::PropertyInequalityGroups()
+    const {
+  std::vector<PropertyInequalityGroup> groups;
+  for (const auto &predicate : predicates) {
+    if (predicate.kind != PredicateKind::kPropertyComparison ||
+        predicate.variable.empty() || predicate.property_key.empty()) {
+      continue;
+    }
+    if (!IsLowerBoundComparison(predicate.comparison_op) &&
+        !IsUpperBoundComparison(predicate.comparison_op)) {
+      continue;
+    }
+    auto found = std::find_if(groups.begin(), groups.end(),
+                              [&](const PropertyInequalityGroup &g) {
+                                return g.variable == predicate.variable &&
+                                       g.property_key == predicate.property_key;
+                              });
+    if (found == groups.end()) {
+      PropertyInequalityGroup group;
+      group.variable = predicate.variable;
+      group.property_key = predicate.property_key;
+      groups.push_back(std::move(group));
+      found = std::prev(groups.end());
+    }
+    if (IsLowerBoundComparison(predicate.comparison_op)) {
+      found->lower_bounds.push_back(&predicate);
+    } else {
+      found->upper_bounds.push_back(&predicate);
+    }
+  }
+  return groups;
 }
 
 bool QueryGraph::HasLocalWork() const {
@@ -973,6 +1138,23 @@ class PatternConverter {
       CHECK(part != nullptr, common::InvalidArgumentError,
             Missing("pattern part"));
       AddPatternPart(*part);
+    }
+  }
+
+  void AddRelationshipsPattern(const ast::RelationshipsPattern &pattern) {
+    CHECK(pattern.node_pattern != nullptr, common::InvalidArgumentError,
+          Missing("relationships pattern node"));
+    CHECK(!pattern.chain.empty(), common::InvalidArgumentError,
+          Missing("relationships pattern chain"));
+    std::string left = AddNode(*pattern.node_pattern);
+    for (const auto &link : pattern.chain) {
+      CHECK(link.first != nullptr, common::InvalidArgumentError,
+            Missing("relationship pattern"));
+      CHECK(link.second != nullptr, common::InvalidArgumentError,
+            Missing("node pattern"));
+      std::string right = AddNode(*link.second);
+      AddRelationship(*link.first, left, right);
+      left = right;
     }
   }
 
@@ -1512,6 +1694,14 @@ QueryHorizon QueryHorizon::ForUnwind(UnwindHorizon unwind) {
   return horizon;
 }
 
+QueryHorizon QueryHorizon::ForProcedureCall(
+    ProcedureCallHorizon procedure_call) {
+  QueryHorizon horizon;
+  horizon.kind = QueryHorizonKind::kProcedureCall;
+  horizon.procedure_call = std::move(procedure_call);
+  return horizon;
+}
+
 QueryHorizon QueryHorizon::ForPassthrough() {
   QueryHorizon horizon;
   horizon.kind = QueryHorizonKind::kPassthrough;
@@ -1573,6 +1763,18 @@ UnwindHorizon &QueryHorizon::RequireUnwind() {
   return unwind;
 }
 
+const ProcedureCallHorizon &QueryHorizon::RequireProcedureCall() const {
+  CHECK(kind == QueryHorizonKind::kProcedureCall, common::InvalidArgumentError,
+        Unsupported("procedure call horizon"));
+  return procedure_call;
+}
+
+ProcedureCallHorizon &QueryHorizon::RequireProcedureCall() {
+  CHECK(kind == QueryHorizonKind::kProcedureCall, common::InvalidArgumentError,
+        Unsupported("procedure call horizon"));
+  return procedure_call;
+}
+
 const SinglePlannerQuery *SinglePlannerQuery::Last() const {
   return LastQueryPart(this);
 }
@@ -1620,6 +1822,7 @@ std::unique_ptr<PlannerQuery> MakeUnionPlannerQuery(
   query->lhs = std::move(lhs);
   query->rhs = std::move(rhs);
   query->all = all;
+  query->distinct = !all;
   return query;
 }
 
@@ -1634,7 +1837,14 @@ class PlannerQueryBuilder {
     switch (statement.node_type) {
       case ast::ASTNodeType::kRegularQuery: {
         std::unique_ptr<PlannerQuery> planner_query =
-            BuildRegularQuery(ast::CastAst<ast::RegularQuery>(statement));
+            BuildRegularQuery(ast::CastAst<ast::RegularQuery>(statement),
+                              ProjectionPosition::kFinal);
+        FinalizePlannerQueryArguments(*planner_query);
+        return planner_query;
+      }
+      case ast::ASTNodeType::kStandaloneCall: {
+        std::unique_ptr<PlannerQuery> planner_query =
+            BuildStandaloneCall(ast::CastAst<ast::StandaloneCall>(statement));
         FinalizePlannerQueryArguments(*planner_query);
         return planner_query;
       }
@@ -1652,20 +1862,41 @@ class PlannerQueryBuilder {
   }
 
   std::unique_ptr<PlannerQuery> BuildRegularQuery(
-      const ast::RegularQuery &query) {
+      const ast::RegularQuery &query, ProjectionPosition projection_position) {
     CHECK(query.single_query, common::InvalidArgumentError,
           Missing("single query"));
 
-    std::unique_ptr<PlannerQuery> planner_query =
-        MakeSinglePlannerQuery(BuildSingleQuery(*query.single_query));
+    const ProjectionPosition branch_position =
+        query.unions.empty() ? projection_position
+                             : ProjectionPosition::kIntermediate;
+    std::unique_ptr<PlannerQuery> planner_query = MakeSinglePlannerQuery(
+        BuildSingleQuery(*query.single_query, branch_position));
     for (const auto &part : query.unions) {
       CHECK(part && part->query, common::InvalidArgumentError,
             Missing("UNION branch query"));
-      planner_query = MakeUnionPlannerQuery(
-          std::move(planner_query), BuildSingleQuery(*part->query), part->all);
+      SinglePlannerQuery rhs =
+          BuildSingleQuery(*part->query, ProjectionPosition::kIntermediate);
+      const std::vector<std::string> lhs_columns =
+          PlannerQueryOutputAliases(*planner_query);
+      const std::vector<std::string> rhs_columns =
+          SinglePlannerQueryOutputAliases(rhs);
+      std::unique_ptr<PlannerQuery> union_query = MakeUnionPlannerQuery(
+          std::move(planner_query), std::move(rhs), part->all);
+      union_query->RequireUnion().mappings =
+          BuildUnionMappings(lhs_columns, rhs_columns);
+      planner_query = std::move(union_query);
     }
 
     return planner_query;
+  }
+
+  std::unique_ptr<PlannerQuery> BuildStandaloneCall(
+      const ast::StandaloneCall &call) {
+    SinglePlannerQuery query;
+    query.horizon = QueryHorizon::ForProcedureCall(
+        BuildProcedureCallHorizon(call, /*expand_implicit_yields=*/true));
+    AttachQueryHorizonSubqueries(&query.horizon);
+    return MakeSinglePlannerQuery(std::move(query));
   }
 
   void AttachQueryGraphSubqueries(QueryGraph *query_graph) {
@@ -1682,14 +1913,24 @@ class PlannerQueryBuilder {
       case QueryHorizonKind::kRegularProjection:
         AttachSelectionSubqueries(
             &horizon->RequireRegularProjection().selections);
+        AttachNestedIRExpressions(
+            &horizon->RequireRegularProjection().nested_expressions);
         return;
       case QueryHorizonKind::kDistinctProjection:
         AttachSelectionSubqueries(
             &horizon->RequireDistinctProjection().selections);
+        AttachNestedIRExpressions(
+            &horizon->RequireDistinctProjection().nested_expressions);
         return;
       case QueryHorizonKind::kAggregatingProjection:
         AttachSelectionSubqueries(
             &horizon->RequireAggregatingProjection().selections);
+        AttachNestedIRExpressions(
+            &horizon->RequireAggregatingProjection().nested_expressions);
+        return;
+      case QueryHorizonKind::kProcedureCall:
+        AttachSelectionSubqueries(
+            &horizon->RequireProcedureCall().yield_selections);
         return;
       case QueryHorizonKind::kUnwind:
       case QueryHorizonKind::kPassthrough:
@@ -1701,17 +1942,161 @@ class PlannerQueryBuilder {
   void AttachSelectionSubqueries(Selections *selections) {
     CHECK(selections != nullptr, common::InternalError, "selections is null");
     for (auto &predicate : selections->predicates) {
+      AppendNestedIRExpressions(
+          &predicate.nested_expressions,
+          CollectNestedIRExpressions(predicate.expression));
+      for (auto &nested : predicate.nested_expressions) {
+        if (nested.kind == NestedIRExpressionKind::kExists &&
+            nested.query != nullptr) {
+          predicate.subquery = nested.query.get();
+          break;
+        }
+      }
       if (predicate.kind != PredicateKind::kExistsSubquery) {
         continue;
       }
-      const ast::ExistentialSubquery *subquery =
-          AsExistentialSubquery(predicate.expression);
-      CHECK(subquery != nullptr, common::InvalidArgumentError,
-            "EXISTS predicate expression is not an existential subquery");
-      CHECK(subquery->query != nullptr, common::InvalidArgumentError,
-            Missing("EXISTS subquery"));
-      predicate.subquery = BuildRegularQuery(*subquery->query);
+      CHECK(predicate.subquery != nullptr, common::InvalidArgumentError,
+            Missing("EXISTS nested IR expression"));
     }
+  }
+
+  void AttachNestedIRExpressions(
+      std::vector<NestedIRExpression> *nested_expressions) {
+    CHECK(nested_expressions != nullptr, common::InternalError,
+          "nested expression list is null");
+    for (auto &nested : *nested_expressions) {
+      CHECK(nested.query != nullptr, common::InvalidArgumentError,
+            "nested IR expression query is null");
+    }
+  }
+
+  static void AppendNestedIRExpressions(
+      std::vector<NestedIRExpression> *target,
+      std::vector<NestedIRExpression> incoming) {
+    CHECK(target != nullptr, common::InternalError,
+          "nested expression target is null");
+    target->reserve(target->size() + incoming.size());
+    for (auto &nested : incoming) {
+      target->push_back(std::move(nested));
+    }
+  }
+
+  std::string NextNestedVariable(std::string_view prefix) {
+    std::string out = "__";
+    out.append(prefix.data(), prefix.size());
+    out.push_back('_');
+    out.append(std::to_string(nested_expression_id_++));
+    return out;
+  }
+
+  std::vector<NestedIRExpression> CollectNestedIRExpressions(
+      const ast::Expression *expression) {
+    std::vector<NestedIRExpression> nested_expressions;
+    if (expression == nullptr) {
+      return nested_expressions;
+    }
+
+    class Collector final : public ast::ASTConstWalker {
+     public:
+      Collector(PlannerQueryBuilder *builder,
+                std::vector<NestedIRExpression> *nested_expressions)
+          : builder_(builder), nested_expressions_(nested_expressions) {}
+
+     protected:
+      void Visit(const ast::ExistentialSubquery &node) override {
+        nested_expressions_->push_back(builder_->BuildExistsIRExpression(node));
+      }
+
+      void Visit(const ast::PatternComprehension &node) override {
+        nested_expressions_->push_back(builder_->BuildListIRExpression(node));
+        WalkMaybe(node.where_expr);
+        WalkMaybe(node.eval_expr);
+      }
+
+     private:
+      PlannerQueryBuilder *builder_ = nullptr;
+      std::vector<NestedIRExpression> *nested_expressions_ = nullptr;
+    };
+
+    Collector collector(this, &nested_expressions);
+    expression->Accept(collector);
+    return nested_expressions;
+  }
+
+  NestedIRExpression BuildExistsIRExpression(
+      const ast::ExistentialSubquery &exists) {
+    NestedIRExpression nested;
+    nested.kind = NestedIRExpressionKind::kExists;
+    nested.expression = &exists;
+    nested.dependencies = SemanticTableRef().ExpressionDependencies(exists);
+    nested.value_variable = NextNestedVariable("exists");
+    if (exists.query != nullptr) {
+      nested.query =
+          BuildRegularQuery(*exists.query, ProjectionPosition::kIntermediate);
+    } else {
+      nested.query = BuildPatternExistsQuery(exists);
+    }
+    return nested;
+  }
+
+  std::unique_ptr<PlannerQuery> BuildPatternExistsQuery(
+      const ast::ExistentialSubquery &exists) {
+    CHECK(exists.pattern != nullptr, common::InvalidArgumentError,
+          Missing("EXISTS pattern"));
+    SinglePlannerQuery query;
+    PatternConverter converter(&query.query_graph);
+    converter.AddPattern(*exists.pattern);
+    if (exists.where_expr != nullptr) {
+      std::unordered_set<std::string> selection_keys;
+      AddSelectionPredicates(exists.where_expr.get(), SemanticTableRef(),
+                             &query.query_graph, &query.query_graph.selections,
+                             &selection_keys);
+    }
+    AttachQueryGraphSubqueries(&query.query_graph);
+    query.horizon = QueryHorizon::ForPassthrough();
+    return MakeSinglePlannerQuery(std::move(query));
+  }
+
+  NestedIRExpression BuildListIRExpression(
+      const ast::PatternComprehension &comprehension) {
+    CHECK(comprehension.relationships_pattern != nullptr,
+          common::InvalidArgumentError,
+          Missing("pattern comprehension relationships pattern"));
+    CHECK(comprehension.eval_expr != nullptr, common::InvalidArgumentError,
+          Missing("pattern comprehension eval expression"));
+
+    NestedIRExpression nested;
+    nested.kind = NestedIRExpressionKind::kList;
+    nested.expression = &comprehension;
+    nested.dependencies =
+        SemanticTableRef().ExpressionDependencies(comprehension);
+    nested.value_variable = NextNestedVariable("list_value");
+    nested.collection_variable = comprehension.variable.empty()
+                                     ? NextNestedVariable("list")
+                                     : comprehension.variable;
+
+    SinglePlannerQuery query;
+    PatternConverter converter(&query.query_graph);
+    converter.AddRelationshipsPattern(*comprehension.relationships_pattern);
+    if (comprehension.where_expr != nullptr) {
+      std::unordered_set<std::string> selection_keys;
+      AddSelectionPredicates(comprehension.where_expr.get(), SemanticTableRef(),
+                             &query.query_graph, &query.query_graph.selections,
+                             &selection_keys);
+    }
+    AttachQueryGraphSubqueries(&query.query_graph);
+
+    RegularQueryProjection projection;
+    projection.position = ProjectionPosition::kIntermediate;
+    projection.items.push_back({.expression = comprehension.eval_expr.get(),
+                                .alias = nested.value_variable});
+    AppendNestedIRExpressions(
+        &projection.nested_expressions,
+        CollectNestedIRExpressions(comprehension.eval_expr.get()));
+    query.horizon = QueryHorizon::ForRegularProjection(std::move(projection));
+    AttachQueryHorizonSubqueries(&query.horizon);
+    nested.query = MakeSinglePlannerQuery(std::move(query));
+    return nested;
   }
 
   void FinalizePlannerQueryArguments(PlannerQuery &query) const {
@@ -1752,7 +2137,11 @@ class PlannerQueryBuilder {
       FinalizeQueryGraphArguments(&segment->query_graph);
       std::unordered_set<std::string> output_symbols =
           SinglePlannerQueryOutputSymbols(*segment);
-      FinalizeQueryHorizonArguments(&segment->horizon, output_symbols);
+      std::unordered_set<std::string> horizon_available_symbols =
+          QueryGraphAvailableSymbols(segment->query_graph);
+      AddSymbols(&horizon_available_symbols, output_symbols);
+      FinalizeQueryHorizonArguments(&segment->horizon,
+                                    horizon_available_symbols);
       available_symbols = std::move(output_symbols);
       segment = segment->tail.get();
     }
@@ -1761,7 +2150,7 @@ class PlannerQueryBuilder {
   void FinalizeQueryGraphArguments(QueryGraph *query_graph) const {
     CHECK(query_graph != nullptr, common::InternalError, "query graph is null");
     std::unordered_set<std::string> available_symbols =
-        QueryGraphLocalAvailableSymbols(*query_graph);
+        query_graph->IdsWithoutOptionalMatchesOrUpdates();
     FinalizeSelectionSubqueries(&query_graph->selections, available_symbols);
     for (auto &optional_match : query_graph->optional_matches) {
       const std::unordered_set<std::string> dependencies =
@@ -1773,6 +2162,7 @@ class PlannerQueryBuilder {
           QueryGraphAvailableSymbols(optional_match);
       AddSymbols(&available_symbols, optional_symbols);
     }
+    AddAssertIsNodeVariables(query_graph);
   }
 
   void FinalizeSelectionSubqueries(
@@ -1780,12 +2170,36 @@ class PlannerQueryBuilder {
       const std::unordered_set<std::string> &available_symbols) const {
     CHECK(selections != nullptr, common::InternalError, "selections is null");
     for (auto &predicate : selections->predicates) {
-      if (predicate.subquery == nullptr) {
-        continue;
+      for (auto &nested : predicate.nested_expressions) {
+        FinalizeNestedIRExpression(
+            &nested, IntersectSymbols(nested.dependencies, available_symbols));
       }
-      FinalizePlannerQueryArguments(
-          *predicate.subquery,
-          IntersectSymbols(predicate.dependencies, available_symbols));
+      if (predicate.subquery == nullptr &&
+          predicate.kind == PredicateKind::kExistsSubquery) {
+        THROW(common::InvalidArgumentError,
+              Missing("EXISTS nested IR expression"));
+      }
+    }
+  }
+
+  void FinalizeNestedIRExpression(
+      NestedIRExpression *nested,
+      const std::unordered_set<std::string> &available_symbols) const {
+    CHECK(nested != nullptr, common::InternalError,
+          "nested IR expression is null");
+    CHECK(nested->query != nullptr, common::InvalidArgumentError,
+          "nested IR expression query is null");
+    FinalizePlannerQueryArguments(*nested->query, available_symbols);
+  }
+
+  void FinalizeNestedIRExpressions(
+      std::vector<NestedIRExpression> *nested_expressions,
+      const std::unordered_set<std::string> &available_symbols) const {
+    CHECK(nested_expressions != nullptr, common::InternalError,
+          "nested IR expression list is null");
+    for (auto &nested : *nested_expressions) {
+      FinalizeNestedIRExpression(
+          &nested, IntersectSymbols(nested.dependencies, available_symbols));
     }
   }
 
@@ -1797,15 +2211,29 @@ class PlannerQueryBuilder {
       case QueryHorizonKind::kRegularProjection:
         FinalizeSelectionSubqueries(
             &horizon->RequireRegularProjection().selections, available_symbols);
+        FinalizeNestedIRExpressions(
+            &horizon->RequireRegularProjection().nested_expressions,
+            available_symbols);
         return;
       case QueryHorizonKind::kDistinctProjection:
         FinalizeSelectionSubqueries(
             &horizon->RequireDistinctProjection().selections,
             available_symbols);
+        FinalizeNestedIRExpressions(
+            &horizon->RequireDistinctProjection().nested_expressions,
+            available_symbols);
         return;
       case QueryHorizonKind::kAggregatingProjection:
         FinalizeSelectionSubqueries(
             &horizon->RequireAggregatingProjection().selections,
+            available_symbols);
+        FinalizeNestedIRExpressions(
+            &horizon->RequireAggregatingProjection().nested_expressions,
+            available_symbols);
+        return;
+      case QueryHorizonKind::kProcedureCall:
+        FinalizeSelectionSubqueries(
+            &horizon->RequireProcedureCall().yield_selections,
             available_symbols);
         return;
       case QueryHorizonKind::kUnwind:
@@ -1869,6 +2297,17 @@ class PlannerQueryBuilder {
     AddExpressionDependencies(dependencies, projection.pagination.limit);
   }
 
+  void AddProcedureCallDependencies(
+      std::unordered_set<std::string> *dependencies,
+      const ProcedureCallHorizon &procedure_call) const {
+    CHECK(dependencies != nullptr, common::InternalError,
+          "dependency set is null");
+    for (const ast::Expression *argument : procedure_call.arguments) {
+      AddExpressionDependencies(dependencies, argument);
+    }
+    AddSelectionDependencies(dependencies, procedure_call.yield_selections);
+  }
+
   static void AddSelectionDependencies(
       std::unordered_set<std::string> *dependencies,
       const Selections &selections) {
@@ -1928,6 +2367,10 @@ class PlannerQueryBuilder {
         AddExpressionDependencies(&dependencies,
                                   horizon.RequireUnwind().expression);
         return dependencies;
+      case QueryHorizonKind::kProcedureCall:
+        AddProcedureCallDependencies(&dependencies,
+                                     horizon.RequireProcedureCall());
+        return dependencies;
       case QueryHorizonKind::kPassthrough:
         return dependencies;
     }
@@ -1957,6 +2400,15 @@ class PlannerQueryBuilder {
         AddSymbol(&symbols, query.horizon.RequireUnwind().alias);
         return symbols;
       }
+      case QueryHorizonKind::kProcedureCall: {
+        std::unordered_set<std::string> symbols =
+            QueryGraphAvailableSymbols(query.query_graph);
+        for (const auto &item :
+             query.horizon.RequireProcedureCall().yield_items) {
+          AddSymbol(&symbols, item.variable);
+        }
+        return symbols;
+      }
       case QueryHorizonKind::kPassthrough:
         return QueryGraphAvailableSymbols(query.query_graph);
     }
@@ -1970,6 +2422,95 @@ class PlannerQueryBuilder {
       AddSymbol(&symbols, item.alias);
     }
     return symbols;
+  }
+
+  static std::vector<std::string> ProjectionItemAliasList(
+      const std::vector<ProjectionItem> &items) {
+    std::vector<std::string> aliases;
+    aliases.reserve(items.size());
+    for (const auto &item : items) {
+      if (!item.alias.empty()) {
+        aliases.push_back(item.alias);
+      }
+    }
+    return aliases;
+  }
+
+  static std::vector<std::string> SortedSymbolList(
+      const std::unordered_set<std::string> &symbols) {
+    std::vector<std::string> out(symbols.begin(), symbols.end());
+    std::sort(out.begin(), out.end());
+    return out;
+  }
+
+  static std::vector<std::string> SinglePlannerQueryOutputAliases(
+      const SinglePlannerQuery &query) {
+    const SinglePlannerQuery *last = query.Last();
+    switch (last->horizon.kind) {
+      case QueryHorizonKind::kRegularProjection:
+        return ProjectionItemAliasList(
+            last->horizon.RequireRegularProjection().items);
+      case QueryHorizonKind::kDistinctProjection:
+        return ProjectionItemAliasList(
+            last->horizon.RequireDistinctProjection().grouping_items);
+      case QueryHorizonKind::kAggregatingProjection: {
+        std::vector<std::string> aliases = ProjectionItemAliasList(
+            last->horizon.RequireAggregatingProjection().grouping_items);
+        std::vector<std::string> aggregations = ProjectionItemAliasList(
+            last->horizon.RequireAggregatingProjection().aggregation_items);
+        aliases.insert(aliases.end(), aggregations.begin(), aggregations.end());
+        return aliases;
+      }
+      case QueryHorizonKind::kProcedureCall: {
+        std::vector<std::string> aliases;
+        for (const auto &item :
+             last->horizon.RequireProcedureCall().yield_items) {
+          aliases.push_back(item.variable);
+        }
+        return aliases;
+      }
+      case QueryHorizonKind::kUnwind:
+      case QueryHorizonKind::kPassthrough:
+        return SortedSymbolList(QueryGraphAvailableSymbols(last->query_graph));
+    }
+    THROW(common::InternalError, "unknown query horizon kind");
+  }
+
+  static std::vector<std::string> PlannerQueryOutputAliases(
+      const PlannerQuery &query) {
+    switch (query.Kind()) {
+      case PlannerQueryKind::kSingle:
+        return SinglePlannerQueryOutputAliases(query.RequireSingle());
+      case PlannerQueryKind::kUnion: {
+        const UnionPlannerQuery &union_query = query.RequireUnion();
+        if (!union_query.mappings.empty()) {
+          std::vector<std::string> aliases;
+          aliases.reserve(union_query.mappings.size());
+          for (const auto &mapping : union_query.mappings) {
+            aliases.push_back(mapping.output_variable);
+          }
+          return aliases;
+        }
+        return SinglePlannerQueryOutputAliases(union_query.rhs);
+      }
+    }
+    THROW(common::InternalError, "unknown planner query kind");
+  }
+
+  static std::vector<UnionPlannerQuery::UnionMapping> BuildUnionMappings(
+      const std::vector<std::string> &lhs_columns,
+      const std::vector<std::string> &rhs_columns) {
+    CHECK(lhs_columns.size() == rhs_columns.size(),
+          common::InvalidArgumentError,
+          "UNION branches have different output column counts");
+    std::vector<UnionPlannerQuery::UnionMapping> mappings;
+    mappings.reserve(lhs_columns.size());
+    for (std::size_t i = 0; i < lhs_columns.size(); ++i) {
+      mappings.push_back({.output_variable = lhs_columns[i],
+                          .lhs_variable = lhs_columns[i],
+                          .rhs_variable = rhs_columns[i]});
+    }
+    return mappings;
   }
 
   bool IsPureVariablePassthrough(
@@ -2012,13 +2553,16 @@ class PlannerQueryBuilder {
     return IsPureVariablePassthrough(*with_clause.body, available_symbols);
   }
 
-  SinglePlannerQuery BuildSingleQuery(const ast::SingleQuery &query) {
+  SinglePlannerQuery BuildSingleQuery(const ast::SingleQuery &query,
+                                      ProjectionPosition projection_position) {
     switch (query.node_type) {
       case ast::ASTNodeType::kSinglePartQuery: {
-        return BuildSinglePartQuery(ast::CastAst<ast::SinglePartQuery>(query));
+        return BuildSinglePartQuery(ast::CastAst<ast::SinglePartQuery>(query),
+                                    projection_position);
       }
       case ast::ASTNodeType::kMultiPartQuery: {
-        return BuildMultiPartQuery(ast::CastAst<ast::MultiPartQuery>(query));
+        return BuildMultiPartQuery(ast::CastAst<ast::MultiPartQuery>(query),
+                                   projection_position);
       }
       default: {
         THROW(common::InvalidArgumentError, Unsupported("single query type"));
@@ -2026,14 +2570,19 @@ class PlannerQueryBuilder {
     }
   }
 
-  SinglePlannerQuery BuildSinglePartQuery(const ast::SinglePartQuery &query) {
+  SinglePlannerQuery BuildSinglePartQuery(
+      const ast::SinglePartQuery &query,
+      ProjectionPosition projection_position) {
     CHECK(query.return_clause || !query.updating_clauses.empty(),
           common::InvalidArgumentError, Missing("RETURN clause"));
     return BuildQuerySegment(query.reading_clauses, query.updating_clauses,
-                             query.return_clause.get(), {});
+                             query.return_clause.get(), {},
+                             projection_position);
   }
 
-  SinglePlannerQuery BuildMultiPartQuery(const ast::MultiPartQuery &query) {
+  SinglePlannerQuery BuildMultiPartQuery(
+      const ast::MultiPartQuery &query,
+      ProjectionPosition projection_position) {
     CHECK(query.final_single_part_query, common::InvalidArgumentError,
           Missing("final single query"));
 
@@ -2071,6 +2620,12 @@ class PlannerQueryBuilder {
             if (clause->Is(ast::ASTNodeType::kUnwind)) {
               finish_and_start_next(QueryHorizon::ForUnwind(BuildUnwindHorizon(
                   *ast::CastAst<ast::Unwind>(clause.get()))));
+              continue;
+            }
+            if (clause->Is(ast::ASTNodeType::kInQueryCall)) {
+              finish_and_start_next(
+                  QueryHorizon::ForProcedureCall(BuildProcedureCallHorizon(
+                      *ast::CastAst<ast::InQueryCall>(clause.get()))));
               continue;
             }
             builder.BuildReadingClause(*clause);
@@ -2119,7 +2674,8 @@ class PlannerQueryBuilder {
         continue;
       }
 
-      finish_and_start_next(BuildProjectionClause(&with_clause));
+      finish_and_start_next(BuildProjectionClause(
+          &with_clause, ProjectionPosition::kIntermediate));
     }
 
     const ast::SinglePartQuery &final = *query.final_single_part_query;
@@ -2129,7 +2685,8 @@ class PlannerQueryBuilder {
     build_updating_clauses(final.updating_clauses,
                            final.return_clause != nullptr);
     if (final.return_clause != nullptr) {
-      finish_current_segment(BuildProjectionClause(final.return_clause.get()));
+      finish_current_segment(BuildProjectionClause(final.return_clause.get(),
+                                                   projection_position));
     } else if (!current_segment_finished && builder.HasLocalWork()) {
       finish_current_segment(QueryHorizon::ForPassthrough());
     }
@@ -2142,17 +2699,21 @@ class PlannerQueryBuilder {
     CHECK(query.return_clause || !query.updating_clauses.empty(),
           common::InvalidArgumentError, Missing("RETURN clause"));
     return BuildQuerySegment(query.reading_clauses, query.updating_clauses,
-                             query.return_clause.get(), argument_ids);
+                             query.return_clause.get(), argument_ids,
+                             ProjectionPosition::kIntermediate);
   }
 
   struct ProjectionParts {
     bool distinct = false;
+    ProjectionPosition position = ProjectionPosition::kIntermediate;
     std::vector<ProjectionItem> items;
     std::vector<ProjectionItem> grouping_items;
     std::vector<ProjectionItem> aggregation_items;
     RequiredOrder required_order;
+    InterestingOrder interesting_order;
     const ast::Expression *skip = nullptr;
     const ast::Expression *limit = nullptr;
+    std::vector<NestedIRExpression> nested_expressions;
   };
 
   static void MoveProjectionTail(ProjectionParts *parts,
@@ -2160,8 +2721,11 @@ class PlannerQueryBuilder {
     CHECK(parts != nullptr, common::InternalError, "projection parts is null");
     CHECK(projection != nullptr, common::InternalError, "projection is null");
     projection->required_order = std::move(parts->required_order);
+    projection->interesting_order = std::move(parts->interesting_order);
     projection->pagination.skip = parts->skip;
     projection->pagination.limit = parts->limit;
+    projection->position = parts->position;
+    projection->nested_expressions = std::move(parts->nested_expressions);
   }
 
   void AddProjectionSelections(QueryHorizon *horizon,
@@ -2191,6 +2755,9 @@ class PlannerQueryBuilder {
       case QueryHorizonKind::kUnwind:
         THROW(common::InternalError,
               "UNWIND horizon cannot have projection WHERE");
+      case QueryHorizonKind::kProcedureCall:
+        THROW(common::InternalError,
+              "procedure call horizon cannot have projection WHERE");
       case QueryHorizonKind::kPassthrough:
         THROW(common::InternalError,
               "passthrough horizon cannot have projection WHERE");
@@ -2199,12 +2766,14 @@ class PlannerQueryBuilder {
   }
 
   QueryHorizon BuildProjectionClause(
-      const ast::ProjectionClause *projection_clause) {
+      const ast::ProjectionClause *projection_clause,
+      ProjectionPosition projection_position) {
     CHECK(projection_clause != nullptr, common::InvalidArgumentError,
           Missing("projection clause"));
     CHECK(projection_clause->body, common::InvalidArgumentError,
           Missing("projection body"));
-    QueryHorizon horizon = BuildProjectionBody(*projection_clause->body);
+    QueryHorizon horizon =
+        BuildProjectionBody(*projection_clause->body, projection_position);
     if (projection_clause->Is(ast::ASTNodeType::kWith)) {
       const auto *with_clause = ast::CastAst<ast::With>(projection_clause);
       AddProjectionSelections(&horizon, with_clause->where.get());
@@ -2217,7 +2786,8 @@ class PlannerQueryBuilder {
       const std::vector<std::unique_ptr<ast::ReadingClause>> &reading,
       const std::vector<std::unique_ptr<ast::UpdatingClause>> &updating,
       const ast::ProjectionClause *projection,
-      const std::unordered_set<std::string> &argument_ids) {
+      const std::unordered_set<std::string> &argument_ids,
+      ProjectionPosition projection_position) {
     CHECK(projection != nullptr || !updating.empty(),
           common::InvalidArgumentError, Missing("projection clause"));
     SinglePlannerQuery root;
@@ -2254,6 +2824,12 @@ class PlannerQueryBuilder {
             BuildUnwindHorizon(*ast::CastAst<ast::Unwind>(clause.get()))));
         continue;
       }
+      if (clause->Is(ast::ASTNodeType::kInQueryCall)) {
+        finish_and_start_next(
+            QueryHorizon::ForProcedureCall(BuildProcedureCallHorizon(
+                *ast::CastAst<ast::InQueryCall>(clause.get()))));
+        continue;
+      }
       builder.BuildReadingClause(*clause);
     }
 
@@ -2275,19 +2851,22 @@ class PlannerQueryBuilder {
     }
 
     if (projection != nullptr) {
-      finish_current_segment(BuildProjectionClause(projection));
+      finish_current_segment(
+          BuildProjectionClause(projection, projection_position));
     } else if (!current_segment_finished && builder.HasLocalWork()) {
       finish_current_segment(QueryHorizon::ForPassthrough());
     }
     return root;
   }
 
-  QueryHorizon BuildProjectionBody(const ast::ProjectionBody &body) {
+  QueryHorizon BuildProjectionBody(const ast::ProjectionBody &body,
+                                   ProjectionPosition projection_position) {
     CHECK(!body.star, common::InvalidArgumentError,
           Unsupported("projection star before rewrite"));
 
     ProjectionParts parts;
     parts.distinct = body.distinct;
+    parts.position = projection_position;
 
     parts.items.reserve(body.items.size());
     parts.grouping_items.reserve(body.items.size());
@@ -2302,8 +2881,14 @@ class PlannerQueryBuilder {
       projection_item.alias = item->alias;
       CHECK(!projection_item.alias.empty(), common::InvalidArgumentError,
             "projection item alias is empty after rewrite");
+      AppendNestedIRExpressions(
+          &parts.nested_expressions,
+          CollectNestedIRExpressions(projection_item.expression));
       parts.items.push_back(std::move(projection_item));
       const ProjectionItem &stored_item = parts.items.back();
+      parts.interesting_order.reverse_projection.push_back(
+          {.projected_alias = stored_item.alias,
+           .source_expression = stored_item.expression});
       if (SemanticTableRef().ContainsAggregation(*stored_item.expression)) {
         parts.aggregation_items.push_back(stored_item);
       } else {
@@ -2321,11 +2906,20 @@ class PlannerQueryBuilder {
       order_item.expression = item->expression.get();
       order_item.direction = item->ascending ? OrderDirection::kAscending
                                              : OrderDirection::kDescending;
+      AppendNestedIRExpressions(
+          &parts.nested_expressions,
+          CollectNestedIRExpressions(order_item.expression));
       parts.required_order.items.emplace_back(order_item);
     }
+    parts.interesting_order.required_order = parts.required_order;
+    parts.interesting_order.candidates = parts.required_order.items;
 
     parts.skip = body.skip.get();
     parts.limit = body.limit.get();
+    AppendNestedIRExpressions(&parts.nested_expressions,
+                              CollectNestedIRExpressions(parts.skip));
+    AppendNestedIRExpressions(&parts.nested_expressions,
+                              CollectNestedIRExpressions(parts.limit));
 
     if (!parts.aggregation_items.empty()) {
       AggregatingQueryProjection projection;
@@ -2360,7 +2954,87 @@ class PlannerQueryBuilder {
     return horizon;
   }
 
+  ProcedureCallHorizon BuildProcedureCallHorizon(
+      const ast::StandaloneCall &call, bool expand_implicit_yields) {
+    ProcedureCallHorizon horizon;
+    horizon.procedure_name = call.procedure_name;
+    horizon.yield_star = call.yield_star;
+    horizon.arguments.reserve(call.arguments.size());
+    for (const auto &argument : call.arguments) {
+      CHECK(argument != nullptr, common::InvalidArgumentError,
+            Missing("procedure argument"));
+      horizon.arguments.push_back(argument.get());
+    }
+    horizon.yield_items = BuildProcedureYieldItems(
+        call.procedure_name, call.yield_items,
+        expand_implicit_yields &&
+            (call.yield_star || call.yield_items.empty()));
+    horizon.read_only = SemanticTableRef()
+                            .KnownProcedureReadOnly(call.procedure_name)
+                            .value_or(false);
+    if (call.yield_where != nullptr) {
+      AddProcedureYieldSelections(call.yield_where.get(), &horizon);
+    }
+    return horizon;
+  }
+
+  ProcedureCallHorizon BuildProcedureCallHorizon(const ast::InQueryCall &call) {
+    ProcedureCallHorizon horizon;
+    horizon.procedure_name = call.procedure_name;
+    horizon.arguments.reserve(call.arguments.size());
+    for (const auto &argument : call.arguments) {
+      CHECK(argument != nullptr, common::InvalidArgumentError,
+            Missing("procedure argument"));
+      horizon.arguments.push_back(argument.get());
+    }
+    horizon.yield_items =
+        BuildProcedureYieldItems(call.procedure_name, call.yield_items,
+                                 /*expand_implicit_yields=*/false);
+    horizon.read_only = SemanticTableRef()
+                            .KnownProcedureReadOnly(call.procedure_name)
+                            .value_or(false);
+    if (call.yield_where != nullptr) {
+      AddProcedureYieldSelections(call.yield_where.get(), &horizon);
+    }
+    return horizon;
+  }
+
+  std::vector<ProcedureYieldItem> BuildProcedureYieldItems(
+      std::string_view procedure_name,
+      const std::vector<ast::StandaloneCall::YieldItem> &items,
+      bool expand_implicit_yields) const {
+    std::vector<ProcedureYieldItem> out;
+    if (!items.empty()) {
+      out.reserve(items.size());
+      for (const auto &item : items) {
+        out.push_back(
+            {.result_field = item.result_field, .variable = item.variable});
+      }
+      return out;
+    }
+    if (!expand_implicit_yields) {
+      return out;
+    }
+    const std::vector<std::string> fields =
+        SemanticTableRef().KnownProcedureYieldFields(procedure_name);
+    out.reserve(fields.size());
+    for (const auto &field : fields) {
+      out.push_back({.result_field = field, .variable = field});
+    }
+    return out;
+  }
+
+  void AddProcedureYieldSelections(const ast::Expression *where,
+                                   ProcedureCallHorizon *horizon) {
+    CHECK(horizon != nullptr, common::InternalError,
+          "procedure call horizon is null");
+    std::unordered_set<std::string> selection_keys;
+    AddSelectionPredicates(where, SemanticTableRef(), nullptr,
+                           &horizon->yield_selections, &selection_keys);
+  }
+
   const ast::SemanticTable *semantic_table_ = nullptr;
+  std::size_t nested_expression_id_ = 0;
 };
 
 }  // namespace

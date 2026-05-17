@@ -36,6 +36,7 @@ struct ProcedureYieldSignature {
 struct ProcedureSignature {
   std::string_view name;
   std::vector<ProcedureYieldSignature> yields;
+  bool read_only = true;
 };
 
 const std::unordered_set<std::string> &EmptyStringSet() {
@@ -176,6 +177,30 @@ std::optional<SemanticVariableType> LookupProcedureYieldType(
     }
   }
   return std::nullopt;
+}
+
+std::vector<std::string> LookupProcedureYieldFields(
+    std::string_view procedure_name) {
+  const ProcedureSignature *signature =
+      LookupProcedureSignature(procedure_name);
+  if (signature == nullptr) {
+    return {};
+  }
+  std::vector<std::string> fields;
+  fields.reserve(signature->yields.size());
+  for (const auto &yield : signature->yields) {
+    fields.emplace_back(yield.field);
+  }
+  return fields;
+}
+
+std::optional<bool> LookupProcedureReadOnly(std::string_view procedure_name) {
+  const ProcedureSignature *signature =
+      LookupProcedureSignature(procedure_name);
+  if (signature == nullptr) {
+    return std::nullopt;
+  }
+  return signature->read_only;
 }
 
 SemanticVariableType InferFunctionResultType(std::string_view function_name) {
@@ -821,6 +846,16 @@ std::optional<SemanticVariableType> SemanticTable::KnownFunctionResultType(
 std::optional<SemanticVariableType> SemanticTable::KnownProcedureYieldType(
     std::string_view procedure_name, std::string_view field_name) const {
   return LookupProcedureYieldType(procedure_name, field_name);
+}
+
+std::vector<std::string> SemanticTable::KnownProcedureYieldFields(
+    std::string_view procedure_name) const {
+  return LookupProcedureYieldFields(procedure_name);
+}
+
+std::optional<bool> SemanticTable::KnownProcedureReadOnly(
+    std::string_view procedure_name) const {
+  return LookupProcedureReadOnly(procedure_name);
 }
 
 const std::unordered_set<std::string> &SemanticTable::ExpressionDependencies(

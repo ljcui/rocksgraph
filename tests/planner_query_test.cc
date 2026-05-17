@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <optional>
 #include <string>
 #include <type_traits>
 #include <unordered_map>
@@ -288,6 +289,11 @@ TEST(PlannerQueryPrinterTest, DumpsUnionAll) {
   ExpectPlannerQueryText("RETURN 1 AS x UNION ALL RETURN 2 AS x",
                          R"(UnionPlannerQuery
   all: true
+  distinct: false
+  mappings:
+    - output: x
+      lhs: x
+      rhs: x
   lhs:
     SinglePlannerQuery
       query_graph:
@@ -793,6 +799,54 @@ TEST(PlannerQueryTest, QueriesSelectionsByStructuredPredicateFields) {
   EXPECT_FALSE(selections.ContainsPropertyPredicate("a", "age", "="));
 }
 
+TEST(PlannerQueryTest, SelectionsExposePushdownAndInequalityGroups) {
+  auto statement = ParseOrFail(
+      "MATCH (n) WHERE n.age > 30 AND n.age <= 50 AND n.name = 'Ada' "
+      "RETURN n");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::Selections &selections =
+      planner_query->RequireSingle().query_graph.selections;
+
+  const std::unordered_set<std::string> no_bound_symbols;
+  EXPECT_TRUE(selections.PredicatesGiven(no_bound_symbols).empty());
+  const std::unordered_set<std::string> bound_n = {"n"};
+  EXPECT_EQ(selections.PredicatesGiven(bound_n).size(), 3U);
+
+  const auto groups = selections.PropertyInequalityGroups();
+  ASSERT_EQ(groups.size(), 1U);
+  EXPECT_EQ(groups[0].variable, "n");
+  EXPECT_EQ(groups[0].property_key, "age");
+  ASSERT_EQ(groups[0].lower_bounds.size(), 1U);
+  ASSERT_EQ(groups[0].upper_bounds.size(), 1U);
+  EXPECT_EQ(groups[0].lower_bounds[0]->comparison_op, ">");
+  EXPECT_EQ(groups[0].upper_bounds[0]->comparison_op, "<=");
+}
+
+TEST(PlannerQueryTest, SelectionsExtractNestedPredicateInfo) {
+  auto statement =
+      ParseOrFail("MATCH (n) WHERE n.age > 30 OR n:Person RETURN n");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::Selections &selections =
+      planner_query->RequireSingle().query_graph.selections;
+
+  ASSERT_EQ(selections.size(), 1U);
+  const ir::Predicate &predicate = selections.predicates[0];
+  EXPECT_EQ(predicate.kind, ir::PredicateKind::kGenericExpression);
+  ASSERT_EQ(predicate.nested_properties.size(), 1U);
+  EXPECT_EQ(predicate.nested_properties[0].variable, "n");
+  EXPECT_EQ(predicate.nested_properties[0].property_key, "age");
+  ASSERT_EQ(predicate.nested_node_labels.size(), 1U);
+  EXPECT_EQ(predicate.nested_node_labels[0].variable, "n");
+  EXPECT_EQ(predicate.nested_node_labels[0].labels,
+            std::vector<std::string>({"Person"}));
+}
+
 TEST(PlannerQueryTest, QueryGraphApisExposeCoveredIdsAndAvailability) {
   auto statement = ParseOrFail(
       "MATCH p = (a)-[r]->(b) OPTIONAL MATCH (b)-[s]->(c) RETURN a, c");
@@ -1149,6 +1203,45 @@ TEST(PlannerQueryTest, BuildsProjectionRequiredOrder) {
             ir::OrderDirection::kAscending);
 }
 
+TEST(PlannerQueryTest, BuildsProjectionPositionAndInterestingOrder) {
+  auto statement = ParseOrFail("MATCH (n) RETURN n.name AS name ORDER BY name");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::RegularQueryProjection &projection =
+      planner_query->RequireSingle().horizon.RequireRegularProjection();
+
+  EXPECT_EQ(projection.position, ir::ProjectionPosition::kFinal);
+  ASSERT_EQ(projection.interesting_order.required_order.size(), 1U);
+  ASSERT_EQ(projection.interesting_order.candidates.size(), 1U);
+  ASSERT_EQ(projection.interesting_order.reverse_projection.size(), 1U);
+  EXPECT_EQ(projection.interesting_order.reverse_projection[0].projected_alias,
+            "name");
+  ASSERT_NE(
+      projection.interesting_order.reverse_projection[0].source_expression,
+      nullptr);
+  EXPECT_EQ(ast::ExpressionToString(
+                *projection.interesting_order.reverse_projection[0]
+                     .source_expression),
+            "n.name");
+}
+
+TEST(PlannerQueryTest, MarksWithProjectionAsIntermediate) {
+  auto statement = ParseOrFail("MATCH (n) WITH n.name AS name RETURN name");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::SinglePlannerQuery &first = planner_query->RequireSingle();
+  ASSERT_EQ(first.horizon.kind, ir::QueryHorizonKind::kRegularProjection);
+  EXPECT_EQ(first.horizon.RequireRegularProjection().position,
+            ir::ProjectionPosition::kIntermediate);
+  ASSERT_TRUE(first.tail);
+  EXPECT_EQ(first.tail->horizon.RequireRegularProjection().position,
+            ir::ProjectionPosition::kFinal);
+}
+
 TEST(PlannerQueryTest, NarrowsTailArgumentIdsToActualDependencies) {
   auto statement =
       ParseOrFail("MATCH (a) WITH a, 1 AS b MATCH (a)-->(c) RETURN c");
@@ -1191,6 +1284,44 @@ TEST(PlannerQueryTest, BuildsOptionalMatchQueryGraph) {
   EXPECT_TRUE(Contains(optional.pattern_nodes, "b"));
   ASSERT_EQ(optional.pattern_relationships.size(), 1U);
   EXPECT_EQ(optional.pattern_relationships[0].variable, "r");
+}
+
+TEST(PlannerQueryTest, AccumulatesSequentialOptionalMatchArguments) {
+  auto statement = ParseOrFail(
+      "MATCH (a) OPTIONAL MATCH (a)-[r]->(b) "
+      "OPTIONAL MATCH (b)-[s]->(c) RETURN c");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::QueryGraph &query_graph =
+      planner_query->RequireSingle().query_graph;
+
+  ASSERT_EQ(query_graph.optional_matches.size(), 2U);
+  const ir::QueryGraph &first_optional = query_graph.optional_matches[0];
+  EXPECT_TRUE(Contains(first_optional.argument_ids, "a"));
+  EXPECT_FALSE(Contains(first_optional.argument_ids, "b"));
+
+  const ir::QueryGraph &second_optional = query_graph.optional_matches[1];
+  EXPECT_TRUE(Contains(second_optional.argument_ids, "b"));
+  EXPECT_FALSE(Contains(second_optional.argument_ids, "a"));
+  EXPECT_FALSE(Contains(second_optional.argument_ids, "c"));
+}
+
+TEST(PlannerQueryTest, AddsAssertIsNodeForStandaloneArgumentPatternNode) {
+  auto statement =
+      ParseOrFail("MATCH (n) WITH n, 1 AS keep MATCH (n) RETURN n");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::SinglePlannerQuery &first = planner_query->RequireSingle();
+  ASSERT_TRUE(first.tail);
+  const ir::QueryGraph &second_graph = first.tail->query_graph;
+
+  EXPECT_TRUE(Contains(second_graph.argument_ids, "n"));
+  EXPECT_TRUE(Contains(second_graph.pattern_nodes, "n"));
+  EXPECT_TRUE(Contains(second_graph.assert_is_node_variables, "n"));
 }
 
 TEST(PlannerQueryTest, ClassifiesArgumentRelationshipTypeWithSemanticTable) {
@@ -1254,6 +1385,70 @@ TEST(PlannerQueryTest, BuildsUnwindHorizonSegment) {
   EXPECT_EQ(return_segment.horizon.RequireRegularProjection().items[0].alias,
             "x");
   EXPECT_EQ(return_segment.tail, nullptr);
+}
+
+TEST(PlannerQueryTest, BuildsStandaloneProcedureCallHorizon) {
+  auto statement = ParseOrFail("CALL db.labels()");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::SinglePlannerQuery &main = planner_query->RequireSingle();
+
+  EXPECT_TRUE(main.query_graph.pattern_nodes.empty());
+  ASSERT_EQ(main.horizon.kind, ir::QueryHorizonKind::kProcedureCall);
+  const ir::ProcedureCallHorizon &call = main.horizon.RequireProcedureCall();
+  EXPECT_EQ(call.procedure_name, "db.labels");
+  EXPECT_TRUE(call.read_only);
+  ASSERT_EQ(call.yield_items.size(), 1U);
+  EXPECT_EQ(call.yield_items[0].result_field,
+            std::optional<std::string>("label"));
+  EXPECT_EQ(call.yield_items[0].variable, "label");
+}
+
+TEST(PlannerQueryTest, BuildsInQueryProcedureCallWithYieldWhere) {
+  auto statement = ParseOrFail(
+      "MATCH (n) CALL db.labels() YIELD label AS l WHERE l <> '' "
+      "RETURN n, l");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::SinglePlannerQuery &call_segment = planner_query->RequireSingle();
+
+  EXPECT_TRUE(Contains(call_segment.query_graph.pattern_nodes, "n"));
+  ASSERT_EQ(call_segment.horizon.kind, ir::QueryHorizonKind::kProcedureCall);
+  const ir::ProcedureCallHorizon &call =
+      call_segment.horizon.RequireProcedureCall();
+  EXPECT_EQ(call.procedure_name, "db.labels");
+  ASSERT_EQ(call.yield_items.size(), 1U);
+  EXPECT_EQ(call.yield_items[0].result_field,
+            std::optional<std::string>("label"));
+  EXPECT_EQ(call.yield_items[0].variable, "l");
+  ASSERT_EQ(call.yield_selections.size(), 1U);
+  EXPECT_TRUE(Contains(call.yield_selections.predicates[0].dependencies, "l"));
+
+  ASSERT_TRUE(call_segment.tail);
+  const ir::SinglePlannerQuery &return_segment = *call_segment.tail;
+  EXPECT_TRUE(Contains(return_segment.query_graph.argument_ids, "n"));
+  EXPECT_TRUE(Contains(return_segment.query_graph.argument_ids, "l"));
+}
+
+TEST(PlannerQueryTest, MarksUnknownProcedureCallsAsNotReadOnly) {
+  auto statement =
+      ParseOrFail("MATCH (n) CALL db.unknown(n) YIELD value RETURN value");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::ProcedureCallHorizon &call =
+      planner_query->RequireSingle().horizon.RequireProcedureCall();
+
+  EXPECT_FALSE(call.read_only);
+  ASSERT_EQ(call.arguments.size(), 1U);
+  EXPECT_EQ(ast::ExpressionToString(*call.arguments[0]), "n");
+  ASSERT_EQ(call.yield_items.size(), 1U);
+  EXPECT_EQ(call.yield_items[0].variable, "value");
 }
 
 TEST(PlannerQueryTest, SkipsPassthroughWithAfterUnwindSegment) {
@@ -1376,6 +1571,64 @@ TEST(PlannerQueryTest, NarrowsExistsSubqueryArgumentIdsToUsedOuterVariables) {
   EXPECT_FALSE(Contains(subquery.query_graph.argument_ids, "r"));
 }
 
+TEST(PlannerQueryTest, BuildsNestedIRExpressionForPatternExists) {
+  auto statement = ParseOrFail(
+      "MATCH (n) WHERE EXISTS { (n)-[r]->(m) WHERE m.age > 1 } RETURN n");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::SinglePlannerQuery &main = planner_query->RequireSingle();
+
+  ASSERT_EQ(main.query_graph.selections.size(), 1U);
+  const ir::Predicate &predicate = main.query_graph.selections.predicates[0];
+  EXPECT_EQ(predicate.kind, ir::PredicateKind::kExistsSubquery);
+  ASSERT_EQ(predicate.nested_expressions.size(), 1U);
+  const ir::NestedIRExpression &nested = predicate.nested_expressions[0];
+  EXPECT_EQ(nested.kind, ir::NestedIRExpressionKind::kExists);
+  EXPECT_TRUE(Contains(nested.dependencies, "n"));
+  ASSERT_NE(nested.query, nullptr);
+  EXPECT_EQ(predicate.subquery, nested.query.get());
+
+  const ir::SinglePlannerQuery &subquery = nested.query->RequireSingle();
+  EXPECT_TRUE(Contains(subquery.query_graph.argument_ids, "n"));
+  EXPECT_TRUE(Contains(subquery.query_graph.pattern_nodes, "n"));
+  EXPECT_TRUE(Contains(subquery.query_graph.pattern_nodes, "m"));
+  ASSERT_EQ(subquery.query_graph.pattern_relationships.size(), 1U);
+  EXPECT_EQ(subquery.query_graph.pattern_relationships[0].variable, "r");
+}
+
+TEST(PlannerQueryTest, BuildsNestedIRExpressionForPatternComprehension) {
+  auto statement =
+      ParseOrFail("MATCH (n) RETURN [(n)-[r]->(m) | m.name] AS names");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::RegularQueryProjection &projection =
+      planner_query->RequireSingle().horizon.RequireRegularProjection();
+
+  ASSERT_EQ(projection.nested_expressions.size(), 1U);
+  const ir::NestedIRExpression &nested = projection.nested_expressions[0];
+  EXPECT_EQ(nested.kind, ir::NestedIRExpressionKind::kList);
+  EXPECT_TRUE(Contains(nested.dependencies, "n"));
+  EXPECT_FALSE(nested.value_variable.empty());
+  EXPECT_FALSE(nested.collection_variable.empty());
+  ASSERT_NE(nested.query, nullptr);
+
+  const ir::SinglePlannerQuery &subquery = nested.query->RequireSingle();
+  EXPECT_TRUE(Contains(subquery.query_graph.argument_ids, "n"));
+  EXPECT_TRUE(Contains(subquery.query_graph.pattern_nodes, "n"));
+  EXPECT_TRUE(Contains(subquery.query_graph.pattern_nodes, "m"));
+  ASSERT_EQ(subquery.query_graph.pattern_relationships.size(), 1U);
+  EXPECT_EQ(subquery.query_graph.pattern_relationships[0].variable, "r");
+  const ir::RegularQueryProjection &nested_projection =
+      subquery.horizon.RequireRegularProjection();
+  ASSERT_EQ(nested_projection.items.size(), 1U);
+  EXPECT_EQ(ast::ExpressionToString(*nested_projection.items[0].expression),
+            "m.name");
+}
+
 TEST(PlannerQueryTest, DeduplicatesRepeatedWherePredicatesAcrossMatches) {
   auto statement = ParseOrFail(
       "MATCH (n)-[r:KNOWS]->(m) WHERE n.age > 30 "
@@ -1473,6 +1726,11 @@ TEST(PlannerQueryTest, BuildsUnionBranch) {
   ASSERT_NE(union_query.lhs, nullptr);
   EXPECT_EQ(union_query.lhs->Kind(), ir::PlannerQueryKind::kSingle);
   EXPECT_FALSE(union_query.all);
+  EXPECT_TRUE(union_query.distinct);
+  ASSERT_EQ(union_query.mappings.size(), 1U);
+  EXPECT_EQ(union_query.mappings[0].output_variable, "x");
+  EXPECT_EQ(union_query.mappings[0].lhs_variable, "x");
+  EXPECT_EQ(union_query.mappings[0].rhs_variable, "x");
 }
 
 TEST(PlannerQueryTest, BuildsUnionAllBranch) {
@@ -1487,6 +1745,11 @@ TEST(PlannerQueryTest, BuildsUnionAllBranch) {
   ASSERT_NE(union_query.lhs, nullptr);
   EXPECT_EQ(union_query.lhs->Kind(), ir::PlannerQueryKind::kSingle);
   EXPECT_TRUE(union_query.all);
+  EXPECT_FALSE(union_query.distinct);
+  ASSERT_EQ(union_query.mappings.size(), 1U);
+  EXPECT_EQ(union_query.mappings[0].output_variable, "a");
+  EXPECT_EQ(union_query.mappings[0].lhs_variable, "a");
+  EXPECT_EQ(union_query.mappings[0].rhs_variable, "a");
 }
 
 TEST(PlannerQueryTest, BuildsCreateMutatingPattern) {

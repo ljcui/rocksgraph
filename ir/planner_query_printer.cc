@@ -78,6 +78,16 @@ std::string PredicateKindToString(PredicateKind kind) {
   THROW(common::InternalError, "unknown predicate kind");
 }
 
+std::string NestedIRExpressionKindToString(NestedIRExpressionKind kind) {
+  switch (kind) {
+    case NestedIRExpressionKind::kExists:
+      return "exists";
+    case NestedIRExpressionKind::kList:
+      return "list";
+  }
+  THROW(common::InternalError, "unknown nested IR expression kind");
+}
+
 std::string MutatingPatternKindToString(MutatingPatternKind kind) {
   switch (kind) {
     case MutatingPatternKind::kCreate:
@@ -178,6 +188,8 @@ class PlannerQueryPrinter {
     Line("UnionPlannerQuery");
     Indent();
     Line(std::string("all: ") + (query.all ? "true" : "false"));
+    Line(std::string("distinct: ") + (query.distinct ? "true" : "false"));
+    PrintUnionMappings(query.mappings);
     Line("lhs:");
     Indent();
     CHECK(query.lhs != nullptr, common::InvalidArgumentError,
@@ -191,10 +203,32 @@ class PlannerQueryPrinter {
     Dedent();
   }
 
+  void PrintUnionMappings(
+      const std::vector<UnionPlannerQuery::UnionMapping> &mappings) {
+    Line("mappings:");
+    Indent();
+    if (mappings.empty()) {
+      Line("[]");
+    } else {
+      for (const auto &mapping : mappings) {
+        Line("- output: " + mapping.output_variable);
+        Indent();
+        Line("lhs: " + mapping.lhs_variable);
+        Line("rhs: " + mapping.rhs_variable);
+        Dedent();
+      }
+    }
+    Dedent();
+  }
+
   void PrintQueryGraph(const QueryGraph &query_graph) {
     Line("query_graph:");
     Indent();
     Line("argument_ids: " + SortedList(query_graph.argument_ids));
+    if (!query_graph.assert_is_node_variables.empty()) {
+      Line("assert_is_node_variables: " +
+           SortedList(query_graph.assert_is_node_variables));
+    }
     if (!query_graph.pattern_paths.empty()) {
       Line("pattern_paths: " + SortedList(query_graph.pattern_paths));
     }
@@ -315,6 +349,36 @@ class PlannerQueryPrinter {
         PrintPlannerQueryNode(*predicate.subquery);
         Dedent();
       }
+      PrintNestedIRExpressions(predicate.nested_expressions);
+      Dedent();
+    }
+    Dedent();
+  }
+
+  void PrintNestedIRExpressions(
+      const std::vector<NestedIRExpression> &nested_expressions) {
+    if (nested_expressions.empty()) {
+      return;
+    }
+    Line("nested_expressions:");
+    Indent();
+    for (const auto &nested : nested_expressions) {
+      Line("- kind: " + NestedIRExpressionKindToString(nested.kind));
+      Indent();
+      Line("expression: " + ExpressionText(nested.expression));
+      Line("dependencies: " + SortedList(nested.dependencies));
+      if (!nested.value_variable.empty()) {
+        Line("value_variable: " + nested.value_variable);
+      }
+      if (!nested.collection_variable.empty()) {
+        Line("collection_variable: " + nested.collection_variable);
+      }
+      if (nested.query != nullptr) {
+        Line("query:");
+        Indent();
+        PrintPlannerQueryNode(*nested.query);
+        Dedent();
+      }
       Dedent();
     }
     Dedent();
@@ -338,6 +402,10 @@ class PlannerQueryPrinter {
         return;
       case QueryHorizonKind::kUnwind:
         PrintUnwind(horizon.RequireUnwind());
+        Dedent();
+        return;
+      case QueryHorizonKind::kProcedureCall:
+        PrintProcedureCall(horizon.RequireProcedureCall());
         Dedent();
         return;
       case QueryHorizonKind::kPassthrough:
@@ -393,6 +461,7 @@ class PlannerQueryPrinter {
 
   void PrintProjectionTail(const QueryProjection &projection) {
     PrintSelections(projection.selections);
+    PrintNestedIRExpressions(projection.nested_expressions);
     Line("required_order:");
     Indent();
     if (projection.required_order.empty()) {
@@ -418,6 +487,43 @@ class PlannerQueryPrinter {
     Indent();
     Line("expression: " + ExpressionText(unwind.expression));
     Line("alias: " + unwind.alias);
+    Dedent();
+  }
+
+  void PrintProcedureCall(const ProcedureCallHorizon &procedure_call) {
+    Line("procedure_call:");
+    Indent();
+    Line("procedure_name: " + procedure_call.procedure_name);
+    Line(std::string("read_only: ") +
+         (procedure_call.read_only ? "true" : "false"));
+    Line(std::string("yield_star: ") +
+         (procedure_call.yield_star ? "true" : "false"));
+    Line("arguments:");
+    Indent();
+    if (procedure_call.arguments.empty()) {
+      Line("[]");
+    } else {
+      for (const ast::Expression *argument : procedure_call.arguments) {
+        Line("- " + ExpressionText(argument));
+      }
+    }
+    Dedent();
+    Line("yield_items:");
+    Indent();
+    if (procedure_call.yield_items.empty()) {
+      Line("[]");
+    } else {
+      for (const auto &item : procedure_call.yield_items) {
+        Line("- variable: " + item.variable);
+        if (item.result_field.has_value()) {
+          Indent();
+          Line("result_field: " + *item.result_field);
+          Dedent();
+        }
+      }
+    }
+    Dedent();
+    PrintSelections(procedure_call.yield_selections);
     Dedent();
   }
 

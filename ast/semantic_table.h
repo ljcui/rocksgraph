@@ -39,6 +39,10 @@ class SemanticTable {
       std::string_view function_name) const;
   [[nodiscard]] std::optional<SemanticVariableType> KnownProcedureYieldType(
       std::string_view procedure_name, std::string_view field_name) const;
+  [[nodiscard]] std::vector<std::string> KnownProcedureYieldFields(
+      std::string_view procedure_name) const;
+  [[nodiscard]] std::optional<bool> KnownProcedureReadOnly(
+      std::string_view procedure_name) const;
   [[nodiscard]] const std::unordered_map<std::string, SemanticVariableType> &
   VariableTypes() const {
     return variable_types_;
