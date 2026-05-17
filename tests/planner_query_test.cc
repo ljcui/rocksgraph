@@ -938,11 +938,46 @@ TEST(PlannerQueryTest, TreatsOnlyOuterPatternVariablesAsExistsDependencies) {
   const ir::SinglePlannerQuery &main = planner_query->RequireSingle();
 
   ASSERT_EQ(main.query_graph.selections.size(), 1U);
-  const auto &dependencies =
-      main.query_graph.selections.predicates[0].dependencies;
+  const auto &predicate = main.query_graph.selections.predicates[0];
+  EXPECT_EQ(predicate.kind, ir::PredicateKind::kExistsSubquery);
+  const auto &dependencies = predicate.dependencies;
   EXPECT_TRUE(Contains(dependencies, "n"));
   EXPECT_FALSE(Contains(dependencies, "r"));
   EXPECT_FALSE(Contains(dependencies, "m"));
+
+  ASSERT_NE(predicate.subquery, nullptr);
+  const ir::SinglePlannerQuery &subquery = predicate.subquery->RequireSingle();
+  EXPECT_TRUE(Contains(subquery.query_graph.argument_ids, "n"));
+  EXPECT_FALSE(Contains(subquery.query_graph.argument_ids, "r"));
+  EXPECT_FALSE(Contains(subquery.query_graph.argument_ids, "m"));
+  EXPECT_TRUE(Contains(subquery.query_graph.pattern_nodes, "n"));
+  EXPECT_TRUE(Contains(subquery.query_graph.pattern_nodes, "m"));
+  ASSERT_EQ(subquery.query_graph.pattern_relationships.size(), 1U);
+  EXPECT_EQ(subquery.query_graph.pattern_relationships[0].variable, "r");
+}
+
+TEST(PlannerQueryTest, NarrowsExistsSubqueryArgumentIdsToUsedOuterVariables) {
+  auto statement = ParseOrFail(
+      "MATCH (a) WITH a, 1 AS unused "
+      "MATCH (a) WHERE EXISTS { MATCH (a)-[r]->(b) RETURN 1 AS ok } RETURN a");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::SinglePlannerQuery &first = planner_query->RequireSingle();
+  ASSERT_TRUE(first.tail);
+  const ir::SinglePlannerQuery &main = *first.tail;
+
+  EXPECT_TRUE(Contains(main.query_graph.argument_ids, "a"));
+  EXPECT_FALSE(Contains(main.query_graph.argument_ids, "unused"));
+  ASSERT_EQ(main.query_graph.selections.size(), 1U);
+  const auto &predicate = main.query_graph.selections.predicates[0];
+  ASSERT_NE(predicate.subquery, nullptr);
+  const ir::SinglePlannerQuery &subquery = predicate.subquery->RequireSingle();
+  EXPECT_TRUE(Contains(subquery.query_graph.argument_ids, "a"));
+  EXPECT_FALSE(Contains(subquery.query_graph.argument_ids, "unused"));
+  EXPECT_FALSE(Contains(subquery.query_graph.argument_ids, "b"));
+  EXPECT_FALSE(Contains(subquery.query_graph.argument_ids, "r"));
 }
 
 TEST(PlannerQueryTest, DeduplicatesRepeatedWherePredicatesAcrossMatches) {

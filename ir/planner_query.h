@@ -41,6 +41,8 @@ enum class PredicateKind {
   kExistsSubquery,
 };
 
+class PlannerQuery;
+
 struct Predicate {
   const ast::Expression *expression = nullptr;
   std::unordered_set<std::string> dependencies;
@@ -50,6 +52,7 @@ struct Predicate {
   std::vector<std::string> labels;
   std::vector<std::string> relationship_types;
   std::string comparison_op;
+  std::unique_ptr<PlannerQuery> subquery;
 };
 
 struct Selections {

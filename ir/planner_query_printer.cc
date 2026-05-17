@@ -222,6 +222,12 @@ class PlannerQueryPrinter {
       if (!predicate.comparison_op.empty()) {
         Line("comparison_op: " + predicate.comparison_op);
       }
+      if (predicate.subquery != nullptr) {
+        Line("subquery:");
+        Indent();
+        PrintPlannerQueryNode(*predicate.subquery);
+        Dedent();
+      }
       Dedent();
     }
     Dedent();

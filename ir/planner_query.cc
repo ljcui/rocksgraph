@@ -86,6 +86,16 @@ const ast::PropertyExpression *AsPropertyExpression(
   return ast::CastAst<ast::PropertyExpression>(unwrapped);
 }
 
+const ast::ExistentialSubquery *AsExistentialSubquery(
+    const ast::Expression *expression) {
+  const ast::Expression *unwrapped = UnwrapParenthesized(expression);
+  if (unwrapped == nullptr ||
+      !unwrapped->Is(ast::ASTNodeType::kExistentialSubquery)) {
+    return nullptr;
+  }
+  return ast::CastAst<ast::ExistentialSubquery>(unwrapped);
+}
+
 std::unordered_set<std::string> QueryGraphLocalAvailableSymbols(
     const QueryGraph &query_graph) {
   std::unordered_set<std::string> symbols = query_graph.argument_ids;
@@ -643,7 +653,7 @@ class QueryGraphBuilder {
       return;
     }
 
-    if (expression->Is(ast::ASTNodeType::kExistentialSubquery)) {
+    if (AsExistentialSubquery(expression) != nullptr) {
       predicate->kind = PredicateKind::kExistsSubquery;
     }
   }
@@ -841,17 +851,44 @@ class PlannerQueryBuilder {
     return planner_query;
   }
 
+  void AttachQueryGraphSubqueries(QueryGraph *query_graph) {
+    CHECK(query_graph != nullptr, common::InternalError, "query graph is null");
+    for (auto &predicate : query_graph->selections.predicates) {
+      if (predicate.kind != PredicateKind::kExistsSubquery) {
+        continue;
+      }
+      const ast::ExistentialSubquery *subquery =
+          AsExistentialSubquery(predicate.expression);
+      CHECK(subquery != nullptr, common::InvalidArgumentError,
+            "EXISTS predicate expression is not an existential subquery");
+      CHECK(subquery->query != nullptr, common::InvalidArgumentError,
+            Missing("EXISTS subquery"));
+      predicate.subquery = BuildRegularQuery(*subquery->query);
+    }
+    for (auto &optional_match : query_graph->optional_matches) {
+      AttachQueryGraphSubqueries(&optional_match);
+    }
+  }
+
   void FinalizePlannerQueryArguments(PlannerQuery &query) const {
+    FinalizePlannerQueryArguments(query, {});
+  }
+
+  void FinalizePlannerQueryArguments(
+      PlannerQuery &query,
+      const std::unordered_set<std::string> &available_symbols) const {
     switch (query.Kind()) {
       case PlannerQueryKind::kSingle:
-        FinalizeSinglePlannerQueryArguments(&query.RequireSingle(), {});
+        FinalizeSinglePlannerQueryArguments(&query.RequireSingle(),
+                                            available_symbols);
         return;
       case PlannerQueryKind::kUnion: {
         UnionPlannerQuery &union_query = query.RequireUnion();
         CHECK(union_query.lhs != nullptr, common::InvalidArgumentError,
               "UNION lhs planner query is null");
-        FinalizePlannerQueryArguments(*union_query.lhs);
-        FinalizeSinglePlannerQueryArguments(&union_query.rhs, {});
+        FinalizePlannerQueryArguments(*union_query.lhs, available_symbols);
+        FinalizeSinglePlannerQueryArguments(&union_query.rhs,
+                                            available_symbols);
         return;
       }
     }
@@ -868,27 +905,38 @@ class PlannerQueryBuilder {
           SinglePlannerQueryDependencies(*segment);
       segment->query_graph.argument_ids =
           IntersectSymbols(dependencies, available_symbols);
-      FinalizeOptionalMatchArguments(
-          &segment->query_graph,
-          QueryGraphLocalAvailableSymbols(segment->query_graph));
+      FinalizeQueryGraphArguments(&segment->query_graph);
       available_symbols = SinglePlannerQueryOutputSymbols(*segment);
       segment = segment->tail.get();
     }
   }
 
-  void FinalizeOptionalMatchArguments(
-      QueryGraph *query_graph,
-      std::unordered_set<std::string> available_symbols) const {
+  void FinalizeQueryGraphArguments(QueryGraph *query_graph) const {
     CHECK(query_graph != nullptr, common::InternalError, "query graph is null");
+    std::unordered_set<std::string> available_symbols =
+        QueryGraphLocalAvailableSymbols(*query_graph);
+    FinalizeSelectionSubqueries(&query_graph->selections, available_symbols);
     for (auto &optional_match : query_graph->optional_matches) {
       const std::unordered_set<std::string> dependencies =
           QueryGraphDependencies(optional_match);
       optional_match.argument_ids =
           IntersectSymbols(dependencies, available_symbols);
-      std::unordered_set<std::string> optional_symbols =
+      FinalizeQueryGraphArguments(&optional_match);
+      const std::unordered_set<std::string> optional_symbols =
           QueryGraphAvailableSymbols(optional_match);
-      FinalizeOptionalMatchArguments(&optional_match, optional_symbols);
       AddSymbols(&available_symbols, optional_symbols);
+    }
+  }
+
+  void FinalizeSelectionSubqueries(
+      Selections *selections,
+      const std::unordered_set<std::string> &available_symbols) const {
+    CHECK(selections != nullptr, common::InternalError, "selections is null");
+    for (auto &predicate : selections->predicates) {
+      if (predicate.subquery == nullptr) {
+        continue;
+      }
+      FinalizePlannerQueryArguments(*predicate.subquery, available_symbols);
     }
   }
 
@@ -1150,6 +1198,7 @@ class PlannerQueryBuilder {
             Missing("reading clause"));
       if (clause->Is(ast::ASTNodeType::kUnwind)) {
         current_segment->query_graph = builder.Release();
+        AttachQueryGraphSubqueries(&current_segment->query_graph);
         current_segment->horizon = QueryHorizon::ForUnwind(
             BuildUnwindHorizon(*ast::CastAst<ast::Unwind>(clause.get())));
         current_argument_ids =
@@ -1165,6 +1214,7 @@ class PlannerQueryBuilder {
     }
 
     current_segment->query_graph = builder.Release();
+    AttachQueryGraphSubqueries(&current_segment->query_graph);
     current_segment->horizon = BuildProjectionClause(projection);
     return root;
   }
