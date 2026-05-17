@@ -67,60 +67,55 @@ const SinglePlannerQuery *LastQueryPart(const SinglePlannerQuery *query) {
   return current;
 }
 
+const ast::Variable *AsVariableExpression(const ast::Expression *expression) {
+  const ast::Expression *unwrapped = UnwrapParenthesized(expression);
+  if (unwrapped == nullptr || !unwrapped->Is(ast::ASTNodeType::kVariable)) {
+    return nullptr;
+  }
+  return ast::CastAst<ast::Variable>(unwrapped);
+}
+
+const ast::PropertyExpression *AsPropertyExpression(
+    const ast::Expression *expression) {
+  const ast::Expression *unwrapped = UnwrapParenthesized(expression);
+  if (unwrapped == nullptr ||
+      !unwrapped->Is(ast::ASTNodeType::kPropertyExpression)) {
+    return nullptr;
+  }
+  return ast::CastAst<ast::PropertyExpression>(unwrapped);
+}
+
+std::unordered_set<std::string> QueryGraphAvailableSymbols(
+    const QueryGraph &query_graph) {
+  std::unordered_set<std::string> symbols = query_graph.argument_ids;
+  symbols.insert(query_graph.pattern_nodes.begin(),
+                 query_graph.pattern_nodes.end());
+  for (const auto &relationship : query_graph.pattern_relationships) {
+    CHECK(!relationship.variable.empty(), common::InvalidArgumentError,
+          "relationship variable is empty");
+    symbols.insert(relationship.variable);
+  }
+  return symbols;
+}
+
+std::unordered_set<std::string> ProjectionOutputSymbols(
+    const Projection &projection) {
+  std::unordered_set<std::string> symbols;
+  for (const auto &item : projection.items) {
+    CHECK(!item.alias.empty(), common::InvalidArgumentError,
+          "projection item alias is empty");
+    symbols.insert(item.alias);
+  }
+  return symbols;
+}
+
 }  // namespace
 
-class QueryGraphBuilder {
+class PatternConverter {
  public:
-  void BuildReadingClause(const ast::ReadingClause &clause) {
-    switch (clause.node_type) {
-      case ast::ASTNodeType::kMatch:
-        BuildMatch(ast::CastAst<ast::Match>(clause));
-        return;
-      case ast::ASTNodeType::kUnwind:
-        THROW(common::InvalidArgumentError, Unsupported("UNWIND"));
-      case ast::ASTNodeType::kInQueryCall:
-        THROW(common::InvalidArgumentError, Unsupported("procedure call"));
-      default:
-        break;
-    }
-    THROW(common::InvalidArgumentError, Unsupported("reading clause"));
-  }
-
-  void BuildMatch(const ast::Match &match) {
-    if (match.optional_match) {
-      THROW(common::InvalidArgumentError, Unsupported("OPTIONAL MATCH"));
-    }
-    CHECK(match.pattern != nullptr, common::InvalidArgumentError,
-          Missing("MATCH pattern"));
-    AddPattern(*match.pattern);
-    if (match.where) {
-      AddWhere(match.where.get());
-    }
-  }
-
-  void AddWhere(const ast::Expression *where) {
-    CHECK(where != nullptr, common::InvalidArgumentError,
-          "WHERE predicate is null");
-    std::vector<const ast::Expression *> predicates;
-    SplitConjunctivePredicates(where, &predicates);
-    CHECK(!predicates.empty(), common::InvalidArgumentError,
-          "WHERE predicate list is empty");
-    for (const ast::Expression *predicate : predicates) {
-      CHECK(predicate != nullptr, common::InvalidArgumentError,
-            "null WHERE predicate is not supported");
-      const std::string predicate_key = ast::ExpressionToString(*predicate);
-      CHECK(!predicate_key.empty(), common::InvalidArgumentError,
-            "failed to stringify WHERE predicate");
-      if (!where_keys_.insert(predicate_key).second) {
-        continue;
-      }
-
-      QueryGraph::WherePredicate where_predicate;
-      where_predicate.expression = predicate;
-      where_predicate.dependencies =
-          ast::CollectExpressionDependencies(*predicate, CoveredSymbols());
-      graph_.where.push_back(std::move(where_predicate));
-    }
+  explicit PatternConverter(QueryGraph *graph) : graph_(graph) {
+    CHECK(graph_ != nullptr, common::InternalError,
+          "pattern converter query graph is null");
   }
 
   void AddPattern(const ast::Pattern &pattern) {
@@ -133,6 +128,7 @@ class QueryGraphBuilder {
     }
   }
 
+ private:
   void AddPatternPart(const ast::PatternPart &part) {
     if (!part.variable.empty()) {
       THROW(common::InvalidArgumentError, Unsupported("named path"));
@@ -140,19 +136,6 @@ class QueryGraphBuilder {
     CHECK(part.element != nullptr, common::InvalidArgumentError,
           Missing("pattern element"));
     AddPatternElement(*part.element);
-  }
-
-  QueryGraph Release() { return std::move(graph_); }
-
- private:
-  [[nodiscard]] std::unordered_set<std::string> CoveredSymbols() const {
-    std::unordered_set<std::string> symbols = graph_.nodes;
-    for (const auto &relationship : graph_.relationships) {
-      CHECK(!relationship.name.empty(), common::InvalidArgumentError,
-            "relationship variable is empty");
-      symbols.insert(relationship.name);
-    }
-    return symbols;
   }
 
   void AddPatternElement(const ast::PatternElement &element) {
@@ -178,7 +161,7 @@ class QueryGraphBuilder {
           Unsupported("node with labels"));
     CHECK(!node.properties, common::InvalidArgumentError,
           Unsupported("node with properties"));
-    graph_.nodes.insert(node.variable);
+    graph_->pattern_nodes.insert(node.variable);
     return node.variable;
   }
 
@@ -187,26 +170,168 @@ class QueryGraphBuilder {
     const ast::RelationshipDetail *detail = pattern.detail.get();
     CHECK(detail && !detail->variable.empty(), common::InvalidArgumentError,
           Unsupported("anonymous relationship"));
-    CHECK(!detail->range, common::InvalidArgumentError,
-          Unsupported("variable length relationship"));
-    CHECK(detail->types.empty(), common::InvalidArgumentError,
-          Unsupported("relationship with labels"));
     CHECK(!detail->properties, common::InvalidArgumentError,
           Unsupported("relationship with properties"));
 
-    QueryGraph::Relationship relationship;
-    relationship.name = detail->variable;
+    PatternRelationship relationship;
+    relationship.variable = detail->variable;
     relationship.left_node = left;
     relationship.right_node = right;
-    relationship.types = {detail->types.begin(), detail->types.end()};
-    if (pattern.left_arrow) {
-      relationship.direction = QueryGraph::Direction::kIncoming;
-    } else if (pattern.right_arrow) {
-      relationship.direction = QueryGraph::Direction::kOutgoing;
-    } else {
-      relationship.direction = QueryGraph::Direction::kBoth;
+    relationship.types = detail->types;
+    if (detail->range) {
+      relationship.length.variable = true;
+      relationship.length.min = detail->range->min;
+      relationship.length.max = detail->range->max;
     }
-    graph_.relationships.push_back(std::move(relationship));
+    if (pattern.left_arrow) {
+      relationship.direction = Direction::kIncoming;
+    } else if (pattern.right_arrow) {
+      relationship.direction = Direction::kOutgoing;
+    } else {
+      relationship.direction = Direction::kBoth;
+    }
+    graph_->pattern_relationships.push_back(std::move(relationship));
+  }
+
+  QueryGraph *graph_ = nullptr;
+};
+
+class QueryGraphBuilder {
+ public:
+  explicit QueryGraphBuilder(
+      std::unordered_set<std::string> argument_ids = {}) {
+    graph_.argument_ids = std::move(argument_ids);
+  }
+
+  void BuildReadingClause(const ast::ReadingClause &clause) {
+    switch (clause.node_type) {
+      case ast::ASTNodeType::kMatch:
+        BuildMatch(ast::CastAst<ast::Match>(clause));
+        return;
+      case ast::ASTNodeType::kUnwind:
+        THROW(common::InvalidArgumentError, Unsupported("UNWIND"));
+      case ast::ASTNodeType::kInQueryCall:
+        THROW(common::InvalidArgumentError, Unsupported("procedure call"));
+      default:
+        break;
+    }
+    THROW(common::InvalidArgumentError, Unsupported("reading clause"));
+  }
+
+  void BuildMatch(const ast::Match &match) {
+    if (match.optional_match) {
+      THROW(common::InvalidArgumentError, Unsupported("OPTIONAL MATCH"));
+    }
+    CHECK(match.pattern != nullptr, common::InvalidArgumentError,
+          Missing("MATCH pattern"));
+    PatternConverter converter(&graph_);
+    converter.AddPattern(*match.pattern);
+    if (match.where) {
+      AddWhere(match.where.get());
+    }
+  }
+
+  void AddWhere(const ast::Expression *where) {
+    CHECK(where != nullptr, common::InvalidArgumentError,
+          "WHERE predicate is null");
+    std::vector<const ast::Expression *> predicates;
+    SplitConjunctivePredicates(where, &predicates);
+    CHECK(!predicates.empty(), common::InvalidArgumentError,
+          "WHERE predicate list is empty");
+    for (const ast::Expression *predicate : predicates) {
+      CHECK(predicate != nullptr, common::InvalidArgumentError,
+            "null WHERE predicate is not supported");
+      const std::string predicate_key = ast::ExpressionToString(*predicate);
+      CHECK(!predicate_key.empty(), common::InvalidArgumentError,
+            "failed to stringify WHERE predicate");
+      if (!where_keys_.insert(predicate_key).second) {
+        continue;
+      }
+
+      Predicate where_predicate;
+      where_predicate.expression = predicate;
+      where_predicate.dependencies =
+          ast::CollectExpressionDependencies(*predicate, CoveredSymbols());
+      ClassifyPredicate(&where_predicate);
+      graph_.selections.predicates.push_back(std::move(where_predicate));
+    }
+  }
+
+  QueryGraph Release() { return std::move(graph_); }
+
+ private:
+  [[nodiscard]] std::unordered_set<std::string> CoveredSymbols() const {
+    std::unordered_set<std::string> symbols = graph_.argument_ids;
+    symbols.insert(graph_.pattern_nodes.begin(), graph_.pattern_nodes.end());
+    for (const auto &relationship : graph_.pattern_relationships) {
+      CHECK(!relationship.variable.empty(), common::InvalidArgumentError,
+            "relationship variable is empty");
+      symbols.insert(relationship.variable);
+    }
+    return symbols;
+  }
+
+  [[nodiscard]] bool IsRelationshipVariable(const std::string &name) const {
+    for (const auto &relationship : graph_.pattern_relationships) {
+      if (relationship.variable == name) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void ClassifyPredicate(Predicate *predicate) const {
+    CHECK(predicate != nullptr, common::InternalError, "predicate is null");
+    CHECK(predicate->expression != nullptr, common::InvalidArgumentError,
+          "WHERE predicate expression is null");
+    const ast::Expression *expression =
+        UnwrapParenthesized(predicate->expression);
+    CHECK(expression != nullptr, common::InvalidArgumentError,
+          "WHERE predicate expression is null");
+
+    if (expression->Is(ast::ASTNodeType::kLabelPredicateExpression)) {
+      const auto *label =
+          ast::CastAst<ast::LabelPredicateExpression>(expression);
+      const ast::Variable *variable = AsVariableExpression(label->expr.get());
+      if (variable == nullptr) {
+        return;
+      }
+      predicate->variable = variable->name;
+      if (IsRelationshipVariable(variable->name)) {
+        predicate->kind = PredicateKind::kRelationshipType;
+        predicate->relationship_types = label->labels;
+      } else if (graph_.pattern_nodes.contains(variable->name)) {
+        predicate->kind = PredicateKind::kNodeLabel;
+        predicate->labels = label->labels;
+      }
+      return;
+    }
+
+    if (expression->Is(ast::ASTNodeType::kComparisonExpression)) {
+      const auto *comparison =
+          ast::CastAst<ast::ComparisonExpression>(expression);
+      const ast::PropertyExpression *property =
+          AsPropertyExpression(comparison->left.get());
+      if (property == nullptr) {
+        return;
+      }
+      const ast::Variable *variable =
+          AsVariableExpression(property->object.get());
+      if (variable == nullptr) {
+        return;
+      }
+      predicate->variable = variable->name;
+      predicate->property_key = property->property_key;
+      predicate->comparison_op = comparison->op;
+      predicate->kind = comparison->op == "="
+                            ? PredicateKind::kPropertyEquality
+                            : PredicateKind::kPropertyComparison;
+      return;
+    }
+
+    if (expression->Is(ast::ASTNodeType::kExistentialSubquery)) {
+      predicate->kind = PredicateKind::kExistsSubquery;
+    }
   }
 
   QueryGraph graph_;
@@ -359,7 +484,8 @@ class PlannerQueryBuilder {
     CheckNoUpdatingClauses(query.updating_clauses);
     CHECK(query.return_clause, common::InvalidArgumentError,
           Missing("RETURN clause"));
-    return BuildQuerySegment(query.reading_clauses, query.return_clause.get());
+    return BuildQuerySegment(query.reading_clauses, query.return_clause.get(),
+                             {});
   }
 
   SinglePlannerQuery BuildMultiPartQuery(const ast::MultiPartQuery &query) {
@@ -368,19 +494,33 @@ class PlannerQueryBuilder {
 
     SinglePlannerQuery root;
     SinglePlannerQuery *current_segment = &root;
+    std::unordered_set<std::string> argument_ids;
     for (const auto &part : query.parts) {
       CheckNoUpdatingClauses(part.updating_clauses);
       CHECK(part.with_clause, common::InvalidArgumentError,
             Missing("WITH clause"));
-      *current_segment =
-          BuildQuerySegment(part.reading_clauses, part.with_clause.get());
+      *current_segment = BuildQuerySegment(
+          part.reading_clauses, part.with_clause.get(), argument_ids);
       current_segment = current_segment->Last();
+      argument_ids =
+          ProjectionOutputSymbols(current_segment->horizon.RequireProjection());
       current_segment->tail = std::make_unique<SinglePlannerQuery>();
       current_segment = current_segment->tail.get();
     }
 
-    *current_segment = BuildSinglePartQuery(*query.final_single_part_query);
+    *current_segment =
+        BuildSinglePartQuery(*query.final_single_part_query, argument_ids);
     return root;
+  }
+
+  SinglePlannerQuery BuildSinglePartQuery(
+      const ast::SinglePartQuery &query,
+      const std::unordered_set<std::string> &argument_ids) {
+    CheckNoUpdatingClauses(query.updating_clauses);
+    CHECK(query.return_clause, common::InvalidArgumentError,
+          Missing("RETURN clause"));
+    return BuildQuerySegment(query.reading_clauses, query.return_clause.get(),
+                             argument_ids);
   }
 
   Projection BuildProjectionClause(
@@ -400,12 +540,14 @@ class PlannerQueryBuilder {
 
   SinglePlannerQuery BuildQuerySegment(
       const std::vector<std::unique_ptr<ast::ReadingClause>> &reading,
-      const ast::ProjectionClause *projection) {
+      const ast::ProjectionClause *projection,
+      const std::unordered_set<std::string> &argument_ids) {
     CHECK(projection != nullptr, common::InvalidArgumentError,
           Missing("projection clause"));
     SinglePlannerQuery root;
     SinglePlannerQuery *current_segment = &root;
-    QueryGraphBuilder builder;
+    std::unordered_set<std::string> current_argument_ids = argument_ids;
+    QueryGraphBuilder builder(current_argument_ids);
     for (const auto &clause : reading) {
       CHECK(clause != nullptr, common::InvalidArgumentError,
             Missing("reading clause"));
@@ -413,9 +555,13 @@ class PlannerQueryBuilder {
         current_segment->query_graph = builder.Release();
         current_segment->horizon = QueryHorizon::ForUnwind(
             BuildUnwindHorizon(*ast::CastAst<ast::Unwind>(clause.get())));
+        current_argument_ids =
+            QueryGraphAvailableSymbols(current_segment->query_graph);
+        current_argument_ids.insert(
+            current_segment->horizon.RequireUnwind().alias);
         current_segment->tail = std::make_unique<SinglePlannerQuery>();
         current_segment = current_segment->tail.get();
-        builder = QueryGraphBuilder();
+        builder = QueryGraphBuilder(current_argument_ids);
         continue;
       }
       builder.BuildReadingClause(*clause);
@@ -480,7 +626,8 @@ class PlannerQueryBuilder {
 
 }  // namespace
 
-std::unique_ptr<PlannerQuery> BuildStatement(const ast::Statement &statement) {
+std::unique_ptr<PlannerQuery> CreatePlannerQuery(
+    const ast::Statement &statement) {
   PlannerQueryBuilder builder;
   return builder.Build(statement);
 }

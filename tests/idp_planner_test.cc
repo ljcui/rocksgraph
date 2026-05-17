@@ -23,12 +23,11 @@ std::size_t CountNodeType(const std::vector<const ir::LogicalPlan *> &plans,
       [type](const ir::LogicalPlan *plan) { return plan->node_type == type; }));
 }
 
-ir::QueryGraph::Relationship MakeRelationship(
+ir::PatternRelationship MakeRelationship(
     std::string name, std::string left, std::string right,
-    ir::QueryGraph::Direction direction =
-        ir::QueryGraph::Direction::kOutgoing) {
-  ir::QueryGraph::Relationship relationship;
-  relationship.name = std::move(name);
+    ir::Direction direction = ir::Direction::kOutgoing) {
+  ir::PatternRelationship relationship;
+  relationship.variable = std::move(name);
   relationship.left_node = std::move(left);
   relationship.right_node = std::move(right);
   relationship.direction = direction;
@@ -37,9 +36,9 @@ ir::QueryGraph::Relationship MakeRelationship(
 
 TEST(IDPPlannerTest, PlansConnectedRelationshipsWithExpandChain) {
   ir::QueryGraph query_graph;
-  query_graph.nodes = {"a", "b", "c"};
-  query_graph.relationships.push_back(MakeRelationship("r1", "a", "b"));
-  query_graph.relationships.push_back(MakeRelationship("r2", "b", "c"));
+  query_graph.pattern_nodes = {"a", "b", "c"};
+  query_graph.pattern_relationships.push_back(MakeRelationship("r1", "a", "b"));
+  query_graph.pattern_relationships.push_back(MakeRelationship("r2", "b", "c"));
 
   auto plan = ir::BuildIDPLogicalPlan(query_graph);
   ASSERT_TRUE(plan);
@@ -59,9 +58,9 @@ TEST(IDPPlannerTest, PlansConnectedRelationshipsWithExpandChain) {
 
 TEST(IDPPlannerTest, UsesCartesianProductForDisconnectedRelationships) {
   ir::QueryGraph query_graph;
-  query_graph.nodes = {"a", "b", "c", "d"};
-  query_graph.relationships.push_back(MakeRelationship("r1", "a", "b"));
-  query_graph.relationships.push_back(MakeRelationship("r2", "c", "d"));
+  query_graph.pattern_nodes = {"a", "b", "c", "d"};
+  query_graph.pattern_relationships.push_back(MakeRelationship("r1", "a", "b"));
+  query_graph.pattern_relationships.push_back(MakeRelationship("r2", "c", "d"));
 
   auto plan = ir::BuildIDPLogicalPlan(query_graph);
   ASSERT_TRUE(plan);
@@ -77,9 +76,9 @@ TEST(IDPPlannerTest, AppendsWhereSelectionWhenDependenciesAreAvailable) {
   always_true.value = true;
 
   ir::QueryGraph query_graph;
-  query_graph.nodes = {"n"};
-  query_graph.where.push_back(
-      ir::QueryGraph::WherePredicate{&always_true, {"n"}});
+  query_graph.pattern_nodes = {"n"};
+  query_graph.selections.predicates.push_back(
+      ir::Predicate{.expression = &always_true, .dependencies = {"n"}});
 
   auto plan = ir::BuildIDPLogicalPlan(query_graph);
   ASSERT_TRUE(plan);
@@ -92,8 +91,8 @@ TEST(IDPPlannerTest, AppendsWhereSelectionWhenDependenciesAreAvailable) {
 
 TEST(IDPPlannerTest, UsesArgumentSymbolsAsSeedInsteadOfRescanningNode) {
   ir::QueryGraph query_graph;
-  query_graph.nodes = {"n", "m"};
-  query_graph.relationships.push_back(MakeRelationship("r", "n", "m"));
+  query_graph.pattern_nodes = {"n", "m"};
+  query_graph.pattern_relationships.push_back(MakeRelationship("r", "n", "m"));
 
   auto plan = ir::BuildIDPLogicalPlan(query_graph, {"n"});
   ASSERT_TRUE(plan);
@@ -107,9 +106,9 @@ TEST(IDPPlannerTest, UsesArgumentSymbolsAsSeedInsteadOfRescanningNode) {
 
 TEST(IDPPlannerTest, ChoosesNodeHashJoinForArgumentAnchoredBranches) {
   ir::QueryGraph query_graph;
-  query_graph.nodes = {"n", "a", "b"};
-  query_graph.relationships.push_back(MakeRelationship("r1", "n", "a"));
-  query_graph.relationships.push_back(MakeRelationship("r2", "n", "b"));
+  query_graph.pattern_nodes = {"n", "a", "b"};
+  query_graph.pattern_relationships.push_back(MakeRelationship("r1", "n", "a"));
+  query_graph.pattern_relationships.push_back(MakeRelationship("r2", "n", "b"));
 
   auto plan = ir::BuildIDPLogicalPlan(query_graph, {"n"});
   ASSERT_TRUE(plan);
@@ -128,15 +127,15 @@ TEST(IDPPlannerTest, PushesDownWherePredicatesToChildrenWhenPossible) {
   cross_predicate.value = true;
 
   ir::QueryGraph query_graph;
-  query_graph.nodes = {"a", "b", "c", "d"};
-  query_graph.relationships.push_back(MakeRelationship("r1", "a", "b"));
-  query_graph.relationships.push_back(MakeRelationship("r2", "c", "d"));
-  query_graph.where.push_back(
-      ir::QueryGraph::WherePredicate{&left_predicate, {"a"}});
-  query_graph.where.push_back(
-      ir::QueryGraph::WherePredicate{&right_predicate, {"c"}});
-  query_graph.where.push_back(
-      ir::QueryGraph::WherePredicate{&cross_predicate, {"a", "c"}});
+  query_graph.pattern_nodes = {"a", "b", "c", "d"};
+  query_graph.pattern_relationships.push_back(MakeRelationship("r1", "a", "b"));
+  query_graph.pattern_relationships.push_back(MakeRelationship("r2", "c", "d"));
+  query_graph.selections.predicates.push_back(
+      ir::Predicate{.expression = &left_predicate, .dependencies = {"a"}});
+  query_graph.selections.predicates.push_back(
+      ir::Predicate{.expression = &right_predicate, .dependencies = {"c"}});
+  query_graph.selections.predicates.push_back(ir::Predicate{
+      .expression = &cross_predicate, .dependencies = {"a", "c"}});
 
   auto plan = ir::BuildIDPLogicalPlan(query_graph);
   ASSERT_TRUE(plan);
@@ -150,9 +149,9 @@ TEST(IDPPlannerTest, RejectsWherePredicateWithMissingDependency) {
   always_true.value = true;
 
   ir::QueryGraph query_graph;
-  query_graph.nodes = {"n"};
-  query_graph.where.push_back(
-      ir::QueryGraph::WherePredicate{&always_true, {"m"}});
+  query_graph.pattern_nodes = {"n"};
+  query_graph.selections.predicates.push_back(
+      ir::Predicate{.expression = &always_true, .dependencies = {"m"}});
 
   EXPECT_THROW((void)ir::BuildIDPLogicalPlan(query_graph),
                common::InvalidArgumentError);
@@ -162,10 +161,10 @@ TEST(IDPPlannerTest, RejectsTooManyRelationshipsForIDPTable) {
   ir::QueryGraph query_graph;
   constexpr std::size_t kRelationshipCount = 21;
   for (std::size_t i = 0; i <= kRelationshipCount; ++i) {
-    query_graph.nodes.insert("n" + std::to_string(i));
+    query_graph.pattern_nodes.insert("n" + std::to_string(i));
   }
   for (std::size_t i = 0; i < kRelationshipCount; ++i) {
-    query_graph.relationships.push_back(
+    query_graph.pattern_relationships.push_back(
         MakeRelationship("r" + std::to_string(i), "n" + std::to_string(i),
                          "n" + std::to_string(i + 1)));
   }

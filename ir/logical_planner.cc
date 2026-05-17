@@ -382,7 +382,7 @@ PlannedPlannerQuery PlanPlannerQuery(const PlannerQuery &planner_query,
 
 std::unique_ptr<LogicalPlan> BuildLogicalPlan(
     const ast::Statement &statement, const LogicalPlannerConfig &config) {
-  std::unique_ptr<PlannerQuery> planner_query = BuildStatement(statement);
+  std::unique_ptr<PlannerQuery> planner_query = CreatePlannerQuery(statement);
   CHECK(planner_query != nullptr, common::InternalError,
         "planner query is null");
   return BuildLogicalPlan(*planner_query, config);

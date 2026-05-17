@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstddef>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -9,25 +11,64 @@
 
 namespace ir {
 
+using LogicalVariable = std::string;
+
+enum class Direction { kIncoming, kOutgoing, kBoth };
+
+struct PatternLength {
+  bool variable = false;
+  int fixed = 1;
+  std::optional<int> min;
+  std::optional<int> max;
+};
+
+struct PatternRelationship {
+  std::string variable;
+  std::string left_node;
+  std::string right_node;
+  Direction direction = Direction::kBoth;
+  std::vector<std::string> types;
+  PatternLength length;
+};
+
+enum class PredicateKind {
+  kGenericExpression,
+  kNodeLabel,
+  kRelationshipType,
+  kPropertyEquality,
+  kPropertyComparison,
+  kExistsSubquery,
+};
+
+struct Predicate {
+  const ast::Expression *expression = nullptr;
+  std::unordered_set<std::string> dependencies;
+  PredicateKind kind = PredicateKind::kGenericExpression;
+  std::string variable;
+  std::string property_key;
+  std::vector<std::string> labels;
+  std::vector<std::string> relationship_types;
+  std::string comparison_op;
+};
+
+struct Selections {
+  std::vector<Predicate> predicates;
+
+  [[nodiscard]] bool empty() const { return predicates.empty(); }
+  [[nodiscard]] std::size_t size() const { return predicates.size(); }
+};
+
+struct Hint {};
+struct MutatingPattern {};
+
 struct QueryGraph {
-  enum class Direction { kIncoming, kOutgoing, kBoth };
-
-  struct WherePredicate {
-    const ast::Expression *expression = nullptr;
-    std::unordered_set<std::string> dependencies;
-  };
-
-  struct Relationship {
-    std::string name;
-    std::string left_node;
-    std::string right_node;
-    Direction direction = Direction::kBoth;
-    std::unordered_set<std::string> types;
-  };
-
-  std::unordered_set<std::string> nodes;
-  std::vector<Relationship> relationships;
-  std::vector<WherePredicate> where;
+  std::unordered_set<LogicalVariable> pattern_nodes;
+  std::vector<PatternRelationship> pattern_relationships;
+  std::unordered_set<LogicalVariable> argument_ids;
+  Selections selections;
+  std::vector<QueryGraph> optional_matches;
+  std::vector<Hint> hints;
+  std::vector<MutatingPattern> mutating_patterns;
 };
 
 struct ProjectionItem {
@@ -125,6 +166,7 @@ std::unique_ptr<PlannerQuery> MakeSinglePlannerQuery(SinglePlannerQuery query);
 std::unique_ptr<PlannerQuery> MakeUnionPlannerQuery(
     std::unique_ptr<PlannerQuery> lhs, SinglePlannerQuery rhs, bool all);
 
-std::unique_ptr<PlannerQuery> BuildStatement(const ast::Statement &statement);
+std::unique_ptr<PlannerQuery> CreatePlannerQuery(
+    const ast::Statement &statement);
 
 }  // namespace ir

@@ -36,11 +36,11 @@ bool Contains(const std::unordered_set<std::string> &set,
 }
 
 std::unordered_map<std::string, std::unordered_set<std::string>>
-WhereDependenciesByExpression(const ir::QueryGraph &query_graph) {
+SelectionDependenciesByExpression(const ir::QueryGraph &query_graph) {
   std::unordered_map<std::string, std::unordered_set<std::string>> result;
-  for (const auto &predicate : query_graph.where) {
+  for (const auto &predicate : query_graph.selections.predicates) {
     CHECK(predicate.expression != nullptr, common::InvalidArgumentError,
-          "null WHERE predicate in QueryGraph");
+          "null selection predicate in QueryGraph");
     result.emplace(ast::ExpressionToString(*predicate.expression),
                    predicate.dependencies);
   }
@@ -56,28 +56,38 @@ TEST(PlannerQueryTest, BuildsGraphFromMatch) {
   ASSERT_TRUE(statement);
 
   std::unique_ptr<ir::PlannerQuery> planner_query =
-      ir::BuildStatement(*statement);
+      ir::CreatePlannerQuery(*statement);
   const ir::SinglePlannerQuery &main = planner_query->RequireSingle();
 
   EXPECT_EQ(main.tail, nullptr);
-  EXPECT_TRUE(Contains(main.query_graph.nodes, "a"));
-  EXPECT_TRUE(Contains(main.query_graph.nodes, "b"));
-  EXPECT_EQ(main.query_graph.where.size(), 4U);
+  EXPECT_TRUE(Contains(main.query_graph.pattern_nodes, "a"));
+  EXPECT_TRUE(Contains(main.query_graph.pattern_nodes, "b"));
+  EXPECT_EQ(main.query_graph.selections.size(), 4U);
 
   const auto where_dependencies =
-      WhereDependenciesByExpression(main.query_graph);
+      SelectionDependenciesByExpression(main.query_graph);
   EXPECT_TRUE(Contains(where_dependencies.at("a:Person"), "a"));
   EXPECT_TRUE(Contains(where_dependencies.at("a.name = 'Alice'"), "a"));
   EXPECT_TRUE(Contains(where_dependencies.at("r:KNOWS"), "r"));
   EXPECT_TRUE(Contains(where_dependencies.at("a.age > 30"), "a"));
+  EXPECT_EQ(main.query_graph.selections.predicates[0].kind,
+            ir::PredicateKind::kNodeLabel);
+  EXPECT_EQ(main.query_graph.selections.predicates[1].kind,
+            ir::PredicateKind::kPropertyEquality);
+  EXPECT_EQ(main.query_graph.selections.predicates[2].kind,
+            ir::PredicateKind::kRelationshipType);
+  EXPECT_EQ(main.query_graph.selections.predicates[3].kind,
+            ir::PredicateKind::kPropertyComparison);
 
-  ASSERT_EQ(main.query_graph.relationships.size(), 1U);
-  const auto &relationship = main.query_graph.relationships[0];
-  EXPECT_EQ(relationship.name, "r");
+  ASSERT_EQ(main.query_graph.pattern_relationships.size(), 1U);
+  const auto &relationship = main.query_graph.pattern_relationships[0];
+  EXPECT_EQ(relationship.variable, "r");
   EXPECT_EQ(relationship.left_node, "a");
   EXPECT_EQ(relationship.right_node, "b");
-  EXPECT_EQ(relationship.direction, ir::QueryGraph::Direction::kOutgoing);
+  EXPECT_EQ(relationship.direction, ir::Direction::kOutgoing);
   EXPECT_TRUE(relationship.types.empty());
+  EXPECT_FALSE(relationship.length.variable);
+  EXPECT_EQ(relationship.length.fixed, 1);
 
   EXPECT_FALSE(main.horizon.RequireProjection().distinct);
   ASSERT_EQ(main.horizon.RequireProjection().items.size(), 2U);
@@ -95,19 +105,40 @@ TEST(PlannerQueryTest, AcceptsAnonymousPatternAfterRewrite) {
   ASSERT_TRUE(statement);
 
   std::unique_ptr<ir::PlannerQuery> planner_query =
-      ir::BuildStatement(*statement);
+      ir::CreatePlannerQuery(*statement);
   const ir::SinglePlannerQuery &main = planner_query->RequireSingle();
 
-  EXPECT_EQ(main.query_graph.nodes.size(), 2U);
-  ASSERT_EQ(main.query_graph.relationships.size(), 1U);
+  EXPECT_EQ(main.query_graph.pattern_nodes.size(), 2U);
+  ASSERT_EQ(main.query_graph.pattern_relationships.size(), 1U);
 
-  const auto &relationship = main.query_graph.relationships[0];
-  EXPECT_FALSE(relationship.name.empty());
+  const auto &relationship = main.query_graph.pattern_relationships[0];
+  EXPECT_FALSE(relationship.variable.empty());
   EXPECT_FALSE(relationship.left_node.empty());
   EXPECT_FALSE(relationship.right_node.empty());
 
   ASSERT_EQ(main.horizon.RequireProjection().items.size(), 1U);
   EXPECT_FALSE(main.horizon.RequireProjection().items[0].alias.empty());
+}
+
+TEST(PlannerQueryTest, BuildsVariableLengthRelationshipPattern) {
+  auto statement = ParseOrFail("MATCH (a)-[r*1..3]->(b) RETURN r");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::SinglePlannerQuery &main = planner_query->RequireSingle();
+
+  ASSERT_EQ(main.query_graph.pattern_relationships.size(), 1U);
+  const auto &relationship = main.query_graph.pattern_relationships[0];
+  EXPECT_EQ(relationship.variable, "r");
+  EXPECT_EQ(relationship.left_node, "a");
+  EXPECT_EQ(relationship.right_node, "b");
+  EXPECT_EQ(relationship.direction, ir::Direction::kOutgoing);
+  EXPECT_TRUE(relationship.length.variable);
+  ASSERT_TRUE(relationship.length.min.has_value());
+  ASSERT_TRUE(relationship.length.max.has_value());
+  EXPECT_EQ(*relationship.length.min, 1);
+  EXPECT_EQ(*relationship.length.max, 3);
 }
 
 TEST(PlannerQueryTest, BuildsTailForMultiPartQuery) {
@@ -117,16 +148,17 @@ TEST(PlannerQueryTest, BuildsTailForMultiPartQuery) {
   ASSERT_TRUE(statement);
 
   std::unique_ptr<ir::PlannerQuery> planner_query =
-      ir::BuildStatement(*statement);
+      ir::CreatePlannerQuery(*statement);
   const ir::SinglePlannerQuery &first = planner_query->RequireSingle();
 
   ASSERT_TRUE(first.tail);
   const ir::SinglePlannerQuery &second = *first.tail;
 
-  EXPECT_TRUE(Contains(first.query_graph.nodes, "n"));
-  EXPECT_EQ(first.query_graph.where.size(), 2U);
+  EXPECT_TRUE(first.query_graph.argument_ids.empty());
+  EXPECT_TRUE(Contains(first.query_graph.pattern_nodes, "n"));
+  EXPECT_EQ(first.query_graph.selections.size(), 2U);
   const auto first_where_dependencies =
-      WhereDependenciesByExpression(first.query_graph);
+      SelectionDependenciesByExpression(first.query_graph);
   EXPECT_TRUE(Contains(first_where_dependencies.at("n:Person"), "n"));
   EXPECT_TRUE(first_where_dependencies.contains("true"));
 
@@ -134,13 +166,15 @@ TEST(PlannerQueryTest, BuildsTailForMultiPartQuery) {
   EXPECT_EQ(first.horizon.RequireProjection().items[0].alias, "n");
   EXPECT_NE(first.horizon.RequireProjection().where, nullptr);
 
-  EXPECT_TRUE(Contains(second.query_graph.nodes, "n"));
-  EXPECT_TRUE(Contains(second.query_graph.nodes, "m"));
-  ASSERT_EQ(second.query_graph.relationships.size(), 1U);
-  EXPECT_EQ(second.query_graph.relationships[0].name, "r");
-  EXPECT_EQ(second.query_graph.where.size(), 2U);
+  EXPECT_TRUE(Contains(second.query_graph.pattern_nodes, "n"));
+  EXPECT_TRUE(Contains(second.query_graph.pattern_nodes, "m"));
+  EXPECT_TRUE(Contains(second.query_graph.argument_ids, "n"));
+  EXPECT_FALSE(Contains(second.query_graph.argument_ids, "m"));
+  ASSERT_EQ(second.query_graph.pattern_relationships.size(), 1U);
+  EXPECT_EQ(second.query_graph.pattern_relationships[0].variable, "r");
+  EXPECT_EQ(second.query_graph.selections.size(), 2U);
   const auto second_where_dependencies =
-      WhereDependenciesByExpression(second.query_graph);
+      SelectionDependenciesByExpression(second.query_graph);
   EXPECT_TRUE(Contains(second_where_dependencies.at("r:KNOWS"), "r"));
   EXPECT_TRUE(second_where_dependencies.contains("true"));
 
@@ -155,17 +189,18 @@ TEST(PlannerQueryTest, BuildsUnwindHorizonSegment) {
   ASSERT_TRUE(statement);
 
   std::unique_ptr<ir::PlannerQuery> planner_query =
-      ir::BuildStatement(*statement);
+      ir::CreatePlannerQuery(*statement);
   const ir::SinglePlannerQuery &unwind_segment = planner_query->RequireSingle();
 
-  EXPECT_TRUE(unwind_segment.query_graph.nodes.empty());
-  EXPECT_TRUE(unwind_segment.query_graph.relationships.empty());
+  EXPECT_TRUE(unwind_segment.query_graph.pattern_nodes.empty());
+  EXPECT_TRUE(unwind_segment.query_graph.pattern_relationships.empty());
   ASSERT_EQ(unwind_segment.horizon.kind, ir::QueryHorizonKind::kUnwind);
   EXPECT_NE(unwind_segment.horizon.RequireUnwind().expression, nullptr);
   EXPECT_EQ(unwind_segment.horizon.RequireUnwind().alias, "x");
 
   ASSERT_TRUE(unwind_segment.tail);
   const ir::SinglePlannerQuery &return_segment = *unwind_segment.tail;
+  EXPECT_TRUE(Contains(return_segment.query_graph.argument_ids, "x"));
   ASSERT_EQ(return_segment.horizon.kind, ir::QueryHorizonKind::kProjection);
   ASSERT_EQ(return_segment.horizon.RequireProjection().items.size(), 1U);
   EXPECT_EQ(return_segment.horizon.RequireProjection().items[0].alias, "x");
@@ -177,7 +212,7 @@ TEST(PlannerQueryTest, PreservesUnwindSegmentBeforeWithTail) {
   ASSERT_TRUE(statement);
 
   std::unique_ptr<ir::PlannerQuery> planner_query =
-      ir::BuildStatement(*statement);
+      ir::CreatePlannerQuery(*statement);
   const ir::SinglePlannerQuery &unwind_segment = planner_query->RequireSingle();
   ASSERT_EQ(unwind_segment.horizon.kind, ir::QueryHorizonKind::kUnwind);
   ASSERT_TRUE(unwind_segment.tail);
@@ -198,12 +233,12 @@ TEST(PlannerQueryTest, SplitsConjunctiveWhereIntoPredicates) {
   ASSERT_TRUE(statement);
 
   std::unique_ptr<ir::PlannerQuery> planner_query =
-      ir::BuildStatement(*statement);
+      ir::CreatePlannerQuery(*statement);
   const ir::SinglePlannerQuery &main = planner_query->RequireSingle();
 
-  EXPECT_EQ(main.query_graph.where.size(), 3U);
+  EXPECT_EQ(main.query_graph.selections.size(), 3U);
   const auto where_dependencies =
-      WhereDependenciesByExpression(main.query_graph);
+      SelectionDependenciesByExpression(main.query_graph);
   EXPECT_TRUE(Contains(where_dependencies.at("n.age > 30"), "n"));
   EXPECT_TRUE(Contains(where_dependencies.at("n.name = 'Alice'"), "n"));
   EXPECT_TRUE(Contains(where_dependencies.at("n.active = true"), "n"));
@@ -214,12 +249,12 @@ TEST(PlannerQueryTest, AcceptsNonConjunctiveWhereExpression) {
   ASSERT_TRUE(statement);
 
   std::unique_ptr<ir::PlannerQuery> planner_query =
-      ir::BuildStatement(*statement);
+      ir::CreatePlannerQuery(*statement);
   const ir::SinglePlannerQuery &main = planner_query->RequireSingle();
 
-  ASSERT_EQ(main.query_graph.where.size(), 1U);
+  ASSERT_EQ(main.query_graph.selections.size(), 1U);
   const auto where_dependencies =
-      WhereDependenciesByExpression(main.query_graph);
+      SelectionDependenciesByExpression(main.query_graph);
   EXPECT_TRUE(Contains(where_dependencies.at("n.age > 30"), "n"));
 }
 
@@ -229,11 +264,12 @@ TEST(PlannerQueryTest, ExcludesScopedQuantifierVariablesFromDependencies) {
   ASSERT_TRUE(statement);
 
   std::unique_ptr<ir::PlannerQuery> planner_query =
-      ir::BuildStatement(*statement);
+      ir::CreatePlannerQuery(*statement);
   const ir::SinglePlannerQuery &main = planner_query->RequireSingle();
 
-  ASSERT_EQ(main.query_graph.where.size(), 1U);
-  const auto &dependencies = main.query_graph.where[0].dependencies;
+  ASSERT_EQ(main.query_graph.selections.size(), 1U);
+  const auto &dependencies =
+      main.query_graph.selections.predicates[0].dependencies;
   EXPECT_TRUE(Contains(dependencies, "n"));
   EXPECT_FALSE(Contains(dependencies, "x"));
 }
@@ -244,11 +280,12 @@ TEST(PlannerQueryTest, TreatsOnlyOuterPatternVariablesAsExistsDependencies) {
   ASSERT_TRUE(statement);
 
   std::unique_ptr<ir::PlannerQuery> planner_query =
-      ir::BuildStatement(*statement);
+      ir::CreatePlannerQuery(*statement);
   const ir::SinglePlannerQuery &main = planner_query->RequireSingle();
 
-  ASSERT_EQ(main.query_graph.where.size(), 1U);
-  const auto &dependencies = main.query_graph.where[0].dependencies;
+  ASSERT_EQ(main.query_graph.selections.size(), 1U);
+  const auto &dependencies =
+      main.query_graph.selections.predicates[0].dependencies;
   EXPECT_TRUE(Contains(dependencies, "n"));
   EXPECT_FALSE(Contains(dependencies, "r"));
   EXPECT_FALSE(Contains(dependencies, "m"));
@@ -262,12 +299,12 @@ TEST(PlannerQueryTest, DeduplicatesRepeatedWherePredicatesAcrossMatches) {
   ASSERT_TRUE(statement);
 
   std::unique_ptr<ir::PlannerQuery> planner_query =
-      ir::BuildStatement(*statement);
+      ir::CreatePlannerQuery(*statement);
   const ir::SinglePlannerQuery &main = planner_query->RequireSingle();
 
-  EXPECT_EQ(main.query_graph.where.size(), 2U);
+  EXPECT_EQ(main.query_graph.selections.size(), 2U);
   const auto where_dependencies =
-      WhereDependenciesByExpression(main.query_graph);
+      SelectionDependenciesByExpression(main.query_graph);
   EXPECT_TRUE(Contains(where_dependencies.at("n.age > 30"), "n"));
   EXPECT_TRUE(Contains(where_dependencies.at("r:KNOWS"), "r"));
 }
@@ -278,7 +315,7 @@ TEST(PlannerQueryTest, BuildsUnionBranch) {
   ASSERT_TRUE(statement);
 
   std::unique_ptr<ir::PlannerQuery> planner_query =
-      ir::BuildStatement(*statement);
+      ir::CreatePlannerQuery(*statement);
   ASSERT_EQ(planner_query->Kind(), ir::PlannerQueryKind::kUnion);
 
   const ir::UnionPlannerQuery &union_query = planner_query->RequireUnion();
@@ -292,7 +329,7 @@ TEST(PlannerQueryTest, BuildsUnionAllBranch) {
   ASSERT_TRUE(statement);
 
   std::unique_ptr<ir::PlannerQuery> planner_query =
-      ir::BuildStatement(*statement);
+      ir::CreatePlannerQuery(*statement);
   ASSERT_EQ(planner_query->Kind(), ir::PlannerQueryKind::kUnion);
 
   const ir::UnionPlannerQuery &union_query = planner_query->RequireUnion();

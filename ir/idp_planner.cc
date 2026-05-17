@@ -45,13 +45,13 @@ std::unordered_set<std::string> MergeSymbols(
   return left;
 }
 
-Expand::Direction ToExpandDirection(QueryGraph::Direction direction) {
+Expand::Direction ToExpandDirection(Direction direction) {
   switch (direction) {
-    case QueryGraph::Direction::kIncoming:
+    case Direction::kIncoming:
       return Expand::Direction::kIncoming;
-    case QueryGraph::Direction::kOutgoing:
+    case Direction::kOutgoing:
       return Expand::Direction::kOutgoing;
-    case QueryGraph::Direction::kBoth:
+    case Direction::kBoth:
       return Expand::Direction::kBoth;
   }
   THROW(common::InternalError, "unknown relationship direction");
@@ -71,36 +71,39 @@ Expand::Direction ReverseDirection(Expand::Direction direction) {
 
 void ValidateQueryGraph(const QueryGraph &query_graph) {
   std::unordered_set<std::string> relationship_names;
-  for (const std::string &node : query_graph.nodes) {
+  for (const std::string &node : query_graph.pattern_nodes) {
     CHECK(!node.empty(), common::InvalidArgumentError,
           "query graph contains empty node variable");
   }
-  for (const auto &relationship : query_graph.relationships) {
-    CHECK(!relationship.name.empty(), common::InvalidArgumentError,
+  for (const auto &relationship : query_graph.pattern_relationships) {
+    CHECK(!relationship.variable.empty(), common::InvalidArgumentError,
           "query graph relationship variable is empty");
     CHECK(!relationship.left_node.empty(), common::InvalidArgumentError,
           "query graph relationship left node is empty");
     CHECK(!relationship.right_node.empty(), common::InvalidArgumentError,
           "query graph relationship right node is empty");
-    CHECK(query_graph.nodes.contains(relationship.left_node),
+    CHECK(query_graph.pattern_nodes.contains(relationship.left_node),
           common::InvalidArgumentError,
           "query graph relationship left node is missing from node set: " +
               relationship.left_node);
-    CHECK(query_graph.nodes.contains(relationship.right_node),
+    CHECK(query_graph.pattern_nodes.contains(relationship.right_node),
           common::InvalidArgumentError,
           "query graph relationship right node is missing from node set: " +
               relationship.right_node);
-    CHECK(
-        relationship_names.insert(relationship.name).second,
-        common::InvalidArgumentError,
-        "duplicate relationship variable in query graph: " + relationship.name);
+    CHECK(!relationship.length.variable && relationship.length.fixed == 1,
+          common::InvalidArgumentError,
+          "IDP logical planning only supports fixed length relationships");
+    CHECK(relationship_names.insert(relationship.variable).second,
+          common::InvalidArgumentError,
+          "duplicate relationship variable in query graph: " +
+              relationship.variable);
   }
-  for (const auto &predicate : query_graph.where) {
+  for (const auto &predicate : query_graph.selections.predicates) {
     CHECK(predicate.expression != nullptr, common::InvalidArgumentError,
-          "query graph WHERE expression is null");
+          "query graph selection expression is null");
     for (const std::string &dependency : predicate.dependencies) {
       CHECK(!dependency.empty(), common::InvalidArgumentError,
-            "query graph WHERE dependency is empty");
+            "query graph selection dependency is empty");
     }
   }
 }
@@ -135,9 +138,8 @@ std::shared_ptr<const PlanExpr> PickBetter(
 }
 
 std::shared_ptr<const PlanExpr> MakeSeedPlan(
-    const QueryGraph::Relationship &relationship,
-    std::size_t relationship_index, bool from_left,
-    const std::unordered_set<std::string> &argument_symbols,
+    const PatternRelationship &relationship, std::size_t relationship_index,
+    bool from_left, const std::unordered_set<std::string> &argument_symbols,
     const IDPPlannerConfig &config) {
   constexpr std::size_t kScanCost = 1;
 
@@ -165,18 +167,17 @@ std::shared_ptr<const PlanExpr> MakeSeedPlan(
                                  argument_symbols.end());
   plan->available_symbols.insert(plan->from);
   plan->available_symbols.insert(plan->to);
-  plan->available_symbols.insert(relationship.name);
+  plan->available_symbols.insert(relationship.variable);
   plan->cost = config.expand_cost + (plan->seed_from_argument ? 0 : kScanCost);
-  plan->tie_breaker =
-      "seed(" + relationship.name + ":" + plan->from + "->" + plan->to + ")";
+  plan->tie_breaker = "seed(" + relationship.variable + ":" + plan->from +
+                      "->" + plan->to + ")";
   return plan;
 }
 
 std::shared_ptr<const PlanExpr> MakeExpandPlan(
     const std::shared_ptr<const PlanExpr> &base,
-    const QueryGraph::Relationship &relationship,
-    std::size_t relationship_index, bool from_left,
-    const IDPPlannerConfig &config) {
+    const PatternRelationship &relationship, std::size_t relationship_index,
+    bool from_left, const IDPPlannerConfig &config) {
   CHECK(base != nullptr, common::InternalError, "base IDP plan is null");
 
   auto plan = std::make_shared<PlanExpr>();
@@ -206,12 +207,12 @@ std::shared_ptr<const PlanExpr> MakeExpandPlan(
   plan->solved_nodes.insert(relationship.left_node);
   plan->solved_nodes.insert(relationship.right_node);
   plan->available_symbols = base->available_symbols;
-  plan->available_symbols.insert(relationship.name);
+  plan->available_symbols.insert(relationship.variable);
   plan->available_symbols.insert(plan->to);
   plan->cost =
       base->cost + (expand_into ? config.expand_into_cost : config.expand_cost);
-  plan->tie_breaker = base->tie_breaker + "|expand(" + relationship.name + ":" +
-                      plan->from + "->" + plan->to + ")";
+  plan->tie_breaker = base->tie_breaker + "|expand(" + relationship.variable +
+                      ":" + plan->from + "->" + plan->to + ")";
   return plan;
 }
 
@@ -263,7 +264,7 @@ std::shared_ptr<const PlanExpr> MakeNodeHashJoinPlan(
 
 std::unique_ptr<LogicalPlan> BuildLogicalPlanFromExpr(
     const std::shared_ptr<const PlanExpr> &expr,
-    const std::vector<QueryGraph::Relationship> &relationships,
+    const std::vector<PatternRelationship> &relationships,
     const std::unordered_set<std::string> &argument_symbols) {
   CHECK(expr != nullptr, common::InternalError, "IDP plan expression is null");
 
@@ -278,9 +279,11 @@ std::unique_ptr<LogicalPlan> BuildLogicalPlanFromExpr(
       } else {
         source = std::make_unique<AllNodesScan>(expr->from, argument_symbols);
       }
-      return std::make_unique<Expand>(std::move(source), expr->from,
-                                      relationship.name, expr->to,
-                                      expr->direction, relationship.types);
+      return std::make_unique<Expand>(
+          std::move(source), expr->from, relationship.variable, expr->to,
+          expr->direction,
+          std::unordered_set<std::string>(relationship.types.begin(),
+                                          relationship.types.end()));
     }
     case PlanExpr::Kind::kExpand: {
       CHECK(expr->relationship_index < relationships.size(),
@@ -290,8 +293,9 @@ std::unique_ptr<LogicalPlan> BuildLogicalPlanFromExpr(
       const auto &relationship = relationships[expr->relationship_index];
       return std::make_unique<Expand>(
           BuildLogicalPlanFromExpr(expr->lhs, relationships, argument_symbols),
-          expr->from, relationship.name, expr->to, expr->direction,
-          relationship.types);
+          expr->from, relationship.variable, expr->to, expr->direction,
+          std::unordered_set<std::string>(relationship.types.begin(),
+                                          relationship.types.end()));
     }
     case PlanExpr::Kind::kCartesianProduct: {
       CHECK(expr->lhs != nullptr, common::InternalError,
@@ -325,8 +329,8 @@ void AppendUncoveredNodeScans(
   CHECK(plan != nullptr, common::InternalError, "output plan is null");
 
   std::vector<std::string> uncovered_nodes;
-  uncovered_nodes.reserve(query_graph.nodes.size());
-  for (const std::string &node : query_graph.nodes) {
+  uncovered_nodes.reserve(query_graph.pattern_nodes.size());
+  for (const std::string &node : query_graph.pattern_nodes) {
     if (!solved_nodes.contains(node)) {
       uncovered_nodes.push_back(node);
     }
@@ -344,19 +348,19 @@ void AppendUncoveredNodeScans(
   }
 }
 
-std::vector<const ast::Expression *> ExpressionsFromWhere(
-    const std::vector<QueryGraph::WherePredicate> &where_predicates) {
+std::vector<const ast::Expression *> ExpressionsFromSelections(
+    const std::vector<Predicate> &predicates) {
   std::vector<const ast::Expression *> expressions;
-  expressions.reserve(where_predicates.size());
-  for (const auto &predicate : where_predicates) {
+  expressions.reserve(predicates.size());
+  for (const auto &predicate : predicates) {
     CHECK(predicate.expression != nullptr, common::InvalidArgumentError,
-          "query graph WHERE expression is null");
+          "query graph selection expression is null");
     expressions.push_back(predicate.expression);
   }
   return expressions;
 }
 
-bool DependenciesCoveredBy(const QueryGraph::WherePredicate &predicate,
+bool DependenciesCoveredBy(const Predicate &predicate,
                            const std::unordered_set<std::string> &symbols) {
   for (const std::string &dependency : predicate.dependencies) {
     if (!symbols.contains(dependency)) {
@@ -368,19 +372,19 @@ bool DependenciesCoveredBy(const QueryGraph::WherePredicate &predicate,
 
 std::unique_ptr<LogicalPlan> AttachSelection(
     std::unique_ptr<LogicalPlan> plan,
-    const std::vector<QueryGraph::WherePredicate> &predicates) {
+    const std::vector<Predicate> &predicates) {
   CHECK(plan != nullptr, common::InternalError,
         "logical plan for selection attach is null");
   if (predicates.empty()) {
     return plan;
   }
   return std::make_unique<Selection>(std::move(plan),
-                                     ExpressionsFromWhere(predicates));
+                                     ExpressionsFromSelections(predicates));
 }
 
 std::unique_ptr<LogicalPlan> PushDownWherePredicates(
     std::unique_ptr<LogicalPlan> plan,
-    const std::vector<QueryGraph::WherePredicate> &predicates) {
+    const std::vector<Predicate> &predicates) {
   CHECK(plan != nullptr, common::InternalError,
         "logical plan for predicate pushdown is null");
   if (predicates.empty()) {
@@ -391,8 +395,8 @@ std::unique_ptr<LogicalPlan> PushDownWherePredicates(
     case LogicalPlanNodeType::kExpand: {
       auto *typed = static_cast<Expand *>(plan.get());
       const auto child_symbols = typed->source->AvailableSymbols();
-      std::vector<QueryGraph::WherePredicate> child_predicates;
-      std::vector<QueryGraph::WherePredicate> current_predicates;
+      std::vector<Predicate> child_predicates;
+      std::vector<Predicate> current_predicates;
       child_predicates.reserve(predicates.size());
       current_predicates.reserve(predicates.size());
       for (const auto &predicate : predicates) {
@@ -413,9 +417,9 @@ std::unique_ptr<LogicalPlan> PushDownWherePredicates(
       auto *typed = static_cast<CartesianProduct *>(plan.get());
       const auto left_symbols = typed->left->AvailableSymbols();
       const auto right_symbols = typed->right->AvailableSymbols();
-      std::vector<QueryGraph::WherePredicate> left_predicates;
-      std::vector<QueryGraph::WherePredicate> right_predicates;
-      std::vector<QueryGraph::WherePredicate> current_predicates;
+      std::vector<Predicate> left_predicates;
+      std::vector<Predicate> right_predicates;
+      std::vector<Predicate> current_predicates;
       left_predicates.reserve(predicates.size());
       right_predicates.reserve(predicates.size());
       current_predicates.reserve(predicates.size());
@@ -437,9 +441,9 @@ std::unique_ptr<LogicalPlan> PushDownWherePredicates(
       auto *typed = static_cast<NodeHashJoin *>(plan.get());
       const auto left_symbols = typed->left->AvailableSymbols();
       const auto right_symbols = typed->right->AvailableSymbols();
-      std::vector<QueryGraph::WherePredicate> left_predicates;
-      std::vector<QueryGraph::WherePredicate> right_predicates;
-      std::vector<QueryGraph::WherePredicate> current_predicates;
+      std::vector<Predicate> left_predicates;
+      std::vector<Predicate> right_predicates;
+      std::vector<Predicate> current_predicates;
       left_predicates.reserve(predicates.size());
       right_predicates.reserve(predicates.size());
       current_predicates.reserve(predicates.size());
@@ -470,22 +474,23 @@ std::unique_ptr<LogicalPlan> PushDownWherePredicates(
 std::unique_ptr<LogicalPlan> ApplyWherePredicates(
     const QueryGraph &query_graph, std::unique_ptr<LogicalPlan> plan) {
   CHECK(plan != nullptr, common::InternalError, "output plan is null");
-  if (query_graph.where.empty()) {
+  if (query_graph.selections.empty()) {
     return plan;
   }
 
   const auto available_symbols = plan->AvailableSymbols();
-  for (const auto &where : query_graph.where) {
-    CHECK(where.expression != nullptr, common::InvalidArgumentError,
-          "query graph WHERE expression is null");
-    for (const std::string &dependency : where.dependencies) {
+  for (const auto &predicate : query_graph.selections.predicates) {
+    CHECK(predicate.expression != nullptr, common::InvalidArgumentError,
+          "query graph selection expression is null");
+    for (const std::string &dependency : predicate.dependencies) {
       CHECK(available_symbols.contains(dependency),
             common::InvalidArgumentError,
-            "WHERE dependency is not available in planned symbols: " +
+            "selection dependency is not available in planned symbols: " +
                 dependency);
     }
   }
-  return PushDownWherePredicates(std::move(plan), query_graph.where);
+  return PushDownWherePredicates(std::move(plan),
+                                 query_graph.selections.predicates);
 }
 
 }  // namespace
@@ -514,7 +519,8 @@ std::unique_ptr<LogicalPlan> BuildIDPLogicalPlan(
   std::shared_ptr<const PlanExpr> full_plan_expr;
   std::unordered_set<std::string> solved_nodes = argument_symbols;
 
-  const std::size_t relationship_count = query_graph.relationships.size();
+  const std::size_t relationship_count =
+      query_graph.pattern_relationships.size();
   if (relationship_count > 0) {
     CHECK(relationship_count <= config.max_relationships,
           common::InvalidArgumentError,
@@ -532,7 +538,7 @@ std::unique_ptr<LogicalPlan> BuildIDPLogicalPlan(
 
     for (std::size_t i = 0; i < relationship_count; ++i) {
       const RelationshipMask mask = RelationshipMask{1} << i;
-      const auto &relationship = query_graph.relationships[i];
+      const auto &relationship = query_graph.pattern_relationships[i];
       table[static_cast<std::size_t>(mask)] = PickBetter(
           table[static_cast<std::size_t>(mask)],
           MakeSeedPlan(relationship, i, true, argument_symbols, config));
@@ -560,7 +566,7 @@ std::unique_ptr<LogicalPlan> BuildIDPLogicalPlan(
           continue;
         }
 
-        const auto &relationship = query_graph.relationships[i];
+        const auto &relationship = query_graph.pattern_relationships[i];
         best_for_mask =
             PickBetter(best_for_mask,
                        MakeExpandPlan(previous, relationship, i, true, config));
@@ -611,8 +617,8 @@ std::unique_ptr<LogicalPlan> BuildIDPLogicalPlan(
 
   std::unique_ptr<LogicalPlan> plan;
   if (full_plan_expr) {
-    plan = BuildLogicalPlanFromExpr(full_plan_expr, query_graph.relationships,
-                                    argument_symbols);
+    plan = BuildLogicalPlanFromExpr(
+        full_plan_expr, query_graph.pattern_relationships, argument_symbols);
   } else if (!argument_symbols.empty()) {
     plan = std::make_unique<Argument>(argument_symbols);
   }
