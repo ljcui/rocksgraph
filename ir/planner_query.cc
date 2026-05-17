@@ -200,22 +200,6 @@ std::unordered_set<std::string> QueryGraphAvailableSymbols(
   return symbols;
 }
 
-std::unordered_set<std::string> ProjectionOutputSymbols(
-    const ast::SemanticTable &semantic_table,
-    const ast::ProjectionBody &projection) {
-  std::unordered_set<std::string> symbols;
-  const std::vector<std::string> &outputs =
-      semantic_table.ProjectionOutputs(projection);
-  CHECK(!outputs.empty(), common::InvalidArgumentError,
-        "projection output symbols are empty");
-  for (const auto &symbol : outputs) {
-    CHECK(!symbol.empty(), common::InvalidArgumentError,
-          "projection output symbol is empty");
-    symbols.insert(symbol);
-  }
-  return symbols;
-}
-
 void AddSymbol(std::unordered_set<std::string> *symbols,
                const std::string &symbol) {
   CHECK(symbols != nullptr, common::InternalError, "symbol set is null");
@@ -367,6 +351,19 @@ bool StringSetContains(const std::unordered_set<std::string> &values,
                      [expected](const std::string &value) {
                        return StringEquals(value, expected);
                      });
+}
+
+bool StringSetEquals(const std::unordered_set<std::string> &lhs,
+                     const std::unordered_set<std::string> &rhs) {
+  if (lhs.size() != rhs.size()) {
+    return false;
+  }
+  for (const auto &value : lhs) {
+    if (!rhs.contains(value)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 bool IsPropertyPredicateKind(PredicateKind kind) {
@@ -1354,6 +1351,15 @@ class QueryGraphBuilder {
   }
 
   [[nodiscard]] bool HasLocalWork() const { return graph_.HasLocalWork(); }
+  [[nodiscard]] bool HasOptionalMatches() const {
+    return !graph_.optional_matches.empty();
+  }
+  [[nodiscard]] bool ContainsUpdates() const {
+    return graph_.ContainsUpdates();
+  }
+  [[nodiscard]] std::unordered_set<LogicalVariable> AvailableSymbols() const {
+    return QueryGraphAvailableSymbols(graph_);
+  }
 
   void BuildMatch(const ast::Match &match) {
     if (match.optional_match) {
@@ -1777,7 +1783,9 @@ class PlannerQueryBuilder {
       if (predicate.subquery == nullptr) {
         continue;
       }
-      FinalizePlannerQueryArguments(*predicate.subquery, available_symbols);
+      FinalizePlannerQueryArguments(
+          *predicate.subquery,
+          IntersectSymbols(predicate.dependencies, available_symbols));
     }
   }
 
@@ -1964,6 +1972,46 @@ class PlannerQueryBuilder {
     return symbols;
   }
 
+  bool IsPureVariablePassthrough(
+      const ast::ProjectionBody &body,
+      const std::unordered_set<std::string> &available_symbols) const {
+    if (body.star || body.distinct || !body.order_by.empty() || body.skip ||
+        body.limit) {
+      return false;
+    }
+
+    std::unordered_set<std::string> projected_symbols;
+    projected_symbols.reserve(body.items.size());
+    for (const auto &item : body.items) {
+      CHECK(item != nullptr, common::InvalidArgumentError,
+            "projection item is null");
+      CHECK(item->expression != nullptr, common::InvalidArgumentError,
+            Missing("projection item expression"));
+      if (SemanticTableRef().ContainsAggregation(*item->expression)) {
+        return false;
+      }
+      const ast::Variable *variable =
+          AsVariableExpression(item->expression.get());
+      if (variable == nullptr || item->alias != variable->name ||
+          !projected_symbols.insert(item->alias).second) {
+        return false;
+      }
+    }
+    return StringSetEquals(projected_symbols, available_symbols);
+  }
+
+  bool CanInlineWith(const ast::With &with_clause,
+                     const std::unordered_set<std::string> &available_symbols,
+                     bool has_optional_boundary,
+                     bool has_update_boundary) const {
+    if (has_optional_boundary || has_update_boundary) {
+      return false;
+    }
+    CHECK(with_clause.body != nullptr, common::InvalidArgumentError,
+          Missing("WITH body"));
+    return IsPureVariablePassthrough(*with_clause.body, available_symbols);
+  }
+
   SinglePlannerQuery BuildSingleQuery(const ast::SingleQuery &query) {
     switch (query.node_type) {
       case ast::ASTNodeType::kSinglePartQuery: {
@@ -1991,24 +2039,100 @@ class PlannerQueryBuilder {
 
     SinglePlannerQuery root;
     SinglePlannerQuery *current_segment = &root;
-    std::unordered_set<std::string> argument_ids;
+    std::unordered_set<std::string> current_argument_ids;
+    QueryGraphBuilder builder(SemanticTableRef(), current_argument_ids);
+    bool current_segment_finished = false;
+
+    auto finish_current_segment = [&](QueryHorizon horizon) {
+      current_segment->query_graph = builder.Release();
+      AttachQueryGraphSubqueries(&current_segment->query_graph);
+      current_segment->horizon = std::move(horizon);
+      current_segment_finished = true;
+    };
+
+    auto start_next_segment = [&]() {
+      current_argument_ids = SinglePlannerQueryOutputSymbols(*current_segment);
+      current_segment->tail = std::make_unique<SinglePlannerQuery>();
+      current_segment = current_segment->tail.get();
+      builder = QueryGraphBuilder(SemanticTableRef(), current_argument_ids);
+      current_segment_finished = false;
+    };
+
+    auto finish_and_start_next = [&](QueryHorizon horizon) {
+      finish_current_segment(std::move(horizon));
+      start_next_segment();
+    };
+
+    auto build_reading_clauses =
+        [&](const std::vector<std::unique_ptr<ast::ReadingClause>> &reading) {
+          for (const auto &clause : reading) {
+            CHECK(clause != nullptr, common::InvalidArgumentError,
+                  Missing("reading clause"));
+            if (clause->Is(ast::ASTNodeType::kUnwind)) {
+              finish_and_start_next(QueryHorizon::ForUnwind(BuildUnwindHorizon(
+                  *ast::CastAst<ast::Unwind>(clause.get()))));
+              continue;
+            }
+            builder.BuildReadingClause(*clause);
+          }
+        };
+
+    auto build_updating_clauses =
+        [&](const std::vector<std::unique_ptr<ast::UpdatingClause>> &updating,
+            bool has_following_work) {
+          for (std::size_t i = 0; i < updating.size(); ++i) {
+            const auto &clause = updating[i];
+            CHECK(clause != nullptr, common::InvalidArgumentError,
+                  Missing("updating clause"));
+            const bool is_merge = clause->Is(ast::ASTNodeType::kMerge);
+            if (is_merge && builder.HasLocalWork()) {
+              finish_and_start_next(QueryHorizon::ForPassthrough());
+            }
+            builder.BuildUpdatingClause(*clause);
+            if (is_merge) {
+              finish_current_segment(QueryHorizon::ForPassthrough());
+              if (i + 1 < updating.size() || has_following_work) {
+                start_next_segment();
+              }
+            }
+          }
+        };
+
     for (const auto &part : query.parts) {
       CHECK(part.with_clause, common::InvalidArgumentError,
             Missing("WITH clause"));
-      *current_segment =
-          BuildQuerySegment(part.reading_clauses, part.updating_clauses,
-                            part.with_clause.get(), argument_ids);
-      current_segment = current_segment->Last();
       CHECK(part.with_clause->body != nullptr, common::InvalidArgumentError,
             Missing("WITH body"));
-      argument_ids =
-          ProjectionOutputSymbols(SemanticTableRef(), *part.with_clause->body);
-      current_segment->tail = std::make_unique<SinglePlannerQuery>();
-      current_segment = current_segment->tail.get();
+
+      build_reading_clauses(part.reading_clauses);
+      build_updating_clauses(part.updating_clauses,
+                             /*has_following_work=*/true);
+
+      const ast::With &with_clause = *part.with_clause;
+      if (CanInlineWith(
+              with_clause, builder.AvailableSymbols(),
+              builder.HasOptionalMatches(),
+              !part.updating_clauses.empty() || builder.ContainsUpdates())) {
+        if (with_clause.where != nullptr) {
+          builder.AddWhere(with_clause.where.get());
+        }
+        continue;
+      }
+
+      finish_and_start_next(BuildProjectionClause(&with_clause));
     }
 
-    *current_segment =
-        BuildSinglePartQuery(*query.final_single_part_query, argument_ids);
+    const ast::SinglePartQuery &final = *query.final_single_part_query;
+    CHECK(final.return_clause || !final.updating_clauses.empty(),
+          common::InvalidArgumentError, Missing("RETURN clause"));
+    build_reading_clauses(final.reading_clauses);
+    build_updating_clauses(final.updating_clauses,
+                           final.return_clause != nullptr);
+    if (final.return_clause != nullptr) {
+      finish_current_segment(BuildProjectionClause(final.return_clause.get()));
+    } else if (!current_segment_finished && builder.HasLocalWork()) {
+      finish_current_segment(QueryHorizon::ForPassthrough());
+    }
     return root;
   }
 

@@ -971,7 +971,7 @@ TEST(PlannerQueryTest, BuildsVariableLengthRelationshipPattern) {
   EXPECT_EQ(*relationship.length.max, 3);
 }
 
-TEST(PlannerQueryTest, BuildsTailForMultiPartQuery) {
+TEST(PlannerQueryTest, InlinesPassthroughWithWhereForMultiPartQuery) {
   auto statement = ParseOrFail(
       "MATCH (n:Person) WHERE true WITH n WHERE n.age > 30 "
       "MATCH (n)-[r:KNOWS]->(m) WHERE true RETURN n, m");
@@ -979,46 +979,28 @@ TEST(PlannerQueryTest, BuildsTailForMultiPartQuery) {
 
   std::unique_ptr<ir::PlannerQuery> planner_query =
       ir::CreatePlannerQuery(*statement);
-  const ir::SinglePlannerQuery &first = planner_query->RequireSingle();
+  const ir::SinglePlannerQuery &main = planner_query->RequireSingle();
 
-  ASSERT_TRUE(first.tail);
-  const ir::SinglePlannerQuery &second = *first.tail;
-
-  EXPECT_TRUE(first.query_graph.argument_ids.empty());
-  EXPECT_TRUE(Contains(first.query_graph.pattern_nodes, "n"));
-  EXPECT_EQ(first.query_graph.selections.size(), 2U);
-  const auto first_where_dependencies =
-      SelectionDependenciesByExpression(first.query_graph);
-  EXPECT_TRUE(Contains(first_where_dependencies.at("n:Person"), "n"));
-  EXPECT_TRUE(first_where_dependencies.contains("true"));
-
-  ASSERT_EQ(first.horizon.kind, ir::QueryHorizonKind::kRegularProjection);
-  ASSERT_EQ(first.horizon.RequireRegularProjection().items.size(), 1U);
-  EXPECT_EQ(first.horizon.RequireRegularProjection().items[0].alias, "n");
-  ASSERT_EQ(first.horizon.RequireRegularProjection().selections.size(), 1U);
-  const auto &projection_predicate =
-      first.horizon.RequireRegularProjection().selections.predicates[0];
-  EXPECT_EQ(projection_predicate.kind, ir::PredicateKind::kPropertyComparison);
-  EXPECT_TRUE(Contains(projection_predicate.dependencies, "n"));
-
-  EXPECT_TRUE(Contains(second.query_graph.pattern_nodes, "n"));
-  EXPECT_TRUE(Contains(second.query_graph.pattern_nodes, "m"));
-  EXPECT_TRUE(Contains(second.query_graph.argument_ids, "n"));
-  EXPECT_FALSE(Contains(second.query_graph.argument_ids, "m"));
-  ASSERT_EQ(second.query_graph.pattern_relationships.size(), 1U);
-  EXPECT_EQ(second.query_graph.pattern_relationships[0].variable, "r");
-  EXPECT_EQ(second.query_graph.pattern_relationships[0].types,
+  EXPECT_TRUE(main.query_graph.argument_ids.empty());
+  EXPECT_TRUE(Contains(main.query_graph.pattern_nodes, "n"));
+  EXPECT_TRUE(Contains(main.query_graph.pattern_nodes, "m"));
+  ASSERT_EQ(main.query_graph.pattern_relationships.size(), 1U);
+  EXPECT_EQ(main.query_graph.pattern_relationships[0].variable, "r");
+  EXPECT_EQ(main.query_graph.pattern_relationships[0].types,
             std::vector<std::string>({"KNOWS"}));
-  EXPECT_EQ(second.query_graph.selections.size(), 1U);
-  const auto second_where_dependencies =
-      SelectionDependenciesByExpression(second.query_graph);
-  EXPECT_TRUE(second_where_dependencies.contains("true"));
+  EXPECT_EQ(main.query_graph.selections.size(), 3U);
+  const auto where_dependencies =
+      SelectionDependenciesByExpression(main.query_graph);
+  EXPECT_TRUE(Contains(where_dependencies.at("n:Person"), "n"));
+  EXPECT_TRUE(where_dependencies.contains("true"));
+  EXPECT_TRUE(Contains(where_dependencies.at("n.age > 30"), "n"));
 
-  ASSERT_EQ(second.horizon.kind, ir::QueryHorizonKind::kRegularProjection);
-  ASSERT_EQ(second.horizon.RequireRegularProjection().items.size(), 2U);
-  EXPECT_EQ(second.horizon.RequireRegularProjection().items[0].alias, "n");
-  EXPECT_EQ(second.horizon.RequireRegularProjection().items[1].alias, "m");
-  EXPECT_EQ(second.tail, nullptr);
+  ASSERT_EQ(main.horizon.kind, ir::QueryHorizonKind::kRegularProjection);
+  ASSERT_EQ(main.horizon.RequireRegularProjection().items.size(), 2U);
+  EXPECT_EQ(main.horizon.RequireRegularProjection().items[0].alias, "n");
+  EXPECT_EQ(main.horizon.RequireRegularProjection().items[1].alias, "m");
+  EXPECT_TRUE(main.horizon.RequireRegularProjection().selections.empty());
+  EXPECT_EQ(main.tail, nullptr);
 }
 
 TEST(PlannerQueryTest, BuildsProjectionSelectionsForWithWhere) {
@@ -1045,6 +1027,45 @@ TEST(PlannerQueryTest, BuildsProjectionSelectionsForWithWhere) {
   EXPECT_FALSE(Contains(predicate.dependencies, "n"));
 }
 
+TEST(PlannerQueryTest, KeepsWithHorizonWhenProjectionDropsVariables) {
+  auto statement =
+      ParseOrFail("MATCH (a), (b) WITH a MATCH (a)-->(c) RETURN c");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::SinglePlannerQuery &first = planner_query->RequireSingle();
+  ASSERT_TRUE(first.tail);
+  const ir::SinglePlannerQuery &second = *first.tail;
+
+  EXPECT_TRUE(Contains(first.query_graph.pattern_nodes, "a"));
+  EXPECT_TRUE(Contains(first.query_graph.pattern_nodes, "b"));
+  ASSERT_EQ(first.horizon.kind, ir::QueryHorizonKind::kRegularProjection);
+  ASSERT_EQ(first.horizon.RequireRegularProjection().items.size(), 1U);
+  EXPECT_EQ(first.horizon.RequireRegularProjection().items[0].alias, "a");
+
+  EXPECT_TRUE(Contains(second.query_graph.argument_ids, "a"));
+  EXPECT_FALSE(Contains(second.query_graph.argument_ids, "b"));
+  EXPECT_TRUE(Contains(second.query_graph.pattern_nodes, "c"));
+}
+
+TEST(PlannerQueryTest, KeepsDistinctWithAsEventHorizon) {
+  auto statement =
+      ParseOrFail("MATCH (n) WITH DISTINCT n MATCH (n)-->(m) RETURN m");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::SinglePlannerQuery &first = planner_query->RequireSingle();
+  ASSERT_TRUE(first.tail);
+
+  ASSERT_EQ(first.horizon.kind, ir::QueryHorizonKind::kDistinctProjection);
+  ASSERT_EQ(first.horizon.RequireDistinctProjection().grouping_items.size(),
+            1U);
+  EXPECT_EQ(first.horizon.RequireDistinctProjection().grouping_items[0].alias,
+            "n");
+}
+
 TEST(PlannerQueryTest, NarrowsProjectionExistsSubqueryArgumentIds) {
   auto statement = ParseOrFail(
       "MATCH (a) WITH a, 1 AS unused "
@@ -1066,6 +1087,28 @@ TEST(PlannerQueryTest, NarrowsProjectionExistsSubqueryArgumentIds) {
   EXPECT_FALSE(Contains(subquery.query_graph.argument_ids, "unused"));
   EXPECT_FALSE(Contains(subquery.query_graph.argument_ids, "b"));
   EXPECT_FALSE(Contains(subquery.query_graph.argument_ids, "r"));
+}
+
+TEST(PlannerQueryTest, InlinedWithExistsDoesNotCaptureFutureVariables) {
+  auto statement = ParseOrFail(
+      "MATCH (a) WITH a WHERE EXISTS { MATCH (b) RETURN 1 AS ok } "
+      "MATCH (b) RETURN a");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::SinglePlannerQuery &main = planner_query->RequireSingle();
+  EXPECT_EQ(main.tail, nullptr);
+  EXPECT_TRUE(Contains(main.query_graph.pattern_nodes, "a"));
+  EXPECT_TRUE(Contains(main.query_graph.pattern_nodes, "b"));
+  ASSERT_EQ(main.query_graph.selections.size(), 1U);
+
+  const ir::Predicate &predicate = main.query_graph.selections.predicates[0];
+  EXPECT_EQ(predicate.kind, ir::PredicateKind::kExistsSubquery);
+  ASSERT_NE(predicate.subquery, nullptr);
+  const ir::SinglePlannerQuery &subquery = predicate.subquery->RequireSingle();
+  EXPECT_FALSE(Contains(subquery.query_graph.argument_ids, "a"));
+  EXPECT_FALSE(Contains(subquery.query_graph.argument_ids, "b"));
 }
 
 TEST(PlannerQueryTest, BuildsProjectionPagination) {
@@ -1213,7 +1256,7 @@ TEST(PlannerQueryTest, BuildsUnwindHorizonSegment) {
   EXPECT_EQ(return_segment.tail, nullptr);
 }
 
-TEST(PlannerQueryTest, PreservesUnwindSegmentBeforeWithTail) {
+TEST(PlannerQueryTest, SkipsPassthroughWithAfterUnwindSegment) {
   auto statement = ParseOrFail("UNWIND [1, 2] AS x WITH x RETURN x");
   ASSERT_TRUE(statement);
 
@@ -1223,14 +1266,13 @@ TEST(PlannerQueryTest, PreservesUnwindSegmentBeforeWithTail) {
   ASSERT_EQ(unwind_segment.horizon.kind, ir::QueryHorizonKind::kUnwind);
   ASSERT_TRUE(unwind_segment.tail);
 
-  const ir::SinglePlannerQuery &with_segment = *unwind_segment.tail;
-  ASSERT_EQ(with_segment.horizon.kind,
-            ir::QueryHorizonKind::kRegularProjection);
-  ASSERT_TRUE(with_segment.tail);
-
-  const ir::SinglePlannerQuery &return_segment = *with_segment.tail;
+  const ir::SinglePlannerQuery &return_segment = *unwind_segment.tail;
+  EXPECT_TRUE(Contains(return_segment.query_graph.argument_ids, "x"));
   ASSERT_EQ(return_segment.horizon.kind,
             ir::QueryHorizonKind::kRegularProjection);
+  ASSERT_EQ(return_segment.horizon.RequireRegularProjection().items.size(), 1U);
+  EXPECT_EQ(return_segment.horizon.RequireRegularProjection().items[0].alias,
+            "x");
   EXPECT_EQ(return_segment.tail, nullptr);
 }
 
