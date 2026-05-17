@@ -153,6 +153,9 @@ add_executable(
   ast/rewriters/rewriter_registry.cc
   ast/rewriters/rewriter_pipeline.cc
   ir/planner_query.cc
+  ir/planner_query_builder.cc
+  ir/planner_query_model.cc
+  ir/planner_query_util.cc
   ir/planner_query_printer.cc
   ${GENERATED_SOURCES})
 target_include_directories(cypher_dump PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
@@ -318,6 +321,9 @@ add_executable(
   planner_query_test
   tests/planner_query_test.cc
   ir/planner_query.cc
+  ir/planner_query_builder.cc
+  ir/planner_query_model.cc
+  ir/planner_query_util.cc
   ir/planner_query_printer.cc
   ast/ast_builder.cc
   ast/ast_clone.cc
