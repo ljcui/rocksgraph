@@ -2,7 +2,6 @@
 
 #include "anonymous_pattern_name_rewriter.h"
 #include "comparison_chain_rewriter.h"
-#include "count_star_rewriter.h"
 #include "existential_subquery_rewriter.h"
 #include "order_by_alias_rewriter.h"
 #include "parenthesized_expression_rewriter.h"
@@ -21,7 +20,6 @@ std::vector<std::unique_ptr<ASTRewriter>> MakeDefaultRewriters() {
   rewriters.emplace_back(std::make_unique<ComparisonChainRewriter>());
   rewriters.emplace_back(std::make_unique<PatternPredicateRewriter>());
   rewriters.emplace_back(std::make_unique<ExistentialSubqueryRewriter>());
-  rewriters.emplace_back(std::make_unique<CountStarRewriter>());
   rewriters.emplace_back(std::make_unique<ProjectionAliasRewriter>());
   rewriters.emplace_back(std::make_unique<OrderByAliasRewriter>());
   // Projection expansion should run after expression normalization.

@@ -477,7 +477,7 @@ TEST(PlannerQueryPrinterTest, DumpsDistinctProjection) {
 )");
 }
 
-TEST(PlannerQueryPrinterTest, DumpsCountStarRewriteSnapshot) {
+TEST(PlannerQueryPrinterTest, DumpsCountStarSnapshot) {
   ExpectPlannerQueryText("MATCH (n) RETURN count(*)", R"(SinglePlannerQuery
   query_graph:
     argument_ids: []
@@ -493,8 +493,8 @@ TEST(PlannerQueryPrinterTest, DumpsCountStarRewriteSnapshot) {
     projection:
       distinct: false
       items:
-        - alias: count(1)
-          expression: count(1)
+        - alias: count(*)
+          expression: count(*)
       order_by:
         []
       where: null
@@ -634,6 +634,27 @@ TEST(PlannerQueryTest, BuildsAggregatingProjectionItems) {
   ASSERT_EQ(projection.aggregation_items.size(), 1U);
   EXPECT_EQ(projection.grouping_items[0].alias, "name");
   EXPECT_EQ(projection.aggregation_items[0].alias, "c");
+}
+
+TEST(PlannerQueryTest, PreservesCountStarAggregationExpression) {
+  auto statement = ParseOrFail("MATCH (n) RETURN count(*) AS c");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::Projection &projection =
+      planner_query->RequireSingle().horizon.RequireProjection();
+
+  EXPECT_EQ(projection.kind, ir::ProjectionKind::kAggregating);
+  ASSERT_EQ(projection.items.size(), 1U);
+  ASSERT_EQ(projection.aggregation_items.size(), 1U);
+  EXPECT_EQ(projection.aggregation_items[0].alias, "c");
+  ASSERT_NE(projection.aggregation_items[0].expression, nullptr);
+  EXPECT_TRUE(projection.aggregation_items[0].expression->Is(
+      ast::ASTNodeType::kCountStarExpression));
+  EXPECT_EQ(
+      ast::ExpressionToString(*projection.aggregation_items[0].expression),
+      "count(*)");
 }
 
 TEST(PlannerQueryTest, QueriesSelectionsByStructuredPredicateFields) {
