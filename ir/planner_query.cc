@@ -1058,7 +1058,7 @@ class PlannerQueryBuilder {
       const QueryProjection &projection) const {
     CHECK(dependencies != nullptr, common::InternalError,
           "dependency set is null");
-    for (const auto &item : projection.order_by) {
+    for (const auto &item : projection.required_order.items) {
       AddExpressionDependencies(dependencies, item.expression);
     }
     AddSelectionDependencies(dependencies, projection.selections);
@@ -1221,7 +1221,7 @@ class PlannerQueryBuilder {
     std::vector<ProjectionItem> items;
     std::vector<ProjectionItem> grouping_items;
     std::vector<ProjectionItem> aggregation_items;
-    std::vector<SortItem> order_by;
+    RequiredOrder required_order;
     const ast::Expression *skip = nullptr;
     const ast::Expression *limit = nullptr;
   };
@@ -1230,7 +1230,7 @@ class PlannerQueryBuilder {
                                  QueryProjection *projection) {
     CHECK(parts != nullptr, common::InternalError, "projection parts is null");
     CHECK(projection != nullptr, common::InternalError, "projection is null");
-    projection->order_by = std::move(parts->order_by);
+    projection->required_order = std::move(parts->required_order);
     projection->pagination.skip = parts->skip;
     projection->pagination.limit = parts->limit;
   }
@@ -1346,16 +1346,17 @@ class PlannerQueryBuilder {
       }
     }
 
-    parts.order_by.reserve(body.order_by.size());
+    parts.required_order.items.reserve(body.order_by.size());
     for (const auto &item : body.order_by) {
       CHECK(item, common::InvalidArgumentError,
             "null sort item is not supported");
       CHECK(item->expression, common::InvalidArgumentError,
             Missing("sort expression"));
-      SortItem sort_item;
-      sort_item.expression = item->expression.get();
-      sort_item.ascending = item->ascending;
-      parts.order_by.emplace_back(sort_item);
+      OrderItem order_item;
+      order_item.expression = item->expression.get();
+      order_item.direction = item->ascending ? OrderDirection::kAscending
+                                             : OrderDirection::kDescending;
+      parts.required_order.items.emplace_back(order_item);
     }
 
     parts.skip = body.skip.get();

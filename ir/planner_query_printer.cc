@@ -50,6 +50,16 @@ std::string DirectionToString(Direction direction) {
   THROW(common::InternalError, "unknown pattern relationship direction");
 }
 
+std::string OrderDirectionToString(OrderDirection direction) {
+  switch (direction) {
+    case OrderDirection::kAscending:
+      return "ascending";
+    case OrderDirection::kDescending:
+      return "descending";
+  }
+  THROW(common::InternalError, "unknown order direction");
+}
+
 std::string PredicateKindToString(PredicateKind kind) {
   switch (kind) {
     case PredicateKind::kGenericExpression:
@@ -302,15 +312,15 @@ class PlannerQueryPrinter {
 
   void PrintProjectionTail(const QueryProjection &projection) {
     PrintSelections(projection.selections);
-    Line("order_by:");
+    Line("required_order:");
     Indent();
-    if (projection.order_by.empty()) {
+    if (projection.required_order.empty()) {
       Line("[]");
     } else {
-      for (const auto &item : projection.order_by) {
+      for (const auto &item : projection.required_order.items) {
         Line("- expression: " + ExpressionText(item.expression));
         Indent();
-        Line(std::string("ascending: ") + (item.ascending ? "true" : "false"));
+        Line("direction: " + OrderDirectionToString(item.direction));
         Dedent();
       }
     }

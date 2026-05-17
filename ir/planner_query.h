@@ -107,9 +107,21 @@ struct ProjectionItem {
   std::string alias;
 };
 
-struct SortItem {
+enum class OrderDirection {
+  kAscending,
+  kDescending,
+};
+
+struct OrderItem {
   const ast::Expression *expression = nullptr;
-  bool ascending = true;
+  OrderDirection direction = OrderDirection::kAscending;
+};
+
+struct RequiredOrder {
+  std::vector<OrderItem> items;
+
+  [[nodiscard]] bool empty() const { return items.empty(); }
+  [[nodiscard]] std::size_t size() const { return items.size(); }
 };
 
 struct Pagination {
@@ -118,7 +130,7 @@ struct Pagination {
 };
 
 struct QueryProjection {
-  std::vector<SortItem> order_by;
+  RequiredOrder required_order;
   Selections selections;
   Pagination pagination;
 };

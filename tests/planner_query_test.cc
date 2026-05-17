@@ -83,7 +83,7 @@ TEST(PlannerQueryPrinterTest, DumpsSimpleMatch) {
           expression: n
       selections:
         []
-      order_by:
+      required_order:
         []
       pagination:
         skip: null
@@ -116,7 +116,7 @@ TEST(PlannerQueryPrinterTest, DumpsInlineNodePredicateSelection) {
           expression: n
       selections:
         []
-      order_by:
+      required_order:
         []
       pagination:
         skip: null
@@ -153,7 +153,7 @@ TEST(PlannerQueryPrinterTest, DumpsRelationshipPatternWithInlineType) {
           expression: b
       selections:
         []
-      order_by:
+      required_order:
         []
       pagination:
         skip: null
@@ -192,7 +192,7 @@ TEST(PlannerQueryPrinterTest, DumpsExplicitRelationshipTypeSelection) {
           expression: r
       selections:
         []
-      order_by:
+      required_order:
         []
       pagination:
         skip: null
@@ -229,7 +229,7 @@ TEST(PlannerQueryPrinterTest, DumpsVariableLengthRelationship) {
           expression: r
       selections:
         []
-      order_by:
+      required_order:
         []
       pagination:
         skip: null
@@ -274,7 +274,7 @@ TEST(PlannerQueryPrinterTest, DumpsUnwindTail) {
               expression: x
           selections:
             []
-          order_by:
+          required_order:
             []
           pagination:
             skip: null
@@ -307,7 +307,7 @@ TEST(PlannerQueryPrinterTest, DumpsUnionAll) {
               expression: 1
           selections:
             []
-          order_by:
+          required_order:
             []
           pagination:
             skip: null
@@ -333,7 +333,7 @@ TEST(PlannerQueryPrinterTest, DumpsUnionAll) {
               expression: 2
           selections:
             []
-          order_by:
+          required_order:
             []
           pagination:
             skip: null
@@ -367,7 +367,7 @@ TEST(PlannerQueryPrinterTest, DumpsInlinePropertySelection) {
           expression: n
       selections:
         []
-      order_by:
+      required_order:
         []
       pagination:
         skip: null
@@ -402,7 +402,7 @@ TEST(PlannerQueryPrinterTest, DumpsExplicitWhereSelection) {
           expression: n
       selections:
         []
-      order_by:
+      required_order:
         []
       pagination:
         skip: null
@@ -432,7 +432,7 @@ TEST(PlannerQueryPrinterTest, DumpsWithTail) {
           expression: n.name
       selections:
         []
-      order_by:
+      required_order:
         []
       pagination:
         skip: null
@@ -456,7 +456,7 @@ TEST(PlannerQueryPrinterTest, DumpsWithTail) {
               expression: name
           selections:
             []
-          order_by:
+          required_order:
             []
           pagination:
             skip: null
@@ -485,7 +485,7 @@ TEST(PlannerQueryPrinterTest, DumpsDistinctProjection) {
           expression: n
       selections:
         []
-      order_by:
+      required_order:
         []
       pagination:
         skip: null
@@ -516,7 +516,7 @@ TEST(PlannerQueryPrinterTest, DumpsCountStarSnapshot) {
           expression: count(*)
       selections:
         []
-      order_by:
+      required_order:
         []
       pagination:
         skip: null
@@ -546,12 +546,45 @@ TEST(PlannerQueryPrinterTest, DumpsOrderBySkipLimit) {
           expression: n
       selections:
         []
-      order_by:
+      required_order:
         - expression: n
-          ascending: true
+          direction: ascending
       pagination:
         skip: 1
         limit: 2
+  tail:
+    null
+)");
+}
+
+TEST(PlannerQueryPrinterTest, DumpsRequiredOrderDirections) {
+  ExpectPlannerQueryText("MATCH (n) RETURN n ORDER BY n.name DESC, n.age ASC",
+                         R"(SinglePlannerQuery
+  query_graph:
+    argument_ids: []
+    pattern_nodes: [n]
+    pattern_relationships:
+      []
+    selections:
+      []
+    optional_matches: 0
+    hints: 0
+    mutating_patterns: 0
+  horizon:
+    regular_projection:
+      items:
+        - alias: n
+          expression: n
+      selections:
+        []
+      required_order:
+        - expression: n.name
+          direction: descending
+        - expression: n.age
+          direction: ascending
+      pagination:
+        skip: null
+        limit: null
   tail:
     null
 )");
@@ -870,6 +903,29 @@ TEST(PlannerQueryTest, BuildsProjectionPagination) {
   ASSERT_NE(projection.pagination.limit, nullptr);
   EXPECT_EQ(ast::ExpressionToString(*projection.pagination.skip), "1");
   EXPECT_EQ(ast::ExpressionToString(*projection.pagination.limit), "2");
+}
+
+TEST(PlannerQueryTest, BuildsProjectionRequiredOrder) {
+  auto statement =
+      ParseOrFail("MATCH (n) RETURN n ORDER BY n.name DESC, n.age ASC");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::RegularQueryProjection &projection =
+      planner_query->RequireSingle().horizon.RequireRegularProjection();
+
+  ASSERT_EQ(projection.required_order.size(), 2U);
+  EXPECT_EQ(
+      ast::ExpressionToString(*projection.required_order.items[0].expression),
+      "n.name");
+  EXPECT_EQ(projection.required_order.items[0].direction,
+            ir::OrderDirection::kDescending);
+  EXPECT_EQ(
+      ast::ExpressionToString(*projection.required_order.items[1].expression),
+      "n.age");
+  EXPECT_EQ(projection.required_order.items[1].direction,
+            ir::OrderDirection::kAscending);
 }
 
 TEST(PlannerQueryTest, NarrowsTailArgumentIdsToActualDependencies) {
