@@ -153,7 +153,9 @@ add_executable(
   ast/rewriters/rewriter_registry.cc
   ast/rewriters/rewriter_pipeline.cc
   ir/planner_query.cc
+  ir/planner_query_arguments.cc
   ir/planner_query_builder.cc
+  ir/planner_query_graph_builder.cc
   ir/planner_query_model.cc
   ir/planner_query_util.cc
   ir/planner_query_printer.cc
@@ -321,7 +323,9 @@ add_executable(
   planner_query_test
   tests/planner_query_test.cc
   ir/planner_query.cc
+  ir/planner_query_arguments.cc
   ir/planner_query_builder.cc
+  ir/planner_query_graph_builder.cc
   ir/planner_query_model.cc
   ir/planner_query_util.cc
   ir/planner_query_printer.cc
