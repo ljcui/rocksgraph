@@ -112,11 +112,15 @@ struct SortItem {
   bool ascending = true;
 };
 
-struct QueryProjection {
-  std::vector<SortItem> order_by;
-  const ast::Expression *where = nullptr;
+struct Pagination {
   const ast::Expression *skip = nullptr;
   const ast::Expression *limit = nullptr;
+};
+
+struct QueryProjection {
+  std::vector<SortItem> order_by;
+  Selections selections;
+  Pagination pagination;
 };
 
 struct RegularQueryProjection : QueryProjection {

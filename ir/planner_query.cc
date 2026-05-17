@@ -279,6 +279,118 @@ std::string PredicateKey(const Predicate &predicate) {
   return key;
 }
 
+bool QueryGraphContainsRelationshipVariable(const QueryGraph *query_graph,
+                                            const std::string &name) {
+  if (query_graph == nullptr) {
+    return false;
+  }
+  for (const auto &relationship : query_graph->pattern_relationships) {
+    if (relationship.variable == name) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool QueryGraphContainsNodeVariable(const QueryGraph *query_graph,
+                                    const std::string &name) {
+  return query_graph != nullptr && query_graph->pattern_nodes.contains(name);
+}
+
+void ClassifyPredicate(Predicate *predicate,
+                       const ast::SemanticTable &semantic_table,
+                       const QueryGraph *query_graph) {
+  CHECK(predicate != nullptr, common::InternalError, "predicate is null");
+  CHECK(predicate->expression != nullptr, common::InvalidArgumentError,
+        "predicate expression is null");
+  const ast::Expression *expression =
+      UnwrapParenthesized(predicate->expression);
+  CHECK(expression != nullptr, common::InvalidArgumentError,
+        "predicate expression is null");
+
+  if (expression->Is(ast::ASTNodeType::kLabelPredicateExpression)) {
+    const auto *label = ast::CastAst<ast::LabelPredicateExpression>(expression);
+    const ast::Variable *variable = AsVariableExpression(label->expr.get());
+    if (variable == nullptr) {
+      return;
+    }
+    predicate->variable = variable->name;
+    const auto variable_type = semantic_table.VariableType(variable->name);
+    const bool type_unknown =
+        !variable_type.has_value() ||
+        *variable_type == ast::SemanticVariableType::kUnknown;
+    if (variable_type == ast::SemanticVariableType::kRelationship ||
+        (type_unknown &&
+         QueryGraphContainsRelationshipVariable(query_graph, variable->name))) {
+      predicate->kind = PredicateKind::kRelationshipType;
+      predicate->relationship_types = label->labels;
+    } else if (variable_type == ast::SemanticVariableType::kNode ||
+               (type_unknown &&
+                QueryGraphContainsNodeVariable(query_graph, variable->name))) {
+      predicate->kind = PredicateKind::kNodeLabel;
+      predicate->labels = label->labels;
+    }
+    return;
+  }
+
+  if (expression->Is(ast::ASTNodeType::kComparisonExpression)) {
+    const auto *comparison =
+        ast::CastAst<ast::ComparisonExpression>(expression);
+    const ast::PropertyExpression *property =
+        AsPropertyExpression(comparison->left.get());
+    if (property == nullptr) {
+      return;
+    }
+    const ast::Variable *variable =
+        AsVariableExpression(property->object.get());
+    if (variable == nullptr) {
+      return;
+    }
+    predicate->variable = variable->name;
+    predicate->property_key = property->property_key;
+    predicate->comparison_op = comparison->op;
+    predicate->kind = comparison->op == "="
+                          ? PredicateKind::kPropertyEquality
+                          : PredicateKind::kPropertyComparison;
+    return;
+  }
+
+  if (AsExistentialSubquery(expression) != nullptr) {
+    predicate->kind = PredicateKind::kExistsSubquery;
+  }
+}
+
+void AddSelectionPredicates(const ast::Expression *where,
+                            const ast::SemanticTable &semantic_table,
+                            const QueryGraph *query_graph,
+                            Selections *selections,
+                            std::unordered_set<std::string> *selection_keys) {
+  CHECK(where != nullptr, common::InvalidArgumentError,
+        "selection predicate is null");
+  CHECK(selections != nullptr, common::InternalError, "selections is null");
+  CHECK(selection_keys != nullptr, common::InternalError,
+        "selection keys is null");
+  std::vector<const ast::Expression *> predicates;
+  SplitConjunctivePredicates(where, &predicates);
+  CHECK(!predicates.empty(), common::InvalidArgumentError,
+        "selection predicate list is empty");
+  for (const ast::Expression *predicate : predicates) {
+    CHECK(predicate != nullptr, common::InvalidArgumentError,
+          "null selection predicate is not supported");
+
+    Predicate selection_predicate;
+    selection_predicate.expression = predicate;
+    selection_predicate.dependencies =
+        semantic_table.ExpressionDependencies(*predicate);
+    ClassifyPredicate(&selection_predicate, semantic_table, query_graph);
+    const std::string predicate_key = PredicateKey(selection_predicate);
+    if (!selection_keys->insert(predicate_key).second) {
+      continue;
+    }
+    selections->predicates.push_back(std::move(selection_predicate));
+  }
+}
+
 }  // namespace
 
 std::vector<const Predicate *> Selections::PredicatesByKind(
@@ -555,27 +667,8 @@ class QueryGraphBuilder {
   }
 
   void AddWhere(const ast::Expression *where) {
-    CHECK(where != nullptr, common::InvalidArgumentError,
-          "WHERE predicate is null");
-    std::vector<const ast::Expression *> predicates;
-    SplitConjunctivePredicates(where, &predicates);
-    CHECK(!predicates.empty(), common::InvalidArgumentError,
-          "WHERE predicate list is empty");
-    for (const ast::Expression *predicate : predicates) {
-      CHECK(predicate != nullptr, common::InvalidArgumentError,
-            "null WHERE predicate is not supported");
-
-      Predicate where_predicate;
-      where_predicate.expression = predicate;
-      where_predicate.dependencies =
-          SemanticTableRef().ExpressionDependencies(*predicate);
-      ClassifyPredicate(&where_predicate);
-      const std::string predicate_key = PredicateKey(where_predicate);
-      if (!where_keys_.insert(predicate_key).second) {
-        continue;
-      }
-      graph_.selections.predicates.push_back(std::move(where_predicate));
-    }
+    AddSelectionPredicates(where, SemanticTableRef(), &graph_,
+                           &graph_.selections, &where_keys_);
   }
 
   QueryGraph Release() { return std::move(graph_); }
@@ -585,77 +678,6 @@ class QueryGraphBuilder {
     CHECK(semantic_table_ != nullptr, common::InternalError,
           "semantic table is null");
     return *semantic_table_;
-  }
-
-  [[nodiscard]] bool IsRelationshipVariable(const std::string &name) const {
-    for (const auto &relationship : graph_.pattern_relationships) {
-      if (relationship.variable == name) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  void ClassifyPredicate(Predicate *predicate) const {
-    CHECK(predicate != nullptr, common::InternalError, "predicate is null");
-    CHECK(predicate->expression != nullptr, common::InvalidArgumentError,
-          "WHERE predicate expression is null");
-    const ast::Expression *expression =
-        UnwrapParenthesized(predicate->expression);
-    CHECK(expression != nullptr, common::InvalidArgumentError,
-          "WHERE predicate expression is null");
-
-    if (expression->Is(ast::ASTNodeType::kLabelPredicateExpression)) {
-      const auto *label =
-          ast::CastAst<ast::LabelPredicateExpression>(expression);
-      const ast::Variable *variable = AsVariableExpression(label->expr.get());
-      if (variable == nullptr) {
-        return;
-      }
-      predicate->variable = variable->name;
-      const auto variable_type =
-          SemanticTableRef().VariableType(variable->name);
-      const bool type_unknown =
-          !variable_type.has_value() ||
-          *variable_type == ast::SemanticVariableType::kUnknown;
-      if (variable_type == ast::SemanticVariableType::kRelationship ||
-          (type_unknown && IsRelationshipVariable(variable->name))) {
-        predicate->kind = PredicateKind::kRelationshipType;
-        predicate->relationship_types = label->labels;
-      } else if (variable_type == ast::SemanticVariableType::kNode ||
-                 (type_unknown &&
-                  graph_.pattern_nodes.contains(variable->name))) {
-        predicate->kind = PredicateKind::kNodeLabel;
-        predicate->labels = label->labels;
-      }
-      return;
-    }
-
-    if (expression->Is(ast::ASTNodeType::kComparisonExpression)) {
-      const auto *comparison =
-          ast::CastAst<ast::ComparisonExpression>(expression);
-      const ast::PropertyExpression *property =
-          AsPropertyExpression(comparison->left.get());
-      if (property == nullptr) {
-        return;
-      }
-      const ast::Variable *variable =
-          AsVariableExpression(property->object.get());
-      if (variable == nullptr) {
-        return;
-      }
-      predicate->variable = variable->name;
-      predicate->property_key = property->property_key;
-      predicate->comparison_op = comparison->op;
-      predicate->kind = comparison->op == "="
-                            ? PredicateKind::kPropertyEquality
-                            : PredicateKind::kPropertyComparison;
-      return;
-    }
-
-    if (AsExistentialSubquery(expression) != nullptr) {
-      predicate->kind = PredicateKind::kExistsSubquery;
-    }
   }
 
   QueryGraph graph_;
@@ -853,7 +875,36 @@ class PlannerQueryBuilder {
 
   void AttachQueryGraphSubqueries(QueryGraph *query_graph) {
     CHECK(query_graph != nullptr, common::InternalError, "query graph is null");
-    for (auto &predicate : query_graph->selections.predicates) {
+    AttachSelectionSubqueries(&query_graph->selections);
+    for (auto &optional_match : query_graph->optional_matches) {
+      AttachQueryGraphSubqueries(&optional_match);
+    }
+  }
+
+  void AttachQueryHorizonSubqueries(QueryHorizon *horizon) {
+    CHECK(horizon != nullptr, common::InternalError, "query horizon is null");
+    switch (horizon->kind) {
+      case QueryHorizonKind::kRegularProjection:
+        AttachSelectionSubqueries(
+            &horizon->RequireRegularProjection().selections);
+        return;
+      case QueryHorizonKind::kDistinctProjection:
+        AttachSelectionSubqueries(
+            &horizon->RequireDistinctProjection().selections);
+        return;
+      case QueryHorizonKind::kAggregatingProjection:
+        AttachSelectionSubqueries(
+            &horizon->RequireAggregatingProjection().selections);
+        return;
+      case QueryHorizonKind::kUnwind:
+        return;
+    }
+    THROW(common::InternalError, "unknown query horizon kind");
+  }
+
+  void AttachSelectionSubqueries(Selections *selections) {
+    CHECK(selections != nullptr, common::InternalError, "selections is null");
+    for (auto &predicate : selections->predicates) {
       if (predicate.kind != PredicateKind::kExistsSubquery) {
         continue;
       }
@@ -864,9 +915,6 @@ class PlannerQueryBuilder {
       CHECK(subquery->query != nullptr, common::InvalidArgumentError,
             Missing("EXISTS subquery"));
       predicate.subquery = BuildRegularQuery(*subquery->query);
-    }
-    for (auto &optional_match : query_graph->optional_matches) {
-      AttachQueryGraphSubqueries(&optional_match);
     }
   }
 
@@ -906,7 +954,10 @@ class PlannerQueryBuilder {
       segment->query_graph.argument_ids =
           IntersectSymbols(dependencies, available_symbols);
       FinalizeQueryGraphArguments(&segment->query_graph);
-      available_symbols = SinglePlannerQueryOutputSymbols(*segment);
+      std::unordered_set<std::string> output_symbols =
+          SinglePlannerQueryOutputSymbols(*segment);
+      FinalizeQueryHorizonArguments(&segment->horizon, output_symbols);
+      available_symbols = std::move(output_symbols);
       segment = segment->tail.get();
     }
   }
@@ -938,6 +989,31 @@ class PlannerQueryBuilder {
       }
       FinalizePlannerQueryArguments(*predicate.subquery, available_symbols);
     }
+  }
+
+  void FinalizeQueryHorizonArguments(
+      QueryHorizon *horizon,
+      const std::unordered_set<std::string> &available_symbols) const {
+    CHECK(horizon != nullptr, common::InternalError, "query horizon is null");
+    switch (horizon->kind) {
+      case QueryHorizonKind::kRegularProjection:
+        FinalizeSelectionSubqueries(
+            &horizon->RequireRegularProjection().selections, available_symbols);
+        return;
+      case QueryHorizonKind::kDistinctProjection:
+        FinalizeSelectionSubqueries(
+            &horizon->RequireDistinctProjection().selections,
+            available_symbols);
+        return;
+      case QueryHorizonKind::kAggregatingProjection:
+        FinalizeSelectionSubqueries(
+            &horizon->RequireAggregatingProjection().selections,
+            available_symbols);
+        return;
+      case QueryHorizonKind::kUnwind:
+        return;
+    }
+    THROW(common::InternalError, "unknown query horizon kind");
   }
 
   std::unordered_set<std::string> SinglePlannerQueryDependencies(
@@ -985,9 +1061,19 @@ class PlannerQueryBuilder {
     for (const auto &item : projection.order_by) {
       AddExpressionDependencies(dependencies, item.expression);
     }
-    AddExpressionDependencies(dependencies, projection.where);
-    AddExpressionDependencies(dependencies, projection.skip);
-    AddExpressionDependencies(dependencies, projection.limit);
+    AddSelectionDependencies(dependencies, projection.selections);
+    AddExpressionDependencies(dependencies, projection.pagination.skip);
+    AddExpressionDependencies(dependencies, projection.pagination.limit);
+  }
+
+  static void AddSelectionDependencies(
+      std::unordered_set<std::string> *dependencies,
+      const Selections &selections) {
+    CHECK(dependencies != nullptr, common::InternalError,
+          "dependency set is null");
+    for (const auto &predicate : selections.predicates) {
+      AddSymbols(dependencies, predicate.dependencies);
+    }
   }
 
   void AddProjectionItemDependencies(
@@ -1145,22 +1231,33 @@ class PlannerQueryBuilder {
     CHECK(parts != nullptr, common::InternalError, "projection parts is null");
     CHECK(projection != nullptr, common::InternalError, "projection is null");
     projection->order_by = std::move(parts->order_by);
-    projection->skip = parts->skip;
-    projection->limit = parts->limit;
+    projection->pagination.skip = parts->skip;
+    projection->pagination.limit = parts->limit;
   }
 
-  static void SetProjectionWhere(QueryHorizon *horizon,
-                                 const ast::Expression *where) {
+  void AddProjectionSelections(QueryHorizon *horizon,
+                               const ast::Expression *where) {
     CHECK(horizon != nullptr, common::InternalError, "query horizon is null");
+    if (where == nullptr) {
+      return;
+    }
+    std::unordered_set<std::string> selection_keys;
     switch (horizon->kind) {
       case QueryHorizonKind::kRegularProjection:
-        horizon->RequireRegularProjection().where = where;
+        AddSelectionPredicates(where, SemanticTableRef(), nullptr,
+                               &horizon->RequireRegularProjection().selections,
+                               &selection_keys);
         return;
       case QueryHorizonKind::kDistinctProjection:
-        horizon->RequireDistinctProjection().where = where;
+        AddSelectionPredicates(where, SemanticTableRef(), nullptr,
+                               &horizon->RequireDistinctProjection().selections,
+                               &selection_keys);
         return;
       case QueryHorizonKind::kAggregatingProjection:
-        horizon->RequireAggregatingProjection().where = where;
+        AddSelectionPredicates(
+            where, SemanticTableRef(), nullptr,
+            &horizon->RequireAggregatingProjection().selections,
+            &selection_keys);
         return;
       case QueryHorizonKind::kUnwind:
         THROW(common::InternalError,
@@ -1178,8 +1275,9 @@ class PlannerQueryBuilder {
     QueryHorizon horizon = BuildProjectionBody(*projection_clause->body);
     if (projection_clause->Is(ast::ASTNodeType::kWith)) {
       const auto *with_clause = ast::CastAst<ast::With>(projection_clause);
-      SetProjectionWhere(&horizon, with_clause->where.get());
+      AddProjectionSelections(&horizon, with_clause->where.get());
     }
+    AttachQueryHorizonSubqueries(&horizon);
     return horizon;
   }
 

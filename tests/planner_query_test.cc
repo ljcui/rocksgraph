@@ -37,15 +37,20 @@ bool Contains(const std::unordered_set<std::string> &set,
 }
 
 std::unordered_map<std::string, std::unordered_set<std::string>>
-SelectionDependenciesByExpression(const ir::QueryGraph &query_graph) {
+SelectionDependenciesByExpression(const ir::Selections &selections) {
   std::unordered_map<std::string, std::unordered_set<std::string>> result;
-  for (const auto &predicate : query_graph.selections.predicates) {
+  for (const auto &predicate : selections.predicates) {
     CHECK(predicate.expression != nullptr, common::InvalidArgumentError,
           "null selection predicate in QueryGraph");
     result.emplace(ast::ExpressionToString(*predicate.expression),
                    predicate.dependencies);
   }
   return result;
+}
+
+std::unordered_map<std::string, std::unordered_set<std::string>>
+SelectionDependenciesByExpression(const ir::QueryGraph &query_graph) {
+  return SelectionDependenciesByExpression(query_graph.selections);
 }
 
 void ExpectPlannerQueryText(const std::string &query,
@@ -76,11 +81,13 @@ TEST(PlannerQueryPrinterTest, DumpsSimpleMatch) {
       items:
         - alias: n
           expression: n
+      selections:
+        []
       order_by:
         []
-      where: null
-      skip: null
-      limit: null
+      pagination:
+        skip: null
+        limit: null
   tail:
     null
 )");
@@ -107,11 +114,13 @@ TEST(PlannerQueryPrinterTest, DumpsInlineNodePredicateSelection) {
       items:
         - alias: n
           expression: n
+      selections:
+        []
       order_by:
         []
-      where: null
-      skip: null
-      limit: null
+      pagination:
+        skip: null
+        limit: null
   tail:
     null
 )");
@@ -142,11 +151,13 @@ TEST(PlannerQueryPrinterTest, DumpsRelationshipPatternWithInlineType) {
           expression: a
         - alias: b
           expression: b
+      selections:
+        []
       order_by:
         []
-      where: null
-      skip: null
-      limit: null
+      pagination:
+        skip: null
+        limit: null
   tail:
     null
 )");
@@ -179,11 +190,13 @@ TEST(PlannerQueryPrinterTest, DumpsExplicitRelationshipTypeSelection) {
       items:
         - alias: r
           expression: r
+      selections:
+        []
       order_by:
         []
-      where: null
-      skip: null
-      limit: null
+      pagination:
+        skip: null
+        limit: null
   tail:
     null
 )");
@@ -214,11 +227,13 @@ TEST(PlannerQueryPrinterTest, DumpsVariableLengthRelationship) {
       items:
         - alias: r
           expression: r
+      selections:
+        []
       order_by:
         []
-      where: null
-      skip: null
-      limit: null
+      pagination:
+        skip: null
+        limit: null
   tail:
     null
 )");
@@ -257,11 +272,13 @@ TEST(PlannerQueryPrinterTest, DumpsUnwindTail) {
           items:
             - alias: x
               expression: x
+          selections:
+            []
           order_by:
             []
-          where: null
-          skip: null
-          limit: null
+          pagination:
+            skip: null
+            limit: null
       tail:
         null
 )");
@@ -288,11 +305,13 @@ TEST(PlannerQueryPrinterTest, DumpsUnionAll) {
           items:
             - alias: x
               expression: 1
+          selections:
+            []
           order_by:
             []
-          where: null
-          skip: null
-          limit: null
+          pagination:
+            skip: null
+            limit: null
       tail:
         null
   rhs:
@@ -312,11 +331,13 @@ TEST(PlannerQueryPrinterTest, DumpsUnionAll) {
           items:
             - alias: x
               expression: 2
+          selections:
+            []
           order_by:
             []
-          where: null
-          skip: null
-          limit: null
+          pagination:
+            skip: null
+            limit: null
       tail:
         null
 )");
@@ -344,11 +365,13 @@ TEST(PlannerQueryPrinterTest, DumpsInlinePropertySelection) {
       items:
         - alias: n
           expression: n
+      selections:
+        []
       order_by:
         []
-      where: null
-      skip: null
-      limit: null
+      pagination:
+        skip: null
+        limit: null
   tail:
     null
 )");
@@ -377,11 +400,13 @@ TEST(PlannerQueryPrinterTest, DumpsExplicitWhereSelection) {
       items:
         - alias: n
           expression: n
+      selections:
+        []
       order_by:
         []
-      where: null
-      skip: null
-      limit: null
+      pagination:
+        skip: null
+        limit: null
   tail:
     null
 )");
@@ -405,11 +430,13 @@ TEST(PlannerQueryPrinterTest, DumpsWithTail) {
       items:
         - alias: name
           expression: n.name
+      selections:
+        []
       order_by:
         []
-      where: null
-      skip: null
-      limit: null
+      pagination:
+        skip: null
+        limit: null
   tail:
     SinglePlannerQuery
       query_graph:
@@ -427,11 +454,13 @@ TEST(PlannerQueryPrinterTest, DumpsWithTail) {
           items:
             - alias: name
               expression: name
+          selections:
+            []
           order_by:
             []
-          where: null
-          skip: null
-          limit: null
+          pagination:
+            skip: null
+            limit: null
       tail:
         null
 )");
@@ -454,11 +483,13 @@ TEST(PlannerQueryPrinterTest, DumpsDistinctProjection) {
       grouping_items:
         - alias: n
           expression: n
+      selections:
+        []
       order_by:
         []
-      where: null
-      skip: null
-      limit: null
+      pagination:
+        skip: null
+        limit: null
   tail:
     null
 )");
@@ -483,11 +514,13 @@ TEST(PlannerQueryPrinterTest, DumpsCountStarSnapshot) {
       aggregation_items:
         - alias: count(*)
           expression: count(*)
+      selections:
+        []
       order_by:
         []
-      where: null
-      skip: null
-      limit: null
+      pagination:
+        skip: null
+        limit: null
   tail:
     null
 )");
@@ -511,12 +544,14 @@ TEST(PlannerQueryPrinterTest, DumpsOrderBySkipLimit) {
       items:
         - alias: n
           expression: n
+      selections:
+        []
       order_by:
         - expression: n
           ascending: true
-      where: null
-      skip: 1
-      limit: 2
+      pagination:
+        skip: 1
+        limit: 2
   tail:
     null
 )");
@@ -565,9 +600,9 @@ TEST(PlannerQueryTest, BuildsGraphFromMatch) {
   ASSERT_EQ(projection.items.size(), 2U);
   EXPECT_EQ(projection.items[0].alias, "a");
   EXPECT_EQ(projection.items[1].alias, "b");
-  EXPECT_EQ(projection.where, nullptr);
-  EXPECT_EQ(projection.skip, nullptr);
-  EXPECT_EQ(projection.limit, nullptr);
+  EXPECT_TRUE(projection.selections.empty());
+  EXPECT_EQ(projection.pagination.skip, nullptr);
+  EXPECT_EQ(projection.pagination.limit, nullptr);
 
   EXPECT_EQ(planner_query->Kind(), ir::PlannerQueryKind::kSingle);
 }
@@ -749,7 +784,11 @@ TEST(PlannerQueryTest, BuildsTailForMultiPartQuery) {
   ASSERT_EQ(first.horizon.kind, ir::QueryHorizonKind::kRegularProjection);
   ASSERT_EQ(first.horizon.RequireRegularProjection().items.size(), 1U);
   EXPECT_EQ(first.horizon.RequireRegularProjection().items[0].alias, "n");
-  EXPECT_NE(first.horizon.RequireRegularProjection().where, nullptr);
+  ASSERT_EQ(first.horizon.RequireRegularProjection().selections.size(), 1U);
+  const auto &projection_predicate =
+      first.horizon.RequireRegularProjection().selections.predicates[0];
+  EXPECT_EQ(projection_predicate.kind, ir::PredicateKind::kPropertyComparison);
+  EXPECT_TRUE(Contains(projection_predicate.dependencies, "n"));
 
   EXPECT_TRUE(Contains(second.query_graph.pattern_nodes, "n"));
   EXPECT_TRUE(Contains(second.query_graph.pattern_nodes, "m"));
@@ -769,6 +808,68 @@ TEST(PlannerQueryTest, BuildsTailForMultiPartQuery) {
   EXPECT_EQ(second.horizon.RequireRegularProjection().items[0].alias, "n");
   EXPECT_EQ(second.horizon.RequireRegularProjection().items[1].alias, "m");
   EXPECT_EQ(second.tail, nullptr);
+}
+
+TEST(PlannerQueryTest, BuildsProjectionSelectionsForWithWhere) {
+  auto statement =
+      ParseOrFail("MATCH (n) WITH n AS x WHERE x.age > 30 RETURN x");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::SinglePlannerQuery &first = planner_query->RequireSingle();
+  ASSERT_TRUE(first.tail);
+
+  const ir::RegularQueryProjection &projection =
+      first.horizon.RequireRegularProjection();
+  ASSERT_EQ(projection.items.size(), 1U);
+  EXPECT_EQ(projection.items[0].alias, "x");
+  ASSERT_EQ(projection.selections.size(), 1U);
+  const auto &predicate = projection.selections.predicates[0];
+  EXPECT_EQ(predicate.kind, ir::PredicateKind::kPropertyComparison);
+  EXPECT_EQ(predicate.variable, "x");
+  EXPECT_EQ(predicate.property_key, "age");
+  EXPECT_EQ(predicate.comparison_op, ">");
+  EXPECT_TRUE(Contains(predicate.dependencies, "x"));
+  EXPECT_FALSE(Contains(predicate.dependencies, "n"));
+}
+
+TEST(PlannerQueryTest, NarrowsProjectionExistsSubqueryArgumentIds) {
+  auto statement = ParseOrFail(
+      "MATCH (a) WITH a, 1 AS unused "
+      "WHERE EXISTS { MATCH (a)-[r]->(b) RETURN 1 AS ok } RETURN a");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::SinglePlannerQuery &first = planner_query->RequireSingle();
+  const ir::RegularQueryProjection &projection =
+      first.horizon.RequireRegularProjection();
+
+  ASSERT_EQ(projection.selections.size(), 1U);
+  const auto &predicate = projection.selections.predicates[0];
+  EXPECT_EQ(predicate.kind, ir::PredicateKind::kExistsSubquery);
+  ASSERT_NE(predicate.subquery, nullptr);
+  const ir::SinglePlannerQuery &subquery = predicate.subquery->RequireSingle();
+  EXPECT_TRUE(Contains(subquery.query_graph.argument_ids, "a"));
+  EXPECT_FALSE(Contains(subquery.query_graph.argument_ids, "unused"));
+  EXPECT_FALSE(Contains(subquery.query_graph.argument_ids, "b"));
+  EXPECT_FALSE(Contains(subquery.query_graph.argument_ids, "r"));
+}
+
+TEST(PlannerQueryTest, BuildsProjectionPagination) {
+  auto statement = ParseOrFail("MATCH (n) RETURN n SKIP 1 LIMIT 2");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::RegularQueryProjection &projection =
+      planner_query->RequireSingle().horizon.RequireRegularProjection();
+
+  ASSERT_NE(projection.pagination.skip, nullptr);
+  ASSERT_NE(projection.pagination.limit, nullptr);
+  EXPECT_EQ(ast::ExpressionToString(*projection.pagination.skip), "1");
+  EXPECT_EQ(ast::ExpressionToString(*projection.pagination.limit), "2");
 }
 
 TEST(PlannerQueryTest, NarrowsTailArgumentIdsToActualDependencies) {

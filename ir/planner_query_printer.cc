@@ -301,6 +301,7 @@ class PlannerQueryPrinter {
   }
 
   void PrintProjectionTail(const QueryProjection &projection) {
+    PrintSelections(projection.selections);
     Line("order_by:");
     Indent();
     if (projection.order_by.empty()) {
@@ -314,9 +315,11 @@ class PlannerQueryPrinter {
       }
     }
     Dedent();
-    Line("where: " + ExpressionText(projection.where));
-    Line("skip: " + ExpressionText(projection.skip));
-    Line("limit: " + ExpressionText(projection.limit));
+    Line("pagination:");
+    Indent();
+    Line("skip: " + ExpressionText(projection.pagination.skip));
+    Line("limit: " + ExpressionText(projection.pagination.limit));
+    Dedent();
   }
 
   void PrintUnwind(const UnwindHorizon &unwind) {
