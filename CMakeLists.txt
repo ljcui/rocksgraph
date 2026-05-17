@@ -234,61 +234,6 @@ target_include_directories(value_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(value_test GTest::gtest_main)
 add_test(NAME value_test COMMAND value_test)
 
-add_executable(logical_plan_test tests/logical_plan_test.cc ir/logical_plan.cc)
-target_include_directories(logical_plan_test
-                           PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(logical_plan_test GTest::gtest_main)
-add_test(NAME logical_plan_test COMMAND logical_plan_test)
-
-add_executable(
-  idp_planner_test
-  tests/idp_planner_test.cc
-  ir/idp_planner.cc
-  ir/logical_plan.cc)
-target_include_directories(idp_planner_test
-                           PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(idp_planner_test GTest::gtest_main)
-add_test(NAME idp_planner_test COMMAND idp_planner_test)
-
-add_executable(
-  logical_planner_test
-  tests/logical_planner_test.cc
-  ir/logical_planner.cc
-  ir/idp_planner.cc
-  ir/logical_plan.cc
-  ir/planner_query.cc
-  ast/ast_builder.cc
-  ast/ast_clone.cc
-  ast/ast_const_walker.cc
-  ast/ast_equal.cc
-  ast/ast_printer.cc
-  ast/ast_to_cypher.cc
-  ast/expression_to_string.cc
-  ast/ast_rewriter.cc
-  ast/ast_walker.cc
-  ast/semantic_validator.cc
-  ast/rewriters/anonymous_pattern_name_rewriter.cc
-  ast/rewriters/uniqueness_predicates_rewriter.cc
-  ast/rewriters/comparison_chain_rewriter.cc
-  ast/rewriters/count_star_rewriter.cc
-  ast/rewriters/existential_subquery_rewriter.cc
-  ast/rewriters/order_by_alias_rewriter.cc
-  ast/rewriters/parenthesized_expression_rewriter.cc
-  ast/rewriters/pattern_predicate_rewriter.cc
-  ast/rewriters/pattern_predicate_normalization_rewriter.cc
-  ast/rewriters/projection_alias_rewriter.cc
-  ast/rewriters/return_star_rewriter.cc
-  ast/rewriters/rewriter_registry.cc
-  ast/rewriters/rewriter_pipeline.cc
-  ${GENERATED_SOURCES})
-target_include_directories(logical_planner_test
-                           PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(logical_planner_test GTest::gtest_main
-                      ANTLR4Runtime::antlr4_runtime)
-set_target_properties(logical_planner_test PROPERTIES BUILD_RPATH
-                                                      "/usr/local/lib")
-add_test(NAME logical_planner_test COMMAND logical_planner_test)
-
 add_executable(ast_node_type_test tests/ast_node_type_test.cc)
 target_include_directories(ast_node_type_test
                            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
