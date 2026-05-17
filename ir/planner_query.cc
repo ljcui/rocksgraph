@@ -843,7 +843,7 @@ class PlannerQueryBuilder {
     return root;
   }
 
-  static Projection BuildProjectionBody(const ast::ProjectionBody &body) {
+  Projection BuildProjectionBody(const ast::ProjectionBody &body) {
     CHECK(!body.star, common::InvalidArgumentError,
           Unsupported("projection star before rewrite"));
 
@@ -851,6 +851,10 @@ class PlannerQueryBuilder {
     projection.distinct = body.distinct;
 
     projection.items.reserve(body.items.size());
+    std::vector<ProjectionItem> grouping_items;
+    std::vector<ProjectionItem> aggregation_items;
+    grouping_items.reserve(body.items.size());
+    aggregation_items.reserve(body.items.size());
     for (const auto &item : body.items) {
       CHECK(item, common::InvalidArgumentError,
             "null projection item is not supported");
@@ -862,6 +866,22 @@ class PlannerQueryBuilder {
       CHECK(!projection_item.alias.empty(), common::InvalidArgumentError,
             "projection item alias is empty after rewrite");
       projection.items.push_back(std::move(projection_item));
+      const ProjectionItem &stored_item = projection.items.back();
+      if (SemanticTableRef().ContainsAggregation(*stored_item.expression)) {
+        aggregation_items.push_back(stored_item);
+      } else {
+        grouping_items.push_back(stored_item);
+      }
+    }
+
+    if (!aggregation_items.empty()) {
+      projection.kind = ProjectionKind::kAggregating;
+      projection.grouping_items = std::move(grouping_items);
+      projection.aggregation_items = std::move(aggregation_items);
+    } else if (projection.distinct) {
+      projection.kind = ProjectionKind::kDistinct;
+    } else {
+      projection.kind = ProjectionKind::kRegular;
     }
 
     projection.order_by.reserve(body.order_by.size());

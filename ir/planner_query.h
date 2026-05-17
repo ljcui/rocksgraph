@@ -109,9 +109,18 @@ struct SortItem {
   bool ascending = true;
 };
 
+enum class ProjectionKind {
+  kRegular,
+  kDistinct,
+  kAggregating,
+};
+
 struct Projection {
+  ProjectionKind kind = ProjectionKind::kRegular;
   bool distinct = false;
   std::vector<ProjectionItem> items;
+  std::vector<ProjectionItem> grouping_items;
+  std::vector<ProjectionItem> aggregation_items;
   std::vector<SortItem> order_by;
   const ast::Expression *where = nullptr;
   const ast::Expression *skip = nullptr;

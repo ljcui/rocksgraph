@@ -583,6 +583,59 @@ TEST(PlannerQueryTest, BuildsGraphFromMatch) {
   EXPECT_EQ(planner_query->Kind(), ir::PlannerQueryKind::kSingle);
 }
 
+TEST(PlannerQueryTest, BuildsRegularProjectionKind) {
+  auto statement = ParseOrFail("MATCH (n) RETURN n");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::Projection &projection =
+      planner_query->RequireSingle().horizon.RequireProjection();
+
+  EXPECT_EQ(projection.kind, ir::ProjectionKind::kRegular);
+  EXPECT_FALSE(projection.distinct);
+  ASSERT_EQ(projection.items.size(), 1U);
+  EXPECT_EQ(projection.items[0].alias, "n");
+  EXPECT_TRUE(projection.grouping_items.empty());
+  EXPECT_TRUE(projection.aggregation_items.empty());
+}
+
+TEST(PlannerQueryTest, BuildsDistinctProjectionKind) {
+  auto statement = ParseOrFail("MATCH (n) RETURN DISTINCT n.name AS name");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::Projection &projection =
+      planner_query->RequireSingle().horizon.RequireProjection();
+
+  EXPECT_EQ(projection.kind, ir::ProjectionKind::kDistinct);
+  EXPECT_TRUE(projection.distinct);
+  ASSERT_EQ(projection.items.size(), 1U);
+  EXPECT_EQ(projection.items[0].alias, "name");
+  EXPECT_TRUE(projection.grouping_items.empty());
+  EXPECT_TRUE(projection.aggregation_items.empty());
+}
+
+TEST(PlannerQueryTest, BuildsAggregatingProjectionItems) {
+  auto statement =
+      ParseOrFail("MATCH (n) RETURN n.name AS name, count(n) AS c");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::Projection &projection =
+      planner_query->RequireSingle().horizon.RequireProjection();
+
+  EXPECT_EQ(projection.kind, ir::ProjectionKind::kAggregating);
+  EXPECT_FALSE(projection.distinct);
+  ASSERT_EQ(projection.items.size(), 2U);
+  ASSERT_EQ(projection.grouping_items.size(), 1U);
+  ASSERT_EQ(projection.aggregation_items.size(), 1U);
+  EXPECT_EQ(projection.grouping_items[0].alias, "name");
+  EXPECT_EQ(projection.aggregation_items[0].alias, "c");
+}
+
 TEST(PlannerQueryTest, QueriesSelectionsByStructuredPredicateFields) {
   auto statement = ParseOrFail(
       "MATCH (a:Person {name: 'Alice'})-[r]->(b) "
