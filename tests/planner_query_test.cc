@@ -771,6 +771,22 @@ TEST(PlannerQueryTest, BuildsTailForMultiPartQuery) {
   EXPECT_EQ(second.tail, nullptr);
 }
 
+TEST(PlannerQueryTest, NarrowsTailArgumentIdsToActualDependencies) {
+  auto statement =
+      ParseOrFail("MATCH (a) WITH a, 1 AS b MATCH (a)-->(c) RETURN c");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::SinglePlannerQuery &first = planner_query->RequireSingle();
+  ASSERT_TRUE(first.tail);
+  const ir::SinglePlannerQuery &second = *first.tail;
+
+  EXPECT_TRUE(Contains(second.query_graph.argument_ids, "a"));
+  EXPECT_FALSE(Contains(second.query_graph.argument_ids, "b"));
+  EXPECT_FALSE(Contains(second.query_graph.argument_ids, "c"));
+}
+
 TEST(PlannerQueryTest, ClassifiesArgumentRelationshipTypeWithSemanticTable) {
   auto statement =
       ParseOrFail("MATCH (a)-[r]->(b) WITH r MATCH (n) WHERE r:KNOWS RETURN r");

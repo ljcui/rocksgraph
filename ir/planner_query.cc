@@ -115,6 +115,34 @@ std::unordered_set<std::string> ProjectionOutputSymbols(
   return symbols;
 }
 
+void AddSymbol(std::unordered_set<std::string> *symbols,
+               const std::string &symbol) {
+  CHECK(symbols != nullptr, common::InternalError, "symbol set is null");
+  if (!symbol.empty()) {
+    symbols->insert(symbol);
+  }
+}
+
+void AddSymbols(std::unordered_set<std::string> *symbols,
+                const std::unordered_set<std::string> &incoming) {
+  CHECK(symbols != nullptr, common::InternalError, "symbol set is null");
+  symbols->insert(incoming.begin(), incoming.end());
+}
+
+std::unordered_set<std::string> IntersectSymbols(
+    const std::unordered_set<std::string> &lhs,
+    const std::unordered_set<std::string> &rhs) {
+  std::unordered_set<std::string> result;
+  const auto &smaller = lhs.size() <= rhs.size() ? lhs : rhs;
+  const auto &larger = lhs.size() <= rhs.size() ? rhs : lhs;
+  for (const auto &symbol : smaller) {
+    if (larger.contains(symbol)) {
+      result.insert(symbol);
+    }
+  }
+  return result;
+}
+
 bool StringEquals(const std::string &value, std::string_view expected) {
   return std::string_view(value) == expected;
 }
@@ -750,7 +778,10 @@ class PlannerQueryBuilder {
   std::unique_ptr<PlannerQuery> Build(const ast::Statement &statement) {
     switch (statement.node_type) {
       case ast::ASTNodeType::kRegularQuery: {
-        return BuildRegularQuery(ast::CastAst<ast::RegularQuery>(statement));
+        std::unique_ptr<PlannerQuery> planner_query =
+            BuildRegularQuery(ast::CastAst<ast::RegularQuery>(statement));
+        FinalizePlannerQueryArguments(*planner_query);
+        return planner_query;
       }
       default: {
         THROW(common::InvalidArgumentError, Unsupported("query type"));
@@ -780,6 +811,169 @@ class PlannerQueryBuilder {
     }
 
     return planner_query;
+  }
+
+  void FinalizePlannerQueryArguments(PlannerQuery &query) const {
+    switch (query.Kind()) {
+      case PlannerQueryKind::kSingle:
+        FinalizeSinglePlannerQueryArguments(&query.RequireSingle(), {});
+        return;
+      case PlannerQueryKind::kUnion: {
+        UnionPlannerQuery &union_query = query.RequireUnion();
+        CHECK(union_query.lhs != nullptr, common::InvalidArgumentError,
+              "UNION lhs planner query is null");
+        FinalizePlannerQueryArguments(*union_query.lhs);
+        FinalizeSinglePlannerQueryArguments(&union_query.rhs, {});
+        return;
+      }
+    }
+    THROW(common::InternalError, "unknown planner query kind");
+  }
+
+  void FinalizeSinglePlannerQueryArguments(
+      SinglePlannerQuery *query,
+      std::unordered_set<std::string> available_symbols) const {
+    CHECK(query != nullptr, common::InternalError, "planner query is null");
+    SinglePlannerQuery *segment = query;
+    while (segment != nullptr) {
+      const std::unordered_set<std::string> dependencies =
+          SinglePlannerQueryDependencies(*segment);
+      segment->query_graph.argument_ids =
+          IntersectSymbols(dependencies, available_symbols);
+      available_symbols = SinglePlannerQueryOutputSymbols(*segment);
+      segment = segment->tail.get();
+    }
+  }
+
+  std::unordered_set<std::string> SinglePlannerQueryDependencies(
+      const SinglePlannerQuery &query) const {
+    std::unordered_set<std::string> dependencies =
+        QueryGraphDependencies(query.query_graph);
+    AddSymbols(&dependencies, QueryHorizonDependencies(query.horizon));
+    return dependencies;
+  }
+
+  std::unordered_set<std::string> QueryGraphDependencies(
+      const QueryGraph &query_graph) const {
+    std::unordered_set<std::string> dependencies;
+    AddSymbols(&dependencies, query_graph.pattern_nodes);
+    for (const auto &relationship : query_graph.pattern_relationships) {
+      AddSymbol(&dependencies, relationship.variable);
+      AddSymbol(&dependencies, relationship.left_node);
+      AddSymbol(&dependencies, relationship.right_node);
+    }
+    for (const auto &predicate : query_graph.selections.predicates) {
+      AddSymbols(&dependencies, predicate.dependencies);
+    }
+    for (const auto &optional_match : query_graph.optional_matches) {
+      AddSymbols(&dependencies, QueryGraphDependencies(optional_match));
+    }
+    return dependencies;
+  }
+
+  void AddExpressionDependencies(std::unordered_set<std::string> *dependencies,
+                                 const ast::Expression *expression) const {
+    CHECK(dependencies != nullptr, common::InternalError,
+          "dependency set is null");
+    if (expression == nullptr) {
+      return;
+    }
+    AddSymbols(dependencies,
+               SemanticTableRef().ExpressionDependencies(*expression));
+  }
+
+  void AddProjectionTailDependencies(
+      std::unordered_set<std::string> *dependencies,
+      const QueryProjection &projection) const {
+    CHECK(dependencies != nullptr, common::InternalError,
+          "dependency set is null");
+    for (const auto &item : projection.order_by) {
+      AddExpressionDependencies(dependencies, item.expression);
+    }
+    AddExpressionDependencies(dependencies, projection.where);
+    AddExpressionDependencies(dependencies, projection.skip);
+    AddExpressionDependencies(dependencies, projection.limit);
+  }
+
+  void AddProjectionItemDependencies(
+      std::unordered_set<std::string> *dependencies,
+      const std::vector<ProjectionItem> &items) const {
+    CHECK(dependencies != nullptr, common::InternalError,
+          "dependency set is null");
+    for (const auto &item : items) {
+      AddExpressionDependencies(dependencies, item.expression);
+    }
+  }
+
+  std::unordered_set<std::string> QueryHorizonDependencies(
+      const QueryHorizon &horizon) const {
+    std::unordered_set<std::string> dependencies;
+    switch (horizon.kind) {
+      case QueryHorizonKind::kRegularProjection: {
+        const RegularQueryProjection &projection =
+            horizon.RequireRegularProjection();
+        AddProjectionItemDependencies(&dependencies, projection.items);
+        AddProjectionTailDependencies(&dependencies, projection);
+        return dependencies;
+      }
+      case QueryHorizonKind::kDistinctProjection: {
+        const DistinctQueryProjection &projection =
+            horizon.RequireDistinctProjection();
+        AddProjectionItemDependencies(&dependencies, projection.grouping_items);
+        AddProjectionTailDependencies(&dependencies, projection);
+        return dependencies;
+      }
+      case QueryHorizonKind::kAggregatingProjection: {
+        const AggregatingQueryProjection &projection =
+            horizon.RequireAggregatingProjection();
+        AddProjectionItemDependencies(&dependencies, projection.grouping_items);
+        AddProjectionItemDependencies(&dependencies,
+                                      projection.aggregation_items);
+        AddProjectionTailDependencies(&dependencies, projection);
+        return dependencies;
+      }
+      case QueryHorizonKind::kUnwind:
+        AddExpressionDependencies(&dependencies,
+                                  horizon.RequireUnwind().expression);
+        return dependencies;
+    }
+    THROW(common::InternalError, "unknown query horizon kind");
+  }
+
+  std::unordered_set<std::string> SinglePlannerQueryOutputSymbols(
+      const SinglePlannerQuery &query) const {
+    switch (query.horizon.kind) {
+      case QueryHorizonKind::kRegularProjection:
+        return ProjectionItemAliases(
+            query.horizon.RequireRegularProjection().items);
+      case QueryHorizonKind::kDistinctProjection:
+        return ProjectionItemAliases(
+            query.horizon.RequireDistinctProjection().grouping_items);
+      case QueryHorizonKind::kAggregatingProjection: {
+        std::unordered_set<std::string> symbols = ProjectionItemAliases(
+            query.horizon.RequireAggregatingProjection().grouping_items);
+        AddSymbols(&symbols, ProjectionItemAliases(
+                                 query.horizon.RequireAggregatingProjection()
+                                     .aggregation_items));
+        return symbols;
+      }
+      case QueryHorizonKind::kUnwind: {
+        std::unordered_set<std::string> symbols =
+            QueryGraphAvailableSymbols(query.query_graph);
+        AddSymbol(&symbols, query.horizon.RequireUnwind().alias);
+        return symbols;
+      }
+    }
+    THROW(common::InternalError, "unknown query horizon kind");
+  }
+
+  static std::unordered_set<std::string> ProjectionItemAliases(
+      const std::vector<ProjectionItem> &items) {
+    std::unordered_set<std::string> symbols;
+    for (const auto &item : items) {
+      AddSymbol(&symbols, item.alias);
+    }
+    return symbols;
   }
 
   SinglePlannerQuery BuildSingleQuery(const ast::SingleQuery &query) {
