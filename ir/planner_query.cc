@@ -597,10 +597,27 @@ class QueryGraphBuilder {
   const ast::SemanticTable *semantic_table_ = nullptr;
 };
 
-QueryHorizon QueryHorizon::ForProjection(Projection projection) {
+QueryHorizon QueryHorizon::ForRegularProjection(
+    RegularQueryProjection projection) {
   QueryHorizon horizon;
-  horizon.kind = QueryHorizonKind::kProjection;
-  horizon.projection = std::move(projection);
+  horizon.kind = QueryHorizonKind::kRegularProjection;
+  horizon.regular_projection = std::move(projection);
+  return horizon;
+}
+
+QueryHorizon QueryHorizon::ForDistinctProjection(
+    DistinctQueryProjection projection) {
+  QueryHorizon horizon;
+  horizon.kind = QueryHorizonKind::kDistinctProjection;
+  horizon.distinct_projection = std::move(projection);
+  return horizon;
+}
+
+QueryHorizon QueryHorizon::ForAggregatingProjection(
+    AggregatingQueryProjection projection) {
+  QueryHorizon horizon;
+  horizon.kind = QueryHorizonKind::kAggregatingProjection;
+  horizon.aggregating_projection = std::move(projection);
   return horizon;
 }
 
@@ -611,16 +628,47 @@ QueryHorizon QueryHorizon::ForUnwind(UnwindHorizon unwind) {
   return horizon;
 }
 
-const Projection &QueryHorizon::RequireProjection() const {
-  CHECK(kind == QueryHorizonKind::kProjection, common::InvalidArgumentError,
-        Unsupported("query horizon"));
-  return projection;
+const RegularQueryProjection &QueryHorizon::RequireRegularProjection() const {
+  CHECK(kind == QueryHorizonKind::kRegularProjection,
+        common::InvalidArgumentError,
+        Unsupported("regular projection horizon"));
+  return regular_projection;
 }
 
-Projection &QueryHorizon::RequireProjection() {
-  CHECK(kind == QueryHorizonKind::kProjection, common::InvalidArgumentError,
-        Unsupported("query horizon"));
-  return projection;
+RegularQueryProjection &QueryHorizon::RequireRegularProjection() {
+  CHECK(kind == QueryHorizonKind::kRegularProjection,
+        common::InvalidArgumentError,
+        Unsupported("regular projection horizon"));
+  return regular_projection;
+}
+
+const DistinctQueryProjection &QueryHorizon::RequireDistinctProjection() const {
+  CHECK(kind == QueryHorizonKind::kDistinctProjection,
+        common::InvalidArgumentError,
+        Unsupported("distinct projection horizon"));
+  return distinct_projection;
+}
+
+DistinctQueryProjection &QueryHorizon::RequireDistinctProjection() {
+  CHECK(kind == QueryHorizonKind::kDistinctProjection,
+        common::InvalidArgumentError,
+        Unsupported("distinct projection horizon"));
+  return distinct_projection;
+}
+
+const AggregatingQueryProjection &QueryHorizon::RequireAggregatingProjection()
+    const {
+  CHECK(kind == QueryHorizonKind::kAggregatingProjection,
+        common::InvalidArgumentError,
+        Unsupported("aggregating projection horizon"));
+  return aggregating_projection;
+}
+
+AggregatingQueryProjection &QueryHorizon::RequireAggregatingProjection() {
+  CHECK(kind == QueryHorizonKind::kAggregatingProjection,
+        common::InvalidArgumentError,
+        Unsupported("aggregating projection horizon"));
+  return aggregating_projection;
 }
 
 const UnwindHorizon &QueryHorizon::RequireUnwind() const {
@@ -793,19 +841,57 @@ class PlannerQueryBuilder {
                              argument_ids);
   }
 
-  Projection BuildProjectionClause(
+  struct ProjectionParts {
+    bool distinct = false;
+    std::vector<ProjectionItem> items;
+    std::vector<ProjectionItem> grouping_items;
+    std::vector<ProjectionItem> aggregation_items;
+    std::vector<SortItem> order_by;
+    const ast::Expression *skip = nullptr;
+    const ast::Expression *limit = nullptr;
+  };
+
+  static void MoveProjectionTail(ProjectionParts *parts,
+                                 QueryProjection *projection) {
+    CHECK(parts != nullptr, common::InternalError, "projection parts is null");
+    CHECK(projection != nullptr, common::InternalError, "projection is null");
+    projection->order_by = std::move(parts->order_by);
+    projection->skip = parts->skip;
+    projection->limit = parts->limit;
+  }
+
+  static void SetProjectionWhere(QueryHorizon *horizon,
+                                 const ast::Expression *where) {
+    CHECK(horizon != nullptr, common::InternalError, "query horizon is null");
+    switch (horizon->kind) {
+      case QueryHorizonKind::kRegularProjection:
+        horizon->RequireRegularProjection().where = where;
+        return;
+      case QueryHorizonKind::kDistinctProjection:
+        horizon->RequireDistinctProjection().where = where;
+        return;
+      case QueryHorizonKind::kAggregatingProjection:
+        horizon->RequireAggregatingProjection().where = where;
+        return;
+      case QueryHorizonKind::kUnwind:
+        THROW(common::InternalError,
+              "UNWIND horizon cannot have projection WHERE");
+    }
+    THROW(common::InternalError, "unknown query horizon kind");
+  }
+
+  QueryHorizon BuildProjectionClause(
       const ast::ProjectionClause *projection_clause) {
     CHECK(projection_clause != nullptr, common::InvalidArgumentError,
           Missing("projection clause"));
-    Projection projection;
     CHECK(projection_clause->body, common::InvalidArgumentError,
           Missing("projection body"));
-    projection = BuildProjectionBody(*projection_clause->body);
+    QueryHorizon horizon = BuildProjectionBody(*projection_clause->body);
     if (projection_clause->Is(ast::ASTNodeType::kWith)) {
       const auto *with_clause = ast::CastAst<ast::With>(projection_clause);
-      projection.where = with_clause->where.get();
+      SetProjectionWhere(&horizon, with_clause->where.get());
     }
-    return projection;
+    return horizon;
   }
 
   SinglePlannerQuery BuildQuerySegment(
@@ -838,23 +924,20 @@ class PlannerQueryBuilder {
     }
 
     current_segment->query_graph = builder.Release();
-    current_segment->horizon =
-        QueryHorizon::ForProjection(BuildProjectionClause(projection));
+    current_segment->horizon = BuildProjectionClause(projection);
     return root;
   }
 
-  Projection BuildProjectionBody(const ast::ProjectionBody &body) {
+  QueryHorizon BuildProjectionBody(const ast::ProjectionBody &body) {
     CHECK(!body.star, common::InvalidArgumentError,
           Unsupported("projection star before rewrite"));
 
-    Projection projection;
-    projection.distinct = body.distinct;
+    ProjectionParts parts;
+    parts.distinct = body.distinct;
 
-    projection.items.reserve(body.items.size());
-    std::vector<ProjectionItem> grouping_items;
-    std::vector<ProjectionItem> aggregation_items;
-    grouping_items.reserve(body.items.size());
-    aggregation_items.reserve(body.items.size());
+    parts.items.reserve(body.items.size());
+    parts.grouping_items.reserve(body.items.size());
+    parts.aggregation_items.reserve(body.items.size());
     for (const auto &item : body.items) {
       CHECK(item, common::InvalidArgumentError,
             "null projection item is not supported");
@@ -865,26 +948,16 @@ class PlannerQueryBuilder {
       projection_item.alias = item->alias;
       CHECK(!projection_item.alias.empty(), common::InvalidArgumentError,
             "projection item alias is empty after rewrite");
-      projection.items.push_back(std::move(projection_item));
-      const ProjectionItem &stored_item = projection.items.back();
+      parts.items.push_back(std::move(projection_item));
+      const ProjectionItem &stored_item = parts.items.back();
       if (SemanticTableRef().ContainsAggregation(*stored_item.expression)) {
-        aggregation_items.push_back(stored_item);
+        parts.aggregation_items.push_back(stored_item);
       } else {
-        grouping_items.push_back(stored_item);
+        parts.grouping_items.push_back(stored_item);
       }
     }
 
-    if (!aggregation_items.empty()) {
-      projection.kind = ProjectionKind::kAggregating;
-      projection.grouping_items = std::move(grouping_items);
-      projection.aggregation_items = std::move(aggregation_items);
-    } else if (projection.distinct) {
-      projection.kind = ProjectionKind::kDistinct;
-    } else {
-      projection.kind = ProjectionKind::kRegular;
-    }
-
-    projection.order_by.reserve(body.order_by.size());
+    parts.order_by.reserve(body.order_by.size());
     for (const auto &item : body.order_by) {
       CHECK(item, common::InvalidArgumentError,
             "null sort item is not supported");
@@ -893,12 +966,31 @@ class PlannerQueryBuilder {
       SortItem sort_item;
       sort_item.expression = item->expression.get();
       sort_item.ascending = item->ascending;
-      projection.order_by.emplace_back(sort_item);
+      parts.order_by.emplace_back(sort_item);
     }
 
-    projection.skip = body.skip.get();
-    projection.limit = body.limit.get();
-    return projection;
+    parts.skip = body.skip.get();
+    parts.limit = body.limit.get();
+
+    if (!parts.aggregation_items.empty()) {
+      AggregatingQueryProjection projection;
+      projection.grouping_items = std::move(parts.grouping_items);
+      projection.aggregation_items = std::move(parts.aggregation_items);
+      MoveProjectionTail(&parts, &projection);
+      return QueryHorizon::ForAggregatingProjection(std::move(projection));
+    }
+
+    if (parts.distinct) {
+      DistinctQueryProjection projection;
+      projection.grouping_items = std::move(parts.items);
+      MoveProjectionTail(&parts, &projection);
+      return QueryHorizon::ForDistinctProjection(std::move(projection));
+    }
+
+    RegularQueryProjection projection;
+    projection.items = std::move(parts.items);
+    MoveProjectionTail(&parts, &projection);
+    return QueryHorizon::ForRegularProjection(std::move(projection));
   }
 
   static UnwindHorizon BuildUnwindHorizon(const ast::Unwind &unwind) {

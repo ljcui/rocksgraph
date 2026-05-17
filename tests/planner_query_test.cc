@@ -72,8 +72,7 @@ TEST(PlannerQueryPrinterTest, DumpsSimpleMatch) {
     hints: 0
     mutating_patterns: 0
   horizon:
-    projection:
-      distinct: false
+    regular_projection:
       items:
         - alias: n
           expression: n
@@ -104,8 +103,7 @@ TEST(PlannerQueryPrinterTest, DumpsInlineNodePredicateSelection) {
     hints: 0
     mutating_patterns: 0
   horizon:
-    projection:
-      distinct: false
+    regular_projection:
       items:
         - alias: n
           expression: n
@@ -138,8 +136,7 @@ TEST(PlannerQueryPrinterTest, DumpsRelationshipPatternWithInlineType) {
     hints: 0
     mutating_patterns: 0
   horizon:
-    projection:
-      distinct: false
+    regular_projection:
       items:
         - alias: a
           expression: a
@@ -178,8 +175,7 @@ TEST(PlannerQueryPrinterTest, DumpsExplicitRelationshipTypeSelection) {
     hints: 0
     mutating_patterns: 0
   horizon:
-    projection:
-      distinct: false
+    regular_projection:
       items:
         - alias: r
           expression: r
@@ -214,8 +210,7 @@ TEST(PlannerQueryPrinterTest, DumpsVariableLengthRelationship) {
     hints: 0
     mutating_patterns: 0
   horizon:
-    projection:
-      distinct: false
+    regular_projection:
       items:
         - alias: r
           expression: r
@@ -258,8 +253,7 @@ TEST(PlannerQueryPrinterTest, DumpsUnwindTail) {
         hints: 0
         mutating_patterns: 0
       horizon:
-        projection:
-          distinct: false
+        regular_projection:
           items:
             - alias: x
               expression: x
@@ -290,8 +284,7 @@ TEST(PlannerQueryPrinterTest, DumpsUnionAll) {
         hints: 0
         mutating_patterns: 0
       horizon:
-        projection:
-          distinct: false
+        regular_projection:
           items:
             - alias: x
               expression: 1
@@ -315,8 +308,7 @@ TEST(PlannerQueryPrinterTest, DumpsUnionAll) {
         hints: 0
         mutating_patterns: 0
       horizon:
-        projection:
-          distinct: false
+        regular_projection:
           items:
             - alias: x
               expression: 2
@@ -348,8 +340,7 @@ TEST(PlannerQueryPrinterTest, DumpsInlinePropertySelection) {
     hints: 0
     mutating_patterns: 0
   horizon:
-    projection:
-      distinct: false
+    regular_projection:
       items:
         - alias: n
           expression: n
@@ -382,8 +373,7 @@ TEST(PlannerQueryPrinterTest, DumpsExplicitWhereSelection) {
     hints: 0
     mutating_patterns: 0
   horizon:
-    projection:
-      distinct: false
+    regular_projection:
       items:
         - alias: n
           expression: n
@@ -411,8 +401,7 @@ TEST(PlannerQueryPrinterTest, DumpsWithTail) {
     hints: 0
     mutating_patterns: 0
   horizon:
-    projection:
-      distinct: false
+    regular_projection:
       items:
         - alias: name
           expression: n.name
@@ -434,8 +423,7 @@ TEST(PlannerQueryPrinterTest, DumpsWithTail) {
         hints: 0
         mutating_patterns: 0
       horizon:
-        projection:
-          distinct: false
+        regular_projection:
           items:
             - alias: name
               expression: name
@@ -462,9 +450,8 @@ TEST(PlannerQueryPrinterTest, DumpsDistinctProjection) {
     hints: 0
     mutating_patterns: 0
   horizon:
-    projection:
-      distinct: true
-      items:
+    distinct_projection:
+      grouping_items:
         - alias: n
           expression: n
       order_by:
@@ -490,9 +477,10 @@ TEST(PlannerQueryPrinterTest, DumpsCountStarSnapshot) {
     hints: 0
     mutating_patterns: 0
   horizon:
-    projection:
-      distinct: false
-      items:
+    aggregating_projection:
+      grouping_items:
+        []
+      aggregation_items:
         - alias: count(*)
           expression: count(*)
       order_by:
@@ -519,8 +507,7 @@ TEST(PlannerQueryPrinterTest, DumpsOrderBySkipLimit) {
     hints: 0
     mutating_patterns: 0
   horizon:
-    projection:
-      distinct: false
+    regular_projection:
       items:
         - alias: n
           expression: n
@@ -572,49 +559,47 @@ TEST(PlannerQueryTest, BuildsGraphFromMatch) {
   EXPECT_FALSE(relationship.length.variable);
   EXPECT_EQ(relationship.length.fixed, 1);
 
-  EXPECT_FALSE(main.horizon.RequireProjection().distinct);
-  ASSERT_EQ(main.horizon.RequireProjection().items.size(), 2U);
-  EXPECT_EQ(main.horizon.RequireProjection().items[0].alias, "a");
-  EXPECT_EQ(main.horizon.RequireProjection().items[1].alias, "b");
-  EXPECT_EQ(main.horizon.RequireProjection().where, nullptr);
-  EXPECT_EQ(main.horizon.RequireProjection().skip, nullptr);
-  EXPECT_EQ(main.horizon.RequireProjection().limit, nullptr);
+  ASSERT_EQ(main.horizon.kind, ir::QueryHorizonKind::kRegularProjection);
+  const ir::RegularQueryProjection &projection =
+      main.horizon.RequireRegularProjection();
+  ASSERT_EQ(projection.items.size(), 2U);
+  EXPECT_EQ(projection.items[0].alias, "a");
+  EXPECT_EQ(projection.items[1].alias, "b");
+  EXPECT_EQ(projection.where, nullptr);
+  EXPECT_EQ(projection.skip, nullptr);
+  EXPECT_EQ(projection.limit, nullptr);
 
   EXPECT_EQ(planner_query->Kind(), ir::PlannerQueryKind::kSingle);
 }
 
-TEST(PlannerQueryTest, BuildsRegularProjectionKind) {
+TEST(PlannerQueryTest, BuildsRegularProjectionHorizon) {
   auto statement = ParseOrFail("MATCH (n) RETURN n");
   ASSERT_TRUE(statement);
 
   std::unique_ptr<ir::PlannerQuery> planner_query =
       ir::CreatePlannerQuery(*statement);
-  const ir::Projection &projection =
-      planner_query->RequireSingle().horizon.RequireProjection();
+  const ir::QueryHorizon &horizon = planner_query->RequireSingle().horizon;
+  ASSERT_EQ(horizon.kind, ir::QueryHorizonKind::kRegularProjection);
+  const ir::RegularQueryProjection &projection =
+      horizon.RequireRegularProjection();
 
-  EXPECT_EQ(projection.kind, ir::ProjectionKind::kRegular);
-  EXPECT_FALSE(projection.distinct);
   ASSERT_EQ(projection.items.size(), 1U);
   EXPECT_EQ(projection.items[0].alias, "n");
-  EXPECT_TRUE(projection.grouping_items.empty());
-  EXPECT_TRUE(projection.aggregation_items.empty());
 }
 
-TEST(PlannerQueryTest, BuildsDistinctProjectionKind) {
+TEST(PlannerQueryTest, BuildsDistinctProjectionHorizon) {
   auto statement = ParseOrFail("MATCH (n) RETURN DISTINCT n.name AS name");
   ASSERT_TRUE(statement);
 
   std::unique_ptr<ir::PlannerQuery> planner_query =
       ir::CreatePlannerQuery(*statement);
-  const ir::Projection &projection =
-      planner_query->RequireSingle().horizon.RequireProjection();
+  const ir::QueryHorizon &horizon = planner_query->RequireSingle().horizon;
+  ASSERT_EQ(horizon.kind, ir::QueryHorizonKind::kDistinctProjection);
+  const ir::DistinctQueryProjection &projection =
+      horizon.RequireDistinctProjection();
 
-  EXPECT_EQ(projection.kind, ir::ProjectionKind::kDistinct);
-  EXPECT_TRUE(projection.distinct);
-  ASSERT_EQ(projection.items.size(), 1U);
-  EXPECT_EQ(projection.items[0].alias, "name");
-  EXPECT_TRUE(projection.grouping_items.empty());
-  EXPECT_TRUE(projection.aggregation_items.empty());
+  ASSERT_EQ(projection.grouping_items.size(), 1U);
+  EXPECT_EQ(projection.grouping_items[0].alias, "name");
 }
 
 TEST(PlannerQueryTest, BuildsAggregatingProjectionItems) {
@@ -624,12 +609,11 @@ TEST(PlannerQueryTest, BuildsAggregatingProjectionItems) {
 
   std::unique_ptr<ir::PlannerQuery> planner_query =
       ir::CreatePlannerQuery(*statement);
-  const ir::Projection &projection =
-      planner_query->RequireSingle().horizon.RequireProjection();
+  const ir::QueryHorizon &horizon = planner_query->RequireSingle().horizon;
+  ASSERT_EQ(horizon.kind, ir::QueryHorizonKind::kAggregatingProjection);
+  const ir::AggregatingQueryProjection &projection =
+      horizon.RequireAggregatingProjection();
 
-  EXPECT_EQ(projection.kind, ir::ProjectionKind::kAggregating);
-  EXPECT_FALSE(projection.distinct);
-  ASSERT_EQ(projection.items.size(), 2U);
   ASSERT_EQ(projection.grouping_items.size(), 1U);
   ASSERT_EQ(projection.aggregation_items.size(), 1U);
   EXPECT_EQ(projection.grouping_items[0].alias, "name");
@@ -642,11 +626,11 @@ TEST(PlannerQueryTest, PreservesCountStarAggregationExpression) {
 
   std::unique_ptr<ir::PlannerQuery> planner_query =
       ir::CreatePlannerQuery(*statement);
-  const ir::Projection &projection =
-      planner_query->RequireSingle().horizon.RequireProjection();
+  const ir::QueryHorizon &horizon = planner_query->RequireSingle().horizon;
+  ASSERT_EQ(horizon.kind, ir::QueryHorizonKind::kAggregatingProjection);
+  const ir::AggregatingQueryProjection &projection =
+      horizon.RequireAggregatingProjection();
 
-  EXPECT_EQ(projection.kind, ir::ProjectionKind::kAggregating);
-  ASSERT_EQ(projection.items.size(), 1U);
   ASSERT_EQ(projection.aggregation_items.size(), 1U);
   EXPECT_EQ(projection.aggregation_items[0].alias, "c");
   ASSERT_NE(projection.aggregation_items[0].expression, nullptr);
@@ -715,8 +699,9 @@ TEST(PlannerQueryTest, AcceptsAnonymousPatternAfterRewrite) {
   EXPECT_FALSE(relationship.left_node.empty());
   EXPECT_FALSE(relationship.right_node.empty());
 
-  ASSERT_EQ(main.horizon.RequireProjection().items.size(), 1U);
-  EXPECT_FALSE(main.horizon.RequireProjection().items[0].alias.empty());
+  ASSERT_EQ(main.horizon.kind, ir::QueryHorizonKind::kRegularProjection);
+  ASSERT_EQ(main.horizon.RequireRegularProjection().items.size(), 1U);
+  EXPECT_FALSE(main.horizon.RequireRegularProjection().items[0].alias.empty());
 }
 
 TEST(PlannerQueryTest, BuildsVariableLengthRelationshipPattern) {
@@ -761,9 +746,10 @@ TEST(PlannerQueryTest, BuildsTailForMultiPartQuery) {
   EXPECT_TRUE(Contains(first_where_dependencies.at("n:Person"), "n"));
   EXPECT_TRUE(first_where_dependencies.contains("true"));
 
-  ASSERT_EQ(first.horizon.RequireProjection().items.size(), 1U);
-  EXPECT_EQ(first.horizon.RequireProjection().items[0].alias, "n");
-  EXPECT_NE(first.horizon.RequireProjection().where, nullptr);
+  ASSERT_EQ(first.horizon.kind, ir::QueryHorizonKind::kRegularProjection);
+  ASSERT_EQ(first.horizon.RequireRegularProjection().items.size(), 1U);
+  EXPECT_EQ(first.horizon.RequireRegularProjection().items[0].alias, "n");
+  EXPECT_NE(first.horizon.RequireRegularProjection().where, nullptr);
 
   EXPECT_TRUE(Contains(second.query_graph.pattern_nodes, "n"));
   EXPECT_TRUE(Contains(second.query_graph.pattern_nodes, "m"));
@@ -778,9 +764,10 @@ TEST(PlannerQueryTest, BuildsTailForMultiPartQuery) {
       SelectionDependenciesByExpression(second.query_graph);
   EXPECT_TRUE(second_where_dependencies.contains("true"));
 
-  ASSERT_EQ(second.horizon.RequireProjection().items.size(), 2U);
-  EXPECT_EQ(second.horizon.RequireProjection().items[0].alias, "n");
-  EXPECT_EQ(second.horizon.RequireProjection().items[1].alias, "m");
+  ASSERT_EQ(second.horizon.kind, ir::QueryHorizonKind::kRegularProjection);
+  ASSERT_EQ(second.horizon.RequireRegularProjection().items.size(), 2U);
+  EXPECT_EQ(second.horizon.RequireRegularProjection().items[0].alias, "n");
+  EXPECT_EQ(second.horizon.RequireRegularProjection().items[1].alias, "m");
   EXPECT_EQ(second.tail, nullptr);
 }
 
@@ -820,9 +807,11 @@ TEST(PlannerQueryTest, BuildsUnwindHorizonSegment) {
   ASSERT_TRUE(unwind_segment.tail);
   const ir::SinglePlannerQuery &return_segment = *unwind_segment.tail;
   EXPECT_TRUE(Contains(return_segment.query_graph.argument_ids, "x"));
-  ASSERT_EQ(return_segment.horizon.kind, ir::QueryHorizonKind::kProjection);
-  ASSERT_EQ(return_segment.horizon.RequireProjection().items.size(), 1U);
-  EXPECT_EQ(return_segment.horizon.RequireProjection().items[0].alias, "x");
+  ASSERT_EQ(return_segment.horizon.kind,
+            ir::QueryHorizonKind::kRegularProjection);
+  ASSERT_EQ(return_segment.horizon.RequireRegularProjection().items.size(), 1U);
+  EXPECT_EQ(return_segment.horizon.RequireRegularProjection().items[0].alias,
+            "x");
   EXPECT_EQ(return_segment.tail, nullptr);
 }
 
@@ -837,11 +826,13 @@ TEST(PlannerQueryTest, PreservesUnwindSegmentBeforeWithTail) {
   ASSERT_TRUE(unwind_segment.tail);
 
   const ir::SinglePlannerQuery &with_segment = *unwind_segment.tail;
-  ASSERT_EQ(with_segment.horizon.kind, ir::QueryHorizonKind::kProjection);
+  ASSERT_EQ(with_segment.horizon.kind,
+            ir::QueryHorizonKind::kRegularProjection);
   ASSERT_TRUE(with_segment.tail);
 
   const ir::SinglePlannerQuery &return_segment = *with_segment.tail;
-  ASSERT_EQ(return_segment.horizon.kind, ir::QueryHorizonKind::kProjection);
+  ASSERT_EQ(return_segment.horizon.kind,
+            ir::QueryHorizonKind::kRegularProjection);
   EXPECT_EQ(return_segment.tail, nullptr);
 }
 

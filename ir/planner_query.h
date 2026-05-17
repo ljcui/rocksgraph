@@ -109,22 +109,24 @@ struct SortItem {
   bool ascending = true;
 };
 
-enum class ProjectionKind {
-  kRegular,
-  kDistinct,
-  kAggregating,
-};
-
-struct Projection {
-  ProjectionKind kind = ProjectionKind::kRegular;
-  bool distinct = false;
-  std::vector<ProjectionItem> items;
-  std::vector<ProjectionItem> grouping_items;
-  std::vector<ProjectionItem> aggregation_items;
+struct QueryProjection {
   std::vector<SortItem> order_by;
   const ast::Expression *where = nullptr;
   const ast::Expression *skip = nullptr;
   const ast::Expression *limit = nullptr;
+};
+
+struct RegularQueryProjection : QueryProjection {
+  std::vector<ProjectionItem> items;
+};
+
+struct DistinctQueryProjection : QueryProjection {
+  std::vector<ProjectionItem> grouping_items;
+};
+
+struct AggregatingQueryProjection : QueryProjection {
+  std::vector<ProjectionItem> grouping_items;
+  std::vector<ProjectionItem> aggregation_items;
 };
 
 struct UnwindHorizon {
@@ -132,18 +134,36 @@ struct UnwindHorizon {
   std::string alias;
 };
 
-enum class QueryHorizonKind { kProjection, kUnwind };
+enum class QueryHorizonKind {
+  kRegularProjection,
+  kDistinctProjection,
+  kAggregatingProjection,
+  kUnwind,
+};
 
 struct QueryHorizon {
-  QueryHorizonKind kind = QueryHorizonKind::kProjection;
-  Projection projection;
+  QueryHorizonKind kind = QueryHorizonKind::kRegularProjection;
+  RegularQueryProjection regular_projection;
+  DistinctQueryProjection distinct_projection;
+  AggregatingQueryProjection aggregating_projection;
   UnwindHorizon unwind;
 
-  static QueryHorizon ForProjection(Projection projection);
+  static QueryHorizon ForRegularProjection(RegularQueryProjection projection);
+  static QueryHorizon ForDistinctProjection(DistinctQueryProjection projection);
+  static QueryHorizon ForAggregatingProjection(
+      AggregatingQueryProjection projection);
   static QueryHorizon ForUnwind(UnwindHorizon unwind);
 
-  [[nodiscard]] const Projection &RequireProjection() const;
-  Projection &RequireProjection();
+  [[nodiscard]] const RegularQueryProjection &RequireRegularProjection() const;
+  RegularQueryProjection &RequireRegularProjection();
+
+  [[nodiscard]] const DistinctQueryProjection &RequireDistinctProjection()
+      const;
+  DistinctQueryProjection &RequireDistinctProjection();
+
+  [[nodiscard]] const AggregatingQueryProjection &RequireAggregatingProjection()
+      const;
+  AggregatingQueryProjection &RequireAggregatingProjection();
 
   [[nodiscard]] const UnwindHorizon &RequireUnwind() const;
   UnwindHorizon &RequireUnwind();

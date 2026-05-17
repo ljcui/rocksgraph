@@ -231,8 +231,16 @@ class PlannerQueryPrinter {
     Line("horizon:");
     Indent();
     switch (horizon.kind) {
-      case QueryHorizonKind::kProjection:
-        PrintProjection(horizon.RequireProjection());
+      case QueryHorizonKind::kRegularProjection:
+        PrintRegularProjection(horizon.RequireRegularProjection());
+        Dedent();
+        return;
+      case QueryHorizonKind::kDistinctProjection:
+        PrintDistinctProjection(horizon.RequireDistinctProjection());
+        Dedent();
+        return;
+      case QueryHorizonKind::kAggregatingProjection:
+        PrintAggregatingProjection(horizon.RequireAggregatingProjection());
         Dedent();
         return;
       case QueryHorizonKind::kUnwind:
@@ -243,16 +251,40 @@ class PlannerQueryPrinter {
     THROW(common::InternalError, "unknown query horizon kind");
   }
 
-  void PrintProjection(const Projection &projection) {
-    Line("projection:");
+  void PrintRegularProjection(const RegularQueryProjection &projection) {
+    Line("regular_projection:");
     Indent();
-    Line(std::string("distinct: ") + (projection.distinct ? "true" : "false"));
-    Line("items:");
+    PrintProjectionItems("items", projection.items);
+    PrintProjectionTail(projection);
+    Dedent();
+  }
+
+  void PrintDistinctProjection(const DistinctQueryProjection &projection) {
+    Line("distinct_projection:");
     Indent();
-    if (projection.items.empty()) {
+    PrintProjectionItems("grouping_items", projection.grouping_items);
+    PrintProjectionTail(projection);
+    Dedent();
+  }
+
+  void PrintAggregatingProjection(
+      const AggregatingQueryProjection &projection) {
+    Line("aggregating_projection:");
+    Indent();
+    PrintProjectionItems("grouping_items", projection.grouping_items);
+    PrintProjectionItems("aggregation_items", projection.aggregation_items);
+    PrintProjectionTail(projection);
+    Dedent();
+  }
+
+  void PrintProjectionItems(const std::string &name,
+                            const std::vector<ProjectionItem> &items) {
+    Line(name + ":");
+    Indent();
+    if (items.empty()) {
       Line("[]");
     } else {
-      for (const auto &item : projection.items) {
+      for (const auto &item : items) {
         Line("- alias: " + item.alias);
         Indent();
         Line("expression: " + ExpressionText(item.expression));
@@ -260,6 +292,9 @@ class PlannerQueryPrinter {
       }
     }
     Dedent();
+  }
+
+  void PrintProjectionTail(const QueryProjection &projection) {
     Line("order_by:");
     Indent();
     if (projection.order_by.empty()) {
@@ -276,7 +311,6 @@ class PlannerQueryPrinter {
     Line("where: " + ExpressionText(projection.where));
     Line("skip: " + ExpressionText(projection.skip));
     Line("limit: " + ExpressionText(projection.limit));
-    Dedent();
   }
 
   void PrintUnwind(const UnwindHorizon &unwind) {
