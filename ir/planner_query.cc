@@ -86,7 +86,7 @@ const ast::PropertyExpression *AsPropertyExpression(
   return ast::CastAst<ast::PropertyExpression>(unwrapped);
 }
 
-std::unordered_set<std::string> QueryGraphAvailableSymbols(
+std::unordered_set<std::string> QueryGraphLocalAvailableSymbols(
     const QueryGraph &query_graph) {
   std::unordered_set<std::string> symbols = query_graph.argument_ids;
   symbols.insert(query_graph.pattern_nodes.begin(),
@@ -95,6 +95,18 @@ std::unordered_set<std::string> QueryGraphAvailableSymbols(
     CHECK(!relationship.variable.empty(), common::InvalidArgumentError,
           "relationship variable is empty");
     symbols.insert(relationship.variable);
+  }
+  return symbols;
+}
+
+std::unordered_set<std::string> QueryGraphAvailableSymbols(
+    const QueryGraph &query_graph) {
+  std::unordered_set<std::string> symbols =
+      QueryGraphLocalAvailableSymbols(query_graph);
+  for (const auto &optional_match : query_graph.optional_matches) {
+    const std::unordered_set<std::string> optional_symbols =
+        QueryGraphAvailableSymbols(optional_match);
+    symbols.insert(optional_symbols.begin(), optional_symbols.end());
   }
   return symbols;
 }
@@ -505,10 +517,26 @@ class QueryGraphBuilder {
 
   void BuildMatch(const ast::Match &match) {
     if (match.optional_match) {
-      THROW(common::InvalidArgumentError, Unsupported("OPTIONAL MATCH"));
+      BuildOptionalMatch(match);
+      return;
     }
-    CHECK(match.pattern != nullptr, common::InvalidArgumentError,
-          Missing("MATCH pattern"));
+    BuildRequiredMatch(match);
+  }
+
+  void BuildOptionalMatch(const ast::Match &match) {
+    QueryGraphBuilder optional_builder(SemanticTableRef());
+    optional_builder.BuildRequiredMatch(match);
+    graph_.optional_matches.push_back(optional_builder.Release());
+  }
+
+  void BuildRequiredMatch(const ast::Match &match) {
+    if (match.optional_match) {
+      CHECK(match.pattern != nullptr, common::InvalidArgumentError,
+            Missing("OPTIONAL MATCH pattern"));
+    } else {
+      CHECK(match.pattern != nullptr, common::InvalidArgumentError,
+            Missing("MATCH pattern"));
+    }
     PatternConverter converter(&graph_);
     converter.AddPattern(*match.pattern);
     if (match.where) {
@@ -840,8 +868,27 @@ class PlannerQueryBuilder {
           SinglePlannerQueryDependencies(*segment);
       segment->query_graph.argument_ids =
           IntersectSymbols(dependencies, available_symbols);
+      FinalizeOptionalMatchArguments(
+          &segment->query_graph,
+          QueryGraphLocalAvailableSymbols(segment->query_graph));
       available_symbols = SinglePlannerQueryOutputSymbols(*segment);
       segment = segment->tail.get();
+    }
+  }
+
+  void FinalizeOptionalMatchArguments(
+      QueryGraph *query_graph,
+      std::unordered_set<std::string> available_symbols) const {
+    CHECK(query_graph != nullptr, common::InternalError, "query graph is null");
+    for (auto &optional_match : query_graph->optional_matches) {
+      const std::unordered_set<std::string> dependencies =
+          QueryGraphDependencies(optional_match);
+      optional_match.argument_ids =
+          IntersectSymbols(dependencies, available_symbols);
+      std::unordered_set<std::string> optional_symbols =
+          QueryGraphAvailableSymbols(optional_match);
+      FinalizeOptionalMatchArguments(&optional_match, optional_symbols);
+      AddSymbols(&available_symbols, optional_symbols);
     }
   }
 

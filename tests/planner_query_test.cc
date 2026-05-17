@@ -787,6 +787,34 @@ TEST(PlannerQueryTest, NarrowsTailArgumentIdsToActualDependencies) {
   EXPECT_FALSE(Contains(second.query_graph.argument_ids, "c"));
 }
 
+TEST(PlannerQueryTest, BuildsOptionalMatchQueryGraph) {
+  auto statement = ParseOrFail(
+      "MATCH (a) WITH a, 1 AS unused "
+      "OPTIONAL MATCH (a)-[r]->(b) RETURN a, b");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::SinglePlannerQuery &first = planner_query->RequireSingle();
+  ASSERT_TRUE(first.tail);
+  const ir::SinglePlannerQuery &main = *first.tail;
+
+  EXPECT_TRUE(Contains(main.query_graph.argument_ids, "a"));
+  EXPECT_FALSE(Contains(main.query_graph.argument_ids, "unused"));
+  EXPECT_TRUE(main.query_graph.pattern_nodes.empty());
+  ASSERT_EQ(main.query_graph.optional_matches.size(), 1U);
+  const ir::QueryGraph &optional = main.query_graph.optional_matches[0];
+
+  EXPECT_TRUE(Contains(optional.argument_ids, "a"));
+  EXPECT_FALSE(Contains(optional.argument_ids, "unused"));
+  EXPECT_FALSE(Contains(optional.argument_ids, "b"));
+  EXPECT_FALSE(Contains(optional.argument_ids, "r"));
+  EXPECT_TRUE(Contains(optional.pattern_nodes, "a"));
+  EXPECT_TRUE(Contains(optional.pattern_nodes, "b"));
+  ASSERT_EQ(optional.pattern_relationships.size(), 1U);
+  EXPECT_EQ(optional.pattern_relationships[0].variable, "r");
+}
+
 TEST(PlannerQueryTest, ClassifiesArgumentRelationshipTypeWithSemanticTable) {
   auto statement =
       ParseOrFail("MATCH (a)-[r]->(b) WITH r MATCH (n) WHERE r:KNOWS RETURN r");
