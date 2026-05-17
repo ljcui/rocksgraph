@@ -128,5 +128,54 @@ TEST(SemanticTableTest, MarksAggregationExpressions) {
   EXPECT_TRUE(
       Contains(table.ExpressionDependencies(*collect_item.expression), "n"));
   EXPECT_EQ(table.VariableType("c"), ast::SemanticVariableType::kScalar);
-  EXPECT_EQ(table.VariableType("nodes"), ast::SemanticVariableType::kScalar);
+  EXPECT_EQ(table.VariableType("nodes"), ast::SemanticVariableType::kList);
+}
+
+TEST(SemanticTableTest, InfersFunctionProjectionResultTypes) {
+  auto statement = ParseOrFail(
+      "MATCH (n) RETURN collect(n) AS nodes, count(*) AS rows, "
+      "count(n) AS counted, sum(n.age) AS total, coalesce(n.name, 'n/a') AS "
+      "name");
+  ASSERT_TRUE(statement);
+
+  ast::SemanticTable table = ast::AnalyzeSemanticTable(*statement);
+
+  EXPECT_EQ(table.VariableType("nodes"), ast::SemanticVariableType::kList);
+  EXPECT_EQ(table.VariableType("rows"), ast::SemanticVariableType::kScalar);
+  EXPECT_EQ(table.VariableType("counted"), ast::SemanticVariableType::kScalar);
+  EXPECT_EQ(table.VariableType("total"), ast::SemanticVariableType::kScalar);
+  EXPECT_EQ(table.VariableType("name"), ast::SemanticVariableType::kScalar);
+}
+
+TEST(SemanticTableTest, TracksVariableTypesAtExpressionScopes) {
+  auto statement = ParseOrFail("MATCH (n) WHERE n:Person WITH 1 AS n RETURN n");
+  ASSERT_TRUE(statement);
+
+  ast::SemanticTable table = ast::AnalyzeSemanticTable(*statement);
+
+  EXPECT_EQ(table.VariableType("n"), ast::SemanticVariableType::kUnknown);
+
+  const auto &regular = ast::CastAst<ast::RegularQuery>(*statement);
+  ASSERT_TRUE(regular.single_query);
+  const auto &multi = ast::CastAst<ast::MultiPartQuery>(*regular.single_query);
+  ASSERT_EQ(multi.parts.size(), 1U);
+  ASSERT_EQ(multi.parts[0].reading_clauses.size(), 1U);
+  const auto &match =
+      ast::CastAst<ast::Match>(*multi.parts[0].reading_clauses[0]);
+  ASSERT_TRUE(match.where);
+
+  EXPECT_EQ(table.VariableTypeAt(*match.where, "n"),
+            ast::SemanticVariableType::kNode);
+
+  ASSERT_TRUE(multi.final_single_part_query);
+  ASSERT_TRUE(multi.final_single_part_query->return_clause);
+  ASSERT_TRUE(multi.final_single_part_query->return_clause->body);
+  ASSERT_EQ(multi.final_single_part_query->return_clause->body->items.size(),
+            1U);
+  const auto &return_item =
+      *multi.final_single_part_query->return_clause->body->items[0];
+  ASSERT_TRUE(return_item.expression);
+
+  EXPECT_EQ(table.VariableTypeAt(*return_item.expression, "n"),
+            ast::SemanticVariableType::kScalar);
 }

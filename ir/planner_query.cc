@@ -315,7 +315,11 @@ void ClassifyPredicate(Predicate *predicate,
       return;
     }
     predicate->variable = variable->name;
-    const auto variable_type = semantic_table.VariableType(variable->name);
+    auto variable_type =
+        semantic_table.VariableTypeAt(*expression, variable->name);
+    if (!variable_type.has_value()) {
+      variable_type = semantic_table.VariableType(variable->name);
+    }
     const bool type_unknown =
         !variable_type.has_value() ||
         *variable_type == ast::SemanticVariableType::kUnknown;

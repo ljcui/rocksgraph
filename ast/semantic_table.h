@@ -31,6 +31,10 @@ class SemanticTable {
  public:
   [[nodiscard]] std::optional<SemanticVariableType> VariableType(
       std::string_view name) const;
+  [[nodiscard]] std::optional<SemanticVariableType> VariableTypeAt(
+      const ASTNode &node, std::string_view name) const;
+  [[nodiscard]] const std::unordered_map<std::string, SemanticVariableType> &
+  VariableTypesAt(const ASTNode &node) const;
   [[nodiscard]] const std::unordered_map<std::string, SemanticVariableType> &
   VariableTypes() const {
     return variable_types_;
@@ -47,6 +51,9 @@ class SemanticTable {
   friend SemanticTable AnalyzeSemanticTable(const ASTNode &node);
 
   void RecordVariableType(std::string_view name, SemanticVariableType type);
+  void RecordVariableTypes(
+      const ASTNode &node,
+      std::unordered_map<std::string, SemanticVariableType> types);
   void RecordExpressionDependencies(const Expression &expression,
                                     std::unordered_set<std::string> symbols);
   void RecordAggregation(const Expression &expression, bool contains);
@@ -54,6 +61,9 @@ class SemanticTable {
                                std::vector<std::string> outputs);
 
   std::unordered_map<std::string, SemanticVariableType> variable_types_;
+  std::unordered_map<const ASTNode *,
+                     std::unordered_map<std::string, SemanticVariableType>>
+      scoped_variable_types_;
   std::unordered_map<const Expression *, std::unordered_set<std::string>>
       expression_dependencies_;
   std::unordered_set<const Expression *> aggregation_expressions_;

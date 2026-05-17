@@ -991,6 +991,25 @@ TEST(PlannerQueryTest, ClassifiesArgumentRelationshipTypeWithSemanticTable) {
   EXPECT_EQ(predicate.relationship_types, std::vector<std::string>({"KNOWS"}));
 }
 
+TEST(PlannerQueryTest, ClassifiesProjectionWhereWithScopedVariableType) {
+  auto statement =
+      ParseOrFail("MATCH (n)-[r]->(b) WITH r AS n WHERE n:KNOWS RETURN n");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::SinglePlannerQuery &first = planner_query->RequireSingle();
+
+  ASSERT_EQ(first.horizon.kind, ir::QueryHorizonKind::kRegularProjection);
+  const ir::RegularQueryProjection &projection =
+      first.horizon.RequireRegularProjection();
+  ASSERT_EQ(projection.selections.size(), 1U);
+  const ir::Predicate &predicate = projection.selections.predicates[0];
+  EXPECT_EQ(predicate.kind, ir::PredicateKind::kRelationshipType);
+  EXPECT_EQ(predicate.variable, "n");
+  EXPECT_EQ(predicate.relationship_types, std::vector<std::string>({"KNOWS"}));
+}
+
 TEST(PlannerQueryTest, BuildsUnwindHorizonSegment) {
   auto statement = ParseOrFail("UNWIND [1, 2] AS x RETURN x");
   ASSERT_TRUE(statement);

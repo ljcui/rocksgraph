@@ -31,8 +31,23 @@ const std::vector<std::string> &EmptyStringVector() {
   return empty;
 }
 
+const TypeMap &EmptyTypeMap() {
+  static const TypeMap empty;
+  return empty;
+}
+
 bool StringEquals(const std::string &value, std::string_view expected) {
   return std::string_view(value) == expected;
+}
+
+std::optional<SemanticVariableType> LookupVariableType(const TypeMap &types,
+                                                       std::string_view name) {
+  for (const auto &entry : types) {
+    if (StringEquals(entry.first, name)) {
+      return entry.second;
+    }
+  }
+  return std::nullopt;
 }
 
 std::string LowerAscii(std::string_view input) {
@@ -60,6 +75,14 @@ bool IsAggregateFunction(std::string_view function_name) {
       "sum",
   };
   return aggregates.contains(name);
+}
+
+SemanticVariableType InferFunctionResultType(std::string_view function_name) {
+  const std::string name = LowerAscii(function_name);
+  if (name == "collect") {
+    return SemanticVariableType::kList;
+  }
+  return SemanticVariableType::kScalar;
 }
 
 bool IsAggregationExpression(const Expression &expression) {
@@ -122,6 +145,7 @@ class SemanticTableAnalyzer final : public ASTConstWalker {
     if (!expr) {
       return;
     }
+    RecordScope(*expr);
     table_.RecordExpressionDependencies(
         *expr, CollectExpressionDependencies(*expr, CurrentScopeSymbols()));
     table_.RecordAggregation(*expr, IsAggregationExpression(*expr));
@@ -165,6 +189,7 @@ class SemanticTableAnalyzer final : public ASTConstWalker {
     for (const auto &item : node.yield_items) {
       Define(item.variable, SemanticVariableType::kUnknown);
     }
+    RecordScope(node);
     WalkMaybe(node.yield_where);
   }
 
@@ -173,12 +198,14 @@ class SemanticTableAnalyzer final : public ASTConstWalker {
       DefinePatternBindings(*node.pattern);
       WalkMaybe(node.pattern);
     }
+    RecordScope(node);
     WalkMaybe(node.where);
   }
 
   void Visit(const Unwind &node) override {
     WalkMaybe(node.expression);
     Define(node.variable, SemanticVariableType::kUnknown);
+    RecordScope(node);
   }
 
   void Visit(const InQueryCall &node) override {
@@ -186,6 +213,7 @@ class SemanticTableAnalyzer final : public ASTConstWalker {
     for (const auto &item : node.yield_items) {
       Define(item.variable, SemanticVariableType::kUnknown);
     }
+    RecordScope(node);
     WalkMaybe(node.yield_where);
   }
 
@@ -194,6 +222,7 @@ class SemanticTableAnalyzer final : public ASTConstWalker {
       DefinePatternBindings(*node.pattern);
       WalkMaybe(node.pattern);
     }
+    RecordScope(node);
   }
 
   void Visit(const Merge &node) override {
@@ -201,6 +230,7 @@ class SemanticTableAnalyzer final : public ASTConstWalker {
       DefinePatternBindings(*node.pattern_part);
       WalkMaybe(node.pattern_part);
     }
+    RecordScope(node);
     for (const auto &action : node.actions) {
       WalkMaybe(action.second);
     }
@@ -215,11 +245,13 @@ class SemanticTableAnalyzer final : public ASTConstWalker {
     const Scope pre = CurrentScope();
     const Scope projected = AnalyzeProjectionBody(*node.body, pre);
     ReplaceCurrentScope(projected);
+    RecordScope(node);
     WalkMaybe(node.where);
   }
 
   void Visit(const Return &node) override {
     CHECK(node.body != nullptr, common::InternalError, "RETURN body is null");
+    RecordScope(node);
     AnalyzeProjectionBody(*node.body, CurrentScope());
   }
 
@@ -311,7 +343,7 @@ class SemanticTableAnalyzer final : public ASTConstWalker {
     return scope_stack_.back();
   }
 
-  void PushScope(const Scope &scope) { scope_stack_.push_back(scope); }
+  void PushScope(Scope scope) { scope_stack_.push_back(std::move(scope)); }
 
   void PopScope() {
     CHECK(!scope_stack_.empty(), common::InternalError,
@@ -320,6 +352,10 @@ class SemanticTableAnalyzer final : public ASTConstWalker {
   }
 
   void ReplaceCurrentScope(const Scope &scope) { scope_stack_.back() = scope; }
+
+  void RecordScope(const ASTNode &node) {
+    table_.RecordVariableTypes(node, CurrentScope().types);
+  }
 
   std::unordered_set<std::string> CurrentScopeSymbols() const {
     std::unordered_set<std::string> symbols;
@@ -361,6 +397,12 @@ class SemanticTableAnalyzer final : public ASTConstWalker {
         return SemanticVariableType::kList;
       case ASTNodeType::kMapLiteral:
         return SemanticVariableType::kMap;
+      case ASTNodeType::kFunctionInvocation: {
+        const auto &function = CastAst<FunctionInvocation>(expression);
+        return InferFunctionResultType(function.function_name);
+      }
+      case ASTNodeType::kCountStarExpression:
+        return SemanticVariableType::kScalar;
       case ASTNodeType::kParenthesizedExpression: {
         const auto &parenthesized =
             CastAst<ParenthesizedExpression>(expression);
@@ -374,11 +416,12 @@ class SemanticTableAnalyzer final : public ASTConstWalker {
     }
   }
 
-  Scope AnalyzeProjectionBody(const ProjectionBody &body,
-                              const Scope &input_scope) {
+  Scope AnalyzeProjectionBody(const ProjectionBody &body, Scope input_scope) {
     PushScope(input_scope);
+    RecordScope(body);
     for (const auto &item : body.items) {
       if (item && item->expression) {
+        RecordScope(*item);
         WalkMaybe(item->expression);
       }
     }
@@ -413,7 +456,12 @@ class SemanticTableAnalyzer final : public ASTConstWalker {
       order_scope.Set(entry.first, entry.second);
     }
     ReplaceCurrentScope(order_scope);
-    WalkList(body.order_by);
+    for (const auto &item : body.order_by) {
+      if (item) {
+        RecordScope(*item);
+        WalkMaybe(item->expression);
+      }
+    }
     WalkMaybe(body.skip);
     WalkMaybe(body.limit);
     PopScope();
@@ -502,12 +550,25 @@ std::ostream &operator<<(std::ostream &out, SemanticVariableType type) {
 
 std::optional<SemanticVariableType> SemanticTable::VariableType(
     std::string_view name) const {
-  for (const auto &entry : variable_types_) {
-    if (StringEquals(entry.first, name)) {
-      return entry.second;
-    }
+  return LookupVariableType(variable_types_, name);
+}
+
+std::optional<SemanticVariableType> SemanticTable::VariableTypeAt(
+    const ASTNode &node, std::string_view name) const {
+  const auto it = scoped_variable_types_.find(&node);
+  if (it == scoped_variable_types_.end()) {
+    return std::nullopt;
   }
-  return std::nullopt;
+  return LookupVariableType(it->second, name);
+}
+
+const std::unordered_map<std::string, SemanticVariableType> &
+SemanticTable::VariableTypesAt(const ASTNode &node) const {
+  const auto it = scoped_variable_types_.find(&node);
+  if (it == scoped_variable_types_.end()) {
+    return EmptyTypeMap();
+  }
+  return it->second;
 }
 
 const std::unordered_set<std::string> &SemanticTable::ExpressionDependencies(
@@ -544,6 +605,12 @@ void SemanticTable::RecordVariableType(std::string_view name,
     return;
   }
   variable_types_[key] = SemanticVariableType::kUnknown;
+}
+
+void SemanticTable::RecordVariableTypes(
+    const ASTNode &node,
+    std::unordered_map<std::string, SemanticVariableType> types) {
+  scoped_variable_types_[&node] = std::move(types);
 }
 
 void SemanticTable::RecordExpressionDependencies(
