@@ -137,6 +137,7 @@ add_executable(
   ast/expression_to_string.cc
   ast/ast_rewriter.cc
   ast/ast_walker.cc
+  ast/semantic_table.cc
   ast/semantic_validator.cc
   ast/rewriters/anonymous_pattern_name_rewriter.cc
   ast/rewriters/uniqueness_predicates_rewriter.cc
@@ -327,6 +328,7 @@ add_executable(
   ast/expression_to_string.cc
   ast/ast_rewriter.cc
   ast/ast_walker.cc
+  ast/semantic_table.cc
   ast/semantic_validator.cc
   ast/rewriters/anonymous_pattern_name_rewriter.cc
   ast/rewriters/uniqueness_predicates_rewriter.cc

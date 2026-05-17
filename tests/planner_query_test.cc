@@ -710,6 +710,25 @@ TEST(PlannerQueryTest, BuildsTailForMultiPartQuery) {
   EXPECT_EQ(second.tail, nullptr);
 }
 
+TEST(PlannerQueryTest, ClassifiesArgumentRelationshipTypeWithSemanticTable) {
+  auto statement =
+      ParseOrFail("MATCH (a)-[r]->(b) WITH r MATCH (n) WHERE r:KNOWS RETURN r");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::SinglePlannerQuery &first = planner_query->RequireSingle();
+  ASSERT_TRUE(first.tail);
+  const ir::SinglePlannerQuery &second = *first.tail;
+
+  EXPECT_TRUE(Contains(second.query_graph.argument_ids, "r"));
+  ASSERT_EQ(second.query_graph.selections.size(), 1U);
+  const auto &predicate = second.query_graph.selections.predicates[0];
+  EXPECT_EQ(predicate.kind, ir::PredicateKind::kRelationshipType);
+  EXPECT_EQ(predicate.variable, "r");
+  EXPECT_EQ(predicate.relationship_types, std::vector<std::string>({"KNOWS"}));
+}
+
 TEST(PlannerQueryTest, BuildsUnwindHorizonSegment) {
   auto statement = ParseOrFail("UNWIND [1, 2] AS x RETURN x");
   ASSERT_TRUE(statement);

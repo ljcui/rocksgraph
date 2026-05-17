@@ -8,8 +8,8 @@
 #include <utility>
 #include <vector>
 
-#include "ast/expression_dependency.h"
 #include "ast/expression_to_string.h"
+#include "ast/semantic_table.h"
 #include "common/exception.h"
 
 namespace ir {
@@ -100,12 +100,17 @@ std::unordered_set<std::string> QueryGraphAvailableSymbols(
 }
 
 std::unordered_set<std::string> ProjectionOutputSymbols(
-    const Projection &projection) {
+    const ast::SemanticTable &semantic_table,
+    const ast::ProjectionBody &projection) {
   std::unordered_set<std::string> symbols;
-  for (const auto &item : projection.items) {
-    CHECK(!item.alias.empty(), common::InvalidArgumentError,
-          "projection item alias is empty");
-    symbols.insert(item.alias);
+  const std::vector<std::string> &outputs =
+      semantic_table.ProjectionOutputs(projection);
+  CHECK(!outputs.empty(), common::InvalidArgumentError,
+        "projection output symbols are empty");
+  for (const auto &symbol : outputs) {
+    CHECK(!symbol.empty(), common::InvalidArgumentError,
+          "projection output symbol is empty");
+    symbols.insert(symbol);
   }
   return symbols;
 }
@@ -449,7 +454,9 @@ class PatternConverter {
 class QueryGraphBuilder {
  public:
   explicit QueryGraphBuilder(
+      const ast::SemanticTable &semantic_table,
       std::unordered_set<std::string> argument_ids = {}) {
+    semantic_table_ = &semantic_table;
     graph_.argument_ids = std::move(argument_ids);
   }
 
@@ -495,7 +502,7 @@ class QueryGraphBuilder {
       Predicate where_predicate;
       where_predicate.expression = predicate;
       where_predicate.dependencies =
-          ast::CollectExpressionDependencies(*predicate, CoveredSymbols());
+          SemanticTableRef().ExpressionDependencies(*predicate);
       ClassifyPredicate(&where_predicate);
       const std::string predicate_key = PredicateKey(where_predicate);
       if (!where_keys_.insert(predicate_key).second) {
@@ -508,15 +515,10 @@ class QueryGraphBuilder {
   QueryGraph Release() { return std::move(graph_); }
 
  private:
-  [[nodiscard]] std::unordered_set<std::string> CoveredSymbols() const {
-    std::unordered_set<std::string> symbols = graph_.argument_ids;
-    symbols.insert(graph_.pattern_nodes.begin(), graph_.pattern_nodes.end());
-    for (const auto &relationship : graph_.pattern_relationships) {
-      CHECK(!relationship.variable.empty(), common::InvalidArgumentError,
-            "relationship variable is empty");
-      symbols.insert(relationship.variable);
-    }
-    return symbols;
+  [[nodiscard]] const ast::SemanticTable &SemanticTableRef() const {
+    CHECK(semantic_table_ != nullptr, common::InternalError,
+          "semantic table is null");
+    return *semantic_table_;
   }
 
   [[nodiscard]] bool IsRelationshipVariable(const std::string &name) const {
@@ -545,10 +547,18 @@ class QueryGraphBuilder {
         return;
       }
       predicate->variable = variable->name;
-      if (IsRelationshipVariable(variable->name)) {
+      const auto variable_type =
+          SemanticTableRef().VariableType(variable->name);
+      const bool type_unknown =
+          !variable_type.has_value() ||
+          *variable_type == ast::SemanticVariableType::kUnknown;
+      if (variable_type == ast::SemanticVariableType::kRelationship ||
+          (type_unknown && IsRelationshipVariable(variable->name))) {
         predicate->kind = PredicateKind::kRelationshipType;
         predicate->relationship_types = label->labels;
-      } else if (graph_.pattern_nodes.contains(variable->name)) {
+      } else if (variable_type == ast::SemanticVariableType::kNode ||
+                 (type_unknown &&
+                  graph_.pattern_nodes.contains(variable->name))) {
         predicate->kind = PredicateKind::kNodeLabel;
         predicate->labels = label->labels;
       }
@@ -584,6 +594,7 @@ class QueryGraphBuilder {
 
   QueryGraph graph_;
   std::unordered_set<std::string> where_keys_;
+  const ast::SemanticTable *semantic_table_ = nullptr;
 };
 
 QueryHorizon QueryHorizon::ForProjection(Projection projection) {
@@ -685,6 +696,9 @@ void CheckNoUpdatingClauses(
 
 class PlannerQueryBuilder {
  public:
+  explicit PlannerQueryBuilder(const ast::SemanticTable &semantic_table)
+      : semantic_table_(&semantic_table) {}
+
   std::unique_ptr<PlannerQuery> Build(const ast::Statement &statement) {
     switch (statement.node_type) {
       case ast::ASTNodeType::kRegularQuery: {
@@ -697,6 +711,12 @@ class PlannerQueryBuilder {
   }
 
  private:
+  [[nodiscard]] const ast::SemanticTable &SemanticTableRef() const {
+    CHECK(semantic_table_ != nullptr, common::InternalError,
+          "semantic table is null");
+    return *semantic_table_;
+  }
+
   std::unique_ptr<PlannerQuery> BuildRegularQuery(
       const ast::RegularQuery &query) {
     CHECK(query.single_query, common::InvalidArgumentError,
@@ -750,8 +770,10 @@ class PlannerQueryBuilder {
       *current_segment = BuildQuerySegment(
           part.reading_clauses, part.with_clause.get(), argument_ids);
       current_segment = current_segment->Last();
+      CHECK(part.with_clause->body != nullptr, common::InvalidArgumentError,
+            Missing("WITH body"));
       argument_ids =
-          ProjectionOutputSymbols(current_segment->horizon.RequireProjection());
+          ProjectionOutputSymbols(SemanticTableRef(), *part.with_clause->body);
       current_segment->tail = std::make_unique<SinglePlannerQuery>();
       current_segment = current_segment->tail.get();
     }
@@ -795,7 +817,7 @@ class PlannerQueryBuilder {
     SinglePlannerQuery root;
     SinglePlannerQuery *current_segment = &root;
     std::unordered_set<std::string> current_argument_ids = argument_ids;
-    QueryGraphBuilder builder(current_argument_ids);
+    QueryGraphBuilder builder(SemanticTableRef(), current_argument_ids);
     for (const auto &clause : reading) {
       CHECK(clause != nullptr, common::InvalidArgumentError,
             Missing("reading clause"));
@@ -809,7 +831,7 @@ class PlannerQueryBuilder {
             current_segment->horizon.RequireUnwind().alias);
         current_segment->tail = std::make_unique<SinglePlannerQuery>();
         current_segment = current_segment->tail.get();
-        builder = QueryGraphBuilder(current_argument_ids);
+        builder = QueryGraphBuilder(SemanticTableRef(), current_argument_ids);
         continue;
       }
       builder.BuildReadingClause(*clause);
@@ -870,13 +892,17 @@ class PlannerQueryBuilder {
     horizon.alias = unwind.variable;
     return horizon;
   }
+
+  const ast::SemanticTable *semantic_table_ = nullptr;
 };
 
 }  // namespace
 
 std::unique_ptr<PlannerQuery> CreatePlannerQuery(
     const ast::Statement &statement) {
-  PlannerQueryBuilder builder;
+  const ast::SemanticTable semantic_table =
+      ast::AnalyzeSemanticTable(statement);
+  PlannerQueryBuilder builder(semantic_table);
   return builder.Build(statement);
 }
 
