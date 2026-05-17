@@ -2,7 +2,6 @@
 
 #include <memory>
 #include <string>
-#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -72,36 +71,60 @@ struct QueryHorizon {
   UnwindHorizon &RequireUnwind();
 };
 
-struct SingleQueryIR {
+struct SinglePlannerQuery;
+struct UnionPlannerQuery;
+
+enum class PlannerQueryKind { kSingle, kUnion };
+
+class PlannerQuery {
+ public:
+  PlannerQuery() = default;
+  PlannerQuery(const PlannerQuery &) = delete;
+  PlannerQuery &operator=(const PlannerQuery &) = delete;
+  PlannerQuery(PlannerQuery &&) noexcept = default;
+  PlannerQuery &operator=(PlannerQuery &&) noexcept = default;
+  virtual ~PlannerQuery() = default;
+
+  [[nodiscard]] virtual PlannerQueryKind Kind() const = 0;
+
+  [[nodiscard]] const SinglePlannerQuery &RequireSingle() const;
+  SinglePlannerQuery &RequireSingle();
+
+  [[nodiscard]] const UnionPlannerQuery &RequireUnion() const;
+  UnionPlannerQuery &RequireUnion();
+};
+
+struct SinglePlannerQuery final : public PlannerQuery {
   QueryGraph query_graph;
   QueryHorizon horizon;
-  std::unique_ptr<SingleQueryIR> tail;
+  std::unique_ptr<SinglePlannerQuery> tail;
 
-  SingleQueryIR() = default;
-  SingleQueryIR(const SingleQueryIR &other);
-  SingleQueryIR &operator=(const SingleQueryIR &other);
-  SingleQueryIR(SingleQueryIR &&other) noexcept = default;
-  SingleQueryIR &operator=(SingleQueryIR &&other) noexcept = default;
-  ~SingleQueryIR() = default;
+  SinglePlannerQuery() = default;
 
-  [[nodiscard]] const SingleQueryIR *Last() const;
-  SingleQueryIR *Last();
+  [[nodiscard]] PlannerQueryKind Kind() const final {
+    return PlannerQueryKind::kSingle;
+  }
+
+  [[nodiscard]] const SinglePlannerQuery *Last() const;
+  SinglePlannerQuery *Last();
 };
 
-struct UnionBranch {
+struct UnionPlannerQuery final : public PlannerQuery {
+  std::unique_ptr<PlannerQuery> lhs;
+  SinglePlannerQuery rhs;
   bool all = false;
-  SingleQueryIR query;
+
+  UnionPlannerQuery() = default;
+
+  [[nodiscard]] PlannerQueryKind Kind() const final {
+    return PlannerQueryKind::kUnion;
+  }
 };
 
-struct RegularQueryIR {
-  SingleQueryIR main;
-  std::vector<UnionBranch> unions;
-};
+std::unique_ptr<PlannerQuery> MakeSinglePlannerQuery(SinglePlannerQuery query);
+std::unique_ptr<PlannerQuery> MakeUnionPlannerQuery(
+    std::unique_ptr<PlannerQuery> lhs, SinglePlannerQuery rhs, bool all);
 
-struct QueryIR {
-  RegularQueryIR regular;
-};
-
-QueryIR BuildStatement(const ast::Statement &statement);
+std::unique_ptr<PlannerQuery> BuildStatement(const ast::Statement &statement);
 
 }  // namespace ir

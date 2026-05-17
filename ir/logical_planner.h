@@ -5,7 +5,7 @@
 #include "ast/ast_node.h"
 #include "ir/idp_planner.h"
 #include "ir/logical_plan.h"
-#include "ir/query_ir.h"
+#include "ir/planner_query.h"
 
 namespace ir {
 
@@ -17,6 +17,6 @@ std::unique_ptr<LogicalPlan> BuildLogicalPlan(
     const ast::Statement &statement, const LogicalPlannerConfig &config = {});
 
 std::unique_ptr<LogicalPlan> BuildLogicalPlan(
-    const QueryIR &query_ir, const LogicalPlannerConfig &config = {});
+    const PlannerQuery &planner_query, const LogicalPlannerConfig &config = {});
 
 }  // namespace ir

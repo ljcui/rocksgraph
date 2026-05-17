@@ -5,7 +5,7 @@
 #include <unordered_set>
 
 #include "ir/logical_plan.h"
-#include "ir/query_ir.h"
+#include "ir/planner_query.h"
 
 namespace ir {
 

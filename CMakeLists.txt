@@ -256,7 +256,7 @@ add_executable(
   ir/logical_planner.cc
   ir/idp_planner.cc
   ir/logical_plan.cc
-  ir/query_ir.cc
+  ir/planner_query.cc
   ast/ast_builder.cc
   ast/ast_clone.cc
   ast/ast_const_walker.cc
@@ -332,8 +332,8 @@ add_test(NAME semantic_validator_test COMMAND semantic_validator_test)
 
 add_executable(
   planner_query_test
-  tests/query_ir_test.cc
-  ir/query_ir.cc
+  tests/planner_query_test.cc
+  ir/planner_query.cc
   ast/ast_builder.cc
   ast/ast_clone.cc
   ast/ast_const_walker.cc

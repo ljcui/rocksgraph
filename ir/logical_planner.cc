@@ -304,7 +304,7 @@ std::unique_ptr<LogicalPlan> BuildQueryHorizon(
 }
 
 std::unique_ptr<LogicalPlan> BuildQueryPartPipeline(
-    const SingleQueryIR &query_part,
+    const SinglePlannerQuery &query_part,
     const std::unordered_set<std::string> &argument_symbols,
     const LogicalPlannerConfig &config) {
   std::unique_ptr<LogicalPlan> plan =
@@ -314,14 +314,14 @@ std::unique_ptr<LogicalPlan> BuildQueryPartPipeline(
   return BuildQueryHorizon(std::move(plan), query_part.horizon);
 }
 
-struct PlannedSingleQuery {
+struct PlannedPlannerQuery {
   std::unique_ptr<LogicalPlan> plan;
   std::vector<std::string> columns;
 };
 
-PlannedSingleQuery PlanSingleQuery(const SingleQueryIR &single_query,
-                                   const LogicalPlannerConfig &config) {
-  const SingleQueryIR *current = &single_query;
+PlannedPlannerQuery PlanSingleQuery(const SinglePlannerQuery &single_query,
+                                    const LogicalPlannerConfig &config) {
+  const SinglePlannerQuery *current = &single_query;
   std::unordered_set<std::string> argument_symbols;
   std::unique_ptr<LogicalPlan> previous_output;
   std::unique_ptr<LogicalPlan> plan;
@@ -339,42 +339,62 @@ PlannedSingleQuery PlanSingleQuery(const SingleQueryIR &single_query,
     current = current->tail.get();
   }
   CHECK(plan != nullptr, common::InternalError, "single query plan is null");
-  return PlannedSingleQuery{
+  return PlannedPlannerQuery{
       .plan = std::move(plan),
       .columns = BuildProduceColumns(
           single_query.Last()->horizon.RequireProjection())};
+}
+
+PlannedPlannerQuery PlanPlannerQuery(const PlannerQuery &planner_query,
+                                     const LogicalPlannerConfig &config) {
+  switch (planner_query.Kind()) {
+    case PlannerQueryKind::kSingle:
+      return PlanSingleQuery(planner_query.RequireSingle(), config);
+    case PlannerQueryKind::kUnion: {
+      const UnionPlannerQuery &union_query = planner_query.RequireUnion();
+      CHECK(union_query.lhs != nullptr, common::InvalidArgumentError,
+            "UNION lhs planner query is null");
+
+      PlannedPlannerQuery planned_lhs =
+          PlanPlannerQuery(*union_query.lhs, config);
+      CHECK(planned_lhs.plan != nullptr, common::InternalError,
+            "UNION lhs logical plan is null");
+
+      PlannedPlannerQuery planned_rhs =
+          PlanSingleQuery(union_query.rhs, config);
+      CHECK(planned_rhs.plan != nullptr, common::InternalError,
+            "UNION rhs logical plan is null");
+
+      CHECK(planned_rhs.columns == planned_lhs.columns,
+            common::InvalidArgumentError,
+            Unsupported("UNION with different projection columns"));
+      return PlannedPlannerQuery{
+          .plan = std::make_unique<Union>(std::move(planned_lhs.plan),
+                                          std::move(planned_rhs.plan),
+                                          union_query.all),
+          .columns = std::move(planned_lhs.columns)};
+    }
+  }
+  THROW(common::InternalError, "unknown planner query kind");
 }
 
 }  // namespace
 
 std::unique_ptr<LogicalPlan> BuildLogicalPlan(
     const ast::Statement &statement, const LogicalPlannerConfig &config) {
-  QueryIR query_ir = BuildStatement(statement);
-  return BuildLogicalPlan(query_ir, config);
+  std::unique_ptr<PlannerQuery> planner_query = BuildStatement(statement);
+  CHECK(planner_query != nullptr, common::InternalError,
+        "planner query is null");
+  return BuildLogicalPlan(*planner_query, config);
 }
 
 std::unique_ptr<LogicalPlan> BuildLogicalPlan(
-    const QueryIR &query_ir, const LogicalPlannerConfig &config) {
-  PlannedSingleQuery planned_main =
-      PlanSingleQuery(query_ir.regular.main, config);
-  CHECK(planned_main.plan != nullptr, common::InternalError,
-        "main query logical plan is null");
-
-  std::unique_ptr<LogicalPlan> combined = std::move(planned_main.plan);
-  std::vector<std::string> output_columns = planned_main.columns;
-
-  for (const auto &branch : query_ir.regular.unions) {
-    PlannedSingleQuery planned_branch = PlanSingleQuery(branch.query, config);
-    CHECK(planned_branch.plan != nullptr, common::InternalError,
-          "union branch logical plan is null");
-    CHECK(planned_branch.columns == output_columns,
-          common::InvalidArgumentError,
-          Unsupported("UNION with different projection columns"));
-    combined = std::make_unique<Union>(
-        std::move(combined), std::move(planned_branch.plan), branch.all);
-  }
-
-  return std::make_unique<ProduceResult>(std::move(combined), output_columns);
+    const PlannerQuery &planner_query, const LogicalPlannerConfig &config) {
+  PlannedPlannerQuery planned_query = PlanPlannerQuery(planner_query, config);
+  CHECK(planned_query.plan != nullptr, common::InternalError,
+        "planner query logical plan is null");
+  return std::make_unique<ProduceResult>(std::move(planned_query.plan),
+                                         planned_query.columns);
 }
 
 }  // namespace ir

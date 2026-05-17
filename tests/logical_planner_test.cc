@@ -172,15 +172,16 @@ TEST(LogicalPlannerTest, RejectsUnionWithDifferentProjectionColumns) {
   ast::IntegerLiteral two;
   two.value = 2;
 
-  ir::QueryIR query_ir;
-  query_ir.regular.main.horizon.RequireProjection().items.push_back(
-      {&one, "a"});
+  ir::SinglePlannerQuery lhs;
+  lhs.horizon.RequireProjection().items.push_back({&one, "a"});
 
-  ir::UnionBranch branch;
-  branch.query.horizon.RequireProjection().items.push_back({&two, "b"});
-  query_ir.regular.unions.push_back(std::move(branch));
+  ir::SinglePlannerQuery rhs;
+  rhs.horizon.RequireProjection().items.push_back({&two, "b"});
 
-  EXPECT_THROW((void)ir::BuildLogicalPlan(query_ir),
+  std::unique_ptr<ir::PlannerQuery> planner_query = ir::MakeUnionPlannerQuery(
+      ir::MakeSinglePlannerQuery(std::move(lhs)), std::move(rhs), false);
+
+  EXPECT_THROW((void)ir::BuildLogicalPlan(*planner_query),
                common::InvalidArgumentError);
 }
 
@@ -190,12 +191,13 @@ TEST(LogicalPlannerTest, RejectsProjectionWhereDependencyOutOfScope) {
   ast::Variable missing;
   missing.name = "missing";
 
-  ir::QueryIR query_ir;
-  query_ir.regular.main.horizon.RequireProjection().items.push_back(
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::MakeSinglePlannerQuery(ir::SinglePlannerQuery{});
+  planner_query->RequireSingle().horizon.RequireProjection().items.push_back(
       {&one, "x"});
-  query_ir.regular.main.horizon.RequireProjection().where = &missing;
+  planner_query->RequireSingle().horizon.RequireProjection().where = &missing;
 
-  EXPECT_THROW((void)ir::BuildLogicalPlan(query_ir),
+  EXPECT_THROW((void)ir::BuildLogicalPlan(*planner_query),
                common::InvalidArgumentError);
 }
 
@@ -203,11 +205,12 @@ TEST(LogicalPlannerTest, RejectsProjectionItemDependencyOutOfScope) {
   ast::Variable missing;
   missing.name = "missing";
 
-  ir::QueryIR query_ir;
-  query_ir.regular.main.horizon.RequireProjection().items.push_back(
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::MakeSinglePlannerQuery(ir::SinglePlannerQuery{});
+  planner_query->RequireSingle().horizon.RequireProjection().items.push_back(
       {&missing, "x"});
 
-  EXPECT_THROW((void)ir::BuildLogicalPlan(query_ir),
+  EXPECT_THROW((void)ir::BuildLogicalPlan(*planner_query),
                common::InvalidArgumentError);
 }
 
@@ -215,10 +218,12 @@ TEST(LogicalPlannerTest, RejectsUnwindDependencyOutOfScope) {
   ast::Variable missing;
   missing.name = "missing";
 
-  ir::QueryIR query_ir;
-  query_ir.regular.main.horizon = ir::QueryHorizon::ForUnwind({&missing, "x"});
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::MakeSinglePlannerQuery(ir::SinglePlannerQuery{});
+  planner_query->RequireSingle().horizon =
+      ir::QueryHorizon::ForUnwind({&missing, "x"});
 
-  EXPECT_THROW((void)ir::BuildLogicalPlan(query_ir),
+  EXPECT_THROW((void)ir::BuildLogicalPlan(*planner_query),
                common::InvalidArgumentError);
 }
 

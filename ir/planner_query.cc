@@ -1,6 +1,5 @@
-#include "ir/query_ir.h"
+#include "ir/planner_query.h"
 
-#include <algorithm>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -52,24 +51,16 @@ void SplitConjunctivePredicates(const ast::Expression *expression,
   output->push_back(unwrapped);
 }
 
-std::unique_ptr<SingleQueryIR> CloneTail(
-    const std::unique_ptr<SingleQueryIR> &tail) {
-  if (!tail) {
-    return nullptr;
-  }
-  return std::make_unique<SingleQueryIR>(*tail);
-}
-
-SingleQueryIR *LastQueryPart(SingleQueryIR *query) {
-  SingleQueryIR *current = query;
+SinglePlannerQuery *LastQueryPart(SinglePlannerQuery *query) {
+  SinglePlannerQuery *current = query;
   while (current->tail) {
     current = current->tail.get();
   }
   return current;
 }
 
-const SingleQueryIR *LastQueryPart(const SingleQueryIR *query) {
-  const SingleQueryIR *current = query;
+const SinglePlannerQuery *LastQueryPart(const SinglePlannerQuery *query) {
+  const SinglePlannerQuery *current = query;
   while (current->tail) {
     current = current->tail.get();
   }
@@ -260,24 +251,55 @@ UnwindHorizon &QueryHorizon::RequireUnwind() {
   return unwind;
 }
 
-SingleQueryIR::SingleQueryIR(const SingleQueryIR &other)
-    : query_graph(other.query_graph),
-      horizon(other.horizon),
-      tail(CloneTail(other.tail)) {}
-
-SingleQueryIR &SingleQueryIR::operator=(const SingleQueryIR &other) {
-  if (this == &other) {
-    return *this;
-  }
-  query_graph = other.query_graph;
-  horizon = other.horizon;
-  tail = CloneTail(other.tail);
-  return *this;
+const SinglePlannerQuery *SinglePlannerQuery::Last() const {
+  return LastQueryPart(this);
 }
 
-const SingleQueryIR *SingleQueryIR::Last() const { return LastQueryPart(this); }
+SinglePlannerQuery *SinglePlannerQuery::Last() { return LastQueryPart(this); }
 
-SingleQueryIR *SingleQueryIR::Last() { return LastQueryPart(this); }
+const SinglePlannerQuery &PlannerQuery::RequireSingle() const {
+  const auto *query = dynamic_cast<const SinglePlannerQuery *>(this);
+  CHECK(query != nullptr, common::InvalidArgumentError,
+        Unsupported("non-single planner query"));
+  return *query;
+}
+
+SinglePlannerQuery &PlannerQuery::RequireSingle() {
+  auto *query = dynamic_cast<SinglePlannerQuery *>(this);
+  CHECK(query != nullptr, common::InvalidArgumentError,
+        Unsupported("non-single planner query"));
+  return *query;
+}
+
+const UnionPlannerQuery &PlannerQuery::RequireUnion() const {
+  const auto *query = dynamic_cast<const UnionPlannerQuery *>(this);
+  CHECK(query != nullptr, common::InvalidArgumentError,
+        Unsupported("non-union planner query"));
+  return *query;
+}
+
+UnionPlannerQuery &PlannerQuery::RequireUnion() {
+  auto *query = dynamic_cast<UnionPlannerQuery *>(this);
+  CHECK(query != nullptr, common::InvalidArgumentError,
+        Unsupported("non-union planner query"));
+  return *query;
+}
+
+std::unique_ptr<PlannerQuery> MakeSinglePlannerQuery(
+    SinglePlannerQuery single_query) {
+  return std::make_unique<SinglePlannerQuery>(std::move(single_query));
+}
+
+std::unique_ptr<PlannerQuery> MakeUnionPlannerQuery(
+    std::unique_ptr<PlannerQuery> lhs, SinglePlannerQuery rhs, bool all) {
+  CHECK(lhs != nullptr, common::InvalidArgumentError,
+        "UNION lhs planner query is null");
+  auto query = std::make_unique<UnionPlannerQuery>();
+  query->lhs = std::move(lhs);
+  query->rhs = std::move(rhs);
+  query->all = all;
+  return query;
+}
 
 namespace {
 
@@ -288,9 +310,9 @@ void CheckNoUpdatingClauses(
   }
 }
 
-class QueryIRBuilder {
+class PlannerQueryBuilder {
  public:
-  QueryIR Build(const ast::Statement &statement) {
+  std::unique_ptr<PlannerQuery> Build(const ast::Statement &statement) {
     switch (statement.node_type) {
       case ast::ASTNodeType::kRegularQuery: {
         return BuildRegularQuery(ast::CastAst<ast::RegularQuery>(statement));
@@ -302,28 +324,24 @@ class QueryIRBuilder {
   }
 
  private:
-  QueryIR BuildRegularQuery(const ast::RegularQuery &query) {
+  std::unique_ptr<PlannerQuery> BuildRegularQuery(
+      const ast::RegularQuery &query) {
     CHECK(query.single_query, common::InvalidArgumentError,
           Missing("single query"));
 
-    QueryIR query_ir;
-    query_ir.regular.main = BuildSingleQuery(*query.single_query);
-
-    query_ir.regular.unions.reserve(query.unions.size());
+    std::unique_ptr<PlannerQuery> planner_query =
+        MakeSinglePlannerQuery(BuildSingleQuery(*query.single_query));
     for (const auto &part : query.unions) {
       CHECK(part && part->query, common::InvalidArgumentError,
             Missing("UNION branch query"));
-
-      UnionBranch branch;
-      branch.all = part->all;
-      branch.query = BuildSingleQuery(*part->query);
-      query_ir.regular.unions.push_back(std::move(branch));
+      planner_query = MakeUnionPlannerQuery(
+          std::move(planner_query), BuildSingleQuery(*part->query), part->all);
     }
 
-    return query_ir;
+    return planner_query;
   }
 
-  SingleQueryIR BuildSingleQuery(const ast::SingleQuery &query) {
+  SinglePlannerQuery BuildSingleQuery(const ast::SingleQuery &query) {
     switch (query.node_type) {
       case ast::ASTNodeType::kSinglePartQuery: {
         return BuildSinglePartQuery(ast::CastAst<ast::SinglePartQuery>(query));
@@ -337,19 +355,19 @@ class QueryIRBuilder {
     }
   }
 
-  SingleQueryIR BuildSinglePartQuery(const ast::SinglePartQuery &query) {
+  SinglePlannerQuery BuildSinglePartQuery(const ast::SinglePartQuery &query) {
     CheckNoUpdatingClauses(query.updating_clauses);
     CHECK(query.return_clause, common::InvalidArgumentError,
           Missing("RETURN clause"));
     return BuildQuerySegment(query.reading_clauses, query.return_clause.get());
   }
 
-  SingleQueryIR BuildMultiPartQuery(const ast::MultiPartQuery &query) {
+  SinglePlannerQuery BuildMultiPartQuery(const ast::MultiPartQuery &query) {
     CHECK(query.final_single_part_query, common::InvalidArgumentError,
           Missing("final single query"));
 
-    SingleQueryIR root;
-    SingleQueryIR *current_segment = &root;
+    SinglePlannerQuery root;
+    SinglePlannerQuery *current_segment = &root;
     for (const auto &part : query.parts) {
       CheckNoUpdatingClauses(part.updating_clauses);
       CHECK(part.with_clause, common::InvalidArgumentError,
@@ -357,7 +375,7 @@ class QueryIRBuilder {
       *current_segment =
           BuildQuerySegment(part.reading_clauses, part.with_clause.get());
       current_segment = current_segment->Last();
-      current_segment->tail = std::make_unique<SingleQueryIR>();
+      current_segment->tail = std::make_unique<SinglePlannerQuery>();
       current_segment = current_segment->tail.get();
     }
 
@@ -380,13 +398,13 @@ class QueryIRBuilder {
     return projection;
   }
 
-  SingleQueryIR BuildQuerySegment(
+  SinglePlannerQuery BuildQuerySegment(
       const std::vector<std::unique_ptr<ast::ReadingClause>> &reading,
       const ast::ProjectionClause *projection) {
     CHECK(projection != nullptr, common::InvalidArgumentError,
           Missing("projection clause"));
-    SingleQueryIR root;
-    SingleQueryIR *current_segment = &root;
+    SinglePlannerQuery root;
+    SinglePlannerQuery *current_segment = &root;
     QueryGraphBuilder builder;
     for (const auto &clause : reading) {
       CHECK(clause != nullptr, common::InvalidArgumentError,
@@ -395,7 +413,7 @@ class QueryIRBuilder {
         current_segment->query_graph = builder.Release();
         current_segment->horizon = QueryHorizon::ForUnwind(
             BuildUnwindHorizon(*ast::CastAst<ast::Unwind>(clause.get())));
-        current_segment->tail = std::make_unique<SingleQueryIR>();
+        current_segment->tail = std::make_unique<SinglePlannerQuery>();
         current_segment = current_segment->tail.get();
         builder = QueryGraphBuilder();
         continue;
@@ -462,8 +480,8 @@ class QueryIRBuilder {
 
 }  // namespace
 
-QueryIR BuildStatement(const ast::Statement &statement) {
-  QueryIRBuilder builder;
+std::unique_ptr<PlannerQuery> BuildStatement(const ast::Statement &statement) {
+  PlannerQueryBuilder builder;
   return builder.Build(statement);
 }
 
