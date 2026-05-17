@@ -1,5 +1,6 @@
 #include "ir/planner_query.h"
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -107,6 +108,95 @@ std::unordered_set<std::string> ProjectionOutputSymbols(
     symbols.insert(item.alias);
   }
   return symbols;
+}
+
+std::string_view PredicateKindKey(PredicateKind kind) {
+  switch (kind) {
+    case PredicateKind::kGenericExpression:
+      return "generic_expression";
+    case PredicateKind::kNodeLabel:
+      return "node_label";
+    case PredicateKind::kRelationshipType:
+      return "relationship_type";
+    case PredicateKind::kPropertyEquality:
+      return "property_equality";
+    case PredicateKind::kPropertyComparison:
+      return "property_comparison";
+    case PredicateKind::kExistsSubquery:
+      return "exists_subquery";
+  }
+  THROW(common::InternalError, "unknown predicate kind");
+}
+
+std::vector<std::string> SortedCopy(std::vector<std::string> values) {
+  std::sort(values.begin(), values.end());
+  return values;
+}
+
+void AppendKeyPart(std::string *key, std::string_view part) {
+  CHECK(key != nullptr, common::InternalError, "predicate key is null");
+  key->append(std::to_string(part.size()));
+  key->push_back(':');
+  key->append(part.data(), part.size());
+  key->push_back('|');
+}
+
+void AppendKeyParts(std::string *key, std::vector<std::string> parts) {
+  AppendKeyPart(key, std::to_string(parts.size()));
+  for (const auto &part : SortedCopy(std::move(parts))) {
+    AppendKeyPart(key, part);
+  }
+}
+
+std::string ExpressionKey(const ast::Expression &expression) {
+  std::string key = ast::ExpressionToString(expression);
+  CHECK(!key.empty(), common::InvalidArgumentError,
+        "failed to stringify predicate expression");
+  return key;
+}
+
+std::string PropertyComparisonRhsKey(const ast::Expression *expression) {
+  const ast::Expression *unwrapped = UnwrapParenthesized(expression);
+  CHECK(unwrapped != nullptr, common::InvalidArgumentError,
+        "property predicate expression is null");
+  CHECK(unwrapped->Is(ast::ASTNodeType::kComparisonExpression),
+        common::InvalidArgumentError,
+        "property predicate expression is not a comparison");
+  const auto *comparison = ast::CastAst<ast::ComparisonExpression>(unwrapped);
+  CHECK(comparison->right != nullptr, common::InvalidArgumentError,
+        "property predicate right expression is null");
+  return ExpressionKey(*comparison->right);
+}
+
+std::string PredicateKey(const Predicate &predicate) {
+  CHECK(predicate.expression != nullptr, common::InvalidArgumentError,
+        "predicate expression is null");
+  std::string key;
+  AppendKeyPart(&key, PredicateKindKey(predicate.kind));
+
+  switch (predicate.kind) {
+    case PredicateKind::kNodeLabel:
+      AppendKeyPart(&key, predicate.variable);
+      AppendKeyParts(&key, predicate.labels);
+      break;
+    case PredicateKind::kRelationshipType:
+      AppendKeyPart(&key, predicate.variable);
+      AppendKeyParts(&key, predicate.relationship_types);
+      break;
+    case PredicateKind::kPropertyEquality:
+    case PredicateKind::kPropertyComparison:
+      AppendKeyPart(&key, predicate.variable);
+      AppendKeyPart(&key, predicate.property_key);
+      AppendKeyPart(&key, predicate.comparison_op);
+      AppendKeyPart(&key, PropertyComparisonRhsKey(predicate.expression));
+      break;
+    case PredicateKind::kGenericExpression:
+    case PredicateKind::kExistsSubquery:
+      AppendKeyPart(&key, ExpressionKey(*predicate.expression));
+      break;
+  }
+  CHECK(!key.empty(), common::InternalError, "predicate key is empty");
+  return key;
 }
 
 }  // namespace
@@ -241,18 +331,16 @@ class QueryGraphBuilder {
     for (const ast::Expression *predicate : predicates) {
       CHECK(predicate != nullptr, common::InvalidArgumentError,
             "null WHERE predicate is not supported");
-      const std::string predicate_key = ast::ExpressionToString(*predicate);
-      CHECK(!predicate_key.empty(), common::InvalidArgumentError,
-            "failed to stringify WHERE predicate");
-      if (!where_keys_.insert(predicate_key).second) {
-        continue;
-      }
 
       Predicate where_predicate;
       where_predicate.expression = predicate;
       where_predicate.dependencies =
           ast::CollectExpressionDependencies(*predicate, CoveredSymbols());
       ClassifyPredicate(&where_predicate);
+      const std::string predicate_key = PredicateKey(where_predicate);
+      if (!where_keys_.insert(predicate_key).second) {
+        continue;
+      }
       graph_.selections.predicates.push_back(std::move(where_predicate));
     }
   }

@@ -797,6 +797,68 @@ TEST(PlannerQueryTest, DeduplicatesRepeatedWherePredicatesAcrossMatches) {
             std::vector<std::string>({"KNOWS"}));
 }
 
+TEST(PlannerQueryTest, DeduplicatesRepeatedNodeLabelWherePredicates) {
+  auto statement =
+      ParseOrFail("MATCH (n) WHERE n:Person AND n:Person RETURN n");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::SinglePlannerQuery &main = planner_query->RequireSingle();
+
+  ASSERT_EQ(main.query_graph.selections.size(), 1U);
+  const auto &predicate = main.query_graph.selections.predicates[0];
+  EXPECT_EQ(predicate.kind, ir::PredicateKind::kNodeLabel);
+  EXPECT_EQ(predicate.variable, "n");
+  EXPECT_EQ(predicate.labels, std::vector<std::string>({"Person"}));
+}
+
+TEST(PlannerQueryTest, DeduplicatesRepeatedRelationshipTypeWherePredicates) {
+  auto statement =
+      ParseOrFail("MATCH (a)-[r]->(b) WHERE r:KNOWS AND r:KNOWS RETURN r");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::SinglePlannerQuery &main = planner_query->RequireSingle();
+
+  ASSERT_EQ(main.query_graph.selections.size(), 1U);
+  const auto &predicate = main.query_graph.selections.predicates[0];
+  EXPECT_EQ(predicate.kind, ir::PredicateKind::kRelationshipType);
+  EXPECT_EQ(predicate.variable, "r");
+  EXPECT_EQ(predicate.relationship_types, std::vector<std::string>({"KNOWS"}));
+}
+
+TEST(PlannerQueryTest, DeduplicatesRepeatedPropertyComparisonWherePredicates) {
+  auto statement =
+      ParseOrFail("MATCH (n) WHERE n.age > 30 AND n.age > 30 RETURN n");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::SinglePlannerQuery &main = planner_query->RequireSingle();
+
+  ASSERT_EQ(main.query_graph.selections.size(), 1U);
+  const auto &predicate = main.query_graph.selections.predicates[0];
+  EXPECT_EQ(predicate.kind, ir::PredicateKind::kPropertyComparison);
+  EXPECT_EQ(predicate.variable, "n");
+  EXPECT_EQ(predicate.property_key, "age");
+  EXPECT_EQ(predicate.comparison_op, ">");
+}
+
+TEST(PlannerQueryTest, DeduplicatesRepeatedGenericWherePredicates) {
+  auto statement = ParseOrFail("MATCH (n) WHERE true AND true RETURN n");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::SinglePlannerQuery &main = planner_query->RequireSingle();
+
+  ASSERT_EQ(main.query_graph.selections.size(), 1U);
+  EXPECT_EQ(main.query_graph.selections.predicates[0].kind,
+            ir::PredicateKind::kGenericExpression);
+}
+
 TEST(PlannerQueryTest, BuildsUnionBranch) {
   auto statement =
       ParseOrFail("MATCH (n) RETURN n AS x UNION MATCH (m) RETURN m AS x");
