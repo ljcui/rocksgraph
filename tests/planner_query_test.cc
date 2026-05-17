@@ -1448,7 +1448,9 @@ TEST(PlannerQueryTest, BuildsUnionAllBranch) {
 }
 
 TEST(PlannerQueryTest, BuildsCreateMutatingPattern) {
-  auto statement = ParseOrFail("CREATE (n) RETURN n");
+  auto statement = ParseOrFail(
+      "CREATE (a:Person {name: 'Ada'})-[r:KNOWS {since: 2024}]->(b) "
+      "RETURN a");
   ASSERT_TRUE(statement);
 
   std::unique_ptr<ir::PlannerQuery> planner_query =
@@ -1459,8 +1461,51 @@ TEST(PlannerQueryTest, BuildsCreateMutatingPattern) {
   const ir::MutatingPattern &mutation = main.query_graph.mutating_patterns[0];
   EXPECT_EQ(mutation.kind, ir::MutatingPatternKind::kCreate);
   EXPECT_NE(mutation.clause, nullptr);
-  EXPECT_NE(mutation.pattern, nullptr);
+  ASSERT_EQ(mutation.create.nodes.size(), 2U);
+  EXPECT_EQ(mutation.create.nodes[0].variable, "a");
+  EXPECT_EQ(mutation.create.nodes[0].labels,
+            std::vector<std::string>({"Person"}));
+  ASSERT_EQ(mutation.create.nodes[0].properties.entries.size(), 1U);
+  EXPECT_EQ(mutation.create.nodes[0].properties.entries[0].key, "name");
+  EXPECT_EQ(mutation.create.nodes[1].variable, "b");
+  ASSERT_EQ(mutation.create.relationships.size(), 1U);
+  EXPECT_EQ(mutation.create.relationships[0].variable, "r");
+  EXPECT_EQ(mutation.create.relationships[0].left_node, "a");
+  EXPECT_EQ(mutation.create.relationships[0].right_node, "b");
+  EXPECT_EQ(mutation.create.relationships[0].types,
+            std::vector<std::string>({"KNOWS"}));
+  ASSERT_EQ(mutation.create.relationships[0].properties.entries.size(), 1U);
+  EXPECT_EQ(mutation.create.relationships[0].properties.entries[0].key,
+            "since");
+  EXPECT_EQ(mutation.create.commands.size(), 3U);
   EXPECT_EQ(main.horizon.kind, ir::QueryHorizonKind::kRegularProjection);
+}
+
+TEST(PlannerQueryTest, KeepsBoundCreateEndpointsOutOfCreateCommands) {
+  auto statement = ParseOrFail("MATCH (a) CREATE (a)-[r:KNOWS]->(b) RETURN r");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::SinglePlannerQuery &main = planner_query->RequireSingle();
+
+  ASSERT_EQ(main.query_graph.mutating_patterns.size(), 1U);
+  const ir::MutatingPattern &mutation = main.query_graph.mutating_patterns[0];
+  ASSERT_EQ(mutation.kind, ir::MutatingPatternKind::kCreate);
+  ASSERT_EQ(mutation.create.nodes.size(), 2U);
+  EXPECT_EQ(mutation.create.nodes[0].variable, "a");
+  EXPECT_TRUE(mutation.create.nodes[0].previously_bound);
+  EXPECT_EQ(mutation.create.nodes[1].variable, "b");
+  EXPECT_FALSE(mutation.create.nodes[1].previously_bound);
+  ASSERT_EQ(mutation.create.relationships.size(), 1U);
+  EXPECT_EQ(mutation.create.relationships[0].left_node, "a");
+  EXPECT_EQ(mutation.create.relationships[0].right_node, "b");
+  ASSERT_EQ(mutation.create.commands.size(), 2U);
+  EXPECT_EQ(mutation.create.commands[0].kind, ir::CreateEntityKind::kNode);
+  EXPECT_EQ(mutation.create.commands[0].index, 1U);
+  EXPECT_EQ(mutation.create.commands[1].kind,
+            ir::CreateEntityKind::kRelationship);
+  EXPECT_EQ(mutation.create.commands[1].index, 0U);
 }
 
 TEST(PlannerQueryTest, BuildsUpdatingOnlyCreateWithPassthroughHorizon) {
@@ -1483,8 +1528,9 @@ TEST(PlannerQueryTest, BuildsUpdatingOnlyCreateWithPassthroughHorizon) {
 }
 
 TEST(PlannerQueryTest, BuildsSetDeleteAndRemoveMutatingPatterns) {
-  auto statement =
-      ParseOrFail("MATCH (n) SET n.name = 'Ada' REMOVE n:Old DELETE n");
+  auto statement = ParseOrFail(
+      "MATCH (n) SET n.name = 'Ada', n = {age: 42}, n += {score: 7}, "
+      "n:New REMOVE n:Old, n.name DELETE n");
   ASSERT_TRUE(statement);
 
   std::unique_ptr<ir::PlannerQuery> planner_query =
@@ -1494,16 +1540,33 @@ TEST(PlannerQueryTest, BuildsSetDeleteAndRemoveMutatingPatterns) {
   ASSERT_EQ(main.query_graph.mutating_patterns.size(), 3U);
   const ir::MutatingPattern &set = main.query_graph.mutating_patterns[0];
   EXPECT_EQ(set.kind, ir::MutatingPatternKind::kSet);
-  EXPECT_EQ(set.set_items.size(), 1U);
+  ASSERT_EQ(set.set_patterns.size(), 4U);
+  EXPECT_EQ(set.set_patterns[0].kind, ir::SetMutatingPatternKind::kSetProperty);
+  EXPECT_EQ(set.set_patterns[0].property_key, "name");
+  EXPECT_EQ(set.set_patterns[1].kind,
+            ir::SetMutatingPatternKind::kSetExactPropertiesFromMap);
+  EXPECT_EQ(set.set_patterns[2].kind,
+            ir::SetMutatingPatternKind::kSetIncludingPropertiesFromMap);
+  EXPECT_EQ(set.set_patterns[3].kind, ir::SetMutatingPatternKind::kSetLabels);
+  EXPECT_EQ(set.set_patterns[3].labels, std::vector<std::string>({"New"}));
 
   const ir::MutatingPattern &remove = main.query_graph.mutating_patterns[1];
   EXPECT_EQ(remove.kind, ir::MutatingPatternKind::kRemove);
-  EXPECT_EQ(remove.remove_items.size(), 1U);
+  ASSERT_EQ(remove.remove_patterns.size(), 2U);
+  EXPECT_EQ(remove.remove_patterns[0].kind,
+            ir::RemoveMutatingPatternKind::kRemoveLabels);
+  EXPECT_EQ(remove.remove_patterns[0].labels,
+            std::vector<std::string>({"Old"}));
+  EXPECT_EQ(remove.remove_patterns[1].kind,
+            ir::RemoveMutatingPatternKind::kRemoveProperty);
+  EXPECT_EQ(remove.remove_patterns[1].property_key, "name");
 
   const ir::MutatingPattern &del = main.query_graph.mutating_patterns[2];
   EXPECT_EQ(del.kind, ir::MutatingPatternKind::kDelete);
-  EXPECT_FALSE(del.detach);
-  EXPECT_EQ(del.delete_expressions.size(), 1U);
+  ASSERT_EQ(del.delete_patterns.size(), 1U);
+  EXPECT_FALSE(del.delete_patterns[0].detach);
+  ASSERT_NE(del.delete_patterns[0].expression, nullptr);
+  EXPECT_EQ(ast::ExpressionToString(*del.delete_patterns[0].expression), "n");
   EXPECT_EQ(main.horizon.kind, ir::QueryHorizonKind::kPassthrough);
 }
 
@@ -1518,8 +1581,11 @@ TEST(PlannerQueryTest, BuildsDetachDeleteMutatingPattern) {
   ASSERT_EQ(main.query_graph.mutating_patterns.size(), 1U);
   const ir::MutatingPattern &mutation = main.query_graph.mutating_patterns[0];
   EXPECT_EQ(mutation.kind, ir::MutatingPatternKind::kDelete);
-  EXPECT_TRUE(mutation.detach);
-  EXPECT_EQ(mutation.delete_expressions.size(), 1U);
+  ASSERT_EQ(mutation.delete_patterns.size(), 1U);
+  EXPECT_TRUE(mutation.delete_patterns[0].detach);
+  ASSERT_NE(mutation.delete_patterns[0].expression, nullptr);
+  EXPECT_EQ(ast::ExpressionToString(*mutation.delete_patterns[0].expression),
+            "n");
 }
 
 TEST(PlannerQueryTest, IsolatesMergeInPassthroughSegment) {
@@ -1541,10 +1607,16 @@ TEST(PlannerQueryTest, IsolatesMergeInPassthroughSegment) {
   const ir::MutatingPattern &merge =
       merge_segment.query_graph.mutating_patterns[0];
   EXPECT_EQ(merge.kind, ir::MutatingPatternKind::kMerge);
-  EXPECT_NE(merge.pattern_part, nullptr);
-  ASSERT_EQ(merge.merge_actions.size(), 1U);
-  EXPECT_FALSE(merge.merge_actions[0].on_match);
-  EXPECT_NE(merge.merge_actions[0].set, nullptr);
+  ASSERT_EQ(merge.merge.create_pattern.nodes.size(), 1U);
+  EXPECT_EQ(merge.merge.create_pattern.nodes[0].variable, "n");
+  EXPECT_TRUE(Contains(merge.merge.match_graph.pattern_nodes, "n"));
+  EXPECT_TRUE(merge.merge.match_graph.pattern_relationships.empty());
+  ASSERT_EQ(merge.merge.actions.size(), 1U);
+  EXPECT_FALSE(merge.merge.actions[0].on_match);
+  ASSERT_EQ(merge.merge.actions[0].set_patterns.size(), 1U);
+  EXPECT_EQ(merge.merge.actions[0].set_patterns[0].kind,
+            ir::SetMutatingPatternKind::kSetProperty);
+  EXPECT_EQ(merge.merge.actions[0].set_patterns[0].property_key, "created");
   EXPECT_EQ(merge_segment.horizon.kind, ir::QueryHorizonKind::kPassthrough);
   ASSERT_NE(merge_segment.tail, nullptr);
 
@@ -1553,6 +1625,55 @@ TEST(PlannerQueryTest, IsolatesMergeInPassthroughSegment) {
   EXPECT_TRUE(Contains(return_segment.query_graph.argument_ids, "n"));
   EXPECT_EQ(return_segment.horizon.kind,
             ir::QueryHorizonKind::kRegularProjection);
+}
+
+TEST(PlannerQueryTest, BuildsRelationshipMergeMatchGraph) {
+  auto statement = ParseOrFail(
+      "MATCH (m) MERGE (m)-[r:KNOWS {since: 2020}]->"
+      "(n:Person {id: m.id}) ON MATCH SET r.seen = true RETURN r");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::SinglePlannerQuery &match_segment = planner_query->RequireSingle();
+  ASSERT_NE(match_segment.tail, nullptr);
+  const ir::SinglePlannerQuery &merge_segment = *match_segment.tail;
+
+  ASSERT_EQ(merge_segment.query_graph.mutating_patterns.size(), 1U);
+  const ir::MutatingPattern &merge =
+      merge_segment.query_graph.mutating_patterns[0];
+  ASSERT_EQ(merge.kind, ir::MutatingPatternKind::kMerge);
+  EXPECT_TRUE(Contains(merge.merge.match_graph.argument_ids, "m"));
+  ASSERT_EQ(merge.merge.create_pattern.nodes.size(), 2U);
+  EXPECT_TRUE(merge.merge.create_pattern.nodes[0].previously_bound);
+  EXPECT_FALSE(merge.merge.create_pattern.nodes[1].previously_bound);
+  ASSERT_EQ(merge.merge.create_pattern.commands.size(), 2U);
+  EXPECT_EQ(merge.merge.create_pattern.commands[0].kind,
+            ir::CreateEntityKind::kNode);
+  EXPECT_EQ(merge.merge.create_pattern.commands[0].index, 1U);
+  EXPECT_EQ(merge.merge.create_pattern.commands[1].kind,
+            ir::CreateEntityKind::kRelationship);
+  EXPECT_EQ(merge.merge.create_pattern.commands[1].index, 0U);
+  EXPECT_TRUE(Contains(merge.merge.match_graph.pattern_nodes, "m"));
+  EXPECT_TRUE(Contains(merge.merge.match_graph.pattern_nodes, "n"));
+  ASSERT_EQ(merge.merge.match_graph.pattern_relationships.size(), 1U);
+  EXPECT_EQ(merge.merge.match_graph.pattern_relationships[0].variable, "r");
+  EXPECT_EQ(merge.merge.match_graph.pattern_relationships[0].types,
+            std::vector<std::string>({"KNOWS"}));
+  ASSERT_EQ(merge.merge.match_graph.node_labels.size(), 1U);
+  EXPECT_EQ(merge.merge.match_graph.node_labels[0].variable, "n");
+  EXPECT_EQ(merge.merge.match_graph.node_labels[0].labels,
+            std::vector<std::string>({"Person"}));
+  ASSERT_EQ(merge.merge.match_graph.property_equalities.size(), 2U);
+  EXPECT_EQ(merge.merge.match_graph.property_equalities[0].variable, "n");
+  EXPECT_EQ(merge.merge.match_graph.property_equalities[0].property_key, "id");
+  EXPECT_EQ(merge.merge.match_graph.property_equalities[1].variable, "r");
+  EXPECT_EQ(merge.merge.match_graph.property_equalities[1].property_key,
+            "since");
+  ASSERT_EQ(merge.merge.actions.size(), 1U);
+  EXPECT_TRUE(merge.merge.actions[0].on_match);
+  ASSERT_EQ(merge.merge.actions[0].set_patterns.size(), 1U);
+  EXPECT_EQ(merge.merge.actions[0].set_patterns[0].property_key, "seen");
 }
 
 TEST(PlannerQueryTest, SinglePlannerQueryIsMoveOnly) {

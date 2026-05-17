@@ -223,22 +223,35 @@ class PlannerQueryPrinter {
       switch (mutating_pattern.kind) {
         case MutatingPatternKind::kMerge:
           Line("merge_actions: " +
-               std::to_string(mutating_pattern.merge_actions.size()));
+               std::to_string(mutating_pattern.merge.actions.size()));
+          Line("match_nodes: " +
+               std::to_string(
+                   mutating_pattern.merge.match_graph.pattern_nodes.size()));
+          Line("match_relationships: " +
+               std::to_string(mutating_pattern.merge.match_graph
+                                  .pattern_relationships.size()));
           break;
-        case MutatingPatternKind::kDelete:
-          Line(std::string("detach: ") +
-               (mutating_pattern.detach ? "true" : "false"));
+        case MutatingPatternKind::kDelete: {
+          const bool detach = !mutating_pattern.delete_patterns.empty() &&
+                              mutating_pattern.delete_patterns.front().detach;
+          Line(std::string("detach: ") + (detach ? "true" : "false"));
           Line("expressions: " +
-               std::to_string(mutating_pattern.delete_expressions.size()));
+               std::to_string(mutating_pattern.delete_patterns.size()));
           break;
+        }
         case MutatingPatternKind::kSet:
-          Line("items: " + std::to_string(mutating_pattern.set_items.size()));
+          Line("items: " +
+               std::to_string(mutating_pattern.set_patterns.size()));
           break;
         case MutatingPatternKind::kRemove:
           Line("items: " +
-               std::to_string(mutating_pattern.remove_items.size()));
+               std::to_string(mutating_pattern.remove_patterns.size()));
           break;
         case MutatingPatternKind::kCreate:
+          Line("nodes: " +
+               std::to_string(mutating_pattern.create.nodes.size()));
+          Line("relationships: " +
+               std::to_string(mutating_pattern.create.relationships.size()));
           break;
       }
       Dedent();

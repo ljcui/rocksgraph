@@ -99,21 +99,123 @@ enum class MutatingPatternKind {
   kRemove,
 };
 
+struct PropertyMapEntry {
+  std::string key;
+  const ast::Expression *value = nullptr;
+};
+
+struct PatternPropertyMap {
+  std::vector<PropertyMapEntry> entries;
+  const ast::Parameter *parameter = nullptr;
+
+  [[nodiscard]] bool empty() const {
+    return entries.empty() && parameter == nullptr;
+  }
+};
+
+struct CreateNodePattern {
+  std::string variable;
+  std::vector<std::string> labels;
+  PatternPropertyMap properties;
+  bool previously_bound = false;
+};
+
+struct CreateRelationshipPattern {
+  std::string variable;
+  std::string left_node;
+  std::string right_node;
+  Direction direction = Direction::kBoth;
+  std::vector<std::string> types;
+  PatternPropertyMap properties;
+};
+
+enum class CreateEntityKind {
+  kNode,
+  kRelationship,
+};
+
+struct CreateEntityCommand {
+  CreateEntityKind kind = CreateEntityKind::kNode;
+  std::size_t index = 0;
+};
+
+struct CreatePattern {
+  std::unordered_set<LogicalVariable> path_variables;
+  std::vector<CreateNodePattern> nodes;
+  std::vector<CreateRelationshipPattern> relationships;
+  std::vector<CreateEntityCommand> commands;
+};
+
+enum class SetMutatingPatternKind {
+  kSetProperty,
+  kSetExactPropertiesFromMap,
+  kSetIncludingPropertiesFromMap,
+  kSetLabels,
+};
+
+struct SetMutatingPattern {
+  SetMutatingPatternKind kind = SetMutatingPatternKind::kSetProperty;
+  const ast::Expression *entity = nullptr;
+  std::string property_key;
+  const ast::Expression *value = nullptr;
+  std::vector<std::string> labels;
+};
+
+enum class RemoveMutatingPatternKind {
+  kRemoveProperty,
+  kRemoveLabels,
+};
+
+struct RemoveMutatingPattern {
+  RemoveMutatingPatternKind kind = RemoveMutatingPatternKind::kRemoveProperty;
+  const ast::Expression *entity = nullptr;
+  std::string property_key;
+  std::vector<std::string> labels;
+};
+
+struct DeleteExpressionPattern {
+  const ast::Expression *expression = nullptr;
+  bool detach = false;
+};
+
+struct PatternLabelPredicate {
+  std::string variable;
+  std::vector<std::string> labels;
+};
+
+struct PatternPropertyEquality {
+  std::string variable;
+  std::string property_key;
+  const ast::Expression *value = nullptr;
+};
+
+struct MergeMatchGraph {
+  std::unordered_set<LogicalVariable> pattern_nodes;
+  std::vector<PatternRelationship> pattern_relationships;
+  std::vector<PatternLabelPredicate> node_labels;
+  std::vector<PatternPropertyEquality> property_equalities;
+  std::unordered_set<LogicalVariable> argument_ids;
+};
+
 struct MergeActionPattern {
   bool on_match = false;
-  const ast::Set *set = nullptr;
+  std::vector<SetMutatingPattern> set_patterns;
+};
+
+struct MergePattern {
+  CreatePattern create_pattern;
+  MergeMatchGraph match_graph;
+  std::vector<MergeActionPattern> actions;
 };
 
 struct MutatingPattern {
   MutatingPatternKind kind = MutatingPatternKind::kCreate;
   const ast::UpdatingClause *clause = nullptr;
-  const ast::Pattern *pattern = nullptr;
-  const ast::PatternPart *pattern_part = nullptr;
-  std::vector<MergeActionPattern> merge_actions;
-  bool detach = false;
-  std::vector<const ast::Expression *> delete_expressions;
-  std::vector<const ast::SetItem *> set_items;
-  std::vector<const ast::RemoveItem *> remove_items;
+  CreatePattern create;
+  MergePattern merge;
+  std::vector<SetMutatingPattern> set_patterns;
+  std::vector<DeleteExpressionPattern> delete_patterns;
+  std::vector<RemoveMutatingPattern> remove_patterns;
 };
 
 struct QueryGraphComponent {

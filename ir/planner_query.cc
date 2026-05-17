@@ -98,67 +98,74 @@ const ast::ExistentialSubquery *AsExistentialSubquery(
   return ast::CastAst<ast::ExistentialSubquery>(unwrapped);
 }
 
-void AddNodePatternSymbols(std::unordered_set<std::string> *symbols,
-                           const ast::NodePattern *node) {
+PatternPropertyMap BuildPropertyMap(const ast::Properties *properties) {
+  PatternPropertyMap out;
+  if (properties == nullptr) {
+    return out;
+  }
+  if (properties->map != nullptr) {
+    out.entries.reserve(properties->map->entries.size());
+    for (const auto &entry : properties->map->entries) {
+      out.entries.push_back({.key = entry.first, .value = entry.second.get()});
+    }
+    return out;
+  }
+  out.parameter = properties->parameter.get();
+  return out;
+}
+
+void AddCreatePatternSymbols(std::unordered_set<std::string> *symbols,
+                             const CreatePattern &pattern) {
   CHECK(symbols != nullptr, common::InternalError, "symbol set is null");
-  if (node != nullptr && !node->variable.empty()) {
-    symbols->insert(node->variable);
+  symbols->insert(pattern.path_variables.begin(), pattern.path_variables.end());
+  for (const auto &node : pattern.nodes) {
+    if (!node.variable.empty()) {
+      symbols->insert(node.variable);
+    }
+  }
+  for (const auto &relationship : pattern.relationships) {
+    if (!relationship.variable.empty()) {
+      symbols->insert(relationship.variable);
+    }
+    if (!relationship.left_node.empty()) {
+      symbols->insert(relationship.left_node);
+    }
+    if (!relationship.right_node.empty()) {
+      symbols->insert(relationship.right_node);
+    }
   }
 }
 
-void AddRelationshipPatternSymbols(
-    std::unordered_set<std::string> *symbols,
-    const ast::RelationshipPattern *relationship) {
+void AddCreatePatternNodeSymbols(std::unordered_set<std::string> *symbols,
+                                 const CreatePattern &pattern) {
   CHECK(symbols != nullptr, common::InternalError, "symbol set is null");
-  if (relationship == nullptr || relationship->detail == nullptr ||
-      relationship->detail->variable.empty()) {
-    return;
-  }
-  symbols->insert(relationship->detail->variable);
-}
-
-void AddPatternElementSymbols(std::unordered_set<std::string> *symbols,
-                              const ast::PatternElement *element) {
-  CHECK(symbols != nullptr, common::InternalError, "symbol set is null");
-  if (element == nullptr) {
-    return;
-  }
-  AddNodePatternSymbols(symbols, element->node_pattern.get());
-  for (const auto &link : element->chain) {
-    AddRelationshipPatternSymbols(symbols, link.first.get());
-    AddNodePatternSymbols(symbols, link.second.get());
+  for (const auto &node : pattern.nodes) {
+    if (!node.variable.empty()) {
+      symbols->insert(node.variable);
+    }
   }
 }
 
-void AddPatternPartSymbols(std::unordered_set<std::string> *symbols,
-                           const ast::PatternPart *part) {
-  CHECK(symbols != nullptr, common::InternalError, "symbol set is null");
-  if (part == nullptr) {
-    return;
-  }
-  if (!part->variable.empty()) {
-    symbols->insert(part->variable);
-  }
-  AddPatternElementSymbols(symbols, part->element.get());
-}
-
-void AddPatternSymbols(std::unordered_set<std::string> *symbols,
-                       const ast::Pattern *pattern) {
-  CHECK(symbols != nullptr, common::InternalError, "symbol set is null");
-  if (pattern == nullptr) {
-    return;
-  }
-  for (const auto &part : pattern->parts) {
-    AddPatternPartSymbols(symbols, part.get());
-  }
+std::unordered_set<std::string> CreatePatternSymbols(
+    const CreatePattern &pattern) {
+  std::unordered_set<std::string> symbols;
+  AddCreatePatternSymbols(&symbols, pattern);
+  return symbols;
 }
 
 std::unordered_set<std::string> MutatingPatternAvailableSymbols(
     const MutatingPattern &mutating_pattern) {
-  std::unordered_set<std::string> symbols;
-  AddPatternSymbols(&symbols, mutating_pattern.pattern);
-  AddPatternPartSymbols(&symbols, mutating_pattern.pattern_part);
-  return symbols;
+  switch (mutating_pattern.kind) {
+    case MutatingPatternKind::kCreate:
+      return CreatePatternSymbols(mutating_pattern.create);
+    case MutatingPatternKind::kMerge:
+      return CreatePatternSymbols(mutating_pattern.merge.create_pattern);
+    case MutatingPatternKind::kSet:
+    case MutatingPatternKind::kDelete:
+    case MutatingPatternKind::kRemove:
+      return {};
+  }
+  THROW(common::InternalError, "unknown mutating pattern kind");
 }
 
 std::unordered_set<std::string> QueryGraphLocalAvailableSymbols(
@@ -234,96 +241,65 @@ void AddExpressionDependencySymbols(
   AddSymbols(dependencies, ast::CollectExpressionDependencies(*expression));
 }
 
-void AddPropertiesDependencySymbols(
+void AddPropertyMapDependencySymbols(
     std::unordered_set<std::string> *dependencies,
-    const ast::Properties *properties) {
+    const PatternPropertyMap &properties) {
   CHECK(dependencies != nullptr, common::InternalError,
         "dependency set is null");
-  if (properties == nullptr || properties->map == nullptr) {
-    return;
+  for (const auto &entry : properties.entries) {
+    AddExpressionDependencySymbols(dependencies, entry.value);
   }
-  for (const auto &entry : properties->map->entries) {
-    AddExpressionDependencySymbols(dependencies, entry.second.get());
-  }
+  AddExpressionDependencySymbols(dependencies, properties.parameter);
 }
 
-void AddNodePatternDependencySymbols(
+void AddCreatePatternDependencySymbols(
     std::unordered_set<std::string> *dependencies,
-    const ast::NodePattern *node) {
+    const CreatePattern &pattern) {
   CHECK(dependencies != nullptr, common::InternalError,
         "dependency set is null");
-  if (node == nullptr) {
-    return;
+  AddCreatePatternSymbols(dependencies, pattern);
+  for (const auto &node : pattern.nodes) {
+    AddPropertyMapDependencySymbols(dependencies, node.properties);
   }
-  AddSymbol(dependencies, node->variable);
-  AddPropertiesDependencySymbols(dependencies, node->properties.get());
+  for (const auto &relationship : pattern.relationships) {
+    AddPropertyMapDependencySymbols(dependencies, relationship.properties);
+  }
 }
 
-void AddRelationshipPatternDependencySymbols(
+void AddSetMutatingPatternDependencySymbols(
     std::unordered_set<std::string> *dependencies,
-    const ast::RelationshipPattern *relationship) {
+    const SetMutatingPattern &pattern) {
   CHECK(dependencies != nullptr, common::InternalError,
         "dependency set is null");
-  if (relationship == nullptr || relationship->detail == nullptr) {
-    return;
-  }
-  AddSymbol(dependencies, relationship->detail->variable);
-  AddPropertiesDependencySymbols(dependencies,
-                                 relationship->detail->properties.get());
+  AddExpressionDependencySymbols(dependencies, pattern.entity);
+  AddExpressionDependencySymbols(dependencies, pattern.value);
 }
 
-void AddPatternElementDependencySymbols(
+void AddSetMutatingPatternDependencySymbols(
     std::unordered_set<std::string> *dependencies,
-    const ast::PatternElement *element) {
+    const std::vector<SetMutatingPattern> &patterns) {
   CHECK(dependencies != nullptr, common::InternalError,
         "dependency set is null");
-  if (element == nullptr) {
-    return;
-  }
-  AddNodePatternDependencySymbols(dependencies, element->node_pattern.get());
-  for (const auto &link : element->chain) {
-    AddRelationshipPatternDependencySymbols(dependencies, link.first.get());
-    AddNodePatternDependencySymbols(dependencies, link.second.get());
+  for (const auto &pattern : patterns) {
+    AddSetMutatingPatternDependencySymbols(dependencies, pattern);
   }
 }
 
-void AddPatternPartDependencySymbols(
+void AddRemoveMutatingPatternDependencySymbols(
     std::unordered_set<std::string> *dependencies,
-    const ast::PatternPart *part) {
+    const RemoveMutatingPattern &pattern) {
   CHECK(dependencies != nullptr, common::InternalError,
         "dependency set is null");
-  if (part == nullptr) {
-    return;
-  }
-  AddSymbol(dependencies, part->variable);
-  AddPatternElementDependencySymbols(dependencies, part->element.get());
+  AddExpressionDependencySymbols(dependencies, pattern.entity);
 }
 
-void AddPatternDependencySymbols(std::unordered_set<std::string> *dependencies,
-                                 const ast::Pattern *pattern) {
+void AddRemoveMutatingPatternDependencySymbols(
+    std::unordered_set<std::string> *dependencies,
+    const std::vector<RemoveMutatingPattern> &patterns) {
   CHECK(dependencies != nullptr, common::InternalError,
         "dependency set is null");
-  if (pattern == nullptr) {
-    return;
-  }
-  for (const auto &part : pattern->parts) {
-    AddPatternPartDependencySymbols(dependencies, part.get());
-  }
-}
-
-void AddSetDependencySymbols(std::unordered_set<std::string> *dependencies,
-                             const ast::Set *set) {
-  CHECK(dependencies != nullptr, common::InternalError,
-        "dependency set is null");
-  if (set == nullptr) {
-    return;
-  }
-  for (const auto &item : set->items) {
-    if (item == nullptr) {
-      continue;
-    }
-    AddExpressionDependencySymbols(dependencies, item->target.get());
-    AddExpressionDependencySymbols(dependencies, item->value.get());
+  for (const auto &pattern : patterns) {
+    AddRemoveMutatingPatternDependencySymbols(dependencies, pattern);
   }
 }
 
@@ -332,36 +308,28 @@ std::unordered_set<std::string> MutatingPatternDependencies(
   std::unordered_set<std::string> dependencies;
   switch (mutating_pattern.kind) {
     case MutatingPatternKind::kCreate:
-      AddPatternDependencySymbols(&dependencies, mutating_pattern.pattern);
+      AddCreatePatternDependencySymbols(&dependencies, mutating_pattern.create);
       break;
     case MutatingPatternKind::kMerge:
-      AddPatternPartDependencySymbols(&dependencies,
-                                      mutating_pattern.pattern_part);
-      for (const auto &action : mutating_pattern.merge_actions) {
-        AddSetDependencySymbols(&dependencies, action.set);
+      AddCreatePatternDependencySymbols(&dependencies,
+                                        mutating_pattern.merge.create_pattern);
+      for (const auto &action : mutating_pattern.merge.actions) {
+        AddSetMutatingPatternDependencySymbols(&dependencies,
+                                               action.set_patterns);
       }
       break;
     case MutatingPatternKind::kSet:
-      for (const auto *item : mutating_pattern.set_items) {
-        if (item == nullptr) {
-          continue;
-        }
-        AddExpressionDependencySymbols(&dependencies, item->target.get());
-        AddExpressionDependencySymbols(&dependencies, item->value.get());
-      }
+      AddSetMutatingPatternDependencySymbols(&dependencies,
+                                             mutating_pattern.set_patterns);
       break;
     case MutatingPatternKind::kDelete:
-      for (const auto *expression : mutating_pattern.delete_expressions) {
-        AddExpressionDependencySymbols(&dependencies, expression);
+      for (const auto &pattern : mutating_pattern.delete_patterns) {
+        AddExpressionDependencySymbols(&dependencies, pattern.expression);
       }
       break;
     case MutatingPatternKind::kRemove:
-      for (const auto *item : mutating_pattern.remove_items) {
-        if (item == nullptr) {
-          continue;
-        }
-        AddExpressionDependencySymbols(&dependencies, item->target.get());
-      }
+      AddRemoveMutatingPatternDependencySymbols(
+          &dependencies, mutating_pattern.remove_patterns);
       break;
   }
   return dependencies;
@@ -1079,6 +1047,284 @@ class PatternConverter {
   QueryGraph *graph_ = nullptr;
 };
 
+Direction PatternDirection(const ast::RelationshipPattern &pattern) {
+  if (pattern.left_arrow) {
+    return Direction::kIncoming;
+  }
+  if (pattern.right_arrow) {
+    return Direction::kOutgoing;
+  }
+  return Direction::kBoth;
+}
+
+class CreatePatternConverter {
+ public:
+  explicit CreatePatternConverter(
+      std::unordered_set<LogicalVariable> existing_nodes = {})
+      : existing_nodes_(std::move(existing_nodes)) {}
+
+  CreatePattern Convert(const ast::Pattern &pattern) {
+    CHECK(!pattern.parts.empty(), common::InvalidArgumentError,
+          Missing("updating pattern part"));
+    for (const auto &part : pattern.parts) {
+      CHECK(part != nullptr, common::InvalidArgumentError,
+            Missing("updating pattern part"));
+      AddPatternPart(*part);
+    }
+    return std::move(pattern_);
+  }
+
+  CreatePattern Convert(const ast::PatternPart &part) {
+    AddPatternPart(part);
+    return std::move(pattern_);
+  }
+
+ private:
+  void AddPatternPart(const ast::PatternPart &part) {
+    if (!part.variable.empty()) {
+      pattern_.path_variables.insert(part.variable);
+    }
+    CHECK(part.element != nullptr, common::InvalidArgumentError,
+          Missing("updating pattern element"));
+    AddPatternElement(*part.element);
+  }
+
+  void AddPatternElement(const ast::PatternElement &element) {
+    CHECK(element.node_pattern != nullptr, common::InvalidArgumentError,
+          Missing("updating node pattern"));
+    std::string left = AddNode(*element.node_pattern);
+    for (const auto &link : element.chain) {
+      CHECK(link.first != nullptr, common::InvalidArgumentError,
+            Missing("updating relationship pattern"));
+      CHECK(link.second != nullptr, common::InvalidArgumentError,
+            Missing("updating node pattern"));
+      std::string right = AddNode(*link.second);
+      AddRelationship(*link.first, left, right);
+      left = std::move(right);
+    }
+  }
+
+  std::string AddNode(const ast::NodePattern &node) {
+    CHECK(!node.variable.empty(), common::InvalidArgumentError,
+          Unsupported("anonymous node in updating pattern"));
+    if (node_indexes_.contains(node.variable)) {
+      CHECK(node.labels.empty() && !node.properties,
+            common::InvalidArgumentError,
+            Unsupported("reused updating node with labels or properties"));
+      return node.variable;
+    }
+
+    CreateNodePattern create_node;
+    create_node.variable = node.variable;
+    create_node.labels = node.labels;
+    create_node.properties = BuildPropertyMap(node.properties.get());
+    create_node.previously_bound = existing_nodes_.contains(node.variable);
+    if (create_node.previously_bound) {
+      CHECK(create_node.labels.empty() && create_node.properties.empty(),
+            common::InvalidArgumentError,
+            Unsupported("bound updating node with labels or properties"));
+    }
+
+    const std::size_t index = pattern_.nodes.size();
+    pattern_.nodes.push_back(std::move(create_node));
+    node_indexes_.emplace(node.variable, index);
+    if (!pattern_.nodes.back().previously_bound) {
+      pattern_.commands.push_back(
+          {.kind = CreateEntityKind::kNode, .index = index});
+    }
+    return node.variable;
+  }
+
+  void AddRelationship(const ast::RelationshipPattern &pattern,
+                       const std::string &left, const std::string &right) {
+    const ast::RelationshipDetail *detail = pattern.detail.get();
+    CHECK(detail != nullptr && !detail->variable.empty(),
+          common::InvalidArgumentError,
+          Unsupported("anonymous relationship in updating pattern"));
+    CHECK(!detail->range.has_value(), common::InvalidArgumentError,
+          Unsupported("variable-length relationship in updating pattern"));
+
+    CreateRelationshipPattern create_relationship;
+    create_relationship.variable = detail->variable;
+    create_relationship.left_node = left;
+    create_relationship.right_node = right;
+    create_relationship.direction = PatternDirection(pattern);
+    create_relationship.types = detail->types;
+    create_relationship.properties = BuildPropertyMap(detail->properties.get());
+
+    const std::size_t index = pattern_.relationships.size();
+    pattern_.relationships.push_back(std::move(create_relationship));
+    pattern_.commands.push_back(
+        {.kind = CreateEntityKind::kRelationship, .index = index});
+  }
+
+  CreatePattern pattern_;
+  std::unordered_map<std::string, std::size_t> node_indexes_;
+  std::unordered_set<LogicalVariable> existing_nodes_;
+};
+
+CreatePattern BuildCreatePattern(
+    const ast::Pattern &pattern,
+    std::unordered_set<LogicalVariable> existing_nodes = {}) {
+  CreatePatternConverter converter(std::move(existing_nodes));
+  return converter.Convert(pattern);
+}
+
+CreatePattern BuildCreatePattern(
+    const ast::PatternPart &part,
+    std::unordered_set<LogicalVariable> existing_nodes = {}) {
+  CreatePatternConverter converter(std::move(existing_nodes));
+  return converter.Convert(part);
+}
+
+PatternRelationship ToPatternRelationship(
+    const CreateRelationshipPattern &relationship) {
+  PatternRelationship out;
+  out.variable = relationship.variable;
+  out.left_node = relationship.left_node;
+  out.right_node = relationship.right_node;
+  out.direction = relationship.direction;
+  out.types = relationship.types;
+  return out;
+}
+
+MergeMatchGraph BuildMergeMatchGraph(
+    const CreatePattern &pattern,
+    std::unordered_set<LogicalVariable> argument_ids) {
+  MergeMatchGraph match_graph;
+  match_graph.argument_ids = std::move(argument_ids);
+  for (const auto &node : pattern.nodes) {
+    AddSymbol(&match_graph.pattern_nodes, node.variable);
+    if (!node.labels.empty()) {
+      match_graph.node_labels.push_back(
+          {.variable = node.variable, .labels = node.labels});
+    }
+    for (const auto &entry : node.properties.entries) {
+      match_graph.property_equalities.push_back({.variable = node.variable,
+                                                 .property_key = entry.key,
+                                                 .value = entry.value});
+    }
+  }
+  for (const auto &relationship : pattern.relationships) {
+    AddSymbol(&match_graph.pattern_nodes, relationship.left_node);
+    AddSymbol(&match_graph.pattern_nodes, relationship.right_node);
+    match_graph.pattern_relationships.push_back(
+        ToPatternRelationship(relationship));
+    for (const auto &entry : relationship.properties.entries) {
+      match_graph.property_equalities.push_back(
+          {.variable = relationship.variable,
+           .property_key = entry.key,
+           .value = entry.value});
+    }
+  }
+  return match_graph;
+}
+
+SetMutatingPattern BuildSetMutatingPattern(const ast::SetItem &item) {
+  SetMutatingPattern pattern;
+  switch (item.type) {
+    case ast::SetItem::Type::kProperty: {
+      const ast::PropertyExpression *property =
+          AsPropertyExpression(item.target.get());
+      CHECK(property != nullptr, common::InvalidArgumentError,
+            Missing("SET property target"));
+      pattern.kind = SetMutatingPatternKind::kSetProperty;
+      pattern.entity = property->object.get();
+      pattern.property_key = property->property_key;
+      pattern.value = item.value.get();
+      return pattern;
+    }
+    case ast::SetItem::Type::kVariable:
+      pattern.kind =
+          item.plus_equal
+              ? SetMutatingPatternKind::kSetIncludingPropertiesFromMap
+              : SetMutatingPatternKind::kSetExactPropertiesFromMap;
+      pattern.entity = item.target.get();
+      pattern.value = item.value.get();
+      return pattern;
+    case ast::SetItem::Type::kLabels:
+      pattern.kind = SetMutatingPatternKind::kSetLabels;
+      pattern.entity = item.target.get();
+      pattern.labels = item.labels;
+      return pattern;
+  }
+  THROW(common::InternalError, "unknown SET item kind");
+}
+
+std::vector<SetMutatingPattern> BuildSetMutatingPatterns(const ast::Set &set) {
+  std::vector<SetMutatingPattern> patterns;
+  patterns.reserve(set.items.size());
+  for (const auto &item : set.items) {
+    CHECK(item != nullptr, common::InvalidArgumentError, Missing("SET item"));
+    patterns.push_back(BuildSetMutatingPattern(*item));
+  }
+  return patterns;
+}
+
+RemoveMutatingPattern BuildRemoveMutatingPattern(const ast::RemoveItem &item) {
+  RemoveMutatingPattern pattern;
+  switch (item.type) {
+    case ast::RemoveItem::Type::kProperty: {
+      const ast::PropertyExpression *property =
+          AsPropertyExpression(item.target.get());
+      CHECK(property != nullptr, common::InvalidArgumentError,
+            Missing("REMOVE property target"));
+      pattern.kind = RemoveMutatingPatternKind::kRemoveProperty;
+      pattern.entity = property->object.get();
+      pattern.property_key = property->property_key;
+      return pattern;
+    }
+    case ast::RemoveItem::Type::kLabels:
+      pattern.kind = RemoveMutatingPatternKind::kRemoveLabels;
+      pattern.entity = item.target.get();
+      pattern.labels = item.labels;
+      return pattern;
+  }
+  THROW(common::InternalError, "unknown REMOVE item kind");
+}
+
+std::vector<RemoveMutatingPattern> BuildRemoveMutatingPatterns(
+    const ast::Remove &remove) {
+  std::vector<RemoveMutatingPattern> patterns;
+  patterns.reserve(remove.items.size());
+  for (const auto &item : remove.items) {
+    CHECK(item != nullptr, common::InvalidArgumentError,
+          Missing("REMOVE item"));
+    patterns.push_back(BuildRemoveMutatingPattern(*item));
+  }
+  return patterns;
+}
+
+MergePattern BuildMergePattern(
+    const ast::Merge &merge,
+    const std::unordered_set<std::string> &available_arguments,
+    std::unordered_set<LogicalVariable> existing_nodes) {
+  CHECK(merge.pattern_part != nullptr, common::InvalidArgumentError,
+        Missing("MERGE pattern"));
+  MergePattern pattern;
+  pattern.create_pattern =
+      BuildCreatePattern(*merge.pattern_part, std::move(existing_nodes));
+  pattern.actions.reserve(merge.actions.size());
+  for (const auto &action : merge.actions) {
+    CHECK(action.second != nullptr, common::InvalidArgumentError,
+          Missing("MERGE action SET"));
+    MergeActionPattern action_pattern;
+    action_pattern.on_match = action.first;
+    action_pattern.set_patterns = BuildSetMutatingPatterns(*action.second);
+    pattern.actions.push_back(std::move(action_pattern));
+  }
+
+  std::unordered_set<std::string> dependencies;
+  AddCreatePatternDependencySymbols(&dependencies, pattern.create_pattern);
+  for (const auto &action : pattern.actions) {
+    AddSetMutatingPatternDependencySymbols(&dependencies, action.set_patterns);
+  }
+  pattern.match_graph =
+      BuildMergeMatchGraph(pattern.create_pattern,
+                           IntersectSymbols(dependencies, available_arguments));
+  return pattern;
+}
+
 class QueryGraphBuilder {
  public:
   explicit QueryGraphBuilder(
@@ -1146,8 +1392,29 @@ class QueryGraphBuilder {
   QueryGraph Release() { return std::move(graph_); }
 
  private:
-  static MutatingPattern BuildMutatingPattern(
-      const ast::UpdatingClause &clause) {
+  [[nodiscard]] std::unordered_set<LogicalVariable> CurrentNodeSymbols() const {
+    std::unordered_set<LogicalVariable> symbols = graph_.argument_ids;
+    AddSymbols(&symbols, graph_.pattern_nodes);
+    for (const auto &mutating_pattern : graph_.mutating_patterns) {
+      switch (mutating_pattern.kind) {
+        case MutatingPatternKind::kCreate:
+          AddCreatePatternNodeSymbols(&symbols, mutating_pattern.create);
+          break;
+        case MutatingPatternKind::kMerge:
+          AddSymbols(&symbols,
+                     mutating_pattern.merge.match_graph.pattern_nodes);
+          break;
+        case MutatingPatternKind::kSet:
+        case MutatingPatternKind::kDelete:
+        case MutatingPatternKind::kRemove:
+          break;
+      }
+    }
+    return symbols;
+  }
+
+  MutatingPattern BuildMutatingPattern(
+      const ast::UpdatingClause &clause) const {
     MutatingPattern mutating_pattern;
     mutating_pattern.clause = &clause;
     switch (clause.node_type) {
@@ -1156,56 +1423,39 @@ class QueryGraphBuilder {
         CHECK(create.pattern != nullptr, common::InvalidArgumentError,
               Missing("CREATE pattern"));
         mutating_pattern.kind = MutatingPatternKind::kCreate;
-        mutating_pattern.pattern = create.pattern.get();
+        mutating_pattern.create =
+            BuildCreatePattern(*create.pattern, CurrentNodeSymbols());
         return mutating_pattern;
       }
       case ast::ASTNodeType::kMerge: {
         const auto &merge = ast::CastAst<ast::Merge>(clause);
-        CHECK(merge.pattern_part != nullptr, common::InvalidArgumentError,
-              Missing("MERGE pattern"));
         mutating_pattern.kind = MutatingPatternKind::kMerge;
-        mutating_pattern.pattern_part = merge.pattern_part.get();
-        mutating_pattern.merge_actions.reserve(merge.actions.size());
-        for (const auto &action : merge.actions) {
-          CHECK(action.second != nullptr, common::InvalidArgumentError,
-                Missing("MERGE action SET"));
-          mutating_pattern.merge_actions.push_back(
-              {.on_match = action.first, .set = action.second.get()});
-        }
+        mutating_pattern.merge =
+            BuildMergePattern(merge, graph_.argument_ids, CurrentNodeSymbols());
         return mutating_pattern;
       }
       case ast::ASTNodeType::kSet: {
         const auto &set = ast::CastAst<ast::Set>(clause);
         mutating_pattern.kind = MutatingPatternKind::kSet;
-        mutating_pattern.set_items.reserve(set.items.size());
-        for (const auto &item : set.items) {
-          CHECK(item != nullptr, common::InvalidArgumentError,
-                Missing("SET item"));
-          mutating_pattern.set_items.push_back(item.get());
-        }
+        mutating_pattern.set_patterns = BuildSetMutatingPatterns(set);
         return mutating_pattern;
       }
       case ast::ASTNodeType::kDelete: {
         const auto &del = ast::CastAst<ast::Delete>(clause);
         mutating_pattern.kind = MutatingPatternKind::kDelete;
-        mutating_pattern.detach = del.detach;
-        mutating_pattern.delete_expressions.reserve(del.expressions.size());
+        mutating_pattern.delete_patterns.reserve(del.expressions.size());
         for (const auto &expression : del.expressions) {
           CHECK(expression != nullptr, common::InvalidArgumentError,
                 Missing("DELETE expression"));
-          mutating_pattern.delete_expressions.push_back(expression.get());
+          mutating_pattern.delete_patterns.push_back(
+              {.expression = expression.get(), .detach = del.detach});
         }
         return mutating_pattern;
       }
       case ast::ASTNodeType::kRemove: {
         const auto &remove = ast::CastAst<ast::Remove>(clause);
         mutating_pattern.kind = MutatingPatternKind::kRemove;
-        mutating_pattern.remove_items.reserve(remove.items.size());
-        for (const auto &item : remove.items) {
-          CHECK(item != nullptr, common::InvalidArgumentError,
-                Missing("REMOVE item"));
-          mutating_pattern.remove_items.push_back(item.get());
-        }
+        mutating_pattern.remove_patterns = BuildRemoveMutatingPatterns(remove);
         return mutating_pattern;
       }
       default:
@@ -1631,135 +1881,12 @@ class PlannerQueryBuilder {
     }
   }
 
-  void AddPropertiesDependencies(std::unordered_set<std::string> *dependencies,
-                                 const ast::Properties *properties) const {
-    CHECK(dependencies != nullptr, common::InternalError,
-          "dependency set is null");
-    if (properties == nullptr || properties->map == nullptr) {
-      return;
-    }
-    for (const auto &entry : properties->map->entries) {
-      AddExpressionDependencies(dependencies, entry.second.get());
-    }
-  }
-
-  void AddNodePatternDependencies(std::unordered_set<std::string> *dependencies,
-                                  const ast::NodePattern *node) const {
-    CHECK(dependencies != nullptr, common::InternalError,
-          "dependency set is null");
-    if (node == nullptr) {
-      return;
-    }
-    AddSymbol(dependencies, node->variable);
-    AddPropertiesDependencies(dependencies, node->properties.get());
-  }
-
-  void AddRelationshipPatternDependencies(
-      std::unordered_set<std::string> *dependencies,
-      const ast::RelationshipPattern *relationship) const {
-    CHECK(dependencies != nullptr, common::InternalError,
-          "dependency set is null");
-    if (relationship == nullptr || relationship->detail == nullptr) {
-      return;
-    }
-    AddSymbol(dependencies, relationship->detail->variable);
-    AddPropertiesDependencies(dependencies,
-                              relationship->detail->properties.get());
-  }
-
-  void AddPatternElementDependencies(
-      std::unordered_set<std::string> *dependencies,
-      const ast::PatternElement *element) const {
-    CHECK(dependencies != nullptr, common::InternalError,
-          "dependency set is null");
-    if (element == nullptr) {
-      return;
-    }
-    AddNodePatternDependencies(dependencies, element->node_pattern.get());
-    for (const auto &link : element->chain) {
-      AddRelationshipPatternDependencies(dependencies, link.first.get());
-      AddNodePatternDependencies(dependencies, link.second.get());
-    }
-  }
-
-  void AddPatternPartDependencies(std::unordered_set<std::string> *dependencies,
-                                  const ast::PatternPart *part) const {
-    CHECK(dependencies != nullptr, common::InternalError,
-          "dependency set is null");
-    if (part == nullptr) {
-      return;
-    }
-    AddSymbol(dependencies, part->variable);
-    AddPatternElementDependencies(dependencies, part->element.get());
-  }
-
-  void AddPatternDependencies(std::unordered_set<std::string> *dependencies,
-                              const ast::Pattern *pattern) const {
-    CHECK(dependencies != nullptr, common::InternalError,
-          "dependency set is null");
-    if (pattern == nullptr) {
-      return;
-    }
-    for (const auto &part : pattern->parts) {
-      AddPatternPartDependencies(dependencies, part.get());
-    }
-  }
-
-  void AddSetDependencies(std::unordered_set<std::string> *dependencies,
-                          const ast::Set *set) const {
-    CHECK(dependencies != nullptr, common::InternalError,
-          "dependency set is null");
-    if (set == nullptr) {
-      return;
-    }
-    for (const auto &item : set->items) {
-      if (item == nullptr) {
-        continue;
-      }
-      AddExpressionDependencies(dependencies, item->target.get());
-      AddExpressionDependencies(dependencies, item->value.get());
-    }
-  }
-
   void AddMutatingPatternDependencies(
       std::unordered_set<std::string> *dependencies,
       const MutatingPattern &mutating_pattern) const {
     CHECK(dependencies != nullptr, common::InternalError,
           "dependency set is null");
-    switch (mutating_pattern.kind) {
-      case MutatingPatternKind::kCreate:
-        AddPatternDependencies(dependencies, mutating_pattern.pattern);
-        return;
-      case MutatingPatternKind::kMerge:
-        AddPatternPartDependencies(dependencies, mutating_pattern.pattern_part);
-        for (const auto &action : mutating_pattern.merge_actions) {
-          AddSetDependencies(dependencies, action.set);
-        }
-        return;
-      case MutatingPatternKind::kSet:
-        for (const auto *item : mutating_pattern.set_items) {
-          if (item == nullptr) {
-            continue;
-          }
-          AddExpressionDependencies(dependencies, item->target.get());
-          AddExpressionDependencies(dependencies, item->value.get());
-        }
-        return;
-      case MutatingPatternKind::kDelete:
-        for (const auto *expression : mutating_pattern.delete_expressions) {
-          AddExpressionDependencies(dependencies, expression);
-        }
-        return;
-      case MutatingPatternKind::kRemove:
-        for (const auto *item : mutating_pattern.remove_items) {
-          if (item == nullptr) {
-            continue;
-          }
-          AddExpressionDependencies(dependencies, item->target.get());
-        }
-        return;
-    }
-    THROW(common::InternalError, "unknown mutating pattern kind");
+    AddSymbols(dependencies, MutatingPatternDependencies(mutating_pattern));
   }
 
   std::unordered_set<std::string> QueryHorizonDependencies(
