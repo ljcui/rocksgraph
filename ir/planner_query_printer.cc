@@ -78,11 +78,35 @@ std::string PredicateKindToString(PredicateKind kind) {
   THROW(common::InternalError, "unknown predicate kind");
 }
 
+std::string MutatingPatternKindToString(MutatingPatternKind kind) {
+  switch (kind) {
+    case MutatingPatternKind::kCreate:
+      return "create";
+    case MutatingPatternKind::kMerge:
+      return "merge";
+    case MutatingPatternKind::kSet:
+      return "set";
+    case MutatingPatternKind::kDelete:
+      return "delete";
+    case MutatingPatternKind::kRemove:
+      return "remove";
+  }
+  THROW(common::InternalError, "unknown mutating pattern kind");
+}
+
 std::string ExpressionText(const ast::Expression *expression) {
   if (expression == nullptr) {
     return "null";
   }
   return ast::ExpressionToString(*expression);
+}
+
+std::string UpdatingClauseText(const ast::UpdatingClause *clause) {
+  if (clause == nullptr) {
+    return "null";
+  }
+  const std::string text = ast::UpdatingClauseToString(*clause);
+  return text.empty() ? "<unprintable>" : text;
 }
 
 std::string PatternLengthText(const PatternLength &length) {
@@ -180,8 +204,45 @@ class PlannerQueryPrinter {
     Line("optional_matches: " +
          std::to_string(query_graph.optional_matches.size()));
     Line("hints: " + std::to_string(query_graph.hints.size()));
-    Line("mutating_patterns: " +
-         std::to_string(query_graph.mutating_patterns.size()));
+    PrintMutatingPatterns(query_graph.mutating_patterns);
+    Dedent();
+  }
+
+  void PrintMutatingPatterns(
+      const std::vector<MutatingPattern> &mutating_patterns) {
+    if (mutating_patterns.empty()) {
+      Line("mutating_patterns: 0");
+      return;
+    }
+    Line("mutating_patterns:");
+    Indent();
+    for (const auto &mutating_pattern : mutating_patterns) {
+      Line("- kind: " + MutatingPatternKindToString(mutating_pattern.kind));
+      Indent();
+      Line("clause: " + UpdatingClauseText(mutating_pattern.clause));
+      switch (mutating_pattern.kind) {
+        case MutatingPatternKind::kMerge:
+          Line("merge_actions: " +
+               std::to_string(mutating_pattern.merge_actions.size()));
+          break;
+        case MutatingPatternKind::kDelete:
+          Line(std::string("detach: ") +
+               (mutating_pattern.detach ? "true" : "false"));
+          Line("expressions: " +
+               std::to_string(mutating_pattern.delete_expressions.size()));
+          break;
+        case MutatingPatternKind::kSet:
+          Line("items: " + std::to_string(mutating_pattern.set_items.size()));
+          break;
+        case MutatingPatternKind::kRemove:
+          Line("items: " +
+               std::to_string(mutating_pattern.remove_items.size()));
+          break;
+        case MutatingPatternKind::kCreate:
+          break;
+      }
+      Dedent();
+    }
     Dedent();
   }
 
@@ -264,6 +325,10 @@ class PlannerQueryPrinter {
         return;
       case QueryHorizonKind::kUnwind:
         PrintUnwind(horizon.RequireUnwind());
+        Dedent();
+        return;
+      case QueryHorizonKind::kPassthrough:
+        Line("passthrough");
         Dedent();
         return;
     }

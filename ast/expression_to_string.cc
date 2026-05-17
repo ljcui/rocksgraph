@@ -977,7 +977,7 @@ std::string ReadingClauseToString(const ReadingClause &clause) {
   }
 }
 
-std::string UpdatingClauseToString(const UpdatingClause &clause) {
+std::string UpdatingClauseText(const UpdatingClause &clause) {
   switch (clause.node_type) {
     case ASTNodeType::kCreate: {
       const auto &create = CastAst<Create>(clause);
@@ -1130,7 +1130,7 @@ std::string SinglePartQueryToString(const SinglePartQuery &query) {
     if (!clause) {
       return {};
     }
-    const std::string text = UpdatingClauseToString(*clause);
+    const std::string text = UpdatingClauseText(*clause);
     if (text.empty()) {
       return {};
     }
@@ -1164,7 +1164,7 @@ std::string MultiPartQueryToString(const MultiPartQuery &query) {
       if (!clause) {
         return {};
       }
-      const std::string text = UpdatingClauseToString(*clause);
+      const std::string text = UpdatingClauseText(*clause);
       if (text.empty()) {
         return {};
       }
@@ -1229,6 +1229,10 @@ std::string RegularQueryToString(const RegularQuery &query) {
 
 std::string ExpressionToString(const Expression &expr) {
   return ExpressionText(expr).text;
+}
+
+std::string UpdatingClauseToString(const UpdatingClause &clause) {
+  return UpdatingClauseText(clause);
 }
 
 }  // namespace ast

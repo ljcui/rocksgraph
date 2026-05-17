@@ -90,7 +90,31 @@ struct Selections {
 };
 
 struct Hint {};
-struct MutatingPattern {};
+
+enum class MutatingPatternKind {
+  kCreate,
+  kMerge,
+  kSet,
+  kDelete,
+  kRemove,
+};
+
+struct MergeActionPattern {
+  bool on_match = false;
+  const ast::Set *set = nullptr;
+};
+
+struct MutatingPattern {
+  MutatingPatternKind kind = MutatingPatternKind::kCreate;
+  const ast::UpdatingClause *clause = nullptr;
+  const ast::Pattern *pattern = nullptr;
+  const ast::PatternPart *pattern_part = nullptr;
+  std::vector<MergeActionPattern> merge_actions;
+  bool detach = false;
+  std::vector<const ast::Expression *> delete_expressions;
+  std::vector<const ast::SetItem *> set_items;
+  std::vector<const ast::RemoveItem *> remove_items;
+};
 
 struct QueryGraph {
   std::unordered_set<LogicalVariable> pattern_paths;
@@ -159,6 +183,7 @@ enum class QueryHorizonKind {
   kDistinctProjection,
   kAggregatingProjection,
   kUnwind,
+  kPassthrough,
 };
 
 struct QueryHorizon {
@@ -173,6 +198,7 @@ struct QueryHorizon {
   static QueryHorizon ForAggregatingProjection(
       AggregatingQueryProjection projection);
   static QueryHorizon ForUnwind(UnwindHorizon unwind);
+  static QueryHorizon ForPassthrough();
 
   [[nodiscard]] const RegularQueryProjection &RequireRegularProjection() const;
   RegularQueryProjection &RequireRegularProjection();

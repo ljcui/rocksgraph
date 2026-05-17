@@ -96,6 +96,69 @@ const ast::ExistentialSubquery *AsExistentialSubquery(
   return ast::CastAst<ast::ExistentialSubquery>(unwrapped);
 }
 
+void AddNodePatternSymbols(std::unordered_set<std::string> *symbols,
+                           const ast::NodePattern *node) {
+  CHECK(symbols != nullptr, common::InternalError, "symbol set is null");
+  if (node != nullptr && !node->variable.empty()) {
+    symbols->insert(node->variable);
+  }
+}
+
+void AddRelationshipPatternSymbols(
+    std::unordered_set<std::string> *symbols,
+    const ast::RelationshipPattern *relationship) {
+  CHECK(symbols != nullptr, common::InternalError, "symbol set is null");
+  if (relationship == nullptr || relationship->detail == nullptr ||
+      relationship->detail->variable.empty()) {
+    return;
+  }
+  symbols->insert(relationship->detail->variable);
+}
+
+void AddPatternElementSymbols(std::unordered_set<std::string> *symbols,
+                              const ast::PatternElement *element) {
+  CHECK(symbols != nullptr, common::InternalError, "symbol set is null");
+  if (element == nullptr) {
+    return;
+  }
+  AddNodePatternSymbols(symbols, element->node_pattern.get());
+  for (const auto &link : element->chain) {
+    AddRelationshipPatternSymbols(symbols, link.first.get());
+    AddNodePatternSymbols(symbols, link.second.get());
+  }
+}
+
+void AddPatternPartSymbols(std::unordered_set<std::string> *symbols,
+                           const ast::PatternPart *part) {
+  CHECK(symbols != nullptr, common::InternalError, "symbol set is null");
+  if (part == nullptr) {
+    return;
+  }
+  if (!part->variable.empty()) {
+    symbols->insert(part->variable);
+  }
+  AddPatternElementSymbols(symbols, part->element.get());
+}
+
+void AddPatternSymbols(std::unordered_set<std::string> *symbols,
+                       const ast::Pattern *pattern) {
+  CHECK(symbols != nullptr, common::InternalError, "symbol set is null");
+  if (pattern == nullptr) {
+    return;
+  }
+  for (const auto &part : pattern->parts) {
+    AddPatternPartSymbols(symbols, part.get());
+  }
+}
+
+std::unordered_set<std::string> MutatingPatternAvailableSymbols(
+    const MutatingPattern &mutating_pattern) {
+  std::unordered_set<std::string> symbols;
+  AddPatternSymbols(&symbols, mutating_pattern.pattern);
+  AddPatternPartSymbols(&symbols, mutating_pattern.pattern_part);
+  return symbols;
+}
+
 std::unordered_set<std::string> QueryGraphLocalAvailableSymbols(
     const QueryGraph &query_graph) {
   std::unordered_set<std::string> symbols = query_graph.argument_ids;
@@ -107,6 +170,11 @@ std::unordered_set<std::string> QueryGraphLocalAvailableSymbols(
     CHECK(!relationship.variable.empty(), common::InvalidArgumentError,
           "relationship variable is empty");
     symbols.insert(relationship.variable);
+  }
+  for (const auto &mutating_pattern : query_graph.mutating_patterns) {
+    const std::unordered_set<std::string> mutation_symbols =
+        MutatingPatternAvailableSymbols(mutating_pattern);
+    symbols.insert(mutation_symbols.begin(), mutation_symbols.end());
   }
   return symbols;
 }
@@ -643,6 +711,17 @@ class QueryGraphBuilder {
     THROW(common::InvalidArgumentError, Unsupported("reading clause"));
   }
 
+  void BuildUpdatingClause(const ast::UpdatingClause &clause) {
+    graph_.mutating_patterns.push_back(BuildMutatingPattern(clause));
+  }
+
+  [[nodiscard]] bool HasLocalWork() const {
+    return !graph_.pattern_paths.empty() || !graph_.pattern_nodes.empty() ||
+           !graph_.pattern_relationships.empty() ||
+           !graph_.selections.empty() || !graph_.optional_matches.empty() ||
+           !graph_.hints.empty() || !graph_.mutating_patterns.empty();
+  }
+
   void BuildMatch(const ast::Match &match) {
     if (match.optional_match) {
       BuildOptionalMatch(match);
@@ -680,6 +759,74 @@ class QueryGraphBuilder {
   QueryGraph Release() { return std::move(graph_); }
 
  private:
+  static MutatingPattern BuildMutatingPattern(
+      const ast::UpdatingClause &clause) {
+    MutatingPattern mutating_pattern;
+    mutating_pattern.clause = &clause;
+    switch (clause.node_type) {
+      case ast::ASTNodeType::kCreate: {
+        const auto &create = ast::CastAst<ast::Create>(clause);
+        CHECK(create.pattern != nullptr, common::InvalidArgumentError,
+              Missing("CREATE pattern"));
+        mutating_pattern.kind = MutatingPatternKind::kCreate;
+        mutating_pattern.pattern = create.pattern.get();
+        return mutating_pattern;
+      }
+      case ast::ASTNodeType::kMerge: {
+        const auto &merge = ast::CastAst<ast::Merge>(clause);
+        CHECK(merge.pattern_part != nullptr, common::InvalidArgumentError,
+              Missing("MERGE pattern"));
+        mutating_pattern.kind = MutatingPatternKind::kMerge;
+        mutating_pattern.pattern_part = merge.pattern_part.get();
+        mutating_pattern.merge_actions.reserve(merge.actions.size());
+        for (const auto &action : merge.actions) {
+          CHECK(action.second != nullptr, common::InvalidArgumentError,
+                Missing("MERGE action SET"));
+          mutating_pattern.merge_actions.push_back(
+              {.on_match = action.first, .set = action.second.get()});
+        }
+        return mutating_pattern;
+      }
+      case ast::ASTNodeType::kSet: {
+        const auto &set = ast::CastAst<ast::Set>(clause);
+        mutating_pattern.kind = MutatingPatternKind::kSet;
+        mutating_pattern.set_items.reserve(set.items.size());
+        for (const auto &item : set.items) {
+          CHECK(item != nullptr, common::InvalidArgumentError,
+                Missing("SET item"));
+          mutating_pattern.set_items.push_back(item.get());
+        }
+        return mutating_pattern;
+      }
+      case ast::ASTNodeType::kDelete: {
+        const auto &del = ast::CastAst<ast::Delete>(clause);
+        mutating_pattern.kind = MutatingPatternKind::kDelete;
+        mutating_pattern.detach = del.detach;
+        mutating_pattern.delete_expressions.reserve(del.expressions.size());
+        for (const auto &expression : del.expressions) {
+          CHECK(expression != nullptr, common::InvalidArgumentError,
+                Missing("DELETE expression"));
+          mutating_pattern.delete_expressions.push_back(expression.get());
+        }
+        return mutating_pattern;
+      }
+      case ast::ASTNodeType::kRemove: {
+        const auto &remove = ast::CastAst<ast::Remove>(clause);
+        mutating_pattern.kind = MutatingPatternKind::kRemove;
+        mutating_pattern.remove_items.reserve(remove.items.size());
+        for (const auto &item : remove.items) {
+          CHECK(item != nullptr, common::InvalidArgumentError,
+                Missing("REMOVE item"));
+          mutating_pattern.remove_items.push_back(item.get());
+        }
+        return mutating_pattern;
+      }
+      default:
+        break;
+    }
+    THROW(common::InvalidArgumentError, Unsupported("updating clause"));
+  }
+
   [[nodiscard]] const ast::SemanticTable &SemanticTableRef() const {
     CHECK(semantic_table_ != nullptr, common::InternalError,
           "semantic table is null");
@@ -719,6 +866,12 @@ QueryHorizon QueryHorizon::ForUnwind(UnwindHorizon unwind) {
   QueryHorizon horizon;
   horizon.kind = QueryHorizonKind::kUnwind;
   horizon.unwind = std::move(unwind);
+  return horizon;
+}
+
+QueryHorizon QueryHorizon::ForPassthrough() {
+  QueryHorizon horizon;
+  horizon.kind = QueryHorizonKind::kPassthrough;
   return horizon;
 }
 
@@ -829,13 +982,6 @@ std::unique_ptr<PlannerQuery> MakeUnionPlannerQuery(
 
 namespace {
 
-void CheckNoUpdatingClauses(
-    const std::vector<std::unique_ptr<ast::UpdatingClause>> &updating_clauses) {
-  if (!updating_clauses.empty()) {
-    THROW(common::InvalidArgumentError, Unsupported("updating clause"));
-  }
-}
-
 class PlannerQueryBuilder {
  public:
   explicit PlannerQueryBuilder(const ast::SemanticTable &semantic_table)
@@ -903,6 +1049,7 @@ class PlannerQueryBuilder {
             &horizon->RequireAggregatingProjection().selections);
         return;
       case QueryHorizonKind::kUnwind:
+      case QueryHorizonKind::kPassthrough:
         return;
     }
     THROW(common::InternalError, "unknown query horizon kind");
@@ -1017,6 +1164,7 @@ class PlannerQueryBuilder {
             available_symbols);
         return;
       case QueryHorizonKind::kUnwind:
+      case QueryHorizonKind::kPassthrough:
         return;
     }
     THROW(common::InternalError, "unknown query horizon kind");
@@ -1045,6 +1193,9 @@ class PlannerQueryBuilder {
     }
     for (const auto &optional_match : query_graph.optional_matches) {
       AddSymbols(&dependencies, QueryGraphDependencies(optional_match));
+    }
+    for (const auto &mutating_pattern : query_graph.mutating_patterns) {
+      AddMutatingPatternDependencies(&dependencies, mutating_pattern);
     }
     return dependencies;
   }
@@ -1093,6 +1244,137 @@ class PlannerQueryBuilder {
     }
   }
 
+  void AddPropertiesDependencies(std::unordered_set<std::string> *dependencies,
+                                 const ast::Properties *properties) const {
+    CHECK(dependencies != nullptr, common::InternalError,
+          "dependency set is null");
+    if (properties == nullptr || properties->map == nullptr) {
+      return;
+    }
+    for (const auto &entry : properties->map->entries) {
+      AddExpressionDependencies(dependencies, entry.second.get());
+    }
+  }
+
+  void AddNodePatternDependencies(std::unordered_set<std::string> *dependencies,
+                                  const ast::NodePattern *node) const {
+    CHECK(dependencies != nullptr, common::InternalError,
+          "dependency set is null");
+    if (node == nullptr) {
+      return;
+    }
+    AddSymbol(dependencies, node->variable);
+    AddPropertiesDependencies(dependencies, node->properties.get());
+  }
+
+  void AddRelationshipPatternDependencies(
+      std::unordered_set<std::string> *dependencies,
+      const ast::RelationshipPattern *relationship) const {
+    CHECK(dependencies != nullptr, common::InternalError,
+          "dependency set is null");
+    if (relationship == nullptr || relationship->detail == nullptr) {
+      return;
+    }
+    AddSymbol(dependencies, relationship->detail->variable);
+    AddPropertiesDependencies(dependencies,
+                              relationship->detail->properties.get());
+  }
+
+  void AddPatternElementDependencies(
+      std::unordered_set<std::string> *dependencies,
+      const ast::PatternElement *element) const {
+    CHECK(dependencies != nullptr, common::InternalError,
+          "dependency set is null");
+    if (element == nullptr) {
+      return;
+    }
+    AddNodePatternDependencies(dependencies, element->node_pattern.get());
+    for (const auto &link : element->chain) {
+      AddRelationshipPatternDependencies(dependencies, link.first.get());
+      AddNodePatternDependencies(dependencies, link.second.get());
+    }
+  }
+
+  void AddPatternPartDependencies(std::unordered_set<std::string> *dependencies,
+                                  const ast::PatternPart *part) const {
+    CHECK(dependencies != nullptr, common::InternalError,
+          "dependency set is null");
+    if (part == nullptr) {
+      return;
+    }
+    AddSymbol(dependencies, part->variable);
+    AddPatternElementDependencies(dependencies, part->element.get());
+  }
+
+  void AddPatternDependencies(std::unordered_set<std::string> *dependencies,
+                              const ast::Pattern *pattern) const {
+    CHECK(dependencies != nullptr, common::InternalError,
+          "dependency set is null");
+    if (pattern == nullptr) {
+      return;
+    }
+    for (const auto &part : pattern->parts) {
+      AddPatternPartDependencies(dependencies, part.get());
+    }
+  }
+
+  void AddSetDependencies(std::unordered_set<std::string> *dependencies,
+                          const ast::Set *set) const {
+    CHECK(dependencies != nullptr, common::InternalError,
+          "dependency set is null");
+    if (set == nullptr) {
+      return;
+    }
+    for (const auto &item : set->items) {
+      if (item == nullptr) {
+        continue;
+      }
+      AddExpressionDependencies(dependencies, item->target.get());
+      AddExpressionDependencies(dependencies, item->value.get());
+    }
+  }
+
+  void AddMutatingPatternDependencies(
+      std::unordered_set<std::string> *dependencies,
+      const MutatingPattern &mutating_pattern) const {
+    CHECK(dependencies != nullptr, common::InternalError,
+          "dependency set is null");
+    switch (mutating_pattern.kind) {
+      case MutatingPatternKind::kCreate:
+        AddPatternDependencies(dependencies, mutating_pattern.pattern);
+        return;
+      case MutatingPatternKind::kMerge:
+        AddPatternPartDependencies(dependencies, mutating_pattern.pattern_part);
+        for (const auto &action : mutating_pattern.merge_actions) {
+          AddSetDependencies(dependencies, action.set);
+        }
+        return;
+      case MutatingPatternKind::kSet:
+        for (const auto *item : mutating_pattern.set_items) {
+          if (item == nullptr) {
+            continue;
+          }
+          AddExpressionDependencies(dependencies, item->target.get());
+          AddExpressionDependencies(dependencies, item->value.get());
+        }
+        return;
+      case MutatingPatternKind::kDelete:
+        for (const auto *expression : mutating_pattern.delete_expressions) {
+          AddExpressionDependencies(dependencies, expression);
+        }
+        return;
+      case MutatingPatternKind::kRemove:
+        for (const auto *item : mutating_pattern.remove_items) {
+          if (item == nullptr) {
+            continue;
+          }
+          AddExpressionDependencies(dependencies, item->target.get());
+        }
+        return;
+    }
+    THROW(common::InternalError, "unknown mutating pattern kind");
+  }
+
   std::unordered_set<std::string> QueryHorizonDependencies(
       const QueryHorizon &horizon) const {
     std::unordered_set<std::string> dependencies;
@@ -1124,6 +1406,8 @@ class PlannerQueryBuilder {
         AddExpressionDependencies(&dependencies,
                                   horizon.RequireUnwind().expression);
         return dependencies;
+      case QueryHorizonKind::kPassthrough:
+        return dependencies;
     }
     THROW(common::InternalError, "unknown query horizon kind");
   }
@@ -1151,6 +1435,8 @@ class PlannerQueryBuilder {
         AddSymbol(&symbols, query.horizon.RequireUnwind().alias);
         return symbols;
       }
+      case QueryHorizonKind::kPassthrough:
+        return QueryGraphAvailableSymbols(query.query_graph);
     }
     THROW(common::InternalError, "unknown query horizon kind");
   }
@@ -1179,11 +1465,10 @@ class PlannerQueryBuilder {
   }
 
   SinglePlannerQuery BuildSinglePartQuery(const ast::SinglePartQuery &query) {
-    CheckNoUpdatingClauses(query.updating_clauses);
-    CHECK(query.return_clause, common::InvalidArgumentError,
-          Missing("RETURN clause"));
-    return BuildQuerySegment(query.reading_clauses, query.return_clause.get(),
-                             {});
+    CHECK(query.return_clause || !query.updating_clauses.empty(),
+          common::InvalidArgumentError, Missing("RETURN clause"));
+    return BuildQuerySegment(query.reading_clauses, query.updating_clauses,
+                             query.return_clause.get(), {});
   }
 
   SinglePlannerQuery BuildMultiPartQuery(const ast::MultiPartQuery &query) {
@@ -1194,11 +1479,11 @@ class PlannerQueryBuilder {
     SinglePlannerQuery *current_segment = &root;
     std::unordered_set<std::string> argument_ids;
     for (const auto &part : query.parts) {
-      CheckNoUpdatingClauses(part.updating_clauses);
       CHECK(part.with_clause, common::InvalidArgumentError,
             Missing("WITH clause"));
-      *current_segment = BuildQuerySegment(
-          part.reading_clauses, part.with_clause.get(), argument_ids);
+      *current_segment =
+          BuildQuerySegment(part.reading_clauses, part.updating_clauses,
+                            part.with_clause.get(), argument_ids);
       current_segment = current_segment->Last();
       CHECK(part.with_clause->body != nullptr, common::InvalidArgumentError,
             Missing("WITH body"));
@@ -1216,11 +1501,10 @@ class PlannerQueryBuilder {
   SinglePlannerQuery BuildSinglePartQuery(
       const ast::SinglePartQuery &query,
       const std::unordered_set<std::string> &argument_ids) {
-    CheckNoUpdatingClauses(query.updating_clauses);
-    CHECK(query.return_clause, common::InvalidArgumentError,
-          Missing("RETURN clause"));
-    return BuildQuerySegment(query.reading_clauses, query.return_clause.get(),
-                             argument_ids);
+    CHECK(query.return_clause || !query.updating_clauses.empty(),
+          common::InvalidArgumentError, Missing("RETURN clause"));
+    return BuildQuerySegment(query.reading_clauses, query.updating_clauses,
+                             query.return_clause.get(), argument_ids);
   }
 
   struct ProjectionParts {
@@ -1269,6 +1553,9 @@ class PlannerQueryBuilder {
       case QueryHorizonKind::kUnwind:
         THROW(common::InternalError,
               "UNWIND horizon cannot have projection WHERE");
+      case QueryHorizonKind::kPassthrough:
+        THROW(common::InternalError,
+              "passthrough horizon cannot have projection WHERE");
     }
     THROW(common::InternalError, "unknown query horizon kind");
   }
@@ -1290,37 +1577,70 @@ class PlannerQueryBuilder {
 
   SinglePlannerQuery BuildQuerySegment(
       const std::vector<std::unique_ptr<ast::ReadingClause>> &reading,
+      const std::vector<std::unique_ptr<ast::UpdatingClause>> &updating,
       const ast::ProjectionClause *projection,
       const std::unordered_set<std::string> &argument_ids) {
-    CHECK(projection != nullptr, common::InvalidArgumentError,
-          Missing("projection clause"));
+    CHECK(projection != nullptr || !updating.empty(),
+          common::InvalidArgumentError, Missing("projection clause"));
     SinglePlannerQuery root;
     SinglePlannerQuery *current_segment = &root;
     std::unordered_set<std::string> current_argument_ids = argument_ids;
     QueryGraphBuilder builder(SemanticTableRef(), current_argument_ids);
+    bool current_segment_finished = false;
+
+    auto finish_current_segment = [&](QueryHorizon horizon) {
+      current_segment->query_graph = builder.Release();
+      AttachQueryGraphSubqueries(&current_segment->query_graph);
+      current_segment->horizon = std::move(horizon);
+      current_segment_finished = true;
+    };
+
+    auto start_next_segment = [&]() {
+      current_argument_ids = SinglePlannerQueryOutputSymbols(*current_segment);
+      current_segment->tail = std::make_unique<SinglePlannerQuery>();
+      current_segment = current_segment->tail.get();
+      builder = QueryGraphBuilder(SemanticTableRef(), current_argument_ids);
+      current_segment_finished = false;
+    };
+
+    auto finish_and_start_next = [&](QueryHorizon horizon) {
+      finish_current_segment(std::move(horizon));
+      start_next_segment();
+    };
+
     for (const auto &clause : reading) {
       CHECK(clause != nullptr, common::InvalidArgumentError,
             Missing("reading clause"));
       if (clause->Is(ast::ASTNodeType::kUnwind)) {
-        current_segment->query_graph = builder.Release();
-        AttachQueryGraphSubqueries(&current_segment->query_graph);
-        current_segment->horizon = QueryHorizon::ForUnwind(
-            BuildUnwindHorizon(*ast::CastAst<ast::Unwind>(clause.get())));
-        current_argument_ids =
-            QueryGraphAvailableSymbols(current_segment->query_graph);
-        current_argument_ids.insert(
-            current_segment->horizon.RequireUnwind().alias);
-        current_segment->tail = std::make_unique<SinglePlannerQuery>();
-        current_segment = current_segment->tail.get();
-        builder = QueryGraphBuilder(SemanticTableRef(), current_argument_ids);
+        finish_and_start_next(QueryHorizon::ForUnwind(
+            BuildUnwindHorizon(*ast::CastAst<ast::Unwind>(clause.get()))));
         continue;
       }
       builder.BuildReadingClause(*clause);
     }
 
-    current_segment->query_graph = builder.Release();
-    AttachQueryGraphSubqueries(&current_segment->query_graph);
-    current_segment->horizon = BuildProjectionClause(projection);
+    for (std::size_t i = 0; i < updating.size(); ++i) {
+      const auto &clause = updating[i];
+      CHECK(clause != nullptr, common::InvalidArgumentError,
+            Missing("updating clause"));
+      const bool is_merge = clause->Is(ast::ASTNodeType::kMerge);
+      if (is_merge && builder.HasLocalWork()) {
+        finish_and_start_next(QueryHorizon::ForPassthrough());
+      }
+      builder.BuildUpdatingClause(*clause);
+      if (is_merge) {
+        finish_current_segment(QueryHorizon::ForPassthrough());
+        if (i + 1 < updating.size() || projection != nullptr) {
+          start_next_segment();
+        }
+      }
+    }
+
+    if (projection != nullptr) {
+      finish_current_segment(BuildProjectionClause(projection));
+    } else if (!current_segment_finished && builder.HasLocalWork()) {
+      finish_current_segment(QueryHorizon::ForPassthrough());
+    }
     return root;
   }
 

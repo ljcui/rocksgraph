@@ -1311,6 +1311,114 @@ TEST(PlannerQueryTest, BuildsUnionAllBranch) {
   EXPECT_TRUE(union_query.all);
 }
 
+TEST(PlannerQueryTest, BuildsCreateMutatingPattern) {
+  auto statement = ParseOrFail("CREATE (n) RETURN n");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::SinglePlannerQuery &main = planner_query->RequireSingle();
+
+  ASSERT_EQ(main.query_graph.mutating_patterns.size(), 1U);
+  const ir::MutatingPattern &mutation = main.query_graph.mutating_patterns[0];
+  EXPECT_EQ(mutation.kind, ir::MutatingPatternKind::kCreate);
+  EXPECT_NE(mutation.clause, nullptr);
+  EXPECT_NE(mutation.pattern, nullptr);
+  EXPECT_EQ(main.horizon.kind, ir::QueryHorizonKind::kRegularProjection);
+}
+
+TEST(PlannerQueryTest, BuildsUpdatingOnlyCreateWithPassthroughHorizon) {
+  auto statement = ParseOrFail("CREATE (n)");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::SinglePlannerQuery &main = planner_query->RequireSingle();
+
+  ASSERT_EQ(main.query_graph.mutating_patterns.size(), 1U);
+  EXPECT_EQ(main.query_graph.mutating_patterns[0].kind,
+            ir::MutatingPatternKind::kCreate);
+  EXPECT_EQ(main.horizon.kind, ir::QueryHorizonKind::kPassthrough);
+  EXPECT_EQ(main.tail, nullptr);
+
+  const std::string printed = ir::PlannerQueryToString(*planner_query);
+  EXPECT_NE(printed.find("passthrough"), std::string::npos);
+  EXPECT_NE(printed.find("clause: CREATE (n)"), std::string::npos);
+}
+
+TEST(PlannerQueryTest, BuildsSetDeleteAndRemoveMutatingPatterns) {
+  auto statement =
+      ParseOrFail("MATCH (n) SET n.name = 'Ada' REMOVE n:Old DELETE n");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::SinglePlannerQuery &main = planner_query->RequireSingle();
+
+  ASSERT_EQ(main.query_graph.mutating_patterns.size(), 3U);
+  const ir::MutatingPattern &set = main.query_graph.mutating_patterns[0];
+  EXPECT_EQ(set.kind, ir::MutatingPatternKind::kSet);
+  EXPECT_EQ(set.set_items.size(), 1U);
+
+  const ir::MutatingPattern &remove = main.query_graph.mutating_patterns[1];
+  EXPECT_EQ(remove.kind, ir::MutatingPatternKind::kRemove);
+  EXPECT_EQ(remove.remove_items.size(), 1U);
+
+  const ir::MutatingPattern &del = main.query_graph.mutating_patterns[2];
+  EXPECT_EQ(del.kind, ir::MutatingPatternKind::kDelete);
+  EXPECT_FALSE(del.detach);
+  EXPECT_EQ(del.delete_expressions.size(), 1U);
+  EXPECT_EQ(main.horizon.kind, ir::QueryHorizonKind::kPassthrough);
+}
+
+TEST(PlannerQueryTest, BuildsDetachDeleteMutatingPattern) {
+  auto statement = ParseOrFail("MATCH (n) DETACH DELETE n");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::SinglePlannerQuery &main = planner_query->RequireSingle();
+
+  ASSERT_EQ(main.query_graph.mutating_patterns.size(), 1U);
+  const ir::MutatingPattern &mutation = main.query_graph.mutating_patterns[0];
+  EXPECT_EQ(mutation.kind, ir::MutatingPatternKind::kDelete);
+  EXPECT_TRUE(mutation.detach);
+  EXPECT_EQ(mutation.delete_expressions.size(), 1U);
+}
+
+TEST(PlannerQueryTest, IsolatesMergeInPassthroughSegment) {
+  auto statement = ParseOrFail(
+      "MATCH (m) MERGE (n) ON CREATE SET n.created = true RETURN n");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::SinglePlannerQuery &match_segment = planner_query->RequireSingle();
+
+  EXPECT_TRUE(Contains(match_segment.query_graph.pattern_nodes, "m"));
+  EXPECT_TRUE(match_segment.query_graph.mutating_patterns.empty());
+  EXPECT_EQ(match_segment.horizon.kind, ir::QueryHorizonKind::kPassthrough);
+  ASSERT_NE(match_segment.tail, nullptr);
+
+  const ir::SinglePlannerQuery &merge_segment = *match_segment.tail;
+  ASSERT_EQ(merge_segment.query_graph.mutating_patterns.size(), 1U);
+  const ir::MutatingPattern &merge =
+      merge_segment.query_graph.mutating_patterns[0];
+  EXPECT_EQ(merge.kind, ir::MutatingPatternKind::kMerge);
+  EXPECT_NE(merge.pattern_part, nullptr);
+  ASSERT_EQ(merge.merge_actions.size(), 1U);
+  EXPECT_FALSE(merge.merge_actions[0].on_match);
+  EXPECT_NE(merge.merge_actions[0].set, nullptr);
+  EXPECT_EQ(merge_segment.horizon.kind, ir::QueryHorizonKind::kPassthrough);
+  ASSERT_NE(merge_segment.tail, nullptr);
+
+  const ir::SinglePlannerQuery &return_segment = *merge_segment.tail;
+  EXPECT_TRUE(return_segment.query_graph.mutating_patterns.empty());
+  EXPECT_TRUE(Contains(return_segment.query_graph.argument_ids, "n"));
+  EXPECT_EQ(return_segment.horizon.kind,
+            ir::QueryHorizonKind::kRegularProjection);
+}
+
 TEST(PlannerQueryTest, SinglePlannerQueryIsMoveOnly) {
   EXPECT_FALSE(std::is_copy_constructible_v<ir::SinglePlannerQuery>);
   EXPECT_FALSE(std::is_copy_assignable_v<ir::SinglePlannerQuery>);
