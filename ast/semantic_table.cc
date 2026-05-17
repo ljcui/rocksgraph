@@ -21,6 +21,23 @@ namespace {
 
 using TypeMap = std::unordered_map<std::string, SemanticVariableType>;
 
+struct FunctionSignature {
+  std::string_view name;
+  SemanticVariableType result_type = SemanticVariableType::kScalar;
+  std::optional<SemanticVariableType> list_element_type = std::nullopt;
+  bool aggregate = false;
+};
+
+struct ProcedureYieldSignature {
+  std::string_view field;
+  SemanticVariableType type = SemanticVariableType::kUnknown;
+};
+
+struct ProcedureSignature {
+  std::string_view name;
+  std::vector<ProcedureYieldSignature> yields;
+};
+
 const std::unordered_set<std::string> &EmptyStringSet() {
   static const std::unordered_set<std::string> empty;
   return empty;
@@ -60,27 +77,111 @@ std::string LowerAscii(std::string_view input) {
   return out;
 }
 
-bool IsAggregateFunction(std::string_view function_name) {
-  const std::string name = LowerAscii(function_name);
-  static const std::unordered_set<std::string> aggregates = {
-      "avg",
-      "collect",
-      "count",
-      "max",
-      "min",
-      "percentilecont",
-      "percentiledisc",
-      "stdev",
-      "stdevp",
-      "sum",
+const std::vector<FunctionSignature> &FunctionSignatures() {
+  static const std::vector<FunctionSignature> signatures = {
+      {"avg", SemanticVariableType::kScalar, std::nullopt, true},
+      {"collect", SemanticVariableType::kList, std::nullopt, true},
+      {"count", SemanticVariableType::kScalar, std::nullopt, true},
+      {"max", SemanticVariableType::kScalar, std::nullopt, true},
+      {"min", SemanticVariableType::kScalar, std::nullopt, true},
+      {"percentilecont", SemanticVariableType::kScalar, std::nullopt, true},
+      {"percentiledisc", SemanticVariableType::kScalar, std::nullopt, true},
+      {"stdev", SemanticVariableType::kScalar, std::nullopt, true},
+      {"stdevp", SemanticVariableType::kScalar, std::nullopt, true},
+      {"sum", SemanticVariableType::kScalar, std::nullopt, true},
+
+      {"coalesce", SemanticVariableType::kScalar},
+      {"elementid", SemanticVariableType::kScalar},
+      {"endnode", SemanticVariableType::kNode},
+      {"exists", SemanticVariableType::kScalar},
+      {"id", SemanticVariableType::kScalar},
+      {"isempty", SemanticVariableType::kScalar},
+      {"keys", SemanticVariableType::kList, SemanticVariableType::kScalar},
+      {"labels", SemanticVariableType::kList, SemanticVariableType::kScalar},
+      {"length", SemanticVariableType::kScalar},
+      {"nodes", SemanticVariableType::kList, SemanticVariableType::kNode},
+      {"properties", SemanticVariableType::kMap},
+      {"range", SemanticVariableType::kList, SemanticVariableType::kScalar},
+      {"relationships", SemanticVariableType::kList,
+       SemanticVariableType::kRelationship},
+      {"size", SemanticVariableType::kScalar},
+      {"split", SemanticVariableType::kList, SemanticVariableType::kScalar},
+      {"startnode", SemanticVariableType::kNode},
+      {"timestamp", SemanticVariableType::kScalar},
+      {"toboolean", SemanticVariableType::kScalar},
+      {"tofloat", SemanticVariableType::kScalar},
+      {"tointeger", SemanticVariableType::kScalar},
+      {"tolower", SemanticVariableType::kScalar},
+      {"tostring", SemanticVariableType::kScalar},
+      {"toupper", SemanticVariableType::kScalar},
+      {"trim", SemanticVariableType::kScalar},
+      {"type", SemanticVariableType::kScalar},
   };
-  return aggregates.contains(name);
+  return signatures;
+}
+
+const FunctionSignature *LookupFunctionSignature(
+    std::string_view function_name) {
+  const std::string name = LowerAscii(function_name);
+  for (const auto &signature : FunctionSignatures()) {
+    if (signature.name == name) {
+      return &signature;
+    }
+  }
+  return nullptr;
+}
+
+bool IsAggregateFunction(std::string_view function_name) {
+  const FunctionSignature *signature = LookupFunctionSignature(function_name);
+  return signature != nullptr && signature->aggregate;
+}
+
+const std::vector<ProcedureSignature> &ProcedureSignatures() {
+  static const std::vector<ProcedureSignature> signatures = {
+      {"db.labels", {{"label", SemanticVariableType::kScalar}}},
+      {"db.propertykeys", {{"propertyKey", SemanticVariableType::kScalar}}},
+      {"db.relationshiptypes",
+       {{"relationshipType", SemanticVariableType::kScalar}}},
+      {"dbms.procedures",
+       {{"name", SemanticVariableType::kScalar},
+        {"signature", SemanticVariableType::kScalar},
+        {"description", SemanticVariableType::kScalar},
+        {"mode", SemanticVariableType::kScalar},
+        {"worksOnSystem", SemanticVariableType::kScalar}}},
+  };
+  return signatures;
+}
+
+const ProcedureSignature *LookupProcedureSignature(
+    std::string_view procedure_name) {
+  const std::string name = LowerAscii(procedure_name);
+  for (const auto &signature : ProcedureSignatures()) {
+    if (signature.name == name) {
+      return &signature;
+    }
+  }
+  return nullptr;
+}
+
+std::optional<SemanticVariableType> LookupProcedureYieldType(
+    std::string_view procedure_name, std::string_view field_name) {
+  const ProcedureSignature *signature =
+      LookupProcedureSignature(procedure_name);
+  if (signature == nullptr) {
+    return std::nullopt;
+  }
+  for (const auto &yield : signature->yields) {
+    if (yield.field == field_name) {
+      return yield.type;
+    }
+  }
+  return std::nullopt;
 }
 
 SemanticVariableType InferFunctionResultType(std::string_view function_name) {
-  const std::string name = LowerAscii(function_name);
-  if (name == "collect") {
-    return SemanticVariableType::kList;
+  const FunctionSignature *signature = LookupFunctionSignature(function_name);
+  if (signature != nullptr) {
+    return signature->result_type;
   }
   return SemanticVariableType::kScalar;
 }
@@ -186,8 +287,12 @@ class SemanticTableAnalyzer final : public ASTConstWalker {
 
   void Visit(const StandaloneCall &node) override {
     WalkList(node.arguments);
-    for (const auto &item : node.yield_items) {
-      Define(item.variable, SemanticVariableType::kUnknown);
+    if (node.yield_star || node.yield_items.empty()) {
+      DefineProcedureYieldStar(node.procedure_name);
+    } else {
+      for (const auto &item : node.yield_items) {
+        DefineProcedureYieldItem(node.procedure_name, item);
+      }
     }
     RecordScope(node);
     WalkMaybe(node.yield_where);
@@ -211,7 +316,7 @@ class SemanticTableAnalyzer final : public ASTConstWalker {
   void Visit(const InQueryCall &node) override {
     WalkList(node.arguments);
     for (const auto &item : node.yield_items) {
-      Define(item.variable, SemanticVariableType::kUnknown);
+      DefineProcedureYieldItem(node.procedure_name, item);
     }
     RecordScope(node);
     WalkMaybe(node.yield_where);
@@ -373,6 +478,29 @@ class SemanticTableAnalyzer final : public ASTConstWalker {
     table_.RecordVariableType(name, type);
   }
 
+  void DefineProcedureYieldItem(std::string_view procedure_name,
+                                const StandaloneCall::YieldItem &yield_item) {
+    const std::string_view field_name =
+        yield_item.result_field.has_value()
+            ? std::string_view(*yield_item.result_field)
+            : std::string_view(yield_item.variable);
+    const SemanticVariableType type =
+        LookupProcedureYieldType(procedure_name, field_name)
+            .value_or(SemanticVariableType::kUnknown);
+    Define(yield_item.variable, type);
+  }
+
+  void DefineProcedureYieldStar(std::string_view procedure_name) {
+    const ProcedureSignature *signature =
+        LookupProcedureSignature(procedure_name);
+    if (signature == nullptr) {
+      return;
+    }
+    for (const auto &yield : signature->yields) {
+      Define(std::string(yield.field), yield.type);
+    }
+  }
+
   [[nodiscard]] std::optional<SemanticVariableType> Lookup(
       const std::string &name) const {
     for (auto it = scope_stack_.rbegin(); it != scope_stack_.rend(); ++it) {
@@ -384,6 +512,74 @@ class SemanticTableAnalyzer final : public ASTConstWalker {
     return std::nullopt;
   }
 
+  [[nodiscard]] SemanticVariableType MergeExpressionTypes(
+      const std::vector<SemanticVariableType> &types) const {
+    if (types.empty()) {
+      return SemanticVariableType::kUnknown;
+    }
+    SemanticVariableType result = types.front();
+    for (SemanticVariableType type : types) {
+      if (type != result) {
+        return SemanticVariableType::kUnknown;
+      }
+    }
+    return result;
+  }
+
+  [[nodiscard]] SemanticVariableType InferListElementType(
+      const Expression &expression) const {
+    switch (expression.node_type) {
+      case ASTNodeType::kParenthesizedExpression: {
+        const auto &parenthesized =
+            CastAst<ParenthesizedExpression>(expression);
+        if (parenthesized.expr) {
+          return InferListElementType(*parenthesized.expr);
+        }
+        return SemanticVariableType::kUnknown;
+      }
+      case ASTNodeType::kListLiteral: {
+        const auto &list = CastAst<ListLiteral>(expression);
+        std::vector<SemanticVariableType> element_types;
+        element_types.reserve(list.elements.size());
+        for (const auto &element : list.elements) {
+          if (element) {
+            element_types.push_back(InferExpressionType(*element));
+          }
+        }
+        return MergeExpressionTypes(element_types);
+      }
+      case ASTNodeType::kListComprehension: {
+        const auto &comprehension = CastAst<ListComprehension>(expression);
+        if (comprehension.eval_expr) {
+          return InferExpressionType(*comprehension.eval_expr);
+        }
+        return SemanticVariableType::kUnknown;
+      }
+      case ASTNodeType::kPatternComprehension: {
+        const auto &comprehension = CastAst<PatternComprehension>(expression);
+        if (comprehension.eval_expr) {
+          return InferExpressionType(*comprehension.eval_expr);
+        }
+        return SemanticVariableType::kUnknown;
+      }
+      case ASTNodeType::kFunctionInvocation: {
+        const auto &function = CastAst<FunctionInvocation>(expression);
+        const FunctionSignature *signature =
+            LookupFunctionSignature(function.function_name);
+        if (signature != nullptr && signature->list_element_type.has_value()) {
+          return *signature->list_element_type;
+        }
+        if (LowerAscii(function.function_name) == "collect" &&
+            function.arguments.size() == 1 && function.arguments[0]) {
+          return InferExpressionType(*function.arguments[0]);
+        }
+        return SemanticVariableType::kUnknown;
+      }
+      default:
+        return SemanticVariableType::kUnknown;
+    }
+  }
+
   [[nodiscard]] SemanticVariableType InferExpressionType(
       const Expression &expression) const {
     switch (expression.node_type) {
@@ -391,18 +587,60 @@ class SemanticTableAnalyzer final : public ASTConstWalker {
         const auto &variable = CastAst<Variable>(expression);
         return Lookup(variable.name).value_or(SemanticVariableType::kUnknown);
       }
+      case ASTNodeType::kOrExpression:
+      case ASTNodeType::kXorExpression:
+      case ASTNodeType::kAndExpression:
+      case ASTNodeType::kComparisonExpression:
+      case ASTNodeType::kComparisonChainExpression:
+      case ASTNodeType::kNotExpression:
+      case ASTNodeType::kStringPredicateExpression:
+      case ASTNodeType::kListPredicateExpression:
+      case ASTNodeType::kLabelPredicateExpression:
+      case ASTNodeType::kNullPredicateExpression:
+      case ASTNodeType::kBooleanLiteral:
+      case ASTNodeType::kPatternPredicateExpression:
+      case ASTNodeType::kAllQuantifier:
+      case ASTNodeType::kAnyQuantifier:
+      case ASTNodeType::kNoneQuantifier:
+      case ASTNodeType::kSingleQuantifier:
+      case ASTNodeType::kExistentialSubquery:
+        return SemanticVariableType::kScalar;
       case ASTNodeType::kListLiteral:
       case ASTNodeType::kListComprehension:
       case ASTNodeType::kPatternComprehension:
         return SemanticVariableType::kList;
       case ASTNodeType::kMapLiteral:
         return SemanticVariableType::kMap;
+      case ASTNodeType::kListIndexExpression: {
+        const auto &list_index = CastAst<ListIndexExpression>(expression);
+        if (list_index.list) {
+          return InferListElementType(*list_index.list);
+        }
+        return SemanticVariableType::kUnknown;
+      }
+      case ASTNodeType::kListSliceExpression:
+        return SemanticVariableType::kList;
       case ASTNodeType::kFunctionInvocation: {
         const auto &function = CastAst<FunctionInvocation>(expression);
         return InferFunctionResultType(function.function_name);
       }
       case ASTNodeType::kCountStarExpression:
         return SemanticVariableType::kScalar;
+      case ASTNodeType::kCaseExpression: {
+        const auto &case_expression = CastAst<CaseExpression>(expression);
+        std::vector<SemanticVariableType> result_types;
+        result_types.reserve(case_expression.alternatives.size() + 1);
+        for (const auto &alternative : case_expression.alternatives) {
+          if (alternative.second) {
+            result_types.push_back(InferExpressionType(*alternative.second));
+          }
+        }
+        if (case_expression.else_expr) {
+          result_types.push_back(
+              InferExpressionType(*case_expression.else_expr));
+        }
+        return MergeExpressionTypes(result_types);
+      }
       case ASTNodeType::kParenthesizedExpression: {
         const auto &parenthesized =
             CastAst<ParenthesizedExpression>(expression);
@@ -569,6 +807,20 @@ SemanticTable::VariableTypesAt(const ASTNode &node) const {
     return EmptyTypeMap();
   }
   return it->second;
+}
+
+std::optional<SemanticVariableType> SemanticTable::KnownFunctionResultType(
+    std::string_view function_name) const {
+  const FunctionSignature *signature = LookupFunctionSignature(function_name);
+  if (signature == nullptr) {
+    return std::nullopt;
+  }
+  return signature->result_type;
+}
+
+std::optional<SemanticVariableType> SemanticTable::KnownProcedureYieldType(
+    std::string_view procedure_name, std::string_view field_name) const {
+  return LookupProcedureYieldType(procedure_name, field_name);
 }
 
 const std::unordered_set<std::string> &SemanticTable::ExpressionDependencies(

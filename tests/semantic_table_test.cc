@@ -147,6 +147,79 @@ TEST(SemanticTableTest, InfersFunctionProjectionResultTypes) {
   EXPECT_EQ(table.VariableType("name"), ast::SemanticVariableType::kScalar);
 }
 
+TEST(SemanticTableTest, UsesFunctionSignatureTableForProjectionTypes) {
+  auto statement = ParseOrFail(
+      "MATCH (a)-[r]->(b) RETURN labels(a) AS labels, keys({name: 'Ada'}) AS "
+      "keys, range(1, 3) AS nums, properties(a) AS props, startNode(r) AS "
+      "start, endNode(r) AS finish, type(r) AS rel_type, toString(a.name) AS "
+      "name");
+  ASSERT_TRUE(statement);
+
+  ast::SemanticTable table = ast::AnalyzeSemanticTable(*statement);
+
+  EXPECT_EQ(table.KnownFunctionResultType("labels"),
+            ast::SemanticVariableType::kList);
+  EXPECT_EQ(table.KnownFunctionResultType("properties"),
+            ast::SemanticVariableType::kMap);
+  EXPECT_FALSE(table.KnownFunctionResultType("unknownFunction").has_value());
+
+  EXPECT_EQ(table.VariableType("labels"), ast::SemanticVariableType::kList);
+  EXPECT_EQ(table.VariableType("keys"), ast::SemanticVariableType::kList);
+  EXPECT_EQ(table.VariableType("nums"), ast::SemanticVariableType::kList);
+  EXPECT_EQ(table.VariableType("props"), ast::SemanticVariableType::kMap);
+  EXPECT_EQ(table.VariableType("start"), ast::SemanticVariableType::kNode);
+  EXPECT_EQ(table.VariableType("finish"), ast::SemanticVariableType::kNode);
+  EXPECT_EQ(table.VariableType("rel_type"), ast::SemanticVariableType::kScalar);
+  EXPECT_EQ(table.VariableType("name"), ast::SemanticVariableType::kScalar);
+}
+
+TEST(SemanticTableTest, UsesProcedureSignaturePlaceholdersForYieldTypes) {
+  auto statement =
+      ParseOrFail("CALL db.labels() YIELD label AS labelName RETURN labelName");
+  ASSERT_TRUE(statement);
+
+  ast::SemanticTable table = ast::AnalyzeSemanticTable(*statement);
+
+  EXPECT_EQ(table.KnownProcedureYieldType("db.labels", "label"),
+            ast::SemanticVariableType::kScalar);
+  EXPECT_FALSE(
+      table.KnownProcedureYieldType("db.labels", "missing").has_value());
+  EXPECT_FALSE(
+      table.KnownProcedureYieldType("db.unknown", "label").has_value());
+  EXPECT_EQ(table.VariableType("labelName"),
+            ast::SemanticVariableType::kScalar);
+}
+
+TEST(SemanticTableTest, FallsBackToUnknownForUnknownProcedureYieldTypes) {
+  auto statement =
+      ParseOrFail("CALL db.labels() YIELD missing AS yielded RETURN yielded");
+  ASSERT_TRUE(statement);
+
+  ast::SemanticTable table = ast::AnalyzeSemanticTable(*statement);
+
+  EXPECT_EQ(table.VariableType("yielded"), ast::SemanticVariableType::kUnknown);
+}
+
+TEST(SemanticTableTest, InfersStructuredExpressionResultTypes) {
+  auto statement = ParseOrFail(
+      "RETURN [1, 2, 3][0] AS first, [{a: 1}][0] AS first_map, [[1]][0] AS "
+      "first_list, [1, 2, 3][0..2] AS slice, CASE WHEN true THEN {a: 1} ELSE "
+      "{b: 2} END AS case_map, CASE WHEN true THEN [1] ELSE [2] END AS "
+      "case_list, true AND false AS flag, 1 < 2 AS cmp");
+  ASSERT_TRUE(statement);
+
+  ast::SemanticTable table = ast::AnalyzeSemanticTable(*statement);
+
+  EXPECT_EQ(table.VariableType("first"), ast::SemanticVariableType::kScalar);
+  EXPECT_EQ(table.VariableType("first_map"), ast::SemanticVariableType::kMap);
+  EXPECT_EQ(table.VariableType("first_list"), ast::SemanticVariableType::kList);
+  EXPECT_EQ(table.VariableType("slice"), ast::SemanticVariableType::kList);
+  EXPECT_EQ(table.VariableType("case_map"), ast::SemanticVariableType::kMap);
+  EXPECT_EQ(table.VariableType("case_list"), ast::SemanticVariableType::kList);
+  EXPECT_EQ(table.VariableType("flag"), ast::SemanticVariableType::kScalar);
+  EXPECT_EQ(table.VariableType("cmp"), ast::SemanticVariableType::kScalar);
+}
+
 TEST(SemanticTableTest, TracksVariableTypesAtExpressionScopes) {
   auto statement = ParseOrFail("MATCH (n) WHERE n:Person WITH 1 AS n RETURN n");
   ASSERT_TRUE(statement);

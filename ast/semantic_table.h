@@ -35,6 +35,10 @@ class SemanticTable {
       const ASTNode &node, std::string_view name) const;
   [[nodiscard]] const std::unordered_map<std::string, SemanticVariableType> &
   VariableTypesAt(const ASTNode &node) const;
+  [[nodiscard]] std::optional<SemanticVariableType> KnownFunctionResultType(
+      std::string_view function_name) const;
+  [[nodiscard]] std::optional<SemanticVariableType> KnownProcedureYieldType(
+      std::string_view procedure_name, std::string_view field_name) const;
   [[nodiscard]] const std::unordered_map<std::string, SemanticVariableType> &
   VariableTypes() const {
     return variable_types_;
