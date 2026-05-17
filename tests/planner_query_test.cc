@@ -119,8 +119,44 @@ TEST(PlannerQueryPrinterTest, DumpsInlineNodePredicateSelection) {
 )");
 }
 
-TEST(PlannerQueryPrinterTest, DumpsRelationshipPatternAndTypeSelection) {
+TEST(PlannerQueryPrinterTest, DumpsRelationshipPatternWithInlineType) {
   ExpectPlannerQueryText("MATCH (a)-[r:KNOWS]->(b) RETURN a, b",
+                         R"(SinglePlannerQuery
+  query_graph:
+    argument_ids: []
+    pattern_nodes: [a, b]
+    pattern_relationships:
+      - variable: r
+        left_node: a
+        right_node: b
+        direction: outgoing
+        types: [KNOWS]
+        length: fixed(1)
+    selections:
+      []
+    optional_matches: 0
+    hints: 0
+    mutating_patterns: 0
+  horizon:
+    projection:
+      distinct: false
+      items:
+        - alias: a
+          expression: a
+        - alias: b
+          expression: b
+      order_by:
+        []
+      where: null
+      skip: null
+      limit: null
+  tail:
+    null
+)");
+}
+
+TEST(PlannerQueryPrinterTest, DumpsExplicitRelationshipTypeSelection) {
+  ExpectPlannerQueryText("MATCH (a)-[r]->(b) WHERE r:KNOWS RETURN r",
                          R"(SinglePlannerQuery
   query_graph:
     argument_ids: []
@@ -145,10 +181,8 @@ TEST(PlannerQueryPrinterTest, DumpsRelationshipPatternAndTypeSelection) {
     projection:
       distinct: false
       items:
-        - alias: a
-          expression: a
-        - alias: b
-          expression: b
+        - alias: r
+          expression: r
       order_by:
         []
       where: null
@@ -514,21 +548,18 @@ TEST(PlannerQueryTest, BuildsGraphFromMatch) {
   EXPECT_EQ(main.tail, nullptr);
   EXPECT_TRUE(Contains(main.query_graph.pattern_nodes, "a"));
   EXPECT_TRUE(Contains(main.query_graph.pattern_nodes, "b"));
-  EXPECT_EQ(main.query_graph.selections.size(), 4U);
+  EXPECT_EQ(main.query_graph.selections.size(), 3U);
 
   const auto where_dependencies =
       SelectionDependenciesByExpression(main.query_graph);
   EXPECT_TRUE(Contains(where_dependencies.at("a:Person"), "a"));
   EXPECT_TRUE(Contains(where_dependencies.at("a.name = 'Alice'"), "a"));
-  EXPECT_TRUE(Contains(where_dependencies.at("r:KNOWS"), "r"));
   EXPECT_TRUE(Contains(where_dependencies.at("a.age > 30"), "a"));
   EXPECT_EQ(main.query_graph.selections.predicates[0].kind,
             ir::PredicateKind::kNodeLabel);
   EXPECT_EQ(main.query_graph.selections.predicates[1].kind,
             ir::PredicateKind::kPropertyEquality);
   EXPECT_EQ(main.query_graph.selections.predicates[2].kind,
-            ir::PredicateKind::kRelationshipType);
-  EXPECT_EQ(main.query_graph.selections.predicates[3].kind,
             ir::PredicateKind::kPropertyComparison);
 
   ASSERT_EQ(main.query_graph.pattern_relationships.size(), 1U);
@@ -537,7 +568,7 @@ TEST(PlannerQueryTest, BuildsGraphFromMatch) {
   EXPECT_EQ(relationship.left_node, "a");
   EXPECT_EQ(relationship.right_node, "b");
   EXPECT_EQ(relationship.direction, ir::Direction::kOutgoing);
-  EXPECT_TRUE(relationship.types.empty());
+  EXPECT_EQ(relationship.types, std::vector<std::string>({"KNOWS"}));
   EXPECT_FALSE(relationship.length.variable);
   EXPECT_EQ(relationship.length.fixed, 1);
 
@@ -624,10 +655,11 @@ TEST(PlannerQueryTest, BuildsTailForMultiPartQuery) {
   EXPECT_FALSE(Contains(second.query_graph.argument_ids, "m"));
   ASSERT_EQ(second.query_graph.pattern_relationships.size(), 1U);
   EXPECT_EQ(second.query_graph.pattern_relationships[0].variable, "r");
-  EXPECT_EQ(second.query_graph.selections.size(), 2U);
+  EXPECT_EQ(second.query_graph.pattern_relationships[0].types,
+            std::vector<std::string>({"KNOWS"}));
+  EXPECT_EQ(second.query_graph.selections.size(), 1U);
   const auto second_where_dependencies =
       SelectionDependenciesByExpression(second.query_graph);
-  EXPECT_TRUE(Contains(second_where_dependencies.at("r:KNOWS"), "r"));
   EXPECT_TRUE(second_where_dependencies.contains("true"));
 
   ASSERT_EQ(second.horizon.RequireProjection().items.size(), 2U);
@@ -754,11 +786,15 @@ TEST(PlannerQueryTest, DeduplicatesRepeatedWherePredicatesAcrossMatches) {
       ir::CreatePlannerQuery(*statement);
   const ir::SinglePlannerQuery &main = planner_query->RequireSingle();
 
-  EXPECT_EQ(main.query_graph.selections.size(), 2U);
+  EXPECT_EQ(main.query_graph.selections.size(), 1U);
   const auto where_dependencies =
       SelectionDependenciesByExpression(main.query_graph);
   EXPECT_TRUE(Contains(where_dependencies.at("n.age > 30"), "n"));
-  EXPECT_TRUE(Contains(where_dependencies.at("r:KNOWS"), "r"));
+  ASSERT_EQ(main.query_graph.pattern_relationships.size(), 2U);
+  EXPECT_EQ(main.query_graph.pattern_relationships[0].types,
+            std::vector<std::string>({"KNOWS"}));
+  EXPECT_EQ(main.query_graph.pattern_relationships[1].types,
+            std::vector<std::string>({"KNOWS"}));
 }
 
 TEST(PlannerQueryTest, BuildsUnionBranch) {

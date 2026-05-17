@@ -47,20 +47,6 @@ std::unique_ptr<Expression> CombineAnd(std::unique_ptr<Expression> left,
   return node;
 }
 
-std::unique_ptr<Expression> CombineOr(std::unique_ptr<Expression> left,
-                                      std::unique_ptr<Expression> right) {
-  if (!left) {
-    return right;
-  }
-  if (!right) {
-    return left;
-  }
-  auto node = std::make_unique<OrExpression>();
-  node->left = std::move(left);
-  node->right = std::move(right);
-  return node;
-}
-
 void CollectFromNodePattern(NodePattern &node,
                             std::vector<std::unique_ptr<Expression>> &preds) {
   if (node.variable.empty()) {
@@ -86,26 +72,6 @@ void CollectFromRelationshipDetail(
     std::vector<std::unique_ptr<Expression>> &preds) {
   if (detail.variable.empty()) {
     return;
-  }
-  if (!detail.types.empty()) {
-    std::unique_ptr<Expression> type_predicate;
-    if (detail.types.size() == 1) {
-      std::vector<std::string> label;
-      label.push_back(std::move(detail.types.front()));
-      type_predicate = MakeLabelPredicate(detail.variable, std::move(label));
-    } else {
-      for (auto &type : detail.types) {
-        std::vector<std::string> label;
-        label.push_back(std::move(type));
-        type_predicate =
-            CombineOr(std::move(type_predicate),
-                      MakeLabelPredicate(detail.variable, std::move(label)));
-      }
-    }
-    detail.types.clear();
-    if (type_predicate) {
-      preds.push_back(std::move(type_predicate));
-    }
   }
   if (!detail.properties || !detail.properties->map) {
     return;

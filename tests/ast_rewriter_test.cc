@@ -103,10 +103,10 @@ TEST(PatternPredicateNormalizationRewriterTest, PullsNodePredicatesToWhere) {
 }
 
 TEST(PatternPredicateNormalizationRewriterTest,
-     PullsRelationshipPredicatesToWhere) {
+     PullsRelationshipPropertiesToWhere) {
   ExpectRewriteEqualsWith<ast::PatternPredicateNormalizationRewriter>(
       "MATCH (n)-[r:KNOWS {since: 2020}]->(m) RETURN r",
-      "MATCH (n)-[r]->(m) WHERE r:KNOWS AND r.since = 2020 RETURN r");
+      "MATCH (n)-[r:KNOWS]->(m) WHERE r.since = 2020 RETURN r");
 }
 
 TEST(ExistentialSubqueryRewriterTest, PatternToMatchQuery) {
