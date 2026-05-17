@@ -110,6 +110,31 @@ std::unordered_set<std::string> ProjectionOutputSymbols(
   return symbols;
 }
 
+bool StringEquals(const std::string &value, std::string_view expected) {
+  return std::string_view(value) == expected;
+}
+
+bool StringVectorContains(const std::vector<std::string> &values,
+                          std::string_view expected) {
+  return std::any_of(values.begin(), values.end(),
+                     [expected](const std::string &value) {
+                       return StringEquals(value, expected);
+                     });
+}
+
+bool StringSetContains(const std::unordered_set<std::string> &values,
+                       std::string_view expected) {
+  return std::any_of(values.begin(), values.end(),
+                     [expected](const std::string &value) {
+                       return StringEquals(value, expected);
+                     });
+}
+
+bool IsPropertyPredicateKind(PredicateKind kind) {
+  return kind == PredicateKind::kPropertyEquality ||
+         kind == PredicateKind::kPropertyComparison;
+}
+
 std::string_view PredicateKindKey(PredicateKind kind) {
   switch (kind) {
     case PredicateKind::kGenericExpression:
@@ -200,6 +225,141 @@ std::string PredicateKey(const Predicate &predicate) {
 }
 
 }  // namespace
+
+std::vector<const Predicate *> Selections::PredicatesByKind(
+    PredicateKind kind) const {
+  std::vector<const Predicate *> result;
+  for (const auto &predicate : predicates) {
+    if (predicate.kind == kind) {
+      result.push_back(&predicate);
+    }
+  }
+  return result;
+}
+
+std::vector<const Predicate *> Selections::PredicatesByVariable(
+    std::string_view variable) const {
+  std::vector<const Predicate *> result;
+  for (const auto &predicate : predicates) {
+    if (StringEquals(predicate.variable, variable)) {
+      result.push_back(&predicate);
+    }
+  }
+  return result;
+}
+
+std::vector<const Predicate *> Selections::PredicatesDependingOn(
+    std::string_view symbol) const {
+  std::vector<const Predicate *> result;
+  for (const auto &predicate : predicates) {
+    if (StringSetContains(predicate.dependencies, symbol)) {
+      result.push_back(&predicate);
+    }
+  }
+  return result;
+}
+
+std::vector<const Predicate *> Selections::NodeLabelPredicates(
+    std::string_view variable) const {
+  std::vector<const Predicate *> result;
+  for (const auto &predicate : predicates) {
+    if (predicate.kind == PredicateKind::kNodeLabel &&
+        StringEquals(predicate.variable, variable)) {
+      result.push_back(&predicate);
+    }
+  }
+  return result;
+}
+
+std::vector<const Predicate *> Selections::RelationshipTypePredicates(
+    std::string_view variable) const {
+  std::vector<const Predicate *> result;
+  for (const auto &predicate : predicates) {
+    if (predicate.kind == PredicateKind::kRelationshipType &&
+        StringEquals(predicate.variable, variable)) {
+      result.push_back(&predicate);
+    }
+  }
+  return result;
+}
+
+std::vector<const Predicate *> Selections::PropertyPredicates(
+    std::string_view variable, std::string_view property_key) const {
+  std::vector<const Predicate *> result;
+  for (const auto &predicate : predicates) {
+    if (IsPropertyPredicateKind(predicate.kind) &&
+        StringEquals(predicate.variable, variable) &&
+        StringEquals(predicate.property_key, property_key)) {
+      result.push_back(&predicate);
+    }
+  }
+  return result;
+}
+
+std::vector<const Predicate *> Selections::PropertyPredicates(
+    std::string_view variable, std::string_view property_key,
+    std::string_view comparison_op) const {
+  std::vector<const Predicate *> result;
+  for (const auto &predicate : predicates) {
+    if (IsPropertyPredicateKind(predicate.kind) &&
+        StringEquals(predicate.variable, variable) &&
+        StringEquals(predicate.property_key, property_key) &&
+        StringEquals(predicate.comparison_op, comparison_op)) {
+      result.push_back(&predicate);
+    }
+  }
+  return result;
+}
+
+bool Selections::ContainsNodeLabel(std::string_view variable,
+                                   std::string_view label) const {
+  for (const auto &predicate : predicates) {
+    if (predicate.kind == PredicateKind::kNodeLabel &&
+        StringEquals(predicate.variable, variable) &&
+        StringVectorContains(predicate.labels, label)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool Selections::ContainsRelationshipType(std::string_view variable,
+                                          std::string_view type) const {
+  for (const auto &predicate : predicates) {
+    if (predicate.kind == PredicateKind::kRelationshipType &&
+        StringEquals(predicate.variable, variable) &&
+        StringVectorContains(predicate.relationship_types, type)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool Selections::ContainsPropertyPredicate(
+    std::string_view variable, std::string_view property_key) const {
+  for (const auto &predicate : predicates) {
+    if (IsPropertyPredicateKind(predicate.kind) &&
+        StringEquals(predicate.variable, variable) &&
+        StringEquals(predicate.property_key, property_key)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool Selections::ContainsPropertyPredicate(
+    std::string_view variable, std::string_view property_key,
+    std::string_view comparison_op) const {
+  for (const auto &predicate : predicates) {
+    if (IsPropertyPredicateKind(predicate.kind) &&
+        StringEquals(predicate.variable, variable) &&
+        StringEquals(predicate.property_key, property_key) &&
+        StringEquals(predicate.comparison_op, comparison_op)) {
+      return true;
+    }
+  }
+  return false;
+}
 
 class PatternConverter {
  public:

@@ -583,6 +583,48 @@ TEST(PlannerQueryTest, BuildsGraphFromMatch) {
   EXPECT_EQ(planner_query->Kind(), ir::PlannerQueryKind::kSingle);
 }
 
+TEST(PlannerQueryTest, QueriesSelectionsByStructuredPredicateFields) {
+  auto statement = ParseOrFail(
+      "MATCH (a:Person {name: 'Alice'})-[r]->(b) "
+      "WHERE a.age > 30 AND r:KNOWS AND b.age = 40 "
+      "RETURN a, b, r");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::SinglePlannerQuery &main = planner_query->RequireSingle();
+  const ir::Selections &selections = main.query_graph.selections;
+
+  EXPECT_EQ(selections.size(), 5U);
+  EXPECT_EQ(selections.PredicatesByVariable("a").size(), 3U);
+  EXPECT_EQ(selections.PredicatesByVariable("r").size(), 1U);
+  EXPECT_EQ(selections.PredicatesDependingOn("a").size(), 3U);
+  EXPECT_EQ(
+      selections.PredicatesByKind(ir::PredicateKind::kPropertyEquality).size(),
+      2U);
+
+  const auto node_labels = selections.NodeLabelPredicates("a");
+  ASSERT_EQ(node_labels.size(), 1U);
+  EXPECT_EQ(node_labels[0]->labels, std::vector<std::string>({"Person"}));
+  EXPECT_TRUE(selections.ContainsNodeLabel("a", "Person"));
+  EXPECT_FALSE(selections.ContainsNodeLabel("a", "Employee"));
+
+  const auto relationship_types = selections.RelationshipTypePredicates("r");
+  ASSERT_EQ(relationship_types.size(), 1U);
+  EXPECT_EQ(relationship_types[0]->relationship_types,
+            std::vector<std::string>({"KNOWS"}));
+  EXPECT_TRUE(selections.ContainsRelationshipType("r", "KNOWS"));
+  EXPECT_FALSE(selections.ContainsRelationshipType("r", "LIKES"));
+
+  const auto age_predicates = selections.PropertyPredicates("a", "age");
+  ASSERT_EQ(age_predicates.size(), 1U);
+  EXPECT_EQ(age_predicates[0]->comparison_op, ">");
+  EXPECT_EQ(selections.PropertyPredicates("a", "age", ">").size(), 1U);
+  EXPECT_TRUE(selections.ContainsPropertyPredicate("a", "age"));
+  EXPECT_TRUE(selections.ContainsPropertyPredicate("a", "age", ">"));
+  EXPECT_FALSE(selections.ContainsPropertyPredicate("a", "age", "="));
+}
+
 TEST(PlannerQueryTest, AcceptsAnonymousPatternAfterRewrite) {
   auto statement = ParseOrFail("MATCH ()-[]->() RETURN 1");
   ASSERT_TRUE(statement);

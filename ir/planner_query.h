@@ -4,6 +4,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 #include <vector>
 
@@ -56,6 +57,33 @@ struct Selections {
 
   [[nodiscard]] bool empty() const { return predicates.empty(); }
   [[nodiscard]] std::size_t size() const { return predicates.size(); }
+
+  [[nodiscard]] std::vector<const Predicate *> PredicatesByKind(
+      PredicateKind kind) const;
+  [[nodiscard]] std::vector<const Predicate *> PredicatesByVariable(
+      std::string_view variable) const;
+  [[nodiscard]] std::vector<const Predicate *> PredicatesDependingOn(
+      std::string_view symbol) const;
+
+  [[nodiscard]] std::vector<const Predicate *> NodeLabelPredicates(
+      std::string_view variable) const;
+  [[nodiscard]] std::vector<const Predicate *> RelationshipTypePredicates(
+      std::string_view variable) const;
+  [[nodiscard]] std::vector<const Predicate *> PropertyPredicates(
+      std::string_view variable, std::string_view property_key) const;
+  [[nodiscard]] std::vector<const Predicate *> PropertyPredicates(
+      std::string_view variable, std::string_view property_key,
+      std::string_view comparison_op) const;
+
+  [[nodiscard]] bool ContainsNodeLabel(std::string_view variable,
+                                       std::string_view label) const;
+  [[nodiscard]] bool ContainsRelationshipType(std::string_view variable,
+                                              std::string_view type) const;
+  [[nodiscard]] bool ContainsPropertyPredicate(
+      std::string_view variable, std::string_view property_key) const;
+  [[nodiscard]] bool ContainsPropertyPredicate(
+      std::string_view variable, std::string_view property_key,
+      std::string_view comparison_op) const;
 };
 
 struct Hint {};
