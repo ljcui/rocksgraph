@@ -18,12 +18,171 @@
 namespace ir {
 namespace {
 
+std::string RewrittenAstRequired(std::string_view detail) {
+  std::string out =
+      "CreatePlannerQuery requires AST rewritten by "
+      "ast::ParseCypherAndRewrite: ";
+  out.append(detail.data(), detail.size());
+  return out;
+}
+
+enum class PatternContractContext { kNone, kRead, kUpdate };
+
+class PatternContractScope {
+ public:
+  PatternContractScope(PatternContractContext *target,
+                       PatternContractContext next)
+      : target_(target), previous_(*target) {
+    *target_ = next;
+  }
+
+  PatternContractScope(const PatternContractScope &) = delete;
+  PatternContractScope &operator=(const PatternContractScope &) = delete;
+
+  ~PatternContractScope() { *target_ = previous_; }
+
+ private:
+  PatternContractContext *target_ = nullptr;
+  PatternContractContext previous_ = PatternContractContext::kNone;
+};
+
+class PlannerQueryInputContractChecker final : public ast::ASTConstWalker {
+ public:
+  void Check(const ast::Statement &statement) { statement.Accept(*this); }
+
+ protected:
+  void Visit(const ast::ProjectionBody &node) override {
+    CHECK(!node.star, common::InvalidArgumentError,
+          RewrittenAstRequired("projection star must be expanded"));
+    ast::ASTConstWalker::Visit(node);
+  }
+
+  void Visit(const ast::ProjectionItem &node) override {
+    CHECK(node.expression != nullptr, common::InvalidArgumentError,
+          RewrittenAstRequired("projection item expression must exist"));
+    CHECK(!node.alias.empty(), common::InvalidArgumentError,
+          RewrittenAstRequired("projection item alias must be filled"));
+    ast::ASTConstWalker::Visit(node);
+  }
+
+  void Visit(const ast::ComparisonChainExpression &node) override {
+    (void)node;
+    THROW(common::InvalidArgumentError,
+          RewrittenAstRequired(
+              "comparison chains must be rewritten to binary comparisons"));
+  }
+
+  void Visit(const ast::ParenthesizedExpression &node) override {
+    (void)node;
+    THROW(common::InvalidArgumentError,
+          RewrittenAstRequired("parenthesized expressions must be unwrapped"));
+  }
+
+  void Visit(const ast::PatternPredicateExpression &node) override {
+    (void)node;
+    THROW(
+        common::InvalidArgumentError,
+        RewrittenAstRequired(
+            "pattern predicates must be rewritten to existential subqueries"));
+  }
+
+  void Visit(const ast::ExistentialSubquery &node) override {
+    CHECK(node.pattern == nullptr, common::InvalidArgumentError,
+          RewrittenAstRequired(
+              "EXISTS patterns must be rewritten to MATCH subqueries"));
+    ast::ASTConstWalker::Visit(node);
+  }
+
+  void Visit(const ast::Match &node) override {
+    {
+      PatternContractScope scope(&pattern_context_,
+                                 PatternContractContext::kRead);
+      WalkMaybe(node.pattern);
+    }
+    WalkMaybe(node.where);
+  }
+
+  void Visit(const ast::Create &node) override {
+    PatternContractScope scope(&pattern_context_,
+                               PatternContractContext::kUpdate);
+    WalkMaybe(node.pattern);
+  }
+
+  void Visit(const ast::Merge &node) override {
+    {
+      PatternContractScope scope(&pattern_context_,
+                                 PatternContractContext::kUpdate);
+      WalkMaybe(node.pattern_part);
+    }
+    for (const auto &action : node.actions) {
+      WalkMaybe(action.second);
+    }
+  }
+
+  void Visit(const ast::PatternComprehension &node) override {
+    {
+      PatternContractScope scope(&pattern_context_,
+                                 PatternContractContext::kRead);
+      WalkMaybe(node.relationships_pattern);
+    }
+    WalkMaybe(node.where_expr);
+    WalkMaybe(node.eval_expr);
+  }
+
+  void Visit(const ast::NodePattern &node) override {
+    if (pattern_context_ != PatternContractContext::kNone) {
+      CHECK(!node.variable.empty(), common::InvalidArgumentError,
+            RewrittenAstRequired("anonymous nodes must be named"));
+    }
+    if (pattern_context_ == PatternContractContext::kRead) {
+      CHECK(node.labels.empty(), common::InvalidArgumentError,
+            RewrittenAstRequired(
+                "inline node labels in read patterns must be normalized"));
+      CHECK(!node.properties, common::InvalidArgumentError,
+            RewrittenAstRequired(
+                "inline node properties in read patterns must be normalized"));
+    }
+    ast::ASTConstWalker::Visit(node);
+  }
+
+  void Visit(const ast::RelationshipPattern &node) override {
+    if (pattern_context_ != PatternContractContext::kNone) {
+      CHECK(node.detail != nullptr, common::InvalidArgumentError,
+            RewrittenAstRequired("anonymous relationships must be named"));
+    }
+    ast::ASTConstWalker::Visit(node);
+  }
+
+  void Visit(const ast::RelationshipDetail &node) override {
+    if (pattern_context_ != PatternContractContext::kNone) {
+      CHECK(!node.variable.empty(), common::InvalidArgumentError,
+            RewrittenAstRequired("anonymous relationships must be named"));
+    }
+    if (pattern_context_ == PatternContractContext::kRead) {
+      CHECK(!node.properties, common::InvalidArgumentError,
+            RewrittenAstRequired(
+                "inline relationship properties in read patterns must be "
+                "normalized"));
+    }
+    ast::ASTConstWalker::Visit(node);
+  }
+
+ private:
+  PatternContractContext pattern_context_ = PatternContractContext::kNone;
+};
+
+void CheckPlannerQueryInputContract(const ast::Statement &statement) {
+  PlannerQueryInputContractChecker checker;
+  checker.Check(statement);
+}
+
 class PlannerQueryBuilder {
  public:
   explicit PlannerQueryBuilder(const ast::SemanticTable &semantic_table)
       : semantic_table_(&semantic_table) {}
 
   std::unique_ptr<PlannerQuery> Build(const ast::Statement &statement) {
+    CheckPlannerQueryInputContract(statement);
     switch (statement.node_type) {
       case ast::ASTNodeType::kRegularQuery: {
         std::unique_ptr<PlannerQuery> planner_query =

@@ -506,6 +506,11 @@ std::unique_ptr<PlannerQuery> MakeSinglePlannerQuery(SinglePlannerQuery query);
 std::unique_ptr<PlannerQuery> MakeUnionPlannerQuery(
     std::unique_ptr<PlannerQuery> lhs, SinglePlannerQuery rhs, bool all);
 
+// CreatePlannerQuery expects a semantic AST after the default rewriter
+// pipeline, normally produced by ast::ParseCypherAndRewrite. Raw parser output
+// is rejected when it still contains unexpanded-star, missing-alias,
+// anonymous-pattern, or pattern-predicate states that the planner IR does not
+// consume directly.
 std::unique_ptr<PlannerQuery> CreatePlannerQuery(
     const ast::Statement &statement);
 

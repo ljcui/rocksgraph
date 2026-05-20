@@ -101,6 +101,7 @@ void ReturnStarRewriter::ExpandStar(ProjectionBody &body) {
     auto var = std::make_unique<Variable>();
     var->name = name;
     item->expression = std::move(var);
+    item->alias = name;
     expanded.push_back(std::move(item));
   }
   for (auto &item : body.items) {

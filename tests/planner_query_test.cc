@@ -32,6 +32,19 @@ std::unique_ptr<ast::Statement> ParseOrFail(const std::string &query) {
   return {};
 }
 
+std::unique_ptr<ast::Statement> ParseRawOrFail(const std::string &query) {
+  try {
+    return ast::ParseCypher(query);
+  } catch (const ast::ParseError &e) {
+    ADD_FAILURE() << "parse errors for query: " << query
+                  << " message: " << e.what();
+  } catch (const ast::SemanticError &e) {
+    ADD_FAILURE() << "semantic errors for query: " << query
+                  << " message: " << e.what();
+  }
+  return {};
+}
+
 bool Contains(const std::unordered_set<std::string> &set,
               const std::string &value) {
   return set.find(value) != set.end();
@@ -63,7 +76,61 @@ void ExpectPlannerQueryText(const std::string &query,
   EXPECT_EQ(ir::PlannerQueryToString(*planner_query), expected);
 }
 
+void ExpectPlannerQueryContractError(const std::string &query,
+                                     const std::string &expected_message) {
+  auto statement = ParseRawOrFail(query);
+  ASSERT_TRUE(statement);
+
+  try {
+    (void)ir::CreatePlannerQuery(*statement);
+    FAIL() << "expected planner query input contract error";
+  } catch (const common::InvalidArgumentError &e) {
+    EXPECT_NE(e.Message().find(expected_message), std::string::npos)
+        << "actual message: " << e.Message();
+  }
+}
+
 }  // namespace
+
+TEST(PlannerQueryInputContractTest, RejectsRawReturnStar) {
+  ExpectPlannerQueryContractError("MATCH (n) RETURN *",
+                                  "projection star must be expanded");
+}
+
+TEST(PlannerQueryInputContractTest, RejectsRawProjectionWithoutAlias) {
+  ExpectPlannerQueryContractError("MATCH (n) RETURN n",
+                                  "projection item alias must be filled");
+}
+
+TEST(PlannerQueryInputContractTest, RejectsRawInlineReadPatternPredicates) {
+  ExpectPlannerQueryContractError(
+      "MATCH (n:Person {id: 1}) RETURN n AS n",
+      "inline node labels in read patterns must be normalized");
+}
+
+TEST(PlannerQueryInputContractTest, RejectsRawPatternPredicateExpression) {
+  ExpectPlannerQueryContractError(
+      "MATCH (n) WHERE (n)-->(m) RETURN n AS n",
+      "pattern predicates must be rewritten to existential subqueries");
+}
+
+TEST(PlannerQueryInputContractTest, RejectsRawAnonymousPatternNames) {
+  ExpectPlannerQueryContractError("MATCH () RETURN 1 AS x",
+                                  "anonymous nodes must be named");
+}
+
+TEST(PlannerQueryInputContractTest, AcceptsRewrittenReturnStar) {
+  auto statement = ParseOrFail("MATCH (n) RETURN *");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::RegularQueryProjection &projection =
+      planner_query->RequireSingle().horizon.RequireRegularProjection();
+
+  ASSERT_EQ(projection.items.size(), 1U);
+  EXPECT_EQ(projection.items[0].alias, "n");
+}
 
 TEST(PlannerQueryPrinterTest, DumpsSimpleMatch) {
   ExpectPlannerQueryText("MATCH (n) RETURN n", R"(SinglePlannerQuery

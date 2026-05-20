@@ -50,22 +50,23 @@ void ExpectRewriteEqualsWith(const std::string &input,
 
 TEST(ReturnStarRewriterTest, MatchReturnStar) {
   ExpectRewriteEqualsWith<ast::ReturnStarRewriter>("MATCH (n) RETURN *",
-                                                   "MATCH (n) RETURN n");
+                                                   "MATCH (n) RETURN n AS n");
 }
 
 TEST(ReturnStarRewriterTest, UnwindReturnStar) {
   ExpectRewriteEqualsWith<ast::ReturnStarRewriter>(
-      "UNWIND [1, 2] AS x RETURN *", "UNWIND [1, 2] AS x RETURN x");
+      "UNWIND [1, 2] AS x RETURN *", "UNWIND [1, 2] AS x RETURN x AS x");
 }
 
 TEST(ReturnStarRewriterTest, WithStarThenReturnStar) {
   ExpectRewriteEqualsWith<ast::ReturnStarRewriter>("MATCH (n) WITH * RETURN *",
-                                                   "MATCH (n) WITH n RETURN n");
+                                                   "MATCH (n) WITH n AS n "
+                                                   "RETURN n AS n");
 }
 
 TEST(ReturnStarRewriterTest, WithAliasReturnStar) {
   ExpectRewriteEqualsWith<ast::ReturnStarRewriter>(
-      "MATCH (n) WITH n AS m RETURN *", "MATCH (n) WITH n AS m RETURN m");
+      "MATCH (n) WITH n AS m RETURN *", "MATCH (n) WITH n AS m RETURN m AS m");
 }
 
 TEST(ComparisonChainRewriterTest, ReturnChain) {
@@ -198,7 +199,7 @@ TEST(AddUniquenessPredicatesRewriterTest,
 
 TEST(RewriterPipelineTest, DefaultPipelineUsesReturnStar) {
   auto statement = ParseOrFail("MATCH (n) RETURN *");
-  auto expected_statement = ParseOrFail("MATCH (n) RETURN n");
+  auto expected_statement = ParseOrFail("MATCH (n) RETURN n AS n");
 
   ast::ApplyDefaultRewriters(*statement);
 
@@ -209,7 +210,7 @@ TEST(RewriterPipelineTest, DefaultPipelineUsesReturnStar) {
 TEST(RewriterPipelineTest, ParseAndRewriteUsesDefaultPipeline) {
   std::unique_ptr<ast::Statement> statement;
   ASSERT_NO_THROW(statement = ast::ParseCypherAndRewrite("MATCH (n) RETURN *"));
-  auto expected_statement = ParseOrFail("MATCH (n) RETURN n");
+  auto expected_statement = ParseOrFail("MATCH (n) RETURN n AS n");
 
   EXPECT_TRUE(ast::ASTEqual::Equal(statement.get(), expected_statement.get()))
       << "rewrite mismatch for parseCypherAndRewrite";
@@ -218,7 +219,8 @@ TEST(RewriterPipelineTest, ParseAndRewriteUsesDefaultPipeline) {
 TEST(RewriterPipelineTest, DefaultPipelineAddsUniquenessPredicates) {
   auto statement = ParseOrFail("MATCH (a)-[r1]->(b)-[r2]->(c) RETURN *");
   auto expected_statement = ParseOrFail(
-      "MATCH (a)-[r1]->(b)-[r2]->(c) WHERE NOT r1 = r2 RETURN a, r1, b, r2, c");
+      "MATCH (a)-[r1]->(b)-[r2]->(c) WHERE NOT r1 = r2 "
+      "RETURN a AS a, r1 AS r1, b AS b, r2 AS r2, c AS c");
 
   ast::ApplyDefaultRewriters(*statement);
 
@@ -228,8 +230,9 @@ TEST(RewriterPipelineTest, DefaultPipelineAddsUniquenessPredicates) {
 
 TEST(RewriterPipelineTest, DefaultPipelineAddsFalseForRepeatedRelationship) {
   auto statement = ParseOrFail("MATCH (a)-[r]->(b)-[r]->(c) RETURN *");
-  auto expected_statement =
-      ParseOrFail("MATCH (a)-[r]->(b)-[r]->(c) WHERE false RETURN a, r, b, c");
+  auto expected_statement = ParseOrFail(
+      "MATCH (a)-[r]->(b)-[r]->(c) WHERE false "
+      "RETURN a AS a, r AS r, b AS b, c AS c");
 
   ast::ApplyDefaultRewriters(*statement);
 
@@ -248,7 +251,7 @@ TEST(RewriterPipelineTest,
       "= __uniq_rel_1)) AND "
       "ALL(__uniq_rel_2 IN r WHERE SINGLE(__uniq_rel_3 IN r WHERE __uniq_rel_2 "
       "= __uniq_rel_3)) "
-      "RETURN a, r, b, c");
+      "RETURN a AS a, r AS r, b AS b, c AS c");
 
   ast::ApplyDefaultRewriters(*statement);
 
