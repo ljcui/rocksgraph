@@ -12,11 +12,19 @@ namespace ir {
 namespace {
 
 inline constexpr auto kLogicalPlanNodeTypeNames = std::array{
-    std::string_view{"Argument"},        std::string_view{"AllNodeScan"},
-    std::string_view{"NodeByLabelScan"}, std::string_view{"Expand"},
-    std::string_view{"Filter"},          std::string_view{"Projection"},
-    std::string_view{"ProduceResults"},  std::string_view{"CartesianProduct"},
-    std::string_view{"Apply"},           std::string_view{"SemiApply"},
+    std::string_view{"Argument"},
+    std::string_view{"AllNodeScan"},
+    std::string_view{"NodeByLabelScan"},
+    std::string_view{"Expand"},
+    std::string_view{"Filter"},
+    std::string_view{"Projection"},
+    std::string_view{"Sort"},
+    std::string_view{"Skip"},
+    std::string_view{"Limit"},
+    std::string_view{"ProduceResults"},
+    std::string_view{"CartesianProduct"},
+    std::string_view{"Apply"},
+    std::string_view{"SemiApply"},
 };
 
 static_assert(kLogicalPlanNodeTypeNames.size() ==
@@ -136,6 +144,16 @@ std::string_view ToString(ExpandDirection direction) {
       return "both";
   }
   THROW(common::InternalError, "unknown expand direction");
+}
+
+std::string_view ToString(LogicalOrderDirection direction) {
+  switch (direction) {
+    case LogicalOrderDirection::kAscending:
+      return "ASC";
+    case LogicalOrderDirection::kDescending:
+      return "DESC";
+  }
+  THROW(common::InternalError, "unknown order direction");
 }
 
 LogicalPlan::LogicalPlan(LogicalPlanNodeType type,
@@ -278,6 +296,58 @@ std::string ProjectionPlan::Details() const {
     aliases.push_back(item.alias);
   }
   return Join(aliases, ", ");
+}
+
+SortPlan::SortPlan(LogicalPlanPtr source, std::vector<LogicalSortItem> items)
+    : LogicalPlan(LogicalPlanNodeType::kSort,
+                  UnaryChildren(std::move(source), "Sort")),
+      items_(std::move(items)) {
+  SetSolvedSymbols(Child(0).SolvedSymbols());
+  SetOutputColumns(Child(0).OutputColumns());
+}
+
+std::string SortPlan::Details() const {
+  std::vector<std::string> items;
+  items.reserve(items_.size());
+  for (const auto &item : items_) {
+    std::string expression = item.expression != nullptr
+                                 ? ast::ExpressionToString(*item.expression)
+                                 : "null";
+    expression.push_back(' ');
+    expression.append(ToString(item.direction));
+    items.push_back(std::move(expression));
+  }
+  return Join(items, ", ");
+}
+
+SkipPlan::SkipPlan(LogicalPlanPtr source, const ast::Expression *skip)
+    : LogicalPlan(LogicalPlanNodeType::kSkip,
+                  UnaryChildren(std::move(source), "Skip")),
+      skip_(skip) {
+  SetSolvedSymbols(Child(0).SolvedSymbols());
+  SetOutputColumns(Child(0).OutputColumns());
+}
+
+std::string SkipPlan::Details() const {
+  if (skip_ == nullptr) {
+    return "null";
+  }
+  return ast::ExpressionToString(*skip_);
+}
+
+LimitPlan::LimitPlan(LogicalPlanPtr source, const ast::Expression *limit)
+    : LogicalPlan(LogicalPlanNodeType::kLimit,
+                  UnaryChildren(std::move(source), "Limit")),
+      limit_(limit) {
+  SetSolvedSymbols(Child(0).SolvedSymbols());
+  SetOutputColumns(Child(0).OutputColumns());
+}
+
+std::string LimitPlan::Details() const {
+  if (limit_ == nullptr) {
+    return "null";
+  }
+  return ast::ExpressionToString(*limit_);
 }
 
 ProduceResultsPlan::ProduceResultsPlan(LogicalPlanPtr source,

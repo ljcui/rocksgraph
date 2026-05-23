@@ -23,6 +23,9 @@ enum class LogicalPlanNodeType {
   kExpand,
   kFilter,
   kProjection,
+  kSort,
+  kSkip,
+  kLimit,
   kProduceResults,
   kCartesianProduct,
   kApply,
@@ -38,9 +41,21 @@ enum class ExpandDirection {
 [[nodiscard]] std::string_view ToString(LogicalPlanNodeType type);
 [[nodiscard]] std::string_view ToString(ExpandDirection direction);
 
+enum class LogicalOrderDirection {
+  kAscending,
+  kDescending,
+};
+
+[[nodiscard]] std::string_view ToString(LogicalOrderDirection direction);
+
 struct LogicalProjectionItem {
   const ast::Expression *expression = nullptr;
   std::string alias;
+};
+
+struct LogicalSortItem {
+  const ast::Expression *expression = nullptr;
+  LogicalOrderDirection direction = LogicalOrderDirection::kAscending;
 };
 
 class LogicalPlan {
@@ -177,6 +192,41 @@ class ProjectionPlan final : public LogicalPlan {
 
  private:
   std::vector<LogicalProjectionItem> items_;
+};
+
+class SortPlan final : public LogicalPlan {
+ public:
+  SortPlan(LogicalPlanPtr source, std::vector<LogicalSortItem> items);
+
+  [[nodiscard]] const std::vector<LogicalSortItem> &Items() const noexcept {
+    return items_;
+  }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  std::vector<LogicalSortItem> items_;
+};
+
+class SkipPlan final : public LogicalPlan {
+ public:
+  SkipPlan(LogicalPlanPtr source, const ast::Expression *skip);
+
+  [[nodiscard]] const ast::Expression *Skip() const noexcept { return skip_; }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  const ast::Expression *skip_ = nullptr;
+};
+
+class LimitPlan final : public LogicalPlan {
+ public:
+  LimitPlan(LogicalPlanPtr source, const ast::Expression *limit);
+
+  [[nodiscard]] const ast::Expression *Limit() const noexcept { return limit_; }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  const ast::Expression *limit_ = nullptr;
 };
 
 class ProduceResultsPlan final : public LogicalPlan {

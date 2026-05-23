@@ -40,6 +40,28 @@ std::vector<std::string> ProjectionAliases(
   return aliases;
 }
 
+LogicalOrderDirection ToLogicalOrderDirection(OrderDirection direction) {
+  switch (direction) {
+    case OrderDirection::kAscending:
+      return LogicalOrderDirection::kAscending;
+    case OrderDirection::kDescending:
+      return LogicalOrderDirection::kDescending;
+  }
+  THROW(common::InternalError, "unknown order direction");
+}
+
+std::vector<LogicalSortItem> SortItems(const RequiredOrder &required_order) {
+  std::vector<LogicalSortItem> items;
+  items.reserve(required_order.items.size());
+  for (const auto &item : required_order.items) {
+    CHECK(item.expression != nullptr, common::InvalidArgumentError,
+          "sort expression is null");
+    items.push_back({.expression = item.expression,
+                     .direction = ToLogicalOrderDirection(item.direction)});
+  }
+  return items;
+}
+
 ExpandDirection ToExpandDirection(Direction direction) {
   switch (direction) {
     case Direction::kIncoming:
@@ -295,11 +317,6 @@ class LogicalPlanBuilder {
   std::unique_ptr<LogicalPlan> ApplyRegularProjection(
       std::unique_ptr<LogicalPlan> plan,
       const RegularQueryProjection &projection) {
-    CHECK(projection.required_order.empty(), common::InvalidArgumentError,
-          Unsupported("ORDER BY logical plan"));
-    CHECK(projection.pagination.skip == nullptr &&
-              projection.pagination.limit == nullptr,
-          common::InvalidArgumentError, Unsupported("SKIP/LIMIT logical plan"));
     CHECK(projection.selections.empty(), common::InvalidArgumentError,
           Unsupported("projection selection logical plan"));
     CHECK(projection.nested_expressions.empty(), common::InvalidArgumentError,
@@ -317,6 +334,18 @@ class LogicalPlanBuilder {
 
     std::vector<std::string> aliases = ProjectionAliases(projection.items);
     plan = std::make_unique<ProjectionPlan>(std::move(plan), std::move(items));
+    if (!projection.required_order.empty()) {
+      plan = std::make_unique<SortPlan>(std::move(plan),
+                                        SortItems(projection.required_order));
+    }
+    if (projection.pagination.skip != nullptr) {
+      plan = std::make_unique<SkipPlan>(std::move(plan),
+                                        projection.pagination.skip);
+    }
+    if (projection.pagination.limit != nullptr) {
+      plan = std::make_unique<LimitPlan>(std::move(plan),
+                                         projection.pagination.limit);
+    }
     if (projection.position == ProjectionPosition::kFinal) {
       plan = std::make_unique<ProduceResultsPlan>(std::move(plan),
                                                   std::move(aliases));

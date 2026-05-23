@@ -88,7 +88,47 @@ TEST(LogicalPlanBuilderTest, BuildsCartesianProductForDisconnectedComponents) {
 )");
 }
 
-TEST(LogicalPlanBuilderTest, RejectsUnsupportedHorizon) {
+TEST(LogicalPlanBuilderTest, BuildsOrderByPlan) {
+  ExpectLogicalPlanText("MATCH (n) RETURN n ORDER BY n.name",
+                        R"(ProduceResults [n]
+  Sort [n.name ASC]
+    Projection [n]
+      AllNodeScan [n]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsSkipAndLimitPlans) {
+  ExpectLogicalPlanText("MATCH (n) RETURN n SKIP 10 LIMIT 20",
+                        R"(ProduceResults [n]
+  Limit [20]
+    Skip [10]
+      Projection [n]
+        AllNodeScan [n]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsOrderBySkipAndLimitPlans) {
+  ExpectLogicalPlanText(
+      "MATCH (n) RETURN n ORDER BY n.name DESC SKIP 5 LIMIT 10",
+      R"(ProduceResults [n]
+  Limit [10]
+    Skip [5]
+      Sort [n.name DESC]
+        Projection [n]
+          AllNodeScan [n]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, RewritesOrderByProjectionExpressionToAlias) {
+  ExpectLogicalPlanText("MATCH (n) RETURN n.age AS age ORDER BY n.age",
+                        R"(ProduceResults [age]
+  Sort [age ASC]
+    Projection [age]
+      AllNodeScan [n]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, RejectsUnsupportedDistinctHorizon) {
   auto statement = ParseOrFail("MATCH (n) RETURN DISTINCT n");
   ASSERT_TRUE(statement);
   std::unique_ptr<ir::PlannerQuery> planner_query =
