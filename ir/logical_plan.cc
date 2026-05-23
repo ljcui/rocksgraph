@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include <utility>
 
+#include "ast/expression_to_string.h"
 #include "common/exception.h"
 
 namespace ir {
@@ -182,6 +183,10 @@ ArgumentPlan::ArgumentPlan(std::vector<std::string> symbols)
   SetSolvedSymbols(SymbolsFromColumns(OutputColumns()));
 }
 
+std::string ArgumentPlan::Details() const {
+  return Join(OutputColumns(), ", ");
+}
+
 AllNodeScanPlan::AllNodeScanPlan(std::string variable)
     : LogicalPlan(LogicalPlanNodeType::kAllNodeScan),
       variable_(std::move(variable)) {
@@ -247,6 +252,13 @@ FilterPlan::FilterPlan(LogicalPlanPtr source, const ast::Expression *predicate)
   SetOutputColumns(Child(0).OutputColumns());
 }
 
+std::string FilterPlan::Details() const {
+  if (predicate_ == nullptr) {
+    return "null";
+  }
+  return ast::ExpressionToString(*predicate_);
+}
+
 ProjectionPlan::ProjectionPlan(LogicalPlanPtr source,
                                std::vector<LogicalProjectionItem> items)
     : LogicalPlan(LogicalPlanNodeType::kProjection,
@@ -274,6 +286,10 @@ ProduceResultsPlan::ProduceResultsPlan(LogicalPlanPtr source,
                   UnaryChildren(std::move(source), "ProduceResults")) {
   SetSolvedSymbols(Child(0).SolvedSymbols());
   SetOutputColumns(std::move(columns));
+}
+
+std::string ProduceResultsPlan::Details() const {
+  return Join(OutputColumns(), ", ");
 }
 
 CartesianProductPlan::CartesianProductPlan(LogicalPlanPtr left,

@@ -6,11 +6,13 @@
 #include "ast/ast_exception.h"
 #include "ast/ast_printer.h"
 #include "gflags/gflags.h"
+#include "ir/logical_plan_builder.h"
+#include "ir/logical_plan_printer.h"
 #include "ir/planner_query.h"
 #include "ir/planner_query_printer.h"
 #include "spdlog/spdlog.h"
 
-DEFINE_string(mode, "ast", "Dump mode: ast or planner_query.");
+DEFINE_string(mode, "ast", "Dump mode: ast, planner_query, or logical_plan.");
 DEFINE_bool(rewrite, false, "Rewrite the cypher statement before printing.");
 
 std::string JoinArgs(const std::vector<std::string> &parts) {
@@ -38,8 +40,8 @@ void PrintMinimalUsage() {
 int main(int argc, char **argv) {
   using common::Exception;
   gflags::SetUsageMessage(
-      "Usage:\n  cypher_dump [--mode=ast|planner_query] [--rewrite] [--] "
-      "<cypher...>");
+      "Usage:\n  cypher_dump [--mode=ast|planner_query|logical_plan] "
+      "[--rewrite] [--] <cypher...>");
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
   if (argc <= 1) {
@@ -67,6 +69,13 @@ int main(int argc, char **argv) {
       auto statement = ast::ParseCypherAndRewrite(input);
       auto planner_query = ir::CreatePlannerQuery(*statement);
       ir::PrintPlannerQuery(*planner_query, std::cout);
+      return 0;
+    }
+    if (FLAGS_mode == "logical_plan") {
+      auto statement = ast::ParseCypherAndRewrite(input);
+      auto planner_query = ir::CreatePlannerQuery(*statement);
+      auto logical_plan = ir::CreateLogicalPlan(*planner_query);
+      ir::PrintLogicalPlan(*logical_plan, std::cout);
       return 0;
     }
     spdlog::error("Unsupported dump mode: {}", FLAGS_mode);

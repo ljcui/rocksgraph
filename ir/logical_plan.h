@@ -90,6 +90,8 @@ class LogicalPlan {
 class ArgumentPlan final : public LogicalPlan {
  public:
   explicit ArgumentPlan(std::vector<std::string> symbols);
+
+  [[nodiscard]] std::string Details() const override;
 };
 
 class AllNodeScanPlan final : public LogicalPlan {
@@ -156,6 +158,7 @@ class FilterPlan final : public LogicalPlan {
   [[nodiscard]] const ast::Expression *Predicate() const noexcept {
     return predicate_;
   }
+  [[nodiscard]] std::string Details() const override;
 
  private:
   const ast::Expression *predicate_ = nullptr;
@@ -179,6 +182,8 @@ class ProjectionPlan final : public LogicalPlan {
 class ProduceResultsPlan final : public LogicalPlan {
  public:
   ProduceResultsPlan(LogicalPlanPtr source, std::vector<std::string> columns);
+
+  [[nodiscard]] std::string Details() const override;
 };
 
 class CartesianProductPlan final : public LogicalPlan {
