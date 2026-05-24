@@ -84,11 +84,13 @@ class RuleBasedComponentPlanner final : public ComponentPlanner {
           context->BuildNodeLeaf(query_graph, nodes.front());
       const std::size_t filter_count =
           context->ApplyAvailableFilters(query_graph.selections, &plan);
-      PlanTable plan_table;
-      plan_table.PutBest(MakePlanCandidate(
+      PlanCandidate candidate = MakePlanCandidate(
           std::move(plan), {},
-          ApplyFilterEstimates(estimate, filter_count, cost_model_)));
-      return plan_table.TakeBest({}).plan;
+          ApplyFilterEstimates(estimate, filter_count, cost_model_));
+      PlanTable plan_table;
+      const PlanKey key = CandidateKey(candidate);
+      plan_table.PutBest(std::move(candidate));
+      return plan_table.TakeBest(key).plan;
     }
 
     PlanTable plan_table;
@@ -110,12 +112,13 @@ class RuleBasedComponentPlanner final : public ComponentPlanner {
     }
     const std::size_t initial_filter_count =
         context->ApplyAvailableFilters(query_graph.selections, &initial_plan);
-    plan_table.PutBest(MakePlanCandidate(
+    PlanCandidate initial_candidate = MakePlanCandidate(
         std::move(initial_plan), {},
         ApplyFilterEstimates(initial_estimate, initial_filter_count,
-                             cost_model_)));
+                             cost_model_));
+    PlanKey current_key = CandidateKey(initial_candidate);
+    plan_table.PutBest(std::move(initial_candidate));
 
-    std::vector<std::size_t> current_key;
     std::vector<std::size_t> remaining = component.pattern_relationship_indices;
     while (!remaining.empty()) {
       PlanCandidate candidate = plan_table.TakeBest(current_key);
@@ -151,7 +154,7 @@ class RuleBasedComponentPlanner final : public ComponentPlanner {
             std::move(candidate.plan),
             std::move(candidate.relationship_indices),
             ApplyFilterEstimates(estimate, filter_count, cost_model_));
-        current_key = next_candidate.relationship_indices;
+        current_key = CandidateKey(next_candidate);
         plan_table.PutBest(std::move(next_candidate));
         continue;
       }
@@ -175,7 +178,7 @@ class RuleBasedComponentPlanner final : public ComponentPlanner {
       PlanCandidate next_candidate = MakePlanCandidate(
           std::move(candidate.plan), std::move(candidate.relationship_indices),
           ApplyFilterEstimates(estimate, filter_count, cost_model_));
-      current_key = next_candidate.relationship_indices;
+      current_key = CandidateKey(next_candidate);
       plan_table.PutBest(std::move(next_candidate));
     }
 
@@ -203,7 +206,10 @@ class IdpComponentPlanner final : public ComponentPlanner {
       PlanTable plan_table;
       PutInitialNodeCandidate(query_graph, nodes.front(), base_predicates,
                               context, &plan_table);
-      PlanCandidate final_candidate = plan_table.TakeBest({});
+      const std::vector<PlanKey> keys = plan_table.KeysWithRelationshipCount(0);
+      CHECK(keys.size() == 1, common::InternalError,
+            "expected one leaf plan candidate");
+      PlanCandidate final_candidate = plan_table.TakeBest(keys.front());
       context->Restore(std::move(final_candidate.planned_predicates));
       return std::move(final_candidate.plan);
     }
@@ -225,8 +231,8 @@ class IdpComponentPlanner final : public ComponentPlanner {
         component.pattern_relationship_indices.size();
     for (std::size_t planned_count = 0; planned_count < relationship_count;
          ++planned_count) {
-      const std::vector<std::vector<std::size_t>> keys =
-          plan_table.KeysWithSize(planned_count);
+      const std::vector<PlanKey> keys =
+          plan_table.KeysWithRelationshipCount(planned_count);
       for (const auto &key : keys) {
         const PlanCandidate *stored_candidate = plan_table.Best(key);
         if (stored_candidate == nullptr) {
@@ -249,13 +255,35 @@ class IdpComponentPlanner final : public ComponentPlanner {
       }
     }
 
-    PlanCandidate final_candidate =
-        plan_table.TakeBest(component.pattern_relationship_indices);
+    PlanCandidate final_candidate = plan_table.TakeBest(
+        BestKeyWithRelationshipCount(plan_table, relationship_count));
     context->Restore(std::move(final_candidate.planned_predicates));
     return std::move(final_candidate.plan);
   }
 
  private:
+  [[nodiscard]] PlanKey BestKeyWithRelationshipCount(
+      const PlanTable &plan_table, std::size_t relationship_count) const {
+    bool found = false;
+    PlanKey best_key;
+    double best_cost = 0.0;
+    for (const PlanKey &key :
+         plan_table.KeysWithRelationshipCount(relationship_count)) {
+      const PlanCandidate *candidate = plan_table.Best(key);
+      if (candidate == nullptr) {
+        continue;
+      }
+      if (!found || candidate->cost < best_cost ||
+          (candidate->cost == best_cost && key < best_key)) {
+        found = true;
+        best_key = key;
+        best_cost = candidate->cost;
+      }
+    }
+    CHECK(found, common::InternalError, "missing final plan candidate");
+    return best_key;
+  }
+
   void PutInitialArgumentCandidate(
       const QueryGraph &query_graph,
       const std::vector<std::string> &argument_nodes,

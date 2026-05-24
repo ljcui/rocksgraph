@@ -12,6 +12,14 @@
 
 namespace ir {
 
+struct PlanKey {
+  std::vector<std::size_t> relationship_indices;
+  std::vector<std::string> covered_symbols;
+};
+
+[[nodiscard]] bool operator==(const PlanKey &lhs, const PlanKey &rhs);
+[[nodiscard]] bool operator<(const PlanKey &lhs, const PlanKey &rhs);
+
 struct PlanCandidate {
   std::unique_ptr<LogicalPlan> plan;
   std::vector<std::size_t> relationship_indices;
@@ -29,6 +37,7 @@ struct PlanCandidate {
     std::vector<std::size_t> indices, std::size_t index);
 
 [[nodiscard]] CostEstimate CandidateEstimate(const PlanCandidate &candidate);
+[[nodiscard]] PlanKey CandidateKey(const PlanCandidate &candidate);
 
 [[nodiscard]] PlanCandidate MakePlanCandidate(
     std::unique_ptr<LogicalPlan> plan,
@@ -39,18 +48,15 @@ class PlanTable {
  public:
   void PutBest(PlanCandidate candidate);
 
-  [[nodiscard]] PlanCandidate TakeBest(
-      std::vector<std::size_t> relationship_indices);
-  [[nodiscard]] const PlanCandidate *Best(
-      std::vector<std::size_t> relationship_indices) const;
-  [[nodiscard]] std::vector<std::vector<std::size_t>> KeysWithSize(
+  [[nodiscard]] PlanCandidate TakeBest(const PlanKey &key);
+  [[nodiscard]] const PlanCandidate *Best(const PlanKey &key) const;
+  [[nodiscard]] std::vector<PlanKey> KeysWithRelationshipCount(
       std::size_t relationship_count) const;
 
  private:
-  std::vector<PlanCandidate>::iterator FindEntry(
-      const std::vector<std::size_t> &relationship_indices);
+  std::vector<PlanCandidate>::iterator FindEntry(const PlanKey &key);
   std::vector<PlanCandidate>::const_iterator FindEntry(
-      const std::vector<std::size_t> &relationship_indices) const;
+      const PlanKey &key) const;
 
   std::vector<PlanCandidate> entries_;
 };
