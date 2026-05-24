@@ -3,7 +3,7 @@
 #include <memory>
 
 #include "ir/logical_plan.h"
-#include "ir/logical_plan_idp.h"
+#include "ir/planner/idp.h"
 
 namespace ir {
 

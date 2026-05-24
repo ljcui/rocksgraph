@@ -160,11 +160,11 @@ add_executable(
   ir/planner_query_util.cc
   ir/planner_query_printer.cc
   ir/logical_plan.cc
-  ir/logical_plan_builder.cc
-  ir/logical_plan_clone.cc
-  ir/logical_plan_component_planner.cc
-  ir/logical_plan_cost_model.cc
-  ir/logical_plan_idp.cc
+  ir/planner/logical_plan_builder.cc
+  ir/planner/plan_clone.cc
+  ir/planner/component_planner.cc
+  ir/planner/cost_model.cc
+  ir/planner/idp.cc
   ir/logical_plan_printer.cc
   ${GENERATED_SOURCES})
 target_include_directories(cypher_dump PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
@@ -259,11 +259,11 @@ add_executable(
   logical_plan_builder_test
   tests/logical_plan_builder_test.cc
   ir/logical_plan.cc
-  ir/logical_plan_builder.cc
-  ir/logical_plan_clone.cc
-  ir/logical_plan_component_planner.cc
-  ir/logical_plan_cost_model.cc
-  ir/logical_plan_idp.cc
+  ir/planner/logical_plan_builder.cc
+  ir/planner/plan_clone.cc
+  ir/planner/component_planner.cc
+  ir/planner/cost_model.cc
+  ir/planner/idp.cc
   ir/logical_plan_printer.cc
   ir/planner_query.cc
   ir/planner_query_arguments.cc

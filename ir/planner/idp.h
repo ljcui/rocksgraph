@@ -7,7 +7,7 @@
 #include <vector>
 
 #include "ir/logical_plan.h"
-#include "ir/logical_plan_cost_model.h"
+#include "ir/planner/cost_model.h"
 #include "ir/planner_query.h"
 
 namespace ir {

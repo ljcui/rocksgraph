@@ -1,4 +1,4 @@
-#include "ir/logical_plan_idp.h"
+#include "ir/planner/idp.h"
 
 #include <algorithm>
 #include <utility>

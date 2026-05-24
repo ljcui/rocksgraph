@@ -1,4 +1,4 @@
-#include "ir/logical_plan_builder.h"
+#include "ir/planner/logical_plan_builder.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "common/exception.h"
-#include "ir/logical_plan_component_planner.h"
+#include "ir/planner/component_planner.h"
 #include "ir/planner_query_internal.h"
 
 namespace ir {
