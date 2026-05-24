@@ -26,6 +26,7 @@ inline constexpr auto kLogicalPlanNodeTypeNames = std::array{
     std::string_view{"Limit"},
     std::string_view{"ProduceResults"},
     std::string_view{"CartesianProduct"},
+    std::string_view{"NodeHashJoin"},
     std::string_view{"Apply"},
     std::string_view{"SemiApply"},
 };
@@ -462,6 +463,26 @@ CartesianProductPlan::CartesianProductPlan(LogicalPlanPtr left,
   SetSolvedSymbols(UnionSolvedSymbols(Child(0), Child(1)));
   SetOutputColumns(UnionOutputColumns(Child(0), Child(1)));
 }
+
+NodeHashJoinPlan::NodeHashJoinPlan(LogicalPlanPtr left, LogicalPlanPtr right,
+                                   std::vector<std::string> join_keys)
+    : LogicalPlan(
+          LogicalPlanNodeType::kNodeHashJoin,
+          BinaryChildren(std::move(left), std::move(right), "NodeHashJoin")),
+      join_keys_(std::move(join_keys)) {
+  CHECK(!join_keys_.empty(), common::InvalidArgumentError,
+        "node hash join keys are empty");
+  for (const auto &key : join_keys_) {
+    CHECK(Child(0).SolvedSymbols().contains(key) &&
+              Child(1).SolvedSymbols().contains(key),
+          common::InvalidArgumentError,
+          "node hash join key is not solved by both inputs");
+  }
+  SetSolvedSymbols(UnionSolvedSymbols(Child(0), Child(1)));
+  SetOutputColumns(UnionOutputColumns(Child(0), Child(1)));
+}
+
+std::string NodeHashJoinPlan::Details() const { return Join(join_keys_, ", "); }
 
 ApplyPlan::ApplyPlan(LogicalPlanPtr left, LogicalPlanPtr right)
     : LogicalPlan(LogicalPlanNodeType::kApply,

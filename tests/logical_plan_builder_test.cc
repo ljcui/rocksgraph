@@ -82,14 +82,16 @@ TEST(LogicalPlanBuilderTest, IdpChoosesCheaperLabelLeaf) {
           .component_planner = ir::LogicalPlanComponentPlannerKind::kIdp});
 }
 
-TEST(LogicalPlanBuilderTest, IdpBuildsTwoHopPlanFromCheaperMiddleLeaf) {
+TEST(LogicalPlanBuilderTest, IdpBuildsTwoHopJoinFromCheaperMiddleLeaf) {
   ExpectLogicalPlanText(
       "MATCH (a)-[r1]->(b:Person)-[r2]->(c) RETURN a, b, c",
       R"(ProduceResults [a, b, c]
   Projection [a, b, c]
     Filter [NOT (r1 = r2)]
-      Expand [(b)-[r2]->(c)]
+      NodeHashJoin [b]
         Expand [(b)<-[r1]-(a)]
+          NodeByLabelScan [b:Person]
+        Expand [(b)-[r2]->(c)]
           NodeByLabelScan [b:Person]
 )",
       ir::LogicalPlanBuilderOptions{
@@ -101,11 +103,28 @@ TEST(LogicalPlanBuilderTest, IdpKeepsDistinctLeafCandidatesWithSameCost) {
       "MATCH (a:Person)-[r1]->(b)-[r2:KNOWS]->(c:Person) RETURN a, b, c",
       R"(ProduceResults [a, b, c]
   Projection [a, b, c]
-    Filter [a:Person]
-      Filter [NOT (r1 = r2)]
-        Expand [(b)<-[r1]-(a)]
-          Expand [(c)<-[r2:KNOWS]-(b)]
-            NodeByLabelScan [c:Person]
+    Filter [NOT (r1 = r2)]
+      NodeHashJoin [b]
+        Expand [(a)-[r1]->(b)]
+          NodeByLabelScan [a:Person]
+        Expand [(c)<-[r2:KNOWS]-(b)]
+          NodeByLabelScan [c:Person]
+)",
+      ir::LogicalPlanBuilderOptions{
+          .component_planner = ir::LogicalPlanComponentPlannerKind::kIdp});
+}
+
+TEST(LogicalPlanBuilderTest, IdpBuildsNodeHashJoinForSharedNodeSubplans) {
+  ExpectLogicalPlanText(
+      "MATCH (a:Person)-[r1]->(b)<-[r2]-(c:Person) RETURN a, b, c",
+      R"(ProduceResults [a, b, c]
+  Projection [a, b, c]
+    Filter [NOT (r1 = r2)]
+      NodeHashJoin [b]
+        Expand [(a)-[r1]->(b)]
+          NodeByLabelScan [a:Person]
+        Expand [(c)-[r2]->(b)]
+          NodeByLabelScan [c:Person]
 )",
       ir::LogicalPlanBuilderOptions{
           .component_planner = ir::LogicalPlanComponentPlannerKind::kIdp});

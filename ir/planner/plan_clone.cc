@@ -39,6 +39,12 @@ std::unique_ptr<LogicalPlan> CloneComponentPlan(const LogicalPlan &plan) {
       return std::make_unique<FilterPlan>(CloneComponentPlan(filter.Child(0)),
                                           filter.Predicate());
     }
+    case LogicalPlanNodeType::kNodeHashJoin: {
+      const auto &join = static_cast<const NodeHashJoinPlan &>(plan);
+      return std::make_unique<NodeHashJoinPlan>(
+          CloneComponentPlan(join.Child(0)), CloneComponentPlan(join.Child(1)),
+          join.JoinKeys());
+    }
     default:
       THROW(common::InternalError,
             "unsupported component plan clone: " + std::string(plan.Name()));

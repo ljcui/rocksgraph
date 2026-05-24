@@ -23,6 +23,9 @@ class CostModel {
   [[nodiscard]] CostEstimate EstimateExpandInto(
       CostEstimate input,
       const std::vector<std::string> &relationship_types) const;
+  [[nodiscard]] CostEstimate EstimateNodeHashJoin(CostEstimate left,
+                                                  CostEstimate right,
+                                                  std::size_t key_count) const;
   [[nodiscard]] CostEstimate ApplyFilter(CostEstimate input) const;
 };
 

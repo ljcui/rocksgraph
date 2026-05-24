@@ -31,6 +31,7 @@ enum class LogicalPlanNodeType {
   kLimit,
   kProduceResults,
   kCartesianProduct,
+  kNodeHashJoin,
   kApply,
   kSemiApply,
 };
@@ -308,6 +309,20 @@ class ProduceResultsPlan final : public LogicalPlan {
 class CartesianProductPlan final : public LogicalPlan {
  public:
   CartesianProductPlan(LogicalPlanPtr left, LogicalPlanPtr right);
+};
+
+class NodeHashJoinPlan final : public LogicalPlan {
+ public:
+  NodeHashJoinPlan(LogicalPlanPtr left, LogicalPlanPtr right,
+                   std::vector<std::string> join_keys);
+
+  [[nodiscard]] const std::vector<std::string> &JoinKeys() const noexcept {
+    return join_keys_;
+  }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  std::vector<std::string> join_keys_;
 };
 
 class ApplyPlan final : public LogicalPlan {

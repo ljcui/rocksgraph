@@ -31,6 +31,18 @@ CostEstimate CostModel::EstimateExpandInto(
           .cost = input.cost + input.estimated_rows * selectivity};
 }
 
+CostEstimate CostModel::EstimateNodeHashJoin(CostEstimate left,
+                                             CostEstimate right,
+                                             std::size_t key_count) const {
+  const double key_selectivity = key_count == 0 ? 1.0 : 1.0 / key_count;
+  const double rows =
+      std::max(1.0, std::min(left.estimated_rows, right.estimated_rows) *
+                        key_selectivity);
+  return {.estimated_rows = rows,
+          .cost = left.cost + right.cost + left.estimated_rows +
+                  right.estimated_rows + rows};
+}
+
 CostEstimate CostModel::ApplyFilter(CostEstimate input) const {
   return {.estimated_rows = std::max(1.0, input.estimated_rows * 0.1),
           .cost = input.cost + input.estimated_rows * 0.1};

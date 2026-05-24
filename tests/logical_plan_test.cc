@@ -139,6 +139,18 @@ TEST(LogicalPlanTest, BinaryPlansMergeSolvedSymbolsAndOutputs) {
   EXPECT_TRUE(Contains(product.SolvedSymbols(), "a"));
   EXPECT_TRUE(Contains(product.SolvedSymbols(), "b"));
 
+  ir::NodeHashJoinPlan join(
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({"b", "a"})),
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({"b", "c"})),
+      {"b"});
+  EXPECT_EQ(join.Name(), "NodeHashJoin");
+  EXPECT_EQ(join.Details(), "b");
+  EXPECT_EQ(join.JoinKeys(), std::vector<std::string>({"b"}));
+  EXPECT_EQ(join.OutputColumns(), std::vector<std::string>({"b", "a", "c"}));
+  EXPECT_TRUE(Contains(join.SolvedSymbols(), "a"));
+  EXPECT_TRUE(Contains(join.SolvedSymbols(), "b"));
+  EXPECT_TRUE(Contains(join.SolvedSymbols(), "c"));
+
   ir::ApplyPlan apply(
       std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({"outer"})),
       std::make_unique<ir::AllNodeScanPlan>("inner"));

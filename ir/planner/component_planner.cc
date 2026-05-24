@@ -63,6 +63,44 @@ Direction Reverse(Direction direction) {
   THROW(common::InternalError, "unknown relationship direction");
 }
 
+bool RelationshipSetsDisjoint(const std::vector<std::size_t> &lhs,
+                              const std::vector<std::size_t> &rhs) {
+  for (std::size_t index : lhs) {
+    if (ContainsRelationshipIndex(rhs, index)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+std::vector<std::size_t> MergeRelationshipIndices(
+    std::vector<std::size_t> lhs, const std::vector<std::size_t> &rhs) {
+  lhs.insert(lhs.end(), rhs.begin(), rhs.end());
+  return NormalizedRelationshipKey(std::move(lhs));
+}
+
+std::unordered_set<const Predicate *> UnionPredicates(
+    const std::unordered_set<const Predicate *> &lhs,
+    const std::unordered_set<const Predicate *> &rhs) {
+  std::unordered_set<const Predicate *> out = lhs;
+  out.insert(rhs.begin(), rhs.end());
+  return out;
+}
+
+std::vector<std::string> SharedNodeSymbols(const QueryGraph &query_graph,
+                                           const PlanCandidate &lhs,
+                                           const PlanCandidate &rhs) {
+  std::vector<std::string> keys;
+  for (const auto &node : query_graph.pattern_nodes) {
+    if (lhs.covered_symbols.contains(node) &&
+        rhs.covered_symbols.contains(node)) {
+      keys.push_back(node);
+    }
+  }
+  std::sort(keys.begin(), keys.end());
+  return keys;
+}
+
 class RuleBasedComponentPlanner final : public ComponentPlanner {
  public:
   std::unique_ptr<LogicalPlan> Plan(
@@ -229,30 +267,11 @@ class IdpComponentPlanner final : public ComponentPlanner {
 
     const std::size_t relationship_count =
         component.pattern_relationship_indices.size();
-    for (std::size_t planned_count = 0; planned_count < relationship_count;
-         ++planned_count) {
-      const std::vector<PlanKey> keys =
-          plan_table.KeysWithRelationshipCount(planned_count);
-      for (const auto &key : keys) {
-        const PlanCandidate *stored_candidate = plan_table.Best(key);
-        if (stored_candidate == nullptr) {
-          continue;
-        }
-        PlanCandidate candidate = CloneCandidate(*stored_candidate);
-        for (std::size_t relationship_index :
-             component.pattern_relationship_indices) {
-          if (ContainsRelationshipIndex(candidate.relationship_indices,
-                                        relationship_index)) {
-            continue;
-          }
-          if (!CanExpand(query_graph.pattern_relationships[relationship_index],
-                         candidate)) {
-            continue;
-          }
-          plan_table.PutBest(ExpandCandidate(query_graph, candidate,
-                                             relationship_index, context));
-        }
-      }
+    for (std::size_t target_count = 1; target_count <= relationship_count;
+         ++target_count) {
+      PutExpandCandidates(query_graph, component, target_count - 1, context,
+                          &plan_table);
+      PutJoinCandidates(query_graph, target_count, context, &plan_table);
     }
 
     PlanCandidate final_candidate = plan_table.TakeBest(
@@ -282,6 +301,80 @@ class IdpComponentPlanner final : public ComponentPlanner {
     }
     CHECK(found, common::InternalError, "missing final plan candidate");
     return best_key;
+  }
+
+  void PutExpandCandidates(const QueryGraph &query_graph,
+                           const QueryGraphComponent &component,
+                           std::size_t input_relationship_count,
+                           QueryGraphPlanningContext *context,
+                           PlanTable *plan_table) const {
+    CHECK(context != nullptr, common::InternalError,
+          "query graph planning context is null");
+    CHECK(plan_table != nullptr, common::InternalError, "plan table is null");
+
+    const std::vector<PlanKey> keys =
+        plan_table->KeysWithRelationshipCount(input_relationship_count);
+    for (const auto &key : keys) {
+      const PlanCandidate *stored_candidate = plan_table->Best(key);
+      if (stored_candidate == nullptr) {
+        continue;
+      }
+      PlanCandidate candidate = CloneCandidate(*stored_candidate);
+      for (std::size_t relationship_index :
+           component.pattern_relationship_indices) {
+        if (ContainsRelationshipIndex(candidate.relationship_indices,
+                                      relationship_index)) {
+          continue;
+        }
+        if (!CanExpand(query_graph.pattern_relationships[relationship_index],
+                       candidate)) {
+          continue;
+        }
+        plan_table->PutBest(ExpandCandidate(query_graph, candidate,
+                                            relationship_index, context));
+      }
+    }
+  }
+
+  void PutJoinCandidates(const QueryGraph &query_graph,
+                         std::size_t target_relationship_count,
+                         QueryGraphPlanningContext *context,
+                         PlanTable *plan_table) const {
+    CHECK(context != nullptr, common::InternalError,
+          "query graph planning context is null");
+    CHECK(plan_table != nullptr, common::InternalError, "plan table is null");
+
+    for (std::size_t left_count = 1; left_count < target_relationship_count;
+         ++left_count) {
+      const std::size_t right_count = target_relationship_count - left_count;
+      const std::vector<PlanKey> left_keys =
+          plan_table->KeysWithRelationshipCount(left_count);
+      const std::vector<PlanKey> right_keys =
+          plan_table->KeysWithRelationshipCount(right_count);
+      for (const auto &left_key : left_keys) {
+        for (const auto &right_key : right_keys) {
+          if (!(left_key < right_key)) {
+            continue;
+          }
+          const PlanCandidate *left = plan_table->Best(left_key);
+          const PlanCandidate *right = plan_table->Best(right_key);
+          if (left == nullptr || right == nullptr) {
+            continue;
+          }
+          if (!RelationshipSetsDisjoint(left->relationship_indices,
+                                        right->relationship_indices)) {
+            continue;
+          }
+          const std::vector<std::string> join_keys =
+              SharedNodeSymbols(query_graph, *left, *right);
+          if (join_keys.empty()) {
+            continue;
+          }
+          plan_table->PutBest(
+              JoinCandidates(query_graph, *left, *right, join_keys, context));
+        }
+      }
+    }
   }
 
   void PutInitialArgumentCandidate(
@@ -380,6 +473,33 @@ class IdpComponentPlanner final : public ComponentPlanner {
         std::move(candidate.plan),
         WithRelationshipIndex(candidate.relationship_indices,
                               relationship_index),
+        ApplyFilterEstimates(estimate, filter_count, cost_model_),
+        context->Snapshot());
+  }
+
+  PlanCandidate JoinCandidates(const QueryGraph &query_graph,
+                               const PlanCandidate &left_input,
+                               const PlanCandidate &right_input,
+                               const std::vector<std::string> &join_keys,
+                               QueryGraphPlanningContext *context) const {
+    CHECK(context != nullptr, common::InternalError,
+          "query graph planning context is null");
+    PlanCandidate left = CloneCandidate(left_input);
+    PlanCandidate right = CloneCandidate(right_input);
+    std::unordered_set<const Predicate *> planned_predicates =
+        UnionPredicates(left.planned_predicates, right.planned_predicates);
+    context->Restore(planned_predicates);
+
+    CostEstimate estimate = cost_model_.EstimateNodeHashJoin(
+        CandidateEstimate(left), CandidateEstimate(right), join_keys.size());
+    std::unique_ptr<LogicalPlan> plan = std::make_unique<NodeHashJoinPlan>(
+        std::move(left.plan), std::move(right.plan), join_keys);
+    const std::size_t filter_count =
+        context->ApplyAvailableFilters(query_graph.selections, &plan);
+    return MakePlanCandidate(
+        std::move(plan),
+        MergeRelationshipIndices(left.relationship_indices,
+                                 right.relationship_indices),
         ApplyFilterEstimates(estimate, filter_count, cost_model_),
         context->Snapshot());
   }
