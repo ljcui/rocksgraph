@@ -68,6 +68,17 @@ TEST(LogicalPlanBuilderTest, BuildsExpandFromSingleRelationshipPattern) {
 )");
 }
 
+TEST(LogicalPlanBuilderTest, BuildsExpandIntoForAlreadyBoundEndpoints) {
+  ExpectLogicalPlanText("MATCH (a)-[r1]->(b), (a)-[r2]->(b) RETURN a, b",
+                        R"(ProduceResults [a, b]
+  Projection [a, b]
+    Filter [NOT (r1 = r2)]
+      ExpandInto [(a)-[r2]->(b)]
+        Expand [(a)-[r1]->(b)]
+          AllNodeScan [a]
+)");
+}
+
 TEST(LogicalPlanBuilderTest, PushesAvailableWherePredicatesIntoFilters) {
   ExpectLogicalPlanText(
       "MATCH (a:Person)-[r:KNOWS]->(b) WHERE b.name = 'Ada' RETURN a, b",
@@ -214,6 +225,21 @@ TEST(LogicalPlanBuilderTest, BuildsTailMatchWithArgumentExpandPlan) {
         AllNodeScan [n]
       Expand [(n)-[anon_0]->(m)]
         Argument [n]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsTailMatchWithBoundEndpointsExpandIntoPlan) {
+  ExpectLogicalPlanText(
+      "MATCH (a), (b) WITH DISTINCT a, b MATCH (a)-[r]->(b) RETURN a, b",
+      R"(ProduceResults [a, b]
+  Projection [a, b]
+    Apply
+      Distinct [a, b]
+        CartesianProduct
+          AllNodeScan [a]
+          AllNodeScan [b]
+      ExpandInto [(a)-[r]->(b)]
+        Argument [a, b]
 )");
 }
 

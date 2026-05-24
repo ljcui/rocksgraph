@@ -54,6 +54,25 @@ TEST(LogicalPlanTest, ExpandCopiesChildMetadataAndAddsPathSymbols) {
   EXPECT_TRUE(Contains(expand.SolvedSymbols(), "a"));
   EXPECT_TRUE(Contains(expand.SolvedSymbols(), "r"));
   EXPECT_TRUE(Contains(expand.SolvedSymbols(), "b"));
+
+  auto into_source =
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({"a", "b"}));
+  ir::ExpandIntoPlan expand_into(std::move(into_source), "a", "r", "b",
+                                 ir::ExpandDirection::kOutgoing, {"KNOWS"});
+  EXPECT_EQ(expand_into.Name(), "ExpandInto");
+  EXPECT_EQ(expand_into.ChildCount(), 1U);
+  EXPECT_EQ(expand_into.Child(0).Name(), "Argument");
+  EXPECT_EQ(expand_into.FromNode(), "a");
+  EXPECT_EQ(expand_into.Relationship(), "r");
+  EXPECT_EQ(expand_into.ToNode(), "b");
+  EXPECT_EQ(expand_into.Direction(), ir::ExpandDirection::kOutgoing);
+  EXPECT_EQ(expand_into.Types(), std::vector<std::string>({"KNOWS"}));
+  EXPECT_EQ(expand_into.Details(), "(a)-[r:KNOWS]->(b)");
+  EXPECT_EQ(expand_into.OutputColumns(),
+            std::vector<std::string>({"a", "b", "r"}));
+  EXPECT_TRUE(Contains(expand_into.SolvedSymbols(), "a"));
+  EXPECT_TRUE(Contains(expand_into.SolvedSymbols(), "r"));
+  EXPECT_TRUE(Contains(expand_into.SolvedSymbols(), "b"));
 }
 
 TEST(LogicalPlanTest, UnaryPlansPreserveOrReplaceOutputColumns) {

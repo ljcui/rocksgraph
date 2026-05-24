@@ -21,6 +21,7 @@ enum class LogicalPlanNodeType {
   kAllNodeScan,
   kNodeByLabelScan,
   kExpand,
+  kExpandInto,
   kFilter,
   kProjection,
   kDistinct,
@@ -144,6 +145,36 @@ class ExpandPlan final : public LogicalPlan {
   ExpandPlan(LogicalPlanPtr source, std::string from_node,
              std::string relationship, std::string to_node,
              ExpandDirection direction, std::vector<std::string> types = {});
+
+  [[nodiscard]] const std::string &FromNode() const noexcept {
+    return from_node_;
+  }
+  [[nodiscard]] const std::string &Relationship() const noexcept {
+    return relationship_;
+  }
+  [[nodiscard]] const std::string &ToNode() const noexcept { return to_node_; }
+  [[nodiscard]] ExpandDirection Direction() const noexcept {
+    return direction_;
+  }
+  [[nodiscard]] const std::vector<std::string> &Types() const noexcept {
+    return types_;
+  }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  std::string from_node_;
+  std::string relationship_;
+  std::string to_node_;
+  ExpandDirection direction_ = ExpandDirection::kBoth;
+  std::vector<std::string> types_;
+};
+
+class ExpandIntoPlan final : public LogicalPlan {
+ public:
+  ExpandIntoPlan(LogicalPlanPtr source, std::string from_node,
+                 std::string relationship, std::string to_node,
+                 ExpandDirection direction,
+                 std::vector<std::string> types = {});
 
   [[nodiscard]] const std::string &FromNode() const noexcept {
     return from_node_;

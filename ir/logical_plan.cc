@@ -16,6 +16,7 @@ inline constexpr auto kLogicalPlanNodeTypeNames = std::array{
     std::string_view{"AllNodeScan"},
     std::string_view{"NodeByLabelScan"},
     std::string_view{"Expand"},
+    std::string_view{"ExpandInto"},
     std::string_view{"Filter"},
     std::string_view{"Projection"},
     std::string_view{"Distinct"},
@@ -147,6 +148,21 @@ std::string ExpandArrow(ExpandDirection direction, bool left) {
   THROW(common::InternalError, "unknown expand direction");
 }
 
+std::string RelationshipDetails(std::string_view from_node,
+                                std::string_view relationship,
+                                std::string_view to_node,
+                                ExpandDirection direction,
+                                const std::vector<std::string> &types) {
+  std::ostringstream out;
+  out << "(" << from_node << ")" << ExpandArrow(direction, true) << "["
+      << relationship;
+  if (!types.empty()) {
+    out << ":" << Join(types, "|");
+  }
+  out << "]" << ExpandArrow(direction, false) << "(" << to_node << ")";
+  return out.str();
+}
+
 }  // namespace
 
 std::string_view ToString(LogicalPlanNodeType type) {
@@ -275,14 +291,34 @@ ExpandPlan::ExpandPlan(LogicalPlanPtr source, std::string from_node,
 }
 
 std::string ExpandPlan::Details() const {
-  std::ostringstream out;
-  out << "(" << from_node_ << ")" << ExpandArrow(direction_, true) << "["
-      << relationship_;
-  if (!types_.empty()) {
-    out << ":" << Join(types_, "|");
-  }
-  out << "]" << ExpandArrow(direction_, false) << "(" << to_node_ << ")";
-  return out.str();
+  return RelationshipDetails(from_node_, relationship_, to_node_, direction_,
+                             types_);
+}
+
+ExpandIntoPlan::ExpandIntoPlan(LogicalPlanPtr source, std::string from_node,
+                               std::string relationship, std::string to_node,
+                               ExpandDirection direction,
+                               std::vector<std::string> types)
+    : LogicalPlan(LogicalPlanNodeType::kExpandInto,
+                  UnaryChildren(std::move(source), "ExpandInto")),
+      from_node_(std::move(from_node)),
+      relationship_(std::move(relationship)),
+      to_node_(std::move(to_node)),
+      direction_(direction),
+      types_(std::move(types)) {
+  SetSolvedSymbols(Child(0).SolvedSymbols());
+  SetOutputColumns(Child(0).OutputColumns());
+  AddSolvedSymbol(from_node_);
+  AddSolvedSymbol(relationship_);
+  AddSolvedSymbol(to_node_);
+  AddOutputColumn(from_node_);
+  AddOutputColumn(relationship_);
+  AddOutputColumn(to_node_);
+}
+
+std::string ExpandIntoPlan::Details() const {
+  return RelationshipDetails(from_node_, relationship_, to_node_, direction_,
+                             types_);
 }
 
 FilterPlan::FilterPlan(LogicalPlanPtr source, const ast::Expression *predicate)

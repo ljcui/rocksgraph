@@ -30,6 +30,19 @@ std::vector<std::string> SortedComponentNodes(
   return out;
 }
 
+std::vector<std::string> SortedComponentArgumentNodes(
+    const QueryGraphComponent &component,
+    const std::unordered_set<std::string> &argument_ids) {
+  std::vector<std::string> out;
+  for (const auto &node : component.pattern_nodes) {
+    if (argument_ids.contains(node)) {
+      out.push_back(node);
+    }
+  }
+  std::sort(out.begin(), out.end());
+  return out;
+}
+
 std::vector<std::string> ProjectionAliases(
     const std::vector<ProjectionItem> &items) {
   std::vector<std::string> aliases;
@@ -239,18 +252,17 @@ class LogicalPlanBuilder {
       return BuildNodeLeaf(query_graph, nodes.front());
     }
 
-    const PatternRelationship &first_relationship =
-        query_graph
-            .pattern_relationships[component.pattern_relationship_indices[0]];
-    std::string start_node = first_relationship.left_node;
-    for (const auto &node : SortedComponentNodes(component)) {
-      if (query_graph.argument_ids.contains(node)) {
-        start_node = node;
-        break;
-      }
+    std::unique_ptr<LogicalPlan> plan;
+    const std::vector<std::string> argument_nodes =
+        SortedComponentArgumentNodes(component, query_graph.argument_ids);
+    if (!argument_nodes.empty()) {
+      plan = std::make_unique<ArgumentPlan>(argument_nodes);
+    } else {
+      const PatternRelationship &first_relationship =
+          query_graph
+              .pattern_relationships[component.pattern_relationship_indices[0]];
+      plan = BuildNodeLeaf(query_graph, first_relationship.left_node);
     }
-
-    std::unique_ptr<LogicalPlan> plan = BuildNodeLeaf(query_graph, start_node);
     ApplyAvailableFilters(query_graph.selections, &plan);
 
     std::vector<std::size_t> remaining = component.pattern_relationship_indices;
@@ -269,6 +281,18 @@ class LogicalPlanBuilder {
           query_graph.pattern_relationships[*found];
       const bool left_solved =
           plan->SolvedSymbols().contains(relationship.left_node);
+      const bool right_solved =
+          plan->SolvedSymbols().contains(relationship.right_node);
+      if (left_solved && right_solved) {
+        plan = std::make_unique<ExpandIntoPlan>(
+            std::move(plan), relationship.left_node, relationship.variable,
+            relationship.right_node, ToExpandDirection(relationship.direction),
+            relationship.types);
+        remaining.erase(found);
+        ApplyAvailableFilters(query_graph.selections, &plan);
+        continue;
+      }
+
       const std::string from_node =
           left_solved ? relationship.left_node : relationship.right_node;
       const std::string to_node =
