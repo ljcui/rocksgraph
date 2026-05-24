@@ -158,11 +158,31 @@ TEST(LogicalPlanBuilderTest, BuildsDistinctOrderBySkipAndLimitPlan) {
 )");
 }
 
-TEST(LogicalPlanBuilderTest, RejectsUnsupportedAggregationHorizon) {
-  auto statement = ParseOrFail("MATCH (n) RETURN count(n) AS c");
-  ASSERT_TRUE(statement);
-  std::unique_ptr<ir::PlannerQuery> planner_query =
-      ir::CreatePlannerQuery(*statement);
-  EXPECT_THROW((void)ir::CreateLogicalPlan(*planner_query),
-               common::InvalidArgumentError);
+TEST(LogicalPlanBuilderTest, BuildsAggregationPlan) {
+  ExpectLogicalPlanText("MATCH (n) RETURN count(n) AS c",
+                        R"(ProduceResults [c]
+  Aggregation [c]
+    AllNodeScan [n]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsGroupingAggregationPlan) {
+  ExpectLogicalPlanText("MATCH (n) RETURN n.name AS name, count(*) AS c",
+                        R"(ProduceResults [name, c]
+  Aggregation [name, c]
+    AllNodeScan [n]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsAggregationOrderBySkipAndLimitPlan) {
+  ExpectLogicalPlanText(
+      "MATCH (n) RETURN n.name AS name, count(*) AS c ORDER BY n.name DESC "
+      "SKIP 1 LIMIT 2",
+      R"(ProduceResults [name, c]
+  Limit [2]
+    Skip [1]
+      Sort [name DESC]
+        Aggregation [name, c]
+          AllNodeScan [n]
+)");
 }

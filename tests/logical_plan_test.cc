@@ -85,6 +85,21 @@ TEST(LogicalPlanTest, UnaryPlansPreserveOrReplaceOutputColumns) {
   EXPECT_TRUE(Contains(distinct.SolvedSymbols(), "n"));
   EXPECT_TRUE(Contains(distinct.SolvedSymbols(), "name"));
 
+  auto aggregation_source = std::make_unique<ir::AllNodeScanPlan>("n");
+  ir::AggregationPlan aggregation(
+      std::move(aggregation_source),
+      std::vector<ir::LogicalProjectionItem>{
+          {.expression = nullptr, .alias = "name"}},
+      std::vector<ir::LogicalProjectionItem>{
+          {.expression = nullptr, .alias = "count"}});
+  EXPECT_EQ(aggregation.Name(), "Aggregation");
+  EXPECT_EQ(aggregation.Details(), "name, count");
+  EXPECT_EQ(aggregation.OutputColumns(),
+            std::vector<std::string>({"name", "count"}));
+  EXPECT_TRUE(Contains(aggregation.SolvedSymbols(), "n"));
+  EXPECT_TRUE(Contains(aggregation.SolvedSymbols(), "name"));
+  EXPECT_TRUE(Contains(aggregation.SolvedSymbols(), "count"));
+
   auto projected = std::make_unique<ir::ProjectionPlan>(
       std::make_unique<ir::AllNodeScanPlan>("n"),
       std::vector<ir::LogicalProjectionItem>{

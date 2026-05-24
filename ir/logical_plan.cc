@@ -19,6 +19,7 @@ inline constexpr auto kLogicalPlanNodeTypeNames = std::array{
     std::string_view{"Filter"},
     std::string_view{"Projection"},
     std::string_view{"Distinct"},
+    std::string_view{"Aggregation"},
     std::string_view{"Sort"},
     std::string_view{"Skip"},
     std::string_view{"Limit"},
@@ -118,6 +119,17 @@ std::vector<std::string> ProjectionItemAliases(
   std::vector<std::string> aliases;
   aliases.reserve(items.size());
   for (const auto &item : items) {
+    aliases.push_back(item.alias);
+  }
+  return aliases;
+}
+
+std::vector<std::string> ProjectionItemAliases(
+    const std::vector<LogicalProjectionItem> &lhs,
+    const std::vector<LogicalProjectionItem> &rhs) {
+  std::vector<std::string> aliases = ProjectionItemAliases(lhs);
+  aliases.reserve(lhs.size() + rhs.size());
+  for (const auto &item : rhs) {
     aliases.push_back(item.alias);
   }
   return aliases;
@@ -318,6 +330,28 @@ DistinctPlan::DistinctPlan(LogicalPlanPtr source,
 
 std::string DistinctPlan::Details() const {
   return Join(ProjectionItemAliases(grouping_items_), ", ");
+}
+
+AggregationPlan::AggregationPlan(
+    LogicalPlanPtr source, std::vector<LogicalProjectionItem> grouping_items,
+    std::vector<LogicalProjectionItem> aggregation_items)
+    : LogicalPlan(LogicalPlanNodeType::kAggregation,
+                  UnaryChildren(std::move(source), "Aggregation")),
+      grouping_items_(std::move(grouping_items)),
+      aggregation_items_(std::move(aggregation_items)) {
+  SetSolvedSymbols(Child(0).SolvedSymbols());
+  for (const auto &item : grouping_items_) {
+    AddSolvedSymbol(item.alias);
+    AddOutputColumn(item.alias);
+  }
+  for (const auto &item : aggregation_items_) {
+    AddSolvedSymbol(item.alias);
+    AddOutputColumn(item.alias);
+  }
+}
+
+std::string AggregationPlan::Details() const {
+  return Join(ProjectionItemAliases(grouping_items_, aggregation_items_), ", ");
 }
 
 SortPlan::SortPlan(LogicalPlanPtr source, std::vector<LogicalSortItem> items)

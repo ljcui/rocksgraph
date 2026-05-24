@@ -40,6 +40,17 @@ std::vector<std::string> ProjectionAliases(
   return aliases;
 }
 
+std::vector<std::string> ProjectionAliases(
+    const std::vector<ProjectionItem> &lhs,
+    const std::vector<ProjectionItem> &rhs) {
+  std::vector<std::string> aliases = ProjectionAliases(lhs);
+  aliases.reserve(lhs.size() + rhs.size());
+  for (const auto &item : rhs) {
+    aliases.push_back(item.alias);
+  }
+  return aliases;
+}
+
 std::vector<LogicalProjectionItem> LogicalProjectionItems(
     const std::vector<ProjectionItem> &items) {
   std::vector<LogicalProjectionItem> logical_items;
@@ -316,8 +327,8 @@ class LogicalPlanBuilder {
         return ApplyDistinctProjection(std::move(plan),
                                        horizon.RequireDistinctProjection());
       case QueryHorizonKind::kAggregatingProjection:
-        THROW(common::InvalidArgumentError,
-              Unsupported("aggregation logical plan"));
+        return ApplyAggregatingProjection(
+            std::move(plan), horizon.RequireAggregatingProjection());
       case QueryHorizonKind::kUnwind:
         THROW(common::InvalidArgumentError, Unsupported("UNWIND logical plan"));
       case QueryHorizonKind::kProcedureCall:
@@ -345,6 +356,17 @@ class LogicalPlanBuilder {
         ProjectionAliases(projection.grouping_items);
     plan = std::make_unique<DistinctPlan>(
         std::move(plan), LogicalProjectionItems(projection.grouping_items));
+    return ApplyProjectionTail(std::move(plan), projection, std::move(aliases));
+  }
+
+  std::unique_ptr<LogicalPlan> ApplyAggregatingProjection(
+      std::unique_ptr<LogicalPlan> plan,
+      const AggregatingQueryProjection &projection) {
+    std::vector<std::string> aliases = ProjectionAliases(
+        projection.grouping_items, projection.aggregation_items);
+    plan = std::make_unique<AggregationPlan>(
+        std::move(plan), LogicalProjectionItems(projection.grouping_items),
+        LogicalProjectionItems(projection.aggregation_items));
     return ApplyProjectionTail(std::move(plan), projection, std::move(aliases));
   }
 
