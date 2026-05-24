@@ -130,6 +130,47 @@ TEST(LogicalPlanBuilderTest, IdpBuildsNodeHashJoinForSharedNodeSubplans) {
           .component_planner = ir::LogicalPlanComponentPlannerKind::kIdp});
 }
 
+TEST(LogicalPlanBuilderTest, IdpExtendsThreeRelationshipJoinedSubplan) {
+  ExpectLogicalPlanText(
+      "MATCH (a:Person)-[r1]->(b)<-[r2]-(c:Person), "
+      "(b)-[r3]->(d:Person) RETURN a, b, c, d",
+      R"(ProduceResults [a, b, c, d]
+  Projection [a, b, c, d]
+    Filter [d:Person]
+      Filter [NOT (r2 = r3)]
+        Filter [NOT (r1 = r3)]
+          Expand [(b)-[r3]->(d)]
+            Filter [NOT (r1 = r2)]
+              NodeHashJoin [b]
+                Expand [(a)-[r1]->(b)]
+                  NodeByLabelScan [a:Person]
+                Expand [(c)-[r2]->(b)]
+                  NodeByLabelScan [c:Person]
+)",
+      ir::LogicalPlanBuilderOptions{
+          .component_planner = ir::LogicalPlanComponentPlannerKind::kIdp});
+}
+
+TEST(LogicalPlanBuilderTest, IdpBuildsNestedThreeRelationshipBushyJoinPlan) {
+  ExpectLogicalPlanText(
+      "MATCH (a:Person)-[r1]->(b) "
+      "MATCH (b)<-[r2]-(c:Person) "
+      "MATCH (b)-[r3]->(d:Person) RETURN a, b, c, d",
+      R"(ProduceResults [a, b, c, d]
+  Projection [a, b, c, d]
+    NodeHashJoin [b]
+      Expand [(a)-[r1]->(b)]
+        NodeByLabelScan [a:Person]
+      NodeHashJoin [b]
+        Expand [(c)-[r2]->(b)]
+          NodeByLabelScan [c:Person]
+        Expand [(d)<-[r3]-(b)]
+          NodeByLabelScan [d:Person]
+)",
+      ir::LogicalPlanBuilderOptions{
+          .component_planner = ir::LogicalPlanComponentPlannerKind::kIdp});
+}
+
 TEST(LogicalPlanBuilderTest, IdpBuildsExpandIntoForBoundEndpoints) {
   ExpectLogicalPlanText(
       "MATCH (a)-[r1]->(b:Person), (a)-[r2]->(b) RETURN a, b",
