@@ -26,7 +26,8 @@ std::unique_ptr<ast::Statement> ParseOrFail(const std::string &query) {
   return {};
 }
 
-std::string LogicalPlanText(const std::string &query) {
+std::string LogicalPlanText(const std::string &query,
+                            const ir::LogicalPlanBuilderOptions &options = {}) {
   auto statement = ParseOrFail(query);
   if (!statement) {
     return {};
@@ -34,13 +35,14 @@ std::string LogicalPlanText(const std::string &query) {
   std::unique_ptr<ir::PlannerQuery> planner_query =
       ir::CreatePlannerQuery(*statement);
   std::unique_ptr<ir::LogicalPlan> logical_plan =
-      ir::CreateLogicalPlan(*planner_query);
+      ir::CreateLogicalPlan(*planner_query, options);
   return ir::LogicalPlanToString(*logical_plan);
 }
 
 void ExpectLogicalPlanText(const std::string &query,
-                           const std::string &expected) {
-  EXPECT_EQ(LogicalPlanText(query), expected);
+                           const std::string &expected,
+                           const ir::LogicalPlanBuilderOptions &options = {}) {
+  EXPECT_EQ(LogicalPlanText(query, options), expected);
 }
 
 }  // namespace
@@ -66,6 +68,18 @@ TEST(LogicalPlanBuilderTest, BuildsExpandFromSingleRelationshipPattern) {
     Expand [(a)-[r:KNOWS]->(b)]
       AllNodeScan [a]
 )");
+}
+
+TEST(LogicalPlanBuilderTest, IdpChoosesCheaperLabelLeaf) {
+  ExpectLogicalPlanText(
+      "MATCH (a)-[r]->(b:Person) RETURN a, b",
+      R"(ProduceResults [a, b]
+  Projection [a, b]
+    Expand [(b)<-[r]-(a)]
+      NodeByLabelScan [b:Person]
+)",
+      ir::LogicalPlanBuilderOptions{
+          .component_planner = ir::LogicalPlanComponentPlannerKind::kIdp});
 }
 
 TEST(LogicalPlanBuilderTest, BuildsExpandIntoForAlreadyBoundEndpoints) {
