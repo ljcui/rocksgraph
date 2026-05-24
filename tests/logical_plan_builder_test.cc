@@ -82,6 +82,34 @@ TEST(LogicalPlanBuilderTest, IdpChoosesCheaperLabelLeaf) {
           .component_planner = ir::LogicalPlanComponentPlannerKind::kIdp});
 }
 
+TEST(LogicalPlanBuilderTest, IdpBuildsTwoHopPlanFromCheaperMiddleLeaf) {
+  ExpectLogicalPlanText(
+      "MATCH (a)-[r1]->(b:Person)-[r2]->(c) RETURN a, b, c",
+      R"(ProduceResults [a, b, c]
+  Projection [a, b, c]
+    Filter [NOT (r1 = r2)]
+      Expand [(b)-[r2]->(c)]
+        Expand [(b)<-[r1]-(a)]
+          NodeByLabelScan [b:Person]
+)",
+      ir::LogicalPlanBuilderOptions{
+          .component_planner = ir::LogicalPlanComponentPlannerKind::kIdp});
+}
+
+TEST(LogicalPlanBuilderTest, IdpBuildsExpandIntoForBoundEndpoints) {
+  ExpectLogicalPlanText(
+      "MATCH (a)-[r1]->(b:Person), (a)-[r2]->(b) RETURN a, b",
+      R"(ProduceResults [a, b]
+  Projection [a, b]
+    Filter [NOT (r1 = r2)]
+      ExpandInto [(a)-[r2]->(b)]
+        Expand [(b)<-[r1]-(a)]
+          NodeByLabelScan [b:Person]
+)",
+      ir::LogicalPlanBuilderOptions{
+          .component_planner = ir::LogicalPlanComponentPlannerKind::kIdp});
+}
+
 TEST(LogicalPlanBuilderTest, BuildsExpandIntoForAlreadyBoundEndpoints) {
   ExpectLogicalPlanText("MATCH (a)-[r1]->(b), (a)-[r2]->(b) RETURN a, b",
                         R"(ProduceResults [a, b]
@@ -255,6 +283,22 @@ TEST(LogicalPlanBuilderTest, BuildsTailMatchWithBoundEndpointsExpandIntoPlan) {
       ExpandInto [(a)-[r]->(b)]
         Argument [a, b]
 )");
+}
+
+TEST(LogicalPlanBuilderTest, IdpKeepsTailMatchArgumentDependency) {
+  ExpectLogicalPlanText(
+      "MATCH (n) WITH DISTINCT n MATCH (n)-[r]->(m:Person) RETURN m",
+      R"(ProduceResults [m]
+  Projection [m]
+    Apply
+      Distinct [n]
+        AllNodeScan [n]
+      Filter [m:Person]
+        Expand [(n)-[r]->(m)]
+          Argument [n]
+)",
+      ir::LogicalPlanBuilderOptions{
+          .component_planner = ir::LogicalPlanComponentPlannerKind::kIdp});
 }
 
 TEST(LogicalPlanBuilderTest, BuildsTailMatchWithoutArgumentDependencyPlan) {
