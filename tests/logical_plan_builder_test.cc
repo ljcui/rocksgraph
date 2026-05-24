@@ -82,6 +82,19 @@ TEST(LogicalPlanBuilderTest, IdpChoosesCheaperLabelLeaf) {
           .component_planner = ir::LogicalPlanComponentPlannerKind::kIdp});
 }
 
+TEST(LogicalPlanBuilderTest, IdpPruningKeepsCheapestLeafCandidate) {
+  ExpectLogicalPlanText(
+      "MATCH (a)-[r]->(b:Person) RETURN a, b",
+      R"(ProduceResults [a, b]
+  Projection [a, b]
+    Expand [(b)<-[r]-(a)]
+      NodeByLabelScan [b:Person]
+)",
+      ir::LogicalPlanBuilderOptions{
+          .component_planner = ir::LogicalPlanComponentPlannerKind::kIdp,
+          .max_idp_candidates_per_relationship_count = 1});
+}
+
 TEST(LogicalPlanBuilderTest, IdpBuildsTwoHopJoinFromCheaperMiddleLeaf) {
   ExpectLogicalPlanText(
       "MATCH (a)-[r1]->(b:Person)-[r2]->(c) RETURN a, b, c",

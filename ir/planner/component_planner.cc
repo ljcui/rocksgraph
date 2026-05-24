@@ -229,6 +229,15 @@ class RuleBasedComponentPlanner final : public ComponentPlanner {
 
 class IdpComponentPlanner final : public ComponentPlanner {
  public:
+  explicit IdpComponentPlanner(
+      std::size_t max_candidates_per_relationship_count)
+      : max_candidates_per_relationship_count_(
+            max_candidates_per_relationship_count) {
+    CHECK(max_candidates_per_relationship_count_ > 0,
+          common::InvalidArgumentError,
+          "max IDP candidates per relationship count must be positive");
+  }
+
   std::unique_ptr<LogicalPlan> Plan(
       const QueryGraph &query_graph, const QueryGraphComponent &component,
       QueryGraphPlanningContext *context) const override {
@@ -264,6 +273,7 @@ class IdpComponentPlanner final : public ComponentPlanner {
                                 &plan_table);
       }
     }
+    PruneCandidates(0, &plan_table);
 
     const std::size_t relationship_count =
         component.pattern_relationship_indices.size();
@@ -272,6 +282,7 @@ class IdpComponentPlanner final : public ComponentPlanner {
       PutExpandCandidates(query_graph, component, target_count - 1, context,
                           &plan_table);
       PutJoinCandidates(query_graph, target_count, context, &plan_table);
+      PruneCandidates(target_count, &plan_table);
     }
 
     PlanCandidate final_candidate = plan_table.TakeBest(
@@ -301,6 +312,13 @@ class IdpComponentPlanner final : public ComponentPlanner {
     }
     CHECK(found, common::InternalError, "missing final plan candidate");
     return best_key;
+  }
+
+  void PruneCandidates(std::size_t relationship_count,
+                       PlanTable *plan_table) const {
+    CHECK(plan_table != nullptr, common::InternalError, "plan table is null");
+    plan_table->PruneRelationshipCount(relationship_count,
+                                       max_candidates_per_relationship_count_);
   }
 
   void PutExpandCandidates(const QueryGraph &query_graph,
@@ -505,6 +523,7 @@ class IdpComponentPlanner final : public ComponentPlanner {
   }
 
   CostModel cost_model_;
+  std::size_t max_candidates_per_relationship_count_ = 128;
 };
 
 }  // namespace
@@ -593,12 +612,13 @@ const Predicate *QueryGraphPlanningContext::FirstConsumableNodeLabelPredicate(
 }
 
 std::unique_ptr<ComponentPlanner> MakeComponentPlanner(
-    LogicalPlanComponentPlannerKind kind) {
-  switch (kind) {
+    const LogicalPlanBuilderOptions &options) {
+  switch (options.component_planner) {
     case LogicalPlanComponentPlannerKind::kRuleBased:
       return std::make_unique<RuleBasedComponentPlanner>();
     case LogicalPlanComponentPlannerKind::kIdp:
-      return std::make_unique<IdpComponentPlanner>();
+      return std::make_unique<IdpComponentPlanner>(
+          options.max_idp_candidates_per_relationship_count);
   }
   THROW(common::InternalError, "unknown logical component planner kind");
 }

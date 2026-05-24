@@ -88,7 +88,7 @@ bool IsUnsupportedPredicateKind(const Predicate &predicate) {
 class LogicalPlanBuilder {
  public:
   explicit LogicalPlanBuilder(const LogicalPlanBuilderOptions &options)
-      : component_planner_(MakeComponentPlanner(options.component_planner)) {}
+      : component_planner_(MakeComponentPlanner(options)) {}
 
   std::unique_ptr<LogicalPlan> Build(const PlannerQuery &planner_query) {
     switch (planner_query.Kind()) {

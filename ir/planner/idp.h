@@ -47,6 +47,8 @@ struct PlanCandidate {
 class PlanTable {
  public:
   void PutBest(PlanCandidate candidate);
+  void PruneRelationshipCount(std::size_t relationship_count,
+                              std::size_t max_candidates);
 
   [[nodiscard]] PlanCandidate TakeBest(const PlanKey &key);
   [[nodiscard]] const PlanCandidate *Best(const PlanKey &key) const;

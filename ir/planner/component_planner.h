@@ -46,6 +46,6 @@ class ComponentPlanner {
 };
 
 [[nodiscard]] std::unique_ptr<ComponentPlanner> MakeComponentPlanner(
-    LogicalPlanComponentPlannerKind kind);
+    const LogicalPlanBuilderOptions &options);
 
 }  // namespace ir

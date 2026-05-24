@@ -77,6 +77,13 @@ PlanCandidate MakePlanCandidate(
   return candidate;
 }
 
+bool CandidateCostLess(const PlanCandidate &lhs, const PlanCandidate &rhs) {
+  if (lhs.cost != rhs.cost) {
+    return lhs.cost < rhs.cost;
+  }
+  return CandidateKey(lhs) < CandidateKey(rhs);
+}
+
 void PlanTable::PutBest(PlanCandidate candidate) {
   CHECK(candidate.plan != nullptr, common::InternalError,
         "candidate plan is null");
@@ -92,6 +99,39 @@ void PlanTable::PutBest(PlanCandidate candidate) {
   if (candidate.cost < found->cost) {
     *found = std::move(candidate);
   }
+}
+
+void PlanTable::PruneRelationshipCount(std::size_t relationship_count,
+                                       std::size_t max_candidates) {
+  CHECK(max_candidates > 0, common::InvalidArgumentError,
+        "max candidates must be positive");
+  std::vector<PlanKey> keys = KeysWithRelationshipCount(relationship_count);
+  if (keys.size() <= max_candidates) {
+    return;
+  }
+
+  std::sort(
+      keys.begin(), keys.end(), [&](const PlanKey &lhs, const PlanKey &rhs) {
+        const PlanCandidate *lhs_candidate = Best(lhs);
+        const PlanCandidate *rhs_candidate = Best(rhs);
+        CHECK(lhs_candidate != nullptr && rhs_candidate != nullptr,
+              common::InternalError, "missing plan candidate during pruning");
+        return CandidateCostLess(*lhs_candidate, *rhs_candidate);
+      });
+  keys.resize(max_candidates);
+  std::sort(keys.begin(), keys.end());
+
+  entries_.erase(std::remove_if(entries_.begin(), entries_.end(),
+                                [&](const PlanCandidate &candidate) {
+                                  if (candidate.relationship_indices.size() !=
+                                      relationship_count) {
+                                    return false;
+                                  }
+                                  const PlanKey key = CandidateKey(candidate);
+                                  return !std::binary_search(keys.begin(),
+                                                             keys.end(), key);
+                                }),
+                 entries_.end());
 }
 
 PlanCandidate PlanTable::TakeBest(const PlanKey &key) {
