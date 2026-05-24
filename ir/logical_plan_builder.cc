@@ -40,6 +40,21 @@ std::vector<std::string> ProjectionAliases(
   return aliases;
 }
 
+std::vector<LogicalProjectionItem> LogicalProjectionItems(
+    const std::vector<ProjectionItem> &items) {
+  std::vector<LogicalProjectionItem> logical_items;
+  logical_items.reserve(items.size());
+  for (const auto &item : items) {
+    CHECK(item.expression != nullptr, common::InvalidArgumentError,
+          "projection expression is null");
+    CHECK(!item.alias.empty(), common::InvalidArgumentError,
+          "projection alias is empty");
+    logical_items.push_back(
+        {.expression = item.expression, .alias = item.alias});
+  }
+  return logical_items;
+}
+
 LogicalOrderDirection ToLogicalOrderDirection(OrderDirection direction) {
   switch (direction) {
     case OrderDirection::kAscending:
@@ -298,8 +313,8 @@ class LogicalPlanBuilder {
         return ApplyRegularProjection(std::move(plan),
                                       horizon.RequireRegularProjection());
       case QueryHorizonKind::kDistinctProjection:
-        THROW(common::InvalidArgumentError,
-              Unsupported("DISTINCT logical plan"));
+        return ApplyDistinctProjection(std::move(plan),
+                                       horizon.RequireDistinctProjection());
       case QueryHorizonKind::kAggregatingProjection:
         THROW(common::InvalidArgumentError,
               Unsupported("aggregation logical plan"));
@@ -317,23 +332,30 @@ class LogicalPlanBuilder {
   std::unique_ptr<LogicalPlan> ApplyRegularProjection(
       std::unique_ptr<LogicalPlan> plan,
       const RegularQueryProjection &projection) {
+    std::vector<std::string> aliases = ProjectionAliases(projection.items);
+    plan = std::make_unique<ProjectionPlan>(
+        std::move(plan), LogicalProjectionItems(projection.items));
+    return ApplyProjectionTail(std::move(plan), projection, std::move(aliases));
+  }
+
+  std::unique_ptr<LogicalPlan> ApplyDistinctProjection(
+      std::unique_ptr<LogicalPlan> plan,
+      const DistinctQueryProjection &projection) {
+    std::vector<std::string> aliases =
+        ProjectionAliases(projection.grouping_items);
+    plan = std::make_unique<DistinctPlan>(
+        std::move(plan), LogicalProjectionItems(projection.grouping_items));
+    return ApplyProjectionTail(std::move(plan), projection, std::move(aliases));
+  }
+
+  std::unique_ptr<LogicalPlan> ApplyProjectionTail(
+      std::unique_ptr<LogicalPlan> plan, const QueryProjection &projection,
+      std::vector<std::string> aliases) {
     CHECK(projection.selections.empty(), common::InvalidArgumentError,
           Unsupported("projection selection logical plan"));
     CHECK(projection.nested_expressions.empty(), common::InvalidArgumentError,
           Unsupported("nested projection expression logical plan"));
 
-    std::vector<LogicalProjectionItem> items;
-    items.reserve(projection.items.size());
-    for (const auto &item : projection.items) {
-      CHECK(item.expression != nullptr, common::InvalidArgumentError,
-            "projection expression is null");
-      CHECK(!item.alias.empty(), common::InvalidArgumentError,
-            "projection alias is empty");
-      items.push_back({.expression = item.expression, .alias = item.alias});
-    }
-
-    std::vector<std::string> aliases = ProjectionAliases(projection.items);
-    plan = std::make_unique<ProjectionPlan>(std::move(plan), std::move(items));
     if (!projection.required_order.empty()) {
       plan = std::make_unique<SortPlan>(std::move(plan),
                                         SortItems(projection.required_order));

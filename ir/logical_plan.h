@@ -23,6 +23,7 @@ enum class LogicalPlanNodeType {
   kExpand,
   kFilter,
   kProjection,
+  kDistinct,
   kSort,
   kSkip,
   kLimit,
@@ -192,6 +193,21 @@ class ProjectionPlan final : public LogicalPlan {
 
  private:
   std::vector<LogicalProjectionItem> items_;
+};
+
+class DistinctPlan final : public LogicalPlan {
+ public:
+  DistinctPlan(LogicalPlanPtr source,
+               std::vector<LogicalProjectionItem> grouping_items);
+
+  [[nodiscard]] const std::vector<LogicalProjectionItem> &GroupingItems()
+      const noexcept {
+    return grouping_items_;
+  }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  std::vector<LogicalProjectionItem> grouping_items_;
 };
 
 class SortPlan final : public LogicalPlan {

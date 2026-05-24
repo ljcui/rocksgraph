@@ -128,8 +128,38 @@ TEST(LogicalPlanBuilderTest, RewritesOrderByProjectionExpressionToAlias) {
 )");
 }
 
-TEST(LogicalPlanBuilderTest, RejectsUnsupportedDistinctHorizon) {
-  auto statement = ParseOrFail("MATCH (n) RETURN DISTINCT n");
+TEST(LogicalPlanBuilderTest, BuildsDistinctPlan) {
+  ExpectLogicalPlanText("MATCH (n) RETURN DISTINCT n.name AS name",
+                        R"(ProduceResults [name]
+  Distinct [name]
+    AllNodeScan [n]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsDistinctOrderByPlan) {
+  ExpectLogicalPlanText("MATCH (n) RETURN DISTINCT n ORDER BY n.name",
+                        R"(ProduceResults [n]
+  Sort [n.name ASC]
+    Distinct [n]
+      AllNodeScan [n]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsDistinctOrderBySkipAndLimitPlan) {
+  ExpectLogicalPlanText(
+      "MATCH (n) RETURN DISTINCT n.name AS name ORDER BY n.name DESC SKIP 1 "
+      "LIMIT 2",
+      R"(ProduceResults [name]
+  Limit [2]
+    Skip [1]
+      Sort [name DESC]
+        Distinct [name]
+          AllNodeScan [n]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, RejectsUnsupportedAggregationHorizon) {
+  auto statement = ParseOrFail("MATCH (n) RETURN count(n) AS c");
   ASSERT_TRUE(statement);
   std::unique_ptr<ir::PlannerQuery> planner_query =
       ir::CreatePlannerQuery(*statement);

@@ -18,6 +18,7 @@ inline constexpr auto kLogicalPlanNodeTypeNames = std::array{
     std::string_view{"Expand"},
     std::string_view{"Filter"},
     std::string_view{"Projection"},
+    std::string_view{"Distinct"},
     std::string_view{"Sort"},
     std::string_view{"Skip"},
     std::string_view{"Limit"},
@@ -110,6 +111,16 @@ std::string Join(const std::vector<std::string> &values,
     out.append(values[i]);
   }
   return out;
+}
+
+std::vector<std::string> ProjectionItemAliases(
+    const std::vector<LogicalProjectionItem> &items) {
+  std::vector<std::string> aliases;
+  aliases.reserve(items.size());
+  for (const auto &item : items) {
+    aliases.push_back(item.alias);
+  }
+  return aliases;
 }
 
 std::string ExpandArrow(ExpandDirection direction, bool left) {
@@ -290,12 +301,23 @@ ProjectionPlan::ProjectionPlan(LogicalPlanPtr source,
 }
 
 std::string ProjectionPlan::Details() const {
-  std::vector<std::string> aliases;
-  aliases.reserve(items_.size());
-  for (const auto &item : items_) {
-    aliases.push_back(item.alias);
+  return Join(ProjectionItemAliases(items_), ", ");
+}
+
+DistinctPlan::DistinctPlan(LogicalPlanPtr source,
+                           std::vector<LogicalProjectionItem> grouping_items)
+    : LogicalPlan(LogicalPlanNodeType::kDistinct,
+                  UnaryChildren(std::move(source), "Distinct")),
+      grouping_items_(std::move(grouping_items)) {
+  SetSolvedSymbols(Child(0).SolvedSymbols());
+  for (const auto &item : grouping_items_) {
+    AddSolvedSymbol(item.alias);
+    AddOutputColumn(item.alias);
   }
-  return Join(aliases, ", ");
+}
+
+std::string DistinctPlan::Details() const {
+  return Join(ProjectionItemAliases(grouping_items_), ", ");
 }
 
 SortPlan::SortPlan(LogicalPlanPtr source, std::vector<LogicalSortItem> items)

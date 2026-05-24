@@ -75,6 +75,16 @@ TEST(LogicalPlanTest, UnaryPlansPreserveOrReplaceOutputColumns) {
   EXPECT_TRUE(Contains(projection.SolvedSymbols(), "n"));
   EXPECT_TRUE(Contains(projection.SolvedSymbols(), "name"));
 
+  auto distinct_source = std::make_unique<ir::AllNodeScanPlan>("n");
+  ir::DistinctPlan distinct(std::move(distinct_source),
+                            std::vector<ir::LogicalProjectionItem>{
+                                {.expression = nullptr, .alias = "name"}});
+  EXPECT_EQ(distinct.Name(), "Distinct");
+  EXPECT_EQ(distinct.Details(), "name");
+  EXPECT_EQ(distinct.OutputColumns(), std::vector<std::string>({"name"}));
+  EXPECT_TRUE(Contains(distinct.SolvedSymbols(), "n"));
+  EXPECT_TRUE(Contains(distinct.SolvedSymbols(), "name"));
+
   auto projected = std::make_unique<ir::ProjectionPlan>(
       std::make_unique<ir::AllNodeScanPlan>("n"),
       std::vector<ir::LogicalProjectionItem>{
