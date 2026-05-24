@@ -186,3 +186,58 @@ TEST(LogicalPlanBuilderTest, BuildsAggregationOrderBySkipAndLimitPlan) {
           AllNodeScan [n]
 )");
 }
+
+TEST(LogicalPlanBuilderTest, BuildsProjectionOnlyTailPlan) {
+  ExpectLogicalPlanText("MATCH (n) WITH n.name AS name RETURN name",
+                        R"(ProduceResults [name]
+  Projection [name]
+    Projection [name]
+      AllNodeScan [n]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsDistinctProjectionOnlyTailPlan) {
+  ExpectLogicalPlanText("MATCH (n) WITH DISTINCT n RETURN n",
+                        R"(ProduceResults [n]
+  Projection [n]
+    Distinct [n]
+      AllNodeScan [n]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsTailMatchWithArgumentExpandPlan) {
+  ExpectLogicalPlanText("MATCH (n) WITH DISTINCT n MATCH (n)-->(m) RETURN m",
+                        R"(ProduceResults [m]
+  Projection [m]
+    Apply
+      Distinct [n]
+        AllNodeScan [n]
+      Expand [(n)-[anon_0]->(m)]
+        Argument [n]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsTailMatchWithoutArgumentDependencyPlan) {
+  ExpectLogicalPlanText(
+      "MATCH (n) WITH n.name AS name MATCH (m) RETURN name, m",
+      R"(ProduceResults [name, m]
+  Projection [name, m]
+    Apply
+      Projection [name]
+        AllNodeScan [n]
+      AllNodeScan [m]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsTailFilterAfterApplyPlan) {
+  ExpectLogicalPlanText(
+      "MATCH (n) WITH DISTINCT n MATCH (m) WHERE n.age > m.age RETURN m",
+      R"(ProduceResults [m]
+  Projection [m]
+    Filter [n.age > m.age]
+      Apply
+        Distinct [n]
+          AllNodeScan [n]
+        AllNodeScan [m]
+)");
+}

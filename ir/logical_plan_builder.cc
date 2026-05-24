@@ -130,18 +130,39 @@ class LogicalPlanBuilder {
   }
 
   std::unique_ptr<LogicalPlan> Build(const SinglePlannerQuery &planner_query) {
-    CHECK(planner_query.tail == nullptr, common::InvalidArgumentError,
-          Unsupported("tail logical plan"));
-
-    planned_predicates_.clear();
     std::unique_ptr<LogicalPlan> plan =
         BuildQueryGraph(planner_query.query_graph);
     plan = ApplyHorizon(std::move(plan), planner_query.horizon);
+    for (const SinglePlannerQuery *tail = planner_query.tail.get();
+         tail != nullptr; tail = tail->tail.get()) {
+      plan = BuildTailSegment(std::move(plan), *tail);
+    }
     return plan;
   }
 
  private:
-  std::unique_ptr<LogicalPlan> BuildQueryGraph(const QueryGraph &query_graph) {
+  std::unique_ptr<LogicalPlan> BuildTailSegment(
+      std::unique_ptr<LogicalPlan> input, const SinglePlannerQuery &segment) {
+    CHECK(input != nullptr, common::InternalError, "tail input plan is null");
+    ValidateTailArgumentsAvailable(*input, segment.query_graph);
+
+    std::unique_ptr<LogicalPlan> plan = std::move(input);
+    if (segment.query_graph.HasLocalWork()) {
+      std::unique_ptr<LogicalPlan> rhs =
+          BuildQueryGraph(segment.query_graph, false);
+      plan = std::make_unique<ApplyPlan>(std::move(plan), std::move(rhs));
+      ApplyAvailableFilters(segment.query_graph.selections, &plan);
+      ValidateAllPredicatesPlanned(segment.query_graph.selections);
+    } else {
+      planned_predicates_.clear();
+      ValidateSupportedQueryGraph(segment.query_graph);
+    }
+    return ApplyHorizon(std::move(plan), segment.horizon);
+  }
+
+  std::unique_ptr<LogicalPlan> BuildQueryGraph(
+      const QueryGraph &query_graph, bool validate_all_predicates = true) {
+    planned_predicates_.clear();
     ValidateSupportedQueryGraph(query_graph);
 
     std::vector<QueryGraphComponent> components =
@@ -150,7 +171,9 @@ class LogicalPlanBuilder {
     if (components.empty()) {
       plan = std::make_unique<ArgumentPlan>(Sorted(query_graph.argument_ids));
       ApplyAvailableFilters(query_graph.selections, &plan);
-      ValidateAllPredicatesPlanned(query_graph.selections);
+      if (validate_all_predicates) {
+        ValidateAllPredicatesPlanned(query_graph.selections);
+      }
       return plan;
     }
 
@@ -168,8 +191,19 @@ class LogicalPlanBuilder {
     }
 
     CHECK(plan != nullptr, common::InternalError, "logical plan is null");
-    ValidateAllPredicatesPlanned(query_graph.selections);
+    if (validate_all_predicates) {
+      ValidateAllPredicatesPlanned(query_graph.selections);
+    }
     return plan;
+  }
+
+  void ValidateTailArgumentsAvailable(const LogicalPlan &input,
+                                      const QueryGraph &query_graph) const {
+    for (const auto &argument : query_graph.argument_ids) {
+      CHECK(StringVectorContains(input.OutputColumns(), argument),
+            common::InvalidArgumentError,
+            "tail argument is not available: " + argument);
+    }
   }
 
   void ValidateSupportedQueryGraph(const QueryGraph &query_graph) const {
