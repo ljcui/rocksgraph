@@ -171,6 +171,26 @@ TEST(LogicalPlanBuilderTest, IdpBuildsNestedThreeRelationshipBushyJoinPlan) {
           .component_planner = ir::LogicalPlanComponentPlannerKind::kIdp});
 }
 
+TEST(LogicalPlanBuilderTest, IdpPlansTriangleWithExpandIntoCompetition) {
+  ExpectLogicalPlanText(
+      "MATCH (a:Person)-[r1]->(b), (b)-[r2]->(c), (a)-[r3]->(c) "
+      "RETURN a, b, c",
+      R"(ProduceResults [a, b, c]
+  Projection [a, b, c]
+    Filter [NOT (r2 = r3)]
+      Filter [NOT (r1 = r2)]
+        ExpandInto [(b)-[r2]->(c)]
+          Filter [NOT (r1 = r3)]
+            NodeHashJoin [a]
+              Expand [(a)-[r1]->(b)]
+                NodeByLabelScan [a:Person]
+              Expand [(a)-[r3]->(c)]
+                NodeByLabelScan [a:Person]
+)",
+      ir::LogicalPlanBuilderOptions{
+          .component_planner = ir::LogicalPlanComponentPlannerKind::kIdp});
+}
+
 TEST(LogicalPlanBuilderTest, IdpBuildsExpandIntoForBoundEndpoints) {
   ExpectLogicalPlanText(
       "MATCH (a)-[r1]->(b:Person), (a)-[r2]->(b) RETURN a, b",
