@@ -126,6 +126,43 @@ TEST(SemanticValidatorTest, RejectsAggregationInOrderBy) {
                       "ORDER BY cannot contain aggregation");
 }
 
+TEST(SemanticValidatorTest, RestrictsOrderByAfterDistinct) {
+  constexpr char kRestrictedOrderBy[] =
+      "In a WITH/RETURN with DISTINCT or an aggregation, it is not possible to "
+      "access variables declared before the WITH/RETURN: n";
+
+  ExpectSemanticError("MATCH (n) RETURN DISTINCT n.name AS name ORDER BY n.age",
+                      kRestrictedOrderBy);
+  ExpectSemanticError(
+      "MATCH (n) WITH DISTINCT n.name AS name ORDER BY n.age RETURN name",
+      kRestrictedOrderBy);
+}
+
+TEST(SemanticValidatorTest, AllowsOrderByProjectedValuesAfterDistinct) {
+  EXPECT_NO_THROW(ast::ParseCypher(
+      "MATCH (n) RETURN DISTINCT n.name AS name ORDER BY name"));
+  EXPECT_NO_THROW(ast::ParseCypherAndRewrite(
+      "MATCH (n) RETURN DISTINCT n.name AS name ORDER BY n.name"));
+  EXPECT_NO_THROW(ast::ParseCypherAndRewrite(
+      "MATCH (n) RETURN DISTINCT n.name AS name ORDER BY size(n.name)"));
+  EXPECT_NO_THROW(
+      ast::ParseCypher("MATCH (n) RETURN DISTINCT n ORDER BY n.age"));
+}
+
+TEST(SemanticValidatorTest, RestrictsOrderByAfterAggregation) {
+  ExpectSemanticError(
+      "MATCH (n) RETURN n.name AS name, count(*) AS c ORDER BY n.age",
+      "In a WITH/RETURN with DISTINCT or an aggregation, it is not possible to "
+      "access variables declared before the WITH/RETURN: n");
+}
+
+TEST(SemanticValidatorTest, AllowsOrderByGroupingValuesAfterAggregation) {
+  EXPECT_NO_THROW(ast::ParseCypherAndRewrite(
+      "MATCH (n) RETURN n.name AS name, count(*) AS c ORDER BY n.name"));
+  EXPECT_NO_THROW(ast::ParseCypher(
+      "MATCH (n) RETURN n AS node, count(*) AS c ORDER BY node.age"));
+}
+
 TEST(SemanticValidatorTest, RejectsAggregationInPagination) {
   ExpectSemanticError("RETURN 1 AS x SKIP count(x)",
                       "SKIP cannot contain aggregation");

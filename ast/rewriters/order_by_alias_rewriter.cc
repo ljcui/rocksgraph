@@ -7,17 +7,63 @@
 #include "../ast_equal.h"
 
 namespace ast {
+namespace {
+
+struct AliasEntry {
+  const std::string *alias = nullptr;
+  const Expression *expression = nullptr;
+};
+
+class AliasExpressionRewriter final : public ASTRewriter {
+ public:
+  explicit AliasExpressionRewriter(const std::vector<AliasEntry> &aliases)
+      : aliases_(aliases) {}
+
+  void RewriteOrderExpression(std::unique_ptr<Expression> &expr) {
+    RewriteExpression(expr);
+  }
+
+ protected:
+  void RewriteExpression(std::unique_ptr<Expression> &expr) override {
+    if (!expr || IsAliasVariable(*expr)) {
+      return;
+    }
+    for (const auto &alias : aliases_) {
+      if (alias.alias != nullptr && alias.expression != nullptr &&
+          ASTEqual::Equal(expr.get(), alias.expression)) {
+        auto variable = std::make_unique<Variable>();
+        variable->name = *alias.alias;
+        expr = std::move(variable);
+        return;
+      }
+    }
+    ASTRewriter::RewriteExpression(expr);
+  }
+
+ private:
+  [[nodiscard]] bool IsAliasVariable(const Expression &expression) const {
+    if (!expression.Is(ASTNodeType::kVariable)) {
+      return false;
+    }
+    const auto *variable = CastAst<Variable>(&expression);
+    for (const auto &alias : aliases_) {
+      if (alias.alias != nullptr && variable->name == *alias.alias) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  const std::vector<AliasEntry> &aliases_;
+};
+
+}  // namespace
 
 void OrderByAliasRewriter::Visit(ProjectionBody &node) {
   ASTRewriter::Visit(node);
   if (node.items.empty() || node.order_by.empty()) {
     return;
   }
-
-  struct AliasEntry {
-    const std::string *alias;
-    const Expression *expression;
-  };
 
   std::vector<AliasEntry> aliases;
   aliases.reserve(node.items.size());
@@ -27,37 +73,16 @@ void OrderByAliasRewriter::Visit(ProjectionBody &node) {
     }
     aliases.push_back(AliasEntry{&item->alias, item->expression.get()});
   }
-
   if (aliases.empty()) {
     return;
   }
 
+  AliasExpressionRewriter alias_rewriter(aliases);
   for (const auto &sort_item : node.order_by) {
     if (!sort_item || !sort_item->expression) {
       continue;
     }
-    if (sort_item->expression->Is(ASTNodeType::kVariable)) {
-      const auto *var = CastAst<Variable>(sort_item->expression.get());
-      bool matches_alias = false;
-      for (const auto &alias : aliases) {
-        if (var->name == *alias.alias) {
-          matches_alias = true;
-          break;
-        }
-      }
-      if (matches_alias) {
-        continue;
-      }
-    }
-
-    for (const auto &alias : aliases) {
-      if (ASTEqual::Equal(sort_item->expression.get(), alias.expression)) {
-        auto var = std::make_unique<Variable>();
-        var->name = *alias.alias;
-        sort_item->expression = std::move(var);
-        break;
-      }
-    }
+    alias_rewriter.RewriteOrderExpression(sort_item->expression);
   }
 }
 

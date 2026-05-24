@@ -122,6 +122,18 @@ TEST(OrderByAliasRewriterTest, RewritesExpressionToAlias) {
       "MATCH (n) RETURN n.age AS age ORDER BY age");
 }
 
+TEST(OrderByAliasRewriterTest, RewritesNestedExpressionToAlias) {
+  ExpectRewriteEqualsWith<ast::OrderByAliasRewriter>(
+      "MATCH (n) RETURN n.age AS age ORDER BY size(n.age)",
+      "MATCH (n) RETURN n.age AS age ORDER BY size(age)");
+}
+
+TEST(OrderByAliasRewriterTest, RewritesVariableInsidePropertyToAlias) {
+  ExpectRewriteEqualsWith<ast::OrderByAliasRewriter>(
+      "MATCH (n) RETURN n AS person ORDER BY n.age",
+      "MATCH (n) RETURN n AS person ORDER BY person.age");
+}
+
 TEST(CountStarRewriterTest, CountStarToFunction) {
   ExpectRewriteEqualsWith<ast::CountStarRewriter>("RETURN count(*)",
                                                   "RETURN count(1)");

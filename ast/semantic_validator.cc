@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "ast_equal.h"
 #include "ast_exception.h"
 #include "ast_walker.h"
 #include "common/exception.h"
@@ -101,6 +102,15 @@ bool IsTopLevelAggregation(Expression *expression) {
   }
   const auto *function = CastAst<FunctionInvocation>(unwrapped);
   return IsAggregateFunction(function->function_name);
+}
+
+bool ProjectionContainsAggregation(const ProjectionBody &body) {
+  for (const auto &item : body.items) {
+    if (item != nullptr && ContainsAggregation(item->expression.get())) {
+      return true;
+    }
+  }
+  return false;
 }
 
 const ProjectionBody *TerminalProjectionBody(const SingleQuery &query) {
@@ -274,6 +284,7 @@ class SemanticValidator : public ASTWalker {
 
     const Scope projected = ScopeFromProjection(node, pre);
     const Scope order_scope = MergeScopes(pre, projected);
+    ValidateRestrictedProjectionOrderBy(node, pre, projected);
 
     PushScope(order_scope);
     ValidateNoAggregation(node.order_by, "ORDER BY");
@@ -425,6 +436,64 @@ class SemanticValidator : public ASTWalker {
     }
   };
 
+  class RestrictedProjectionOrderByScanner final : public ASTWalker {
+   public:
+    RestrictedProjectionOrderByScanner(
+        const Scope &pre_projection_scope, const Scope &projected_scope,
+        const std::vector<const Expression *> &projected_expressions)
+        : pre_projection_scope_(pre_projection_scope),
+          projected_scope_(projected_scope),
+          projected_expressions_(projected_expressions) {}
+
+    [[nodiscard]] std::vector<std::string> Scan(Expression &expression) {
+      restricted_variables_.clear();
+      reported_restricted_variables_.clear();
+      if (!IsProjectedExpression(expression)) {
+        expression.Accept(*this);
+      }
+      return restricted_variables_;
+    }
+
+   protected:
+    void WalkExpression(std::unique_ptr<Expression> &expr) override {
+      if (!expr) {
+        return;
+      }
+      if (IsProjectedExpression(*expr)) {
+        return;
+      }
+      ASTWalker::WalkExpression(expr);
+    }
+
+    void Visit(Variable &node) override {
+      if (node.name.empty() || projected_scope_.Contains(node.name) ||
+          !pre_projection_scope_.Contains(node.name)) {
+        return;
+      }
+      if (reported_restricted_variables_.insert(node.name).second) {
+        restricted_variables_.push_back(node.name);
+      }
+    }
+
+   private:
+    [[nodiscard]] bool IsProjectedExpression(
+        const Expression &expression) const {
+      for (const Expression *projected_expression : projected_expressions_) {
+        if (projected_expression != nullptr &&
+            ASTEqual::Equal(&expression, projected_expression)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    const Scope &pre_projection_scope_;
+    const Scope &projected_scope_;
+    const std::vector<const Expression *> &projected_expressions_;
+    std::vector<std::string> restricted_variables_;
+    std::unordered_set<std::string> reported_restricted_variables_;
+  };
+
   Scope &CurrentScope() { return scope_stack_.back(); }
   [[nodiscard]] const Scope &CurrentScope() const {
     return scope_stack_.back();
@@ -492,6 +561,41 @@ class SemanticValidator : public ASTWalker {
         ReportSemantic("aggregation must be a top-level projection item");
       }
     }
+  }
+
+  void ValidateRestrictedProjectionOrderBy(const ProjectionBody &body,
+                                           const Scope &pre_projection_scope,
+                                           const Scope &projected_scope) {
+    if (!body.distinct && !ProjectionContainsAggregation(body)) {
+      return;
+    }
+
+    std::vector<const Expression *> projected_expressions;
+    projected_expressions.reserve(body.items.size());
+    for (const auto &item : body.items) {
+      if (item != nullptr) {
+        projected_expressions.push_back(item->expression.get());
+      }
+    }
+
+    RestrictedProjectionOrderByScanner scanner(
+        pre_projection_scope, projected_scope, projected_expressions);
+    for (const auto &item : body.order_by) {
+      if (item == nullptr || item->expression == nullptr) {
+        continue;
+      }
+      for (const std::string &name : scanner.Scan(*item->expression)) {
+        ReportRestrictedProjectionOrderBy(name);
+      }
+    }
+  }
+
+  void ReportRestrictedProjectionOrderBy(const std::string &name) {
+    ReportSemantic(
+        "In a WITH/RETURN with DISTINCT or an aggregation, it is "
+        "not possible to access variables declared before the "
+        "WITH/RETURN: " +
+        name);
   }
 
   void CollectFromPattern(const Pattern &pattern, Scope &scope) const {
