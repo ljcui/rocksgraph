@@ -17,6 +17,8 @@ inline constexpr auto kLogicalPlanNodeTypeNames = std::array{
     std::string_view{"NodeByLabelScan"},
     std::string_view{"Expand"},
     std::string_view{"ExpandInto"},
+    std::string_view{"VarExpand"},
+    std::string_view{"PathBuild"},
     std::string_view{"Filter"},
     std::string_view{"Projection"},
     std::string_view{"Distinct"},
@@ -31,6 +33,8 @@ inline constexpr auto kLogicalPlanNodeTypeNames = std::array{
     std::string_view{"SemiApply"},
     std::string_view{"LetSemiApply"},
     std::string_view{"RollUpApply"},
+    std::string_view{"OptionalApply"},
+    std::string_view{"AssertIsNode"},
     std::string_view{"Unwind"},
     std::string_view{"Union"},
 };
@@ -175,6 +179,38 @@ std::string RelationshipDetails(std::string_view from_node,
     out << ":" << Join(types, "|");
   }
   out << "]" << ExpandArrow(direction, false) << "(" << to_node << ")";
+  return out.str();
+}
+
+std::string VariableLengthDetails(const LogicalVariableLength &length) {
+  if (!length.min.has_value() && !length.max.has_value()) {
+    return "*";
+  }
+  std::string out = "*";
+  if (length.min.has_value()) {
+    out.append(std::to_string(*length.min));
+  }
+  out.append("..");
+  if (length.max.has_value()) {
+    out.append(std::to_string(*length.max));
+  }
+  return out;
+}
+
+std::string VarRelationshipDetails(std::string_view from_node,
+                                   std::string_view relationship,
+                                   std::string_view to_node,
+                                   ExpandDirection direction,
+                                   const std::vector<std::string> &types,
+                                   const LogicalVariableLength &length) {
+  std::ostringstream out;
+  out << "(" << from_node << ")" << ExpandArrow(direction, true) << "["
+      << relationship;
+  if (!types.empty()) {
+    out << ":" << Join(types, "|");
+  }
+  out << VariableLengthDetails(length) << "]" << ExpandArrow(direction, false)
+      << "(" << to_node << ")";
   return out.str();
 }
 
@@ -335,6 +371,46 @@ std::string ExpandIntoPlan::Details() const {
   return RelationshipDetails(from_node_, relationship_, to_node_, direction_,
                              types_);
 }
+
+VarExpandPlan::VarExpandPlan(LogicalPlanPtr source, std::string from_node,
+                             std::string relationship, std::string to_node,
+                             ExpandDirection direction,
+                             std::vector<std::string> types,
+                             LogicalVariableLength length)
+    : LogicalPlan(LogicalPlanNodeType::kVarExpand,
+                  UnaryChildren(std::move(source), "VarExpand")),
+      from_node_(std::move(from_node)),
+      relationship_(std::move(relationship)),
+      to_node_(std::move(to_node)),
+      direction_(direction),
+      types_(std::move(types)),
+      length_(std::move(length)) {
+  SetSolvedSymbols(Child(0).SolvedSymbols());
+  SetOutputColumns(Child(0).OutputColumns());
+  AddSolvedSymbol(from_node_);
+  AddSolvedSymbol(relationship_);
+  AddSolvedSymbol(to_node_);
+  AddOutputColumn(from_node_);
+  AddOutputColumn(relationship_);
+  AddOutputColumn(to_node_);
+}
+
+std::string VarExpandPlan::Details() const {
+  return VarRelationshipDetails(from_node_, relationship_, to_node_, direction_,
+                                types_, length_);
+}
+
+PathBuildPlan::PathBuildPlan(LogicalPlanPtr source, std::string path_variable)
+    : LogicalPlan(LogicalPlanNodeType::kPathBuild,
+                  UnaryChildren(std::move(source), "PathBuild")),
+      path_variable_(std::move(path_variable)) {
+  SetSolvedSymbols(Child(0).SolvedSymbols());
+  SetOutputColumns(Child(0).OutputColumns());
+  AddSolvedSymbol(path_variable_);
+  AddOutputColumn(path_variable_);
+}
+
+std::string PathBuildPlan::Details() const { return path_variable_; }
 
 FilterPlan::FilterPlan(LogicalPlanPtr source, const ast::Expression *predicate)
     : LogicalPlan(LogicalPlanNodeType::kFilter,
@@ -548,6 +624,25 @@ std::string RollUpApplyPlan::Details() const {
   }
   return collection_variable_ + " <- " + value_variable_;
 }
+
+OptionalApplyPlan::OptionalApplyPlan(LogicalPlanPtr left, LogicalPlanPtr right)
+    : LogicalPlan(
+          LogicalPlanNodeType::kOptionalApply,
+          BinaryChildren(std::move(left), std::move(right), "OptionalApply")) {
+  SetSolvedSymbols(UnionSolvedSymbols(Child(0), Child(1)));
+  SetOutputColumns(UnionOutputColumns(Child(0), Child(1)));
+}
+
+AssertIsNodePlan::AssertIsNodePlan(LogicalPlanPtr source,
+                                   std::vector<std::string> variables)
+    : LogicalPlan(LogicalPlanNodeType::kAssertIsNode,
+                  UnaryChildren(std::move(source), "AssertIsNode")),
+      variables_(std::move(variables)) {
+  SetSolvedSymbols(Child(0).SolvedSymbols());
+  SetOutputColumns(Child(0).OutputColumns());
+}
+
+std::string AssertIsNodePlan::Details() const { return Join(variables_, ", "); }
 
 UnwindPlan::UnwindPlan(LogicalPlanPtr source, const ast::Expression *expression,
                        std::string alias)

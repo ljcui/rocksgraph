@@ -75,6 +75,41 @@ TEST(LogicalPlanTest, ExpandCopiesChildMetadataAndAddsPathSymbols) {
   EXPECT_TRUE(Contains(expand_into.SolvedSymbols(), "b"));
 }
 
+TEST(LogicalPlanTest, VarExpandAndPathBuildExposeMetadata) {
+  auto source = std::make_unique<ir::AllNodeScanPlan>("a");
+  ir::VarExpandPlan var_expand(std::move(source), "a", "r", "b",
+                               ir::ExpandDirection::kOutgoing, {"KNOWS"},
+                               {.min = 1, .max = 3});
+
+  EXPECT_EQ(var_expand.Name(), "VarExpand");
+  EXPECT_EQ(var_expand.ChildCount(), 1U);
+  EXPECT_EQ(var_expand.FromNode(), "a");
+  EXPECT_EQ(var_expand.Relationship(), "r");
+  EXPECT_EQ(var_expand.ToNode(), "b");
+  EXPECT_EQ(var_expand.Direction(), ir::ExpandDirection::kOutgoing);
+  EXPECT_EQ(var_expand.Types(), std::vector<std::string>({"KNOWS"}));
+  ASSERT_TRUE(var_expand.Length().min.has_value());
+  ASSERT_TRUE(var_expand.Length().max.has_value());
+  EXPECT_EQ(*var_expand.Length().min, 1);
+  EXPECT_EQ(*var_expand.Length().max, 3);
+  EXPECT_EQ(var_expand.Details(), "(a)-[r:KNOWS*1..3]->(b)");
+  EXPECT_EQ(var_expand.OutputColumns(),
+            std::vector<std::string>({"a", "r", "b"}));
+  EXPECT_TRUE(Contains(var_expand.SolvedSymbols(), "a"));
+  EXPECT_TRUE(Contains(var_expand.SolvedSymbols(), "r"));
+  EXPECT_TRUE(Contains(var_expand.SolvedSymbols(), "b"));
+
+  auto path_source = std::make_unique<ir::ArgumentPlan>(
+      std::vector<std::string>({"a", "r", "b"}));
+  ir::PathBuildPlan path(std::move(path_source), "p");
+  EXPECT_EQ(path.Name(), "PathBuild");
+  EXPECT_EQ(path.PathVariable(), "p");
+  EXPECT_EQ(path.Details(), "p");
+  EXPECT_EQ(path.OutputColumns(),
+            std::vector<std::string>({"a", "r", "b", "p"}));
+  EXPECT_TRUE(Contains(path.SolvedSymbols(), "p"));
+}
+
 TEST(LogicalPlanTest, UnaryPlansPreserveOrReplaceOutputColumns) {
   auto scan = std::make_unique<ir::AllNodeScanPlan>("n");
   ir::FilterPlan filter(std::move(scan), nullptr);
@@ -165,6 +200,15 @@ TEST(LogicalPlanTest, BinaryPlansMergeSolvedSymbolsAndOutputs) {
   EXPECT_EQ(semi_apply.OutputColumns(), std::vector<std::string>({"outer"}));
   EXPECT_TRUE(Contains(semi_apply.SolvedSymbols(), "outer"));
   EXPECT_TRUE(Contains(semi_apply.SolvedSymbols(), "inner"));
+
+  ir::OptionalApplyPlan optional_apply(
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({"outer"})),
+      std::make_unique<ir::AllNodeScanPlan>("inner"));
+  EXPECT_EQ(optional_apply.Name(), "OptionalApply");
+  EXPECT_EQ(optional_apply.OutputColumns(),
+            std::vector<std::string>({"outer", "inner"}));
+  EXPECT_TRUE(Contains(optional_apply.SolvedSymbols(), "outer"));
+  EXPECT_TRUE(Contains(optional_apply.SolvedSymbols(), "inner"));
 }
 
 TEST(LogicalPlanTest, NestedApplyPlansExposeComputedOutputs) {
@@ -220,6 +264,18 @@ TEST(LogicalPlanTest, UnwindAndUnionPlansExposeOutputs) {
   EXPECT_EQ(union_plan.Details(), "DISTINCT x");
   EXPECT_EQ(union_plan.OutputColumns(), std::vector<std::string>({"x"}));
   EXPECT_TRUE(Contains(union_plan.SolvedSymbols(), "x"));
+}
+
+TEST(LogicalPlanTest, AssertIsNodePreservesInputs) {
+  ir::AssertIsNodePlan assert_is_node(
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({"n"})),
+      {"n"});
+
+  EXPECT_EQ(assert_is_node.Name(), "AssertIsNode");
+  EXPECT_EQ(assert_is_node.Variables(), std::vector<std::string>({"n"}));
+  EXPECT_EQ(assert_is_node.Details(), "n");
+  EXPECT_EQ(assert_is_node.OutputColumns(), std::vector<std::string>({"n"}));
+  EXPECT_TRUE(Contains(assert_is_node.SolvedSymbols(), "n"));
 }
 
 TEST(LogicalPlanTest, InvalidChildAccessThrows) {

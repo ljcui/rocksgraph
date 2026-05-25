@@ -34,6 +34,18 @@ std::unique_ptr<LogicalPlan> CloneComponentPlan(const LogicalPlan &plan) {
           expand.Relationship(), expand.ToNode(), expand.Direction(),
           expand.Types());
     }
+    case LogicalPlanNodeType::kVarExpand: {
+      const auto &expand = static_cast<const VarExpandPlan &>(plan);
+      return std::make_unique<VarExpandPlan>(
+          CloneComponentPlan(expand.Child(0)), expand.FromNode(),
+          expand.Relationship(), expand.ToNode(), expand.Direction(),
+          expand.Types(), expand.Length());
+    }
+    case LogicalPlanNodeType::kPathBuild: {
+      const auto &path = static_cast<const PathBuildPlan &>(plan);
+      return std::make_unique<PathBuildPlan>(CloneComponentPlan(path.Child(0)),
+                                             path.PathVariable());
+    }
     case LogicalPlanNodeType::kFilter: {
       const auto &filter = static_cast<const FilterPlan &>(plan);
       return std::make_unique<FilterPlan>(CloneComponentPlan(filter.Child(0)),
@@ -100,6 +112,15 @@ std::unique_ptr<LogicalPlan> CloneComponentPlan(const LogicalPlan &plan) {
           CloneComponentPlan(apply.Child(0)),
           CloneComponentPlan(apply.Child(1)), apply.CollectionVariable(),
           apply.ValueVariable());
+    }
+    case LogicalPlanNodeType::kOptionalApply:
+      return std::make_unique<OptionalApplyPlan>(
+          CloneComponentPlan(plan.Child(0)), CloneComponentPlan(plan.Child(1)));
+    case LogicalPlanNodeType::kAssertIsNode: {
+      const auto &assert_is_node = static_cast<const AssertIsNodePlan &>(plan);
+      return std::make_unique<AssertIsNodePlan>(
+          CloneComponentPlan(assert_is_node.Child(0)),
+          assert_is_node.Variables());
     }
     case LogicalPlanNodeType::kUnwind: {
       const auto &unwind = static_cast<const UnwindPlan &>(plan);

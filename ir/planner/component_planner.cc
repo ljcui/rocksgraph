@@ -51,6 +51,12 @@ ExpandDirection ToExpandDirection(Direction direction) {
   THROW(common::InternalError, "unknown relationship direction");
 }
 
+LogicalVariableLength ToLogicalVariableLength(const PatternLength &length) {
+  CHECK(length.variable, common::InvalidArgumentError,
+        "relationship length is not variable");
+  return {.min = length.min, .max = length.max};
+}
+
 Direction Reverse(Direction direction) {
   switch (direction) {
     case Direction::kIncoming:
@@ -340,7 +346,23 @@ class IdpComponentPlanner final : public ComponentPlanner {
           "relationship is not expandable");
 
     CostEstimate estimate;
-    if (left_solved && right_solved) {
+    if (relationship.length.variable) {
+      const std::string from_node =
+          left_solved ? relationship.left_node : relationship.right_node;
+      const std::string to_node =
+          left_solved ? relationship.right_node : relationship.left_node;
+      const Direction direction = left_solved ? relationship.direction
+                                              : Reverse(relationship.direction);
+      estimate = left_solved && right_solved
+                     ? cost_model_.EstimateExpandInto(
+                           CandidateEstimate(candidate), relationship.types)
+                     : cost_model_.EstimateExpand(CandidateEstimate(candidate),
+                                                  relationship.types);
+      candidate.plan = std::make_unique<VarExpandPlan>(
+          std::move(candidate.plan), from_node, relationship.variable, to_node,
+          ToExpandDirection(direction), relationship.types,
+          ToLogicalVariableLength(relationship.length));
+    } else if (left_solved && right_solved) {
       estimate = cost_model_.EstimateExpandInto(CandidateEstimate(candidate),
                                                 relationship.types);
       candidate.plan = std::make_unique<ExpandIntoPlan>(

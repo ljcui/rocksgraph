@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_set>
@@ -22,6 +23,8 @@ enum class LogicalPlanNodeType {
   kNodeByLabelScan,
   kExpand,
   kExpandInto,
+  kVarExpand,
+  kPathBuild,
   kFilter,
   kProjection,
   kDistinct,
@@ -36,6 +39,8 @@ enum class LogicalPlanNodeType {
   kSemiApply,
   kLetSemiApply,
   kRollUpApply,
+  kOptionalApply,
+  kAssertIsNode,
   kUnwind,
   kUnion,
 };
@@ -70,6 +75,11 @@ struct LogicalUnionMapping {
   std::string output_variable;
   std::string lhs_variable;
   std::string rhs_variable;
+};
+
+struct LogicalVariableLength {
+  std::optional<int> min;
+  std::optional<int> max;
 };
 
 class LogicalPlan {
@@ -208,6 +218,53 @@ class ExpandIntoPlan final : public LogicalPlan {
   std::string to_node_;
   ExpandDirection direction_ = ExpandDirection::kBoth;
   std::vector<std::string> types_;
+};
+
+class VarExpandPlan final : public LogicalPlan {
+ public:
+  VarExpandPlan(LogicalPlanPtr source, std::string from_node,
+                std::string relationship, std::string to_node,
+                ExpandDirection direction, std::vector<std::string> types,
+                LogicalVariableLength length);
+
+  [[nodiscard]] const std::string &FromNode() const noexcept {
+    return from_node_;
+  }
+  [[nodiscard]] const std::string &Relationship() const noexcept {
+    return relationship_;
+  }
+  [[nodiscard]] const std::string &ToNode() const noexcept { return to_node_; }
+  [[nodiscard]] ExpandDirection Direction() const noexcept {
+    return direction_;
+  }
+  [[nodiscard]] const std::vector<std::string> &Types() const noexcept {
+    return types_;
+  }
+  [[nodiscard]] const LogicalVariableLength &Length() const noexcept {
+    return length_;
+  }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  std::string from_node_;
+  std::string relationship_;
+  std::string to_node_;
+  ExpandDirection direction_ = ExpandDirection::kBoth;
+  std::vector<std::string> types_;
+  LogicalVariableLength length_;
+};
+
+class PathBuildPlan final : public LogicalPlan {
+ public:
+  PathBuildPlan(LogicalPlanPtr source, std::string path_variable);
+
+  [[nodiscard]] const std::string &PathVariable() const noexcept {
+    return path_variable_;
+  }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  std::string path_variable_;
 };
 
 class FilterPlan final : public LogicalPlan {
@@ -375,6 +432,24 @@ class RollUpApplyPlan final : public LogicalPlan {
  private:
   std::string collection_variable_;
   std::string value_variable_;
+};
+
+class OptionalApplyPlan final : public LogicalPlan {
+ public:
+  OptionalApplyPlan(LogicalPlanPtr left, LogicalPlanPtr right);
+};
+
+class AssertIsNodePlan final : public LogicalPlan {
+ public:
+  AssertIsNodePlan(LogicalPlanPtr source, std::vector<std::string> variables);
+
+  [[nodiscard]] const std::vector<std::string> &Variables() const noexcept {
+    return variables_;
+  }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  std::vector<std::string> variables_;
 };
 
 class UnwindPlan final : public LogicalPlan {

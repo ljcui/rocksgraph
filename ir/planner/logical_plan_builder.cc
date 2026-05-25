@@ -187,26 +187,27 @@ class LogicalPlanBuilder {
     if (components.empty()) {
       plan = std::make_unique<ArgumentPlan>(Sorted(query_graph.argument_ids));
       context.ApplyAvailableFilters(query_graph.selections, &plan);
-      if (validate_all_predicates) {
-        context.ValidateAllPredicatesPlanned(query_graph.selections);
-      }
-      return plan;
-    }
-
-    for (const auto &component : components) {
-      std::unique_ptr<LogicalPlan> component_plan =
-          component_planner_->Plan(query_graph, component, &context);
-      context.ApplyAvailableFilters(query_graph.selections, &component_plan);
-      if (plan == nullptr) {
-        plan = std::move(component_plan);
-      } else {
-        plan = std::make_unique<CartesianProductPlan>(
-            std::move(plan), std::move(component_plan));
-        context.ApplyAvailableFilters(query_graph.selections, &plan);
+    } else {
+      for (const auto &component : components) {
+        std::unique_ptr<LogicalPlan> component_plan =
+            component_planner_->Plan(query_graph, component, &context);
+        context.ApplyAvailableFilters(query_graph.selections, &component_plan);
+        if (plan == nullptr) {
+          plan = std::move(component_plan);
+        } else {
+          plan = std::make_unique<CartesianProductPlan>(
+              std::move(plan), std::move(component_plan));
+          context.ApplyAvailableFilters(query_graph.selections, &plan);
+        }
       }
     }
 
     CHECK(plan != nullptr, common::InternalError, "logical plan is null");
+    plan = ApplyPathBuilds(std::move(plan), query_graph.pattern_paths);
+    plan = ApplyAssertIsNode(std::move(plan),
+                             query_graph.assert_is_node_variables);
+    context.ApplyAvailableFilters(query_graph.selections, &plan);
+    plan = ApplyOptionalMatches(std::move(plan), query_graph, &context);
     if (validate_all_predicates) {
       context.ValidateAllPredicatesPlanned(query_graph.selections);
     }
@@ -223,22 +224,10 @@ class LogicalPlanBuilder {
   }
 
   void ValidateSupportedQueryGraph(const QueryGraph &query_graph) const {
-    CHECK(query_graph.pattern_paths.empty(), common::InvalidArgumentError,
-          Unsupported("named path logical plan"));
-    CHECK(query_graph.optional_matches.empty(), common::InvalidArgumentError,
-          Unsupported("OPTIONAL MATCH logical plan"));
     CHECK(query_graph.hints.empty(), common::InvalidArgumentError,
           Unsupported("planner hint logical plan"));
     CHECK(query_graph.mutating_patterns.empty(), common::InvalidArgumentError,
           Unsupported("updating logical plan"));
-    CHECK(query_graph.assert_is_node_variables.empty(),
-          common::InvalidArgumentError,
-          Unsupported("argument node assertion logical plan"));
-
-    for (const auto &relationship : query_graph.pattern_relationships) {
-      CHECK(!relationship.length.variable, common::InvalidArgumentError,
-            Unsupported("variable-length expand logical plan"));
-    }
     for (const auto &predicate : query_graph.selections.predicates) {
       if (predicate.kind == PredicateKind::kExistsSubquery) {
         CHECK(predicate.subquery != nullptr, common::InvalidArgumentError,
@@ -269,6 +258,46 @@ class LogicalPlanBuilder {
         return plan;
     }
     THROW(common::InternalError, "unknown query horizon kind");
+  }
+
+  std::unique_ptr<LogicalPlan> ApplyPathBuilds(
+      std::unique_ptr<LogicalPlan> plan,
+      const std::unordered_set<LogicalVariable> &path_variables) {
+    CHECK(plan != nullptr, common::InternalError, "logical plan is null");
+    for (const auto &path_variable : Sorted(path_variables)) {
+      plan = std::make_unique<PathBuildPlan>(std::move(plan), path_variable);
+    }
+    return plan;
+  }
+
+  std::unique_ptr<LogicalPlan> ApplyAssertIsNode(
+      std::unique_ptr<LogicalPlan> plan,
+      const std::unordered_set<LogicalVariable> &variables) {
+    CHECK(plan != nullptr, common::InternalError, "logical plan is null");
+    if (variables.empty()) {
+      return plan;
+    }
+    return std::make_unique<AssertIsNodePlan>(std::move(plan),
+                                              Sorted(variables));
+  }
+
+  std::unique_ptr<LogicalPlan> ApplyOptionalMatches(
+      std::unique_ptr<LogicalPlan> plan, const QueryGraph &query_graph,
+      QueryGraphPlanningContext *context) {
+    CHECK(plan != nullptr, common::InternalError, "logical plan is null");
+    CHECK(context != nullptr, common::InternalError,
+          "query graph planning context is null");
+    for (const auto &optional_match : query_graph.optional_matches) {
+      std::unordered_set<const Predicate *> outer_predicates =
+          planned_predicates_;
+      std::unique_ptr<LogicalPlan> optional_plan =
+          BuildQueryGraph(optional_match);
+      planned_predicates_ = std::move(outer_predicates);
+      plan = std::make_unique<OptionalApplyPlan>(std::move(plan),
+                                                 std::move(optional_plan));
+      context->ApplyAvailableFilters(query_graph.selections, &plan);
+    }
+    return plan;
   }
 
   std::unique_ptr<LogicalPlan> ApplyRegularProjection(

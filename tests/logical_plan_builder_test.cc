@@ -552,3 +552,102 @@ TEST(LogicalPlanBuilderTest, BuildsPatternComprehensionRollUpApplyPlan) {
           Argument [n]
 )");
 }
+
+TEST(LogicalPlanBuilderTest, BuildsOptionalApplyPlan) {
+  ExpectLogicalPlanText("MATCH (a) OPTIONAL MATCH (a)-[r]->(b) RETURN a, b",
+                        R"(ProduceResults [a, b]
+  Projection [a, b]
+    OptionalApply
+      AllNodeScan [a]
+      Expand [(a)-[r]->(b)]
+        Argument [a]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsSequentialOptionalApplyPlans) {
+  ExpectLogicalPlanText(
+      "MATCH (a) OPTIONAL MATCH (a)-[r]->(b) "
+      "OPTIONAL MATCH (b)-[s]->(c) RETURN c",
+      R"(ProduceResults [c]
+  Projection [c]
+    OptionalApply
+      OptionalApply
+        AllNodeScan [a]
+        Expand [(a)-[r]->(b)]
+          Argument [a]
+      Expand [(b)-[s]->(c)]
+        Argument [b]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsOptionalMatchWithLocalWherePlan) {
+  ExpectLogicalPlanText(
+      "MATCH (a) OPTIONAL MATCH (a)-[r]->(b) WHERE b.age > 1 RETURN b",
+      R"(ProduceResults [b]
+  Projection [b]
+    OptionalApply
+      AllNodeScan [a]
+      Filter [b.age > 1]
+        Expand [(a)-[r]->(b)]
+          Argument [a]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsVariableLengthExpandPlan) {
+  ExpectLogicalPlanText("MATCH (a)-[r*1..3]->(b) RETURN r",
+                        R"(ProduceResults [r]
+  Projection [r]
+    Filter [ALL(__uniq_rel_0 IN r WHERE SINGLE(__uniq_rel_1 IN r WHERE __uniq_rel_0 = __uniq_rel_1))]
+      VarExpand [(a)-[r*1..3]->(b)]
+        AllNodeScan [a]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsVariableLengthExpandBetweenArgumentsPlan) {
+  ExpectLogicalPlanText(
+      "MATCH (a), (b) WITH DISTINCT a, b MATCH (a)-[r*0..2]->(b) RETURN r",
+      R"(ProduceResults [r]
+  Projection [r]
+    Apply
+      Distinct [a, b]
+        CartesianProduct
+          AllNodeScan [a]
+          AllNodeScan [b]
+      Filter [ALL(__uniq_rel_0 IN r WHERE SINGLE(__uniq_rel_1 IN r WHERE __uniq_rel_0 = __uniq_rel_1))]
+        VarExpand [(a)-[r*0..2]->(b)]
+          Argument [a, b]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsNamedPathPlan) {
+  ExpectLogicalPlanText("MATCH p = (a)-[r]->(b) RETURN p",
+                        R"(ProduceResults [p]
+  Projection [p]
+    PathBuild [p]
+      Expand [(a)-[r]->(b)]
+        AllNodeScan [a]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsNamedPathFilterAfterPathBuildPlan) {
+  ExpectLogicalPlanText("MATCH p = (a)-[r]->(b) WHERE length(p) > 0 RETURN p",
+                        R"(ProduceResults [p]
+  Projection [p]
+    Filter [length(p) > 0]
+      PathBuild [p]
+        Expand [(a)-[r]->(b)]
+          AllNodeScan [a]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsArgumentNodeAssertionPlan) {
+  ExpectLogicalPlanText("MATCH (n) WITH n, 1 AS keep MATCH (n) RETURN n",
+                        R"(ProduceResults [n]
+  Projection [n]
+    Apply
+      Projection [n, keep]
+        AllNodeScan [n]
+      AssertIsNode [n]
+        Argument [n]
+)");
+}
