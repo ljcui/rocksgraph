@@ -255,6 +255,12 @@ target_include_directories(logical_plan_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
 target_link_libraries(logical_plan_test GTest::gtest_main)
 add_test(NAME logical_plan_test COMMAND logical_plan_test)
 
+add_executable(cost_model_test tests/cost_model_test.cc
+                               ir/planner/cost_model.cc)
+target_include_directories(cost_model_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(cost_model_test GTest::gtest_main)
+add_test(NAME cost_model_test COMMAND cost_model_test)
+
 add_executable(idp_test tests/idp_test.cc ir/planner/idp.cc ir/logical_plan.cc
                         ast/expression_to_string.cc)
 target_include_directories(idp_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
