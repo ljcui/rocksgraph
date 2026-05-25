@@ -112,6 +112,43 @@ TEST(LogicalPlanBuilderTest, IdpUsesInjectedStatisticsForLeafCost) {
           .planner_statistics = &statistics});
 }
 
+TEST(LogicalPlanBuilderTest, IdpUsesRelationshipTypeFanoutStatistics) {
+  test_support::FakePlannerStatistics statistics;
+  statistics.expand_fanout_by_type = {{"COMMON_REL", 100.0}, {"RARE_REL", 1.0}};
+  ExpectLogicalPlanText(
+      "MATCH (a)-[r1:COMMON_REL]->(b)-[r2:RARE_REL]->(c) RETURN a, b, c",
+      R"(ProduceResults [a, b, c]
+  Projection [a, b, c]
+    Expand [(b)<-[r1:COMMON_REL]-(a)]
+      Expand [(b)-[r2:RARE_REL]->(c)]
+        AllNodeScan [b]
+)",
+      ir::LogicalPlanBuilderOptions{
+          .component_planner = ir::LogicalPlanComponentPlannerKind::kIdp,
+          .planner_statistics = &statistics});
+}
+
+TEST(LogicalPlanBuilderTest,
+     IdpUsesRelationshipTypeExpandIntoSelectivityStatistics) {
+  test_support::FakePlannerStatistics statistics;
+  statistics.expand_fanout_by_type = {{"AB", 3.0}, {"BC", 3.0}, {"AC", 3.0}};
+  statistics.expand_into_selectivity_by_type = {
+      {"AB", 0.9}, {"BC", 0.01}, {"AC", 0.9}};
+  ExpectLogicalPlanText(
+      "MATCH (a)-[r1:AB]->(b), (b)-[r2:BC]->(c), (a)-[r3:AC]->(c) "
+      "RETURN a, b, c",
+      R"(ProduceResults [a, b, c]
+  Projection [a, b, c]
+    ExpandInto [(b)-[r2:BC]->(c)]
+      Expand [(a)-[r3:AC]->(c)]
+        Expand [(a)-[r1:AB]->(b)]
+          AllNodeScan [a]
+)",
+      ir::LogicalPlanBuilderOptions{
+          .component_planner = ir::LogicalPlanComponentPlannerKind::kIdp,
+          .planner_statistics = &statistics});
+}
+
 TEST(LogicalPlanBuilderTest, IdpBuildsTwoHopJoinFromCheaperMiddleLeaf) {
   ExpectLogicalPlanText(
       "MATCH (a)-[r1]->(b:Person)-[r2]->(c) RETURN a, b, c",
