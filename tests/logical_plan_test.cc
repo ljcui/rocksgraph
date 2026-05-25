@@ -186,7 +186,7 @@ TEST(LogicalPlanTest, UnaryPlansPreserveOrReplaceOutputColumns) {
   EXPECT_EQ(projection.Name(), "Projection");
   EXPECT_EQ(projection.Details(), "name");
   EXPECT_EQ(projection.OutputColumns(), std::vector<std::string>({"name"}));
-  EXPECT_TRUE(Contains(projection.SolvedSymbols(), "n"));
+  EXPECT_FALSE(Contains(projection.SolvedSymbols(), "n"));
   EXPECT_TRUE(Contains(projection.SolvedSymbols(), "name"));
 
   auto distinct_source = std::make_unique<ir::AllNodeScanPlan>("n");
@@ -196,7 +196,7 @@ TEST(LogicalPlanTest, UnaryPlansPreserveOrReplaceOutputColumns) {
   EXPECT_EQ(distinct.Name(), "Distinct");
   EXPECT_EQ(distinct.Details(), "name");
   EXPECT_EQ(distinct.OutputColumns(), std::vector<std::string>({"name"}));
-  EXPECT_TRUE(Contains(distinct.SolvedSymbols(), "n"));
+  EXPECT_FALSE(Contains(distinct.SolvedSymbols(), "n"));
   EXPECT_TRUE(Contains(distinct.SolvedSymbols(), "name"));
 
   auto aggregation_source = std::make_unique<ir::AllNodeScanPlan>("n");
@@ -210,7 +210,7 @@ TEST(LogicalPlanTest, UnaryPlansPreserveOrReplaceOutputColumns) {
   EXPECT_EQ(aggregation.Details(), "name, count");
   EXPECT_EQ(aggregation.OutputColumns(),
             std::vector<std::string>({"name", "count"}));
-  EXPECT_TRUE(Contains(aggregation.SolvedSymbols(), "n"));
+  EXPECT_FALSE(Contains(aggregation.SolvedSymbols(), "n"));
   EXPECT_TRUE(Contains(aggregation.SolvedSymbols(), "name"));
   EXPECT_TRUE(Contains(aggregation.SolvedSymbols(), "count"));
 
@@ -280,7 +280,7 @@ TEST(LogicalPlanTest, BinaryPlansMergeSolvedSymbolsAndOutputs) {
       std::make_unique<ir::AllNodeScanPlan>("inner"));
   EXPECT_EQ(semi_apply.OutputColumns(), std::vector<std::string>({"outer"}));
   EXPECT_TRUE(Contains(semi_apply.SolvedSymbols(), "outer"));
-  EXPECT_TRUE(Contains(semi_apply.SolvedSymbols(), "inner"));
+  EXPECT_FALSE(Contains(semi_apply.SolvedSymbols(), "inner"));
 
   ir::AntiSemiApplyPlan anti_semi_apply(
       std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({"outer"})),
@@ -289,7 +289,7 @@ TEST(LogicalPlanTest, BinaryPlansMergeSolvedSymbolsAndOutputs) {
   EXPECT_EQ(anti_semi_apply.OutputColumns(),
             std::vector<std::string>({"outer"}));
   EXPECT_TRUE(Contains(anti_semi_apply.SolvedSymbols(), "outer"));
-  EXPECT_TRUE(Contains(anti_semi_apply.SolvedSymbols(), "inner"));
+  EXPECT_FALSE(Contains(anti_semi_apply.SolvedSymbols(), "inner"));
 
   ir::OptionalApplyPlan optional_apply(
       std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({"outer"})),
@@ -311,7 +311,7 @@ TEST(LogicalPlanTest, NestedApplyPlansExposeComputedOutputs) {
   EXPECT_EQ(let_apply.OutputColumns(),
             std::vector<std::string>({"outer", "__exists"}));
   EXPECT_TRUE(Contains(let_apply.SolvedSymbols(), "outer"));
-  EXPECT_TRUE(Contains(let_apply.SolvedSymbols(), "inner"));
+  EXPECT_FALSE(Contains(let_apply.SolvedSymbols(), "inner"));
   EXPECT_TRUE(Contains(let_apply.SolvedSymbols(), "__exists"));
 
   ir::RollUpApplyPlan roll_up(
@@ -326,7 +326,7 @@ TEST(LogicalPlanTest, NestedApplyPlansExposeComputedOutputs) {
             std::vector<std::string>({"outer", "__list"}));
   EXPECT_TRUE(Contains(roll_up.SolvedSymbols(), "outer"));
   EXPECT_TRUE(Contains(roll_up.SolvedSymbols(), "__list"));
-  EXPECT_TRUE(Contains(roll_up.SolvedSymbols(), "__value"));
+  EXPECT_FALSE(Contains(roll_up.SolvedSymbols(), "__value"));
 }
 
 TEST(LogicalPlanTest, UnwindAndUnionPlansExposeOutputs) {

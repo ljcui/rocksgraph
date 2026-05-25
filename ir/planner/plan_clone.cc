@@ -6,8 +6,10 @@
 #include "common/exception.h"
 
 namespace ir {
+namespace {
 
-std::unique_ptr<LogicalPlan> CloneComponentPlan(const LogicalPlan &plan) {
+std::unique_ptr<LogicalPlan> CloneComponentPlanWithoutMetadata(
+    const LogicalPlan &plan) {
   switch (plan.Type()) {
     case LogicalPlanNodeType::kArgument:
       return std::make_unique<ArgumentPlan>(plan.OutputColumns());
@@ -242,6 +244,14 @@ std::unique_ptr<LogicalPlan> CloneComponentPlan(const LogicalPlan &plan) {
       THROW(common::InternalError,
             "unsupported component plan clone: " + std::string(plan.Name()));
   }
+}
+
+}  // namespace
+
+std::unique_ptr<LogicalPlan> CloneComponentPlan(const LogicalPlan &plan) {
+  std::unique_ptr<LogicalPlan> clone = CloneComponentPlanWithoutMetadata(plan);
+  clone->CopyMetadataFrom(plan);
+  return clone;
 }
 
 PlanCandidate CloneCandidate(const PlanCandidate &candidate) {

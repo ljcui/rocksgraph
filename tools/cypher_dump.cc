@@ -75,7 +75,9 @@ int main(int argc, char **argv) {
       auto statement = ast::ParseCypherAndRewrite(input);
       auto planner_query = ir::CreatePlannerQuery(*statement);
       auto logical_plan = ir::CreateLogicalPlan(*planner_query);
-      ir::PrintLogicalPlan(*logical_plan, std::cout);
+      ir::PrintLogicalPlan(
+          *logical_plan, std::cout,
+          ir::LogicalPlanPrinterOptions{.include_metadata = true});
       return 0;
     }
     spdlog::error("Unsupported dump mode: {}", FLAGS_mode);

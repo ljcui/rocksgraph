@@ -92,6 +92,13 @@ struct LogicalSortItem {
   LogicalOrderDirection direction = LogicalOrderDirection::kAscending;
 };
 
+struct LogicalPlanMetadata {
+  std::optional<double> estimated_rows;
+  std::optional<double> cost;
+  std::vector<LogicalSortItem> ordering;
+  bool distinct = false;
+};
+
 struct LogicalUnionMapping {
   std::string output_variable;
   std::string lhs_variable;
@@ -122,6 +129,22 @@ class LogicalPlan {
   [[nodiscard]] const std::vector<std::string> &OutputColumns() const noexcept {
     return output_columns_;
   }
+  [[nodiscard]] const LogicalPlanMetadata &Metadata() const noexcept {
+    return metadata_;
+  }
+  [[nodiscard]] const std::optional<double> &EstimatedRows() const noexcept {
+    return metadata_.estimated_rows;
+  }
+  [[nodiscard]] const std::optional<double> &Cost() const noexcept {
+    return metadata_.cost;
+  }
+  [[nodiscard]] const std::vector<LogicalSortItem> &OrderingTrait()
+      const noexcept {
+    return metadata_.ordering;
+  }
+  [[nodiscard]] bool DistinctTrait() const noexcept {
+    return metadata_.distinct;
+  }
   [[nodiscard]] const std::vector<LogicalPlanPtr> &Children() const noexcept {
     return children_;
   }
@@ -130,6 +153,13 @@ class LogicalPlan {
   }
   [[nodiscard]] const LogicalPlan &Child(std::size_t index) const;
   [[nodiscard]] LogicalPlan &Child(std::size_t index);
+
+  void SetCostEstimate(double estimated_rows, double cost);
+  void ClearCostEstimate();
+  void SetOrderingTrait(std::vector<LogicalSortItem> ordering);
+  void ClearOrderingTrait();
+  void SetDistinctTrait(bool distinct);
+  void CopyMetadataFrom(const LogicalPlan &source);
 
  protected:
   explicit LogicalPlan(LogicalPlanNodeType type,
@@ -144,6 +174,7 @@ class LogicalPlan {
   LogicalPlanNodeType type_;
   std::unordered_set<std::string> solved_symbols_;
   std::vector<std::string> output_columns_;
+  LogicalPlanMetadata metadata_;
   std::vector<LogicalPlanPtr> children_;
 };
 

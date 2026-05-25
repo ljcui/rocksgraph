@@ -2,6 +2,8 @@
 
 #include <gtest/gtest.h>
 
+#include <optional>
+
 #include "tests/fake_planner_statistics.h"
 
 TEST(CostModelTest, UsesDefaultHeuristicStatistics) {
@@ -190,4 +192,64 @@ TEST(CostModelTest, AppliesFilterEstimatesRepeatedly) {
 
   EXPECT_DOUBLE_EQ(estimate.estimated_rows, 4.0);
   EXPECT_DOUBLE_EQ(estimate.cost, 30.0);
+}
+
+TEST(CostModelTest, UsesCombinedFilterSelectivityForMultiplePredicates) {
+  test_support::FakePlannerStatistics statistics;
+  statistics.filter_selectivity = 0.2;
+  statistics.combined_filter_selectivity = 0.05;
+  ir::CostModel model(&statistics);
+
+  ir::CostEstimate estimate = ir::ApplyFilterEstimates(
+      {.estimated_rows = 100.0, .cost = 10.0}, 2, model);
+
+  EXPECT_DOUBLE_EQ(estimate.estimated_rows, 5.0);
+  EXPECT_DOUBLE_EQ(estimate.cost, 34.0);
+}
+
+TEST(CostModelTest, EstimatesRelationalOperatorMetadata) {
+  test_support::FakePlannerStatistics statistics;
+  statistics.distinct_selectivity = 0.25;
+  statistics.aggregation_group_selectivity = 0.2;
+  statistics.unwind_rows_per_input = 4.0;
+  statistics.procedure_rows = 7.0;
+  ir::CostModel model(&statistics);
+
+  ir::CostEstimate input{.estimated_rows = 100.0, .cost = 10.0};
+
+  ir::CostEstimate projection = model.EstimateProjection(input, 3);
+  EXPECT_DOUBLE_EQ(projection.estimated_rows, 100.0);
+  EXPECT_DOUBLE_EQ(projection.cost, 13.0);
+
+  ir::CostEstimate distinct = model.EstimateDistinct(input, 1);
+  EXPECT_DOUBLE_EQ(distinct.estimated_rows, 25.0);
+  EXPECT_DOUBLE_EQ(distinct.cost, 135.0);
+
+  ir::CostEstimate aggregation = model.EstimateAggregation(input, 1, 2);
+  EXPECT_DOUBLE_EQ(aggregation.estimated_rows, 20.0);
+  EXPECT_DOUBLE_EQ(aggregation.cost, 150.0);
+
+  ir::CostEstimate global_aggregation = model.EstimateAggregation(input, 0, 1);
+  EXPECT_DOUBLE_EQ(global_aggregation.estimated_rows, 1.0);
+  EXPECT_DOUBLE_EQ(global_aggregation.cost, 121.0);
+
+  ir::CostEstimate skipped = model.EstimateSkip(input, 10.0);
+  EXPECT_DOUBLE_EQ(skipped.estimated_rows, 90.0);
+  EXPECT_DOUBLE_EQ(skipped.cost, 110.0);
+
+  ir::CostEstimate limited = model.EstimateLimit(input, 5.0);
+  EXPECT_DOUBLE_EQ(limited.estimated_rows, 5.0);
+  EXPECT_DOUBLE_EQ(limited.cost, 15.0);
+
+  ir::CostEstimate unwind_unknown = model.EstimateUnwind(input, std::nullopt);
+  EXPECT_DOUBLE_EQ(unwind_unknown.estimated_rows, 400.0);
+  EXPECT_DOUBLE_EQ(unwind_unknown.cost, 410.0);
+
+  ir::CostEstimate unwind_literal = model.EstimateUnwind(input, 2.0);
+  EXPECT_DOUBLE_EQ(unwind_literal.estimated_rows, 200.0);
+  EXPECT_DOUBLE_EQ(unwind_literal.cost, 210.0);
+
+  ir::CostEstimate procedure = model.EstimateProcedureCall("db.labels", 1, 2);
+  EXPECT_DOUBLE_EQ(procedure.estimated_rows, 7.0);
+  EXPECT_DOUBLE_EQ(procedure.cost, 8.4);
 }

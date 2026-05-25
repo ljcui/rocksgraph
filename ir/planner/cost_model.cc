@@ -1,6 +1,7 @@
 #include "ir/planner/cost_model.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace ir {
 namespace {
@@ -10,7 +11,20 @@ const HeuristicPlannerStatistics &DefaultStatistics() {
   return statistics;
 }
 
+double AtLeastOne(double value) { return std::max(1.0, value); }
+
+double NonNegative(double value) { return std::max(0.0, value); }
+
 }  // namespace
+
+double PlannerStatistics::EstimateCombinedFilterSelectivity(
+    std::size_t predicate_count) const {
+  double selectivity = 1.0;
+  for (std::size_t i = 0; i < predicate_count; ++i) {
+    selectivity *= EstimateFilterSelectivity();
+  }
+  return selectivity;
+}
 
 double PlannerStatistics::EstimateNodeIndexSeekSelectivity(
     const std::unordered_set<std::string> &labels,
@@ -49,6 +63,23 @@ double PlannerStatistics::EstimateRelationshipIndexRangeSeekSelectivity(
   return bound_count > 1 ? 0.05 : 0.1;
 }
 
+std::optional<PropertyHistogram> PlannerStatistics::NodePropertyHistogram(
+    const std::unordered_set<std::string> &labels,
+    std::string_view property_key) const {
+  (void)labels;
+  (void)property_key;
+  return std::nullopt;
+}
+
+std::optional<PropertyHistogram>
+PlannerStatistics::RelationshipPropertyHistogram(
+    const std::vector<std::string> &relationship_types,
+    std::string_view property_key) const {
+  (void)relationship_types;
+  (void)property_key;
+  return std::nullopt;
+}
+
 double PlannerStatistics::EstimateValueHashJoinSelectivity(
     std::size_t predicate_count) const {
   return predicate_count == 0 ? 1.0 : 1.0 / predicate_count;
@@ -59,11 +90,34 @@ double PlannerStatistics::EstimatePredicateJoinSelectivity(
   if (predicate_count == 0) {
     return 1.0;
   }
-  double selectivity = 1.0;
-  for (std::size_t i = 0; i < predicate_count; ++i) {
-    selectivity *= EstimateFilterSelectivity();
+  return EstimateCombinedFilterSelectivity(predicate_count);
+}
+
+double PlannerStatistics::EstimateDistinctSelectivity(
+    std::size_t key_count) const {
+  return key_count == 0 ? 1.0 : 0.5;
+}
+
+double PlannerStatistics::EstimateAggregationGroupSelectivity(
+    std::size_t grouping_key_count) const {
+  return grouping_key_count == 0 ? 0.0 : 0.1;
+}
+
+double PlannerStatistics::EstimateUnwindRowsPerInput() const { return 10.0; }
+
+double PlannerStatistics::EstimateLimitRows(
+    double input_rows, std::optional<double> literal_limit) const {
+  if (literal_limit.has_value()) {
+    return std::min(input_rows, NonNegative(*literal_limit));
   }
-  return selectivity;
+  return std::min(input_rows, AtLeastOne(input_rows * 0.1));
+}
+
+double PlannerStatistics::EstimateProcedureRows(std::string_view procedure_name,
+                                                std::size_t yield_count) const {
+  (void)procedure_name;
+  (void)yield_count;
+  return 100.0;
 }
 
 double HeuristicPlannerStatistics::EstimateNodeCount(
@@ -207,9 +261,171 @@ CostEstimate CostModel::EstimatePredicateJoin(
 }
 
 CostEstimate CostModel::ApplyFilter(CostEstimate input) const {
-  const double selectivity = Statistics().EstimateFilterSelectivity();
-  return {.estimated_rows = std::max(1.0, input.estimated_rows * selectivity),
-          .cost = input.cost + input.estimated_rows * selectivity};
+  return ApplyFilters(input, 1);
+}
+
+CostEstimate CostModel::ApplyFilters(CostEstimate input,
+                                     std::size_t filter_count) const {
+  if (filter_count == 0) {
+    return input;
+  }
+
+  double cost = input.cost;
+  double rows_for_cost = input.estimated_rows;
+  const double single_filter_selectivity =
+      Statistics().EstimateFilterSelectivity();
+  for (std::size_t i = 0; i < filter_count; ++i) {
+    rows_for_cost = AtLeastOne(rows_for_cost * single_filter_selectivity);
+    cost += rows_for_cost;
+  }
+
+  const double combined_selectivity =
+      Statistics().EstimateCombinedFilterSelectivity(filter_count);
+  return {
+      .estimated_rows = AtLeastOne(input.estimated_rows * combined_selectivity),
+      .cost = cost};
+}
+
+CostEstimate CostModel::EstimateProjection(CostEstimate input,
+                                           std::size_t item_count) const {
+  return EstimatePassThrough(
+      input, 0.01 * static_cast<double>(std::max<std::size_t>(1, item_count)));
+}
+
+CostEstimate CostModel::EstimateDistinct(CostEstimate input,
+                                         std::size_t key_count) const {
+  const double rows =
+      AtLeastOne(input.estimated_rows *
+                 Statistics().EstimateDistinctSelectivity(key_count));
+  return {.estimated_rows = rows,
+          .cost = input.cost + input.estimated_rows + rows};
+}
+
+CostEstimate CostModel::EstimateAggregation(
+    CostEstimate input, std::size_t grouping_key_count,
+    std::size_t aggregation_count) const {
+  const double rows =
+      grouping_key_count == 0
+          ? 1.0
+          : AtLeastOne(input.estimated_rows *
+                       Statistics().EstimateAggregationGroupSelectivity(
+                           grouping_key_count));
+  const double per_row_cost =
+      1.0 + 0.1 * static_cast<double>(aggregation_count);
+  return {.estimated_rows = rows,
+          .cost = input.cost + input.estimated_rows * per_row_cost + rows};
+}
+
+CostEstimate CostModel::EstimateSort(CostEstimate input,
+                                     std::size_t item_count) const {
+  const double comparison_factor =
+      static_cast<double>(std::max<std::size_t>(1, item_count));
+  const double sort_work = input.estimated_rows *
+                           std::log2(input.estimated_rows + 1.0) *
+                           comparison_factor;
+  return {.estimated_rows = input.estimated_rows,
+          .cost = input.cost + sort_work};
+}
+
+CostEstimate CostModel::EstimateSkip(CostEstimate input,
+                                     std::optional<double> literal_skip) const {
+  const double rows =
+      literal_skip.has_value()
+          ? NonNegative(input.estimated_rows - NonNegative(*literal_skip))
+          : input.estimated_rows;
+  return {.estimated_rows = rows, .cost = input.cost + input.estimated_rows};
+}
+
+CostEstimate CostModel::EstimateLimit(
+    CostEstimate input, std::optional<double> literal_limit) const {
+  const double rows = NonNegative(
+      Statistics().EstimateLimitRows(input.estimated_rows, literal_limit));
+  return {.estimated_rows = rows, .cost = input.cost + rows};
+}
+
+CostEstimate CostModel::EstimateProduceResults(CostEstimate input,
+                                               std::size_t column_count) const {
+  return EstimatePassThrough(
+      input,
+      0.01 * static_cast<double>(std::max<std::size_t>(1, column_count)));
+}
+
+CostEstimate CostModel::EstimateCartesianProduct(CostEstimate left,
+                                                 CostEstimate right) const {
+  const double rows = left.estimated_rows * right.estimated_rows;
+  return {.estimated_rows = rows,
+          .cost = left.cost + right.cost + left.estimated_rows +
+                  right.estimated_rows + rows};
+}
+
+CostEstimate CostModel::EstimateApply(CostEstimate left,
+                                      CostEstimate right) const {
+  const double rows = left.estimated_rows * right.estimated_rows;
+  return {.estimated_rows = rows,
+          .cost = left.cost + left.estimated_rows * right.cost + rows};
+}
+
+CostEstimate CostModel::EstimateSemiApply(CostEstimate left,
+                                          CostEstimate right) const {
+  return {.estimated_rows = left.estimated_rows,
+          .cost = left.cost + left.estimated_rows * right.cost};
+}
+
+CostEstimate CostModel::EstimateRollUpApply(CostEstimate left,
+                                            CostEstimate right) const {
+  return {.estimated_rows = left.estimated_rows,
+          .cost = left.cost + left.estimated_rows * right.cost +
+                  left.estimated_rows};
+}
+
+CostEstimate CostModel::EstimateOptionalApply(CostEstimate left,
+                                              CostEstimate right) const {
+  const double rows =
+      std::max(left.estimated_rows, left.estimated_rows * right.estimated_rows);
+  return {.estimated_rows = rows,
+          .cost = left.cost + left.estimated_rows * right.cost + rows};
+}
+
+CostEstimate CostModel::EstimateUnwind(
+    CostEstimate input, std::optional<double> literal_list_size) const {
+  const double rows_per_input =
+      literal_list_size.has_value()
+          ? NonNegative(*literal_list_size)
+          : NonNegative(Statistics().EstimateUnwindRowsPerInput());
+  const double rows = input.estimated_rows * rows_per_input;
+  return {.estimated_rows = rows, .cost = input.cost + rows};
+}
+
+CostEstimate CostModel::EstimateUnion(CostEstimate left, CostEstimate right,
+                                      bool all) const {
+  const double input_rows = left.estimated_rows + right.estimated_rows;
+  const double rows =
+      all ? input_rows
+          : AtLeastOne(input_rows *
+                       Statistics().EstimateDistinctSelectivity(1));
+  return {.estimated_rows = rows,
+          .cost = left.cost + right.cost + input_rows + rows};
+}
+
+CostEstimate CostModel::EstimateProcedureCall(std::string_view procedure_name,
+                                              std::size_t argument_count,
+                                              std::size_t yield_count) const {
+  const double rows = NonNegative(
+      Statistics().EstimateProcedureRows(procedure_name, yield_count));
+  return {.estimated_rows = rows,
+          .cost = rows * (1.0 + 0.1 * static_cast<double>(argument_count) +
+                          0.05 * static_cast<double>(yield_count))};
+}
+
+CostEstimate CostModel::EstimatePassThrough(CostEstimate input,
+                                            double per_row_cost) const {
+  return {.estimated_rows = input.estimated_rows,
+          .cost = input.cost + input.estimated_rows * per_row_cost};
+}
+
+CostEstimate CostModel::EstimateWrite(CostEstimate input,
+                                      double per_row_cost) const {
+  return EstimatePassThrough(input, per_row_cost);
 }
 
 const PlannerStatistics &CostModel::Statistics() const {
@@ -222,10 +438,7 @@ const PlannerStatistics &CostModel::Statistics() const {
 CostEstimate ApplyFilterEstimates(CostEstimate estimate,
                                   std::size_t filter_count,
                                   const CostModel &cost_model) {
-  for (std::size_t i = 0; i < filter_count; ++i) {
-    estimate = cost_model.ApplyFilter(estimate);
-  }
-  return estimate;
+  return cost_model.ApplyFilters(estimate, filter_count);
 }
 
 }  // namespace ir

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_set>
 #include <utility>
@@ -12,6 +13,7 @@
 #include "ast/expression_dependency.h"
 #include "common/exception.h"
 #include "ir/planner/component_planner.h"
+#include "ir/planner/cost_model.h"
 #include "ir/planner_query_internal.h"
 
 namespace ir {
@@ -168,6 +170,323 @@ std::vector<const ast::Expression *> JoinPredicateExpressions(
     expressions.push_back(predicate->expression);
   }
   return expressions;
+}
+
+std::optional<double> NonNegativeIntegerLiteral(
+    const ast::Expression *expression) {
+  const ast::Expression *unwrapped = UnwrapParenthesized(expression);
+  if (unwrapped == nullptr ||
+      !unwrapped->Is(ast::ASTNodeType::kIntegerLiteral)) {
+    return std::nullopt;
+  }
+  const auto *literal = ast::CastAst<ast::IntegerLiteral>(unwrapped);
+  return std::max<double>(0.0, static_cast<double>(literal->value));
+}
+
+std::optional<double> LiteralListSize(const ast::Expression *expression) {
+  const ast::Expression *unwrapped = UnwrapParenthesized(expression);
+  if (unwrapped == nullptr || !unwrapped->Is(ast::ASTNodeType::kListLiteral)) {
+    return std::nullopt;
+  }
+  const auto *literal = ast::CastAst<ast::ListLiteral>(unwrapped);
+  return static_cast<double>(literal->elements.size());
+}
+
+CostEstimate EstimateLogicalPlanLeaf(const LogicalPlan &plan,
+                                     const CostModel &cost_model) {
+  switch (plan.Type()) {
+    case LogicalPlanNodeType::kArgument:
+      return cost_model.EstimateArgument(plan.OutputColumns().size());
+    case LogicalPlanNodeType::kAllNodeScan:
+      return cost_model.EstimateNodeScan({});
+    case LogicalPlanNodeType::kNodeByLabelScan: {
+      const auto &scan = static_cast<const NodeByLabelScanPlan &>(plan);
+      return cost_model.EstimateNodeScan(std::unordered_set<std::string>(
+          scan.Labels().begin(), scan.Labels().end()));
+    }
+    case LogicalPlanNodeType::kNodeIndexSeek: {
+      const auto &seek = static_cast<const NodeIndexSeekPlan &>(plan);
+      return cost_model.EstimateNodeIndexSeek(
+          std::unordered_set<std::string>(seek.Labels().begin(),
+                                          seek.Labels().end()),
+          seek.PropertyKey());
+    }
+    case LogicalPlanNodeType::kNodeIndexRangeSeek: {
+      const auto &seek = static_cast<const NodeIndexRangeSeekPlan &>(plan);
+      return cost_model.EstimateNodeIndexRangeSeek(
+          std::unordered_set<std::string>(seek.Labels().begin(),
+                                          seek.Labels().end()),
+          seek.PropertyKey(), seek.Predicates().size());
+    }
+    case LogicalPlanNodeType::kRelationshipTypeScan: {
+      const auto &scan = static_cast<const RelationshipTypeScanPlan &>(plan);
+      return cost_model.EstimateRelationshipTypeScan(scan.Types());
+    }
+    case LogicalPlanNodeType::kRelationshipIndexSeek: {
+      const auto &seek = static_cast<const RelationshipIndexSeekPlan &>(plan);
+      return cost_model.EstimateRelationshipIndexSeek(seek.Types(),
+                                                      seek.PropertyKey());
+    }
+    case LogicalPlanNodeType::kRelationshipIndexRangeSeek: {
+      const auto &seek =
+          static_cast<const RelationshipIndexRangeSeekPlan &>(plan);
+      return cost_model.EstimateRelationshipIndexRangeSeek(
+          seek.Types(), seek.PropertyKey(), seek.Predicates().size());
+    }
+    default:
+      THROW(common::InternalError, "unsupported logical plan leaf estimate: " +
+                                       std::string(plan.Name()));
+  }
+}
+
+const CostEstimate &OnlyChildEstimate(
+    const std::vector<CostEstimate> &child_estimates,
+    std::string_view node_name) {
+  CHECK(child_estimates.size() == 1, common::InternalError,
+        std::string(node_name) + " expected one child estimate");
+  return child_estimates.front();
+}
+
+void InheritTraits(const LogicalPlan &source, LogicalPlan *target) {
+  CHECK(target != nullptr, common::InternalError, "logical plan is null");
+  target->SetOrderingTrait(source.OrderingTrait());
+  target->SetDistinctTrait(source.DistinctTrait());
+}
+
+void ClearTraits(LogicalPlan *plan) {
+  CHECK(plan != nullptr, common::InternalError, "logical plan is null");
+  plan->ClearOrderingTrait();
+  plan->SetDistinctTrait(false);
+}
+
+bool ChildSolves(const LogicalPlan &plan, std::string_view symbol) {
+  return plan.Child(0).SolvedSymbols().contains(std::string(symbol));
+}
+
+CostEstimate EstimateLogicalPlanNode(
+    const LogicalPlan &plan, const std::vector<CostEstimate> &child_estimates,
+    const CostModel &cost_model) {
+  switch (plan.Type()) {
+    case LogicalPlanNodeType::kArgument:
+    case LogicalPlanNodeType::kAllNodeScan:
+    case LogicalPlanNodeType::kNodeByLabelScan:
+    case LogicalPlanNodeType::kNodeIndexSeek:
+    case LogicalPlanNodeType::kNodeIndexRangeSeek:
+    case LogicalPlanNodeType::kRelationshipTypeScan:
+    case LogicalPlanNodeType::kRelationshipIndexSeek:
+    case LogicalPlanNodeType::kRelationshipIndexRangeSeek:
+      return EstimateLogicalPlanLeaf(plan, cost_model);
+    case LogicalPlanNodeType::kExpand: {
+      const auto &expand = static_cast<const ExpandPlan &>(plan);
+      return cost_model.EstimateExpand(
+          OnlyChildEstimate(child_estimates, plan.Name()), expand.Types());
+    }
+    case LogicalPlanNodeType::kExpandInto: {
+      const auto &expand = static_cast<const ExpandIntoPlan &>(plan);
+      return cost_model.EstimateExpandInto(
+          OnlyChildEstimate(child_estimates, plan.Name()), expand.Types());
+    }
+    case LogicalPlanNodeType::kVarExpand: {
+      const auto &expand = static_cast<const VarExpandPlan &>(plan);
+      const bool endpoints_bound = ChildSolves(plan, expand.FromNode()) &&
+                                   ChildSolves(plan, expand.ToNode());
+      return endpoints_bound
+                 ? cost_model.EstimateExpandInto(
+                       OnlyChildEstimate(child_estimates, plan.Name()),
+                       expand.Types())
+                 : cost_model.EstimateExpand(
+                       OnlyChildEstimate(child_estimates, plan.Name()),
+                       expand.Types());
+    }
+    case LogicalPlanNodeType::kPathBuild:
+    case LogicalPlanNodeType::kAssertIsNode:
+    case LogicalPlanNodeType::kWriteBarrier:
+      return cost_model.EstimatePassThrough(
+          OnlyChildEstimate(child_estimates, plan.Name()), 0.01);
+    case LogicalPlanNodeType::kFilter:
+      return cost_model.ApplyFilter(
+          OnlyChildEstimate(child_estimates, plan.Name()));
+    case LogicalPlanNodeType::kProjection: {
+      const auto &projection = static_cast<const ProjectionPlan &>(plan);
+      return cost_model.EstimateProjection(
+          OnlyChildEstimate(child_estimates, plan.Name()),
+          projection.Items().size());
+    }
+    case LogicalPlanNodeType::kDistinct: {
+      const auto &distinct = static_cast<const DistinctPlan &>(plan);
+      return cost_model.EstimateDistinct(
+          OnlyChildEstimate(child_estimates, plan.Name()),
+          distinct.GroupingItems().size());
+    }
+    case LogicalPlanNodeType::kAggregation: {
+      const auto &aggregation = static_cast<const AggregationPlan &>(plan);
+      return cost_model.EstimateAggregation(
+          OnlyChildEstimate(child_estimates, plan.Name()),
+          aggregation.GroupingItems().size(),
+          aggregation.AggregationItems().size());
+    }
+    case LogicalPlanNodeType::kSort: {
+      const auto &sort = static_cast<const SortPlan &>(plan);
+      return cost_model.EstimateSort(
+          OnlyChildEstimate(child_estimates, plan.Name()), sort.Items().size());
+    }
+    case LogicalPlanNodeType::kSkip: {
+      const auto &skip = static_cast<const SkipPlan &>(plan);
+      return cost_model.EstimateSkip(
+          OnlyChildEstimate(child_estimates, plan.Name()),
+          NonNegativeIntegerLiteral(skip.Skip()));
+    }
+    case LogicalPlanNodeType::kLimit: {
+      const auto &limit = static_cast<const LimitPlan &>(plan);
+      return cost_model.EstimateLimit(
+          OnlyChildEstimate(child_estimates, plan.Name()),
+          NonNegativeIntegerLiteral(limit.Limit()));
+    }
+    case LogicalPlanNodeType::kProduceResults:
+      return cost_model.EstimateProduceResults(
+          OnlyChildEstimate(child_estimates, plan.Name()),
+          plan.OutputColumns().size());
+    case LogicalPlanNodeType::kCartesianProduct:
+      CHECK(child_estimates.size() == 2, common::InternalError,
+            "CartesianProduct expected two child estimates");
+      return cost_model.EstimateCartesianProduct(child_estimates[0],
+                                                 child_estimates[1]);
+    case LogicalPlanNodeType::kNodeHashJoin: {
+      CHECK(child_estimates.size() == 2, common::InternalError,
+            "NodeHashJoin expected two child estimates");
+      const auto &join = static_cast<const NodeHashJoinPlan &>(plan);
+      return cost_model.EstimateNodeHashJoin(
+          child_estimates[0], child_estimates[1], join.JoinKeys().size());
+    }
+    case LogicalPlanNodeType::kValueHashJoin: {
+      CHECK(child_estimates.size() == 2, common::InternalError,
+            "ValueHashJoin expected two child estimates");
+      const auto &join = static_cast<const ValueHashJoinPlan &>(plan);
+      return cost_model.EstimateValueHashJoin(
+          child_estimates[0], child_estimates[1], join.Predicates().size());
+    }
+    case LogicalPlanNodeType::kPredicateJoin: {
+      CHECK(child_estimates.size() == 2, common::InternalError,
+            "PredicateJoin expected two child estimates");
+      const auto &join = static_cast<const PredicateJoinPlan &>(plan);
+      return cost_model.EstimatePredicateJoin(
+          child_estimates[0], child_estimates[1], join.Predicates().size());
+    }
+    case LogicalPlanNodeType::kApply:
+      CHECK(child_estimates.size() == 2, common::InternalError,
+            "Apply expected two child estimates");
+      return cost_model.EstimateApply(child_estimates[0], child_estimates[1]);
+    case LogicalPlanNodeType::kSemiApply:
+    case LogicalPlanNodeType::kAntiSemiApply:
+    case LogicalPlanNodeType::kLetSemiApply:
+      CHECK(child_estimates.size() == 2, common::InternalError,
+            std::string(plan.Name()) + " expected two child estimates");
+      return cost_model.EstimateSemiApply(child_estimates[0],
+                                          child_estimates[1]);
+    case LogicalPlanNodeType::kRollUpApply:
+      CHECK(child_estimates.size() == 2, common::InternalError,
+            "RollUpApply expected two child estimates");
+      return cost_model.EstimateRollUpApply(child_estimates[0],
+                                            child_estimates[1]);
+    case LogicalPlanNodeType::kOptionalApply:
+      CHECK(child_estimates.size() == 2, common::InternalError,
+            "OptionalApply expected two child estimates");
+      return cost_model.EstimateOptionalApply(child_estimates[0],
+                                              child_estimates[1]);
+    case LogicalPlanNodeType::kCreateNode:
+    case LogicalPlanNodeType::kCreateRelationship:
+    case LogicalPlanNodeType::kSetProperty:
+    case LogicalPlanNodeType::kSetProperties:
+    case LogicalPlanNodeType::kSetLabels:
+    case LogicalPlanNodeType::kRemoveProperty:
+    case LogicalPlanNodeType::kRemoveLabels:
+    case LogicalPlanNodeType::kDelete:
+    case LogicalPlanNodeType::kDetachDelete:
+      return cost_model.EstimateWrite(
+          OnlyChildEstimate(child_estimates, plan.Name()), 1.0);
+    case LogicalPlanNodeType::kMerge:
+      CHECK(child_estimates.size() == 2, common::InternalError,
+            "Merge expected two child estimates");
+      return cost_model.EstimateWrite(
+          cost_model.EstimateSemiApply(child_estimates[0], child_estimates[1]),
+          1.0);
+    case LogicalPlanNodeType::kUnwind: {
+      const auto &unwind = static_cast<const UnwindPlan &>(plan);
+      return cost_model.EstimateUnwind(
+          OnlyChildEstimate(child_estimates, plan.Name()),
+          LiteralListSize(unwind.Expression()));
+    }
+    case LogicalPlanNodeType::kUnion: {
+      CHECK(child_estimates.size() == 2, common::InternalError,
+            "Union expected two child estimates");
+      const auto &union_plan = static_cast<const UnionPlan &>(plan);
+      return cost_model.EstimateUnion(child_estimates[0], child_estimates[1],
+                                      union_plan.All());
+    }
+  }
+  THROW(common::InternalError,
+        "unknown logical plan estimate: " + std::string(plan.Name()));
+}
+
+void ApplyLogicalPlanTraits(LogicalPlan *plan) {
+  CHECK(plan != nullptr, common::InternalError, "logical plan is null");
+  switch (plan->Type()) {
+    case LogicalPlanNodeType::kFilter:
+    case LogicalPlanNodeType::kSkip:
+    case LogicalPlanNodeType::kLimit:
+    case LogicalPlanNodeType::kProduceResults:
+    case LogicalPlanNodeType::kAssertIsNode:
+    case LogicalPlanNodeType::kWriteBarrier:
+    case LogicalPlanNodeType::kSetProperty:
+    case LogicalPlanNodeType::kSetProperties:
+    case LogicalPlanNodeType::kSetLabels:
+    case LogicalPlanNodeType::kRemoveProperty:
+    case LogicalPlanNodeType::kRemoveLabels:
+    case LogicalPlanNodeType::kDelete:
+    case LogicalPlanNodeType::kDetachDelete:
+      InheritTraits(plan->Child(0), plan);
+      return;
+    case LogicalPlanNodeType::kSort: {
+      const auto &sort = static_cast<const SortPlan &>(*plan);
+      const bool distinct = plan->Child(0).DistinctTrait();
+      plan->SetOrderingTrait(sort.Items());
+      plan->SetDistinctTrait(distinct);
+      return;
+    }
+    case LogicalPlanNodeType::kDistinct:
+    case LogicalPlanNodeType::kAggregation:
+      plan->ClearOrderingTrait();
+      plan->SetDistinctTrait(true);
+      return;
+    case LogicalPlanNodeType::kUnion: {
+      const auto &union_plan = static_cast<const UnionPlan &>(*plan);
+      plan->ClearOrderingTrait();
+      plan->SetDistinctTrait(!union_plan.All());
+      return;
+    }
+    default:
+      ClearTraits(plan);
+      return;
+  }
+}
+
+CostEstimate AnnotateLogicalPlanMetadata(LogicalPlan *plan,
+                                         const CostModel &cost_model) {
+  CHECK(plan != nullptr, common::InternalError, "logical plan is null");
+  std::vector<CostEstimate> child_estimates;
+  child_estimates.reserve(plan->ChildCount());
+  for (auto &child : plan->Children()) {
+    CHECK(child != nullptr, common::InternalError,
+          "logical plan child is null");
+    child_estimates.push_back(
+        AnnotateLogicalPlanMetadata(child.get(), cost_model));
+  }
+
+  CostEstimate estimate =
+      EstimateLogicalPlanNode(*plan, child_estimates, cost_model);
+  plan->SetCostEstimate(estimate.estimated_rows, estimate.cost);
+  ApplyLogicalPlanTraits(plan);
+  return estimate;
 }
 
 QueryGraph QueryGraphFromMergeMatchGraph(const MergeMatchGraph &match_graph) {
@@ -703,14 +1022,20 @@ std::unique_ptr<LogicalPlan> CreateLogicalPlan(
     const PlannerQuery &planner_query,
     const LogicalPlanBuilderOptions &options) {
   LogicalPlanBuilder builder(options);
-  return builder.Build(planner_query);
+  std::unique_ptr<LogicalPlan> plan = builder.Build(planner_query);
+  AnnotateLogicalPlanMetadata(plan.get(),
+                              CostModel(options.planner_statistics));
+  return plan;
 }
 
 std::unique_ptr<LogicalPlan> CreateLogicalPlan(
     const SinglePlannerQuery &planner_query,
     const LogicalPlanBuilderOptions &options) {
   LogicalPlanBuilder builder(options);
-  return builder.Build(planner_query);
+  std::unique_ptr<LogicalPlan> plan = builder.Build(planner_query);
+  AnnotateLogicalPlanMetadata(plan.get(),
+                              CostModel(options.planner_statistics));
+  return plan;
 }
 
 }  // namespace ir

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -41,6 +42,12 @@ class FakePlannerStatistics final : public ir::PlannerStatistics {
   double node_hash_join_selectivity = 1.0;
   double value_hash_join_selectivity = 1.0;
   double predicate_join_selectivity = 0.1;
+  std::optional<double> combined_filter_selectivity;
+  double distinct_selectivity = 0.5;
+  double aggregation_group_selectivity = 0.1;
+  double unwind_rows_per_input = 10.0;
+  std::optional<double> unknown_limit_rows;
+  double procedure_rows = 100.0;
 
   [[nodiscard]] double EstimateNodeCount(
       const std::unordered_set<std::string> &labels) const override {
@@ -174,6 +181,15 @@ class FakePlannerStatistics final : public ir::PlannerStatistics {
     return filter_selectivity;
   }
 
+  [[nodiscard]] double EstimateCombinedFilterSelectivity(
+      std::size_t predicate_count) const override {
+    if (combined_filter_selectivity.has_value()) {
+      return *combined_filter_selectivity;
+    }
+    return ir::PlannerStatistics::EstimateCombinedFilterSelectivity(
+        predicate_count);
+  }
+
   [[nodiscard]] double EstimateNodeHashJoinSelectivity(
       std::size_t key_count) const override {
     return key_count == 0 ? 1.0 : node_hash_join_selectivity;
@@ -187,6 +203,36 @@ class FakePlannerStatistics final : public ir::PlannerStatistics {
   [[nodiscard]] double EstimatePredicateJoinSelectivity(
       std::size_t predicate_count) const override {
     return predicate_count == 0 ? 1.0 : predicate_join_selectivity;
+  }
+
+  [[nodiscard]] double EstimateDistinctSelectivity(
+      std::size_t key_count) const override {
+    return key_count == 0 ? 1.0 : distinct_selectivity;
+  }
+
+  [[nodiscard]] double EstimateAggregationGroupSelectivity(
+      std::size_t grouping_key_count) const override {
+    return grouping_key_count == 0 ? 0.0 : aggregation_group_selectivity;
+  }
+
+  [[nodiscard]] double EstimateUnwindRowsPerInput() const override {
+    return unwind_rows_per_input;
+  }
+
+  [[nodiscard]] double EstimateLimitRows(
+      double input_rows, std::optional<double> literal_limit) const override {
+    if (literal_limit.has_value()) {
+      return std::min(input_rows, std::max(0.0, *literal_limit));
+    }
+    return unknown_limit_rows.value_or(
+        ir::PlannerStatistics::EstimateLimitRows(input_rows, literal_limit));
+  }
+
+  [[nodiscard]] double EstimateProcedureRows(
+      std::string_view procedure_name, std::size_t yield_count) const override {
+    (void)procedure_name;
+    (void)yield_count;
+    return procedure_rows;
   }
 };
 

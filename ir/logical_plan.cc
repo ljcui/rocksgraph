@@ -553,6 +553,30 @@ LogicalPlan &LogicalPlan::Child(std::size_t index) {
   return *children_[index];
 }
 
+void LogicalPlan::SetCostEstimate(double estimated_rows, double cost) {
+  metadata_.estimated_rows = estimated_rows;
+  metadata_.cost = cost;
+}
+
+void LogicalPlan::ClearCostEstimate() {
+  metadata_.estimated_rows.reset();
+  metadata_.cost.reset();
+}
+
+void LogicalPlan::SetOrderingTrait(std::vector<LogicalSortItem> ordering) {
+  metadata_.ordering = std::move(ordering);
+}
+
+void LogicalPlan::ClearOrderingTrait() { metadata_.ordering.clear(); }
+
+void LogicalPlan::SetDistinctTrait(bool distinct) {
+  metadata_.distinct = distinct;
+}
+
+void LogicalPlan::CopyMetadataFrom(const LogicalPlan &source) {
+  metadata_ = source.metadata_;
+}
+
 void LogicalPlan::SetSolvedSymbols(std::unordered_set<std::string> symbols) {
   solved_symbols_ = std::move(symbols);
 }
@@ -847,7 +871,6 @@ ProjectionPlan::ProjectionPlan(LogicalPlanPtr source,
     : LogicalPlan(LogicalPlanNodeType::kProjection,
                   UnaryChildren(std::move(source), "Projection")),
       items_(std::move(items)) {
-  SetSolvedSymbols(Child(0).SolvedSymbols());
   for (const auto &item : items_) {
     AddSolvedSymbol(item.alias);
     AddOutputColumn(item.alias);
@@ -863,7 +886,6 @@ DistinctPlan::DistinctPlan(LogicalPlanPtr source,
     : LogicalPlan(LogicalPlanNodeType::kDistinct,
                   UnaryChildren(std::move(source), "Distinct")),
       grouping_items_(std::move(grouping_items)) {
-  SetSolvedSymbols(Child(0).SolvedSymbols());
   for (const auto &item : grouping_items_) {
     AddSolvedSymbol(item.alias);
     AddOutputColumn(item.alias);
@@ -881,7 +903,6 @@ AggregationPlan::AggregationPlan(
                   UnaryChildren(std::move(source), "Aggregation")),
       grouping_items_(std::move(grouping_items)),
       aggregation_items_(std::move(aggregation_items)) {
-  SetSolvedSymbols(Child(0).SolvedSymbols());
   for (const auto &item : grouping_items_) {
     AddSolvedSymbol(item.alias);
     AddOutputColumn(item.alias);
@@ -952,8 +973,8 @@ ProduceResultsPlan::ProduceResultsPlan(LogicalPlanPtr source,
                                        std::vector<std::string> columns)
     : LogicalPlan(LogicalPlanNodeType::kProduceResults,
                   UnaryChildren(std::move(source), "ProduceResults")) {
-  SetSolvedSymbols(Child(0).SolvedSymbols());
   SetOutputColumns(std::move(columns));
+  SetSolvedSymbols(SymbolsFromColumns(OutputColumns()));
 }
 
 std::string ProduceResultsPlan::Details() const {
@@ -1034,7 +1055,7 @@ SemiApplyPlan::SemiApplyPlan(LogicalPlanPtr left, LogicalPlanPtr right)
     : LogicalPlan(
           LogicalPlanNodeType::kSemiApply,
           BinaryChildren(std::move(left), std::move(right), "SemiApply")) {
-  SetSolvedSymbols(UnionSolvedSymbols(Child(0), Child(1)));
+  SetSolvedSymbols(Child(0).SolvedSymbols());
   SetOutputColumns(Child(0).OutputColumns());
 }
 
@@ -1042,7 +1063,7 @@ AntiSemiApplyPlan::AntiSemiApplyPlan(LogicalPlanPtr left, LogicalPlanPtr right)
     : LogicalPlan(
           LogicalPlanNodeType::kAntiSemiApply,
           BinaryChildren(std::move(left), std::move(right), "AntiSemiApply")) {
-  SetSolvedSymbols(UnionSolvedSymbols(Child(0), Child(1)));
+  SetSolvedSymbols(Child(0).SolvedSymbols());
   SetOutputColumns(Child(0).OutputColumns());
 }
 
@@ -1052,7 +1073,7 @@ LetSemiApplyPlan::LetSemiApplyPlan(LogicalPlanPtr left, LogicalPlanPtr right,
           LogicalPlanNodeType::kLetSemiApply,
           BinaryChildren(std::move(left), std::move(right), "LetSemiApply")),
       value_variable_(std::move(value_variable)) {
-  SetSolvedSymbols(UnionSolvedSymbols(Child(0), Child(1)));
+  SetSolvedSymbols(Child(0).SolvedSymbols());
   AddSolvedSymbol(value_variable_);
   SetOutputColumns(Child(0).OutputColumns());
   AddOutputColumn(value_variable_);
@@ -1068,9 +1089,8 @@ RollUpApplyPlan::RollUpApplyPlan(LogicalPlanPtr left, LogicalPlanPtr right,
           BinaryChildren(std::move(left), std::move(right), "RollUpApply")),
       collection_variable_(std::move(collection_variable)),
       value_variable_(std::move(value_variable)) {
-  SetSolvedSymbols(UnionSolvedSymbols(Child(0), Child(1)));
+  SetSolvedSymbols(Child(0).SolvedSymbols());
   AddSolvedSymbol(collection_variable_);
-  AddSolvedSymbol(value_variable_);
   SetOutputColumns(Child(0).OutputColumns());
   AddOutputColumn(collection_variable_);
 }

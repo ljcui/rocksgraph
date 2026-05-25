@@ -40,6 +40,18 @@ std::string LogicalPlanText(const std::string &query,
   return ir::LogicalPlanToString(*logical_plan);
 }
 
+std::unique_ptr<ir::LogicalPlan> LogicalPlanFor(
+    const std::string &query,
+    const ir::LogicalPlanBuilderOptions &options = {}) {
+  auto statement = ParseOrFail(query);
+  if (!statement) {
+    return {};
+  }
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  return ir::CreateLogicalPlan(*planner_query, options);
+}
+
 void ExpectLogicalPlanText(const std::string &query,
                            const std::string &expected,
                            const ir::LogicalPlanBuilderOptions &options = {}) {
@@ -59,6 +71,26 @@ TEST(LogicalPlanBuilderTest, UsesNodeLabelPredicateAsLeafScan) {
   ExpectLogicalPlanText("MATCH (n:Person) RETURN n", R"(ProduceResults [n]
   Projection [n]
     NodeByLabelScan [n:Person]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, AnnotatesCostMetadataAndPrintsWhenRequested) {
+  std::unique_ptr<ir::LogicalPlan> plan =
+      LogicalPlanFor("MATCH (n:Person) RETURN n");
+  ASSERT_NE(plan, nullptr);
+
+  EXPECT_TRUE(plan->EstimatedRows().has_value());
+  EXPECT_TRUE(plan->Cost().has_value());
+  EXPECT_DOUBLE_EQ(*plan->EstimatedRows(), 100.0);
+  EXPECT_DOUBLE_EQ(*plan->Cost(), 102.0);
+  EXPECT_DOUBLE_EQ(*plan->Child(0).Cost(), 101.0);
+  EXPECT_DOUBLE_EQ(*plan->Child(0).Child(0).Cost(), 100.0);
+
+  EXPECT_EQ(ir::LogicalPlanToString(
+                *plan, ir::LogicalPlanPrinterOptions{.include_metadata = true}),
+            R"(ProduceResults [n] {rows=100, cost=102}
+  Projection [n] {rows=100, cost=101}
+    NodeByLabelScan [n:Person] {rows=100, cost=100}
 )");
 }
 
@@ -412,6 +444,24 @@ TEST(LogicalPlanBuilderTest, BuildsDistinctOrderByPlan) {
     Distinct [n]
       AllNodeScan [n]
 )");
+}
+
+TEST(LogicalPlanBuilderTest, AnnotatesOrderingAndDistinctTraits) {
+  std::unique_ptr<ir::LogicalPlan> plan =
+      LogicalPlanFor("MATCH (n) RETURN DISTINCT n ORDER BY n");
+  ASSERT_NE(plan, nullptr);
+
+  EXPECT_TRUE(plan->DistinctTrait());
+  ASSERT_EQ(plan->OrderingTrait().size(), 1U);
+  EXPECT_NE(plan->OrderingTrait()[0].expression, nullptr);
+  EXPECT_EQ(plan->OrderingTrait()[0].direction,
+            ir::LogicalOrderDirection::kAscending);
+
+  const ir::LogicalPlan &sort = plan->Child(0);
+  EXPECT_TRUE(sort.DistinctTrait());
+  ASSERT_EQ(sort.OrderingTrait().size(), 1U);
+  EXPECT_TRUE(sort.Child(0).DistinctTrait());
+  EXPECT_TRUE(sort.Child(0).OrderingTrait().empty());
 }
 
 TEST(LogicalPlanBuilderTest, BuildsDistinctOrderBySkipAndLimitPlan) {
