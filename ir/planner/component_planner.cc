@@ -101,135 +101,6 @@ std::vector<std::string> SharedNodeSymbols(const QueryGraph &query_graph,
   return keys;
 }
 
-class RuleBasedComponentPlanner final : public ComponentPlanner {
- public:
-  explicit RuleBasedComponentPlanner(const PlannerStatistics *statistics)
-      : cost_model_(statistics) {}
-
-  std::unique_ptr<LogicalPlan> Plan(
-      const QueryGraph &query_graph, const QueryGraphComponent &component,
-      QueryGraphPlanningContext *context) const override {
-    CHECK(context != nullptr, common::InternalError,
-          "query graph planning context is null");
-
-    if (component.pattern_relationship_indices.empty()) {
-      const std::vector<std::string> nodes = SortedComponentNodes(component);
-      CHECK(nodes.size() == 1, common::InvalidArgumentError,
-            Unsupported("multi-node disconnected component logical plan"));
-      CostEstimate estimate =
-          query_graph.argument_ids.contains(nodes.front())
-              ? cost_model_.EstimateArgument(1)
-              : cost_model_.EstimateNodeScan(
-                    query_graph.LabelsOnNode(nodes.front()));
-      std::unique_ptr<LogicalPlan> plan =
-          context->BuildNodeLeaf(query_graph, nodes.front());
-      const std::size_t filter_count =
-          context->ApplyAvailableFilters(query_graph.selections, &plan);
-      PlanCandidate candidate = MakePlanCandidate(
-          std::move(plan), {},
-          ApplyFilterEstimates(estimate, filter_count, cost_model_));
-      PlanTable plan_table;
-      const PlanKey key = CandidateKey(candidate);
-      plan_table.PutBest(std::move(candidate));
-      return plan_table.TakeBest(key).plan;
-    }
-
-    PlanTable plan_table;
-    std::unique_ptr<LogicalPlan> initial_plan;
-    CostEstimate initial_estimate;
-    const std::vector<std::string> argument_nodes =
-        SortedComponentArgumentNodes(component, query_graph.argument_ids);
-    if (!argument_nodes.empty()) {
-      initial_plan = std::make_unique<ArgumentPlan>(argument_nodes);
-      initial_estimate = cost_model_.EstimateArgument(argument_nodes.size());
-    } else {
-      const PatternRelationship &first_relationship =
-          query_graph
-              .pattern_relationships[component.pattern_relationship_indices[0]];
-      initial_plan =
-          context->BuildNodeLeaf(query_graph, first_relationship.left_node);
-      initial_estimate = cost_model_.EstimateNodeScan(
-          query_graph.LabelsOnNode(first_relationship.left_node));
-    }
-    const std::size_t initial_filter_count =
-        context->ApplyAvailableFilters(query_graph.selections, &initial_plan);
-    PlanCandidate initial_candidate = MakePlanCandidate(
-        std::move(initial_plan), {},
-        ApplyFilterEstimates(initial_estimate, initial_filter_count,
-                             cost_model_));
-    PlanKey current_key = CandidateKey(initial_candidate);
-    plan_table.PutBest(std::move(initial_candidate));
-
-    std::vector<std::size_t> remaining = component.pattern_relationship_indices;
-    while (!remaining.empty()) {
-      PlanCandidate candidate = plan_table.TakeBest(current_key);
-      auto found = std::find_if(
-          remaining.begin(), remaining.end(), [&](std::size_t index) {
-            const PatternRelationship &relationship =
-                query_graph.pattern_relationships[index];
-            return candidate.covered_symbols.contains(relationship.left_node) ||
-                   candidate.covered_symbols.contains(relationship.right_node);
-          });
-      CHECK(found != remaining.end(), common::InvalidArgumentError,
-            Unsupported("disconnected relationship expansion logical plan"));
-
-      const std::size_t relationship_index = *found;
-      const PatternRelationship &relationship =
-          query_graph.pattern_relationships[relationship_index];
-      const bool left_solved =
-          candidate.covered_symbols.contains(relationship.left_node);
-      const bool right_solved =
-          candidate.covered_symbols.contains(relationship.right_node);
-      if (left_solved && right_solved) {
-        CostEstimate estimate = cost_model_.EstimateExpandInto(
-            CandidateEstimate(candidate), relationship.types);
-        candidate.plan = std::make_unique<ExpandIntoPlan>(
-            std::move(candidate.plan), relationship.left_node,
-            relationship.variable, relationship.right_node,
-            ToExpandDirection(relationship.direction), relationship.types);
-        remaining.erase(found);
-        const std::size_t filter_count = context->ApplyAvailableFilters(
-            query_graph.selections, &candidate.plan);
-        candidate.relationship_indices.push_back(relationship_index);
-        PlanCandidate next_candidate = MakePlanCandidate(
-            std::move(candidate.plan),
-            std::move(candidate.relationship_indices),
-            ApplyFilterEstimates(estimate, filter_count, cost_model_));
-        current_key = CandidateKey(next_candidate);
-        plan_table.PutBest(std::move(next_candidate));
-        continue;
-      }
-
-      const std::string from_node =
-          left_solved ? relationship.left_node : relationship.right_node;
-      const std::string to_node =
-          left_solved ? relationship.right_node : relationship.left_node;
-      const Direction direction = left_solved ? relationship.direction
-                                              : Reverse(relationship.direction);
-
-      CostEstimate estimate = cost_model_.EstimateExpand(
-          CandidateEstimate(candidate), relationship.types);
-      candidate.plan = std::make_unique<ExpandPlan>(
-          std::move(candidate.plan), from_node, relationship.variable, to_node,
-          ToExpandDirection(direction), relationship.types);
-      remaining.erase(found);
-      const std::size_t filter_count = context->ApplyAvailableFilters(
-          query_graph.selections, &candidate.plan);
-      candidate.relationship_indices.push_back(relationship_index);
-      PlanCandidate next_candidate = MakePlanCandidate(
-          std::move(candidate.plan), std::move(candidate.relationship_indices),
-          ApplyFilterEstimates(estimate, filter_count, cost_model_));
-      current_key = CandidateKey(next_candidate);
-      plan_table.PutBest(std::move(next_candidate));
-    }
-
-    return plan_table.TakeBest(current_key).plan;
-  }
-
- private:
-  CostModel cost_model_;
-};
-
 class IdpComponentPlanner final : public ComponentPlanner {
  public:
   explicit IdpComponentPlanner(
@@ -618,16 +489,9 @@ const Predicate *QueryGraphPlanningContext::FirstConsumableNodeLabelPredicate(
 
 std::unique_ptr<ComponentPlanner> MakeComponentPlanner(
     const LogicalPlanBuilderOptions &options) {
-  switch (options.component_planner) {
-    case LogicalPlanComponentPlannerKind::kRuleBased:
-      return std::make_unique<RuleBasedComponentPlanner>(
-          options.planner_statistics);
-    case LogicalPlanComponentPlannerKind::kIdp:
-      return std::make_unique<IdpComponentPlanner>(
-          options.max_idp_candidates_per_relationship_count,
-          options.planner_statistics);
-  }
-  THROW(common::InternalError, "unknown logical component planner kind");
+  return std::make_unique<IdpComponentPlanner>(
+      options.max_idp_candidates_per_relationship_count,
+      options.planner_statistics);
 }
 
 }  // namespace ir

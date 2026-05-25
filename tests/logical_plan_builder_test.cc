@@ -71,29 +71,24 @@ TEST(LogicalPlanBuilderTest, BuildsExpandFromSingleRelationshipPattern) {
 )");
 }
 
-TEST(LogicalPlanBuilderTest, IdpChoosesCheaperLabelLeaf) {
-  ExpectLogicalPlanText(
-      "MATCH (a)-[r]->(b:Person) RETURN a, b",
-      R"(ProduceResults [a, b]
+TEST(LogicalPlanBuilderTest, UsesIdpPlannerByDefault) {
+  ExpectLogicalPlanText("MATCH (a)-[r]->(b:Person) RETURN a, b",
+                        R"(ProduceResults [a, b]
   Projection [a, b]
     Expand [(b)<-[r]-(a)]
       NodeByLabelScan [b:Person]
-)",
-      ir::LogicalPlanBuilderOptions{
-          .component_planner = ir::LogicalPlanComponentPlannerKind::kIdp});
+)");
 }
 
 TEST(LogicalPlanBuilderTest, IdpPruningKeepsCheapestLeafCandidate) {
-  ExpectLogicalPlanText(
-      "MATCH (a)-[r]->(b:Person) RETURN a, b",
-      R"(ProduceResults [a, b]
+  ExpectLogicalPlanText("MATCH (a)-[r]->(b:Person) RETURN a, b",
+                        R"(ProduceResults [a, b]
   Projection [a, b]
     Expand [(b)<-[r]-(a)]
       NodeByLabelScan [b:Person]
 )",
-      ir::LogicalPlanBuilderOptions{
-          .component_planner = ir::LogicalPlanComponentPlannerKind::kIdp,
-          .max_idp_candidates_per_relationship_count = 1});
+                        ir::LogicalPlanBuilderOptions{
+                            .max_idp_candidates_per_relationship_count = 1});
 }
 
 TEST(LogicalPlanBuilderTest, IdpUsesInjectedStatisticsForLeafCost) {
@@ -107,9 +102,7 @@ TEST(LogicalPlanBuilderTest, IdpUsesInjectedStatisticsForLeafCost) {
       Expand [(b)<-[r]-(a)]
         NodeByLabelScan [b:Rare]
 )",
-      ir::LogicalPlanBuilderOptions{
-          .component_planner = ir::LogicalPlanComponentPlannerKind::kIdp,
-          .planner_statistics = &statistics});
+      ir::LogicalPlanBuilderOptions{.planner_statistics = &statistics});
 }
 
 TEST(LogicalPlanBuilderTest, IdpUsesRelationshipTypeFanoutStatistics) {
@@ -123,9 +116,7 @@ TEST(LogicalPlanBuilderTest, IdpUsesRelationshipTypeFanoutStatistics) {
       Expand [(b)-[r2:RARE_REL]->(c)]
         AllNodeScan [b]
 )",
-      ir::LogicalPlanBuilderOptions{
-          .component_planner = ir::LogicalPlanComponentPlannerKind::kIdp,
-          .planner_statistics = &statistics});
+      ir::LogicalPlanBuilderOptions{.planner_statistics = &statistics});
 }
 
 TEST(LogicalPlanBuilderTest,
@@ -144,15 +135,12 @@ TEST(LogicalPlanBuilderTest,
         Expand [(a)-[r1:AB]->(b)]
           AllNodeScan [a]
 )",
-      ir::LogicalPlanBuilderOptions{
-          .component_planner = ir::LogicalPlanComponentPlannerKind::kIdp,
-          .planner_statistics = &statistics});
+      ir::LogicalPlanBuilderOptions{.planner_statistics = &statistics});
 }
 
 TEST(LogicalPlanBuilderTest, IdpBuildsTwoHopJoinFromCheaperMiddleLeaf) {
-  ExpectLogicalPlanText(
-      "MATCH (a)-[r1]->(b:Person)-[r2]->(c) RETURN a, b, c",
-      R"(ProduceResults [a, b, c]
+  ExpectLogicalPlanText("MATCH (a)-[r1]->(b:Person)-[r2]->(c) RETURN a, b, c",
+                        R"(ProduceResults [a, b, c]
   Projection [a, b, c]
     Filter [NOT (r1 = r2)]
       NodeHashJoin [b]
@@ -160,9 +148,7 @@ TEST(LogicalPlanBuilderTest, IdpBuildsTwoHopJoinFromCheaperMiddleLeaf) {
           NodeByLabelScan [b:Person]
         Expand [(b)-[r2]->(c)]
           NodeByLabelScan [b:Person]
-)",
-      ir::LogicalPlanBuilderOptions{
-          .component_planner = ir::LogicalPlanComponentPlannerKind::kIdp});
+)");
 }
 
 TEST(LogicalPlanBuilderTest, IdpKeepsDistinctLeafCandidatesWithSameCost) {
@@ -176,9 +162,7 @@ TEST(LogicalPlanBuilderTest, IdpKeepsDistinctLeafCandidatesWithSameCost) {
           NodeByLabelScan [a:Person]
         Expand [(c)<-[r2:KNOWS]-(b)]
           NodeByLabelScan [c:Person]
-)",
-      ir::LogicalPlanBuilderOptions{
-          .component_planner = ir::LogicalPlanComponentPlannerKind::kIdp});
+)");
 }
 
 TEST(LogicalPlanBuilderTest, IdpBuildsNodeHashJoinForSharedNodeSubplans) {
@@ -192,9 +176,7 @@ TEST(LogicalPlanBuilderTest, IdpBuildsNodeHashJoinForSharedNodeSubplans) {
           NodeByLabelScan [a:Person]
         Expand [(c)-[r2]->(b)]
           NodeByLabelScan [c:Person]
-)",
-      ir::LogicalPlanBuilderOptions{
-          .component_planner = ir::LogicalPlanComponentPlannerKind::kIdp});
+)");
 }
 
 TEST(LogicalPlanBuilderTest, IdpExtendsThreeRelationshipJoinedSubplan) {
@@ -213,9 +195,7 @@ TEST(LogicalPlanBuilderTest, IdpExtendsThreeRelationshipJoinedSubplan) {
                   NodeByLabelScan [a:Person]
                 Expand [(c)-[r2]->(b)]
                   NodeByLabelScan [c:Person]
-)",
-      ir::LogicalPlanBuilderOptions{
-          .component_planner = ir::LogicalPlanComponentPlannerKind::kIdp});
+)");
 }
 
 TEST(LogicalPlanBuilderTest, IdpBuildsNestedThreeRelationshipBushyJoinPlan) {
@@ -233,9 +213,7 @@ TEST(LogicalPlanBuilderTest, IdpBuildsNestedThreeRelationshipBushyJoinPlan) {
           NodeByLabelScan [c:Person]
         Expand [(d)<-[r3]-(b)]
           NodeByLabelScan [d:Person]
-)",
-      ir::LogicalPlanBuilderOptions{
-          .component_planner = ir::LogicalPlanComponentPlannerKind::kIdp});
+)");
 }
 
 TEST(LogicalPlanBuilderTest, IdpPlansTriangleWithExpandIntoCompetition) {
@@ -253,23 +231,18 @@ TEST(LogicalPlanBuilderTest, IdpPlansTriangleWithExpandIntoCompetition) {
                 NodeByLabelScan [a:Person]
               Expand [(a)-[r3]->(c)]
                 NodeByLabelScan [a:Person]
-)",
-      ir::LogicalPlanBuilderOptions{
-          .component_planner = ir::LogicalPlanComponentPlannerKind::kIdp});
+)");
 }
 
 TEST(LogicalPlanBuilderTest, IdpBuildsExpandIntoForBoundEndpoints) {
-  ExpectLogicalPlanText(
-      "MATCH (a)-[r1]->(b:Person), (a)-[r2]->(b) RETURN a, b",
-      R"(ProduceResults [a, b]
+  ExpectLogicalPlanText("MATCH (a)-[r1]->(b:Person), (a)-[r2]->(b) RETURN a, b",
+                        R"(ProduceResults [a, b]
   Projection [a, b]
     Filter [NOT (r1 = r2)]
       ExpandInto [(a)-[r2]->(b)]
         Expand [(b)<-[r1]-(a)]
           NodeByLabelScan [b:Person]
-)",
-      ir::LogicalPlanBuilderOptions{
-          .component_planner = ir::LogicalPlanComponentPlannerKind::kIdp});
+)");
 }
 
 TEST(LogicalPlanBuilderTest, BuildsExpandIntoForAlreadyBoundEndpoints) {
@@ -458,9 +431,7 @@ TEST(LogicalPlanBuilderTest, IdpKeepsTailMatchArgumentDependency) {
       Filter [m:Person]
         Expand [(n)-[r]->(m)]
           Argument [n]
-)",
-      ir::LogicalPlanBuilderOptions{
-          .component_planner = ir::LogicalPlanComponentPlannerKind::kIdp});
+)");
 }
 
 TEST(LogicalPlanBuilderTest, BuildsTailMatchWithoutArgumentDependencyPlan) {
