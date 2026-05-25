@@ -4,14 +4,55 @@
 
 #include <memory>
 #include <string>
+#include <unordered_set>
+#include <vector>
 
 #include "ast/ast_builder.h"
 #include "ast/ast_exception.h"
 #include "common/exception.h"
 #include "ir/logical_plan_printer.h"
+#include "ir/planner/cost_model.h"
 #include "ir/planner_query.h"
 
 namespace {
+
+bool Contains(const std::unordered_set<std::string> &values,
+              const std::string &value) {
+  return values.find(value) != values.end();
+}
+
+class LabelAwareStatistics final : public ir::PlannerStatistics {
+ public:
+  [[nodiscard]] double EstimateNodeCount(
+      const std::unordered_set<std::string> &labels) const override {
+    if (Contains(labels, "Rare")) {
+      return 5.0;
+    }
+    if (Contains(labels, "Common")) {
+      return 500.0;
+    }
+    return labels.empty() ? 1000.0 : 100.0;
+  }
+
+  [[nodiscard]] double EstimateExpandFanout(
+      const std::vector<std::string> &relationship_types) const override {
+    return relationship_types.empty() ? 10.0 : 3.0;
+  }
+
+  [[nodiscard]] double EstimateExpandIntoSelectivity(
+      const std::vector<std::string> &relationship_types) const override {
+    return relationship_types.empty() ? 0.5 : 0.2;
+  }
+
+  [[nodiscard]] double EstimateFilterSelectivity() const override {
+    return 0.1;
+  }
+
+  [[nodiscard]] double EstimateNodeHashJoinSelectivity(
+      std::size_t key_count) const override {
+    return key_count == 0 ? 1.0 : 1.0 / key_count;
+  }
+};
 
 std::unique_ptr<ast::Statement> ParseOrFail(const std::string &query) {
   try {
@@ -93,6 +134,21 @@ TEST(LogicalPlanBuilderTest, IdpPruningKeepsCheapestLeafCandidate) {
       ir::LogicalPlanBuilderOptions{
           .component_planner = ir::LogicalPlanComponentPlannerKind::kIdp,
           .max_idp_candidates_per_relationship_count = 1});
+}
+
+TEST(LogicalPlanBuilderTest, IdpUsesInjectedStatisticsForLeafCost) {
+  LabelAwareStatistics statistics;
+  ExpectLogicalPlanText(
+      "MATCH (a:Common)-[r]->(b:Rare) RETURN a, b",
+      R"(ProduceResults [a, b]
+  Projection [a, b]
+    Filter [a:Common]
+      Expand [(b)<-[r]-(a)]
+        NodeByLabelScan [b:Rare]
+)",
+      ir::LogicalPlanBuilderOptions{
+          .component_planner = ir::LogicalPlanComponentPlannerKind::kIdp,
+          .planner_statistics = &statistics});
 }
 
 TEST(LogicalPlanBuilderTest, IdpBuildsTwoHopJoinFromCheaperMiddleLeaf) {

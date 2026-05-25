@@ -103,6 +103,9 @@ std::vector<std::string> SharedNodeSymbols(const QueryGraph &query_graph,
 
 class RuleBasedComponentPlanner final : public ComponentPlanner {
  public:
+  explicit RuleBasedComponentPlanner(const PlannerStatistics *statistics)
+      : cost_model_(statistics) {}
+
   std::unique_ptr<LogicalPlan> Plan(
       const QueryGraph &query_graph, const QueryGraphComponent &component,
       QueryGraphPlanningContext *context) const override {
@@ -230,8 +233,10 @@ class RuleBasedComponentPlanner final : public ComponentPlanner {
 class IdpComponentPlanner final : public ComponentPlanner {
  public:
   explicit IdpComponentPlanner(
-      std::size_t max_candidates_per_relationship_count)
-      : max_candidates_per_relationship_count_(
+      std::size_t max_candidates_per_relationship_count,
+      const PlannerStatistics *statistics)
+      : cost_model_(statistics),
+        max_candidates_per_relationship_count_(
             max_candidates_per_relationship_count) {
     CHECK(max_candidates_per_relationship_count_ > 0,
           common::InvalidArgumentError,
@@ -615,10 +620,12 @@ std::unique_ptr<ComponentPlanner> MakeComponentPlanner(
     const LogicalPlanBuilderOptions &options) {
   switch (options.component_planner) {
     case LogicalPlanComponentPlannerKind::kRuleBased:
-      return std::make_unique<RuleBasedComponentPlanner>();
+      return std::make_unique<RuleBasedComponentPlanner>(
+          options.planner_statistics);
     case LogicalPlanComponentPlannerKind::kIdp:
       return std::make_unique<IdpComponentPlanner>(
-          options.max_idp_candidates_per_relationship_count);
+          options.max_idp_candidates_per_relationship_count,
+          options.planner_statistics);
   }
   THROW(common::InternalError, "unknown logical component planner kind");
 }

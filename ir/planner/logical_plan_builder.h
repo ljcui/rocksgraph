@@ -8,6 +8,8 @@
 
 namespace ir {
 
+class PlannerStatistics;
+
 enum class LogicalPlanComponentPlannerKind {
   kRuleBased,
   kIdp,
@@ -17,6 +19,7 @@ struct LogicalPlanBuilderOptions {
   LogicalPlanComponentPlannerKind component_planner =
       LogicalPlanComponentPlannerKind::kRuleBased;
   std::size_t max_idp_candidates_per_relationship_count = 128;
+  const PlannerStatistics *planner_statistics = nullptr;
 };
 
 std::unique_ptr<LogicalPlan> CreateLogicalPlan(
