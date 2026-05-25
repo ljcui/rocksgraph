@@ -170,6 +170,14 @@ std::vector<const ast::Expression *> JoinPredicateExpressions(
   return expressions;
 }
 
+QueryGraph QueryGraphFromMergeMatchGraph(const MergeMatchGraph &match_graph) {
+  QueryGraph query_graph;
+  query_graph.pattern_nodes = match_graph.pattern_nodes;
+  query_graph.pattern_relationships = match_graph.pattern_relationships;
+  query_graph.argument_ids = match_graph.argument_ids;
+  return query_graph;
+}
+
 class LogicalPlanBuilder {
  public:
   explicit LogicalPlanBuilder(const LogicalPlanBuilderOptions &options)
@@ -284,6 +292,8 @@ class LogicalPlanBuilder {
                              query_graph.assert_is_node_variables);
     context.ApplyAvailableFilters(query_graph.selections, &plan);
     plan = ApplyOptionalMatches(std::move(plan), query_graph, &context);
+    plan =
+        ApplyMutatingPatterns(std::move(plan), query_graph.mutating_patterns);
     if (validate_all_predicates) {
       context.ValidateAllPredicatesPlanned(query_graph.selections);
     }
@@ -302,8 +312,6 @@ class LogicalPlanBuilder {
   void ValidateSupportedQueryGraph(const QueryGraph &query_graph) const {
     CHECK(query_graph.hints.empty(), common::InvalidArgumentError,
           Unsupported("planner hint logical plan"));
-    CHECK(query_graph.mutating_patterns.empty(), common::InvalidArgumentError,
-          Unsupported("updating logical plan"));
     for (const auto &predicate : query_graph.selections.predicates) {
       if (predicate.kind == PredicateKind::kExistsSubquery ||
           predicate.kind == PredicateKind::kNotExistsSubquery) {
@@ -375,6 +383,149 @@ class LogicalPlanBuilder {
         planned_predicates_.insert(predicate);
       }
     }
+  }
+
+  std::unique_ptr<LogicalPlan> ApplyMutatingPatterns(
+      std::unique_ptr<LogicalPlan> plan,
+      const std::vector<MutatingPattern> &mutating_patterns) {
+    CHECK(plan != nullptr, common::InternalError, "logical plan is null");
+    if (mutating_patterns.empty()) {
+      return plan;
+    }
+
+    plan = std::make_unique<WriteBarrierPlan>(std::move(plan));
+    for (const auto &mutating_pattern : mutating_patterns) {
+      switch (mutating_pattern.kind) {
+        case MutatingPatternKind::kCreate:
+          plan = ApplyCreatePattern(std::move(plan), mutating_pattern.create);
+          break;
+        case MutatingPatternKind::kMerge:
+          plan = ApplyMergePattern(std::move(plan), mutating_pattern.merge);
+          break;
+        case MutatingPatternKind::kSet:
+          plan =
+              ApplySetPatterns(std::move(plan), mutating_pattern.set_patterns);
+          break;
+        case MutatingPatternKind::kRemove:
+          plan = ApplyRemovePatterns(std::move(plan),
+                                     mutating_pattern.remove_patterns);
+          break;
+        case MutatingPatternKind::kDelete:
+          plan = ApplyDeletePatterns(std::move(plan),
+                                     mutating_pattern.delete_patterns);
+          break;
+      }
+    }
+    return plan;
+  }
+
+  std::unique_ptr<LogicalPlan> ApplyCreatePattern(
+      std::unique_ptr<LogicalPlan> plan, const CreatePattern &pattern) {
+    CHECK(plan != nullptr, common::InternalError, "logical plan is null");
+    for (const auto &command : pattern.commands) {
+      switch (command.kind) {
+        case CreateEntityKind::kNode:
+          CHECK(command.index < pattern.nodes.size(),
+                common::InvalidArgumentError,
+                "CREATE node command index is out of range");
+          plan = std::make_unique<CreateNodePlan>(std::move(plan),
+                                                  pattern.nodes[command.index]);
+          break;
+        case CreateEntityKind::kRelationship:
+          CHECK(command.index < pattern.relationships.size(),
+                common::InvalidArgumentError,
+                "CREATE relationship command index is out of range");
+          plan = std::make_unique<CreateRelationshipPlan>(
+              std::move(plan), pattern.relationships[command.index]);
+          break;
+      }
+    }
+    return ApplyPathBuilds(std::move(plan), pattern.path_variables);
+  }
+
+  std::unique_ptr<LogicalPlan> ApplyMergePattern(
+      std::unique_ptr<LogicalPlan> plan, const MergePattern &merge) {
+    CHECK(plan != nullptr, common::InternalError, "logical plan is null");
+    return std::make_unique<MergePlan>(
+        std::move(plan), BuildMergeMatchPlan(merge.match_graph), merge);
+  }
+
+  std::unique_ptr<LogicalPlan> BuildMergeMatchPlan(
+      const MergeMatchGraph &match_graph) {
+    const std::unordered_set<const Predicate *> outer_predicates =
+        planned_predicates_;
+    std::unique_ptr<LogicalPlan> match_plan =
+        BuildQueryGraph(QueryGraphFromMergeMatchGraph(match_graph));
+    planned_predicates_ = outer_predicates;
+    return match_plan;
+  }
+
+  std::unique_ptr<LogicalPlan> ApplySetPatterns(
+      std::unique_ptr<LogicalPlan> plan,
+      const std::vector<SetMutatingPattern> &patterns) {
+    CHECK(plan != nullptr, common::InternalError, "logical plan is null");
+    for (const auto &pattern : patterns) {
+      switch (pattern.kind) {
+        case SetMutatingPatternKind::kSetProperty:
+          plan = std::make_unique<SetPropertyPlan>(
+              std::move(plan), pattern.entity, pattern.property_key,
+              pattern.value);
+          break;
+        case SetMutatingPatternKind::kSetExactPropertiesFromMap:
+          plan = std::make_unique<SetPropertiesPlan>(
+              std::move(plan), pattern.entity, pattern.value,
+              /*include_existing=*/false);
+          break;
+        case SetMutatingPatternKind::kSetIncludingPropertiesFromMap:
+          plan = std::make_unique<SetPropertiesPlan>(
+              std::move(plan), pattern.entity, pattern.value,
+              /*include_existing=*/true);
+          break;
+        case SetMutatingPatternKind::kSetLabels:
+          plan = std::make_unique<SetLabelsPlan>(
+              std::move(plan), pattern.entity, pattern.labels);
+          break;
+      }
+    }
+    return plan;
+  }
+
+  std::unique_ptr<LogicalPlan> ApplyRemovePatterns(
+      std::unique_ptr<LogicalPlan> plan,
+      const std::vector<RemoveMutatingPattern> &patterns) {
+    CHECK(plan != nullptr, common::InternalError, "logical plan is null");
+    for (const auto &pattern : patterns) {
+      switch (pattern.kind) {
+        case RemoveMutatingPatternKind::kRemoveProperty:
+          plan = std::make_unique<RemovePropertyPlan>(
+              std::move(plan), pattern.entity, pattern.property_key);
+          break;
+        case RemoveMutatingPatternKind::kRemoveLabels:
+          plan = std::make_unique<RemoveLabelsPlan>(
+              std::move(plan), pattern.entity, pattern.labels);
+          break;
+      }
+    }
+    return plan;
+  }
+
+  std::unique_ptr<LogicalPlan> ApplyDeletePatterns(
+      std::unique_ptr<LogicalPlan> plan,
+      const std::vector<DeleteExpressionPattern> &patterns) {
+    CHECK(plan != nullptr, common::InternalError, "logical plan is null");
+    std::vector<const ast::Expression *> expressions;
+    expressions.reserve(patterns.size());
+    bool detach = false;
+    for (const auto &pattern : patterns) {
+      expressions.push_back(pattern.expression);
+      detach = pattern.detach;
+    }
+    if (detach) {
+      return std::make_unique<DetachDeletePlan>(std::move(plan),
+                                                std::move(expressions));
+    }
+    return std::make_unique<DeletePlan>(std::move(plan),
+                                        std::move(expressions));
   }
 
   std::unique_ptr<LogicalPlan> ApplyHorizon(std::unique_ptr<LogicalPlan> plan,

@@ -746,3 +746,91 @@ TEST(LogicalPlanBuilderTest, BuildsArgumentNodeAssertionPlan) {
         Argument [n]
 )");
 }
+
+TEST(LogicalPlanBuilderTest, BuildsCreatePlan) {
+  ExpectLogicalPlanText(
+      "CREATE (a:Person {name: 'Ada'})-[r:KNOWS {since: 2024}]->(b) "
+      "RETURN a, r, b",
+      R"(ProduceResults [a, r, b]
+  Projection [a, r, b]
+    CreateRelationship [(a)-[r:KNOWS {since: 2024}]->(b)]
+      CreateNode [b]
+        CreateNode [a:Person {name: 'Ada'}]
+          WriteBarrier
+            Argument
+)");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsCreateWithBoundEndpointPlan) {
+  ExpectLogicalPlanText("MATCH (a) CREATE (a)-[r:KNOWS]->(b) RETURN r",
+                        R"(ProduceResults [r]
+  Projection [r]
+    CreateRelationship [(a)-[r:KNOWS]->(b)]
+      CreateNode [b]
+        WriteBarrier
+          AllNodeScan [a]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsNamedCreatePathPlan) {
+  ExpectLogicalPlanText("CREATE p = (a)-[r]->(b) RETURN p",
+                        R"(ProduceResults [p]
+  Projection [p]
+    PathBuild [p]
+      CreateRelationship [(a)-[r]->(b)]
+        CreateNode [b]
+          CreateNode [a]
+            WriteBarrier
+              Argument
+)");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsSetRemoveAndDeletePlans) {
+  ExpectLogicalPlanText(
+      "MATCH (n) SET n.name = 'Ada', n = {age: 42}, n += {score: 7}, "
+      "n:New REMOVE n:Old, n.name DELETE n",
+      R"(Delete [n]
+  RemoveProperty [n.name]
+    RemoveLabels [n:Old]
+      SetLabels [n:New]
+        SetProperties [n += {score: 7}]
+          SetProperties [n = {age: 42}]
+            SetProperty [n.name = 'Ada']
+              WriteBarrier
+                AllNodeScan [n]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsDetachDeletePlan) {
+  ExpectLogicalPlanText("MATCH (n) DETACH DELETE n",
+                        R"(DetachDelete [n]
+  WriteBarrier
+    AllNodeScan [n]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsSetWithReturnPlan) {
+  ExpectLogicalPlanText("MATCH (n) SET n.name = 'Ada' RETURN n",
+                        R"(ProduceResults [n]
+  Projection [n]
+    SetProperty [n.name = 'Ada']
+      WriteBarrier
+        AllNodeScan [n]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsMergePlan) {
+  ExpectLogicalPlanText(
+      "MATCH (m) MERGE (m)-[r:KNOWS {since: 2020}]->"
+      "(n:Person {id: m.id}) ON MATCH SET r.seen = true RETURN r",
+      R"(ProduceResults [r]
+  Projection [r]
+    Apply
+      AllNodeScan [m]
+      Merge [(m)-[r:KNOWS {since: 2020}]->(n:Person {id: m.id}) ON MATCH SET r.seen = true]
+        WriteBarrier
+          Argument [m]
+        Expand [(m)-[r:KNOWS]->(n)]
+          Argument [m]
+)");
+}

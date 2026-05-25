@@ -43,6 +43,17 @@ inline constexpr auto kLogicalPlanNodeTypeNames = std::array{
     std::string_view{"RollUpApply"},
     std::string_view{"OptionalApply"},
     std::string_view{"AssertIsNode"},
+    std::string_view{"WriteBarrier"},
+    std::string_view{"CreateNode"},
+    std::string_view{"CreateRelationship"},
+    std::string_view{"Merge"},
+    std::string_view{"SetProperty"},
+    std::string_view{"SetProperties"},
+    std::string_view{"SetLabels"},
+    std::string_view{"RemoveProperty"},
+    std::string_view{"RemoveLabels"},
+    std::string_view{"Delete"},
+    std::string_view{"DetachDelete"},
     std::string_view{"Unwind"},
     std::string_view{"Union"},
 };
@@ -190,6 +201,24 @@ std::string RelationshipDetails(std::string_view from_node,
   return out.str();
 }
 
+std::string DirectionalRelationshipDetails(
+    std::string_view from_node, std::string_view relationship,
+    std::string_view to_node, Direction direction,
+    const std::vector<std::string> &types) {
+  switch (direction) {
+    case Direction::kIncoming:
+      return RelationshipDetails(from_node, relationship, to_node,
+                                 ExpandDirection::kIncoming, types);
+    case Direction::kOutgoing:
+      return RelationshipDetails(from_node, relationship, to_node,
+                                 ExpandDirection::kOutgoing, types);
+    case Direction::kBoth:
+      return RelationshipDetails(from_node, relationship, to_node,
+                                 ExpandDirection::kBoth, types);
+  }
+  THROW(common::InternalError, "unknown relationship direction");
+}
+
 std::string NodePatternDetails(std::string_view variable,
                                const std::vector<std::string> &labels) {
   std::string out(variable);
@@ -200,13 +229,16 @@ std::string NodePatternDetails(std::string_view variable,
   return out;
 }
 
+std::string ExpressionDetail(const ast::Expression *expression) {
+  return expression != nullptr ? ast::ExpressionToString(*expression) : "null";
+}
+
 std::vector<std::string> ExpressionDetails(
     const std::vector<const ast::Expression *> &expressions) {
   std::vector<std::string> details;
   details.reserve(expressions.size());
   for (const ast::Expression *expression : expressions) {
-    details.push_back(
-        expression != nullptr ? ast::ExpressionToString(*expression) : "null");
+    details.push_back(ExpressionDetail(expression));
   }
   return details;
 }
@@ -222,6 +254,173 @@ std::string PropertyValueDetails(std::string_view variable,
                  ? ast::ExpressionToString(*value_expression)
                  : "null");
   return out;
+}
+
+std::string PropertyMapDetails(const PatternPropertyMap &properties) {
+  std::vector<std::string> entries;
+  entries.reserve(properties.entries.size() +
+                  (properties.parameter != nullptr ? 1 : 0));
+  for (const auto &entry : properties.entries) {
+    entries.push_back(entry.key + ": " + ExpressionDetail(entry.value));
+  }
+  if (properties.parameter != nullptr) {
+    entries.push_back(ExpressionDetail(properties.parameter));
+  }
+  if (entries.empty()) {
+    return {};
+  }
+  if (properties.parameter != nullptr && properties.entries.empty()) {
+    return entries.front();
+  }
+  return "{" + Join(entries, ", ") + "}";
+}
+
+std::string CreateNodeDetails(const CreateNodePattern &node) {
+  std::string out = NodePatternDetails(node.variable, node.labels);
+  const std::string properties = PropertyMapDetails(node.properties);
+  if (!properties.empty()) {
+    out.push_back(' ');
+    out.append(properties);
+  }
+  return out;
+}
+
+std::string RelationshipDetailsWithProperties(
+    std::string_view from_node, std::string_view relationship,
+    std::string_view to_node, Direction direction,
+    const std::vector<std::string> &types,
+    const PatternPropertyMap &properties) {
+  std::string out = DirectionalRelationshipDetails(from_node, relationship,
+                                                   to_node, direction, types);
+  const std::string property_details = PropertyMapDetails(properties);
+  if (property_details.empty()) {
+    return out;
+  }
+  (void)relationship;
+  const std::size_t position = out.find(']');
+  CHECK(position != std::string::npos, common::InternalError,
+        "relationship detail is missing relationship close");
+  out.insert(position, " " + property_details);
+  return out;
+}
+
+std::string CreateRelationshipDetails(
+    const CreateRelationshipPattern &relationship) {
+  return RelationshipDetailsWithProperties(
+      relationship.left_node, relationship.variable, relationship.right_node,
+      relationship.direction, relationship.types, relationship.properties);
+}
+
+const CreateNodePattern *FindCreateNode(const CreatePattern &pattern,
+                                        std::string_view variable) {
+  for (const auto &node : pattern.nodes) {
+    if (node.variable == variable) {
+      return &node;
+    }
+  }
+  return nullptr;
+}
+
+std::string MergeEndpointDetails(const CreatePattern &pattern,
+                                 std::string_view variable) {
+  const CreateNodePattern *node = FindCreateNode(pattern, variable);
+  if (node == nullptr) {
+    return std::string(variable);
+  }
+  return CreateNodeDetails(*node);
+}
+
+std::string MergeRelationshipDetails(
+    const CreatePattern &pattern,
+    const CreateRelationshipPattern &relationship) {
+  return RelationshipDetailsWithProperties(
+      MergeEndpointDetails(pattern, relationship.left_node),
+      relationship.variable,
+      MergeEndpointDetails(pattern, relationship.right_node),
+      relationship.direction, relationship.types, relationship.properties);
+}
+
+std::string CreatePatternDetails(const CreatePattern &pattern) {
+  std::vector<std::string> parts;
+  std::unordered_set<std::string> relationship_nodes;
+  for (const auto &relationship : pattern.relationships) {
+    parts.push_back(MergeRelationshipDetails(pattern, relationship));
+    AddSymbol(&relationship_nodes, relationship.left_node);
+    AddSymbol(&relationship_nodes, relationship.right_node);
+  }
+  for (const auto &node : pattern.nodes) {
+    if (!relationship_nodes.contains(node.variable)) {
+      parts.push_back(CreateNodeDetails(node));
+    }
+  }
+  for (const auto &path_variable : pattern.path_variables) {
+    parts.push_back(path_variable);
+  }
+  return Join(parts, ", ");
+}
+
+std::unordered_set<std::string> CreatePatternSolvedSymbols(
+    const CreatePattern &pattern) {
+  std::unordered_set<std::string> symbols;
+  for (const auto &path_variable : pattern.path_variables) {
+    AddSymbol(&symbols, path_variable);
+  }
+  for (const auto &node : pattern.nodes) {
+    AddSymbol(&symbols, node.variable);
+  }
+  for (const auto &relationship : pattern.relationships) {
+    AddSymbol(&symbols, relationship.left_node);
+    AddSymbol(&symbols, relationship.variable);
+    AddSymbol(&symbols, relationship.right_node);
+  }
+  return symbols;
+}
+
+std::string SetPatternDetails(const SetMutatingPattern &pattern) {
+  switch (pattern.kind) {
+    case SetMutatingPatternKind::kSetProperty:
+      return ExpressionDetail(pattern.entity) + "." + pattern.property_key +
+             " = " + ExpressionDetail(pattern.value);
+    case SetMutatingPatternKind::kSetExactPropertiesFromMap:
+      return ExpressionDetail(pattern.entity) + " = " +
+             ExpressionDetail(pattern.value);
+    case SetMutatingPatternKind::kSetIncludingPropertiesFromMap:
+      return ExpressionDetail(pattern.entity) +
+             " += " + ExpressionDetail(pattern.value);
+    case SetMutatingPatternKind::kSetLabels:
+      return ExpressionDetail(pattern.entity) + ":" + Join(pattern.labels, ":");
+  }
+  THROW(common::InternalError, "unknown SET pattern kind");
+}
+
+std::string RemovePatternDetails(const RemoveMutatingPattern &pattern) {
+  switch (pattern.kind) {
+    case RemoveMutatingPatternKind::kRemoveProperty:
+      return ExpressionDetail(pattern.entity) + "." + pattern.property_key;
+    case RemoveMutatingPatternKind::kRemoveLabels:
+      return ExpressionDetail(pattern.entity) + ":" + Join(pattern.labels, ":");
+  }
+  THROW(common::InternalError, "unknown REMOVE pattern kind");
+}
+
+std::string MergeActionDetails(const MergeActionPattern &action) {
+  std::vector<std::string> set_details;
+  set_details.reserve(action.set_patterns.size());
+  for (const auto &pattern : action.set_patterns) {
+    set_details.push_back(SetPatternDetails(pattern));
+  }
+  std::string out = action.on_match ? "ON MATCH SET " : "ON CREATE SET ";
+  out.append(Join(set_details, ", "));
+  return out;
+}
+
+std::string MergeDetails(const MergePattern &merge) {
+  std::vector<std::string> details;
+  details.push_back(CreatePatternDetails(merge.create_pattern));
+  for (const auto &action : merge.actions) {
+    details.push_back(MergeActionDetails(action));
+  }
+  return Join(details, " ");
 }
 
 std::string NodeIndexDetails(std::string_view variable,
@@ -901,6 +1100,185 @@ AssertIsNodePlan::AssertIsNodePlan(LogicalPlanPtr source,
 }
 
 std::string AssertIsNodePlan::Details() const { return Join(variables_, ", "); }
+
+WriteBarrierPlan::WriteBarrierPlan(LogicalPlanPtr source)
+    : LogicalPlan(LogicalPlanNodeType::kWriteBarrier,
+                  UnaryChildren(std::move(source), "WriteBarrier")) {
+  SetSolvedSymbols(Child(0).SolvedSymbols());
+  SetOutputColumns(Child(0).OutputColumns());
+}
+
+CreateNodePlan::CreateNodePlan(LogicalPlanPtr source, CreateNodePattern node)
+    : LogicalPlan(LogicalPlanNodeType::kCreateNode,
+                  UnaryChildren(std::move(source), "CreateNode")),
+      node_(std::move(node)) {
+  CHECK(!node_.variable.empty(), common::InvalidArgumentError,
+        "created node variable is empty");
+  SetSolvedSymbols(Child(0).SolvedSymbols());
+  SetOutputColumns(Child(0).OutputColumns());
+  AddSolvedSymbol(node_.variable);
+  AddOutputColumn(node_.variable);
+}
+
+std::string CreateNodePlan::Details() const { return CreateNodeDetails(node_); }
+
+CreateRelationshipPlan::CreateRelationshipPlan(
+    LogicalPlanPtr source, CreateRelationshipPattern relationship)
+    : LogicalPlan(LogicalPlanNodeType::kCreateRelationship,
+                  UnaryChildren(std::move(source), "CreateRelationship")),
+      relationship_(std::move(relationship)) {
+  CHECK(!relationship_.variable.empty(), common::InvalidArgumentError,
+        "created relationship variable is empty");
+  SetSolvedSymbols(Child(0).SolvedSymbols());
+  SetOutputColumns(Child(0).OutputColumns());
+  AddSolvedSymbol(relationship_.left_node);
+  AddSolvedSymbol(relationship_.variable);
+  AddSolvedSymbol(relationship_.right_node);
+  AddOutputColumn(relationship_.left_node);
+  AddOutputColumn(relationship_.variable);
+  AddOutputColumn(relationship_.right_node);
+}
+
+std::string CreateRelationshipPlan::Details() const {
+  return CreateRelationshipDetails(relationship_);
+}
+
+MergePlan::MergePlan(LogicalPlanPtr source, LogicalPlanPtr match_plan,
+                     MergePattern merge)
+    : LogicalPlan(
+          LogicalPlanNodeType::kMerge,
+          BinaryChildren(std::move(source), std::move(match_plan), "Merge")),
+      merge_(std::move(merge)) {
+  SetSolvedSymbols(UnionSolvedSymbols(Child(0), Child(1)));
+  SetOutputColumns(UnionOutputColumns(Child(0), Child(1)));
+  std::unordered_set<std::string> symbols =
+      CreatePatternSolvedSymbols(merge_.create_pattern);
+  for (const auto &symbol : symbols) {
+    AddSolvedSymbol(symbol);
+    AddOutputColumn(symbol);
+  }
+}
+
+std::string MergePlan::Details() const { return MergeDetails(merge_); }
+
+SetPropertyPlan::SetPropertyPlan(LogicalPlanPtr source,
+                                 const ast::Expression *entity,
+                                 std::string property_key,
+                                 const ast::Expression *value)
+    : LogicalPlan(LogicalPlanNodeType::kSetProperty,
+                  UnaryChildren(std::move(source), "SetProperty")),
+      entity_(entity),
+      property_key_(std::move(property_key)),
+      value_(value) {
+  CHECK(!property_key_.empty(), common::InvalidArgumentError,
+        "SET property key is empty");
+  SetSolvedSymbols(Child(0).SolvedSymbols());
+  SetOutputColumns(Child(0).OutputColumns());
+}
+
+std::string SetPropertyPlan::Details() const {
+  return ExpressionDetail(entity_) + "." + property_key_ + " = " +
+         ExpressionDetail(value_);
+}
+
+SetPropertiesPlan::SetPropertiesPlan(LogicalPlanPtr source,
+                                     const ast::Expression *entity,
+                                     const ast::Expression *value,
+                                     bool include_existing)
+    : LogicalPlan(LogicalPlanNodeType::kSetProperties,
+                  UnaryChildren(std::move(source), "SetProperties")),
+      entity_(entity),
+      value_(value),
+      include_existing_(include_existing) {
+  SetSolvedSymbols(Child(0).SolvedSymbols());
+  SetOutputColumns(Child(0).OutputColumns());
+}
+
+std::string SetPropertiesPlan::Details() const {
+  return ExpressionDetail(entity_) + (include_existing_ ? " += " : " = ") +
+         ExpressionDetail(value_);
+}
+
+SetLabelsPlan::SetLabelsPlan(LogicalPlanPtr source,
+                             const ast::Expression *entity,
+                             std::vector<std::string> labels)
+    : LogicalPlan(LogicalPlanNodeType::kSetLabels,
+                  UnaryChildren(std::move(source), "SetLabels")),
+      entity_(entity),
+      labels_(std::move(labels)) {
+  CHECK(!labels_.empty(), common::InvalidArgumentError,
+        "SET labels list is empty");
+  SetSolvedSymbols(Child(0).SolvedSymbols());
+  SetOutputColumns(Child(0).OutputColumns());
+}
+
+std::string SetLabelsPlan::Details() const {
+  return ExpressionDetail(entity_) + ":" + Join(labels_, ":");
+}
+
+RemovePropertyPlan::RemovePropertyPlan(LogicalPlanPtr source,
+                                       const ast::Expression *entity,
+                                       std::string property_key)
+    : LogicalPlan(LogicalPlanNodeType::kRemoveProperty,
+                  UnaryChildren(std::move(source), "RemoveProperty")),
+      entity_(entity),
+      property_key_(std::move(property_key)) {
+  CHECK(!property_key_.empty(), common::InvalidArgumentError,
+        "REMOVE property key is empty");
+  SetSolvedSymbols(Child(0).SolvedSymbols());
+  SetOutputColumns(Child(0).OutputColumns());
+}
+
+std::string RemovePropertyPlan::Details() const {
+  return ExpressionDetail(entity_) + "." + property_key_;
+}
+
+RemoveLabelsPlan::RemoveLabelsPlan(LogicalPlanPtr source,
+                                   const ast::Expression *entity,
+                                   std::vector<std::string> labels)
+    : LogicalPlan(LogicalPlanNodeType::kRemoveLabels,
+                  UnaryChildren(std::move(source), "RemoveLabels")),
+      entity_(entity),
+      labels_(std::move(labels)) {
+  CHECK(!labels_.empty(), common::InvalidArgumentError,
+        "REMOVE labels list is empty");
+  SetSolvedSymbols(Child(0).SolvedSymbols());
+  SetOutputColumns(Child(0).OutputColumns());
+}
+
+std::string RemoveLabelsPlan::Details() const {
+  return ExpressionDetail(entity_) + ":" + Join(labels_, ":");
+}
+
+DeletePlan::DeletePlan(LogicalPlanPtr source,
+                       std::vector<const ast::Expression *> expressions)
+    : LogicalPlan(LogicalPlanNodeType::kDelete,
+                  UnaryChildren(std::move(source), "Delete")),
+      expressions_(std::move(expressions)) {
+  CHECK(!expressions_.empty(), common::InvalidArgumentError,
+        "DELETE expressions are empty");
+  SetSolvedSymbols(Child(0).SolvedSymbols());
+  SetOutputColumns(Child(0).OutputColumns());
+}
+
+std::string DeletePlan::Details() const {
+  return Join(ExpressionDetails(expressions_), ", ");
+}
+
+DetachDeletePlan::DetachDeletePlan(
+    LogicalPlanPtr source, std::vector<const ast::Expression *> expressions)
+    : LogicalPlan(LogicalPlanNodeType::kDetachDelete,
+                  UnaryChildren(std::move(source), "DetachDelete")),
+      expressions_(std::move(expressions)) {
+  CHECK(!expressions_.empty(), common::InvalidArgumentError,
+        "DETACH DELETE expressions are empty");
+  SetSolvedSymbols(Child(0).SolvedSymbols());
+  SetOutputColumns(Child(0).OutputColumns());
+}
+
+std::string DetachDeletePlan::Details() const {
+  return Join(ExpressionDetails(expressions_), ", ");
+}
 
 UnwindPlan::UnwindPlan(LogicalPlanPtr source, const ast::Expression *expression,
                        std::string alias)

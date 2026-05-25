@@ -368,6 +368,121 @@ TEST(LogicalPlanTest, AssertIsNodePreservesInputs) {
   EXPECT_TRUE(Contains(assert_is_node.SolvedSymbols(), "n"));
 }
 
+TEST(LogicalPlanTest, WritePlansExposeMetadata) {
+  ir::WriteBarrierPlan barrier(
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({"n"})));
+  EXPECT_EQ(barrier.Name(), "WriteBarrier");
+  EXPECT_EQ(barrier.OutputColumns(), std::vector<std::string>({"n"}));
+  EXPECT_TRUE(Contains(barrier.SolvedSymbols(), "n"));
+
+  ir::CreateNodePattern node;
+  node.variable = "n";
+  node.labels = {"Person"};
+  node.properties.entries.push_back({.key = "name", .value = nullptr});
+  ir::CreateNodePlan create_node(
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({})), node);
+  EXPECT_EQ(create_node.Name(), "CreateNode");
+  EXPECT_EQ(create_node.Node().variable, "n");
+  EXPECT_EQ(create_node.Details(), "n:Person {name: null}");
+  EXPECT_EQ(create_node.OutputColumns(), std::vector<std::string>({"n"}));
+  EXPECT_TRUE(Contains(create_node.SolvedSymbols(), "n"));
+
+  ir::CreateRelationshipPattern relationship;
+  relationship.variable = "r";
+  relationship.left_node = "a";
+  relationship.right_node = "b";
+  relationship.direction = ir::Direction::kOutgoing;
+  relationship.types = {"KNOWS"};
+  relationship.properties.entries.push_back({.key = "since", .value = nullptr});
+  ir::CreateRelationshipPlan create_relationship(
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({"a", "b"})),
+      relationship);
+  EXPECT_EQ(create_relationship.Name(), "CreateRelationship");
+  EXPECT_EQ(create_relationship.Relationship().variable, "r");
+  EXPECT_EQ(create_relationship.Details(), "(a)-[r:KNOWS {since: null}]->(b)");
+  EXPECT_EQ(create_relationship.OutputColumns(),
+            std::vector<std::string>({"a", "b", "r"}));
+  EXPECT_TRUE(Contains(create_relationship.SolvedSymbols(), "r"));
+
+  ir::MergePattern merge;
+  merge.create_pattern.nodes.push_back(node);
+  merge.create_pattern.commands.push_back(
+      {.kind = ir::CreateEntityKind::kNode, .index = 0});
+  merge.match_graph.pattern_nodes.insert("n");
+  ir::MergeActionPattern action;
+  action.on_match = false;
+  action.set_patterns.push_back(
+      {.kind = ir::SetMutatingPatternKind::kSetProperty,
+       .entity = nullptr,
+       .property_key = "created",
+       .value = nullptr});
+  merge.actions.push_back(action);
+  ir::MergePlan merge_plan(
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({})),
+      std::make_unique<ir::AllNodeScanPlan>("n"), merge);
+  EXPECT_EQ(merge_plan.Name(), "Merge");
+  EXPECT_EQ(merge_plan.ChildCount(), 2U);
+  EXPECT_EQ(merge_plan.Details(),
+            "n:Person {name: null} ON CREATE SET null.created = null");
+  EXPECT_TRUE(Contains(merge_plan.SolvedSymbols(), "n"));
+}
+
+TEST(LogicalPlanTest, MutatingUpdatePlansPreserveInputs) {
+  ir::SetPropertyPlan set_property(
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({"n"})),
+      nullptr, "name", nullptr);
+  EXPECT_EQ(set_property.Name(), "SetProperty");
+  EXPECT_EQ(set_property.PropertyKey(), "name");
+  EXPECT_EQ(set_property.Details(), "null.name = null");
+  EXPECT_EQ(set_property.OutputColumns(), std::vector<std::string>({"n"}));
+
+  ir::SetPropertiesPlan set_properties(
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({"n"})),
+      nullptr, nullptr, true);
+  EXPECT_EQ(set_properties.Name(), "SetProperties");
+  EXPECT_TRUE(set_properties.IncludeExisting());
+  EXPECT_EQ(set_properties.Details(), "null += null");
+  EXPECT_EQ(set_properties.OutputColumns(), std::vector<std::string>({"n"}));
+
+  ir::SetLabelsPlan set_labels(
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({"n"})),
+      nullptr, {"New"});
+  EXPECT_EQ(set_labels.Name(), "SetLabels");
+  EXPECT_EQ(set_labels.Labels(), std::vector<std::string>({"New"}));
+  EXPECT_EQ(set_labels.Details(), "null:New");
+
+  ir::RemovePropertyPlan remove_property(
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({"n"})),
+      nullptr, "name");
+  EXPECT_EQ(remove_property.Name(), "RemoveProperty");
+  EXPECT_EQ(remove_property.PropertyKey(), "name");
+  EXPECT_EQ(remove_property.Details(), "null.name");
+
+  ir::RemoveLabelsPlan remove_labels(
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({"n"})),
+      nullptr, {"Old"});
+  EXPECT_EQ(remove_labels.Name(), "RemoveLabels");
+  EXPECT_EQ(remove_labels.Labels(), std::vector<std::string>({"Old"}));
+  EXPECT_EQ(remove_labels.Details(), "null:Old");
+
+  ir::DeletePlan del(
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({"n"})),
+      {nullptr});
+  EXPECT_EQ(del.Name(), "Delete");
+  EXPECT_EQ(del.Expressions(), std::vector<const ast::Expression *>({nullptr}));
+  EXPECT_EQ(del.Details(), "null");
+  EXPECT_EQ(del.OutputColumns(), std::vector<std::string>({"n"}));
+
+  ir::DetachDeletePlan detach_delete(
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({"n"})),
+      {nullptr});
+  EXPECT_EQ(detach_delete.Name(), "DetachDelete");
+  EXPECT_EQ(detach_delete.Expressions(),
+            std::vector<const ast::Expression *>({nullptr}));
+  EXPECT_EQ(detach_delete.Details(), "null");
+  EXPECT_EQ(detach_delete.OutputColumns(), std::vector<std::string>({"n"}));
+}
+
 TEST(LogicalPlanTest, InvalidChildAccessThrows) {
   ir::AllNodeScanPlan scan("n");
   EXPECT_THROW((void)scan.Child(0), common::InvalidArgumentError);

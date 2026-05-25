@@ -168,6 +168,64 @@ std::unique_ptr<LogicalPlan> CloneComponentPlan(const LogicalPlan &plan) {
           CloneComponentPlan(assert_is_node.Child(0)),
           assert_is_node.Variables());
     }
+    case LogicalPlanNodeType::kWriteBarrier:
+      return std::make_unique<WriteBarrierPlan>(
+          CloneComponentPlan(plan.Child(0)));
+    case LogicalPlanNodeType::kCreateNode: {
+      const auto &create = static_cast<const CreateNodePlan &>(plan);
+      return std::make_unique<CreateNodePlan>(
+          CloneComponentPlan(create.Child(0)), create.Node());
+    }
+    case LogicalPlanNodeType::kCreateRelationship: {
+      const auto &create = static_cast<const CreateRelationshipPlan &>(plan);
+      return std::make_unique<CreateRelationshipPlan>(
+          CloneComponentPlan(create.Child(0)), create.Relationship());
+    }
+    case LogicalPlanNodeType::kMerge: {
+      const auto &merge = static_cast<const MergePlan &>(plan);
+      return std::make_unique<MergePlan>(CloneComponentPlan(merge.Child(0)),
+                                         CloneComponentPlan(merge.Child(1)),
+                                         merge.Merge());
+    }
+    case LogicalPlanNodeType::kSetProperty: {
+      const auto &set = static_cast<const SetPropertyPlan &>(plan);
+      return std::make_unique<SetPropertyPlan>(CloneComponentPlan(set.Child(0)),
+                                               set.Entity(), set.PropertyKey(),
+                                               set.Value());
+    }
+    case LogicalPlanNodeType::kSetProperties: {
+      const auto &set = static_cast<const SetPropertiesPlan &>(plan);
+      return std::make_unique<SetPropertiesPlan>(
+          CloneComponentPlan(set.Child(0)), set.Entity(), set.Value(),
+          set.IncludeExisting());
+    }
+    case LogicalPlanNodeType::kSetLabels: {
+      const auto &set = static_cast<const SetLabelsPlan &>(plan);
+      return std::make_unique<SetLabelsPlan>(CloneComponentPlan(set.Child(0)),
+                                             set.Entity(), set.Labels());
+    }
+    case LogicalPlanNodeType::kRemoveProperty: {
+      const auto &remove = static_cast<const RemovePropertyPlan &>(plan);
+      return std::make_unique<RemovePropertyPlan>(
+          CloneComponentPlan(remove.Child(0)), remove.Entity(),
+          remove.PropertyKey());
+    }
+    case LogicalPlanNodeType::kRemoveLabels: {
+      const auto &remove = static_cast<const RemoveLabelsPlan &>(plan);
+      return std::make_unique<RemoveLabelsPlan>(
+          CloneComponentPlan(remove.Child(0)), remove.Entity(),
+          remove.Labels());
+    }
+    case LogicalPlanNodeType::kDelete: {
+      const auto &del = static_cast<const DeletePlan &>(plan);
+      return std::make_unique<DeletePlan>(CloneComponentPlan(del.Child(0)),
+                                          del.Expressions());
+    }
+    case LogicalPlanNodeType::kDetachDelete: {
+      const auto &del = static_cast<const DetachDeletePlan &>(plan);
+      return std::make_unique<DetachDeletePlan>(
+          CloneComponentPlan(del.Child(0)), del.Expressions());
+    }
     case LogicalPlanNodeType::kUnwind: {
       const auto &unwind = static_cast<const UnwindPlan &>(plan);
       return std::make_unique<UnwindPlan>(CloneComponentPlan(unwind.Child(0)),

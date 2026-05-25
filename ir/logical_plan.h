@@ -8,6 +8,8 @@
 #include <unordered_set>
 #include <vector>
 
+#include "ir/planner_query.h"
+
 namespace ast {
 class Expression;
 }  // namespace ast
@@ -49,6 +51,17 @@ enum class LogicalPlanNodeType {
   kRollUpApply,
   kOptionalApply,
   kAssertIsNode,
+  kWriteBarrier,
+  kCreateNode,
+  kCreateRelationship,
+  kMerge,
+  kSetProperty,
+  kSetProperties,
+  kSetLabels,
+  kRemoveProperty,
+  kRemoveLabels,
+  kDelete,
+  kDetachDelete,
   kUnwind,
   kUnion,
 };
@@ -660,6 +673,172 @@ class AssertIsNodePlan final : public LogicalPlan {
 
  private:
   std::vector<std::string> variables_;
+};
+
+class WriteBarrierPlan final : public LogicalPlan {
+ public:
+  explicit WriteBarrierPlan(LogicalPlanPtr source);
+};
+
+class CreateNodePlan final : public LogicalPlan {
+ public:
+  CreateNodePlan(LogicalPlanPtr source, CreateNodePattern node);
+
+  [[nodiscard]] const CreateNodePattern &Node() const noexcept { return node_; }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  CreateNodePattern node_;
+};
+
+class CreateRelationshipPlan final : public LogicalPlan {
+ public:
+  CreateRelationshipPlan(LogicalPlanPtr source,
+                         CreateRelationshipPattern relationship);
+
+  [[nodiscard]] const CreateRelationshipPattern &Relationship() const noexcept {
+    return relationship_;
+  }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  CreateRelationshipPattern relationship_;
+};
+
+class MergePlan final : public LogicalPlan {
+ public:
+  MergePlan(LogicalPlanPtr source, LogicalPlanPtr match_plan,
+            MergePattern merge);
+
+  [[nodiscard]] const MergePattern &Merge() const noexcept { return merge_; }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  MergePattern merge_;
+};
+
+class SetPropertyPlan final : public LogicalPlan {
+ public:
+  SetPropertyPlan(LogicalPlanPtr source, const ast::Expression *entity,
+                  std::string property_key, const ast::Expression *value);
+
+  [[nodiscard]] const ast::Expression *Entity() const noexcept {
+    return entity_;
+  }
+  [[nodiscard]] const std::string &PropertyKey() const noexcept {
+    return property_key_;
+  }
+  [[nodiscard]] const ast::Expression *Value() const noexcept { return value_; }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  const ast::Expression *entity_ = nullptr;
+  std::string property_key_;
+  const ast::Expression *value_ = nullptr;
+};
+
+class SetPropertiesPlan final : public LogicalPlan {
+ public:
+  SetPropertiesPlan(LogicalPlanPtr source, const ast::Expression *entity,
+                    const ast::Expression *value, bool include_existing);
+
+  [[nodiscard]] const ast::Expression *Entity() const noexcept {
+    return entity_;
+  }
+  [[nodiscard]] const ast::Expression *Value() const noexcept { return value_; }
+  [[nodiscard]] bool IncludeExisting() const noexcept {
+    return include_existing_;
+  }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  const ast::Expression *entity_ = nullptr;
+  const ast::Expression *value_ = nullptr;
+  bool include_existing_ = false;
+};
+
+class SetLabelsPlan final : public LogicalPlan {
+ public:
+  SetLabelsPlan(LogicalPlanPtr source, const ast::Expression *entity,
+                std::vector<std::string> labels);
+
+  [[nodiscard]] const ast::Expression *Entity() const noexcept {
+    return entity_;
+  }
+  [[nodiscard]] const std::vector<std::string> &Labels() const noexcept {
+    return labels_;
+  }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  const ast::Expression *entity_ = nullptr;
+  std::vector<std::string> labels_;
+};
+
+class RemovePropertyPlan final : public LogicalPlan {
+ public:
+  RemovePropertyPlan(LogicalPlanPtr source, const ast::Expression *entity,
+                     std::string property_key);
+
+  [[nodiscard]] const ast::Expression *Entity() const noexcept {
+    return entity_;
+  }
+  [[nodiscard]] const std::string &PropertyKey() const noexcept {
+    return property_key_;
+  }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  const ast::Expression *entity_ = nullptr;
+  std::string property_key_;
+};
+
+class RemoveLabelsPlan final : public LogicalPlan {
+ public:
+  RemoveLabelsPlan(LogicalPlanPtr source, const ast::Expression *entity,
+                   std::vector<std::string> labels);
+
+  [[nodiscard]] const ast::Expression *Entity() const noexcept {
+    return entity_;
+  }
+  [[nodiscard]] const std::vector<std::string> &Labels() const noexcept {
+    return labels_;
+  }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  const ast::Expression *entity_ = nullptr;
+  std::vector<std::string> labels_;
+};
+
+class DeletePlan final : public LogicalPlan {
+ public:
+  DeletePlan(LogicalPlanPtr source,
+             std::vector<const ast::Expression *> expressions);
+
+  [[nodiscard]] const std::vector<const ast::Expression *> &Expressions()
+      const noexcept {
+    return expressions_;
+  }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  std::vector<const ast::Expression *> expressions_;
+};
+
+class DetachDeletePlan final : public LogicalPlan {
+ public:
+  DetachDeletePlan(LogicalPlanPtr source,
+                   std::vector<const ast::Expression *> expressions);
+
+  [[nodiscard]] const std::vector<const ast::Expression *> &Expressions()
+      const noexcept {
+    return expressions_;
+  }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  std::vector<const ast::Expression *> expressions_;
 };
 
 class UnwindPlan final : public LogicalPlan {
