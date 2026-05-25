@@ -4,55 +4,15 @@
 
 #include <memory>
 #include <string>
-#include <unordered_set>
-#include <vector>
 
 #include "ast/ast_builder.h"
 #include "ast/ast_exception.h"
 #include "common/exception.h"
 #include "ir/logical_plan_printer.h"
-#include "ir/planner/cost_model.h"
 #include "ir/planner_query.h"
+#include "tests/fake_planner_statistics.h"
 
 namespace {
-
-bool Contains(const std::unordered_set<std::string> &values,
-              const std::string &value) {
-  return values.find(value) != values.end();
-}
-
-class LabelAwareStatistics final : public ir::PlannerStatistics {
- public:
-  [[nodiscard]] double EstimateNodeCount(
-      const std::unordered_set<std::string> &labels) const override {
-    if (Contains(labels, "Rare")) {
-      return 5.0;
-    }
-    if (Contains(labels, "Common")) {
-      return 500.0;
-    }
-    return labels.empty() ? 1000.0 : 100.0;
-  }
-
-  [[nodiscard]] double EstimateExpandFanout(
-      const std::vector<std::string> &relationship_types) const override {
-    return relationship_types.empty() ? 10.0 : 3.0;
-  }
-
-  [[nodiscard]] double EstimateExpandIntoSelectivity(
-      const std::vector<std::string> &relationship_types) const override {
-    return relationship_types.empty() ? 0.5 : 0.2;
-  }
-
-  [[nodiscard]] double EstimateFilterSelectivity() const override {
-    return 0.1;
-  }
-
-  [[nodiscard]] double EstimateNodeHashJoinSelectivity(
-      std::size_t key_count) const override {
-    return key_count == 0 ? 1.0 : 1.0 / key_count;
-  }
-};
 
 std::unique_ptr<ast::Statement> ParseOrFail(const std::string &query) {
   try {
@@ -137,7 +97,8 @@ TEST(LogicalPlanBuilderTest, IdpPruningKeepsCheapestLeafCandidate) {
 }
 
 TEST(LogicalPlanBuilderTest, IdpUsesInjectedStatisticsForLeafCost) {
-  LabelAwareStatistics statistics;
+  test_support::FakePlannerStatistics statistics;
+  statistics.node_count_by_label = {{"Rare", 5.0}, {"Common", 500.0}};
   ExpectLogicalPlanText(
       "MATCH (a:Common)-[r]->(b:Rare) RETURN a, b",
       R"(ProduceResults [a, b]

@@ -2,41 +2,7 @@
 
 #include <gtest/gtest.h>
 
-#include <cstddef>
-#include <string>
-#include <unordered_set>
-#include <vector>
-
-namespace {
-
-class FakePlannerStatistics final : public ir::PlannerStatistics {
- public:
-  [[nodiscard]] double EstimateNodeCount(
-      const std::unordered_set<std::string> &labels) const override {
-    return labels.empty() ? 2000.0 : 25.0;
-  }
-
-  [[nodiscard]] double EstimateExpandFanout(
-      const std::vector<std::string> &relationship_types) const override {
-    return relationship_types.empty() ? 7.0 : 2.0;
-  }
-
-  [[nodiscard]] double EstimateExpandIntoSelectivity(
-      const std::vector<std::string> &relationship_types) const override {
-    return relationship_types.empty() ? 0.4 : 0.05;
-  }
-
-  [[nodiscard]] double EstimateFilterSelectivity() const override {
-    return 0.25;
-  }
-
-  [[nodiscard]] double EstimateNodeHashJoinSelectivity(
-      std::size_t key_count) const override {
-    return key_count == 0 ? 1.0 : 0.2;
-  }
-};
-
-}  // namespace
+#include "tests/fake_planner_statistics.h"
 
 TEST(CostModelTest, UsesDefaultHeuristicStatistics) {
   ir::CostModel model;
@@ -82,7 +48,15 @@ TEST(CostModelTest, UsesDefaultHeuristicStatistics) {
 }
 
 TEST(CostModelTest, UsesInjectedPlannerStatistics) {
-  FakePlannerStatistics statistics;
+  test_support::FakePlannerStatistics statistics;
+  statistics.all_node_count = 2000.0;
+  statistics.labeled_node_count = 25.0;
+  statistics.untyped_expand_fanout = 7.0;
+  statistics.typed_expand_fanout = 2.0;
+  statistics.untyped_expand_into_selectivity = 0.4;
+  statistics.typed_expand_into_selectivity = 0.05;
+  statistics.filter_selectivity = 0.25;
+  statistics.node_hash_join_selectivity = 0.2;
   ir::CostModel model(&statistics);
 
   ir::CostEstimate all_node_scan = model.EstimateNodeScan({});
@@ -126,7 +100,8 @@ TEST(CostModelTest, UsesInjectedPlannerStatistics) {
 }
 
 TEST(CostModelTest, AppliesFilterEstimatesRepeatedly) {
-  FakePlannerStatistics statistics;
+  test_support::FakePlannerStatistics statistics;
+  statistics.filter_selectivity = 0.25;
   ir::CostModel model(&statistics);
 
   ir::CostEstimate estimate = ir::ApplyFilterEstimates(
