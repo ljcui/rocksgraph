@@ -29,10 +29,14 @@ inline constexpr auto kLogicalPlanNodeTypeNames = std::array{
     std::string_view{"NodeHashJoin"},
     std::string_view{"Apply"},
     std::string_view{"SemiApply"},
+    std::string_view{"LetSemiApply"},
+    std::string_view{"RollUpApply"},
+    std::string_view{"Unwind"},
+    std::string_view{"Union"},
 };
 
 static_assert(kLogicalPlanNodeTypeNames.size() ==
-              static_cast<std::size_t>(LogicalPlanNodeType::kSemiApply) + 1);
+              static_cast<std::size_t>(LogicalPlanNodeType::kUnion) + 1);
 
 void AddSymbol(std::unordered_set<std::string> *symbols,
                std::string_view symbol) {
@@ -135,6 +139,16 @@ std::vector<std::string> ProjectionItemAliases(
     aliases.push_back(item.alias);
   }
   return aliases;
+}
+
+std::vector<std::string> UnionOutputVariables(
+    const std::vector<LogicalUnionMapping> &mappings) {
+  std::vector<std::string> columns;
+  columns.reserve(mappings.size());
+  for (const auto &mapping : mappings) {
+    columns.push_back(mapping.output_variable);
+  }
+  return columns;
 }
 
 std::string ExpandArrow(ExpandDirection direction, bool left) {
@@ -497,6 +511,82 @@ SemiApplyPlan::SemiApplyPlan(LogicalPlanPtr left, LogicalPlanPtr right)
           BinaryChildren(std::move(left), std::move(right), "SemiApply")) {
   SetSolvedSymbols(UnionSolvedSymbols(Child(0), Child(1)));
   SetOutputColumns(Child(0).OutputColumns());
+}
+
+LetSemiApplyPlan::LetSemiApplyPlan(LogicalPlanPtr left, LogicalPlanPtr right,
+                                   std::string value_variable)
+    : LogicalPlan(
+          LogicalPlanNodeType::kLetSemiApply,
+          BinaryChildren(std::move(left), std::move(right), "LetSemiApply")),
+      value_variable_(std::move(value_variable)) {
+  SetSolvedSymbols(UnionSolvedSymbols(Child(0), Child(1)));
+  AddSolvedSymbol(value_variable_);
+  SetOutputColumns(Child(0).OutputColumns());
+  AddOutputColumn(value_variable_);
+}
+
+std::string LetSemiApplyPlan::Details() const { return value_variable_; }
+
+RollUpApplyPlan::RollUpApplyPlan(LogicalPlanPtr left, LogicalPlanPtr right,
+                                 std::string collection_variable,
+                                 std::string value_variable)
+    : LogicalPlan(
+          LogicalPlanNodeType::kRollUpApply,
+          BinaryChildren(std::move(left), std::move(right), "RollUpApply")),
+      collection_variable_(std::move(collection_variable)),
+      value_variable_(std::move(value_variable)) {
+  SetSolvedSymbols(UnionSolvedSymbols(Child(0), Child(1)));
+  AddSolvedSymbol(collection_variable_);
+  AddSolvedSymbol(value_variable_);
+  SetOutputColumns(Child(0).OutputColumns());
+  AddOutputColumn(collection_variable_);
+}
+
+std::string RollUpApplyPlan::Details() const {
+  if (value_variable_.empty()) {
+    return collection_variable_;
+  }
+  return collection_variable_ + " <- " + value_variable_;
+}
+
+UnwindPlan::UnwindPlan(LogicalPlanPtr source, const ast::Expression *expression,
+                       std::string alias)
+    : LogicalPlan(LogicalPlanNodeType::kUnwind,
+                  UnaryChildren(std::move(source), "Unwind")),
+      expression_(expression),
+      alias_(std::move(alias)) {
+  SetSolvedSymbols(Child(0).SolvedSymbols());
+  SetOutputColumns(Child(0).OutputColumns());
+  AddSolvedSymbol(alias_);
+  AddOutputColumn(alias_);
+}
+
+std::string UnwindPlan::Details() const {
+  std::string expression =
+      expression_ != nullptr ? ast::ExpressionToString(*expression_) : "null";
+  expression.append(" AS ");
+  expression.append(alias_);
+  return expression;
+}
+
+UnionPlan::UnionPlan(LogicalPlanPtr left, LogicalPlanPtr right,
+                     std::vector<LogicalUnionMapping> mappings, bool all)
+    : LogicalPlan(LogicalPlanNodeType::kUnion,
+                  BinaryChildren(std::move(left), std::move(right), "Union")),
+      mappings_(std::move(mappings)),
+      all_(all) {
+  SetOutputColumns(UnionOutputVariables(mappings_));
+  SetSolvedSymbols(SymbolsFromColumns(OutputColumns()));
+}
+
+std::string UnionPlan::Details() const {
+  std::string details = all_ ? "ALL" : "DISTINCT";
+  const std::vector<std::string> columns = UnionOutputVariables(mappings_);
+  if (!columns.empty()) {
+    details.append(" ");
+    details.append(Join(columns, ", "));
+  }
+  return details;
 }
 
 }  // namespace ir

@@ -167,6 +167,61 @@ TEST(LogicalPlanTest, BinaryPlansMergeSolvedSymbolsAndOutputs) {
   EXPECT_TRUE(Contains(semi_apply.SolvedSymbols(), "inner"));
 }
 
+TEST(LogicalPlanTest, NestedApplyPlansExposeComputedOutputs) {
+  ir::LetSemiApplyPlan let_apply(
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({"outer"})),
+      std::make_unique<ir::AllNodeScanPlan>("inner"), "__exists");
+  EXPECT_EQ(let_apply.Name(), "LetSemiApply");
+  EXPECT_EQ(let_apply.ValueVariable(), "__exists");
+  EXPECT_EQ(let_apply.Details(), "__exists");
+  EXPECT_EQ(let_apply.OutputColumns(),
+            std::vector<std::string>({"outer", "__exists"}));
+  EXPECT_TRUE(Contains(let_apply.SolvedSymbols(), "outer"));
+  EXPECT_TRUE(Contains(let_apply.SolvedSymbols(), "inner"));
+  EXPECT_TRUE(Contains(let_apply.SolvedSymbols(), "__exists"));
+
+  ir::RollUpApplyPlan roll_up(
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({"outer"})),
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({"__value"})),
+      "__list", "__value");
+  EXPECT_EQ(roll_up.Name(), "RollUpApply");
+  EXPECT_EQ(roll_up.CollectionVariable(), "__list");
+  EXPECT_EQ(roll_up.ValueVariable(), "__value");
+  EXPECT_EQ(roll_up.Details(), "__list <- __value");
+  EXPECT_EQ(roll_up.OutputColumns(),
+            std::vector<std::string>({"outer", "__list"}));
+  EXPECT_TRUE(Contains(roll_up.SolvedSymbols(), "outer"));
+  EXPECT_TRUE(Contains(roll_up.SolvedSymbols(), "__list"));
+  EXPECT_TRUE(Contains(roll_up.SolvedSymbols(), "__value"));
+}
+
+TEST(LogicalPlanTest, UnwindAndUnionPlansExposeOutputs) {
+  ir::UnwindPlan unwind(
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({"row"})),
+      nullptr, "x");
+  EXPECT_EQ(unwind.Name(), "Unwind");
+  EXPECT_EQ(unwind.Expression(), nullptr);
+  EXPECT_EQ(unwind.Alias(), "x");
+  EXPECT_EQ(unwind.Details(), "null AS x");
+  EXPECT_EQ(unwind.OutputColumns(), std::vector<std::string>({"row", "x"}));
+  EXPECT_TRUE(Contains(unwind.SolvedSymbols(), "row"));
+  EXPECT_TRUE(Contains(unwind.SolvedSymbols(), "x"));
+
+  ir::UnionPlan union_plan(
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({"a"})),
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({"b"})),
+      std::vector<ir::LogicalUnionMapping>{
+          {.output_variable = "x", .lhs_variable = "a", .rhs_variable = "b"}},
+      false);
+  EXPECT_EQ(union_plan.Name(), "Union");
+  EXPECT_FALSE(union_plan.All());
+  ASSERT_EQ(union_plan.Mappings().size(), 1U);
+  EXPECT_EQ(union_plan.Mappings()[0].output_variable, "x");
+  EXPECT_EQ(union_plan.Details(), "DISTINCT x");
+  EXPECT_EQ(union_plan.OutputColumns(), std::vector<std::string>({"x"}));
+  EXPECT_TRUE(Contains(union_plan.SolvedSymbols(), "x"));
+}
+
 TEST(LogicalPlanTest, InvalidChildAccessThrows) {
   ir::AllNodeScanPlan scan("n");
   EXPECT_THROW((void)scan.Child(0), common::InvalidArgumentError);

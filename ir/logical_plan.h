@@ -34,6 +34,10 @@ enum class LogicalPlanNodeType {
   kNodeHashJoin,
   kApply,
   kSemiApply,
+  kLetSemiApply,
+  kRollUpApply,
+  kUnwind,
+  kUnion,
 };
 
 enum class ExpandDirection {
@@ -60,6 +64,12 @@ struct LogicalProjectionItem {
 struct LogicalSortItem {
   const ast::Expression *expression = nullptr;
   LogicalOrderDirection direction = LogicalOrderDirection::kAscending;
+};
+
+struct LogicalUnionMapping {
+  std::string output_variable;
+  std::string lhs_variable;
+  std::string rhs_variable;
 };
 
 class LogicalPlan {
@@ -333,6 +343,71 @@ class ApplyPlan final : public LogicalPlan {
 class SemiApplyPlan final : public LogicalPlan {
  public:
   SemiApplyPlan(LogicalPlanPtr left, LogicalPlanPtr right);
+};
+
+class LetSemiApplyPlan final : public LogicalPlan {
+ public:
+  LetSemiApplyPlan(LogicalPlanPtr left, LogicalPlanPtr right,
+                   std::string value_variable);
+
+  [[nodiscard]] const std::string &ValueVariable() const noexcept {
+    return value_variable_;
+  }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  std::string value_variable_;
+};
+
+class RollUpApplyPlan final : public LogicalPlan {
+ public:
+  RollUpApplyPlan(LogicalPlanPtr left, LogicalPlanPtr right,
+                  std::string collection_variable, std::string value_variable);
+
+  [[nodiscard]] const std::string &CollectionVariable() const noexcept {
+    return collection_variable_;
+  }
+  [[nodiscard]] const std::string &ValueVariable() const noexcept {
+    return value_variable_;
+  }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  std::string collection_variable_;
+  std::string value_variable_;
+};
+
+class UnwindPlan final : public LogicalPlan {
+ public:
+  UnwindPlan(LogicalPlanPtr source, const ast::Expression *expression,
+             std::string alias);
+
+  [[nodiscard]] const ast::Expression *Expression() const noexcept {
+    return expression_;
+  }
+  [[nodiscard]] const std::string &Alias() const noexcept { return alias_; }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  const ast::Expression *expression_ = nullptr;
+  std::string alias_;
+};
+
+class UnionPlan final : public LogicalPlan {
+ public:
+  UnionPlan(LogicalPlanPtr left, LogicalPlanPtr right,
+            std::vector<LogicalUnionMapping> mappings, bool all);
+
+  [[nodiscard]] const std::vector<LogicalUnionMapping> &Mappings()
+      const noexcept {
+    return mappings_;
+  }
+  [[nodiscard]] bool All() const noexcept { return all_; }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  std::vector<LogicalUnionMapping> mappings_;
+  bool all_ = false;
 };
 
 }  // namespace ir

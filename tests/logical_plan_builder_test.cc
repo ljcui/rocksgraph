@@ -458,3 +458,97 @@ TEST(LogicalPlanBuilderTest, BuildsTailFilterAfterApplyPlan) {
         AllNodeScan [m]
 )");
 }
+
+TEST(LogicalPlanBuilderTest, BuildsProjectionSelectionForWithWhere) {
+  ExpectLogicalPlanText("MATCH (n) WITH n AS x WHERE x.age > 30 RETURN x",
+                        R"(ProduceResults [x]
+  Projection [x]
+    Filter [x.age > 30]
+      Projection [x]
+        AllNodeScan [n]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsUnwindPlan) {
+  ExpectLogicalPlanText("UNWIND [1, 2] AS x RETURN x",
+                        R"(ProduceResults [x]
+  Projection [x]
+    Unwind [[1, 2] AS x]
+      Argument
+)");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsUnionAllPlan) {
+  ExpectLogicalPlanText("RETURN 1 AS a UNION ALL RETURN 2 AS a",
+                        R"(ProduceResults [a]
+  Union [ALL a]
+    Projection [a]
+      Argument
+    Projection [a]
+      Argument
+)");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsUnionDistinctPlan) {
+  ExpectLogicalPlanText("MATCH (n) RETURN n AS x UNION MATCH (m) RETURN m AS x",
+                        R"(ProduceResults [x]
+  Union [DISTINCT x]
+    Projection [x]
+      AllNodeScan [n]
+    Projection [x]
+      AllNodeScan [m]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsExistsSubquerySemiApplyPlan) {
+  ExpectLogicalPlanText(
+      "MATCH (n) WHERE EXISTS { MATCH (n)-[r]->(m) RETURN 1 AS ok } RETURN n",
+      R"(ProduceResults [n]
+  Projection [n]
+    SemiApply
+      AllNodeScan [n]
+      Projection [ok]
+        Expand [(n)-[r]->(m)]
+          Argument [n]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsWithWhereExistsSubquerySemiApplyPlan) {
+  ExpectLogicalPlanText(
+      "MATCH (n) WITH n AS x "
+      "WHERE EXISTS { MATCH (x)-[r]->(m) RETURN 1 AS ok } RETURN x",
+      R"(ProduceResults [x]
+  Projection [x]
+    SemiApply
+      Projection [x]
+        AllNodeScan [n]
+      Projection [ok]
+        Expand [(x)-[r]->(m)]
+          Argument [x]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsProjectionExistsLetSemiApplyPlan) {
+  ExpectLogicalPlanText(
+      "MATCH (n) RETURN EXISTS { MATCH (n)-[r]->(m) RETURN 1 AS ok } AS has",
+      R"(ProduceResults [has]
+  Projection [has]
+    LetSemiApply [__exists_0]
+      AllNodeScan [n]
+      Projection [ok]
+        Expand [(n)-[r]->(m)]
+          Argument [n]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsPatternComprehensionRollUpApplyPlan) {
+  ExpectLogicalPlanText("MATCH (n) RETURN [(n)-[r]->(m) | m.name] AS names",
+                        R"(ProduceResults [names]
+  Projection [names]
+    RollUpApply [__list_1 <- __list_value_0]
+      AllNodeScan [n]
+      Projection [__list_value_0]
+        Expand [(n)-[r]->(m)]
+          Argument [n]
+)");
+}

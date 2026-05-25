@@ -39,11 +39,79 @@ std::unique_ptr<LogicalPlan> CloneComponentPlan(const LogicalPlan &plan) {
       return std::make_unique<FilterPlan>(CloneComponentPlan(filter.Child(0)),
                                           filter.Predicate());
     }
+    case LogicalPlanNodeType::kProjection: {
+      const auto &projection = static_cast<const ProjectionPlan &>(plan);
+      return std::make_unique<ProjectionPlan>(
+          CloneComponentPlan(projection.Child(0)), projection.Items());
+    }
+    case LogicalPlanNodeType::kDistinct: {
+      const auto &distinct = static_cast<const DistinctPlan &>(plan);
+      return std::make_unique<DistinctPlan>(
+          CloneComponentPlan(distinct.Child(0)), distinct.GroupingItems());
+    }
+    case LogicalPlanNodeType::kAggregation: {
+      const auto &aggregation = static_cast<const AggregationPlan &>(plan);
+      return std::make_unique<AggregationPlan>(
+          CloneComponentPlan(aggregation.Child(0)), aggregation.GroupingItems(),
+          aggregation.AggregationItems());
+    }
+    case LogicalPlanNodeType::kSort: {
+      const auto &sort = static_cast<const SortPlan &>(plan);
+      return std::make_unique<SortPlan>(CloneComponentPlan(sort.Child(0)),
+                                        sort.Items());
+    }
+    case LogicalPlanNodeType::kSkip: {
+      const auto &skip = static_cast<const SkipPlan &>(plan);
+      return std::make_unique<SkipPlan>(CloneComponentPlan(skip.Child(0)),
+                                        skip.Skip());
+    }
+    case LogicalPlanNodeType::kLimit: {
+      const auto &limit = static_cast<const LimitPlan &>(plan);
+      return std::make_unique<LimitPlan>(CloneComponentPlan(limit.Child(0)),
+                                         limit.Limit());
+    }
+    case LogicalPlanNodeType::kProduceResults:
+      return std::make_unique<ProduceResultsPlan>(
+          CloneComponentPlan(plan.Child(0)), plan.OutputColumns());
+    case LogicalPlanNodeType::kCartesianProduct:
+      return std::make_unique<CartesianProductPlan>(
+          CloneComponentPlan(plan.Child(0)), CloneComponentPlan(plan.Child(1)));
     case LogicalPlanNodeType::kNodeHashJoin: {
       const auto &join = static_cast<const NodeHashJoinPlan &>(plan);
       return std::make_unique<NodeHashJoinPlan>(
           CloneComponentPlan(join.Child(0)), CloneComponentPlan(join.Child(1)),
           join.JoinKeys());
+    }
+    case LogicalPlanNodeType::kApply:
+      return std::make_unique<ApplyPlan>(CloneComponentPlan(plan.Child(0)),
+                                         CloneComponentPlan(plan.Child(1)));
+    case LogicalPlanNodeType::kSemiApply:
+      return std::make_unique<SemiApplyPlan>(CloneComponentPlan(plan.Child(0)),
+                                             CloneComponentPlan(plan.Child(1)));
+    case LogicalPlanNodeType::kLetSemiApply: {
+      const auto &apply = static_cast<const LetSemiApplyPlan &>(plan);
+      return std::make_unique<LetSemiApplyPlan>(
+          CloneComponentPlan(apply.Child(0)),
+          CloneComponentPlan(apply.Child(1)), apply.ValueVariable());
+    }
+    case LogicalPlanNodeType::kRollUpApply: {
+      const auto &apply = static_cast<const RollUpApplyPlan &>(plan);
+      return std::make_unique<RollUpApplyPlan>(
+          CloneComponentPlan(apply.Child(0)),
+          CloneComponentPlan(apply.Child(1)), apply.CollectionVariable(),
+          apply.ValueVariable());
+    }
+    case LogicalPlanNodeType::kUnwind: {
+      const auto &unwind = static_cast<const UnwindPlan &>(plan);
+      return std::make_unique<UnwindPlan>(CloneComponentPlan(unwind.Child(0)),
+                                          unwind.Expression(), unwind.Alias());
+    }
+    case LogicalPlanNodeType::kUnion: {
+      const auto &union_plan = static_cast<const UnionPlan &>(plan);
+      return std::make_unique<UnionPlan>(
+          CloneComponentPlan(union_plan.Child(0)),
+          CloneComponentPlan(union_plan.Child(1)), union_plan.Mappings(),
+          union_plan.All());
     }
     default:
       THROW(common::InternalError,

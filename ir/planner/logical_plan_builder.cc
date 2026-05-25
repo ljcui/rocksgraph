@@ -80,22 +80,32 @@ std::vector<LogicalSortItem> SortItems(const RequiredOrder &required_order) {
   return items;
 }
 
-bool IsUnsupportedPredicateKind(const Predicate &predicate) {
-  return predicate.kind == PredicateKind::kExistsSubquery ||
-         predicate.subquery != nullptr || !predicate.nested_expressions.empty();
+std::vector<LogicalUnionMapping> LogicalUnionMappings(
+    const std::vector<UnionPlannerQuery::UnionMapping> &mappings) {
+  std::vector<LogicalUnionMapping> logical_mappings;
+  logical_mappings.reserve(mappings.size());
+  for (const auto &mapping : mappings) {
+    CHECK(!mapping.output_variable.empty(), common::InvalidArgumentError,
+          "UNION output variable is empty");
+    logical_mappings.push_back({.output_variable = mapping.output_variable,
+                                .lhs_variable = mapping.lhs_variable,
+                                .rhs_variable = mapping.rhs_variable});
+  }
+  return logical_mappings;
 }
 
 class LogicalPlanBuilder {
  public:
   explicit LogicalPlanBuilder(const LogicalPlanBuilderOptions &options)
-      : component_planner_(MakeComponentPlanner(options)) {}
+      : options_(options), component_planner_(MakeComponentPlanner(options)) {}
 
   std::unique_ptr<LogicalPlan> Build(const PlannerQuery &planner_query) {
     switch (planner_query.Kind()) {
       case PlannerQueryKind::kSingle:
         return Build(planner_query.RequireSingle());
       case PlannerQueryKind::kUnion:
-        THROW(common::InvalidArgumentError, Unsupported("UNION logical plan"));
+        return BuildUnion(planner_query.RequireUnion(),
+                          /*produce_results=*/true);
     }
     THROW(common::InternalError, "unknown planner query kind");
   }
@@ -112,6 +122,39 @@ class LogicalPlanBuilder {
   }
 
  private:
+  std::unique_ptr<LogicalPlan> BuildUnionInput(
+      const PlannerQuery &planner_query) {
+    switch (planner_query.Kind()) {
+      case PlannerQueryKind::kSingle:
+        return Build(planner_query.RequireSingle());
+      case PlannerQueryKind::kUnion:
+        return BuildUnion(planner_query.RequireUnion(),
+                          /*produce_results=*/false);
+    }
+    THROW(common::InternalError, "unknown planner query kind");
+  }
+
+  std::unique_ptr<LogicalPlan> BuildUnion(const UnionPlannerQuery &union_query,
+                                          bool produce_results) {
+    CHECK(union_query.lhs != nullptr, common::InvalidArgumentError,
+          "UNION lhs planner query is null");
+    std::vector<LogicalUnionMapping> mappings =
+        LogicalUnionMappings(union_query.mappings);
+    std::vector<std::string> output_columns;
+    output_columns.reserve(mappings.size());
+    for (const auto &mapping : mappings) {
+      output_columns.push_back(mapping.output_variable);
+    }
+    std::unique_ptr<LogicalPlan> plan = std::make_unique<UnionPlan>(
+        BuildUnionInput(*union_query.lhs), Build(union_query.rhs),
+        std::move(mappings), union_query.all);
+    if (produce_results) {
+      plan = std::make_unique<ProduceResultsPlan>(std::move(plan),
+                                                  std::move(output_columns));
+    }
+    return plan;
+  }
+
   std::unique_ptr<LogicalPlan> BuildTailSegment(
       std::unique_ptr<LogicalPlan> input, const SinglePlannerQuery &segment) {
     CHECK(input != nullptr, common::InternalError, "tail input plan is null");
@@ -122,7 +165,7 @@ class LogicalPlanBuilder {
       std::unique_ptr<LogicalPlan> rhs =
           BuildQueryGraph(segment.query_graph, false);
       plan = std::make_unique<ApplyPlan>(std::move(plan), std::move(rhs));
-      QueryGraphPlanningContext context(&planned_predicates_);
+      QueryGraphPlanningContext context(&planned_predicates_, &options_);
       context.ApplyAvailableFilters(segment.query_graph.selections, &plan);
       context.ValidateAllPredicatesPlanned(segment.query_graph.selections);
     } else {
@@ -136,7 +179,7 @@ class LogicalPlanBuilder {
       const QueryGraph &query_graph, bool validate_all_predicates = true) {
     planned_predicates_.clear();
     ValidateSupportedQueryGraph(query_graph);
-    QueryGraphPlanningContext context(&planned_predicates_);
+    QueryGraphPlanningContext context(&planned_predicates_, &options_);
 
     std::vector<QueryGraphComponent> components =
         query_graph.ConnectedComponents();
@@ -197,9 +240,10 @@ class LogicalPlanBuilder {
             Unsupported("variable-length expand logical plan"));
     }
     for (const auto &predicate : query_graph.selections.predicates) {
-      CHECK(!IsUnsupportedPredicateKind(predicate),
-            common::InvalidArgumentError,
-            Unsupported("nested predicate logical plan"));
+      if (predicate.kind == PredicateKind::kExistsSubquery) {
+        CHECK(predicate.subquery != nullptr, common::InvalidArgumentError,
+              "EXISTS predicate subquery is null");
+      }
     }
   }
 
@@ -217,7 +261,7 @@ class LogicalPlanBuilder {
         return ApplyAggregatingProjection(
             std::move(plan), horizon.RequireAggregatingProjection());
       case QueryHorizonKind::kUnwind:
-        THROW(common::InvalidArgumentError, Unsupported("UNWIND logical plan"));
+        return ApplyUnwind(std::move(plan), horizon.RequireUnwind());
       case QueryHorizonKind::kProcedureCall:
         THROW(common::InvalidArgumentError,
               Unsupported("procedure call logical plan"));
@@ -230,6 +274,8 @@ class LogicalPlanBuilder {
   std::unique_ptr<LogicalPlan> ApplyRegularProjection(
       std::unique_ptr<LogicalPlan> plan,
       const RegularQueryProjection &projection) {
+    plan =
+        ApplyNestedExpressions(std::move(plan), projection.nested_expressions);
     std::vector<std::string> aliases = ProjectionAliases(projection.items);
     plan = std::make_unique<ProjectionPlan>(
         std::move(plan), LogicalProjectionItems(projection.items));
@@ -239,6 +285,8 @@ class LogicalPlanBuilder {
   std::unique_ptr<LogicalPlan> ApplyDistinctProjection(
       std::unique_ptr<LogicalPlan> plan,
       const DistinctQueryProjection &projection) {
+    plan =
+        ApplyNestedExpressions(std::move(plan), projection.nested_expressions);
     std::vector<std::string> aliases =
         ProjectionAliases(projection.grouping_items);
     plan = std::make_unique<DistinctPlan>(
@@ -249,6 +297,8 @@ class LogicalPlanBuilder {
   std::unique_ptr<LogicalPlan> ApplyAggregatingProjection(
       std::unique_ptr<LogicalPlan> plan,
       const AggregatingQueryProjection &projection) {
+    plan =
+        ApplyNestedExpressions(std::move(plan), projection.nested_expressions);
     std::vector<std::string> aliases = ProjectionAliases(
         projection.grouping_items, projection.aggregation_items);
     plan = std::make_unique<AggregationPlan>(
@@ -257,13 +307,40 @@ class LogicalPlanBuilder {
     return ApplyProjectionTail(std::move(plan), projection, std::move(aliases));
   }
 
+  std::unique_ptr<LogicalPlan> ApplyUnwind(std::unique_ptr<LogicalPlan> plan,
+                                           const UnwindHorizon &unwind) {
+    CHECK(unwind.expression != nullptr, common::InvalidArgumentError,
+          "UNWIND expression is null");
+    CHECK(!unwind.alias.empty(), common::InvalidArgumentError,
+          "UNWIND alias is empty");
+    return std::make_unique<UnwindPlan>(std::move(plan), unwind.expression,
+                                        unwind.alias);
+  }
+
+  std::unique_ptr<LogicalPlan> ApplyNestedExpressions(
+      std::unique_ptr<LogicalPlan> plan,
+      const std::vector<NestedIRExpression> &nested_expressions) {
+    CHECK(plan != nullptr, common::InternalError, "logical plan is null");
+    std::unordered_set<const Predicate *> planned_predicates;
+    QueryGraphPlanningContext context(&planned_predicates, &options_);
+    context.ApplyNestedExpressions(nested_expressions, &plan);
+    return plan;
+  }
+
+  std::unique_ptr<LogicalPlan> ApplyProjectionSelections(
+      std::unique_ptr<LogicalPlan> plan, const Selections &selections) {
+    CHECK(plan != nullptr, common::InternalError, "logical plan is null");
+    std::unordered_set<const Predicate *> planned_predicates;
+    QueryGraphPlanningContext context(&planned_predicates, &options_);
+    context.ApplyAvailableFilters(selections, &plan);
+    context.ValidateAllPredicatesPlanned(selections);
+    return plan;
+  }
+
   std::unique_ptr<LogicalPlan> ApplyProjectionTail(
       std::unique_ptr<LogicalPlan> plan, const QueryProjection &projection,
       std::vector<std::string> aliases) {
-    CHECK(projection.selections.empty(), common::InvalidArgumentError,
-          Unsupported("projection selection logical plan"));
-    CHECK(projection.nested_expressions.empty(), common::InvalidArgumentError,
-          Unsupported("nested projection expression logical plan"));
+    plan = ApplyProjectionSelections(std::move(plan), projection.selections);
 
     if (!projection.required_order.empty()) {
       plan = std::make_unique<SortPlan>(std::move(plan),
@@ -284,6 +361,7 @@ class LogicalPlanBuilder {
     return plan;
   }
 
+  LogicalPlanBuilderOptions options_;
   std::unique_ptr<ComponentPlanner> component_planner_;
   std::unordered_set<const Predicate *> planned_predicates_;
 };

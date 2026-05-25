@@ -405,10 +405,13 @@ class IdpComponentPlanner final : public ComponentPlanner {
 }  // namespace
 
 QueryGraphPlanningContext::QueryGraphPlanningContext(
-    std::unordered_set<const Predicate *> *planned_predicates)
-    : planned_predicates_(planned_predicates) {
+    std::unordered_set<const Predicate *> *planned_predicates,
+    const LogicalPlanBuilderOptions *options)
+    : planned_predicates_(planned_predicates), options_(options) {
   CHECK(planned_predicates_ != nullptr, common::InternalError,
         "planned predicate set is null");
+  CHECK(options_ != nullptr, common::InternalError,
+        "logical plan builder options are null");
 }
 
 std::unique_ptr<LogicalPlan> QueryGraphPlanningContext::BuildNodeLeaf(
@@ -447,14 +450,51 @@ std::size_t QueryGraphPlanningContext::ApplyAvailableFilters(
       }
       CHECK(predicate.expression != nullptr, common::InvalidArgumentError,
             "selection predicate expression is null");
-      *plan =
-          std::make_unique<FilterPlan>(std::move(*plan), predicate.expression);
+      if (predicate.kind == PredicateKind::kExistsSubquery) {
+        CHECK(predicate.subquery != nullptr, common::InvalidArgumentError,
+              "EXISTS predicate subquery is null");
+        *plan = std::make_unique<SemiApplyPlan>(
+            std::move(*plan), BuildNestedPlan(*predicate.subquery));
+      } else {
+        ApplyNestedExpressions(predicate.nested_expressions, plan);
+        *plan = std::make_unique<FilterPlan>(std::move(*plan),
+                                             predicate.expression);
+      }
       planned_predicates_->insert(&predicate);
       ++applied_count;
       changed = true;
     }
   }
   return applied_count;
+}
+
+void QueryGraphPlanningContext::ApplyNestedExpressions(
+    const std::vector<NestedIRExpression> &nested_expressions,
+    std::unique_ptr<LogicalPlan> *plan) const {
+  CHECK(plan != nullptr && *plan != nullptr, common::InternalError,
+        "logical plan is null");
+  for (const auto &nested : nested_expressions) {
+    CHECK(nested.query != nullptr, common::InvalidArgumentError,
+          "nested IR expression query is null");
+    switch (nested.kind) {
+      case NestedIRExpressionKind::kExists:
+        CHECK(!nested.value_variable.empty(), common::InvalidArgumentError,
+              "EXISTS nested value variable is empty");
+        *plan = std::make_unique<LetSemiApplyPlan>(
+            std::move(*plan), BuildNestedPlan(*nested.query),
+            nested.value_variable);
+        break;
+      case NestedIRExpressionKind::kList:
+        CHECK(!nested.collection_variable.empty(), common::InvalidArgumentError,
+              "list nested collection variable is empty");
+        CHECK(!nested.value_variable.empty(), common::InvalidArgumentError,
+              "list nested value variable is empty");
+        *plan = std::make_unique<RollUpApplyPlan>(
+            std::move(*plan), BuildNestedPlan(*nested.query),
+            nested.collection_variable, nested.value_variable);
+        break;
+    }
+  }
 }
 
 void QueryGraphPlanningContext::ValidateAllPredicatesPlanned(
@@ -485,6 +525,13 @@ const Predicate *QueryGraphPlanningContext::FirstConsumableNodeLabelPredicate(
     }
   }
   return nullptr;
+}
+
+std::unique_ptr<LogicalPlan> QueryGraphPlanningContext::BuildNestedPlan(
+    const PlannerQuery &query) const {
+  CHECK(options_ != nullptr, common::InternalError,
+        "logical plan builder options are null");
+  return CreateLogicalPlan(query, *options_);
 }
 
 std::unique_ptr<ComponentPlanner> MakeComponentPlanner(
