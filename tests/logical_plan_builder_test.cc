@@ -62,6 +62,30 @@ TEST(LogicalPlanBuilderTest, UsesNodeLabelPredicateAsLeafScan) {
 )");
 }
 
+TEST(LogicalPlanBuilderTest, UsesMultiLabelPredicateAsLeafScan) {
+  ExpectLogicalPlanText("MATCH (n:Person:Employee) RETURN n",
+                        R"(ProduceResults [n]
+  Projection [n]
+    NodeByLabelScan [n:Employee:Person]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, UsesNodePropertyIndexSeek) {
+  ExpectLogicalPlanText("MATCH (n:Person) WHERE n.name = 'Ada' RETURN n",
+                        R"(ProduceResults [n]
+  Projection [n]
+    NodeIndexSeek [n:Person WHERE n.name = 'Ada']
+)");
+}
+
+TEST(LogicalPlanBuilderTest, UsesNodePropertyIndexRangeSeek) {
+  ExpectLogicalPlanText("MATCH (n) WHERE n.age >= 10 AND n.age < 20 RETURN n",
+                        R"(ProduceResults [n]
+  Projection [n]
+    NodeIndexRangeSeek [n WHERE n.age >= 10 AND n.age < 20]
+)");
+}
+
 TEST(LogicalPlanBuilderTest, BuildsExpandFromSingleRelationshipPattern) {
   ExpectLogicalPlanText("MATCH (a)-[r:KNOWS]->(b) RETURN a, r, b",
                         R"(ProduceResults [a, r, b]
@@ -112,11 +136,48 @@ TEST(LogicalPlanBuilderTest, IdpUsesRelationshipTypeFanoutStatistics) {
       "MATCH (a)-[r1:COMMON_REL]->(b)-[r2:RARE_REL]->(c) RETURN a, b, c",
       R"(ProduceResults [a, b, c]
   Projection [a, b, c]
-    Expand [(b)<-[r1:COMMON_REL]-(a)]
-      Expand [(b)-[r2:RARE_REL]->(c)]
-        AllNodeScan [b]
+    Expand [(b)-[r2:RARE_REL]->(c)]
+      RelationshipTypeScan [(a)-[r1:COMMON_REL]->(b)]
 )",
       ir::LogicalPlanBuilderOptions{.planner_statistics = &statistics});
+}
+
+TEST(LogicalPlanBuilderTest, UsesRelationshipTypeScanWhenCheaper) {
+  test_support::FakePlannerStatistics statistics;
+  statistics.relationship_count_by_type = {{"RARE_REL", 5.0}};
+  ExpectLogicalPlanText(
+      "MATCH (a)-[r:RARE_REL]->(b) RETURN r",
+      R"(ProduceResults [r]
+  Projection [r]
+    RelationshipTypeScan [(a)-[r:RARE_REL]->(b)]
+)",
+      ir::LogicalPlanBuilderOptions{.planner_statistics = &statistics});
+}
+
+TEST(LogicalPlanBuilderTest, UsesRelationshipPropertyIndexSeek) {
+  ExpectLogicalPlanText("MATCH (a)-[r]->(b) WHERE r.since = 2020 RETURN r",
+                        R"(ProduceResults [r]
+  Projection [r]
+    RelationshipIndexSeek [(a)-[r]->(b) WHERE r.since = 2020]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, UsesRelationshipPropertyIndexRangeSeek) {
+  ExpectLogicalPlanText(
+      "MATCH (a)-[r]->(b) WHERE r.since >= 2000 AND r.since < 2020 RETURN r",
+      R"(ProduceResults [r]
+  Projection [r]
+    RelationshipIndexRangeSeek [(a)-[r]->(b) WHERE r.since >= 2000 AND r.since < 2020]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, PushesRelationshipTypePredicateIntoAccessPath) {
+  ExpectLogicalPlanText(
+      "MATCH (a)-[r]->(b) WHERE r:KNOWS AND r.since = 2020 RETURN r",
+      R"(ProduceResults [r]
+  Projection [r]
+    RelationshipIndexSeek [(a)-[r:KNOWS]->(b) WHERE r.since = 2020]
+)");
 }
 
 TEST(LogicalPlanBuilderTest,
@@ -261,9 +322,9 @@ TEST(LogicalPlanBuilderTest, PushesAvailableWherePredicatesIntoFilters) {
       "MATCH (a:Person)-[r:KNOWS]->(b) WHERE b.name = 'Ada' RETURN a, b",
       R"(ProduceResults [a, b]
   Projection [a, b]
-    Filter [b.name = 'Ada']
-      Expand [(a)-[r:KNOWS]->(b)]
-        NodeByLabelScan [a:Person]
+    Filter [a:Person]
+      Expand [(b)<-[r:KNOWS]-(a)]
+        NodeIndexSeek [b WHERE b.name = 'Ada']
 )");
 }
 
@@ -271,6 +332,26 @@ TEST(LogicalPlanBuilderTest, BuildsCartesianProductForDisconnectedComponents) {
   ExpectLogicalPlanText("MATCH (a), (b) RETURN a, b", R"(ProduceResults [a, b]
   Projection [a, b]
     CartesianProduct
+      AllNodeScan [a]
+      AllNodeScan [b]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, UsesValueHashJoinForDisconnectedEquality) {
+  ExpectLogicalPlanText("MATCH (a), (b) WHERE a.id = b.id RETURN a, b",
+                        R"(ProduceResults [a, b]
+  Projection [a, b]
+    ValueHashJoin [a.id = b.id]
+      AllNodeScan [a]
+      AllNodeScan [b]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, UsesPredicateJoinForDisconnectedPredicate) {
+  ExpectLogicalPlanText("MATCH (a), (b) WHERE a.age > b.age RETURN a, b",
+                        R"(ProduceResults [a, b]
+  Projection [a, b]
+    PredicateJoin [a.age > b.age]
       AllNodeScan [a]
       AllNodeScan [b]
 )");
@@ -506,6 +587,20 @@ TEST(LogicalPlanBuilderTest, BuildsExistsSubquerySemiApplyPlan) {
       R"(ProduceResults [n]
   Projection [n]
     SemiApply
+      AllNodeScan [n]
+      Projection [ok]
+        Expand [(n)-[r]->(m)]
+          Argument [n]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsNotExistsSubqueryAntiSemiApplyPlan) {
+  ExpectLogicalPlanText(
+      "MATCH (n) WHERE NOT EXISTS { MATCH (n)-[r]->(m) RETURN 1 AS ok } "
+      "RETURN n",
+      R"(ProduceResults [n]
+  Projection [n]
+    AntiSemiApply
       AllNodeScan [n]
       Projection [ok]
         Expand [(n)-[r]->(m)]

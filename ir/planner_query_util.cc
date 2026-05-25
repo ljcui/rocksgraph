@@ -411,6 +411,8 @@ std::string_view PredicateKindKey(PredicateKind kind) {
       return "property_comparison";
     case PredicateKind::kExistsSubquery:
       return "exists_subquery";
+    case PredicateKind::kNotExistsSubquery:
+      return "not_exists_subquery";
   }
   THROW(common::InternalError, "unknown predicate kind");
 }
@@ -479,6 +481,7 @@ std::string PredicateKey(const Predicate &predicate) {
       break;
     case PredicateKind::kGenericExpression:
     case PredicateKind::kExistsSubquery:
+    case PredicateKind::kNotExistsSubquery:
       AppendKeyPart(&key, ExpressionKey(*predicate.expression));
       break;
   }
@@ -649,6 +652,17 @@ void ClassifyPredicate(Predicate *predicate,
   if (AsExistentialSubquery(expression) != nullptr ||
       AsPatternPredicateExpression(expression) != nullptr) {
     predicate->kind = PredicateKind::kExistsSubquery;
+    return;
+  }
+
+  if (expression->Is(ast::ASTNodeType::kNotExpression)) {
+    const auto *not_expression = ast::CastAst<ast::NotExpression>(expression);
+    const ast::Expression *operand =
+        UnwrapParenthesized(not_expression->operand.get());
+    if (AsExistentialSubquery(operand) != nullptr ||
+        AsPatternPredicateExpression(operand) != nullptr) {
+      predicate->kind = PredicateKind::kNotExistsSubquery;
+    }
   }
 }
 

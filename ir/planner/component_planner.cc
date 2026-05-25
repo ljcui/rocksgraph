@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -9,6 +10,8 @@
 #include <utility>
 #include <vector>
 
+#include "ast/ast_node.h"
+#include "ast/expression_dependency.h"
 #include "common/exception.h"
 #include "ir/planner/cost_model.h"
 #include "ir/planner/idp.h"
@@ -37,6 +40,75 @@ std::vector<std::string> SortedComponentArgumentNodes(
   }
   std::sort(out.begin(), out.end());
   return out;
+}
+
+std::vector<std::string> SortedUniqueStrings(std::vector<std::string> values) {
+  std::sort(values.begin(), values.end());
+  values.erase(std::unique(values.begin(), values.end()), values.end());
+  return values;
+}
+
+std::unordered_set<std::string> SingleSymbolSet(std::string_view symbol) {
+  std::unordered_set<std::string> out;
+  if (!symbol.empty()) {
+    out.emplace(symbol);
+  }
+  return out;
+}
+
+bool PredicateDependsOnlyOn(const Predicate &predicate,
+                            std::string_view variable) {
+  return DependenciesMet(predicate.dependencies, SingleSymbolSet(variable));
+}
+
+const ast::ComparisonExpression *AsComparisonExpression(
+    const ast::Expression *expression) {
+  const ast::Expression *unwrapped = UnwrapParenthesized(expression);
+  if (unwrapped == nullptr ||
+      !unwrapped->Is(ast::ASTNodeType::kComparisonExpression)) {
+    return nullptr;
+  }
+  return ast::CastAst<ast::ComparisonExpression>(unwrapped);
+}
+
+const ast::Expression *ComparisonRightExpression(const Predicate &predicate) {
+  const ast::ComparisonExpression *comparison =
+      AsComparisonExpression(predicate.expression);
+  CHECK(comparison != nullptr && comparison->right != nullptr,
+        common::InvalidArgumentError,
+        "index seek predicate is not a comparison");
+  return comparison->right.get();
+}
+
+std::vector<const ast::Expression *> PredicateExpressions(
+    const std::vector<const Predicate *> &predicates) {
+  std::vector<const ast::Expression *> expressions;
+  expressions.reserve(predicates.size());
+  for (const Predicate *predicate : predicates) {
+    CHECK(predicate != nullptr && predicate->expression != nullptr,
+          common::InvalidArgumentError, "predicate expression is null");
+    expressions.push_back(predicate->expression);
+  }
+  return expressions;
+}
+
+std::vector<std::string> LabelsFromPredicates(
+    const std::vector<const Predicate *> &predicates) {
+  std::vector<std::string> labels;
+  for (const Predicate *predicate : predicates) {
+    CHECK(predicate != nullptr, common::InternalError, "predicate is null");
+    labels.insert(labels.end(), predicate->labels.begin(),
+                  predicate->labels.end());
+  }
+  return SortedUniqueStrings(std::move(labels));
+}
+
+std::vector<std::string> IntersectSortedStrings(
+    const std::vector<std::string> &lhs, const std::vector<std::string> &rhs) {
+  std::vector<std::string> result;
+  std::set_intersection(lhs.begin(), lhs.end(), rhs.begin(), rhs.end(),
+                        std::back_inserter(result));
+  return result;
 }
 
 ExpandDirection ToExpandDirection(Direction direction) {
@@ -107,6 +179,53 @@ std::vector<std::string> SharedNodeSymbols(const QueryGraph &query_graph,
   return keys;
 }
 
+CostEstimate EstimateLeafPlan(const LogicalPlan &plan,
+                              const CostModel &cost_model) {
+  switch (plan.Type()) {
+    case LogicalPlanNodeType::kArgument:
+      return cost_model.EstimateArgument(plan.OutputColumns().size());
+    case LogicalPlanNodeType::kAllNodeScan:
+      return cost_model.EstimateNodeScan({});
+    case LogicalPlanNodeType::kNodeByLabelScan: {
+      const auto &scan = static_cast<const NodeByLabelScanPlan &>(plan);
+      return cost_model.EstimateNodeScan(std::unordered_set<std::string>(
+          scan.Labels().begin(), scan.Labels().end()));
+    }
+    case LogicalPlanNodeType::kNodeIndexSeek: {
+      const auto &seek = static_cast<const NodeIndexSeekPlan &>(plan);
+      return cost_model.EstimateNodeIndexSeek(
+          std::unordered_set<std::string>(seek.Labels().begin(),
+                                          seek.Labels().end()),
+          seek.PropertyKey());
+    }
+    case LogicalPlanNodeType::kNodeIndexRangeSeek: {
+      const auto &seek = static_cast<const NodeIndexRangeSeekPlan &>(plan);
+      return cost_model.EstimateNodeIndexRangeSeek(
+          std::unordered_set<std::string>(seek.Labels().begin(),
+                                          seek.Labels().end()),
+          seek.PropertyKey(), seek.Predicates().size());
+    }
+    case LogicalPlanNodeType::kRelationshipTypeScan: {
+      const auto &scan = static_cast<const RelationshipTypeScanPlan &>(plan);
+      return cost_model.EstimateRelationshipTypeScan(scan.Types());
+    }
+    case LogicalPlanNodeType::kRelationshipIndexSeek: {
+      const auto &seek = static_cast<const RelationshipIndexSeekPlan &>(plan);
+      return cost_model.EstimateRelationshipIndexSeek(seek.Types(),
+                                                      seek.PropertyKey());
+    }
+    case LogicalPlanNodeType::kRelationshipIndexRangeSeek: {
+      const auto &seek =
+          static_cast<const RelationshipIndexRangeSeekPlan &>(plan);
+      return cost_model.EstimateRelationshipIndexRangeSeek(
+          seek.Types(), seek.PropertyKey(), seek.Predicates().size());
+    }
+    default:
+      THROW(common::InternalError,
+            "unsupported leaf estimate: " + std::string(plan.Name()));
+  }
+}
+
 class IdpComponentPlanner final : public ComponentPlanner {
  public:
   explicit IdpComponentPlanner(
@@ -156,6 +275,8 @@ class IdpComponentPlanner final : public ComponentPlanner {
       }
     }
     PruneCandidates(0, &plan_table);
+    PutInitialRelationshipCandidates(query_graph, component, base_predicates,
+                                     context, &plan_table);
 
     const std::size_t relationship_count =
         component.pattern_relationship_indices.size();
@@ -309,16 +430,39 @@ class IdpComponentPlanner final : public ComponentPlanner {
     context->Restore(base_predicates);
     std::unique_ptr<LogicalPlan> plan =
         context->BuildNodeLeaf(query_graph, node);
-    CostEstimate estimate =
-        query_graph.argument_ids.contains(node)
-            ? cost_model_.EstimateArgument(1)
-            : cost_model_.EstimateNodeScan(query_graph.LabelsOnNode(node));
+    CostEstimate estimate = EstimateLeafPlan(*plan, cost_model_);
     const std::size_t filter_count =
         context->ApplyAvailableFilters(query_graph.selections, &plan);
     plan_table->PutBest(MakePlanCandidate(
         std::move(plan), {},
         ApplyFilterEstimates(estimate, filter_count, cost_model_),
         context->Snapshot()));
+  }
+
+  void PutInitialRelationshipCandidates(
+      const QueryGraph &query_graph, const QueryGraphComponent &component,
+      const std::unordered_set<const Predicate *> &base_predicates,
+      QueryGraphPlanningContext *context, PlanTable *plan_table) const {
+    CHECK(context != nullptr, common::InternalError,
+          "query graph planning context is null");
+    CHECK(plan_table != nullptr, common::InternalError, "plan table is null");
+
+    for (std::size_t relationship_index :
+         component.pattern_relationship_indices) {
+      context->Restore(base_predicates);
+      std::unique_ptr<LogicalPlan> plan =
+          context->BuildRelationshipLeaf(query_graph, relationship_index);
+      if (plan == nullptr) {
+        continue;
+      }
+      CostEstimate estimate = EstimateLeafPlan(*plan, cost_model_);
+      const std::size_t filter_count =
+          context->ApplyAvailableFilters(query_graph.selections, &plan);
+      plan_table->PutBest(MakePlanCandidate(
+          std::move(plan), {relationship_index},
+          ApplyFilterEstimates(estimate, filter_count, cost_model_),
+          context->Snapshot()));
+    }
   }
 
   [[nodiscard]] bool CanExpand(const PatternRelationship &relationship,
@@ -344,6 +488,8 @@ class IdpComponentPlanner final : public ComponentPlanner {
         candidate.covered_symbols.contains(relationship.right_node);
     CHECK(left_solved || right_solved, common::InternalError,
           "relationship is not expandable");
+    const std::vector<std::string> relationship_types =
+        context->ConsumeRelationshipTypes(query_graph.selections, relationship);
 
     CostEstimate estimate;
     if (relationship.length.variable) {
@@ -355,20 +501,20 @@ class IdpComponentPlanner final : public ComponentPlanner {
                                               : Reverse(relationship.direction);
       estimate = left_solved && right_solved
                      ? cost_model_.EstimateExpandInto(
-                           CandidateEstimate(candidate), relationship.types)
+                           CandidateEstimate(candidate), relationship_types)
                      : cost_model_.EstimateExpand(CandidateEstimate(candidate),
-                                                  relationship.types);
+                                                  relationship_types);
       candidate.plan = std::make_unique<VarExpandPlan>(
           std::move(candidate.plan), from_node, relationship.variable, to_node,
-          ToExpandDirection(direction), relationship.types,
+          ToExpandDirection(direction), relationship_types,
           ToLogicalVariableLength(relationship.length));
     } else if (left_solved && right_solved) {
       estimate = cost_model_.EstimateExpandInto(CandidateEstimate(candidate),
-                                                relationship.types);
+                                                relationship_types);
       candidate.plan = std::make_unique<ExpandIntoPlan>(
           std::move(candidate.plan), relationship.left_node,
           relationship.variable, relationship.right_node,
-          ToExpandDirection(relationship.direction), relationship.types);
+          ToExpandDirection(relationship.direction), relationship_types);
     } else {
       const std::string from_node =
           left_solved ? relationship.left_node : relationship.right_node;
@@ -377,10 +523,10 @@ class IdpComponentPlanner final : public ComponentPlanner {
       const Direction direction = left_solved ? relationship.direction
                                               : Reverse(relationship.direction);
       estimate = cost_model_.EstimateExpand(CandidateEstimate(candidate),
-                                            relationship.types);
+                                            relationship_types);
       candidate.plan = std::make_unique<ExpandPlan>(
           std::move(candidate.plan), from_node, relationship.variable, to_node,
-          ToExpandDirection(direction), relationship.types);
+          ToExpandDirection(direction), relationship_types);
     }
 
     const std::size_t filter_count =
@@ -445,14 +591,108 @@ std::unique_ptr<LogicalPlan> QueryGraphPlanningContext::BuildNodeLeaf(
         std::vector<std::string>{std::string(variable)});
   }
 
-  const Predicate *label_predicate =
-      FirstConsumableNodeLabelPredicate(query_graph.selections, variable);
-  if (label_predicate != nullptr) {
-    planned_predicates_->insert(label_predicate);
-    return std::make_unique<NodeByLabelScanPlan>(
-        std::string(variable), label_predicate->labels.front());
+  const std::vector<const Predicate *> label_predicates =
+      ConsumableNodeLabelPredicates(query_graph.selections, variable);
+  const std::vector<std::string> labels =
+      LabelsFromPredicates(label_predicates);
+
+  const Predicate *seek_predicate =
+      BestIndexSeekPredicate(query_graph.selections, variable);
+  if (seek_predicate != nullptr) {
+    MarkPlanned(label_predicates);
+    planned_predicates_->insert(seek_predicate);
+    return std::make_unique<NodeIndexSeekPlan>(
+        std::string(variable), labels, seek_predicate->property_key,
+        ComparisonRightExpression(*seek_predicate));
+  }
+
+  std::vector<const Predicate *> range_predicates =
+      BestIndexRangePredicates(query_graph.selections, variable);
+  if (!range_predicates.empty()) {
+    const std::string property_key = range_predicates.front()->property_key;
+    MarkPlanned(label_predicates);
+    MarkPlanned(range_predicates);
+    return std::make_unique<NodeIndexRangeSeekPlan>(
+        std::string(variable), labels, property_key,
+        PredicateExpressions(range_predicates));
+  }
+
+  if (!labels.empty()) {
+    MarkPlanned(label_predicates);
+    return std::make_unique<NodeByLabelScanPlan>(std::string(variable), labels);
   }
   return std::make_unique<AllNodeScanPlan>(std::string(variable));
+}
+
+std::unique_ptr<LogicalPlan> QueryGraphPlanningContext::BuildRelationshipLeaf(
+    const QueryGraph &query_graph, std::size_t relationship_index) {
+  CHECK(relationship_index < query_graph.pattern_relationships.size(),
+        common::InvalidArgumentError, "relationship leaf index out of range");
+  const PatternRelationship &relationship =
+      query_graph.pattern_relationships[relationship_index];
+  if (relationship.length.variable) {
+    return nullptr;
+  }
+
+  std::vector<std::string> types =
+      ConsumeRelationshipTypes(query_graph.selections, relationship);
+  const Predicate *seek_predicate =
+      BestIndexSeekPredicate(query_graph.selections, relationship.variable);
+  if (seek_predicate != nullptr) {
+    planned_predicates_->insert(seek_predicate);
+    return std::make_unique<RelationshipIndexSeekPlan>(
+        relationship.left_node, relationship.variable, relationship.right_node,
+        ToExpandDirection(relationship.direction), types,
+        seek_predicate->property_key,
+        ComparisonRightExpression(*seek_predicate));
+  }
+
+  std::vector<const Predicate *> range_predicates =
+      BestIndexRangePredicates(query_graph.selections, relationship.variable);
+  if (!range_predicates.empty()) {
+    const std::string property_key = range_predicates.front()->property_key;
+    MarkPlanned(range_predicates);
+    return std::make_unique<RelationshipIndexRangeSeekPlan>(
+        relationship.left_node, relationship.variable, relationship.right_node,
+        ToExpandDirection(relationship.direction), types, property_key,
+        PredicateExpressions(range_predicates));
+  }
+
+  if (!types.empty()) {
+    return std::make_unique<RelationshipTypeScanPlan>(
+        relationship.left_node, relationship.variable, relationship.right_node,
+        ToExpandDirection(relationship.direction), std::move(types));
+  }
+  return nullptr;
+}
+
+std::vector<std::string> QueryGraphPlanningContext::ConsumeRelationshipTypes(
+    const Selections &selections, const PatternRelationship &relationship) {
+  std::vector<std::string> types = SortedUniqueStrings(relationship.types);
+  bool constrained = !types.empty();
+
+  for (const Predicate *predicate : ConsumableRelationshipTypePredicates(
+           selections, relationship.variable)) {
+    CHECK(predicate != nullptr, common::InternalError, "predicate is null");
+    std::vector<std::string> predicate_types =
+        SortedUniqueStrings(predicate->relationship_types);
+    if (predicate_types.empty()) {
+      continue;
+    }
+    if (!constrained) {
+      types = std::move(predicate_types);
+      constrained = true;
+      planned_predicates_->insert(predicate);
+      continue;
+    }
+    std::vector<std::string> intersection =
+        IntersectSortedStrings(types, predicate_types);
+    if (!intersection.empty()) {
+      types = std::move(intersection);
+      planned_predicates_->insert(predicate);
+    }
+  }
+  return types;
 }
 
 std::size_t QueryGraphPlanningContext::ApplyAvailableFilters(
@@ -476,6 +716,11 @@ std::size_t QueryGraphPlanningContext::ApplyAvailableFilters(
         CHECK(predicate.subquery != nullptr, common::InvalidArgumentError,
               "EXISTS predicate subquery is null");
         *plan = std::make_unique<SemiApplyPlan>(
+            std::move(*plan), BuildNestedPlan(*predicate.subquery));
+      } else if (predicate.kind == PredicateKind::kNotExistsSubquery) {
+        CHECK(predicate.subquery != nullptr, common::InvalidArgumentError,
+              "NOT EXISTS predicate subquery is null");
+        *plan = std::make_unique<AntiSemiApplyPlan>(
             std::move(*plan), BuildNestedPlan(*predicate.subquery));
       } else {
         ApplyNestedExpressions(predicate.nested_expressions, plan);
@@ -538,15 +783,95 @@ void QueryGraphPlanningContext::Restore(
   *planned_predicates_ = std::move(planned_predicates);
 }
 
-const Predicate *QueryGraphPlanningContext::FirstConsumableNodeLabelPredicate(
+std::vector<const Predicate *>
+QueryGraphPlanningContext::ConsumableNodeLabelPredicates(
     const Selections &selections, std::string_view variable) const {
+  std::vector<const Predicate *> out;
   for (const Predicate *predicate : selections.NodeLabelPredicates(variable)) {
     if (predicate != nullptr && predicate->expression != nullptr &&
-        predicate->labels.size() == 1) {
-      return predicate;
+        PredicateDependsOnlyOn(*predicate, variable) &&
+        !predicate->labels.empty()) {
+      out.push_back(predicate);
     }
   }
-  return nullptr;
+  return out;
+}
+
+std::vector<const Predicate *>
+QueryGraphPlanningContext::ConsumableRelationshipTypePredicates(
+    const Selections &selections, std::string_view variable) const {
+  std::vector<const Predicate *> out;
+  for (const Predicate *predicate :
+       selections.RelationshipTypePredicates(variable)) {
+    if (predicate != nullptr && predicate->expression != nullptr &&
+        PredicateDependsOnlyOn(*predicate, variable) &&
+        !predicate->relationship_types.empty()) {
+      out.push_back(predicate);
+    }
+  }
+  return out;
+}
+
+const Predicate *QueryGraphPlanningContext::BestIndexSeekPredicate(
+    const Selections &selections, std::string_view variable) const {
+  const Predicate *best = nullptr;
+  for (const auto &predicate : selections.predicates) {
+    if (predicate.kind != PredicateKind::kPropertyEquality ||
+        !StringEquals(predicate.variable, variable) ||
+        predicate.property_key.empty() || predicate.expression == nullptr ||
+        !PredicateDependsOnlyOn(predicate, variable)) {
+      continue;
+    }
+    if (ComparisonRightExpression(predicate) == nullptr) {
+      continue;
+    }
+    if (best == nullptr || predicate.property_key < best->property_key) {
+      best = &predicate;
+    }
+  }
+  return best;
+}
+
+std::vector<const Predicate *>
+QueryGraphPlanningContext::BestIndexRangePredicates(
+    const Selections &selections, std::string_view variable) const {
+  std::vector<const Predicate *> best;
+  std::string best_property_key;
+  for (PropertyInequalityGroup group : selections.PropertyInequalityGroups()) {
+    if (!StringEquals(group.variable, variable) || group.property_key.empty()) {
+      continue;
+    }
+    std::vector<const Predicate *> predicates;
+    predicates.insert(predicates.end(), group.lower_bounds.begin(),
+                      group.lower_bounds.end());
+    predicates.insert(predicates.end(), group.upper_bounds.begin(),
+                      group.upper_bounds.end());
+    predicates.erase(std::remove_if(predicates.begin(), predicates.end(),
+                                    [&](const Predicate *predicate) {
+                                      return predicate == nullptr ||
+                                             predicate->expression == nullptr ||
+                                             !PredicateDependsOnlyOn(*predicate,
+                                                                     variable);
+                                    }),
+                     predicates.end());
+    if (predicates.empty()) {
+      continue;
+    }
+    if (best.empty() || group.property_key < best_property_key) {
+      best = std::move(predicates);
+      best_property_key = std::move(group.property_key);
+    }
+  }
+  return best;
+}
+
+void QueryGraphPlanningContext::MarkPlanned(
+    const std::vector<const Predicate *> &predicates) {
+  for (const Predicate *predicate : predicates) {
+    if (predicate != nullptr) {
+      planned_predicates_->insert(predicate);
+    }
+  }
 }
 
 std::unique_ptr<LogicalPlan> QueryGraphPlanningContext::BuildNestedPlan(

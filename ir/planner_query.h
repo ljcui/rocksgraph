@@ -39,6 +39,7 @@ enum class PredicateKind {
   kPropertyEquality,
   kPropertyComparison,
   kExistsSubquery,
+  kNotExistsSubquery,
 };
 
 class PlannerQuery;

@@ -18,7 +18,38 @@ std::unique_ptr<LogicalPlan> CloneComponentPlan(const LogicalPlan &plan) {
     case LogicalPlanNodeType::kNodeByLabelScan: {
       const auto &scan = static_cast<const NodeByLabelScanPlan &>(plan);
       return std::make_unique<NodeByLabelScanPlan>(scan.Variable(),
-                                                   scan.Label());
+                                                   scan.Labels());
+    }
+    case LogicalPlanNodeType::kNodeIndexSeek: {
+      const auto &seek = static_cast<const NodeIndexSeekPlan &>(plan);
+      return std::make_unique<NodeIndexSeekPlan>(seek.Variable(), seek.Labels(),
+                                                 seek.PropertyKey(),
+                                                 seek.ValueExpression());
+    }
+    case LogicalPlanNodeType::kNodeIndexRangeSeek: {
+      const auto &seek = static_cast<const NodeIndexRangeSeekPlan &>(plan);
+      return std::make_unique<NodeIndexRangeSeekPlan>(
+          seek.Variable(), seek.Labels(), seek.PropertyKey(),
+          seek.Predicates());
+    }
+    case LogicalPlanNodeType::kRelationshipTypeScan: {
+      const auto &scan = static_cast<const RelationshipTypeScanPlan &>(plan);
+      return std::make_unique<RelationshipTypeScanPlan>(
+          scan.FromNode(), scan.Relationship(), scan.ToNode(), scan.Direction(),
+          scan.Types());
+    }
+    case LogicalPlanNodeType::kRelationshipIndexSeek: {
+      const auto &seek = static_cast<const RelationshipIndexSeekPlan &>(plan);
+      return std::make_unique<RelationshipIndexSeekPlan>(
+          seek.FromNode(), seek.Relationship(), seek.ToNode(), seek.Direction(),
+          seek.Types(), seek.PropertyKey(), seek.ValueExpression());
+    }
+    case LogicalPlanNodeType::kRelationshipIndexRangeSeek: {
+      const auto &seek =
+          static_cast<const RelationshipIndexRangeSeekPlan &>(plan);
+      return std::make_unique<RelationshipIndexRangeSeekPlan>(
+          seek.FromNode(), seek.Relationship(), seek.ToNode(), seek.Direction(),
+          seek.Types(), seek.PropertyKey(), seek.Predicates());
     }
     case LogicalPlanNodeType::kExpand: {
       const auto &expand = static_cast<const ExpandPlan &>(plan);
@@ -94,12 +125,27 @@ std::unique_ptr<LogicalPlan> CloneComponentPlan(const LogicalPlan &plan) {
           CloneComponentPlan(join.Child(0)), CloneComponentPlan(join.Child(1)),
           join.JoinKeys());
     }
+    case LogicalPlanNodeType::kValueHashJoin: {
+      const auto &join = static_cast<const ValueHashJoinPlan &>(plan);
+      return std::make_unique<ValueHashJoinPlan>(
+          CloneComponentPlan(join.Child(0)), CloneComponentPlan(join.Child(1)),
+          join.Predicates());
+    }
+    case LogicalPlanNodeType::kPredicateJoin: {
+      const auto &join = static_cast<const PredicateJoinPlan &>(plan);
+      return std::make_unique<PredicateJoinPlan>(
+          CloneComponentPlan(join.Child(0)), CloneComponentPlan(join.Child(1)),
+          join.Predicates());
+    }
     case LogicalPlanNodeType::kApply:
       return std::make_unique<ApplyPlan>(CloneComponentPlan(plan.Child(0)),
                                          CloneComponentPlan(plan.Child(1)));
     case LogicalPlanNodeType::kSemiApply:
       return std::make_unique<SemiApplyPlan>(CloneComponentPlan(plan.Child(0)),
                                              CloneComponentPlan(plan.Child(1)));
+    case LogicalPlanNodeType::kAntiSemiApply:
+      return std::make_unique<AntiSemiApplyPlan>(
+          CloneComponentPlan(plan.Child(0)), CloneComponentPlan(plan.Child(1)));
     case LogicalPlanNodeType::kLetSemiApply: {
       const auto &apply = static_cast<const LetSemiApplyPlan &>(plan);
       return std::make_unique<LetSemiApplyPlan>(

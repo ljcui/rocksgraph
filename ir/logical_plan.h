@@ -21,6 +21,11 @@ enum class LogicalPlanNodeType {
   kArgument,
   kAllNodeScan,
   kNodeByLabelScan,
+  kNodeIndexSeek,
+  kNodeIndexRangeSeek,
+  kRelationshipTypeScan,
+  kRelationshipIndexSeek,
+  kRelationshipIndexRangeSeek,
   kExpand,
   kExpandInto,
   kVarExpand,
@@ -35,8 +40,11 @@ enum class LogicalPlanNodeType {
   kProduceResults,
   kCartesianProduct,
   kNodeHashJoin,
+  kValueHashJoin,
+  kPredicateJoin,
   kApply,
   kSemiApply,
+  kAntiSemiApply,
   kLetSemiApply,
   kRollUpApply,
   kOptionalApply,
@@ -149,16 +157,183 @@ class AllNodeScanPlan final : public LogicalPlan {
 class NodeByLabelScanPlan final : public LogicalPlan {
  public:
   NodeByLabelScanPlan(std::string variable, std::string label);
+  NodeByLabelScanPlan(std::string variable, std::vector<std::string> labels);
 
   [[nodiscard]] const std::string &Variable() const noexcept {
     return variable_;
   }
-  [[nodiscard]] const std::string &Label() const noexcept { return label_; }
+  [[nodiscard]] const std::string &Label() const noexcept;
+  [[nodiscard]] const std::vector<std::string> &Labels() const noexcept {
+    return labels_;
+  }
   [[nodiscard]] std::string Details() const override;
 
  private:
   std::string variable_;
-  std::string label_;
+  std::vector<std::string> labels_;
+};
+
+class NodeIndexSeekPlan final : public LogicalPlan {
+ public:
+  NodeIndexSeekPlan(std::string variable, std::vector<std::string> labels,
+                    std::string property_key,
+                    const ast::Expression *value_expression);
+
+  [[nodiscard]] const std::string &Variable() const noexcept {
+    return variable_;
+  }
+  [[nodiscard]] const std::vector<std::string> &Labels() const noexcept {
+    return labels_;
+  }
+  [[nodiscard]] const std::string &PropertyKey() const noexcept {
+    return property_key_;
+  }
+  [[nodiscard]] const ast::Expression *ValueExpression() const noexcept {
+    return value_expression_;
+  }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  std::string variable_;
+  std::vector<std::string> labels_;
+  std::string property_key_;
+  const ast::Expression *value_expression_ = nullptr;
+};
+
+class NodeIndexRangeSeekPlan final : public LogicalPlan {
+ public:
+  NodeIndexRangeSeekPlan(std::string variable, std::vector<std::string> labels,
+                         std::string property_key,
+                         std::vector<const ast::Expression *> predicates);
+
+  [[nodiscard]] const std::string &Variable() const noexcept {
+    return variable_;
+  }
+  [[nodiscard]] const std::vector<std::string> &Labels() const noexcept {
+    return labels_;
+  }
+  [[nodiscard]] const std::string &PropertyKey() const noexcept {
+    return property_key_;
+  }
+  [[nodiscard]] const std::vector<const ast::Expression *> &Predicates()
+      const noexcept {
+    return predicates_;
+  }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  std::string variable_;
+  std::vector<std::string> labels_;
+  std::string property_key_;
+  std::vector<const ast::Expression *> predicates_;
+};
+
+class RelationshipTypeScanPlan final : public LogicalPlan {
+ public:
+  RelationshipTypeScanPlan(std::string from_node, std::string relationship,
+                           std::string to_node, ExpandDirection direction,
+                           std::vector<std::string> types);
+
+  [[nodiscard]] const std::string &FromNode() const noexcept {
+    return from_node_;
+  }
+  [[nodiscard]] const std::string &Relationship() const noexcept {
+    return relationship_;
+  }
+  [[nodiscard]] const std::string &ToNode() const noexcept { return to_node_; }
+  [[nodiscard]] ExpandDirection Direction() const noexcept {
+    return direction_;
+  }
+  [[nodiscard]] const std::vector<std::string> &Types() const noexcept {
+    return types_;
+  }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  std::string from_node_;
+  std::string relationship_;
+  std::string to_node_;
+  ExpandDirection direction_ = ExpandDirection::kBoth;
+  std::vector<std::string> types_;
+};
+
+class RelationshipIndexSeekPlan final : public LogicalPlan {
+ public:
+  RelationshipIndexSeekPlan(std::string from_node, std::string relationship,
+                            std::string to_node, ExpandDirection direction,
+                            std::vector<std::string> types,
+                            std::string property_key,
+                            const ast::Expression *value_expression);
+
+  [[nodiscard]] const std::string &FromNode() const noexcept {
+    return from_node_;
+  }
+  [[nodiscard]] const std::string &Relationship() const noexcept {
+    return relationship_;
+  }
+  [[nodiscard]] const std::string &ToNode() const noexcept { return to_node_; }
+  [[nodiscard]] ExpandDirection Direction() const noexcept {
+    return direction_;
+  }
+  [[nodiscard]] const std::vector<std::string> &Types() const noexcept {
+    return types_;
+  }
+  [[nodiscard]] const std::string &PropertyKey() const noexcept {
+    return property_key_;
+  }
+  [[nodiscard]] const ast::Expression *ValueExpression() const noexcept {
+    return value_expression_;
+  }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  std::string from_node_;
+  std::string relationship_;
+  std::string to_node_;
+  ExpandDirection direction_ = ExpandDirection::kBoth;
+  std::vector<std::string> types_;
+  std::string property_key_;
+  const ast::Expression *value_expression_ = nullptr;
+};
+
+class RelationshipIndexRangeSeekPlan final : public LogicalPlan {
+ public:
+  RelationshipIndexRangeSeekPlan(
+      std::string from_node, std::string relationship, std::string to_node,
+      ExpandDirection direction, std::vector<std::string> types,
+      std::string property_key,
+      std::vector<const ast::Expression *> predicates);
+
+  [[nodiscard]] const std::string &FromNode() const noexcept {
+    return from_node_;
+  }
+  [[nodiscard]] const std::string &Relationship() const noexcept {
+    return relationship_;
+  }
+  [[nodiscard]] const std::string &ToNode() const noexcept { return to_node_; }
+  [[nodiscard]] ExpandDirection Direction() const noexcept {
+    return direction_;
+  }
+  [[nodiscard]] const std::vector<std::string> &Types() const noexcept {
+    return types_;
+  }
+  [[nodiscard]] const std::string &PropertyKey() const noexcept {
+    return property_key_;
+  }
+  [[nodiscard]] const std::vector<const ast::Expression *> &Predicates()
+      const noexcept {
+    return predicates_;
+  }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  std::string from_node_;
+  std::string relationship_;
+  std::string to_node_;
+  ExpandDirection direction_ = ExpandDirection::kBoth;
+  std::vector<std::string> types_;
+  std::string property_key_;
+  std::vector<const ast::Expression *> predicates_;
 };
 
 class ExpandPlan final : public LogicalPlan {
@@ -392,6 +567,36 @@ class NodeHashJoinPlan final : public LogicalPlan {
   std::vector<std::string> join_keys_;
 };
 
+class ValueHashJoinPlan final : public LogicalPlan {
+ public:
+  ValueHashJoinPlan(LogicalPlanPtr left, LogicalPlanPtr right,
+                    std::vector<const ast::Expression *> predicates);
+
+  [[nodiscard]] const std::vector<const ast::Expression *> &Predicates()
+      const noexcept {
+    return predicates_;
+  }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  std::vector<const ast::Expression *> predicates_;
+};
+
+class PredicateJoinPlan final : public LogicalPlan {
+ public:
+  PredicateJoinPlan(LogicalPlanPtr left, LogicalPlanPtr right,
+                    std::vector<const ast::Expression *> predicates);
+
+  [[nodiscard]] const std::vector<const ast::Expression *> &Predicates()
+      const noexcept {
+    return predicates_;
+  }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  std::vector<const ast::Expression *> predicates_;
+};
+
 class ApplyPlan final : public LogicalPlan {
  public:
   ApplyPlan(LogicalPlanPtr left, LogicalPlanPtr right);
@@ -400,6 +605,11 @@ class ApplyPlan final : public LogicalPlan {
 class SemiApplyPlan final : public LogicalPlan {
  public:
   SemiApplyPlan(LogicalPlanPtr left, LogicalPlanPtr right);
+};
+
+class AntiSemiApplyPlan final : public LogicalPlan {
+ public:
+  AntiSemiApplyPlan(LogicalPlanPtr left, LogicalPlanPtr right);
 };
 
 class LetSemiApplyPlan final : public LogicalPlan {

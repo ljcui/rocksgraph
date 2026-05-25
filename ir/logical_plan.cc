@@ -15,6 +15,11 @@ inline constexpr auto kLogicalPlanNodeTypeNames = std::array{
     std::string_view{"Argument"},
     std::string_view{"AllNodeScan"},
     std::string_view{"NodeByLabelScan"},
+    std::string_view{"NodeIndexSeek"},
+    std::string_view{"NodeIndexRangeSeek"},
+    std::string_view{"RelationshipTypeScan"},
+    std::string_view{"RelationshipIndexSeek"},
+    std::string_view{"RelationshipIndexRangeSeek"},
     std::string_view{"Expand"},
     std::string_view{"ExpandInto"},
     std::string_view{"VarExpand"},
@@ -29,8 +34,11 @@ inline constexpr auto kLogicalPlanNodeTypeNames = std::array{
     std::string_view{"ProduceResults"},
     std::string_view{"CartesianProduct"},
     std::string_view{"NodeHashJoin"},
+    std::string_view{"ValueHashJoin"},
+    std::string_view{"PredicateJoin"},
     std::string_view{"Apply"},
     std::string_view{"SemiApply"},
+    std::string_view{"AntiSemiApply"},
     std::string_view{"LetSemiApply"},
     std::string_view{"RollUpApply"},
     std::string_view{"OptionalApply"},
@@ -182,6 +190,86 @@ std::string RelationshipDetails(std::string_view from_node,
   return out.str();
 }
 
+std::string NodePatternDetails(std::string_view variable,
+                               const std::vector<std::string> &labels) {
+  std::string out(variable);
+  for (const auto &label : labels) {
+    out.push_back(':');
+    out.append(label);
+  }
+  return out;
+}
+
+std::vector<std::string> ExpressionDetails(
+    const std::vector<const ast::Expression *> &expressions) {
+  std::vector<std::string> details;
+  details.reserve(expressions.size());
+  for (const ast::Expression *expression : expressions) {
+    details.push_back(
+        expression != nullptr ? ast::ExpressionToString(*expression) : "null");
+  }
+  return details;
+}
+
+std::string PropertyValueDetails(std::string_view variable,
+                                 std::string_view property_key,
+                                 const ast::Expression *value_expression) {
+  std::string out(variable);
+  out.push_back('.');
+  out.append(property_key);
+  out.append(" = ");
+  out.append(value_expression != nullptr
+                 ? ast::ExpressionToString(*value_expression)
+                 : "null");
+  return out;
+}
+
+std::string NodeIndexDetails(std::string_view variable,
+                             const std::vector<std::string> &labels,
+                             std::string_view property_key,
+                             const ast::Expression *value_expression) {
+  std::string out = NodePatternDetails(variable, labels);
+  out.append(" WHERE ");
+  out.append(PropertyValueDetails(variable, property_key, value_expression));
+  return out;
+}
+
+std::string NodeIndexRangeDetails(
+    std::string_view variable, const std::vector<std::string> &labels,
+    const std::vector<const ast::Expression *> &predicates) {
+  std::string out = NodePatternDetails(variable, labels);
+  out.append(" WHERE ");
+  out.append(Join(ExpressionDetails(predicates), " AND "));
+  return out;
+}
+
+std::string RelationshipIndexDetails(std::string_view from_node,
+                                     std::string_view relationship,
+                                     std::string_view to_node,
+                                     ExpandDirection direction,
+                                     const std::vector<std::string> &types,
+                                     std::string_view property_key,
+                                     const ast::Expression *value_expression) {
+  std::string out =
+      RelationshipDetails(from_node, relationship, to_node, direction, types);
+  out.append(" WHERE ");
+  out.append(
+      PropertyValueDetails(relationship, property_key, value_expression));
+  return out;
+}
+
+std::string RelationshipIndexRangeDetails(
+    std::string_view from_node, std::string_view relationship,
+    std::string_view to_node, ExpandDirection direction,
+    const std::vector<std::string> &types,
+    const std::vector<const ast::Expression *> &predicates) {
+  std::string out =
+      RelationshipDetails(from_node, relationship, to_node, direction, types);
+  out.append(" WHERE ");
+  out.append(Join(ExpressionDetails(predicates), " AND "));
+  return out;
+}
+
 std::string VariableLengthDetails(const LogicalVariableLength &length) {
   if (!length.min.has_value() && !length.max.has_value()) {
     return "*";
@@ -306,18 +394,146 @@ std::string AllNodeScanPlan::Details() const { return variable_; }
 
 NodeByLabelScanPlan::NodeByLabelScanPlan(std::string variable,
                                          std::string label)
+    : NodeByLabelScanPlan(std::move(variable),
+                          std::vector<std::string>{std::move(label)}) {}
+
+NodeByLabelScanPlan::NodeByLabelScanPlan(std::string variable,
+                                         std::vector<std::string> labels)
     : LogicalPlan(LogicalPlanNodeType::kNodeByLabelScan),
       variable_(std::move(variable)),
-      label_(std::move(label)) {
+      labels_(std::move(labels)) {
+  CHECK(!labels_.empty(), common::InvalidArgumentError,
+        "node label scan labels are empty");
   AddOutputColumn(variable_);
   AddSolvedSymbol(variable_);
 }
 
+const std::string &NodeByLabelScanPlan::Label() const noexcept {
+  return labels_.front();
+}
+
 std::string NodeByLabelScanPlan::Details() const {
-  if (label_.empty()) {
-    return variable_;
-  }
-  return variable_ + ":" + label_;
+  return NodePatternDetails(variable_, labels_);
+}
+
+NodeIndexSeekPlan::NodeIndexSeekPlan(std::string variable,
+                                     std::vector<std::string> labels,
+                                     std::string property_key,
+                                     const ast::Expression *value_expression)
+    : LogicalPlan(LogicalPlanNodeType::kNodeIndexSeek),
+      variable_(std::move(variable)),
+      labels_(std::move(labels)),
+      property_key_(std::move(property_key)),
+      value_expression_(value_expression) {
+  CHECK(!property_key_.empty(), common::InvalidArgumentError,
+        "node index seek property key is empty");
+  AddOutputColumn(variable_);
+  AddSolvedSymbol(variable_);
+}
+
+std::string NodeIndexSeekPlan::Details() const {
+  return NodeIndexDetails(variable_, labels_, property_key_, value_expression_);
+}
+
+NodeIndexRangeSeekPlan::NodeIndexRangeSeekPlan(
+    std::string variable, std::vector<std::string> labels,
+    std::string property_key, std::vector<const ast::Expression *> predicates)
+    : LogicalPlan(LogicalPlanNodeType::kNodeIndexRangeSeek),
+      variable_(std::move(variable)),
+      labels_(std::move(labels)),
+      property_key_(std::move(property_key)),
+      predicates_(std::move(predicates)) {
+  CHECK(!property_key_.empty(), common::InvalidArgumentError,
+        "node index range seek property key is empty");
+  CHECK(!predicates_.empty(), common::InvalidArgumentError,
+        "node index range seek predicates are empty");
+  AddOutputColumn(variable_);
+  AddSolvedSymbol(variable_);
+}
+
+std::string NodeIndexRangeSeekPlan::Details() const {
+  return NodeIndexRangeDetails(variable_, labels_, predicates_);
+}
+
+RelationshipTypeScanPlan::RelationshipTypeScanPlan(
+    std::string from_node, std::string relationship, std::string to_node,
+    ExpandDirection direction, std::vector<std::string> types)
+    : LogicalPlan(LogicalPlanNodeType::kRelationshipTypeScan),
+      from_node_(std::move(from_node)),
+      relationship_(std::move(relationship)),
+      to_node_(std::move(to_node)),
+      direction_(direction),
+      types_(std::move(types)) {
+  CHECK(!types_.empty(), common::InvalidArgumentError,
+        "relationship type scan types are empty");
+  AddOutputColumn(from_node_);
+  AddOutputColumn(relationship_);
+  AddOutputColumn(to_node_);
+  AddSolvedSymbol(from_node_);
+  AddSolvedSymbol(relationship_);
+  AddSolvedSymbol(to_node_);
+}
+
+std::string RelationshipTypeScanPlan::Details() const {
+  return RelationshipDetails(from_node_, relationship_, to_node_, direction_,
+                             types_);
+}
+
+RelationshipIndexSeekPlan::RelationshipIndexSeekPlan(
+    std::string from_node, std::string relationship, std::string to_node,
+    ExpandDirection direction, std::vector<std::string> types,
+    std::string property_key, const ast::Expression *value_expression)
+    : LogicalPlan(LogicalPlanNodeType::kRelationshipIndexSeek),
+      from_node_(std::move(from_node)),
+      relationship_(std::move(relationship)),
+      to_node_(std::move(to_node)),
+      direction_(direction),
+      types_(std::move(types)),
+      property_key_(std::move(property_key)),
+      value_expression_(value_expression) {
+  CHECK(!property_key_.empty(), common::InvalidArgumentError,
+        "relationship index seek property key is empty");
+  AddOutputColumn(from_node_);
+  AddOutputColumn(relationship_);
+  AddOutputColumn(to_node_);
+  AddSolvedSymbol(from_node_);
+  AddSolvedSymbol(relationship_);
+  AddSolvedSymbol(to_node_);
+}
+
+std::string RelationshipIndexSeekPlan::Details() const {
+  return RelationshipIndexDetails(from_node_, relationship_, to_node_,
+                                  direction_, types_, property_key_,
+                                  value_expression_);
+}
+
+RelationshipIndexRangeSeekPlan::RelationshipIndexRangeSeekPlan(
+    std::string from_node, std::string relationship, std::string to_node,
+    ExpandDirection direction, std::vector<std::string> types,
+    std::string property_key, std::vector<const ast::Expression *> predicates)
+    : LogicalPlan(LogicalPlanNodeType::kRelationshipIndexRangeSeek),
+      from_node_(std::move(from_node)),
+      relationship_(std::move(relationship)),
+      to_node_(std::move(to_node)),
+      direction_(direction),
+      types_(std::move(types)),
+      property_key_(std::move(property_key)),
+      predicates_(std::move(predicates)) {
+  CHECK(!property_key_.empty(), common::InvalidArgumentError,
+        "relationship index range seek property key is empty");
+  CHECK(!predicates_.empty(), common::InvalidArgumentError,
+        "relationship index range seek predicates are empty");
+  AddOutputColumn(from_node_);
+  AddOutputColumn(relationship_);
+  AddOutputColumn(to_node_);
+  AddSolvedSymbol(from_node_);
+  AddSolvedSymbol(relationship_);
+  AddSolvedSymbol(to_node_);
+}
+
+std::string RelationshipIndexRangeSeekPlan::Details() const {
+  return RelationshipIndexRangeDetails(from_node_, relationship_, to_node_,
+                                       direction_, types_, predicates_);
 }
 
 ExpandPlan::ExpandPlan(LogicalPlanPtr source, std::string from_node,
@@ -574,6 +790,40 @@ NodeHashJoinPlan::NodeHashJoinPlan(LogicalPlanPtr left, LogicalPlanPtr right,
 
 std::string NodeHashJoinPlan::Details() const { return Join(join_keys_, ", "); }
 
+ValueHashJoinPlan::ValueHashJoinPlan(
+    LogicalPlanPtr left, LogicalPlanPtr right,
+    std::vector<const ast::Expression *> predicates)
+    : LogicalPlan(
+          LogicalPlanNodeType::kValueHashJoin,
+          BinaryChildren(std::move(left), std::move(right), "ValueHashJoin")),
+      predicates_(std::move(predicates)) {
+  CHECK(!predicates_.empty(), common::InvalidArgumentError,
+        "value hash join predicates are empty");
+  SetSolvedSymbols(UnionSolvedSymbols(Child(0), Child(1)));
+  SetOutputColumns(UnionOutputColumns(Child(0), Child(1)));
+}
+
+std::string ValueHashJoinPlan::Details() const {
+  return Join(ExpressionDetails(predicates_), " AND ");
+}
+
+PredicateJoinPlan::PredicateJoinPlan(
+    LogicalPlanPtr left, LogicalPlanPtr right,
+    std::vector<const ast::Expression *> predicates)
+    : LogicalPlan(
+          LogicalPlanNodeType::kPredicateJoin,
+          BinaryChildren(std::move(left), std::move(right), "PredicateJoin")),
+      predicates_(std::move(predicates)) {
+  CHECK(!predicates_.empty(), common::InvalidArgumentError,
+        "predicate join predicates are empty");
+  SetSolvedSymbols(UnionSolvedSymbols(Child(0), Child(1)));
+  SetOutputColumns(UnionOutputColumns(Child(0), Child(1)));
+}
+
+std::string PredicateJoinPlan::Details() const {
+  return Join(ExpressionDetails(predicates_), " AND ");
+}
+
 ApplyPlan::ApplyPlan(LogicalPlanPtr left, LogicalPlanPtr right)
     : LogicalPlan(LogicalPlanNodeType::kApply,
                   BinaryChildren(std::move(left), std::move(right), "Apply")) {
@@ -585,6 +835,14 @@ SemiApplyPlan::SemiApplyPlan(LogicalPlanPtr left, LogicalPlanPtr right)
     : LogicalPlan(
           LogicalPlanNodeType::kSemiApply,
           BinaryChildren(std::move(left), std::move(right), "SemiApply")) {
+  SetSolvedSymbols(UnionSolvedSymbols(Child(0), Child(1)));
+  SetOutputColumns(Child(0).OutputColumns());
+}
+
+AntiSemiApplyPlan::AntiSemiApplyPlan(LogicalPlanPtr left, LogicalPlanPtr right)
+    : LogicalPlan(
+          LogicalPlanNodeType::kAntiSemiApply,
+          BinaryChildren(std::move(left), std::move(right), "AntiSemiApply")) {
   SetSolvedSymbols(UnionSolvedSymbols(Child(0), Child(1)));
   SetOutputColumns(Child(0).OutputColumns());
 }

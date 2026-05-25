@@ -8,6 +8,8 @@
 #include <utility>
 #include <vector>
 
+#include "ast/ast_node.h"
+#include "ast/expression_dependency.h"
 #include "common/exception.h"
 #include "ir/planner/component_planner.h"
 #include "ir/planner_query_internal.h"
@@ -92,6 +94,80 @@ std::vector<LogicalUnionMapping> LogicalUnionMappings(
                                 .rhs_variable = mapping.rhs_variable});
   }
   return logical_mappings;
+}
+
+bool DependenciesWithin(const std::unordered_set<std::string> &dependencies,
+                        const std::unordered_set<std::string> &symbols) {
+  return DependenciesMet(dependencies, symbols);
+}
+
+std::unordered_set<std::string> UnionSymbols(
+    const std::unordered_set<std::string> &lhs,
+    const std::unordered_set<std::string> &rhs) {
+  std::unordered_set<std::string> out = lhs;
+  AddSymbols(&out, rhs);
+  return out;
+}
+
+const ast::ComparisonExpression *AsComparisonExpression(
+    const ast::Expression *expression) {
+  const ast::Expression *unwrapped = UnwrapParenthesized(expression);
+  if (unwrapped == nullptr ||
+      !unwrapped->Is(ast::ASTNodeType::kComparisonExpression)) {
+    return nullptr;
+  }
+  return ast::CastAst<ast::ComparisonExpression>(unwrapped);
+}
+
+bool IsCrossComponentPredicate(const Predicate &predicate,
+                               const std::unordered_set<std::string> &left,
+                               const std::unordered_set<std::string> &right) {
+  if (predicate.expression == nullptr || predicate.dependencies.empty()) {
+    return false;
+  }
+  const std::unordered_set<std::string> combined = UnionSymbols(left, right);
+  return DependenciesWithin(predicate.dependencies, combined) &&
+         !DependenciesWithin(predicate.dependencies, left) &&
+         !DependenciesWithin(predicate.dependencies, right);
+}
+
+bool IsValueHashJoinPredicate(const Predicate &predicate,
+                              const std::unordered_set<std::string> &left,
+                              const std::unordered_set<std::string> &right) {
+  if (!IsCrossComponentPredicate(predicate, left, right)) {
+    return false;
+  }
+  const ast::ComparisonExpression *comparison =
+      AsComparisonExpression(predicate.expression);
+  if (comparison == nullptr || comparison->op != "=" ||
+      comparison->left == nullptr || comparison->right == nullptr) {
+    return false;
+  }
+  const std::unordered_set<std::string> lhs_dependencies =
+      ast::CollectExpressionDependencies(*comparison->left);
+  const std::unordered_set<std::string> rhs_dependencies =
+      ast::CollectExpressionDependencies(*comparison->right);
+  return (DependenciesWithin(lhs_dependencies, left) &&
+          DependenciesWithin(rhs_dependencies, right)) ||
+         (DependenciesWithin(lhs_dependencies, right) &&
+          DependenciesWithin(rhs_dependencies, left));
+}
+
+bool CanUsePredicateJoin(const Predicate &predicate) {
+  return predicate.kind != PredicateKind::kExistsSubquery &&
+         predicate.kind != PredicateKind::kNotExistsSubquery;
+}
+
+std::vector<const ast::Expression *> JoinPredicateExpressions(
+    const std::vector<const Predicate *> &predicates) {
+  std::vector<const ast::Expression *> expressions;
+  expressions.reserve(predicates.size());
+  for (const Predicate *predicate : predicates) {
+    CHECK(predicate != nullptr && predicate->expression != nullptr,
+          common::InvalidArgumentError, "join predicate expression is null");
+    expressions.push_back(predicate->expression);
+  }
+  return expressions;
 }
 
 class LogicalPlanBuilder {
@@ -195,8 +271,8 @@ class LogicalPlanBuilder {
         if (plan == nullptr) {
           plan = std::move(component_plan);
         } else {
-          plan = std::make_unique<CartesianProductPlan>(
-              std::move(plan), std::move(component_plan));
+          plan = JoinComponents(std::move(plan), std::move(component_plan),
+                                query_graph.selections);
           context.ApplyAvailableFilters(query_graph.selections, &plan);
         }
       }
@@ -229,9 +305,74 @@ class LogicalPlanBuilder {
     CHECK(query_graph.mutating_patterns.empty(), common::InvalidArgumentError,
           Unsupported("updating logical plan"));
     for (const auto &predicate : query_graph.selections.predicates) {
-      if (predicate.kind == PredicateKind::kExistsSubquery) {
+      if (predicate.kind == PredicateKind::kExistsSubquery ||
+          predicate.kind == PredicateKind::kNotExistsSubquery) {
         CHECK(predicate.subquery != nullptr, common::InvalidArgumentError,
               "EXISTS predicate subquery is null");
+      }
+    }
+  }
+
+  std::unique_ptr<LogicalPlan> JoinComponents(
+      std::unique_ptr<LogicalPlan> left, std::unique_ptr<LogicalPlan> right,
+      const Selections &selections) {
+    CHECK(left != nullptr && right != nullptr, common::InternalError,
+          "component join input is null");
+    const std::unordered_set<std::string> left_symbols = left->SolvedSymbols();
+    const std::unordered_set<std::string> right_symbols =
+        right->SolvedSymbols();
+
+    std::vector<const Predicate *> value_join_predicates =
+        JoinPredicates(selections, left_symbols, right_symbols,
+                       /*value_hash_join=*/true);
+    if (!value_join_predicates.empty()) {
+      MarkPredicatesPlanned(value_join_predicates);
+      return std::make_unique<ValueHashJoinPlan>(
+          std::move(left), std::move(right),
+          JoinPredicateExpressions(value_join_predicates));
+    }
+
+    std::vector<const Predicate *> predicate_join_predicates =
+        JoinPredicates(selections, left_symbols, right_symbols,
+                       /*value_hash_join=*/false);
+    if (!predicate_join_predicates.empty()) {
+      MarkPredicatesPlanned(predicate_join_predicates);
+      return std::make_unique<PredicateJoinPlan>(
+          std::move(left), std::move(right),
+          JoinPredicateExpressions(predicate_join_predicates));
+    }
+
+    return std::make_unique<CartesianProductPlan>(std::move(left),
+                                                  std::move(right));
+  }
+
+  std::vector<const Predicate *> JoinPredicates(
+      const Selections &selections, const std::unordered_set<std::string> &left,
+      const std::unordered_set<std::string> &right,
+      bool value_hash_join) const {
+    std::vector<const Predicate *> predicates;
+    for (const auto &predicate : selections.predicates) {
+      if (planned_predicates_.contains(&predicate)) {
+        continue;
+      }
+      if (value_hash_join) {
+        if (IsValueHashJoinPredicate(predicate, left, right)) {
+          predicates.push_back(&predicate);
+        }
+        continue;
+      }
+      if (CanUsePredicateJoin(predicate) &&
+          IsCrossComponentPredicate(predicate, left, right)) {
+        predicates.push_back(&predicate);
+      }
+    }
+    return predicates;
+  }
+
+  void MarkPredicatesPlanned(const std::vector<const Predicate *> &predicates) {
+    for (const Predicate *predicate : predicates) {
+      if (predicate != nullptr) {
+        planned_predicates_.insert(predicate);
       }
     }
   }

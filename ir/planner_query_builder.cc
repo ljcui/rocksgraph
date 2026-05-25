@@ -301,7 +301,8 @@ class PlannerQueryBuilder {
           break;
         }
       }
-      if (predicate.kind != PredicateKind::kExistsSubquery) {
+      if (predicate.kind != PredicateKind::kExistsSubquery &&
+          predicate.kind != PredicateKind::kNotExistsSubquery) {
         continue;
       }
       CHECK(predicate.subquery != nullptr, common::InvalidArgumentError,

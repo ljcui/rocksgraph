@@ -1210,6 +1210,26 @@ TEST(PlannerQueryTest, NarrowsProjectionExistsSubqueryArgumentIds) {
   EXPECT_FALSE(Contains(subquery.query_graph.argument_ids, "r"));
 }
 
+TEST(PlannerQueryTest, ClassifiesNotExistsSubqueryPredicate) {
+  auto statement = ParseOrFail(
+      "MATCH (a) WHERE NOT EXISTS { MATCH (a)-[r]->(b) RETURN 1 AS ok } "
+      "RETURN a");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::SinglePlannerQuery &query = planner_query->RequireSingle();
+
+  ASSERT_EQ(query.query_graph.selections.size(), 1U);
+  const auto &predicate = query.query_graph.selections.predicates[0];
+  EXPECT_EQ(predicate.kind, ir::PredicateKind::kNotExistsSubquery);
+  ASSERT_NE(predicate.subquery, nullptr);
+  const ir::SinglePlannerQuery &subquery = predicate.subquery->RequireSingle();
+  EXPECT_TRUE(Contains(subquery.query_graph.argument_ids, "a"));
+  EXPECT_FALSE(Contains(subquery.query_graph.argument_ids, "b"));
+  EXPECT_FALSE(Contains(subquery.query_graph.argument_ids, "r"));
+}
+
 TEST(PlannerQueryTest, InlinedWithExistsDoesNotCaptureFutureVariables) {
   auto statement = ParseOrFail(
       "MATCH (a) WITH a WHERE EXISTS { MATCH (b) RETURN 1 AS ok } "

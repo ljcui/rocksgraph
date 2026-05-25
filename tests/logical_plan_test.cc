@@ -31,9 +31,69 @@ TEST(LogicalPlanTest, LeafPlansExposeNamesAndMetadata) {
   EXPECT_EQ(label_scan.Name(), "NodeByLabelScan");
   EXPECT_EQ(label_scan.Variable(), "p");
   EXPECT_EQ(label_scan.Label(), "Person");
+  EXPECT_EQ(label_scan.Labels(), std::vector<std::string>({"Person"}));
   EXPECT_EQ(label_scan.Details(), "p:Person");
   EXPECT_EQ(label_scan.OutputColumns(), std::vector<std::string>({"p"}));
   EXPECT_TRUE(Contains(label_scan.SolvedSymbols(), "p"));
+
+  ir::NodeByLabelScanPlan multi_label_scan(
+      "e", std::vector<std::string>({"Employee", "Person"}));
+  EXPECT_EQ(multi_label_scan.Label(), "Employee");
+  EXPECT_EQ(multi_label_scan.Labels(),
+            std::vector<std::string>({"Employee", "Person"}));
+  EXPECT_EQ(multi_label_scan.Details(), "e:Employee:Person");
+}
+
+TEST(LogicalPlanTest, IndexAndRelationshipLeafPlansExposeMetadata) {
+  ir::NodeIndexSeekPlan node_seek("n", {"Person"}, "name", nullptr);
+  EXPECT_EQ(node_seek.Name(), "NodeIndexSeek");
+  EXPECT_EQ(node_seek.Variable(), "n");
+  EXPECT_EQ(node_seek.Labels(), std::vector<std::string>({"Person"}));
+  EXPECT_EQ(node_seek.PropertyKey(), "name");
+  EXPECT_EQ(node_seek.ValueExpression(), nullptr);
+  EXPECT_EQ(node_seek.Details(), "n:Person WHERE n.name = null");
+  EXPECT_EQ(node_seek.OutputColumns(), std::vector<std::string>({"n"}));
+  EXPECT_TRUE(Contains(node_seek.SolvedSymbols(), "n"));
+
+  ir::NodeIndexRangeSeekPlan node_range("n", {}, "age", {nullptr});
+  EXPECT_EQ(node_range.Name(), "NodeIndexRangeSeek");
+  EXPECT_EQ(node_range.Variable(), "n");
+  EXPECT_TRUE(node_range.Labels().empty());
+  EXPECT_EQ(node_range.PropertyKey(), "age");
+  EXPECT_EQ(node_range.Predicates(),
+            std::vector<const ast::Expression *>({nullptr}));
+  EXPECT_EQ(node_range.Details(), "n WHERE null");
+
+  ir::RelationshipTypeScanPlan rel_scan(
+      "a", "r", "b", ir::ExpandDirection::kOutgoing, {"KNOWS"});
+  EXPECT_EQ(rel_scan.Name(), "RelationshipTypeScan");
+  EXPECT_EQ(rel_scan.FromNode(), "a");
+  EXPECT_EQ(rel_scan.Relationship(), "r");
+  EXPECT_EQ(rel_scan.ToNode(), "b");
+  EXPECT_EQ(rel_scan.Direction(), ir::ExpandDirection::kOutgoing);
+  EXPECT_EQ(rel_scan.Types(), std::vector<std::string>({"KNOWS"}));
+  EXPECT_EQ(rel_scan.Details(), "(a)-[r:KNOWS]->(b)");
+  EXPECT_EQ(rel_scan.OutputColumns(),
+            std::vector<std::string>({"a", "r", "b"}));
+  EXPECT_TRUE(Contains(rel_scan.SolvedSymbols(), "a"));
+  EXPECT_TRUE(Contains(rel_scan.SolvedSymbols(), "r"));
+  EXPECT_TRUE(Contains(rel_scan.SolvedSymbols(), "b"));
+
+  ir::RelationshipIndexSeekPlan rel_seek("a", "r", "b",
+                                         ir::ExpandDirection::kOutgoing,
+                                         {"KNOWS"}, "since", nullptr);
+  EXPECT_EQ(rel_seek.Name(), "RelationshipIndexSeek");
+  EXPECT_EQ(rel_seek.PropertyKey(), "since");
+  EXPECT_EQ(rel_seek.ValueExpression(), nullptr);
+  EXPECT_EQ(rel_seek.Details(), "(a)-[r:KNOWS]->(b) WHERE r.since = null");
+
+  ir::RelationshipIndexRangeSeekPlan rel_range(
+      "a", "r", "b", ir::ExpandDirection::kOutgoing, {}, "since", {nullptr});
+  EXPECT_EQ(rel_range.Name(), "RelationshipIndexRangeSeek");
+  EXPECT_EQ(rel_range.PropertyKey(), "since");
+  EXPECT_EQ(rel_range.Predicates(),
+            std::vector<const ast::Expression *>({nullptr}));
+  EXPECT_EQ(rel_range.Details(), "(a)-[r]->(b) WHERE null");
 }
 
 TEST(LogicalPlanTest, ExpandCopiesChildMetadataAndAddsPathSymbols) {
@@ -186,6 +246,27 @@ TEST(LogicalPlanTest, BinaryPlansMergeSolvedSymbolsAndOutputs) {
   EXPECT_TRUE(Contains(join.SolvedSymbols(), "b"));
   EXPECT_TRUE(Contains(join.SolvedSymbols(), "c"));
 
+  ir::ValueHashJoinPlan value_join(
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({"a"})),
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({"b"})),
+      {nullptr});
+  EXPECT_EQ(value_join.Name(), "ValueHashJoin");
+  EXPECT_EQ(value_join.Details(), "null");
+  EXPECT_EQ(value_join.Predicates(),
+            std::vector<const ast::Expression *>({nullptr}));
+  EXPECT_EQ(value_join.OutputColumns(), std::vector<std::string>({"a", "b"}));
+
+  ir::PredicateJoinPlan predicate_join(
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({"a"})),
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({"b"})),
+      {nullptr});
+  EXPECT_EQ(predicate_join.Name(), "PredicateJoin");
+  EXPECT_EQ(predicate_join.Details(), "null");
+  EXPECT_EQ(predicate_join.Predicates(),
+            std::vector<const ast::Expression *>({nullptr}));
+  EXPECT_EQ(predicate_join.OutputColumns(),
+            std::vector<std::string>({"a", "b"}));
+
   ir::ApplyPlan apply(
       std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({"outer"})),
       std::make_unique<ir::AllNodeScanPlan>("inner"));
@@ -200,6 +281,15 @@ TEST(LogicalPlanTest, BinaryPlansMergeSolvedSymbolsAndOutputs) {
   EXPECT_EQ(semi_apply.OutputColumns(), std::vector<std::string>({"outer"}));
   EXPECT_TRUE(Contains(semi_apply.SolvedSymbols(), "outer"));
   EXPECT_TRUE(Contains(semi_apply.SolvedSymbols(), "inner"));
+
+  ir::AntiSemiApplyPlan anti_semi_apply(
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({"outer"})),
+      std::make_unique<ir::AllNodeScanPlan>("inner"));
+  EXPECT_EQ(anti_semi_apply.Name(), "AntiSemiApply");
+  EXPECT_EQ(anti_semi_apply.OutputColumns(),
+            std::vector<std::string>({"outer"}));
+  EXPECT_TRUE(Contains(anti_semi_apply.SolvedSymbols(), "outer"));
+  EXPECT_TRUE(Contains(anti_semi_apply.SolvedSymbols(), "inner"));
 
   ir::OptionalApplyPlan optional_apply(
       std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({"outer"})),

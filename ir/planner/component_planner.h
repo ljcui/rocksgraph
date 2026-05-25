@@ -21,6 +21,10 @@ class QueryGraphPlanningContext {
 
   [[nodiscard]] std::unique_ptr<LogicalPlan> BuildNodeLeaf(
       const QueryGraph &query_graph, std::string_view variable);
+  [[nodiscard]] std::unique_ptr<LogicalPlan> BuildRelationshipLeaf(
+      const QueryGraph &query_graph, std::size_t relationship_index);
+  [[nodiscard]] std::vector<std::string> ConsumeRelationshipTypes(
+      const Selections &selections, const PatternRelationship &relationship);
   std::size_t ApplyAvailableFilters(const Selections &selections,
                                     std::unique_ptr<LogicalPlan> *plan);
   void ApplyNestedExpressions(
@@ -32,8 +36,16 @@ class QueryGraphPlanningContext {
   void Restore(std::unordered_set<const Predicate *> planned_predicates);
 
  private:
-  [[nodiscard]] const Predicate *FirstConsumableNodeLabelPredicate(
+  [[nodiscard]] std::vector<const Predicate *> ConsumableNodeLabelPredicates(
       const Selections &selections, std::string_view variable) const;
+  [[nodiscard]] std::vector<const Predicate *>
+  ConsumableRelationshipTypePredicates(const Selections &selections,
+                                       std::string_view variable) const;
+  [[nodiscard]] const Predicate *BestIndexSeekPredicate(
+      const Selections &selections, std::string_view variable) const;
+  [[nodiscard]] std::vector<const Predicate *> BestIndexRangePredicates(
+      const Selections &selections, std::string_view variable) const;
+  void MarkPlanned(const std::vector<const Predicate *> &predicates);
   [[nodiscard]] std::unique_ptr<LogicalPlan> BuildNestedPlan(
       const PlannerQuery &query) const;
 
