@@ -1,11 +1,13 @@
 #include "ir/planner_query_graph_builder.h"
 
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
+#include "ast/ast_clone.h"
 #include "ast/semantic_table.h"
 #include "common/exception.h"
 #include "ir/planner_query_internal.h"
@@ -256,6 +258,65 @@ PatternRelationship ToPatternRelationship(
   return out;
 }
 
+std::unique_ptr<ast::Expression> MakeVariableExpression(
+    const std::string &name) {
+  auto variable = std::make_unique<ast::Variable>();
+  variable->name = name;
+  return variable;
+}
+
+std::unique_ptr<ast::Expression> MakePropertyExpression(
+    const std::string &variable, const std::string &property_key) {
+  auto property = std::make_unique<ast::PropertyExpression>();
+  property->object = MakeVariableExpression(variable);
+  property->property_key = property_key;
+  return property;
+}
+
+const ast::Expression *AddMergeMatchExpression(
+    MergeMatchGraph *match_graph, std::unique_ptr<ast::Expression> expression) {
+  CHECK(match_graph != nullptr, common::InternalError,
+        "merge match graph is null");
+  CHECK(expression != nullptr, common::InternalError,
+        "merge match expression is null");
+  const ast::Expression *raw = expression.get();
+  std::shared_ptr<ast::Expression> owned(std::move(expression));
+  match_graph->predicate_expressions.push_back(std::move(owned));
+  return raw;
+}
+
+const ast::Expression *BuildMergeMatchLabelExpression(
+    MergeMatchGraph *match_graph, const PatternLabelPredicate &label) {
+  CHECK(match_graph != nullptr, common::InternalError,
+        "merge match graph is null");
+  if (label.variable.empty() || label.labels.empty()) {
+    return nullptr;
+  }
+
+  auto expression = std::make_unique<ast::LabelPredicateExpression>();
+  expression->expr = MakeVariableExpression(label.variable);
+  expression->labels = label.labels;
+  return AddMergeMatchExpression(match_graph, std::move(expression));
+}
+
+const ast::Expression *BuildMergeMatchPropertyExpression(
+    MergeMatchGraph *match_graph, const PatternPropertyEquality &equality) {
+  CHECK(match_graph != nullptr, common::InternalError,
+        "merge match graph is null");
+  CHECK(equality.value != nullptr, common::InvalidArgumentError,
+        "MERGE property equality value is null");
+  if (equality.variable.empty() || equality.property_key.empty()) {
+    return nullptr;
+  }
+
+  auto comparison = std::make_unique<ast::ComparisonExpression>();
+  comparison->left =
+      MakePropertyExpression(equality.variable, equality.property_key);
+  comparison->op = "=";
+  comparison->right = ast::CloneExpression(*equality.value);
+  return AddMergeMatchExpression(match_graph, std::move(comparison));
+}
+
 MergeMatchGraph BuildMergeMatchGraph(
     const CreatePattern &pattern,
     std::unordered_set<LogicalVariable> argument_ids) {
@@ -264,13 +325,18 @@ MergeMatchGraph BuildMergeMatchGraph(
   for (const auto &node : pattern.nodes) {
     AddSymbol(&match_graph.pattern_nodes, node.variable);
     if (!node.labels.empty()) {
-      match_graph.node_labels.push_back(
-          {.variable = node.variable, .labels = node.labels});
+      PatternLabelPredicate label{.variable = node.variable,
+                                  .labels = node.labels};
+      label.expression = BuildMergeMatchLabelExpression(&match_graph, label);
+      match_graph.node_labels.push_back(std::move(label));
     }
     for (const auto &entry : node.properties.entries) {
-      match_graph.property_equalities.push_back({.variable = node.variable,
-                                                 .property_key = entry.key,
-                                                 .value = entry.value});
+      PatternPropertyEquality equality{.variable = node.variable,
+                                       .property_key = entry.key,
+                                       .value = entry.value};
+      equality.expression =
+          BuildMergeMatchPropertyExpression(&match_graph, equality);
+      match_graph.property_equalities.push_back(std::move(equality));
     }
   }
   for (const auto &relationship : pattern.relationships) {
@@ -279,10 +345,12 @@ MergeMatchGraph BuildMergeMatchGraph(
     match_graph.pattern_relationships.push_back(
         ToPatternRelationship(relationship));
     for (const auto &entry : relationship.properties.entries) {
-      match_graph.property_equalities.push_back(
-          {.variable = relationship.variable,
-           .property_key = entry.key,
-           .value = entry.value});
+      PatternPropertyEquality equality{.variable = relationship.variable,
+                                       .property_key = entry.key,
+                                       .value = entry.value};
+      equality.expression =
+          BuildMergeMatchPropertyExpression(&match_graph, equality);
+      match_graph.property_equalities.push_back(std::move(equality));
     }
   }
   return match_graph;

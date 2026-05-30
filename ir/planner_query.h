@@ -234,12 +234,14 @@ struct DeleteExpressionPattern {
 struct PatternLabelPredicate {
   std::string variable;
   std::vector<std::string> labels;
+  const ast::Expression *expression = nullptr;
 };
 
 struct PatternPropertyEquality {
   std::string variable;
   std::string property_key;
   const ast::Expression *value = nullptr;
+  const ast::Expression *expression = nullptr;
 };
 
 struct MergeMatchGraph {
@@ -248,6 +250,7 @@ struct MergeMatchGraph {
   std::vector<PatternLabelPredicate> node_labels;
   std::vector<PatternPropertyEquality> property_equalities;
   std::unordered_set<LogicalVariable> argument_ids;
+  std::vector<std::shared_ptr<ast::Expression>> predicate_expressions;
 };
 
 struct MergeActionPattern {

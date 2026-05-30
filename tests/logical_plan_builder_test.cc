@@ -1257,8 +1257,22 @@ TEST(LogicalPlanBuilderTest, BuildsMergePlan) {
       Merge [(m)-[r:KNOWS {since: 2020}]->(n:Person {id: m.id}) ON MATCH SET r.seen = true]
         WriteBarrier
           Argument [m]
-        Expand [(m)-[r:KNOWS]->(n)]
-          Argument [m]
+        Filter [r.since = 2020]
+          Filter [n.id = m.id]
+            Filter [n:Person]
+              Expand [(m)-[r:KNOWS]->(n)]
+                Argument [m]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsMergeMatchPlanWithIndexablePredicates) {
+  ExpectLogicalPlanText("MERGE (n:Person {id: 1}) RETURN n",
+                        R"(ProduceResults [n]
+  Projection [n]
+    Merge [n:Person {id: 1}]
+      WriteBarrier
+        Argument
+      NodeIndexSeek [n:Person WHERE n.id = 1]
 )");
 }
 

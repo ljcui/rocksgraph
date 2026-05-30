@@ -2209,12 +2209,24 @@ TEST(PlannerQueryTest, BuildsRelationshipMergeMatchGraph) {
   EXPECT_EQ(merge.merge.match_graph.node_labels[0].variable, "n");
   EXPECT_EQ(merge.merge.match_graph.node_labels[0].labels,
             std::vector<std::string>({"Person"}));
+  ASSERT_NE(merge.merge.match_graph.node_labels[0].expression, nullptr);
+  EXPECT_EQ(ast::ExpressionToString(
+                *merge.merge.match_graph.node_labels[0].expression),
+            "n:Person");
   ASSERT_EQ(merge.merge.match_graph.property_equalities.size(), 2U);
   EXPECT_EQ(merge.merge.match_graph.property_equalities[0].variable, "n");
   EXPECT_EQ(merge.merge.match_graph.property_equalities[0].property_key, "id");
+  ASSERT_NE(merge.merge.match_graph.property_equalities[0].expression, nullptr);
+  EXPECT_EQ(ast::ExpressionToString(
+                *merge.merge.match_graph.property_equalities[0].expression),
+            "n.id = m.id");
   EXPECT_EQ(merge.merge.match_graph.property_equalities[1].variable, "r");
   EXPECT_EQ(merge.merge.match_graph.property_equalities[1].property_key,
             "since");
+  ASSERT_NE(merge.merge.match_graph.property_equalities[1].expression, nullptr);
+  EXPECT_EQ(ast::ExpressionToString(
+                *merge.merge.match_graph.property_equalities[1].expression),
+            "r.since = 2020");
   ASSERT_EQ(merge.merge.actions.size(), 1U);
   EXPECT_TRUE(merge.merge.actions[0].on_match);
   ASSERT_EQ(merge.merge.actions[0].set_patterns.size(), 1U);

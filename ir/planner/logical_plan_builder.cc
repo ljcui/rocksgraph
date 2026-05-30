@@ -507,6 +507,41 @@ QueryGraph QueryGraphFromMergeMatchGraph(const MergeMatchGraph &match_graph) {
   query_graph.pattern_nodes = match_graph.pattern_nodes;
   query_graph.pattern_relationships = match_graph.pattern_relationships;
   query_graph.argument_ids = match_graph.argument_ids;
+  for (const auto &label : match_graph.node_labels) {
+    if (label.variable.empty() || label.labels.empty()) {
+      continue;
+    }
+    CHECK(label.expression != nullptr, common::InternalError,
+          "MERGE label predicate expression is null");
+    Predicate predicate;
+    predicate.expression = label.expression;
+    predicate.dependencies.insert(label.variable);
+    predicate.kind = PredicateKind::kNodeLabel;
+    predicate.variable = label.variable;
+    predicate.labels = label.labels;
+    query_graph.selections.AddPredicate(std::move(predicate));
+  }
+  for (const auto &equality : match_graph.property_equalities) {
+    if (equality.variable.empty() || equality.property_key.empty()) {
+      continue;
+    }
+    CHECK(equality.value != nullptr, common::InvalidArgumentError,
+          "MERGE property equality value is null");
+    CHECK(equality.expression != nullptr, common::InternalError,
+          "MERGE property equality expression is null");
+    Predicate predicate;
+    predicate.expression = equality.expression;
+    predicate.dependencies.insert(equality.variable);
+    AddSymbols(&predicate.dependencies,
+               ast::CollectExpressionDependencies(*equality.value));
+    predicate.kind = PredicateKind::kPropertyEquality;
+    predicate.variable = equality.variable;
+    predicate.property_key = equality.property_key;
+    predicate.property_value = equality.value;
+    predicate.comparison_op = "=";
+    query_graph.selections.AddPredicate(std::move(predicate));
+  }
+  AddAssertIsNodeVariables(&query_graph);
   return query_graph;
 }
 
