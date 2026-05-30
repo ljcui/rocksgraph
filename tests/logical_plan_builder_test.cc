@@ -2,9 +2,11 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -18,23 +20,47 @@
 
 namespace {
 
-class EmptyPlannerCatalog final : public ir::PlannerCatalog {
+class FakePlannerCatalog final : public ir::PlannerCatalog {
  public:
+  void AddNodeIndex(std::vector<std::string> labels,
+                    std::string_view property_key) {
+    node_indexes_.insert(IndexKey(std::move(labels), property_key));
+  }
+
+  void AddRelationshipIndex(std::vector<std::string> relationship_types,
+                            std::string_view property_key) {
+    relationship_indexes_.insert(
+        IndexKey(std::move(relationship_types), property_key));
+  }
+
   [[nodiscard]] bool HasNodeIndex(
       const std::vector<std::string> &labels,
       std::string_view property_key) const override {
-    (void)labels;
-    (void)property_key;
-    return false;
+    return node_indexes_.contains(IndexKey(labels, property_key));
   }
 
   [[nodiscard]] bool HasRelationshipIndex(
       const std::vector<std::string> &relationship_types,
       std::string_view property_key) const override {
-    (void)relationship_types;
-    (void)property_key;
-    return false;
+    return relationship_indexes_.contains(
+        IndexKey(relationship_types, property_key));
   }
+
+ private:
+  static std::string IndexKey(std::vector<std::string> qualifiers,
+                              std::string_view property_key) {
+    std::sort(qualifiers.begin(), qualifiers.end());
+    std::string key(property_key);
+    key.push_back('\n');
+    for (const auto &qualifier : qualifiers) {
+      key += qualifier;
+      key.push_back('\n');
+    }
+    return key;
+  }
+
+  std::unordered_set<std::string> node_indexes_;
+  std::unordered_set<std::string> relationship_indexes_;
 };
 
 std::unique_ptr<ast::Statement> ParseOrFail(const std::string &query) {
@@ -162,13 +188,35 @@ TEST(LogicalPlanBuilderTest, UsesNodePropertyIndexSeek) {
 }
 
 TEST(LogicalPlanBuilderTest, KeepsNodePropertyFilterWhenIndexUnavailable) {
-  EmptyPlannerCatalog catalog;
+  FakePlannerCatalog catalog;
   ExpectLogicalPlanText(
       "MATCH (n:Person) WHERE n.name = 'Ada' RETURN n",
       R"(ProduceResults [n]
   Projection [n]
     Filter [n.name = 'Ada']
       NodeByLabelScan [n:Person]
+)",
+      ir::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
+}
+
+TEST(LogicalPlanBuilderTest, UsesNodeIndexOnlyWhenCatalogLabelsMatch) {
+  FakePlannerCatalog catalog;
+  catalog.AddNodeIndex({"Person"}, "name");
+
+  ExpectLogicalPlanText(
+      "MATCH (n:Person) WHERE n.name = 'Ada' RETURN n",
+      R"(ProduceResults [n]
+  Projection [n]
+    NodeIndexSeek [n:Person WHERE n.name = 'Ada']
+)",
+      ir::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
+
+  ExpectLogicalPlanText(
+      "MATCH (n:Movie) WHERE n.name = 'Ada' RETURN n",
+      R"(ProduceResults [n]
+  Projection [n]
+    Filter [n.name = 'Ada']
+      NodeByLabelScan [n:Movie]
 )",
       ir::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
 }
@@ -208,6 +256,20 @@ TEST(LogicalPlanBuilderTest, UsesCheapestNodePropertyIndexSeekCandidate) {
       ir::LogicalPlanBuilderOptions{.planner_statistics = &statistics});
 }
 
+TEST(LogicalPlanBuilderTest, UsesOnlyCatalogAvailableNodePropertyIndex) {
+  FakePlannerCatalog catalog;
+  catalog.AddNodeIndex({}, "z_fast");
+
+  ExpectLogicalPlanText(
+      "MATCH (n) WHERE n.a_slow = 1 AND n.z_fast = 2 RETURN n",
+      R"(ProduceResults [n]
+  Projection [n]
+    Filter [n.a_slow = 1]
+      NodeIndexSeek [n WHERE n.z_fast = 2]
+)",
+      ir::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
+}
+
 TEST(LogicalPlanBuilderTest, UsesNodePropertyIndexRangeSeek) {
   ExpectLogicalPlanText("MATCH (n) WHERE n.age >= 10 AND n.age < 20 RETURN n",
                         R"(ProduceResults [n]
@@ -217,7 +279,7 @@ TEST(LogicalPlanBuilderTest, UsesNodePropertyIndexRangeSeek) {
 }
 
 TEST(LogicalPlanBuilderTest, KeepsNodeRangeFiltersWhenIndexUnavailable) {
-  EmptyPlannerCatalog catalog;
+  FakePlannerCatalog catalog;
   ExpectLogicalPlanText(
       "MATCH (n) WHERE n.age >= 10 AND n.age < 20 RETURN n",
       R"(ProduceResults [n]
@@ -336,13 +398,36 @@ TEST(LogicalPlanBuilderTest, UsesRelationshipPropertyIndexSeek) {
 
 TEST(LogicalPlanBuilderTest,
      KeepsRelationshipPropertyFilterWhenIndexUnavailable) {
-  EmptyPlannerCatalog catalog;
+  FakePlannerCatalog catalog;
   ExpectLogicalPlanText(
       "MATCH (a)-[r]->(b) WHERE r.since = 2020 RETURN r",
       R"(ProduceResults [r]
   Projection [r]
     Filter [r.since = 2020]
       Expand [(a)-[r]->(b)]
+        AllNodeScan [a]
+)",
+      ir::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
+}
+
+TEST(LogicalPlanBuilderTest, UsesRelationshipIndexOnlyWhenCatalogTypesMatch) {
+  FakePlannerCatalog catalog;
+  catalog.AddRelationshipIndex({"KNOWS"}, "since");
+
+  ExpectLogicalPlanText(
+      "MATCH (a)-[r:KNOWS]->(b) WHERE r.since = 2020 RETURN r",
+      R"(ProduceResults [r]
+  Projection [r]
+    RelationshipIndexSeek [(a)-[r:KNOWS]->(b) WHERE r.since = 2020]
+)",
+      ir::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
+
+  ExpectLogicalPlanText(
+      "MATCH (a)-[r:LIKES]->(b) WHERE r.since = 2020 RETURN r",
+      R"(ProduceResults [r]
+  Projection [r]
+    Filter [r.since = 2020]
+      Expand [(a)-[r:LIKES]->(b)]
         AllNodeScan [a]
 )",
       ir::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
@@ -361,6 +446,21 @@ TEST(LogicalPlanBuilderTest,
       RelationshipIndexSeek [(a)-[r]->(b) WHERE r.z_fast = 2]
 )",
       ir::LogicalPlanBuilderOptions{.planner_statistics = &statistics});
+}
+
+TEST(LogicalPlanBuilderTest,
+     UsesOnlyCatalogAvailableRelationshipPropertyIndex) {
+  FakePlannerCatalog catalog;
+  catalog.AddRelationshipIndex({}, "z_fast");
+
+  ExpectLogicalPlanText(
+      "MATCH (a)-[r]->(b) WHERE r.a_slow = 1 AND r.z_fast = 2 RETURN r",
+      R"(ProduceResults [r]
+  Projection [r]
+    Filter [r.a_slow = 1]
+      RelationshipIndexSeek [(a)-[r]->(b) WHERE r.z_fast = 2]
+)",
+      ir::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
 }
 
 TEST(LogicalPlanBuilderTest,
