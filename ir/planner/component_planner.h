@@ -36,15 +36,27 @@ class QueryGraphPlanningContext {
   void Restore(std::unordered_set<const Predicate *> planned_predicates);
 
  private:
+  enum class IndexEntityKind {
+    kNode,
+    kRelationship,
+  };
+
   [[nodiscard]] std::vector<const Predicate *> ConsumableNodeLabelPredicates(
       const Selections &selections, std::string_view variable) const;
   [[nodiscard]] std::vector<const Predicate *>
   ConsumableRelationshipTypePredicates(const Selections &selections,
                                        std::string_view variable) const;
+  [[nodiscard]] bool HasIndex(IndexEntityKind entity_kind,
+                              const std::vector<std::string> &qualifiers,
+                              std::string_view property_key) const;
   [[nodiscard]] const Predicate *BestIndexSeekPredicate(
-      const Selections &selections, std::string_view variable) const;
+      const Selections &selections, std::string_view variable,
+      IndexEntityKind entity_kind,
+      const std::vector<std::string> &qualifiers) const;
   [[nodiscard]] std::vector<const Predicate *> BestIndexRangePredicates(
-      const Selections &selections, std::string_view variable) const;
+      const Selections &selections, std::string_view variable,
+      IndexEntityKind entity_kind,
+      const std::vector<std::string> &qualifiers) const;
   void MarkPlanned(const std::vector<const Predicate *> &predicates);
   [[nodiscard]] std::unique_ptr<LogicalPlan> BuildNestedPlan(
       const PlannerQuery &query) const;

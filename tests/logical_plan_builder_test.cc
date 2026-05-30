@@ -4,7 +4,9 @@
 
 #include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 #include "ast/ast_builder.h"
 #include "ast/ast_exception.h"
@@ -15,6 +17,25 @@
 #include "tests/fake_planner_statistics.h"
 
 namespace {
+
+class EmptyPlannerCatalog final : public ir::PlannerCatalog {
+ public:
+  [[nodiscard]] bool HasNodeIndex(
+      const std::vector<std::string> &labels,
+      std::string_view property_key) const override {
+    (void)labels;
+    (void)property_key;
+    return false;
+  }
+
+  [[nodiscard]] bool HasRelationshipIndex(
+      const std::vector<std::string> &relationship_types,
+      std::string_view property_key) const override {
+    (void)relationship_types;
+    (void)property_key;
+    return false;
+  }
+};
 
 std::unique_ptr<ast::Statement> ParseOrFail(const std::string &query) {
   try {
@@ -140,6 +161,18 @@ TEST(LogicalPlanBuilderTest, UsesNodePropertyIndexSeek) {
 )");
 }
 
+TEST(LogicalPlanBuilderTest, KeepsNodePropertyFilterWhenIndexUnavailable) {
+  EmptyPlannerCatalog catalog;
+  ExpectLogicalPlanText(
+      "MATCH (n:Person) WHERE n.name = 'Ada' RETURN n",
+      R"(ProduceResults [n]
+  Projection [n]
+    Filter [n.name = 'Ada']
+      NodeByLabelScan [n:Person]
+)",
+      ir::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
+}
+
 TEST(LogicalPlanBuilderTest, UsesNodePropertyIndexSeekForReversedEquality) {
   ExpectLogicalPlanText("MATCH (n) WHERE 1 = n.id RETURN n",
                         R"(ProduceResults [n]
@@ -154,6 +187,19 @@ TEST(LogicalPlanBuilderTest, UsesNodePropertyIndexRangeSeek) {
   Projection [n]
     NodeIndexRangeSeek [n WHERE n.age >= 10 AND n.age < 20]
 )");
+}
+
+TEST(LogicalPlanBuilderTest, KeepsNodeRangeFiltersWhenIndexUnavailable) {
+  EmptyPlannerCatalog catalog;
+  ExpectLogicalPlanText(
+      "MATCH (n) WHERE n.age >= 10 AND n.age < 20 RETURN n",
+      R"(ProduceResults [n]
+  Projection [n]
+    Filter [n.age < 20]
+      Filter [n.age >= 10]
+        AllNodeScan [n]
+)",
+      ir::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
 }
 
 TEST(LogicalPlanBuilderTest, UsesNodePropertyIndexRangeSeekForReversedBounds) {
@@ -259,6 +305,20 @@ TEST(LogicalPlanBuilderTest, UsesRelationshipPropertyIndexSeek) {
   Projection [r]
     RelationshipIndexSeek [(a)-[r]->(b) WHERE r.since = 2020]
 )");
+}
+
+TEST(LogicalPlanBuilderTest,
+     KeepsRelationshipPropertyFilterWhenIndexUnavailable) {
+  EmptyPlannerCatalog catalog;
+  ExpectLogicalPlanText(
+      "MATCH (a)-[r]->(b) WHERE r.since = 2020 RETURN r",
+      R"(ProduceResults [r]
+  Projection [r]
+    Filter [r.since = 2020]
+      Expand [(a)-[r]->(b)]
+        AllNodeScan [a]
+)",
+      ir::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
 }
 
 TEST(LogicalPlanBuilderTest,

@@ -23,6 +23,13 @@ namespace {
 
 constexpr std::string_view kLogicalPlanStage = "logical plan";
 
+const PlannerCatalog &PlannerCatalogFor(
+    const LogicalPlanBuilderOptions &options) {
+  static const HeuristicPlannerCatalog kDefaultCatalog;
+  return options.planner_catalog == nullptr ? kDefaultCatalog
+                                            : *options.planner_catalog;
+}
+
 std::vector<std::string> SortedComponentNodes(
     const QueryGraphComponent &component) {
   std::vector<std::string> out(component.pattern_nodes.begin(),
@@ -586,8 +593,8 @@ std::unique_ptr<LogicalPlan> QueryGraphPlanningContext::BuildNodeLeaf(
   const std::vector<std::string> labels =
       LabelsFromPredicates(label_predicates);
 
-  const Predicate *seek_predicate =
-      BestIndexSeekPredicate(query_graph.selections, variable);
+  const Predicate *seek_predicate = BestIndexSeekPredicate(
+      query_graph.selections, variable, IndexEntityKind::kNode, labels);
   if (seek_predicate != nullptr) {
     MarkPlanned(label_predicates);
     planned_predicates_->insert(seek_predicate);
@@ -596,8 +603,8 @@ std::unique_ptr<LogicalPlan> QueryGraphPlanningContext::BuildNodeLeaf(
         PredicateValueExpression(*seek_predicate));
   }
 
-  std::vector<const Predicate *> range_predicates =
-      BestIndexRangePredicates(query_graph.selections, variable);
+  std::vector<const Predicate *> range_predicates = BestIndexRangePredicates(
+      query_graph.selections, variable, IndexEntityKind::kNode, labels);
   if (!range_predicates.empty()) {
     const std::string property_key = range_predicates.front()->property_key;
     MarkPlanned(label_predicates);
@@ -627,7 +634,8 @@ std::unique_ptr<LogicalPlan> QueryGraphPlanningContext::BuildRelationshipLeaf(
   std::vector<std::string> types =
       ConsumeRelationshipTypes(query_graph.selections, relationship);
   const Predicate *seek_predicate =
-      BestIndexSeekPredicate(query_graph.selections, relationship.variable);
+      BestIndexSeekPredicate(query_graph.selections, relationship.variable,
+                             IndexEntityKind::kRelationship, types);
   if (seek_predicate != nullptr) {
     planned_predicates_->insert(seek_predicate);
     return std::make_unique<RelationshipIndexSeekPlan>(
@@ -638,7 +646,8 @@ std::unique_ptr<LogicalPlan> QueryGraphPlanningContext::BuildRelationshipLeaf(
   }
 
   std::vector<const Predicate *> range_predicates =
-      BestIndexRangePredicates(query_graph.selections, relationship.variable);
+      BestIndexRangePredicates(query_graph.selections, relationship.variable,
+                               IndexEntityKind::kRelationship, types);
   if (!range_predicates.empty()) {
     const std::string property_key = range_predicates.front()->property_key;
     MarkPlanned(range_predicates);
@@ -803,8 +812,26 @@ QueryGraphPlanningContext::ConsumableRelationshipTypePredicates(
   return out;
 }
 
+bool QueryGraphPlanningContext::HasIndex(
+    IndexEntityKind entity_kind, const std::vector<std::string> &qualifiers,
+    std::string_view property_key) const {
+  if (property_key.empty()) {
+    return false;
+  }
+  const PlannerCatalog &catalog = PlannerCatalogFor(*options_);
+  switch (entity_kind) {
+    case IndexEntityKind::kNode:
+      return catalog.HasNodeIndex(qualifiers, property_key);
+    case IndexEntityKind::kRelationship:
+      return catalog.HasRelationshipIndex(qualifiers, property_key);
+  }
+  THROW(common::InternalError, "unknown index entity kind");
+}
+
 const Predicate *QueryGraphPlanningContext::BestIndexSeekPredicate(
-    const Selections &selections, std::string_view variable) const {
+    const Selections &selections, std::string_view variable,
+    IndexEntityKind entity_kind,
+    const std::vector<std::string> &qualifiers) const {
   const Predicate *best = nullptr;
   for (const auto &predicate : selections.predicates) {
     if (predicate.kind != PredicateKind::kPropertyEquality ||
@@ -816,6 +843,9 @@ const Predicate *QueryGraphPlanningContext::BestIndexSeekPredicate(
     if (predicate.property_value == nullptr) {
       continue;
     }
+    if (!HasIndex(entity_kind, qualifiers, predicate.property_key)) {
+      continue;
+    }
     if (best == nullptr || predicate.property_key < best->property_key) {
       best = &predicate;
     }
@@ -825,11 +855,16 @@ const Predicate *QueryGraphPlanningContext::BestIndexSeekPredicate(
 
 std::vector<const Predicate *>
 QueryGraphPlanningContext::BestIndexRangePredicates(
-    const Selections &selections, std::string_view variable) const {
+    const Selections &selections, std::string_view variable,
+    IndexEntityKind entity_kind,
+    const std::vector<std::string> &qualifiers) const {
   std::vector<const Predicate *> best;
   std::string best_property_key;
   for (PropertyInequalityGroup group : selections.PropertyInequalityGroups()) {
     if (!StringEquals(group.variable, variable) || group.property_key.empty()) {
+      continue;
+    }
+    if (!HasIndex(entity_kind, qualifiers, group.property_key)) {
       continue;
     }
     std::vector<const Predicate *> predicates;
@@ -859,7 +894,8 @@ QueryGraphPlanningContext::BestIndexRangePredicates(
         predicate.property_key.empty() || predicate.property_value == nullptr ||
         predicate.expression == nullptr ||
         !StringEquals(predicate.comparison_op, "STARTS WITH") ||
-        !PredicateDependsOnlyOn(predicate, variable)) {
+        !PredicateDependsOnlyOn(predicate, variable) ||
+        !HasIndex(entity_kind, qualifiers, predicate.property_key)) {
       continue;
     }
     if (best.empty() || predicate.property_key < best_property_key) {
