@@ -13,15 +13,20 @@
 
 namespace ir {
 
+struct LeafPlanCandidate {
+  std::unique_ptr<LogicalPlan> plan;
+  std::unordered_set<const Predicate *> planned_predicates;
+};
+
 class QueryGraphPlanningContext {
  public:
   explicit QueryGraphPlanningContext(
       std::unordered_set<const Predicate *> *planned_predicates,
       const LogicalPlanBuilderOptions *options);
 
-  [[nodiscard]] std::unique_ptr<LogicalPlan> BuildNodeLeaf(
+  [[nodiscard]] std::vector<LeafPlanCandidate> BuildNodeLeafCandidates(
       const QueryGraph &query_graph, std::string_view variable);
-  [[nodiscard]] std::unique_ptr<LogicalPlan> BuildRelationshipLeaf(
+  [[nodiscard]] std::vector<LeafPlanCandidate> BuildRelationshipLeafCandidates(
       const QueryGraph &query_graph, std::size_t relationship_index);
   [[nodiscard]] std::vector<std::string> ConsumeRelationshipTypes(
       const Selections &selections, const PatternRelationship &relationship);
@@ -49,14 +54,15 @@ class QueryGraphPlanningContext {
   [[nodiscard]] bool HasIndex(IndexEntityKind entity_kind,
                               const std::vector<std::string> &qualifiers,
                               std::string_view property_key) const;
-  [[nodiscard]] const Predicate *BestIndexSeekPredicate(
+  [[nodiscard]] std::vector<const Predicate *> IndexSeekPredicates(
       const Selections &selections, std::string_view variable,
       IndexEntityKind entity_kind,
       const std::vector<std::string> &qualifiers) const;
-  [[nodiscard]] std::vector<const Predicate *> BestIndexRangePredicates(
-      const Selections &selections, std::string_view variable,
-      IndexEntityKind entity_kind,
-      const std::vector<std::string> &qualifiers) const;
+  [[nodiscard]] std::vector<std::vector<const Predicate *>>
+  IndexRangePredicateGroups(const Selections &selections,
+                            std::string_view variable,
+                            IndexEntityKind entity_kind,
+                            const std::vector<std::string> &qualifiers) const;
   void MarkPlanned(const std::vector<const Predicate *> &predicates);
   [[nodiscard]] std::unique_ptr<LogicalPlan> BuildNestedPlan(
       const PlannerQuery &query) const;

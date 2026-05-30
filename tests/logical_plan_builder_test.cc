@@ -173,12 +173,39 @@ TEST(LogicalPlanBuilderTest, KeepsNodePropertyFilterWhenIndexUnavailable) {
       ir::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
 }
 
+TEST(LogicalPlanBuilderTest, UsesCheaperNodeScanWhenIndexCostIsHigher) {
+  test_support::FakePlannerStatistics statistics;
+  statistics.node_index_seek_selectivity_by_key = {{"name", 2.0}};
+  ExpectLogicalPlanText(
+      "MATCH (n:Person) WHERE n.name = 'Ada' RETURN n",
+      R"(ProduceResults [n]
+  Projection [n]
+    Filter [n.name = 'Ada']
+      NodeByLabelScan [n:Person]
+)",
+      ir::LogicalPlanBuilderOptions{.planner_statistics = &statistics});
+}
+
 TEST(LogicalPlanBuilderTest, UsesNodePropertyIndexSeekForReversedEquality) {
   ExpectLogicalPlanText("MATCH (n) WHERE 1 = n.id RETURN n",
                         R"(ProduceResults [n]
   Projection [n]
     NodeIndexSeek [n WHERE n.id = 1]
 )");
+}
+
+TEST(LogicalPlanBuilderTest, UsesCheapestNodePropertyIndexSeekCandidate) {
+  test_support::FakePlannerStatistics statistics;
+  statistics.node_index_seek_selectivity_by_key = {{"a_slow", 0.5},
+                                                   {"z_fast", 0.001}};
+  ExpectLogicalPlanText(
+      "MATCH (n) WHERE n.a_slow = 1 AND n.z_fast = 2 RETURN n",
+      R"(ProduceResults [n]
+  Projection [n]
+    Filter [n.a_slow = 1]
+      NodeIndexSeek [n WHERE n.z_fast = 2]
+)",
+      ir::LogicalPlanBuilderOptions{.planner_statistics = &statistics});
 }
 
 TEST(LogicalPlanBuilderTest, UsesNodePropertyIndexRangeSeek) {
@@ -319,6 +346,21 @@ TEST(LogicalPlanBuilderTest,
         AllNodeScan [a]
 )",
       ir::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
+}
+
+TEST(LogicalPlanBuilderTest,
+     UsesCheapestRelationshipPropertyIndexSeekCandidate) {
+  test_support::FakePlannerStatistics statistics;
+  statistics.relationship_index_seek_selectivity_by_key = {{"a_slow", 0.5},
+                                                           {"z_fast", 0.001}};
+  ExpectLogicalPlanText(
+      "MATCH (a)-[r]->(b) WHERE r.a_slow = 1 AND r.z_fast = 2 RETURN r",
+      R"(ProduceResults [r]
+  Projection [r]
+    Filter [r.a_slow = 1]
+      RelationshipIndexSeek [(a)-[r]->(b) WHERE r.z_fast = 2]
+)",
+      ir::LogicalPlanBuilderOptions{.planner_statistics = &statistics});
 }
 
 TEST(LogicalPlanBuilderTest,

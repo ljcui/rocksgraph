@@ -88,6 +88,25 @@ const ast::Expression *PredicateValueExpression(const Predicate &predicate) {
   return predicate.property_value;
 }
 
+void AddRangePredicateGroup(std::vector<std::vector<const Predicate *>> *groups,
+                            std::vector<const Predicate *> predicates) {
+  CHECK(groups != nullptr, common::InternalError,
+        "range predicate groups are null");
+  if (predicates.empty()) {
+    return;
+  }
+  const std::string &property_key = predicates.front()->property_key;
+  for (auto &group : *groups) {
+    CHECK(!group.empty(), common::InternalError,
+          "range predicate group is empty");
+    if (group.front()->property_key == property_key) {
+      group.insert(group.end(), predicates.begin(), predicates.end());
+      return;
+    }
+  }
+  groups->push_back(std::move(predicates));
+}
+
 std::vector<std::string> LabelsFromPredicates(
     const std::vector<const Predicate *> &predicates) {
   std::vector<std::string> labels;
@@ -425,15 +444,23 @@ class IdpComponentPlanner final : public ComponentPlanner {
     CHECK(plan_table != nullptr, common::InternalError, "plan table is null");
 
     context->Restore(base_predicates);
-    std::unique_ptr<LogicalPlan> plan =
-        context->BuildNodeLeaf(query_graph, node);
-    CostEstimate estimate = EstimateLeafPlan(*plan, cost_model_);
-    const std::size_t filter_count =
-        context->ApplyAvailableFilters(query_graph.selections, &plan);
-    plan_table->PutBest(MakePlanCandidate(
-        std::move(plan), {},
-        ApplyFilterEstimates(estimate, filter_count, cost_model_),
-        context->Snapshot()));
+    std::vector<LeafPlanCandidate> leaf_candidates =
+        context->BuildNodeLeafCandidates(query_graph, node);
+    CHECK(!leaf_candidates.empty(), common::InternalError,
+          "missing node leaf candidate");
+    for (auto &leaf_candidate : leaf_candidates) {
+      CHECK(leaf_candidate.plan != nullptr, common::InternalError,
+            "node leaf candidate plan is null");
+      context->Restore(std::move(leaf_candidate.planned_predicates));
+      CostEstimate estimate =
+          EstimateLeafPlan(*leaf_candidate.plan, cost_model_);
+      const std::size_t filter_count = context->ApplyAvailableFilters(
+          query_graph.selections, &leaf_candidate.plan);
+      plan_table->PutBest(MakePlanCandidate(
+          std::move(leaf_candidate.plan), {},
+          ApplyFilterEstimates(estimate, filter_count, cost_model_),
+          context->Snapshot()));
+    }
   }
 
   void PutInitialRelationshipCandidates(
@@ -447,18 +474,22 @@ class IdpComponentPlanner final : public ComponentPlanner {
     for (std::size_t relationship_index :
          component.pattern_relationship_indices) {
       context->Restore(base_predicates);
-      std::unique_ptr<LogicalPlan> plan =
-          context->BuildRelationshipLeaf(query_graph, relationship_index);
-      if (plan == nullptr) {
-        continue;
+      std::vector<LeafPlanCandidate> leaf_candidates =
+          context->BuildRelationshipLeafCandidates(query_graph,
+                                                   relationship_index);
+      for (auto &leaf_candidate : leaf_candidates) {
+        CHECK(leaf_candidate.plan != nullptr, common::InternalError,
+              "relationship leaf candidate plan is null");
+        context->Restore(std::move(leaf_candidate.planned_predicates));
+        CostEstimate estimate =
+            EstimateLeafPlan(*leaf_candidate.plan, cost_model_);
+        const std::size_t filter_count = context->ApplyAvailableFilters(
+            query_graph.selections, &leaf_candidate.plan);
+        plan_table->PutBest(MakePlanCandidate(
+            std::move(leaf_candidate.plan), {relationship_index},
+            ApplyFilterEstimates(estimate, filter_count, cost_model_),
+            context->Snapshot()));
       }
-      CostEstimate estimate = EstimateLeafPlan(*plan, cost_model_);
-      const std::size_t filter_count =
-          context->ApplyAvailableFilters(query_graph.selections, &plan);
-      plan_table->PutBest(MakePlanCandidate(
-          std::move(plan), {relationship_index},
-          ApplyFilterEstimates(estimate, filter_count, cost_model_),
-          context->Snapshot()));
     }
   }
 
@@ -579,13 +610,20 @@ QueryGraphPlanningContext::QueryGraphPlanningContext(
         "logical plan builder options are null");
 }
 
-std::unique_ptr<LogicalPlan> QueryGraphPlanningContext::BuildNodeLeaf(
+std::vector<LeafPlanCandidate>
+QueryGraphPlanningContext::BuildNodeLeafCandidates(
     const QueryGraph &query_graph, std::string_view variable) {
   CHECK(!variable.empty(), common::InvalidArgumentError,
         "node leaf variable is empty");
+  const std::unordered_set<const Predicate *> base_predicates = Snapshot();
+  std::vector<LeafPlanCandidate> candidates;
+
   if (query_graph.argument_ids.contains(std::string(variable))) {
-    return std::make_unique<ArgumentPlan>(
+    auto plan = std::make_unique<ArgumentPlan>(
         std::vector<std::string>{std::string(variable)});
+    candidates.push_back(
+        {.plan = std::move(plan), .planned_predicates = Snapshot()});
+    return candidates;
   }
 
   const std::vector<const Predicate *> label_predicates =
@@ -593,76 +631,102 @@ std::unique_ptr<LogicalPlan> QueryGraphPlanningContext::BuildNodeLeaf(
   const std::vector<std::string> labels =
       LabelsFromPredicates(label_predicates);
 
-  const Predicate *seek_predicate = BestIndexSeekPredicate(
-      query_graph.selections, variable, IndexEntityKind::kNode, labels);
-  if (seek_predicate != nullptr) {
+  for (const Predicate *seek_predicate : IndexSeekPredicates(
+           query_graph.selections, variable, IndexEntityKind::kNode, labels)) {
+    Restore(base_predicates);
     MarkPlanned(label_predicates);
     planned_predicates_->insert(seek_predicate);
-    return std::make_unique<NodeIndexSeekPlan>(
+    auto plan = std::make_unique<NodeIndexSeekPlan>(
         std::string(variable), labels, seek_predicate->property_key,
         PredicateValueExpression(*seek_predicate));
+    candidates.push_back(
+        {.plan = std::move(plan), .planned_predicates = Snapshot()});
   }
 
-  std::vector<const Predicate *> range_predicates = BestIndexRangePredicates(
-      query_graph.selections, variable, IndexEntityKind::kNode, labels);
-  if (!range_predicates.empty()) {
+  for (const std::vector<const Predicate *> &range_predicates :
+       IndexRangePredicateGroups(query_graph.selections, variable,
+                                 IndexEntityKind::kNode, labels)) {
+    Restore(base_predicates);
     const std::string property_key = range_predicates.front()->property_key;
     MarkPlanned(label_predicates);
     MarkPlanned(range_predicates);
-    return std::make_unique<NodeIndexRangeSeekPlan>(
+    auto plan = std::make_unique<NodeIndexRangeSeekPlan>(
         std::string(variable), labels, property_key,
         PredicateExpressions(range_predicates));
+    candidates.push_back(
+        {.plan = std::move(plan), .planned_predicates = Snapshot()});
   }
 
+  Restore(base_predicates);
   if (!labels.empty()) {
     MarkPlanned(label_predicates);
-    return std::make_unique<NodeByLabelScanPlan>(std::string(variable), labels);
+    auto plan =
+        std::make_unique<NodeByLabelScanPlan>(std::string(variable), labels);
+    candidates.push_back(
+        {.plan = std::move(plan), .planned_predicates = Snapshot()});
+    return candidates;
   }
-  return std::make_unique<AllNodeScanPlan>(std::string(variable));
+  auto plan = std::make_unique<AllNodeScanPlan>(std::string(variable));
+  candidates.push_back(
+      {.plan = std::move(plan), .planned_predicates = Snapshot()});
+  return candidates;
 }
 
-std::unique_ptr<LogicalPlan> QueryGraphPlanningContext::BuildRelationshipLeaf(
+std::vector<LeafPlanCandidate>
+QueryGraphPlanningContext::BuildRelationshipLeafCandidates(
     const QueryGraph &query_graph, std::size_t relationship_index) {
   CHECK(relationship_index < query_graph.pattern_relationships.size(),
         common::InvalidArgumentError, "relationship leaf index out of range");
+  std::vector<LeafPlanCandidate> candidates;
   const PatternRelationship &relationship =
       query_graph.pattern_relationships[relationship_index];
   if (relationship.length.variable) {
-    return nullptr;
+    return candidates;
   }
 
+  const std::unordered_set<const Predicate *> base_predicates = Snapshot();
   std::vector<std::string> types =
       ConsumeRelationshipTypes(query_graph.selections, relationship);
-  const Predicate *seek_predicate =
-      BestIndexSeekPredicate(query_graph.selections, relationship.variable,
-                             IndexEntityKind::kRelationship, types);
-  if (seek_predicate != nullptr) {
+  const std::unordered_set<const Predicate *> type_predicates = Snapshot();
+
+  for (const Predicate *seek_predicate :
+       IndexSeekPredicates(query_graph.selections, relationship.variable,
+                           IndexEntityKind::kRelationship, types)) {
+    Restore(type_predicates);
     planned_predicates_->insert(seek_predicate);
-    return std::make_unique<RelationshipIndexSeekPlan>(
+    auto plan = std::make_unique<RelationshipIndexSeekPlan>(
         relationship.left_node, relationship.variable, relationship.right_node,
         ToExpandDirection(relationship.direction), types,
         seek_predicate->property_key,
         PredicateValueExpression(*seek_predicate));
+    candidates.push_back(
+        {.plan = std::move(plan), .planned_predicates = Snapshot()});
   }
 
-  std::vector<const Predicate *> range_predicates =
-      BestIndexRangePredicates(query_graph.selections, relationship.variable,
-                               IndexEntityKind::kRelationship, types);
-  if (!range_predicates.empty()) {
+  for (const std::vector<const Predicate *> &range_predicates :
+       IndexRangePredicateGroups(query_graph.selections, relationship.variable,
+                                 IndexEntityKind::kRelationship, types)) {
+    Restore(type_predicates);
     const std::string property_key = range_predicates.front()->property_key;
     MarkPlanned(range_predicates);
-    return std::make_unique<RelationshipIndexRangeSeekPlan>(
+    auto plan = std::make_unique<RelationshipIndexRangeSeekPlan>(
         relationship.left_node, relationship.variable, relationship.right_node,
         ToExpandDirection(relationship.direction), types, property_key,
         PredicateExpressions(range_predicates));
+    candidates.push_back(
+        {.plan = std::move(plan), .planned_predicates = Snapshot()});
   }
 
+  Restore(type_predicates);
   if (!types.empty()) {
-    return std::make_unique<RelationshipTypeScanPlan>(
+    auto plan = std::make_unique<RelationshipTypeScanPlan>(
         relationship.left_node, relationship.variable, relationship.right_node,
         ToExpandDirection(relationship.direction), std::move(types));
+    candidates.push_back(
+        {.plan = std::move(plan), .planned_predicates = Snapshot()});
   }
-  return nullptr;
+  Restore(base_predicates);
+  return candidates;
 }
 
 std::vector<std::string> QueryGraphPlanningContext::ConsumeRelationshipTypes(
@@ -828,11 +892,11 @@ bool QueryGraphPlanningContext::HasIndex(
   THROW(common::InternalError, "unknown index entity kind");
 }
 
-const Predicate *QueryGraphPlanningContext::BestIndexSeekPredicate(
+std::vector<const Predicate *> QueryGraphPlanningContext::IndexSeekPredicates(
     const Selections &selections, std::string_view variable,
     IndexEntityKind entity_kind,
     const std::vector<std::string> &qualifiers) const {
-  const Predicate *best = nullptr;
+  std::vector<const Predicate *> out;
   for (const auto &predicate : selections.predicates) {
     if (predicate.kind != PredicateKind::kPropertyEquality ||
         !StringEquals(predicate.variable, variable) ||
@@ -846,20 +910,23 @@ const Predicate *QueryGraphPlanningContext::BestIndexSeekPredicate(
     if (!HasIndex(entity_kind, qualifiers, predicate.property_key)) {
       continue;
     }
-    if (best == nullptr || predicate.property_key < best->property_key) {
-      best = &predicate;
-    }
+    out.push_back(&predicate);
   }
-  return best;
+  std::stable_sort(
+      out.begin(), out.end(), [](const Predicate *lhs, const Predicate *rhs) {
+        CHECK(lhs != nullptr && rhs != nullptr, common::InternalError,
+              "index seek predicate is null");
+        return lhs->property_key < rhs->property_key;
+      });
+  return out;
 }
 
-std::vector<const Predicate *>
-QueryGraphPlanningContext::BestIndexRangePredicates(
+std::vector<std::vector<const Predicate *>>
+QueryGraphPlanningContext::IndexRangePredicateGroups(
     const Selections &selections, std::string_view variable,
     IndexEntityKind entity_kind,
     const std::vector<std::string> &qualifiers) const {
-  std::vector<const Predicate *> best;
-  std::string best_property_key;
+  std::vector<std::vector<const Predicate *>> groups;
   for (PropertyInequalityGroup group : selections.PropertyInequalityGroups()) {
     if (!StringEquals(group.variable, variable) || group.property_key.empty()) {
       continue;
@@ -883,10 +950,7 @@ QueryGraphPlanningContext::BestIndexRangePredicates(
     if (predicates.empty()) {
       continue;
     }
-    if (best.empty() || group.property_key < best_property_key) {
-      best = std::move(predicates);
-      best_property_key = std::move(group.property_key);
-    }
+    AddRangePredicateGroup(&groups, std::move(predicates));
   }
   for (const auto &predicate : selections.predicates) {
     if (predicate.kind != PredicateKind::kPropertyStringPredicate ||
@@ -898,16 +962,17 @@ QueryGraphPlanningContext::BestIndexRangePredicates(
         !HasIndex(entity_kind, qualifiers, predicate.property_key)) {
       continue;
     }
-    if (best.empty() || predicate.property_key < best_property_key) {
-      best = {&predicate};
-      best_property_key = predicate.property_key;
-      continue;
-    }
-    if (predicate.property_key == best_property_key) {
-      best.push_back(&predicate);
-    }
+    AddRangePredicateGroup(&groups, {&predicate});
   }
-  return best;
+  std::stable_sort(groups.begin(), groups.end(),
+                   [](const std::vector<const Predicate *> &lhs,
+                      const std::vector<const Predicate *> &rhs) {
+                     CHECK(!lhs.empty() && !rhs.empty(), common::InternalError,
+                           "index range predicate group is empty");
+                     return lhs.front()->property_key <
+                            rhs.front()->property_key;
+                   });
+  return groups;
 }
 
 void QueryGraphPlanningContext::MarkPlanned(
