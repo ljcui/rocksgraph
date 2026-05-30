@@ -159,7 +159,10 @@ CostEstimate CostModel::EstimateNodeScan(
 
 CostEstimate CostModel::EstimateNodeIndexSeek(
     const std::unordered_set<std::string> &labels,
-    std::string_view property_key) const {
+    std::string_view property_key, bool unique) const {
+  if (unique) {
+    return {.estimated_rows = 1.0, .cost = 1.0};
+  }
   const double base_rows = Statistics().EstimateNodeCount(labels);
   const double rows =
       std::max(1.0, base_rows * Statistics().EstimateNodeIndexSeekSelectivity(
@@ -186,7 +189,10 @@ CostEstimate CostModel::EstimateRelationshipTypeScan(
 
 CostEstimate CostModel::EstimateRelationshipIndexSeek(
     const std::vector<std::string> &relationship_types,
-    std::string_view property_key) const {
+    std::string_view property_key, bool unique) const {
+  if (unique) {
+    return {.estimated_rows = 1.0, .cost = 1.0};
+  }
   const double base_rows =
       Statistics().EstimateRelationshipCount(relationship_types);
   const double rows = std::max(

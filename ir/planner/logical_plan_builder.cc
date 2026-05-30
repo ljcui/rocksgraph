@@ -212,7 +212,7 @@ CostEstimate EstimateLogicalPlanLeaf(const LogicalPlan &plan,
       return cost_model.EstimateNodeIndexSeek(
           std::unordered_set<std::string>(seek.Labels().begin(),
                                           seek.Labels().end()),
-          seek.PropertyKey());
+          seek.PropertyKey(), seek.Unique());
     }
     case LogicalPlanNodeType::kNodeIndexRangeSeek: {
       const auto &seek = static_cast<const NodeIndexRangeSeekPlan &>(plan);
@@ -227,8 +227,8 @@ CostEstimate EstimateLogicalPlanLeaf(const LogicalPlan &plan,
     }
     case LogicalPlanNodeType::kRelationshipIndexSeek: {
       const auto &seek = static_cast<const RelationshipIndexSeekPlan &>(plan);
-      return cost_model.EstimateRelationshipIndexSeek(seek.Types(),
-                                                      seek.PropertyKey());
+      return cost_model.EstimateRelationshipIndexSeek(
+          seek.Types(), seek.PropertyKey(), seek.Unique());
     }
     case LogicalPlanNodeType::kRelationshipIndexRangeSeek: {
       const auto &seek =

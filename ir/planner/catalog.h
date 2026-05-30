@@ -1,10 +1,21 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace ir {
+
+struct NodeIndexDescriptor {
+  std::string property_key;
+  bool unique = false;
+};
+
+struct RelationshipIndexDescriptor {
+  std::string property_key;
+  bool unique = false;
+};
 
 class PlannerCatalog {
  public:
@@ -13,28 +24,36 @@ class PlannerCatalog {
   PlannerCatalog &operator=(const PlannerCatalog &) = delete;
   virtual ~PlannerCatalog() = default;
 
-  [[nodiscard]] virtual bool HasNodeIndex(
+  [[nodiscard]] virtual std::optional<NodeIndexDescriptor> FindNodeIndex(
       const std::vector<std::string> &labels,
       std::string_view property_key) const = 0;
-  [[nodiscard]] virtual bool HasRelationshipIndex(
-      const std::vector<std::string> &relationship_types,
-      std::string_view property_key) const = 0;
+  [[nodiscard]] virtual std::optional<RelationshipIndexDescriptor>
+  FindRelationshipIndex(const std::vector<std::string> &relationship_types,
+                        std::string_view property_key) const = 0;
 };
 
 class HeuristicPlannerCatalog final : public PlannerCatalog {
  public:
-  [[nodiscard]] bool HasNodeIndex(
+  [[nodiscard]] std::optional<NodeIndexDescriptor> FindNodeIndex(
       const std::vector<std::string> &labels,
       std::string_view property_key) const override {
     (void)labels;
-    return !property_key.empty();
+    if (property_key.empty()) {
+      return std::nullopt;
+    }
+    return NodeIndexDescriptor{.property_key = std::string(property_key),
+                               .unique = false};
   }
 
-  [[nodiscard]] bool HasRelationshipIndex(
-      const std::vector<std::string> &relationship_types,
-      std::string_view property_key) const override {
+  [[nodiscard]] std::optional<RelationshipIndexDescriptor>
+  FindRelationshipIndex(const std::vector<std::string> &relationship_types,
+                        std::string_view property_key) const override {
     (void)relationship_types;
-    return !property_key.empty();
+    if (property_key.empty()) {
+      return std::nullopt;
+    }
+    return RelationshipIndexDescriptor{
+        .property_key = std::string(property_key), .unique = false};
   }
 };
 

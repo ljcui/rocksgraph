@@ -52,9 +52,13 @@ TEST(LogicalPlanTest, IndexAndRelationshipLeafPlansExposeMetadata) {
   EXPECT_EQ(node_seek.Labels(), std::vector<std::string>({"Person"}));
   EXPECT_EQ(node_seek.PropertyKey(), "name");
   EXPECT_EQ(node_seek.ValueExpression(), nullptr);
+  EXPECT_FALSE(node_seek.Unique());
   EXPECT_EQ(node_seek.Details(), "n:Person WHERE n.name = null");
   EXPECT_EQ(node_seek.OutputColumns(), std::vector<std::string>({"n"}));
   EXPECT_TRUE(Contains(node_seek.SolvedSymbols(), "n"));
+
+  ir::NodeIndexSeekPlan unique_node_seek("n", {}, "id", nullptr, true);
+  EXPECT_TRUE(unique_node_seek.Unique());
 
   ir::NodeIndexRangeSeekPlan node_range("n", {}, "age", {nullptr});
   EXPECT_EQ(node_range.Name(), "NodeIndexRangeSeek");
@@ -86,7 +90,12 @@ TEST(LogicalPlanTest, IndexAndRelationshipLeafPlansExposeMetadata) {
   EXPECT_EQ(rel_seek.Name(), "RelationshipIndexSeek");
   EXPECT_EQ(rel_seek.PropertyKey(), "since");
   EXPECT_EQ(rel_seek.ValueExpression(), nullptr);
+  EXPECT_FALSE(rel_seek.Unique());
   EXPECT_EQ(rel_seek.Details(), "(a)-[r:KNOWS]->(b) WHERE r.since = null");
+
+  ir::RelationshipIndexSeekPlan unique_rel_seek(
+      "a", "r", "b", ir::ExpandDirection::kOutgoing, {}, "id", nullptr, true);
+  EXPECT_TRUE(unique_rel_seek.Unique());
 
   ir::RelationshipIndexRangeSeekPlan rel_range(
       "a", "r", "b", ir::ExpandDirection::kOutgoing, {}, "since", {nullptr});

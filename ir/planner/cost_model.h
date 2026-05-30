@@ -102,7 +102,7 @@ class CostModel {
       const std::unordered_set<std::string> &labels) const;
   [[nodiscard]] CostEstimate EstimateNodeIndexSeek(
       const std::unordered_set<std::string> &labels,
-      std::string_view property_key) const;
+      std::string_view property_key, bool unique = false) const;
   [[nodiscard]] CostEstimate EstimateNodeIndexRangeSeek(
       const std::unordered_set<std::string> &labels,
       std::string_view property_key, std::size_t bound_count) const;
@@ -110,7 +110,7 @@ class CostModel {
       const std::vector<std::string> &relationship_types) const;
   [[nodiscard]] CostEstimate EstimateRelationshipIndexSeek(
       const std::vector<std::string> &relationship_types,
-      std::string_view property_key) const;
+      std::string_view property_key, bool unique = false) const;
   [[nodiscard]] CostEstimate EstimateRelationshipIndexRangeSeek(
       const std::vector<std::string> &relationship_types,
       std::string_view property_key, std::size_t bound_count) const;

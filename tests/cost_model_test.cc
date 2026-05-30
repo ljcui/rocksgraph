@@ -22,6 +22,11 @@ TEST(CostModelTest, UsesDefaultHeuristicStatistics) {
   EXPECT_DOUBLE_EQ(node_index_seek.estimated_rows, 1.0);
   EXPECT_DOUBLE_EQ(node_index_seek.cost, 1.0);
 
+  ir::CostEstimate unique_node_index_seek =
+      model.EstimateNodeIndexSeek({}, "id", true);
+  EXPECT_DOUBLE_EQ(unique_node_index_seek.estimated_rows, 1.0);
+  EXPECT_DOUBLE_EQ(unique_node_index_seek.cost, 1.0);
+
   ir::CostEstimate node_index_range =
       model.EstimateNodeIndexRangeSeek({"Person"}, "age", 1);
   EXPECT_DOUBLE_EQ(node_index_range.estimated_rows, 10.0);
@@ -36,6 +41,11 @@ TEST(CostModelTest, UsesDefaultHeuristicStatistics) {
       model.EstimateRelationshipIndexSeek({"KNOWS"}, "since");
   EXPECT_DOUBLE_EQ(relationship_index_seek.estimated_rows, 50.0);
   EXPECT_DOUBLE_EQ(relationship_index_seek.cost, 50.0);
+
+  ir::CostEstimate unique_relationship_index_seek =
+      model.EstimateRelationshipIndexSeek({}, "id", true);
+  EXPECT_DOUBLE_EQ(unique_relationship_index_seek.estimated_rows, 1.0);
+  EXPECT_DOUBLE_EQ(unique_relationship_index_seek.cost, 1.0);
 
   ir::CostEstimate relationship_index_range =
       model.EstimateRelationshipIndexRangeSeek({"KNOWS"}, "since", 1);
@@ -118,6 +128,11 @@ TEST(CostModelTest, UsesInjectedPlannerStatistics) {
   EXPECT_DOUBLE_EQ(node_index_seek.estimated_rows, 1.0);
   EXPECT_DOUBLE_EQ(node_index_seek.cost, 1.0);
 
+  ir::CostEstimate unique_node_index_seek =
+      model.EstimateNodeIndexSeek({}, "id", true);
+  EXPECT_DOUBLE_EQ(unique_node_index_seek.estimated_rows, 1.0);
+  EXPECT_DOUBLE_EQ(unique_node_index_seek.cost, 1.0);
+
   ir::CostEstimate node_index_range =
       model.EstimateNodeIndexRangeSeek({"Person"}, "age", 1);
   EXPECT_DOUBLE_EQ(node_index_range.estimated_rows, 10.0);
@@ -132,6 +147,11 @@ TEST(CostModelTest, UsesInjectedPlannerStatistics) {
       model.EstimateRelationshipIndexSeek({"KNOWS"}, "since");
   EXPECT_DOUBLE_EQ(relationship_index_seek.estimated_rows, 3.0);
   EXPECT_DOUBLE_EQ(relationship_index_seek.cost, 3.0);
+
+  ir::CostEstimate unique_relationship_index_seek =
+      model.EstimateRelationshipIndexSeek({"KNOWS"}, "id", true);
+  EXPECT_DOUBLE_EQ(unique_relationship_index_seek.estimated_rows, 1.0);
+  EXPECT_DOUBLE_EQ(unique_relationship_index_seek.cost, 1.0);
 
   ir::CostEstimate relationship_index_range =
       model.EstimateRelationshipIndexRangeSeek({"KNOWS"}, "since", 1);

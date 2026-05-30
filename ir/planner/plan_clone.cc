@@ -24,9 +24,9 @@ std::unique_ptr<LogicalPlan> CloneComponentPlanWithoutMetadata(
     }
     case LogicalPlanNodeType::kNodeIndexSeek: {
       const auto &seek = static_cast<const NodeIndexSeekPlan &>(plan);
-      return std::make_unique<NodeIndexSeekPlan>(seek.Variable(), seek.Labels(),
-                                                 seek.PropertyKey(),
-                                                 seek.ValueExpression());
+      return std::make_unique<NodeIndexSeekPlan>(
+          seek.Variable(), seek.Labels(), seek.PropertyKey(),
+          seek.ValueExpression(), seek.Unique());
     }
     case LogicalPlanNodeType::kNodeIndexRangeSeek: {
       const auto &seek = static_cast<const NodeIndexRangeSeekPlan &>(plan);
@@ -44,7 +44,8 @@ std::unique_ptr<LogicalPlan> CloneComponentPlanWithoutMetadata(
       const auto &seek = static_cast<const RelationshipIndexSeekPlan &>(plan);
       return std::make_unique<RelationshipIndexSeekPlan>(
           seek.FromNode(), seek.Relationship(), seek.ToNode(), seek.Direction(),
-          seek.Types(), seek.PropertyKey(), seek.ValueExpression());
+          seek.Types(), seek.PropertyKey(), seek.ValueExpression(),
+          seek.Unique());
     }
     case LogicalPlanNodeType::kRelationshipIndexRangeSeek: {
       const auto &seek =

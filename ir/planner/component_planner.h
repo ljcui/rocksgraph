@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_set>
@@ -46,15 +47,25 @@ class QueryGraphPlanningContext {
     kRelationship,
   };
 
+  struct IndexDescriptor {
+    std::string property_key;
+    bool unique = false;
+  };
+
+  struct IndexedPredicate {
+    const Predicate *predicate = nullptr;
+    IndexDescriptor index;
+  };
+
   [[nodiscard]] std::vector<const Predicate *> ConsumableNodeLabelPredicates(
       const Selections &selections, std::string_view variable) const;
   [[nodiscard]] std::vector<const Predicate *>
   ConsumableRelationshipTypePredicates(const Selections &selections,
                                        std::string_view variable) const;
-  [[nodiscard]] bool HasIndex(IndexEntityKind entity_kind,
-                              const std::vector<std::string> &qualifiers,
-                              std::string_view property_key) const;
-  [[nodiscard]] std::vector<const Predicate *> IndexSeekPredicates(
+  [[nodiscard]] std::optional<IndexDescriptor> FindIndex(
+      IndexEntityKind entity_kind, const std::vector<std::string> &qualifiers,
+      std::string_view property_key) const;
+  [[nodiscard]] std::vector<IndexedPredicate> IndexSeekPredicates(
       const Selections &selections, std::string_view variable,
       IndexEntityKind entity_kind,
       const std::vector<std::string> &qualifiers) const;

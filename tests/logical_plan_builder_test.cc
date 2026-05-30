@@ -4,9 +4,10 @@
 
 #include <algorithm>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
-#include <unordered_set>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -23,27 +24,38 @@ namespace {
 class FakePlannerCatalog final : public ir::PlannerCatalog {
  public:
   void AddNodeIndex(std::vector<std::string> labels,
-                    std::string_view property_key) {
-    node_indexes_.insert(IndexKey(std::move(labels), property_key));
+                    std::string_view property_key, bool unique = false) {
+    node_indexes_[IndexKey(std::move(labels), property_key)] = unique;
   }
 
   void AddRelationshipIndex(std::vector<std::string> relationship_types,
-                            std::string_view property_key) {
-    relationship_indexes_.insert(
-        IndexKey(std::move(relationship_types), property_key));
+                            std::string_view property_key,
+                            bool unique = false) {
+    relationship_indexes_[IndexKey(std::move(relationship_types),
+                                   property_key)] = unique;
   }
 
-  [[nodiscard]] bool HasNodeIndex(
+  [[nodiscard]] std::optional<ir::NodeIndexDescriptor> FindNodeIndex(
       const std::vector<std::string> &labels,
       std::string_view property_key) const override {
-    return node_indexes_.contains(IndexKey(labels, property_key));
+    const auto found = node_indexes_.find(IndexKey(labels, property_key));
+    if (found == node_indexes_.end()) {
+      return std::nullopt;
+    }
+    return ir::NodeIndexDescriptor{.property_key = std::string(property_key),
+                                   .unique = found->second};
   }
 
-  [[nodiscard]] bool HasRelationshipIndex(
-      const std::vector<std::string> &relationship_types,
-      std::string_view property_key) const override {
-    return relationship_indexes_.contains(
-        IndexKey(relationship_types, property_key));
+  [[nodiscard]] std::optional<ir::RelationshipIndexDescriptor>
+  FindRelationshipIndex(const std::vector<std::string> &relationship_types,
+                        std::string_view property_key) const override {
+    const auto found =
+        relationship_indexes_.find(IndexKey(relationship_types, property_key));
+    if (found == relationship_indexes_.end()) {
+      return std::nullopt;
+    }
+    return ir::RelationshipIndexDescriptor{
+        .property_key = std::string(property_key), .unique = found->second};
   }
 
  private:
@@ -59,8 +71,8 @@ class FakePlannerCatalog final : public ir::PlannerCatalog {
     return key;
   }
 
-  std::unordered_set<std::string> node_indexes_;
-  std::unordered_set<std::string> relationship_indexes_;
+  std::unordered_map<std::string, bool> node_indexes_;
+  std::unordered_map<std::string, bool> relationship_indexes_;
 };
 
 std::unique_ptr<ast::Statement> ParseOrFail(const std::string &query) {
@@ -270,6 +282,21 @@ TEST(LogicalPlanBuilderTest, UsesOnlyCatalogAvailableNodePropertyIndex) {
       ir::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
 }
 
+TEST(LogicalPlanBuilderTest, UsesUniqueNodePropertyIndexSeekCandidate) {
+  FakePlannerCatalog catalog;
+  catalog.AddNodeIndex({}, "a_regular");
+  catalog.AddNodeIndex({}, "z_unique", true);
+
+  ExpectLogicalPlanText(
+      "MATCH (n) WHERE n.a_regular = 1 AND n.z_unique = 2 RETURN n",
+      R"(ProduceResults [n]
+  Projection [n]
+    Filter [n.a_regular = 1]
+      NodeIndexSeek [n WHERE n.z_unique = 2]
+)",
+      ir::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
+}
+
 TEST(LogicalPlanBuilderTest, UsesNodePropertyIndexRangeSeek) {
   ExpectLogicalPlanText("MATCH (n) WHERE n.age >= 10 AND n.age < 20 RETURN n",
                         R"(ProduceResults [n]
@@ -459,6 +486,21 @@ TEST(LogicalPlanBuilderTest,
   Projection [r]
     Filter [r.a_slow = 1]
       RelationshipIndexSeek [(a)-[r]->(b) WHERE r.z_fast = 2]
+)",
+      ir::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
+}
+
+TEST(LogicalPlanBuilderTest, UsesUniqueRelationshipPropertyIndexSeekCandidate) {
+  FakePlannerCatalog catalog;
+  catalog.AddRelationshipIndex({}, "a_regular");
+  catalog.AddRelationshipIndex({}, "z_unique", true);
+
+  ExpectLogicalPlanText(
+      "MATCH (a)-[r]->(b) WHERE r.a_regular = 1 AND r.z_unique = 2 RETURN r",
+      R"(ProduceResults [r]
+  Projection [r]
+    Filter [r.a_regular = 1]
+      RelationshipIndexSeek [(a)-[r]->(b) WHERE r.z_unique = 2]
 )",
       ir::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
 }

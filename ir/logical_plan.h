@@ -222,7 +222,8 @@ class NodeIndexSeekPlan final : public LogicalPlan {
  public:
   NodeIndexSeekPlan(std::string variable, std::vector<std::string> labels,
                     std::string property_key,
-                    const ast::Expression *value_expression);
+                    const ast::Expression *value_expression,
+                    bool unique = false);
 
   [[nodiscard]] const std::string &Variable() const noexcept {
     return variable_;
@@ -236,6 +237,7 @@ class NodeIndexSeekPlan final : public LogicalPlan {
   [[nodiscard]] const ast::Expression *ValueExpression() const noexcept {
     return value_expression_;
   }
+  [[nodiscard]] bool Unique() const noexcept { return unique_; }
   [[nodiscard]] std::string Details() const override;
 
  private:
@@ -243,6 +245,7 @@ class NodeIndexSeekPlan final : public LogicalPlan {
   std::vector<std::string> labels_;
   std::string property_key_;
   const ast::Expression *value_expression_ = nullptr;
+  bool unique_ = false;
 };
 
 class NodeIndexRangeSeekPlan final : public LogicalPlan {
@@ -308,7 +311,8 @@ class RelationshipIndexSeekPlan final : public LogicalPlan {
                             std::string to_node, ExpandDirection direction,
                             std::vector<std::string> types,
                             std::string property_key,
-                            const ast::Expression *value_expression);
+                            const ast::Expression *value_expression,
+                            bool unique = false);
 
   [[nodiscard]] const std::string &FromNode() const noexcept {
     return from_node_;
@@ -329,6 +333,7 @@ class RelationshipIndexSeekPlan final : public LogicalPlan {
   [[nodiscard]] const ast::Expression *ValueExpression() const noexcept {
     return value_expression_;
   }
+  [[nodiscard]] bool Unique() const noexcept { return unique_; }
   [[nodiscard]] std::string Details() const override;
 
  private:
@@ -339,6 +344,7 @@ class RelationshipIndexSeekPlan final : public LogicalPlan {
   std::vector<std::string> types_;
   std::string property_key_;
   const ast::Expression *value_expression_ = nullptr;
+  bool unique_ = false;
 };
 
 class RelationshipIndexRangeSeekPlan final : public LogicalPlan {

@@ -660,12 +660,14 @@ std::string NodeByLabelScanPlan::Details() const {
 NodeIndexSeekPlan::NodeIndexSeekPlan(std::string variable,
                                      std::vector<std::string> labels,
                                      std::string property_key,
-                                     const ast::Expression *value_expression)
+                                     const ast::Expression *value_expression,
+                                     bool unique)
     : LogicalPlan(LogicalPlanNodeType::kNodeIndexSeek),
       variable_(std::move(variable)),
       labels_(std::move(labels)),
       property_key_(std::move(property_key)),
-      value_expression_(value_expression) {
+      value_expression_(value_expression),
+      unique_(unique) {
   CHECK(!property_key_.empty(), common::InvalidArgumentError,
         "node index seek property key is empty");
   AddOutputColumn(variable_);
@@ -723,7 +725,8 @@ std::string RelationshipTypeScanPlan::Details() const {
 RelationshipIndexSeekPlan::RelationshipIndexSeekPlan(
     std::string from_node, std::string relationship, std::string to_node,
     ExpandDirection direction, std::vector<std::string> types,
-    std::string property_key, const ast::Expression *value_expression)
+    std::string property_key, const ast::Expression *value_expression,
+    bool unique)
     : LogicalPlan(LogicalPlanNodeType::kRelationshipIndexSeek),
       from_node_(std::move(from_node)),
       relationship_(std::move(relationship)),
@@ -731,7 +734,8 @@ RelationshipIndexSeekPlan::RelationshipIndexSeekPlan(
       direction_(direction),
       types_(std::move(types)),
       property_key_(std::move(property_key)),
-      value_expression_(value_expression) {
+      value_expression_(value_expression),
+      unique_(unique) {
   CHECK(!property_key_.empty(), common::InvalidArgumentError,
         "relationship index seek property key is empty");
   AddOutputColumn(from_node_);
