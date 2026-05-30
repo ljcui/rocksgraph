@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -329,7 +330,7 @@ TEST(LogicalPlanTest, NestedApplyPlansExposeComputedOutputs) {
   EXPECT_FALSE(Contains(roll_up.SolvedSymbols(), "__value"));
 }
 
-TEST(LogicalPlanTest, UnwindAndUnionPlansExposeOutputs) {
+TEST(LogicalPlanTest, UnwindProcedureCallAndUnionPlansExposeOutputs) {
   ir::UnwindPlan unwind(
       std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({"row"})),
       nullptr, "x");
@@ -340,6 +341,34 @@ TEST(LogicalPlanTest, UnwindAndUnionPlansExposeOutputs) {
   EXPECT_EQ(unwind.OutputColumns(), std::vector<std::string>({"row", "x"}));
   EXPECT_TRUE(Contains(unwind.SolvedSymbols(), "row"));
   EXPECT_TRUE(Contains(unwind.SolvedSymbols(), "x"));
+
+  ir::ProcedureCallPlan procedure_call(
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({"row"})),
+      "db.labels", {nullptr},
+      std::vector<ir::ProcedureYieldItem>{
+          {.result_field = std::optional<std::string>("label"),
+           .variable = "l"}},
+      false, true);
+  EXPECT_EQ(procedure_call.Name(), "ProcedureCall");
+  EXPECT_EQ(procedure_call.ProcedureName(), "db.labels");
+  EXPECT_EQ(procedure_call.Arguments(),
+            std::vector<const ast::Expression *>({nullptr}));
+  ASSERT_EQ(procedure_call.YieldItems().size(), 1U);
+  EXPECT_EQ(procedure_call.YieldItems()[0].result_field,
+            std::optional<std::string>("label"));
+  EXPECT_EQ(procedure_call.YieldItems()[0].variable, "l");
+  EXPECT_FALSE(procedure_call.YieldStar());
+  EXPECT_TRUE(procedure_call.ReadOnly());
+  EXPECT_EQ(procedure_call.Details(), "CALL db.labels(null) YIELD label AS l");
+  EXPECT_EQ(procedure_call.OutputColumns(),
+            std::vector<std::string>({"row", "l"}));
+  EXPECT_TRUE(Contains(procedure_call.SolvedSymbols(), "row"));
+  EXPECT_TRUE(Contains(procedure_call.SolvedSymbols(), "l"));
+
+  ir::ProcedureCallPlan yield_star_call(
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({})),
+      "dbms.procedures", {}, {}, true, true);
+  EXPECT_EQ(yield_star_call.Details(), "CALL dbms.procedures() YIELD *");
 
   ir::UnionPlan union_plan(
       std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({"a"})),

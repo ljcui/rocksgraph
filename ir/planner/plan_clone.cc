@@ -233,6 +233,14 @@ std::unique_ptr<LogicalPlan> CloneComponentPlanWithoutMetadata(
       return std::make_unique<UnwindPlan>(CloneComponentPlan(unwind.Child(0)),
                                           unwind.Expression(), unwind.Alias());
     }
+    case LogicalPlanNodeType::kProcedureCall: {
+      const auto &procedure_call = static_cast<const ProcedureCallPlan &>(plan);
+      return std::make_unique<ProcedureCallPlan>(
+          CloneComponentPlan(procedure_call.Child(0)),
+          procedure_call.ProcedureName(), procedure_call.Arguments(),
+          procedure_call.YieldItems(), procedure_call.YieldStar(),
+          procedure_call.ReadOnly());
+    }
     case LogicalPlanNodeType::kUnion: {
       const auto &union_plan = static_cast<const UnionPlan &>(plan);
       return std::make_unique<UnionPlan>(

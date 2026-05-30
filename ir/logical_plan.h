@@ -63,6 +63,7 @@ enum class LogicalPlanNodeType {
   kDelete,
   kDetachDelete,
   kUnwind,
+  kProcedureCall,
   kUnion,
 };
 
@@ -886,6 +887,36 @@ class UnwindPlan final : public LogicalPlan {
  private:
   const ast::Expression *expression_ = nullptr;
   std::string alias_;
+};
+
+class ProcedureCallPlan final : public LogicalPlan {
+ public:
+  ProcedureCallPlan(LogicalPlanPtr source, std::string procedure_name,
+                    std::vector<const ast::Expression *> arguments,
+                    std::vector<ProcedureYieldItem> yield_items,
+                    bool yield_star, bool read_only);
+
+  [[nodiscard]] const std::string &ProcedureName() const noexcept {
+    return procedure_name_;
+  }
+  [[nodiscard]] const std::vector<const ast::Expression *> &Arguments()
+      const noexcept {
+    return arguments_;
+  }
+  [[nodiscard]] const std::vector<ProcedureYieldItem> &YieldItems()
+      const noexcept {
+    return yield_items_;
+  }
+  [[nodiscard]] bool YieldStar() const noexcept { return yield_star_; }
+  [[nodiscard]] bool ReadOnly() const noexcept { return read_only_; }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  std::string procedure_name_;
+  std::vector<const ast::Expression *> arguments_;
+  std::vector<ProcedureYieldItem> yield_items_;
+  bool yield_star_ = false;
+  bool read_only_ = false;
 };
 
 class UnionPlan final : public LogicalPlan {

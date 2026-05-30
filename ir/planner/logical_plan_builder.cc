@@ -416,6 +416,16 @@ CostEstimate EstimateLogicalPlanNode(
           OnlyChildEstimate(child_estimates, plan.Name()),
           LiteralListSize(unwind.Expression()));
     }
+    case LogicalPlanNodeType::kProcedureCall: {
+      const auto &procedure_call = static_cast<const ProcedureCallPlan &>(plan);
+      const CostEstimate &input =
+          OnlyChildEstimate(child_estimates, plan.Name());
+      const CostEstimate call = cost_model.EstimateProcedureCall(
+          procedure_call.ProcedureName(), procedure_call.Arguments().size(),
+          procedure_call.YieldItems().size());
+      return {.estimated_rows = input.estimated_rows * call.estimated_rows,
+              .cost = input.cost + input.estimated_rows * call.cost};
+    }
     case LogicalPlanNodeType::kUnion: {
       CHECK(child_estimates.size() == 2, common::InternalError,
             "Union expected two child estimates");
@@ -863,8 +873,8 @@ class LogicalPlanBuilder {
       case QueryHorizonKind::kUnwind:
         return ApplyUnwind(std::move(plan), horizon.RequireUnwind());
       case QueryHorizonKind::kProcedureCall:
-        THROW(common::InvalidArgumentError,
-              Unsupported("procedure call logical plan"));
+        return ApplyProcedureCall(std::move(plan),
+                                  horizon.RequireProcedureCall());
       case QueryHorizonKind::kPassthrough:
         return plan;
     }
@@ -955,6 +965,41 @@ class LogicalPlanBuilder {
           "UNWIND alias is empty");
     return std::make_unique<UnwindPlan>(std::move(plan), unwind.expression,
                                         unwind.alias);
+  }
+
+  std::unique_ptr<LogicalPlan> ApplyProcedureCall(
+      std::unique_ptr<LogicalPlan> plan,
+      const ProcedureCallHorizon &procedure_call) {
+    CHECK(plan != nullptr, common::InternalError, "logical plan is null");
+    CHECK(!procedure_call.procedure_name.empty(), common::InvalidArgumentError,
+          "procedure name is empty");
+    ValidateProcedureCallDependencies(*plan, procedure_call);
+
+    if (!procedure_call.read_only) {
+      plan = std::make_unique<WriteBarrierPlan>(std::move(plan));
+    }
+    plan = std::make_unique<ProcedureCallPlan>(
+        std::move(plan), procedure_call.procedure_name,
+        procedure_call.arguments, procedure_call.yield_items,
+        procedure_call.yield_star, procedure_call.read_only);
+    return ApplyProjectionSelections(std::move(plan),
+                                     procedure_call.yield_selections);
+  }
+
+  void ValidateProcedureCallDependencies(
+      const LogicalPlan &input,
+      const ProcedureCallHorizon &procedure_call) const {
+    const std::unordered_set<std::string> &symbols = input.SolvedSymbols();
+    for (const ast::Expression *argument : procedure_call.arguments) {
+      if (argument == nullptr) {
+        continue;
+      }
+      const std::unordered_set<std::string> dependencies =
+          ast::CollectExpressionDependencies(*argument);
+      CHECK(DependenciesMet(dependencies, symbols),
+            common::InvalidArgumentError,
+            Unsupported("procedure argument with unmet dependencies"));
+    }
   }
 
   std::unique_ptr<LogicalPlan> ApplyNestedExpressions(

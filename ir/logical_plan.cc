@@ -55,6 +55,7 @@ inline constexpr auto kLogicalPlanNodeTypeNames = std::array{
     std::string_view{"Delete"},
     std::string_view{"DetachDelete"},
     std::string_view{"Unwind"},
+    std::string_view{"ProcedureCall"},
     std::string_view{"Union"},
 };
 
@@ -172,6 +173,23 @@ std::vector<std::string> UnionOutputVariables(
     columns.push_back(mapping.output_variable);
   }
   return columns;
+}
+
+std::string ProcedureYieldItemDetails(const ProcedureYieldItem &item) {
+  if (item.result_field.has_value() && *item.result_field != item.variable) {
+    return *item.result_field + " AS " + item.variable;
+  }
+  return item.variable;
+}
+
+std::vector<std::string> ProcedureYieldItemDetails(
+    const std::vector<ProcedureYieldItem> &items) {
+  std::vector<std::string> details;
+  details.reserve(items.size());
+  for (const auto &item : items) {
+    details.push_back(ProcedureYieldItemDetails(item));
+  }
+  return details;
 }
 
 std::string ExpandArrow(ExpandDirection direction, bool left) {
@@ -1336,6 +1354,48 @@ std::string UnionPlan::Details() const {
   if (!columns.empty()) {
     details.append(" ");
     details.append(Join(columns, ", "));
+  }
+  return details;
+}
+
+ProcedureCallPlan::ProcedureCallPlan(
+    LogicalPlanPtr source, std::string procedure_name,
+    std::vector<const ast::Expression *> arguments,
+    std::vector<ProcedureYieldItem> yield_items, bool yield_star,
+    bool read_only)
+    : LogicalPlan(LogicalPlanNodeType::kProcedureCall,
+                  UnaryChildren(std::move(source), "ProcedureCall")),
+      procedure_name_(std::move(procedure_name)),
+      arguments_(std::move(arguments)),
+      yield_items_(std::move(yield_items)),
+      yield_star_(yield_star),
+      read_only_(read_only) {
+  CHECK(!procedure_name_.empty(), common::InvalidArgumentError,
+        "procedure name is empty");
+  SetSolvedSymbols(Child(0).SolvedSymbols());
+  SetOutputColumns(Child(0).OutputColumns());
+  for (const auto &item : yield_items_) {
+    CHECK(!item.variable.empty(), common::InvalidArgumentError,
+          "procedure yield variable is empty");
+    AddSolvedSymbol(item.variable);
+    AddOutputColumn(item.variable);
+  }
+}
+
+std::string ProcedureCallPlan::Details() const {
+  std::vector<std::string> args;
+  args.reserve(arguments_.size());
+  for (const ast::Expression *argument : arguments_) {
+    args.push_back(ExpressionDetail(argument));
+  }
+
+  std::string details =
+      "CALL " + procedure_name_ + "(" + Join(args, ", ") + ")";
+  if (yield_star_) {
+    details.append(" YIELD *");
+  } else if (!yield_items_.empty()) {
+    details.append(" YIELD ");
+    details.append(Join(ProcedureYieldItemDetails(yield_items_), ", "));
   }
   return details;
 }

@@ -609,6 +609,63 @@ TEST(LogicalPlanBuilderTest, BuildsUnwindPlan) {
 )");
 }
 
+TEST(LogicalPlanBuilderTest, BuildsStandaloneProcedureCallPlan) {
+  ExpectLogicalPlanText("CALL db.labels()",
+                        R"(ProcedureCall [CALL db.labels() YIELD label]
+  Argument
+)");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsStandaloneProcedureCallWithYieldWherePlan) {
+  ExpectLogicalPlanText("CALL db.labels() YIELD label AS l WHERE l <> ''",
+                        R"(Filter [l <> '']
+  ProcedureCall [CALL db.labels() YIELD label AS l]
+    Argument
+)");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsInQueryProcedureCallPlan) {
+  ExpectLogicalPlanText(
+      "MATCH (n) CALL db.labels() YIELD label AS l WHERE l <> '' RETURN n, l",
+      R"(ProduceResults [n, l]
+  Projection [n, l]
+    Filter [l <> '']
+      ProcedureCall [CALL db.labels() YIELD label AS l]
+        AllNodeScan [n]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsProcedureCallWithArgumentDependencyPlan) {
+  ExpectLogicalPlanText(
+      "MATCH (n) CALL db.unknown(n.name) YIELD value RETURN n, value",
+      R"(ProduceResults [n, value]
+  Projection [n, value]
+    ProcedureCall [CALL db.unknown(n.name) YIELD value]
+      WriteBarrier
+        AllNodeScan [n]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, AnnotatesProcedureCallCostMetadata) {
+  test_support::FakePlannerStatistics statistics;
+  statistics.procedure_rows = 3.0;
+  std::unique_ptr<ir::LogicalPlan> plan = LogicalPlanFor(
+      "CALL db.labels()",
+      ir::LogicalPlanBuilderOptions{.planner_statistics = &statistics});
+  ASSERT_NE(plan, nullptr);
+
+  EXPECT_EQ(plan->Type(), ir::LogicalPlanNodeType::kProcedureCall);
+  EXPECT_DOUBLE_EQ(*plan->EstimatedRows(), 3.0);
+  EXPECT_DOUBLE_EQ(*plan->Cost(), 3.25);
+  EXPECT_DOUBLE_EQ(*plan->Child(0).Cost(), 0.1);
+
+  EXPECT_EQ(ir::LogicalPlanToString(
+                *plan, ir::LogicalPlanPrinterOptions{.include_metadata = true}),
+            R"(ProcedureCall [CALL db.labels() YIELD label] {rows=3, cost=3.25}
+  Argument {rows=1, cost=0.1}
+)");
+}
+
 TEST(LogicalPlanBuilderTest, BuildsUnionAllPlan) {
   ExpectLogicalPlanText("RETURN 1 AS a UNION ALL RETURN 2 AS a",
                         R"(ProduceResults [a]
