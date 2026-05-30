@@ -63,25 +63,6 @@ bool PredicateDependsOnlyOn(const Predicate &predicate,
   return DependenciesMet(predicate.dependencies, SingleSymbolSet(variable));
 }
 
-const ast::ComparisonExpression *AsComparisonExpression(
-    const ast::Expression *expression) {
-  const ast::Expression *unwrapped = UnwrapParenthesized(expression);
-  if (unwrapped == nullptr ||
-      !unwrapped->Is(ast::ASTNodeType::kComparisonExpression)) {
-    return nullptr;
-  }
-  return ast::CastAst<ast::ComparisonExpression>(unwrapped);
-}
-
-const ast::Expression *ComparisonRightExpression(const Predicate &predicate) {
-  const ast::ComparisonExpression *comparison =
-      AsComparisonExpression(predicate.expression);
-  CHECK(comparison != nullptr && comparison->right != nullptr,
-        common::InvalidArgumentError,
-        "index seek predicate is not a comparison");
-  return comparison->right.get();
-}
-
 std::vector<const ast::Expression *> PredicateExpressions(
     const std::vector<const Predicate *> &predicates) {
   std::vector<const ast::Expression *> expressions;
@@ -92,6 +73,12 @@ std::vector<const ast::Expression *> PredicateExpressions(
     expressions.push_back(predicate->expression);
   }
   return expressions;
+}
+
+const ast::Expression *PredicateValueExpression(const Predicate &predicate) {
+  CHECK(predicate.property_value != nullptr, common::InvalidArgumentError,
+        "index seek predicate value is null");
+  return predicate.property_value;
 }
 
 std::vector<std::string> LabelsFromPredicates(
@@ -606,7 +593,7 @@ std::unique_ptr<LogicalPlan> QueryGraphPlanningContext::BuildNodeLeaf(
     planned_predicates_->insert(seek_predicate);
     return std::make_unique<NodeIndexSeekPlan>(
         std::string(variable), labels, seek_predicate->property_key,
-        ComparisonRightExpression(*seek_predicate));
+        PredicateValueExpression(*seek_predicate));
   }
 
   std::vector<const Predicate *> range_predicates =
@@ -647,7 +634,7 @@ std::unique_ptr<LogicalPlan> QueryGraphPlanningContext::BuildRelationshipLeaf(
         relationship.left_node, relationship.variable, relationship.right_node,
         ToExpandDirection(relationship.direction), types,
         seek_predicate->property_key,
-        ComparisonRightExpression(*seek_predicate));
+        PredicateValueExpression(*seek_predicate));
   }
 
   std::vector<const Predicate *> range_predicates =
@@ -826,7 +813,7 @@ const Predicate *QueryGraphPlanningContext::BestIndexSeekPredicate(
         !PredicateDependsOnlyOn(predicate, variable)) {
       continue;
     }
-    if (ComparisonRightExpression(predicate) == nullptr) {
+    if (predicate.property_value == nullptr) {
       continue;
     }
     if (best == nullptr || predicate.property_key < best->property_key) {
@@ -864,6 +851,24 @@ QueryGraphPlanningContext::BestIndexRangePredicates(
     if (best.empty() || group.property_key < best_property_key) {
       best = std::move(predicates);
       best_property_key = std::move(group.property_key);
+    }
+  }
+  for (const auto &predicate : selections.predicates) {
+    if (predicate.kind != PredicateKind::kPropertyStringPredicate ||
+        !StringEquals(predicate.variable, variable) ||
+        predicate.property_key.empty() || predicate.property_value == nullptr ||
+        predicate.expression == nullptr ||
+        !StringEquals(predicate.comparison_op, "STARTS WITH") ||
+        !PredicateDependsOnlyOn(predicate, variable)) {
+      continue;
+    }
+    if (best.empty() || predicate.property_key < best_property_key) {
+      best = {&predicate};
+      best_property_key = predicate.property_key;
+      continue;
+    }
+    if (predicate.property_key == best_property_key) {
+      best.push_back(&predicate);
     }
   }
   return best;

@@ -38,6 +38,10 @@ enum class PredicateKind {
   kRelationshipType,
   kPropertyEquality,
   kPropertyComparison,
+  kPropertyIn,
+  kPropertyStringPredicate,
+  kPropertyIsNull,
+  kPropertyIsNotNull,
   kExistsSubquery,
   kNotExistsSubquery,
 };
@@ -79,6 +83,7 @@ struct Predicate {
   PredicateKind kind = PredicateKind::kGenericExpression;
   std::string variable;
   std::string property_key;
+  const ast::Expression *property_value = nullptr;
   std::vector<std::string> labels;
   std::vector<std::string> relationship_types;
   std::string comparison_op;

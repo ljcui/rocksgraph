@@ -72,8 +72,18 @@ std::string PredicateKindToString(PredicateKind kind) {
       return "property_equality";
     case PredicateKind::kPropertyComparison:
       return "property_comparison";
+    case PredicateKind::kPropertyIn:
+      return "property_in";
+    case PredicateKind::kPropertyStringPredicate:
+      return "property_string_predicate";
+    case PredicateKind::kPropertyIsNull:
+      return "property_is_null";
+    case PredicateKind::kPropertyIsNotNull:
+      return "property_is_not_null";
     case PredicateKind::kExistsSubquery:
       return "exists_subquery";
+    case PredicateKind::kNotExistsSubquery:
+      return "not_exists_subquery";
   }
   THROW(common::InternalError, "unknown predicate kind");
 }
@@ -333,6 +343,9 @@ class PlannerQueryPrinter {
       }
       if (!predicate.property_key.empty()) {
         Line("property_key: " + predicate.property_key);
+      }
+      if (predicate.property_value != nullptr) {
+        Line("property_value: " + ExpressionText(predicate.property_value));
       }
       if (!predicate.labels.empty()) {
         Line("labels: " + List(predicate.labels));

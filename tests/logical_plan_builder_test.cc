@@ -140,11 +140,48 @@ TEST(LogicalPlanBuilderTest, UsesNodePropertyIndexSeek) {
 )");
 }
 
+TEST(LogicalPlanBuilderTest, UsesNodePropertyIndexSeekForReversedEquality) {
+  ExpectLogicalPlanText("MATCH (n) WHERE 1 = n.id RETURN n",
+                        R"(ProduceResults [n]
+  Projection [n]
+    NodeIndexSeek [n WHERE n.id = 1]
+)");
+}
+
 TEST(LogicalPlanBuilderTest, UsesNodePropertyIndexRangeSeek) {
   ExpectLogicalPlanText("MATCH (n) WHERE n.age >= 10 AND n.age < 20 RETURN n",
                         R"(ProduceResults [n]
   Projection [n]
     NodeIndexRangeSeek [n WHERE n.age >= 10 AND n.age < 20]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, UsesNodePropertyIndexRangeSeekForReversedBounds) {
+  ExpectLogicalPlanText("MATCH (n) WHERE 5 <= n.age AND 20 > n.age RETURN n",
+                        R"(ProduceResults [n]
+  Projection [n]
+    NodeIndexRangeSeek [n WHERE 5 <= n.age AND 20 > n.age]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, UsesNodePropertyIndexRangeSeekForStartsWith) {
+  ExpectLogicalPlanText("MATCH (n) WHERE n.name STARTS WITH 'A' RETURN n",
+                        R"(ProduceResults [n]
+  Projection [n]
+    NodeIndexRangeSeek [n WHERE n.name STARTS WITH 'A']
+)");
+}
+
+TEST(LogicalPlanBuilderTest, KeepsStructuredPropertyPredicatesAsFilters) {
+  ExpectLogicalPlanText(
+      "MATCH (n) WHERE n.prop IN [1, 2] AND n.deleted IS NULL AND "
+      "n.email IS NOT NULL RETURN n",
+      R"(ProduceResults [n]
+  Projection [n]
+    Filter [n.email IS NOT NULL]
+      Filter [n.deleted IS NULL]
+        Filter [n.prop IN [1, 2]]
+          AllNodeScan [n]
 )");
 }
 
@@ -218,6 +255,15 @@ TEST(LogicalPlanBuilderTest, UsesRelationshipTypeScanWhenCheaper) {
 
 TEST(LogicalPlanBuilderTest, UsesRelationshipPropertyIndexSeek) {
   ExpectLogicalPlanText("MATCH (a)-[r]->(b) WHERE r.since = 2020 RETURN r",
+                        R"(ProduceResults [r]
+  Projection [r]
+    RelationshipIndexSeek [(a)-[r]->(b) WHERE r.since = 2020]
+)");
+}
+
+TEST(LogicalPlanBuilderTest,
+     UsesRelationshipPropertyIndexSeekForReversedEquality) {
+  ExpectLogicalPlanText("MATCH (a)-[r]->(b) WHERE 2020 = r.since RETURN r",
                         R"(ProduceResults [r]
   Projection [r]
     RelationshipIndexSeek [(a)-[r]->(b) WHERE r.since = 2020]

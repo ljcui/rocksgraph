@@ -177,6 +177,9 @@ std::vector<PropertyInequalityGroup> Selections::PropertyInequalityGroups()
         predicate.variable.empty() || predicate.property_key.empty()) {
       continue;
     }
+    if (predicate.property_value == nullptr) {
+      continue;
+    }
     if (!IsLowerBoundComparison(predicate.comparison_op) &&
         !IsUpperBoundComparison(predicate.comparison_op)) {
       continue;

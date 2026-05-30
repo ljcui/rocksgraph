@@ -429,6 +429,7 @@ TEST(PlannerQueryPrinterTest, DumpsInlinePropertySelection) {
         dependencies: [n]
         variable: n
         property_key: id
+        property_value: 1
         comparison_op: =
     optional_matches: 0
     hints: 0
@@ -464,7 +465,72 @@ TEST(PlannerQueryPrinterTest, DumpsExplicitWhereSelection) {
         dependencies: [n]
         variable: n
         property_key: age
+        property_value: 30
         comparison_op: >
+    optional_matches: 0
+    hints: 0
+    mutating_patterns: 0
+  horizon:
+    regular_projection:
+      items:
+        - alias: n
+          expression: n
+      selections:
+        []
+      required_order:
+        []
+      pagination:
+        skip: null
+        limit: null
+  tail:
+    null
+)");
+}
+
+TEST(PlannerQueryPrinterTest, DumpsStructuredPropertyPredicates) {
+  ExpectPlannerQueryText(
+      "MATCH (n) WHERE 1 = n.id AND n.name STARTS WITH 'A' AND "
+      "n.prop IN [1, 2] AND n.deleted IS NULL AND n.email IS NOT NULL RETURN n",
+      R"(SinglePlannerQuery
+  query_graph:
+    argument_ids: []
+    pattern_nodes: [n]
+    pattern_relationships:
+      []
+    selections:
+      - kind: property_equality
+        expression: 1 = n.id
+        dependencies: [n]
+        variable: n
+        property_key: id
+        property_value: 1
+        comparison_op: =
+      - kind: property_string_predicate
+        expression: n.name STARTS WITH 'A'
+        dependencies: [n]
+        variable: n
+        property_key: name
+        property_value: 'A'
+        comparison_op: STARTS WITH
+      - kind: property_in
+        expression: n.prop IN [1, 2]
+        dependencies: [n]
+        variable: n
+        property_key: prop
+        property_value: [1, 2]
+        comparison_op: IN
+      - kind: property_is_null
+        expression: n.deleted IS NULL
+        dependencies: [n]
+        variable: n
+        property_key: deleted
+        comparison_op: IS NULL
+      - kind: property_is_not_null
+        expression: n.email IS NOT NULL
+        dependencies: [n]
+        variable: n
+        property_key: email
+        comparison_op: IS NOT NULL
     optional_matches: 0
     hints: 0
     mutating_patterns: 0
@@ -864,6 +930,62 @@ TEST(PlannerQueryTest, QueriesSelectionsByStructuredPredicateFields) {
   EXPECT_TRUE(selections.ContainsPropertyPredicate("a", "age"));
   EXPECT_TRUE(selections.ContainsPropertyPredicate("a", "age", ">"));
   EXPECT_FALSE(selections.ContainsPropertyPredicate("a", "age", "="));
+}
+
+TEST(PlannerQueryTest, ClassifiesNormalizedPropertyPredicates) {
+  auto statement = ParseOrFail(
+      "MATCH (n) WHERE 1 = n.id AND 5 <= n.age AND n.prop IN [1, 2] AND "
+      "n.name STARTS WITH 'A' AND n.deleted IS NULL AND "
+      "n.email IS NOT NULL RETURN n");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::Selections &selections =
+      planner_query->RequireSingle().query_graph.selections;
+
+  ASSERT_EQ(selections.size(), 6U);
+
+  const auto id_predicates = selections.PropertyPredicates("n", "id", "=");
+  ASSERT_EQ(id_predicates.size(), 1U);
+  EXPECT_EQ(id_predicates[0]->kind, ir::PredicateKind::kPropertyEquality);
+  ASSERT_NE(id_predicates[0]->property_value, nullptr);
+  EXPECT_EQ(ast::ExpressionToString(*id_predicates[0]->property_value), "1");
+
+  const auto age_predicates = selections.PropertyPredicates("n", "age", ">=");
+  ASSERT_EQ(age_predicates.size(), 1U);
+  EXPECT_EQ(age_predicates[0]->kind, ir::PredicateKind::kPropertyComparison);
+  ASSERT_NE(age_predicates[0]->property_value, nullptr);
+  EXPECT_EQ(ast::ExpressionToString(*age_predicates[0]->property_value), "5");
+
+  const auto in_predicates = selections.PropertyPredicates("n", "prop", "IN");
+  ASSERT_EQ(in_predicates.size(), 1U);
+  EXPECT_EQ(in_predicates[0]->kind, ir::PredicateKind::kPropertyIn);
+  ASSERT_NE(in_predicates[0]->property_value, nullptr);
+  EXPECT_EQ(ast::ExpressionToString(*in_predicates[0]->property_value),
+            "[1, 2]");
+
+  const auto string_predicates =
+      selections.PropertyPredicates("n", "name", "STARTS WITH");
+  ASSERT_EQ(string_predicates.size(), 1U);
+  EXPECT_EQ(string_predicates[0]->kind,
+            ir::PredicateKind::kPropertyStringPredicate);
+  ASSERT_NE(string_predicates[0]->property_value, nullptr);
+  EXPECT_EQ(ast::ExpressionToString(*string_predicates[0]->property_value),
+            "'A'");
+
+  const auto null_predicates =
+      selections.PropertyPredicates("n", "deleted", "IS NULL");
+  ASSERT_EQ(null_predicates.size(), 1U);
+  EXPECT_EQ(null_predicates[0]->kind, ir::PredicateKind::kPropertyIsNull);
+  EXPECT_EQ(null_predicates[0]->property_value, nullptr);
+
+  const auto not_null_predicates =
+      selections.PropertyPredicates("n", "email", "IS NOT NULL");
+  ASSERT_EQ(not_null_predicates.size(), 1U);
+  EXPECT_EQ(not_null_predicates[0]->kind,
+            ir::PredicateKind::kPropertyIsNotNull);
+  EXPECT_EQ(not_null_predicates[0]->property_value, nullptr);
 }
 
 TEST(PlannerQueryTest, SelectionsExposePushdownAndInequalityGroups) {
@@ -1785,6 +1907,37 @@ TEST(PlannerQueryTest, DeduplicatesRepeatedPropertyComparisonWherePredicates) {
   EXPECT_EQ(predicate.variable, "n");
   EXPECT_EQ(predicate.property_key, "age");
   EXPECT_EQ(predicate.comparison_op, ">");
+}
+
+TEST(PlannerQueryTest, DeduplicatesNormalizedPropertyPredicates) {
+  auto statement = ParseOrFail(
+      "MATCH (n) WHERE 1 = n.id AND n.id = 1 AND "
+      "n.name STARTS WITH 'A' AND n.name STARTS WITH 'A' AND "
+      "n.prop IN [1, 2] AND n.prop IN [1, 2] AND "
+      "n.deleted IS NULL AND n.deleted IS NULL RETURN n");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::SinglePlannerQuery &main = planner_query->RequireSingle();
+
+  EXPECT_EQ(main.query_graph.selections.size(), 4U);
+  EXPECT_EQ(main.query_graph.selections
+                .PredicatesByKind(ir::PredicateKind::kPropertyEquality)
+                .size(),
+            1U);
+  EXPECT_EQ(main.query_graph.selections
+                .PredicatesByKind(ir::PredicateKind::kPropertyStringPredicate)
+                .size(),
+            1U);
+  EXPECT_EQ(main.query_graph.selections
+                .PredicatesByKind(ir::PredicateKind::kPropertyIn)
+                .size(),
+            1U);
+  EXPECT_EQ(main.query_graph.selections
+                .PredicatesByKind(ir::PredicateKind::kPropertyIsNull)
+                .size(),
+            1U);
 }
 
 TEST(PlannerQueryTest, DeduplicatesRepeatedGenericWherePredicates) {

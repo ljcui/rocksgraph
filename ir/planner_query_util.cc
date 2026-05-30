@@ -381,7 +381,11 @@ bool StringSetEquals(const std::unordered_set<std::string> &lhs,
 
 bool IsPropertyPredicateKind(PredicateKind kind) {
   return kind == PredicateKind::kPropertyEquality ||
-         kind == PredicateKind::kPropertyComparison;
+         kind == PredicateKind::kPropertyComparison ||
+         kind == PredicateKind::kPropertyIn ||
+         kind == PredicateKind::kPropertyStringPredicate ||
+         kind == PredicateKind::kPropertyIsNull ||
+         kind == PredicateKind::kPropertyIsNotNull;
 }
 
 bool IsLowerBoundComparison(std::string_view op) {
@@ -414,6 +418,14 @@ std::string_view PredicateKindKey(PredicateKind kind) {
       return "property_equality";
     case PredicateKind::kPropertyComparison:
       return "property_comparison";
+    case PredicateKind::kPropertyIn:
+      return "property_in";
+    case PredicateKind::kPropertyStringPredicate:
+      return "property_string_predicate";
+    case PredicateKind::kPropertyIsNull:
+      return "property_is_null";
+    case PredicateKind::kPropertyIsNotNull:
+      return "property_is_not_null";
     case PredicateKind::kExistsSubquery:
       return "exists_subquery";
     case PredicateKind::kNotExistsSubquery:
@@ -449,19 +461,6 @@ std::string ExpressionKey(const ast::Expression &expression) {
   return key;
 }
 
-std::string PropertyComparisonRhsKey(const ast::Expression *expression) {
-  const ast::Expression *unwrapped = UnwrapParenthesized(expression);
-  CHECK(unwrapped != nullptr, common::InvalidArgumentError,
-        "property predicate expression is null");
-  CHECK(unwrapped->Is(ast::ASTNodeType::kComparisonExpression),
-        common::InvalidArgumentError,
-        "property predicate expression is not a comparison");
-  const auto *comparison = ast::CastAst<ast::ComparisonExpression>(unwrapped);
-  CHECK(comparison->right != nullptr, common::InvalidArgumentError,
-        "property predicate right expression is null");
-  return ExpressionKey(*comparison->right);
-}
-
 std::string PredicateKey(const Predicate &predicate) {
   CHECK(predicate.expression != nullptr, common::InvalidArgumentError,
         "predicate expression is null");
@@ -482,7 +481,23 @@ std::string PredicateKey(const Predicate &predicate) {
       AppendKeyPart(&key, predicate.variable);
       AppendKeyPart(&key, predicate.property_key);
       AppendKeyPart(&key, predicate.comparison_op);
-      AppendKeyPart(&key, PropertyComparisonRhsKey(predicate.expression));
+      CHECK(predicate.property_value != nullptr, common::InvalidArgumentError,
+            "property predicate value is null");
+      AppendKeyPart(&key, ExpressionKey(*predicate.property_value));
+      break;
+    case PredicateKind::kPropertyIn:
+    case PredicateKind::kPropertyStringPredicate:
+      AppendKeyPart(&key, predicate.variable);
+      AppendKeyPart(&key, predicate.property_key);
+      AppendKeyPart(&key, predicate.comparison_op);
+      CHECK(predicate.property_value != nullptr, common::InvalidArgumentError,
+            "property predicate value is null");
+      AppendKeyPart(&key, ExpressionKey(*predicate.property_value));
+      break;
+    case PredicateKind::kPropertyIsNull:
+    case PredicateKind::kPropertyIsNotNull:
+      AppendKeyPart(&key, predicate.variable);
+      AppendKeyPart(&key, predicate.property_key);
       break;
     case PredicateKind::kGenericExpression:
     case PredicateKind::kExistsSubquery:
@@ -521,6 +536,42 @@ bool QueryGraphRelationshipCoversVariable(const QueryGraph &query_graph,
     }
   }
   return false;
+}
+
+std::string ReverseComparisonOp(std::string_view op) {
+  if (op == "<") {
+    return ">";
+  }
+  if (op == "<=") {
+    return ">=";
+  }
+  if (op == ">") {
+    return "<";
+  }
+  if (op == ">=") {
+    return "<=";
+  }
+  return std::string(op);
+}
+
+bool FillPropertyPredicate(Predicate *predicate,
+                           const ast::PropertyExpression *property,
+                           const ast::Expression *value,
+                           std::string comparison_op, PredicateKind kind) {
+  CHECK(predicate != nullptr, common::InternalError, "predicate is null");
+  if (property == nullptr) {
+    return false;
+  }
+  const ast::Variable *variable = AsVariableExpression(property->object.get());
+  if (variable == nullptr || property->property_key.empty()) {
+    return false;
+  }
+  predicate->variable = variable->name;
+  predicate->property_key = property->property_key;
+  predicate->property_value = value;
+  predicate->comparison_op = std::move(comparison_op);
+  predicate->kind = kind;
+  return true;
 }
 
 void AddAssertIsNodeVariables(QueryGraph *query_graph) {
@@ -637,20 +688,48 @@ void ClassifyPredicate(Predicate *predicate,
         ast::CastAst<ast::ComparisonExpression>(expression);
     const ast::PropertyExpression *property =
         AsPropertyExpression(comparison->left.get());
+    const ast::Expression *value = comparison->right.get();
+    std::string comparison_op = comparison->op;
     if (property == nullptr) {
-      return;
+      property = AsPropertyExpression(comparison->right.get());
+      value = comparison->left.get();
+      comparison_op = ReverseComparisonOp(comparison->op);
     }
-    const ast::Variable *variable =
-        AsVariableExpression(property->object.get());
-    if (variable == nullptr) {
-      return;
-    }
-    predicate->variable = variable->name;
-    predicate->property_key = property->property_key;
-    predicate->comparison_op = comparison->op;
-    predicate->kind = comparison->op == "="
-                          ? PredicateKind::kPropertyEquality
-                          : PredicateKind::kPropertyComparison;
+    const PredicateKind kind = comparison_op == "="
+                                   ? PredicateKind::kPropertyEquality
+                                   : PredicateKind::kPropertyComparison;
+    FillPropertyPredicate(predicate, property, value, std::move(comparison_op),
+                          kind);
+    return;
+  }
+
+  if (expression->Is(ast::ASTNodeType::kListPredicateExpression)) {
+    const auto *list_predicate =
+        ast::CastAst<ast::ListPredicateExpression>(expression);
+    FillPropertyPredicate(
+        predicate, AsPropertyExpression(list_predicate->element.get()),
+        list_predicate->list.get(), "IN", PredicateKind::kPropertyIn);
+    return;
+  }
+
+  if (expression->Is(ast::ASTNodeType::kStringPredicateExpression)) {
+    const auto *string_predicate =
+        ast::CastAst<ast::StringPredicateExpression>(expression);
+    FillPropertyPredicate(predicate,
+                          AsPropertyExpression(string_predicate->left.get()),
+                          string_predicate->right.get(), string_predicate->op,
+                          PredicateKind::kPropertyStringPredicate);
+    return;
+  }
+
+  if (expression->Is(ast::ASTNodeType::kNullPredicateExpression)) {
+    const auto *null_predicate =
+        ast::CastAst<ast::NullPredicateExpression>(expression);
+    FillPropertyPredicate(
+        predicate, AsPropertyExpression(null_predicate->operand.get()), nullptr,
+        null_predicate->is_null ? "IS NULL" : "IS NOT NULL",
+        null_predicate->is_null ? PredicateKind::kPropertyIsNull
+                                : PredicateKind::kPropertyIsNotNull);
     return;
   }
 
