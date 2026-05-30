@@ -21,6 +21,8 @@
 namespace ir {
 namespace {
 
+constexpr std::string_view kLogicalPlanStage = "logical plan";
+
 std::vector<std::string> SortedComponentNodes(
     const QueryGraphComponent &component) {
   std::vector<std::string> out(component.pattern_nodes.begin(),
@@ -250,7 +252,8 @@ class IdpComponentPlanner final : public ComponentPlanner {
     if (component.pattern_relationship_indices.empty()) {
       const std::vector<std::string> nodes = SortedComponentNodes(component);
       CHECK(nodes.size() == 1, common::InvalidArgumentError,
-            Unsupported("multi-node disconnected component logical plan"));
+            UnsupportedInStage(kLogicalPlanStage,
+                               "multi-node disconnected component"));
       PlanTable plan_table;
       PutInitialNodeCandidate(query_graph, nodes.front(), base_predicates,
                               context, &plan_table);
@@ -769,7 +772,8 @@ void QueryGraphPlanningContext::ValidateAllPredicatesPlanned(
   for (const auto &predicate : selections.predicates) {
     CHECK(planned_predicates_->contains(&predicate),
           common::InvalidArgumentError,
-          Unsupported("selection predicate with unmet dependencies"));
+          UnsupportedInStage(kLogicalPlanStage,
+                             "selection predicate with unmet dependencies"));
   }
 }
 

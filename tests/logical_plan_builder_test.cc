@@ -4,9 +4,11 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 
 #include "ast/ast_builder.h"
 #include "ast/ast_exception.h"
+#include "ast/ast_node.h"
 #include "common/exception.h"
 #include "ir/logical_plan_printer.h"
 #include "ir/planner_query.h"
@@ -56,6 +58,34 @@ void ExpectLogicalPlanText(const std::string &query,
                            const std::string &expected,
                            const ir::LogicalPlanBuilderOptions &options = {}) {
   EXPECT_EQ(LogicalPlanText(query, options), expected);
+}
+
+std::unique_ptr<ast::Variable> Variable(std::string name) {
+  auto variable = std::make_unique<ast::Variable>();
+  variable->name = std::move(name);
+  return variable;
+}
+
+std::unique_ptr<ast::ComparisonExpression> Equality(
+    std::unique_ptr<ast::Expression> left,
+    std::unique_ptr<ast::Expression> right) {
+  auto expression = std::make_unique<ast::ComparisonExpression>();
+  expression->op = "=";
+  expression->left = std::move(left);
+  expression->right = std::move(right);
+  return expression;
+}
+
+void ExpectLogicalPlanInvalidArgument(const ir::SinglePlannerQuery &query,
+                                      const std::string &message_substring) {
+  try {
+    (void)ir::CreateLogicalPlan(query);
+    FAIL() << "expected InvalidArgumentError";
+  } catch (const common::InvalidArgumentError &e) {
+    EXPECT_NE(e.Message().find(message_substring), std::string::npos)
+        << e.Message();
+    EXPECT_EQ(e.Message().find("logical plan"), 0U) << e.Message();
+  }
 }
 
 }  // namespace
@@ -940,4 +970,52 @@ TEST(LogicalPlanBuilderTest, BuildsMergePlan) {
         Expand [(m)-[r:KNOWS]->(n)]
           Argument [m]
 )");
+}
+
+TEST(LogicalPlanBuilderTest, RejectsPlannerHintsWithLogicalPlanStage) {
+  ir::SinglePlannerQuery query;
+  query.query_graph.hints.push_back(ir::Hint{});
+
+  ExpectLogicalPlanInvalidArgument(query, "planner hint is not supported");
+}
+
+TEST(LogicalPlanBuilderTest,
+     RejectsTailArgumentMissingFromInputWithLogicalPlanStage) {
+  ir::SinglePlannerQuery query;
+  query.query_graph.pattern_nodes.insert("n");
+  query.horizon = ir::QueryHorizon::ForPassthrough();
+  query.tail = std::make_unique<ir::SinglePlannerQuery>();
+  query.tail->query_graph.argument_ids.insert("missing");
+
+  ExpectLogicalPlanInvalidArgument(query,
+                                   "tail argument is not available: missing");
+}
+
+TEST(LogicalPlanBuilderTest,
+     RejectsProcedureArgumentUnmetDependenciesWithLogicalPlanStage) {
+  ir::SinglePlannerQuery query;
+  ir::ProcedureCallHorizon call;
+  call.procedure_name = "db.unknown";
+  std::unique_ptr<ast::Variable> missing = Variable("missing");
+  call.arguments.push_back(missing.get());
+  call.yield_items.push_back({.variable = "out"});
+  query.horizon = ir::QueryHorizon::ForProcedureCall(std::move(call));
+
+  ExpectLogicalPlanInvalidArgument(
+      query, "procedure argument with unmet dependencies is not supported");
+}
+
+TEST(LogicalPlanBuilderTest,
+     RejectsSelectionPredicateUnmetDependenciesWithLogicalPlanStage) {
+  ir::SinglePlannerQuery query;
+  query.query_graph.pattern_nodes.insert("n");
+  auto predicate_expression = Equality(Variable("n"), Variable("missing"));
+  const ast::Expression *predicate_ptr = predicate_expression.get();
+  query.query_graph.selections.predicates.push_back(
+      {.expression = predicate_ptr,
+       .dependencies = {"n", "missing"},
+       .kind = ir::PredicateKind::kGenericExpression});
+
+  ExpectLogicalPlanInvalidArgument(
+      query, "selection predicate with unmet dependencies is not supported");
 }

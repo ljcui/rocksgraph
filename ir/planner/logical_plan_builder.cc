@@ -5,6 +5,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -18,6 +19,8 @@
 
 namespace ir {
 namespace {
+
+constexpr std::string_view kLogicalPlanStage = "logical plan";
 
 std::vector<std::string> Sorted(
     const std::unordered_set<std::string> &symbols) {
@@ -634,13 +637,14 @@ class LogicalPlanBuilder {
     for (const auto &argument : query_graph.argument_ids) {
       CHECK(StringVectorContains(input.OutputColumns(), argument),
             common::InvalidArgumentError,
-            "tail argument is not available: " + argument);
+            std::string(kLogicalPlanStage) +
+                ": tail argument is not available: " + argument);
     }
   }
 
   void ValidateSupportedQueryGraph(const QueryGraph &query_graph) const {
     CHECK(query_graph.hints.empty(), common::InvalidArgumentError,
-          Unsupported("planner hint logical plan"));
+          UnsupportedInStage(kLogicalPlanStage, "planner hint"));
     for (const auto &predicate : query_graph.selections.predicates) {
       if (predicate.kind == PredicateKind::kExistsSubquery ||
           predicate.kind == PredicateKind::kNotExistsSubquery) {
@@ -998,7 +1002,8 @@ class LogicalPlanBuilder {
           ast::CollectExpressionDependencies(*argument);
       CHECK(DependenciesMet(dependencies, symbols),
             common::InvalidArgumentError,
-            Unsupported("procedure argument with unmet dependencies"));
+            UnsupportedInStage(kLogicalPlanStage,
+                               "procedure argument with unmet dependencies"));
     }
   }
 

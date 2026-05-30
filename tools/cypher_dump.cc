@@ -73,8 +73,20 @@ int main(int argc, char **argv) {
     }
     if (FLAGS_mode == "logical_plan") {
       auto statement = ast::ParseCypherAndRewrite(input);
-      auto planner_query = ir::CreatePlannerQuery(*statement);
-      auto logical_plan = ir::CreateLogicalPlan(*planner_query);
+      std::unique_ptr<ir::PlannerQuery> planner_query;
+      try {
+        planner_query = ir::CreatePlannerQuery(*statement);
+      } catch (const Exception &e) {
+        spdlog::error("Planner query error: {}", e.Message());
+        return 1;
+      }
+      std::unique_ptr<ir::LogicalPlan> logical_plan;
+      try {
+        logical_plan = ir::CreateLogicalPlan(*planner_query);
+      } catch (const Exception &e) {
+        spdlog::error("Logical plan error: {}", e.Message());
+        return 1;
+      }
       ir::PrintLogicalPlan(
           *logical_plan, std::cout,
           ir::LogicalPlanPrinterOptions{.include_metadata = true});

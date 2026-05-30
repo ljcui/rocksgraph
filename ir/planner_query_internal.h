@@ -16,6 +16,8 @@ class SemanticTable;
 namespace ir {
 
 std::string Unsupported(std::string_view feature);
+std::string UnsupportedInStage(std::string_view stage,
+                               std::string_view feature);
 std::string Missing(std::string_view subject);
 
 const ast::Expression *UnwrapParenthesized(const ast::Expression *expression);

@@ -20,6 +20,11 @@ std::string Unsupported(std::string_view feature) {
   return std::string(feature) + " is not supported";
 }
 
+std::string UnsupportedInStage(std::string_view stage,
+                               std::string_view feature) {
+  return std::string(stage) + ": " + Unsupported(feature);
+}
+
 std::string Missing(std::string_view subject) {
   return "missing " + std::string(subject);
 }
