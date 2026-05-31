@@ -195,6 +195,104 @@ TEST(QueryExecutorTest, ExecutesNamedCreatePathLength) {
   EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{{"1"}}));
 }
 
+TEST(QueryExecutorTest, ExecutesQuantifierExpressions) {
+  rg::InMemoryGraph graph;
+
+  rg::QueryResult result =
+      rg::ExecuteReadQuery(graph,
+                           "RETURN ALL(x IN [1, 2] WHERE x > 0) AS all_ok, "
+                           "ANY(x IN [1, 2] WHERE x = 2) AS any_ok, "
+                           "NONE(x IN [1, 2] WHERE x = 3) AS none_ok, "
+                           "SINGLE(x IN [1, 2] WHERE x = 2) AS single_ok");
+
+  ASSERT_EQ(result.columns, (std::vector<std::string>{"all_ok", "any_ok",
+                                                      "none_ok", "single_ok"}));
+  EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{
+                                    {"true", "true", "true", "true"}}));
+}
+
+TEST(QueryExecutorTest, ExecutesVariableLengthExpand) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "MATCH (a:Person {name: 'Ada'})-[r*0..2]->(b) "
+      "RETURN b.name AS name, size(r) AS hops ORDER BY hops, name");
+
+  ASSERT_EQ(result.columns, (std::vector<std::string>{"name", "hops"}));
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{
+                {"\"Ada\"", "0"}, {"\"Grace\"", "1"}, {"\"C++\"", "2"}}));
+}
+
+TEST(QueryExecutorTest, ExecutesVariableLengthExpandWithTypeFilter) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result =
+      rg::ExecuteReadQuery(graph,
+                           "MATCH (a:Person {name: 'Ada'})-[r:KNOWS*1..2]->(b) "
+                           "RETURN b.name AS name, size(r) AS hops");
+
+  ASSERT_EQ(result.columns, (std::vector<std::string>{"name", "hops"}));
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{{"\"Grace\"", "1"}}));
+}
+
+TEST(QueryExecutorTest, ExecutesVariableLengthExpandIntoBoundEndpoint) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "MATCH (a:Person {name: 'Ada'}), (b:Language {name: 'C++'}) "
+      "WITH a, b MATCH (a)-[r*1..2]->(b) RETURN size(r) AS hops");
+
+  ASSERT_EQ(result.columns, std::vector<std::string>{"hops"});
+  EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{{"2"}}));
+}
+
+TEST(QueryExecutorTest, ExecutesVariableLengthNamedPath) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result =
+      rg::ExecuteReadQuery(graph,
+                           "MATCH p = (a:Person {name: 'Ada'})-[r*1..2]->"
+                           "(b:Language) RETURN length(p) AS len");
+
+  ASSERT_EQ(result.columns, std::vector<std::string>{"len"});
+  EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{{"2"}}));
+}
+
+TEST(QueryExecutorTest, ExecutesReversePlannedVariableLengthNamedPath) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result =
+      rg::ExecuteReadQuery(graph,
+                           "MATCH p = (a)-[r*1..2]->(b:Language) "
+                           "RETURN length(p) AS len ORDER BY len");
+
+  ASSERT_EQ(result.columns, std::vector<std::string>{"len"});
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{{"1"}, {"2"}}));
+}
+
+TEST(QueryExecutorTest, VariableLengthExpandReturnsNoRowsWhenBoundsDoNotMatch) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result =
+      rg::ExecuteReadQuery(graph,
+                           "MATCH (a:Person {name: 'Ada'})-[r:KNOWS*2..2]->(b) "
+                           "RETURN count(r) AS c");
+
+  ASSERT_EQ(result.columns, std::vector<std::string>{"c"});
+  EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{{"0"}}));
+}
+
 TEST(QueryExecutorTest, ExecutesCreateNodeAndRelationship) {
   rg::InMemoryGraph graph;
 

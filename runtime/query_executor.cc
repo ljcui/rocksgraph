@@ -36,6 +36,8 @@ struct EntityRef {
   std::int64_t id = -1;
 };
 
+enum class QuantifierMode { kAll, kAny, kNone, kSingle };
+
 std::string LowerAscii(std::string value) {
   std::transform(
       value.begin(), value.end(), value.begin(),
@@ -218,6 +220,56 @@ Value EvaluateFunction(const ast::FunctionInvocation &function,
 
   THROW(common::InvalidArgumentError,
         "unsupported function in executor: " + function.function_name);
+}
+
+Value EvaluateQuantifier(const ast::Quantifier &quantifier, QuantifierMode mode,
+                         const QueryRow &row) {
+  CHECK(!quantifier.variable.empty(), common::InvalidArgumentError,
+        "quantifier variable is empty");
+  CHECK(quantifier.list_expr != nullptr, common::InvalidArgumentError,
+        "quantifier list expression is null");
+  CHECK(quantifier.predicate != nullptr, common::InvalidArgumentError,
+        "quantifier predicate is null");
+
+  Value list = EvaluateExpression(*quantifier.list_expr, row);
+  if (!list.IsList()) {
+    return Value(false);
+  }
+
+  std::int64_t matches = 0;
+  for (const auto &item : list.AsList()) {
+    QueryRow scoped = row;
+    scoped[quantifier.variable] = item;
+    const bool matched =
+        IsTruthy(EvaluateExpression(*quantifier.predicate, scoped));
+    if (mode == QuantifierMode::kAll && !matched) {
+      return Value(false);
+    }
+    if (mode == QuantifierMode::kAny && matched) {
+      return Value(true);
+    }
+    if (mode == QuantifierMode::kNone && matched) {
+      return Value(false);
+    }
+    if (mode == QuantifierMode::kSingle && matched) {
+      ++matches;
+      if (matches > 1) {
+        return Value(false);
+      }
+    }
+  }
+
+  switch (mode) {
+    case QuantifierMode::kAll:
+      return Value(true);
+    case QuantifierMode::kAny:
+      return Value(false);
+    case QuantifierMode::kNone:
+      return Value(true);
+    case QuantifierMode::kSingle:
+      return Value(matches == 1);
+  }
+  THROW(common::InternalError, "unknown quantifier mode");
 }
 
 Value EvaluateExpression(const ast::Expression &expression,
@@ -449,6 +501,18 @@ Value EvaluateExpression(const ast::Expression &expression,
     case ast::ASTNodeType::kFunctionInvocation:
       return EvaluateFunction(ast::CastAst<ast::FunctionInvocation>(expression),
                               row);
+    case ast::ASTNodeType::kAllQuantifier:
+      return EvaluateQuantifier(ast::CastAst<ast::AllQuantifier>(expression),
+                                QuantifierMode::kAll, row);
+    case ast::ASTNodeType::kAnyQuantifier:
+      return EvaluateQuantifier(ast::CastAst<ast::AnyQuantifier>(expression),
+                                QuantifierMode::kAny, row);
+    case ast::ASTNodeType::kNoneQuantifier:
+      return EvaluateQuantifier(ast::CastAst<ast::NoneQuantifier>(expression),
+                                QuantifierMode::kNone, row);
+    case ast::ASTNodeType::kSingleQuantifier:
+      return EvaluateQuantifier(ast::CastAst<ast::SingleQuantifier>(expression),
+                                QuantifierMode::kSingle, row);
     case ast::ASTNodeType::kParenthesizedExpression: {
       const auto &parenthesized =
           ast::CastAst<ast::ParenthesizedExpression>(expression);
@@ -638,6 +702,9 @@ class QueryExecutorImpl {
       case ir::LogicalPlanNodeType::kExpandInto:
         return ExecuteExpandInto(static_cast<const ir::ExpandIntoPlan &>(plan),
                                  input);
+      case ir::LogicalPlanNodeType::kVarExpand:
+        return ExecuteVarExpand(static_cast<const ir::VarExpandPlan &>(plan),
+                                input);
       case ir::LogicalPlanNodeType::kPathBuild:
         return ExecutePathBuild(static_cast<const ir::PathBuildPlan &>(plan),
                                 input);
@@ -1024,6 +1091,150 @@ class QueryExecutorImpl {
     return out;
   }
 
+  Rows ExecuteVarExpand(const ir::VarExpandPlan &plan, const Rows &input) {
+    Rows child_rows = ExecutePlan(plan.Child(0), input);
+    Rows out;
+    for (const auto &row : child_rows) {
+      const Value &from = LookupVariable(row, plan.FromNode());
+      CHECK(from.IsNode(), common::InvalidArgumentError,
+            "variable expand source is not a node: " + plan.FromNode());
+
+      std::optional<std::int64_t> bound_to_id;
+      const auto to_found = row.find(plan.ToNode());
+      if (to_found != row.end()) {
+        CHECK(to_found->second.IsNode(), common::InvalidArgumentError,
+              "variable expand target is not a node: " + plan.ToNode());
+        bound_to_id = to_found->second.AsNode().id;
+      }
+
+      const std::size_t min_length = VarExpandMinLength(plan.Length());
+      const std::size_t max_length = VarExpandMaxLength(plan.Length());
+      if (max_length < min_length) {
+        continue;
+      }
+
+      std::vector<InMemoryGraph::RelationshipPtr> path;
+      std::unordered_set<std::int64_t> used_relationships;
+      ExpandVariableLengthPath(plan, row, from.AsNode().id, bound_to_id,
+                               min_length, max_length, &path,
+                               &used_relationships, &out);
+    }
+    return out;
+  }
+
+  std::size_t VarExpandMinLength(
+      const ir::LogicalVariableLength &length) const {
+    if (!length.min.has_value()) {
+      return 1;
+    }
+    CHECK(*length.min >= 0, common::InvalidArgumentError,
+          "variable expand minimum length is negative");
+    return static_cast<std::size_t>(*length.min);
+  }
+
+  std::size_t VarExpandMaxLength(
+      const ir::LogicalVariableLength &length) const {
+    if (!length.max.has_value()) {
+      return graph_->Relationships().size();
+    }
+    CHECK(*length.max >= 0, common::InvalidArgumentError,
+          "variable expand maximum length is negative");
+    return static_cast<std::size_t>(*length.max);
+  }
+
+  std::optional<std::int64_t> NextVarExpandNode(
+      const Relationship &relationship, std::int64_t current_node_id,
+      ir::ExpandDirection direction) const {
+    if (direction == ir::ExpandDirection::kOutgoing) {
+      if (relationship.start_node_id != current_node_id) {
+        return std::nullopt;
+      }
+      return relationship.end_node_id;
+    }
+    if (direction == ir::ExpandDirection::kIncoming) {
+      if (relationship.end_node_id != current_node_id) {
+        return std::nullopt;
+      }
+      return relationship.start_node_id;
+    }
+    if (relationship.start_node_id == current_node_id) {
+      return relationship.end_node_id;
+    }
+    if (relationship.end_node_id == current_node_id) {
+      return relationship.start_node_id;
+    }
+    return std::nullopt;
+  }
+
+  void ExpandVariableLengthPath(
+      const ir::VarExpandPlan &plan, const QueryRow &row,
+      std::int64_t current_node_id, std::optional<std::int64_t> bound_to_id,
+      std::size_t min_length, std::size_t max_length,
+      std::vector<InMemoryGraph::RelationshipPtr> *path,
+      std::unordered_set<std::int64_t> *used_relationships, Rows *out) {
+    CHECK(path != nullptr, common::InternalError,
+          "variable expand path is null");
+    CHECK(used_relationships != nullptr, common::InternalError,
+          "variable expand used relationship set is null");
+    CHECK(out != nullptr, common::InternalError,
+          "variable expand output is null");
+
+    if (path->size() >= min_length &&
+        (!bound_to_id.has_value() || *bound_to_id == current_node_id)) {
+      EmitVarExpandRow(plan, row, current_node_id, *path, out);
+    }
+    if (path->size() == max_length) {
+      return;
+    }
+
+    for (const auto &relationship : graph_->Relationships()) {
+      if (used_relationships->contains(relationship->id)) {
+        continue;
+      }
+      if (!RuntimeRelationshipHasAnyType(*relationship, plan.Types())) {
+        continue;
+      }
+      std::optional<std::int64_t> next_node_id =
+          NextVarExpandNode(*relationship, current_node_id, plan.Direction());
+      if (!next_node_id.has_value()) {
+        continue;
+      }
+
+      used_relationships->insert(relationship->id);
+      path->push_back(relationship);
+      ExpandVariableLengthPath(plan, row, *next_node_id, bound_to_id,
+                               min_length, max_length, path, used_relationships,
+                               out);
+      path->pop_back();
+      used_relationships->erase(relationship->id);
+    }
+  }
+
+  void EmitVarExpandRow(const ir::VarExpandPlan &plan, const QueryRow &row,
+                        std::int64_t current_node_id,
+                        const std::vector<InMemoryGraph::RelationshipPtr> &path,
+                        Rows *out) {
+    CHECK(out != nullptr, common::InternalError,
+          "variable expand output is null");
+    Value::List relationships;
+    relationships.reserve(path.size());
+    for (const auto &relationship : path) {
+      CHECK(relationship != nullptr, common::InternalError,
+            "variable expand relationship is null");
+      relationships.emplace_back(relationship);
+    }
+
+    QueryRow next = row;
+    if (!TryBind(&next, plan.Relationship(), Value(std::move(relationships)))) {
+      return;
+    }
+    if (!TryBind(&next, plan.ToNode(),
+                 Value(graph_->NodeById(current_node_id)))) {
+      return;
+    }
+    out->push_back(std::move(next));
+  }
+
   Rows ExecutePathBuild(const ir::PathBuildPlan &plan, const Rows &input) {
     Rows rows = ExecutePlan(plan.Child(0), input);
     Rows out;
@@ -1050,21 +1261,93 @@ class QueryExecutorImpl {
     path->nodes.reserve(pattern.nodes.size());
     path->relationships.reserve(pattern.relationships.size());
 
-    for (const auto &node_variable : pattern.nodes) {
-      const Value &node = LookupVariable(row, node_variable);
-      CHECK(node.IsNode(), common::InvalidArgumentError,
-            "path node is not a node: " + node_variable);
-      path->nodes.push_back(graph_->NodeById(node.AsNode().id));
-    }
-    for (const auto &relationship_variable : pattern.relationships) {
+    const Value &start_node = LookupVariable(row, pattern.nodes.front());
+    CHECK(start_node.IsNode(), common::InvalidArgumentError,
+          "path node is not a node: " + pattern.nodes.front());
+    std::int64_t current_node_id = start_node.AsNode().id;
+    path->nodes.push_back(graph_->NodeById(current_node_id));
+
+    for (std::size_t index = 0; index < pattern.relationships.size(); ++index) {
+      const std::string &relationship_variable = pattern.relationships[index];
       const Value &relationship = LookupVariable(row, relationship_variable);
-      CHECK(
-          relationship.IsRelationship(), common::InvalidArgumentError,
-          "path relationship is not a relationship: " + relationship_variable);
-      path->relationships.push_back(
-          graph_->RelationshipById(relationship.AsRelationship().id));
+      std::vector<InMemoryGraph::RelationshipPtr> relationships;
+      if (relationship.IsList()) {
+        relationships.reserve(relationship.AsList().size());
+        for (const auto &item : relationship.AsList()) {
+          CHECK(item.IsRelationship(), common::InvalidArgumentError,
+                "path relationship list item is not a relationship: " +
+                    relationship_variable);
+          relationships.push_back(
+              graph_->RelationshipById(item.AsRelationship().id));
+        }
+      } else {
+        CHECK(relationship.IsRelationship(), common::InvalidArgumentError,
+              "path relationship is not a relationship: " +
+                  relationship_variable);
+        relationships.push_back(
+            graph_->RelationshipById(relationship.AsRelationship().id));
+      }
+
+      const Value &target_node = LookupVariable(row, pattern.nodes[index + 1]);
+      CHECK(target_node.IsNode(), common::InvalidArgumentError,
+            "path node is not a node: " + pattern.nodes[index + 1]);
+      const std::int64_t target_node_id = target_node.AsNode().id;
+
+      if (!CanTraverseRelationshipSequence(relationships, current_node_id,
+                                           target_node_id)) {
+        std::vector<InMemoryGraph::RelationshipPtr> reversed(
+            relationships.rbegin(), relationships.rend());
+        CHECK(CanTraverseRelationshipSequence(reversed, current_node_id,
+                                              target_node_id),
+              common::InvalidArgumentError,
+              "path relationship sequence does not connect nodes: " +
+                  relationship_variable);
+        relationships = std::move(reversed);
+      }
+
+      for (const auto &item : relationships) {
+        AppendPathRelationship(*item, path.get(), &current_node_id);
+      }
+      CHECK(current_node_id == target_node_id, common::InvalidArgumentError,
+            "path node does not match traversed relationship endpoint: " +
+                pattern.nodes[index + 1]);
     }
     return Value(std::move(path));
+  }
+
+  bool CanTraverseRelationshipSequence(
+      const std::vector<InMemoryGraph::RelationshipPtr> &relationships,
+      std::int64_t start_node_id, std::int64_t target_node_id) const {
+    std::int64_t current_node_id = start_node_id;
+    for (const auto &relationship : relationships) {
+      CHECK(relationship != nullptr, common::InternalError,
+            "path relationship is null");
+      if (relationship->start_node_id == current_node_id) {
+        current_node_id = relationship->end_node_id;
+      } else if (relationship->end_node_id == current_node_id) {
+        current_node_id = relationship->start_node_id;
+      } else {
+        return false;
+      }
+    }
+    return current_node_id == target_node_id;
+  }
+
+  void AppendPathRelationship(const Relationship &relationship, Path *path,
+                              std::int64_t *current_node_id) {
+    CHECK(path != nullptr, common::InternalError, "path is null");
+    CHECK(current_node_id != nullptr, common::InternalError,
+          "path current node id is null");
+    path->relationships.push_back(graph_->RelationshipById(relationship.id));
+    if (relationship.start_node_id == *current_node_id) {
+      *current_node_id = relationship.end_node_id;
+    } else if (relationship.end_node_id == *current_node_id) {
+      *current_node_id = relationship.start_node_id;
+    } else {
+      THROW(common::InvalidArgumentError,
+            "path relationship is not connected to current node");
+    }
+    path->nodes.push_back(graph_->NodeById(*current_node_id));
   }
 
   Rows ExecuteFilter(const ir::FilterPlan &plan, const Rows &input) {
