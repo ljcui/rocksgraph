@@ -681,6 +681,8 @@ class QueryExecutorImpl {
       case ir::LogicalPlanNodeType::kProcedureCall:
         return ExecuteProcedureCall(
             static_cast<const ir::ProcedureCallPlan &>(plan), input);
+      case ir::LogicalPlanNodeType::kUnion:
+        return ExecuteUnion(static_cast<const ir::UnionPlan &>(plan), input);
       case ir::LogicalPlanNodeType::kWriteBarrier:
         return ExecutePlan(plan.Child(0), input);
       case ir::LogicalPlanNodeType::kCreateNode:
@@ -1343,6 +1345,39 @@ class QueryExecutorImpl {
       }
       out.push_back(std::move(next));
     }
+    return out;
+  }
+
+  Rows ExecuteUnion(const ir::UnionPlan &plan, const Rows &input) {
+    Rows out;
+    std::set<std::string> seen;
+
+    auto append_rows = [&](const Rows &rows, bool left_side) {
+      for (const auto &row : rows) {
+        QueryRow mapped;
+        std::string key;
+        for (const auto &mapping : plan.Mappings()) {
+          const std::string &source =
+              left_side ? mapping.lhs_variable : mapping.rhs_variable;
+          const auto found = row.find(source);
+          CHECK(found != row.end(), common::InvalidArgumentError,
+                "UNION source variable is not bound: " + source);
+          mapped[mapping.output_variable] = found->second;
+          if (!plan.All()) {
+            key += mapping.output_variable;
+            key += '=';
+            key += ValueKey(found->second);
+            key += '\n';
+          }
+        }
+        if (plan.All() || seen.insert(std::move(key)).second) {
+          out.push_back(std::move(mapped));
+        }
+      }
+    };
+
+    append_rows(ExecutePlan(plan.Child(0), input), true);
+    append_rows(ExecutePlan(plan.Child(1), input), false);
     return out;
   }
 

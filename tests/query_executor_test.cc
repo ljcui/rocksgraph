@@ -87,6 +87,27 @@ TEST(QueryExecutorTest, ExecutesCountAggregation) {
   EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{{"2"}}));
 }
 
+TEST(QueryExecutorTest, ExecutesUnionAll) {
+  rg::InMemoryGraph graph;
+
+  rg::QueryResult result =
+      rg::ExecuteReadQuery(graph, "RETURN 1 AS x UNION ALL RETURN 1 AS x");
+
+  ASSERT_EQ(result.columns, std::vector<std::string>{"x"});
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{{"1"}, {"1"}}));
+}
+
+TEST(QueryExecutorTest, ExecutesUnionDistinct) {
+  rg::InMemoryGraph graph;
+
+  rg::QueryResult result =
+      rg::ExecuteReadQuery(graph, "RETURN 1 AS x UNION RETURN 1 AS x");
+
+  ASSERT_EQ(result.columns, std::vector<std::string>{"x"});
+  EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{{"1"}}));
+}
+
 TEST(QueryExecutorTest, ExecutesCreateNodeAndRelationship) {
   rg::InMemoryGraph graph;
 
