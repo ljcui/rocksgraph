@@ -171,9 +171,14 @@ TEST(LogicalPlanTest, VarExpandAndPathBuildExposeMetadata) {
 
   auto path_source = std::make_unique<ir::ArgumentPlan>(
       std::vector<std::string>({"a", "r", "b"}));
-  ir::PathBuildPlan path(std::move(path_source), "p");
+  ir::PathBuildPlan path(
+      std::move(path_source),
+      ir::PathPattern{
+          .variable = "p", .nodes = {"a", "b"}, .relationships = {"r"}});
   EXPECT_EQ(path.Name(), "PathBuild");
   EXPECT_EQ(path.PathVariable(), "p");
+  EXPECT_EQ(path.Path().nodes, std::vector<std::string>({"a", "b"}));
+  EXPECT_EQ(path.Path().relationships, std::vector<std::string>({"r"}));
   EXPECT_EQ(path.Details(), "p");
   EXPECT_EQ(path.OutputColumns(),
             std::vector<std::string>({"a", "r", "b", "p"}));

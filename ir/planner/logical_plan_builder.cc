@@ -654,7 +654,7 @@ class LogicalPlanBuilder {
     }
 
     CHECK(plan != nullptr, common::InternalError, "logical plan is null");
-    plan = ApplyPathBuilds(std::move(plan), query_graph.pattern_paths);
+    plan = ApplyPathBuilds(std::move(plan), query_graph.path_patterns);
     plan = ApplyAssertIsNode(std::move(plan),
                              query_graph.assert_is_node_variables);
     context.ApplyAvailableFilters(query_graph.selections, &plan);
@@ -808,7 +808,7 @@ class LogicalPlanBuilder {
           break;
       }
     }
-    return ApplyPathBuilds(std::move(plan), pattern.path_variables);
+    return ApplyPathBuilds(std::move(plan), pattern.path_patterns);
   }
 
   std::unique_ptr<LogicalPlan> ApplyMergePattern(
@@ -922,10 +922,10 @@ class LogicalPlanBuilder {
 
   std::unique_ptr<LogicalPlan> ApplyPathBuilds(
       std::unique_ptr<LogicalPlan> plan,
-      const std::unordered_set<LogicalVariable> &path_variables) {
+      const std::vector<PathPattern> &paths) {
     CHECK(plan != nullptr, common::InternalError, "logical plan is null");
-    for (const auto &path_variable : Sorted(path_variables)) {
-      plan = std::make_unique<PathBuildPlan>(std::move(plan), path_variable);
+    for (const auto &path : paths) {
+      plan = std::make_unique<PathBuildPlan>(std::move(plan), path);
     }
     return plan;
   }

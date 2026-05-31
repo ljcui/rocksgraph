@@ -157,6 +157,44 @@ TEST(QueryExecutorTest, ExecutesDbPropertyKeysProcedureWithYieldWhere) {
             (std::vector<std::vector<std::string>>{{"\"since\""}}));
 }
 
+TEST(QueryExecutorTest, ExecutesNamedPath) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph, "MATCH p = (a:Person)-[r:KNOWS]->(b:Person) RETURN p");
+
+  ASSERT_EQ(result.columns, std::vector<std::string>{"p"});
+  ASSERT_EQ(result.rows.size(), 1U);
+  ASSERT_EQ(result.rows[0].size(), 1U);
+  ASSERT_TRUE(result.rows[0][0].IsPath());
+  EXPECT_EQ(result.rows[0][0].AsPath().nodes.size(), 2U);
+  EXPECT_EQ(result.rows[0][0].AsPath().relationships.size(), 1U);
+}
+
+TEST(QueryExecutorTest, ExecutesNamedPathLength) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result =
+      rg::ExecuteReadQuery(graph,
+                           "MATCH p = (a:Person)-[r:KNOWS]->(b:Person) "
+                           "RETURN length(p) AS len");
+
+  ASSERT_EQ(result.columns, std::vector<std::string>{"len"});
+  EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{{"1"}}));
+}
+
+TEST(QueryExecutorTest, ExecutesNamedCreatePathLength) {
+  rg::InMemoryGraph graph;
+
+  rg::QueryResult result = rg::ExecuteQuery(
+      graph, "CREATE p = (a)-[r:KNOWS]->(b) RETURN length(p) AS len");
+
+  ASSERT_EQ(result.columns, std::vector<std::string>{"len"});
+  EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{{"1"}}));
+}
+
 TEST(QueryExecutorTest, ExecutesCreateNodeAndRelationship) {
   rg::InMemoryGraph graph;
 

@@ -51,28 +51,34 @@ class PatternConverter {
 
  private:
   void AddPatternPart(const ast::PatternPart &part) {
-    if (!part.variable.empty()) {
-      graph_->pattern_paths.insert(part.variable);
-    }
     CHECK(part.element != nullptr, common::InvalidArgumentError,
           Missing("pattern element"));
-    AddPatternElement(*part.element);
+    PathPattern path = AddPatternElement(*part.element);
+    if (!part.variable.empty()) {
+      graph_->pattern_paths.insert(part.variable);
+      path.variable = part.variable;
+      graph_->path_patterns.push_back(std::move(path));
+    }
   }
 
-  void AddPatternElement(const ast::PatternElement &element) {
+  PathPattern AddPatternElement(const ast::PatternElement &element) {
     if (!element.node_pattern) {
       THROW(common::InternalError, "node_pattern is null");
     }
+    PathPattern path;
     std::string left = AddNode(*element.node_pattern);
+    path.nodes.push_back(left);
     for (const auto &link : element.chain) {
       CHECK(link.first != nullptr, common::InvalidArgumentError,
             Missing("relationship pattern"));
       CHECK(link.second != nullptr, common::InvalidArgumentError,
             Missing("node pattern"));
       std::string right = AddNode(*link.second);
-      AddRelationship(*link.first, left, right);
+      path.relationships.push_back(AddRelationship(*link.first, left, right));
+      path.nodes.push_back(right);
       left = right;
     }
+    return path;
   }
 
   std::string AddNode(const ast::NodePattern &node) {
@@ -86,8 +92,9 @@ class PatternConverter {
     return node.variable;
   }
 
-  void AddRelationship(const ast::RelationshipPattern &pattern,
-                       const std::string &left, const std::string &right) {
+  std::string AddRelationship(const ast::RelationshipPattern &pattern,
+                              const std::string &left,
+                              const std::string &right) {
     const ast::RelationshipDetail *detail = pattern.detail.get();
     CHECK(detail && !detail->variable.empty(), common::InvalidArgumentError,
           Unsupported("anonymous relationship"));
@@ -111,7 +118,9 @@ class PatternConverter {
     } else {
       relationship.direction = Direction::kBoth;
     }
+    std::string variable = relationship.variable;
     graph_->pattern_relationships.push_back(std::move(relationship));
+    return variable;
   }
 
   QueryGraph *graph_ = nullptr;
@@ -151,27 +160,33 @@ class CreatePatternConverter {
 
  private:
   void AddPatternPart(const ast::PatternPart &part) {
-    if (!part.variable.empty()) {
-      pattern_.path_variables.insert(part.variable);
-    }
     CHECK(part.element != nullptr, common::InvalidArgumentError,
           Missing("updating pattern element"));
-    AddPatternElement(*part.element);
+    PathPattern path = AddPatternElement(*part.element);
+    if (!part.variable.empty()) {
+      pattern_.path_variables.insert(part.variable);
+      path.variable = part.variable;
+      pattern_.path_patterns.push_back(std::move(path));
+    }
   }
 
-  void AddPatternElement(const ast::PatternElement &element) {
+  PathPattern AddPatternElement(const ast::PatternElement &element) {
     CHECK(element.node_pattern != nullptr, common::InvalidArgumentError,
           Missing("updating node pattern"));
+    PathPattern path;
     std::string left = AddNode(*element.node_pattern);
+    path.nodes.push_back(left);
     for (const auto &link : element.chain) {
       CHECK(link.first != nullptr, common::InvalidArgumentError,
             Missing("updating relationship pattern"));
       CHECK(link.second != nullptr, common::InvalidArgumentError,
             Missing("updating node pattern"));
       std::string right = AddNode(*link.second);
-      AddRelationship(*link.first, left, right);
+      path.relationships.push_back(AddRelationship(*link.first, left, right));
+      path.nodes.push_back(right);
       left = std::move(right);
     }
+    return path;
   }
 
   std::string AddNode(const ast::NodePattern &node) {
@@ -205,8 +220,9 @@ class CreatePatternConverter {
     return node.variable;
   }
 
-  void AddRelationship(const ast::RelationshipPattern &pattern,
-                       const std::string &left, const std::string &right) {
+  std::string AddRelationship(const ast::RelationshipPattern &pattern,
+                              const std::string &left,
+                              const std::string &right) {
     const ast::RelationshipDetail *detail = pattern.detail.get();
     CHECK(detail != nullptr && !detail->variable.empty(),
           common::InvalidArgumentError,
@@ -223,9 +239,11 @@ class CreatePatternConverter {
     create_relationship.properties = BuildPropertyMap(detail->properties.get());
 
     const std::size_t index = pattern_.relationships.size();
+    std::string variable = create_relationship.variable;
     pattern_.relationships.push_back(std::move(create_relationship));
     pattern_.commands.push_back(
         {.kind = CreateEntityKind::kRelationship, .index = index});
+    return variable;
   }
 
   CreatePattern pattern_;

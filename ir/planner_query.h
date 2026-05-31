@@ -32,6 +32,12 @@ struct PatternRelationship {
   PatternLength length;
 };
 
+struct PathPattern {
+  std::string variable;
+  std::vector<std::string> nodes;
+  std::vector<std::string> relationships;
+};
+
 enum class PredicateKind {
   kGenericExpression,
   kNodeLabel,
@@ -194,6 +200,7 @@ struct CreateEntityCommand {
 
 struct CreatePattern {
   std::unordered_set<LogicalVariable> path_variables;
+  std::vector<PathPattern> path_patterns;
   std::vector<CreateNodePattern> nodes;
   std::vector<CreateRelationshipPattern> relationships;
   std::vector<CreateEntityCommand> commands;
@@ -283,6 +290,7 @@ struct QueryGraphComponent {
 
 struct QueryGraph {
   std::unordered_set<LogicalVariable> pattern_paths;
+  std::vector<PathPattern> path_patterns;
   std::unordered_set<LogicalVariable> pattern_nodes;
   std::vector<PatternRelationship> pattern_relationships;
   std::unordered_set<LogicalVariable> argument_ids;

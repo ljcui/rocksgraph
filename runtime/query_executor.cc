@@ -638,6 +638,9 @@ class QueryExecutorImpl {
       case ir::LogicalPlanNodeType::kExpandInto:
         return ExecuteExpandInto(static_cast<const ir::ExpandIntoPlan &>(plan),
                                  input);
+      case ir::LogicalPlanNodeType::kPathBuild:
+        return ExecutePathBuild(static_cast<const ir::PathBuildPlan &>(plan),
+                                input);
       case ir::LogicalPlanNodeType::kFilter:
         return ExecuteFilter(static_cast<const ir::FilterPlan &>(plan), input);
       case ir::LogicalPlanNodeType::kProjection:
@@ -1019,6 +1022,49 @@ class QueryExecutorImpl {
       }
     }
     return out;
+  }
+
+  Rows ExecutePathBuild(const ir::PathBuildPlan &plan, const Rows &input) {
+    Rows rows = ExecutePlan(plan.Child(0), input);
+    Rows out;
+    out.reserve(rows.size());
+    for (const auto &row : rows) {
+      QueryRow next = row;
+      if (TryBind(&next, plan.PathVariable(),
+                  BuildPathValue(plan.Path(), row))) {
+        out.push_back(std::move(next));
+      }
+    }
+    return out;
+  }
+
+  Value BuildPathValue(const ir::PathPattern &pattern, const QueryRow &row) {
+    CHECK(!pattern.nodes.empty(), common::InvalidArgumentError,
+          "path has no nodes: " + pattern.variable);
+    CHECK(
+        pattern.nodes.size() == pattern.relationships.size() + 1,
+        common::InvalidArgumentError,
+        "path node and relationship counts do not match: " + pattern.variable);
+
+    auto path = std::make_shared<Path>();
+    path->nodes.reserve(pattern.nodes.size());
+    path->relationships.reserve(pattern.relationships.size());
+
+    for (const auto &node_variable : pattern.nodes) {
+      const Value &node = LookupVariable(row, node_variable);
+      CHECK(node.IsNode(), common::InvalidArgumentError,
+            "path node is not a node: " + node_variable);
+      path->nodes.push_back(graph_->NodeById(node.AsNode().id));
+    }
+    for (const auto &relationship_variable : pattern.relationships) {
+      const Value &relationship = LookupVariable(row, relationship_variable);
+      CHECK(
+          relationship.IsRelationship(), common::InvalidArgumentError,
+          "path relationship is not a relationship: " + relationship_variable);
+      path->relationships.push_back(
+          graph_->RelationshipById(relationship.AsRelationship().id));
+    }
+    return Value(std::move(path));
   }
 
   Rows ExecuteFilter(const ir::FilterPlan &plan, const Rows &input) {

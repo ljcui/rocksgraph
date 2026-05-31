@@ -78,7 +78,7 @@ std::unique_ptr<LogicalPlan> CloneComponentPlanWithoutMetadata(
     case LogicalPlanNodeType::kPathBuild: {
       const auto &path = static_cast<const PathBuildPlan &>(plan);
       return std::make_unique<PathBuildPlan>(CloneComponentPlan(path.Child(0)),
-                                             path.PathVariable());
+                                             path.Path());
     }
     case LogicalPlanNodeType::kFilter: {
       const auto &filter = static_cast<const FilterPlan &>(plan);

@@ -482,15 +482,16 @@ class VarExpandPlan final : public LogicalPlan {
 
 class PathBuildPlan final : public LogicalPlan {
  public:
-  PathBuildPlan(LogicalPlanPtr source, std::string path_variable);
+  PathBuildPlan(LogicalPlanPtr source, PathPattern path);
 
   [[nodiscard]] const std::string &PathVariable() const noexcept {
-    return path_variable_;
+    return path_.variable;
   }
+  [[nodiscard]] const PathPattern &Path() const noexcept { return path_; }
   [[nodiscard]] std::string Details() const override;
 
  private:
-  std::string path_variable_;
+  PathPattern path_;
 };
 
 class FilterPlan final : public LogicalPlan {

@@ -861,17 +861,19 @@ std::string VarExpandPlan::Details() const {
                                 types_, length_);
 }
 
-PathBuildPlan::PathBuildPlan(LogicalPlanPtr source, std::string path_variable)
+PathBuildPlan::PathBuildPlan(LogicalPlanPtr source, PathPattern path)
     : LogicalPlan(LogicalPlanNodeType::kPathBuild,
                   UnaryChildren(std::move(source), "PathBuild")),
-      path_variable_(std::move(path_variable)) {
+      path_(std::move(path)) {
+  CHECK(!path_.variable.empty(), common::InvalidArgumentError,
+        "path variable is empty");
   SetSolvedSymbols(Child(0).SolvedSymbols());
   SetOutputColumns(Child(0).OutputColumns());
-  AddSolvedSymbol(path_variable_);
-  AddOutputColumn(path_variable_);
+  AddSolvedSymbol(path_.variable);
+  AddOutputColumn(path_.variable);
 }
 
-std::string PathBuildPlan::Details() const { return path_variable_; }
+std::string PathBuildPlan::Details() const { return path_.variable; }
 
 FilterPlan::FilterPlan(LogicalPlanPtr source, const ast::Expression *predicate)
     : LogicalPlan(LogicalPlanNodeType::kFilter,
