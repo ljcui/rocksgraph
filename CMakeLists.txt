@@ -138,6 +138,10 @@ set(ROCKSGRAPH_IR_SOURCES
   ir/planner/logical_plan_builder.cc
   ir/planner/plan_clone.cc)
 
+set(ROCKSGRAPH_STORAGE_SOURCES storage/in_memory_graph.cc)
+
+set(ROCKSGRAPH_RUNTIME_SOURCES runtime/query_executor.cc)
+
 add_library(rocksgraph_ast STATIC ${ROCKSGRAPH_AST_SOURCES})
 target_include_directories(rocksgraph_ast PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(rocksgraph_ast PUBLIC ANTLR4Runtime::antlr4_runtime)
@@ -151,8 +155,19 @@ set_target_properties(rocksgraph_ir PROPERTIES BUILD_RPATH "/usr/local/lib")
 add_library(rocksgraph_value STATIC value/value.cc)
 target_include_directories(rocksgraph_value PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
+add_library(rocksgraph_storage STATIC ${ROCKSGRAPH_STORAGE_SOURCES})
+target_include_directories(rocksgraph_storage PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(rocksgraph_storage PUBLIC rocksgraph_ir
+                                                rocksgraph_value)
+
+add_library(rocksgraph_runtime STATIC ${ROCKSGRAPH_RUNTIME_SOURCES})
+target_include_directories(rocksgraph_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(rocksgraph_runtime PUBLIC rocksgraph_storage
+                                                rocksgraph_ir)
+
 add_executable(rg-server main.cc)
-target_link_libraries(rg-server PRIVATE rocksgraph_ast rocksgraph_value)
+target_link_libraries(rg-server PRIVATE rocksgraph_runtime ${GFLAGS_TARGET}
+                                        ${SPDLOG_TARGET})
 set_target_properties(rg-server PROPERTIES BUILD_RPATH "/usr/local/lib")
 
 add_executable(cypher_dump tools/cypher_dump.cc)
@@ -225,3 +240,10 @@ target_link_libraries(planner_query_test PRIVATE GTest::gtest_main
 set_target_properties(planner_query_test PROPERTIES BUILD_RPATH
                                                     "/usr/local/lib")
 add_test(NAME planner_query_test COMMAND planner_query_test)
+
+add_executable(query_executor_test tests/query_executor_test.cc)
+target_link_libraries(query_executor_test PRIVATE GTest::gtest_main
+                                                  rocksgraph_runtime)
+set_target_properties(query_executor_test PROPERTIES BUILD_RPATH
+                                                     "/usr/local/lib")
+add_test(NAME query_executor_test COMMAND query_executor_test)
