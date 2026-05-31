@@ -440,6 +440,69 @@ TEST(QueryExecutorTest, VariableLengthExpandReturnsNoRowsWhenBoundsDoNotMatch) {
   EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{{"0"}}));
 }
 
+TEST(QueryExecutorTest, OptionalMatchNullExtendsMissingRows) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result =
+      rg::ExecuteReadQuery(graph,
+                           "MATCH (n:Language) "
+                           "OPTIONAL MATCH (n)-[r]->(m) "
+                           "RETURN n.name AS n, m.name AS m, type(r) AS rel");
+
+  ASSERT_EQ(result.columns, (std::vector<std::string>{"n", "m", "rel"}));
+  EXPECT_EQ(
+      StringRows(result),
+      (std::vector<std::vector<std::string>>{{"\"C++\"", "null", "null"}}));
+}
+
+TEST(QueryExecutorTest, OptionalMatchPreservesMatchedRows) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result =
+      rg::ExecuteReadQuery(graph,
+                           "MATCH (n:Person {name: 'Ada'}) "
+                           "OPTIONAL MATCH (n)-[r:KNOWS]->(m) "
+                           "RETURN n.name AS n, m.name AS m, type(r) AS rel");
+
+  ASSERT_EQ(result.columns, (std::vector<std::string>{"n", "m", "rel"}));
+  EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{
+                                    {"\"Ada\"", "\"Grace\"", "\"KNOWS\""}}));
+}
+
+TEST(QueryExecutorTest, OptionalMatchNullExtendsWhenLocalWhereRejectsRows) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result =
+      rg::ExecuteReadQuery(graph,
+                           "MATCH (n:Person {name: 'Ada'}) "
+                           "OPTIONAL MATCH (n)-[r:KNOWS]->(m) "
+                           "WHERE m.name = 'Missing' "
+                           "RETURN n.name AS n, m.name AS m, type(r) AS rel");
+
+  ASSERT_EQ(result.columns, (std::vector<std::string>{"n", "m", "rel"}));
+  EXPECT_EQ(
+      StringRows(result),
+      (std::vector<std::vector<std::string>>{{"\"Ada\"", "null", "null"}}));
+}
+
+TEST(QueryExecutorTest, OptionalMatchNullsCanBeAggregated) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "MATCH (n:Language) "
+      "OPTIONAL MATCH (n)-[r]->(m) "
+      "RETURN count(m) AS matched, collect(m.name) AS names");
+
+  ASSERT_EQ(result.columns, (std::vector<std::string>{"matched", "names"}));
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{{"0", "[]"}}));
+}
+
 TEST(QueryExecutorTest, ExecutesCreateNodeAndRelationship) {
   rg::InMemoryGraph graph;
 

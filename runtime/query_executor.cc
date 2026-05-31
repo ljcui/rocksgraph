@@ -1896,7 +1896,13 @@ class QueryExecutorImpl {
     for (const auto &left : left_rows) {
       Rows right_rows = ExecutePlan(plan.Child(1), Rows{left});
       if (right_rows.empty()) {
-        out.push_back(left);
+        QueryRow null_extended = left;
+        for (const auto &column : plan.Child(1).OutputColumns()) {
+          if (null_extended.find(column) == null_extended.end()) {
+            null_extended[column] = Value::Null();
+          }
+        }
+        out.push_back(std::move(null_extended));
         continue;
       }
       for (const auto &row : right_rows) {
