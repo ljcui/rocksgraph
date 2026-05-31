@@ -131,6 +131,32 @@ TEST(QueryExecutorTest, ExecutesDbLabelsProcedureWithYieldWhere) {
             (std::vector<std::vector<std::string>>{{"\"Person\""}}));
 }
 
+TEST(QueryExecutorTest, ExecutesDbRelationshipTypesProcedure) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result =
+      rg::ExecuteReadQuery(graph, "CALL db.relationshipTypes()");
+
+  ASSERT_EQ(result.columns, std::vector<std::string>{"relationshipType"});
+  EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{
+                                    {"\"KNOWS\""}, {"\"USES\""}}));
+}
+
+TEST(QueryExecutorTest, ExecutesDbPropertyKeysProcedureWithYieldWhere) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result =
+      rg::ExecuteReadQuery(graph,
+                           "CALL db.propertyKeys() YIELD propertyKey AS k "
+                           "WHERE k STARTS WITH 's' RETURN k");
+
+  ASSERT_EQ(result.columns, std::vector<std::string>{"k"});
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{{"\"since\""}}));
+}
+
 TEST(QueryExecutorTest, ExecutesCreateNodeAndRelationship) {
   rg::InMemoryGraph graph;
 

@@ -1333,8 +1333,17 @@ class QueryExecutorImpl {
                             const Rows &input) {
     CHECK(plan.ReadOnly(), common::InvalidArgumentError,
           "write procedure calls are not supported");
-    if (LowerAscii(plan.ProcedureName()) == "db.labels") {
-      return ExecuteDbLabels(plan, input);
+    const std::string procedure_name = LowerAscii(plan.ProcedureName());
+    if (procedure_name == "db.labels") {
+      return ExecuteMetadataProcedure(plan, input, "label", CollectLabels());
+    }
+    if (procedure_name == "db.relationshiptypes") {
+      return ExecuteMetadataProcedure(plan, input, "relationshipType",
+                                      CollectRelationshipTypes());
+    }
+    if (procedure_name == "db.propertykeys") {
+      return ExecuteMetadataProcedure(plan, input, "propertyKey",
+                                      CollectPropertyKeys());
     }
 
     Rows rows = ExecutePlan(plan.Child(0), input);
@@ -1352,30 +1361,63 @@ class QueryExecutorImpl {
     return out;
   }
 
-  Rows ExecuteDbLabels(const ir::ProcedureCallPlan &plan, const Rows &input) {
-    CHECK(plan.Arguments().empty(), common::InvalidArgumentError,
-          "db.labels() expects no arguments");
-
+  std::set<std::string> CollectLabels() const {
     std::set<std::string> labels;
     for (const auto &node : graph_->Nodes()) {
       for (const auto &label : node->labels) {
         labels.insert(label);
       }
     }
+    return labels;
+  }
+
+  std::set<std::string> CollectRelationshipTypes() const {
+    std::set<std::string> types;
+    for (const auto &relationship : graph_->Relationships()) {
+      if (!relationship->type.empty()) {
+        types.insert(relationship->type);
+      }
+    }
+    return types;
+  }
+
+  std::set<std::string> CollectPropertyKeys() const {
+    std::set<std::string> keys;
+    for (const auto &node : graph_->Nodes()) {
+      for (const auto &[key, value] : node->properties) {
+        (void)value;
+        keys.insert(key);
+      }
+    }
+    for (const auto &relationship : graph_->Relationships()) {
+      for (const auto &[key, value] : relationship->properties) {
+        (void)value;
+        keys.insert(key);
+      }
+    }
+    return keys;
+  }
+
+  Rows ExecuteMetadataProcedure(const ir::ProcedureCallPlan &plan,
+                                const Rows &input, std::string_view field_name,
+                                const std::set<std::string> &values) {
+    CHECK(plan.Arguments().empty(), common::InvalidArgumentError,
+          plan.ProcedureName() + "() expects no arguments");
 
     Rows rows = ExecutePlan(plan.Child(0), input);
     Rows out;
     for (const auto &row : rows) {
-      for (const auto &label : labels) {
+      for (const auto &value : values) {
         QueryRow next = row;
         for (const auto &item : plan.YieldItems()) {
           if (item.variable.empty()) {
             continue;
           }
           const std::string field = item.result_field.value_or(item.variable);
-          CHECK(field == "label", common::InvalidArgumentError,
-                "unsupported db.labels() yield field: " + field);
-          next[item.variable] = Value(label);
+          CHECK(
+              field == field_name, common::InvalidArgumentError,
+              "unsupported " + plan.ProcedureName() + " yield field: " + field);
+          next[item.variable] = Value(value);
         }
         out.push_back(std::move(next));
       }
