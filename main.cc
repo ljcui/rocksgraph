@@ -84,7 +84,7 @@ int main(int argc, char **argv) {
   }
 
   try {
-    PrintResult(rg::ExecuteReadQuery(graph, JoinArgs(parts)));
+    PrintResult(rg::ExecuteQuery(graph, JoinArgs(parts)));
   } catch (const common::Exception &e) {
     spdlog::error("Query error: {}", e.Message());
     return 1;

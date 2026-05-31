@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -20,15 +21,19 @@ struct QueryResult {
 
 class QueryExecutor final {
  public:
-  explicit QueryExecutor(const InMemoryGraph &graph) : graph_(&graph) {}
+  explicit QueryExecutor(InMemoryGraph &graph) : graph_(&graph) {}
 
   [[nodiscard]] QueryResult Execute(const ir::LogicalPlan &plan) const;
+  void ExecuteWrite(const ir::LogicalPlan &plan);
 
  private:
-  const InMemoryGraph *graph_ = nullptr;
+  InMemoryGraph *graph_ = nullptr;
 };
 
 [[nodiscard]] QueryResult ExecuteReadQuery(const InMemoryGraph &graph,
                                            std::string_view cypher);
+[[nodiscard]] QueryResult ExecuteQuery(InMemoryGraph &graph,
+                                       std::string_view cypher);
+void ExecuteWriteQuery(InMemoryGraph &graph, std::string_view cypher);
 
 }  // namespace rg

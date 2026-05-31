@@ -86,3 +86,68 @@ TEST(QueryExecutorTest, ExecutesCountAggregation) {
   ASSERT_EQ(result.columns, std::vector<std::string>{"c"});
   EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{{"2"}}));
 }
+
+TEST(QueryExecutorTest, ExecutesCreateNodeAndRelationship) {
+  rg::InMemoryGraph graph;
+
+  rg::QueryResult result = rg::ExecuteQuery(
+      graph,
+      "CREATE (a:Person {name: 'Ada'})-[r:KNOWS {since: 2026}]->"
+      "(b:Person {name: 'Grace'}) "
+      "RETURN a.name AS a, b.name AS b, r.since AS since");
+
+  ASSERT_EQ(result.columns, (std::vector<std::string>{"a", "b", "since"}));
+  EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{
+                                    {"\"Ada\"", "\"Grace\"", "2026"}}));
+
+  rg::QueryResult check = rg::ExecuteReadQuery(
+      graph, "MATCH (a:Person)-[r:KNOWS]->(b:Person) RETURN count(r) AS c");
+  EXPECT_EQ(StringRows(check), (std::vector<std::vector<std::string>>{{"1"}}));
+}
+
+TEST(QueryExecutorTest, ExecutesSetRemoveAndDetachDelete) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::ExecuteWriteQuery(graph,
+                        "MATCH (n:Person) WHERE n.name = 'Ada' "
+                        "SET n.score = 7, n += {team: 'db'}, n:Engineer "
+                        "REMOVE n.age");
+
+  rg::QueryResult updated = rg::ExecuteReadQuery(
+      graph,
+      "MATCH (n:Engineer) WHERE n.name = 'Ada' "
+      "RETURN n.score AS score, n.team AS team, n.age AS age");
+  ASSERT_EQ(updated.columns,
+            (std::vector<std::string>{"score", "team", "age"}));
+  EXPECT_EQ(StringRows(updated),
+            (std::vector<std::vector<std::string>>{{"7", "\"db\"", "null"}}));
+
+  rg::ExecuteWriteQuery(graph,
+                        "MATCH (n:Engineer) WHERE n.name = 'Ada' "
+                        "DETACH DELETE n");
+  rg::QueryResult deleted = rg::ExecuteReadQuery(
+      graph, "MATCH (n:Person) WHERE n.name = 'Ada' RETURN count(n) AS c");
+  EXPECT_EQ(StringRows(deleted),
+            (std::vector<std::vector<std::string>>{{"0"}}));
+}
+
+TEST(QueryExecutorTest, ExecutesMergeCreateAndMatchActions) {
+  rg::InMemoryGraph graph;
+
+  rg::QueryResult created = rg::ExecuteQuery(graph,
+                                             "MERGE (n:Person {name: 'Ada'}) "
+                                             "ON CREATE SET n.created = true "
+                                             "RETURN n.created AS created");
+  ASSERT_EQ(StringRows(created),
+            (std::vector<std::vector<std::string>>{{"true"}}));
+
+  rg::QueryResult matched =
+      rg::ExecuteQuery(graph,
+                       "MERGE (n:Person {name: 'Ada'}) "
+                       "ON MATCH SET n.seen = true "
+                       "RETURN n.created AS created, n.seen AS seen");
+  ASSERT_EQ(matched.columns, (std::vector<std::string>{"created", "seen"}));
+  EXPECT_EQ(StringRows(matched),
+            (std::vector<std::vector<std::string>>{{"true", "true"}}));
+}

@@ -6,6 +6,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "ir/planner/catalog.h"
@@ -27,6 +28,26 @@ class InMemoryGraph final : public ir::PlannerCatalog {
                                      const NodePtr &end_node, std::string type,
                                      Value::Map properties = {});
 
+  void SetNodeProperty(const NodePtr &node, std::string property_key,
+                       Value value);
+  void SetRelationshipProperty(const RelationshipPtr &relationship,
+                               std::string property_key, Value value);
+  void SetNodeProperties(const NodePtr &node, Value::Map properties,
+                         bool include_existing);
+  void SetLabels(const NodePtr &node, std::vector<std::string> labels);
+  void RemoveNodeProperty(const NodePtr &node, std::string_view property_key);
+  void RemoveRelationshipProperty(const RelationshipPtr &relationship,
+                                  std::string_view property_key);
+  void RemoveLabels(const NodePtr &node,
+                    const std::vector<std::string> &labels);
+  void DeleteNode(const NodePtr &node);
+  void DeleteRelationship(const RelationshipPtr &relationship);
+
+  [[nodiscard]] bool HasRelationship(int64_t id) const noexcept;
+  [[nodiscard]] const RelationshipPtr &RelationshipById(int64_t id) const;
+  [[nodiscard]] std::vector<RelationshipPtr> RelationshipsConnectedTo(
+      int64_t node_id) const;
+
   void AddNodeIndex(std::vector<std::string> labels,
                     std::string_view property_key, bool unique = false);
   void AddRelationshipIndex(std::vector<std::string> relationship_types,
@@ -38,6 +59,10 @@ class InMemoryGraph final : public ir::PlannerCatalog {
   [[nodiscard]] const std::vector<RelationshipPtr> &Relationships()
       const noexcept {
     return relationships_;
+  }
+  [[nodiscard]] const std::unordered_map<int64_t, RelationshipPtr> &
+  RelationshipsById() const noexcept {
+    return relationships_by_id_;
   }
 
   [[nodiscard]] const NodePtr &NodeById(int64_t id) const;
@@ -59,6 +84,7 @@ class InMemoryGraph final : public ir::PlannerCatalog {
   std::vector<NodePtr> nodes_;
   std::vector<RelationshipPtr> relationships_;
   std::unordered_map<int64_t, NodePtr> nodes_by_id_;
+  std::unordered_map<int64_t, RelationshipPtr> relationships_by_id_;
   std::unordered_map<std::string, bool> node_indexes_;
   std::unordered_map<std::string, bool> relationship_indexes_;
 };
@@ -69,5 +95,6 @@ class InMemoryGraph final : public ir::PlannerCatalog {
     const Relationship &relationship, const std::vector<std::string> &types);
 [[nodiscard]] const Value *FindProperty(const Value &value,
                                         std::string_view property_key);
+[[nodiscard]] Value::Map CopyProperties(const Value::Map &properties);
 
 }  // namespace rg

@@ -40,6 +40,7 @@ InMemoryGraph::RelationshipPtr InMemoryGraph::CreateRelationship(
   relationship->end_node_id = end_node_id;
   relationship->type = std::move(type);
   relationship->properties = std::move(properties);
+  relationships_by_id_.emplace(relationship->id, relationship);
   relationships_.push_back(relationship);
   return relationship;
 }
@@ -53,6 +54,106 @@ InMemoryGraph::RelationshipPtr InMemoryGraph::CreateRelationship(
         "relationship end node is null");
   return CreateRelationship(start_node->id, end_node->id, std::move(type),
                             std::move(properties));
+}
+
+void InMemoryGraph::SetNodeProperty(const NodePtr &node,
+                                    std::string property_key, Value value) {
+  CHECK(node != nullptr, common::InvalidArgumentError, "node is null");
+  node->properties[std::move(property_key)] = std::move(value);
+}
+
+void InMemoryGraph::SetRelationshipProperty(const RelationshipPtr &relationship,
+                                            std::string property_key,
+                                            Value value) {
+  CHECK(relationship != nullptr, common::InvalidArgumentError,
+        "relationship is null");
+  relationship->properties[std::move(property_key)] = std::move(value);
+}
+
+void InMemoryGraph::SetNodeProperties(const NodePtr &node,
+                                      Value::Map properties,
+                                      bool include_existing) {
+  CHECK(node != nullptr, common::InvalidArgumentError, "node is null");
+  if (!include_existing) {
+    node->properties.clear();
+  }
+  for (auto &entry : properties) {
+    node->properties[std::move(entry.first)] = std::move(entry.second);
+  }
+}
+
+void InMemoryGraph::SetLabels(const NodePtr &node,
+                              std::vector<std::string> labels) {
+  CHECK(node != nullptr, common::InvalidArgumentError, "node is null");
+  for (const auto &label : labels) {
+    if (std::find(node->labels.begin(), node->labels.end(), label) ==
+        node->labels.end()) {
+      node->labels.push_back(label);
+    }
+  }
+  std::sort(node->labels.begin(), node->labels.end());
+}
+
+void InMemoryGraph::RemoveNodeProperty(const NodePtr &node,
+                                       std::string_view property_key) {
+  CHECK(node != nullptr, common::InvalidArgumentError, "node is null");
+  node->properties.erase(std::string(property_key));
+}
+
+void InMemoryGraph::RemoveRelationshipProperty(
+    const RelationshipPtr &relationship, std::string_view property_key) {
+  CHECK(relationship != nullptr, common::InvalidArgumentError,
+        "relationship is null");
+  relationship->properties.erase(std::string(property_key));
+}
+
+void InMemoryGraph::RemoveLabels(const NodePtr &node,
+                                 const std::vector<std::string> &labels) {
+  CHECK(node != nullptr, common::InvalidArgumentError, "node is null");
+  node->labels.erase(std::remove_if(node->labels.begin(), node->labels.end(),
+                                    [&labels](const std::string &label) {
+                                      return ContainsString(labels, label);
+                                    }),
+                     node->labels.end());
+}
+
+void InMemoryGraph::DeleteNode(const NodePtr &node) {
+  CHECK(node != nullptr, common::InvalidArgumentError, "node is null");
+  nodes_by_id_.erase(node->id);
+  nodes_.erase(std::remove(nodes_.begin(), nodes_.end(), node), nodes_.end());
+}
+
+void InMemoryGraph::DeleteRelationship(const RelationshipPtr &relationship) {
+  CHECK(relationship != nullptr, common::InvalidArgumentError,
+        "relationship is null");
+  relationships_by_id_.erase(relationship->id);
+  relationships_.erase(
+      std::remove(relationships_.begin(), relationships_.end(), relationship),
+      relationships_.end());
+}
+
+bool InMemoryGraph::HasRelationship(int64_t id) const noexcept {
+  return relationships_by_id_.find(id) != relationships_by_id_.end();
+}
+
+const InMemoryGraph::RelationshipPtr &InMemoryGraph::RelationshipById(
+    int64_t id) const {
+  const auto found = relationships_by_id_.find(id);
+  CHECK(found != relationships_by_id_.end(), common::NotFoundError,
+        "relationship does not exist");
+  return found->second;
+}
+
+std::vector<InMemoryGraph::RelationshipPtr>
+InMemoryGraph::RelationshipsConnectedTo(int64_t node_id) const {
+  std::vector<RelationshipPtr> result;
+  for (const auto &relationship : relationships_) {
+    if (relationship->start_node_id == node_id ||
+        relationship->end_node_id == node_id) {
+      result.push_back(relationship);
+    }
+  }
+  return result;
 }
 
 void InMemoryGraph::AddNodeIndex(std::vector<std::string> labels,
@@ -150,5 +251,7 @@ const Value *FindProperty(const Value &value, std::string_view property_key) {
   }
   return nullptr;
 }
+
+Value::Map CopyProperties(const Value::Map &properties) { return properties; }
 
 }  // namespace rg
