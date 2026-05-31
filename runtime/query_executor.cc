@@ -1333,6 +1333,10 @@ class QueryExecutorImpl {
                             const Rows &input) {
     CHECK(plan.ReadOnly(), common::InvalidArgumentError,
           "write procedure calls are not supported");
+    if (LowerAscii(plan.ProcedureName()) == "db.labels") {
+      return ExecuteDbLabels(plan, input);
+    }
+
     Rows rows = ExecutePlan(plan.Child(0), input);
     Rows out;
     for (const auto &row : rows) {
@@ -1344,6 +1348,37 @@ class QueryExecutorImpl {
         next[item.variable] = Value::Null();
       }
       out.push_back(std::move(next));
+    }
+    return out;
+  }
+
+  Rows ExecuteDbLabels(const ir::ProcedureCallPlan &plan, const Rows &input) {
+    CHECK(plan.Arguments().empty(), common::InvalidArgumentError,
+          "db.labels() expects no arguments");
+
+    std::set<std::string> labels;
+    for (const auto &node : graph_->Nodes()) {
+      for (const auto &label : node->labels) {
+        labels.insert(label);
+      }
+    }
+
+    Rows rows = ExecutePlan(plan.Child(0), input);
+    Rows out;
+    for (const auto &row : rows) {
+      for (const auto &label : labels) {
+        QueryRow next = row;
+        for (const auto &item : plan.YieldItems()) {
+          if (item.variable.empty()) {
+            continue;
+          }
+          const std::string field = item.result_field.value_or(item.variable);
+          CHECK(field == "label", common::InvalidArgumentError,
+                "unsupported db.labels() yield field: " + field);
+          next[item.variable] = Value(label);
+        }
+        out.push_back(std::move(next));
+      }
     }
     return out;
   }

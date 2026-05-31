@@ -108,6 +108,29 @@ TEST(QueryExecutorTest, ExecutesUnionDistinct) {
   EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{{"1"}}));
 }
 
+TEST(QueryExecutorTest, ExecutesDbLabelsProcedure) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result = rg::ExecuteReadQuery(graph, "CALL db.labels()");
+
+  ASSERT_EQ(result.columns, std::vector<std::string>{"label"});
+  EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{
+                                    {"\"Language\""}, {"\"Person\""}}));
+}
+
+TEST(QueryExecutorTest, ExecutesDbLabelsProcedureWithYieldWhere) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph, "CALL db.labels() YIELD label AS l WHERE l = 'Person' RETURN l");
+
+  ASSERT_EQ(result.columns, std::vector<std::string>{"l"});
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{{"\"Person\""}}));
+}
+
 TEST(QueryExecutorTest, ExecutesCreateNodeAndRelationship) {
   rg::InMemoryGraph graph;
 
