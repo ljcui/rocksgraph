@@ -1405,7 +1405,7 @@ class QueryExecutorImpl {
     Rows rows = ExecutePlan(plan.Child(0), input);
     struct GroupState {
       QueryRow row;
-      std::int64_t count = 0;
+      Rows rows;
     };
 
     std::map<std::string, GroupState> groups;
@@ -1426,9 +1426,9 @@ class QueryExecutorImpl {
         key += '\n';
         group_row[item.alias] = std::move(value);
       }
-      auto [it, inserted] = groups.emplace(key, GroupState{group_row, 0});
+      auto [it, inserted] = groups.emplace(key, GroupState{group_row, {}});
       (void)inserted;
-      ++it->second.count;
+      it->second.rows.push_back(row);
     }
 
     Rows out;
@@ -1438,25 +1438,135 @@ class QueryExecutorImpl {
       for (const auto &item : plan.AggregationItems()) {
         CHECK(item.expression != nullptr, common::InvalidArgumentError,
               "aggregation expression is null");
-        if (item.expression->Is(ast::ASTNodeType::kCountStarExpression)) {
-          row[item.alias] = Value(state.count);
-          continue;
-        }
-        if (item.expression->Is(ast::ASTNodeType::kFunctionInvocation)) {
-          const auto &function =
-              ast::CastAst<ast::FunctionInvocation>(*item.expression);
-          if (LowerAscii(function.function_name) == "count") {
-            row[item.alias] = Value(state.count);
-            continue;
-          }
-        }
-        THROW(common::InvalidArgumentError,
-              "unsupported aggregation expression: " +
-                  ast::ExpressionToString(*item.expression));
+        row[item.alias] =
+            EvaluateAggregationExpression(*item.expression, state.rows);
       }
       out.push_back(std::move(row));
     }
     return out;
+  }
+
+  Value EvaluateAggregationExpression(const ast::Expression &expression,
+                                      const Rows &rows) const {
+    if (expression.Is(ast::ASTNodeType::kCountStarExpression)) {
+      return Value(static_cast<std::int64_t>(rows.size()));
+    }
+    if (!expression.Is(ast::ASTNodeType::kFunctionInvocation)) {
+      THROW(common::InvalidArgumentError,
+            "unsupported aggregation expression: " +
+                ast::ExpressionToString(expression));
+    }
+
+    const auto &function = ast::CastAst<ast::FunctionInvocation>(expression);
+    const std::string name = LowerAscii(function.function_name);
+    if (name == "count") {
+      return EvaluateCountAggregation(function, rows);
+    }
+    if (name == "collect") {
+      return EvaluateCollectAggregation(function, rows);
+    }
+    if (name == "sum") {
+      return EvaluateSumAggregation(function, rows);
+    }
+    if (name == "avg") {
+      return EvaluateAvgAggregation(function, rows);
+    }
+    if (name == "min") {
+      return EvaluateMinMaxAggregation(function, rows, true);
+    }
+    if (name == "max") {
+      return EvaluateMinMaxAggregation(function, rows, false);
+    }
+
+    THROW(common::InvalidArgumentError,
+          "unsupported aggregation expression: " +
+              ast::ExpressionToString(expression));
+  }
+
+  std::vector<Value> EvaluateAggregationValues(
+      const ast::FunctionInvocation &function, const Rows &rows) const {
+    CHECK(function.arguments.size() == 1, common::InvalidArgumentError,
+          function.function_name + "() expects one argument");
+    CHECK(function.arguments[0] != nullptr, common::InvalidArgumentError,
+          function.function_name + "() argument is null");
+
+    std::vector<Value> values;
+    values.reserve(rows.size());
+    std::set<std::string> seen;
+    for (const auto &row : rows) {
+      Value value = EvaluateExpression(*function.arguments[0], row);
+      if (value.IsNull()) {
+        continue;
+      }
+      if (function.distinct && !seen.insert(ValueKey(value)).second) {
+        continue;
+      }
+      values.push_back(std::move(value));
+    }
+    return values;
+  }
+
+  Value EvaluateCountAggregation(const ast::FunctionInvocation &function,
+                                 const Rows &rows) const {
+    return Value(static_cast<std::int64_t>(
+        EvaluateAggregationValues(function, rows).size()));
+  }
+
+  Value EvaluateCollectAggregation(const ast::FunctionInvocation &function,
+                                   const Rows &rows) const {
+    return Value(Value::List(EvaluateAggregationValues(function, rows)));
+  }
+
+  Value EvaluateSumAggregation(const ast::FunctionInvocation &function,
+                               const Rows &rows) const {
+    std::vector<Value> values = EvaluateAggregationValues(function, rows);
+    bool integral = true;
+    std::int64_t integer_sum = 0;
+    double double_sum = 0.0;
+    for (const Value &value : values) {
+      CHECK(IsNumeric(value), common::InvalidArgumentError,
+            function.function_name + "() expects numeric values");
+      if (value.IsInteger()) {
+        integer_sum += value.AsInteger();
+        double_sum += static_cast<double>(value.AsInteger());
+      } else {
+        integral = false;
+        double_sum += value.AsDouble();
+      }
+    }
+    return integral ? Value(integer_sum) : Value(double_sum);
+  }
+
+  Value EvaluateAvgAggregation(const ast::FunctionInvocation &function,
+                               const Rows &rows) const {
+    std::vector<Value> values = EvaluateAggregationValues(function, rows);
+    if (values.empty()) {
+      return Value::Null();
+    }
+    double sum = 0.0;
+    for (const Value &value : values) {
+      CHECK(IsNumeric(value), common::InvalidArgumentError,
+            function.function_name + "() expects numeric values");
+      sum += AsDoubleValue(value);
+    }
+    return Value(sum / static_cast<double>(values.size()));
+  }
+
+  Value EvaluateMinMaxAggregation(const ast::FunctionInvocation &function,
+                                  const Rows &rows, bool min) const {
+    std::vector<Value> values = EvaluateAggregationValues(function, rows);
+    if (values.empty()) {
+      return Value::Null();
+    }
+    Value best = values.front();
+    for (std::size_t index = 1; index < values.size(); ++index) {
+      const Value &candidate = values[index];
+      if ((min && ValueLess(candidate, best)) ||
+          (!min && ValueLess(best, candidate))) {
+        best = candidate;
+      }
+    }
+    return best;
   }
 
   Rows ExecuteSort(const ir::SortPlan &plan, const Rows &input) {

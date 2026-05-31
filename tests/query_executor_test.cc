@@ -80,11 +80,109 @@ TEST(QueryExecutorTest, ExecutesCountAggregation) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result =
-      rg::ExecuteReadQuery(graph, "MATCH (n:Person) RETURN count(n) AS c");
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph, "MATCH (n:Person) RETURN count(*) AS rows, count(n.age) AS ages");
 
-  ASSERT_EQ(result.columns, std::vector<std::string>{"c"});
-  EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{{"2"}}));
+  ASSERT_EQ(result.columns, (std::vector<std::string>{"rows", "ages"}));
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{{"2", "2"}}));
+}
+
+TEST(QueryExecutorTest, ExecutesNumericAggregations) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "MATCH (n:Person) RETURN sum(n.age) AS total, avg(n.age) AS average, "
+      "min(n.age) AS youngest, max(n.age) AS oldest");
+
+  ASSERT_EQ(result.columns, (std::vector<std::string>{"total", "average",
+                                                      "youngest", "oldest"}));
+  EXPECT_EQ(
+      StringRows(result),
+      (std::vector<std::vector<std::string>>{{"121", "60.5", "36", "85"}}));
+}
+
+TEST(QueryExecutorTest, ExecutesCollectAggregation) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result =
+      rg::ExecuteReadQuery(graph,
+                           "MATCH (n:Person) RETURN collect(n.name) AS names, "
+                           "collect(DISTINCT n.age > 40) AS older_flags");
+
+  ASSERT_EQ(result.columns, (std::vector<std::string>{"names", "older_flags"}));
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{
+                {"[\"Ada\", \"Grace\"]", "[false, true]"}}));
+}
+
+TEST(QueryExecutorTest, ExecutesDistinctAggregations) {
+  rg::InMemoryGraph graph;
+  graph.CreateNode({"Person"}, {{"age", rg::Value(36)}});
+  graph.CreateNode({"Person"}, {{"age", rg::Value(36)}});
+  graph.CreateNode({"Person"}, {{"age", rg::Value(85)}});
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "MATCH (n:Person) RETURN count(DISTINCT n.age) AS ages, "
+      "sum(DISTINCT n.age) AS total, avg(DISTINCT n.age) AS average");
+
+  ASSERT_EQ(result.columns,
+            (std::vector<std::string>{"ages", "total", "average"}));
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{{"2", "121", "60.5"}}));
+}
+
+TEST(QueryExecutorTest, ExecutesGroupedAggregations) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "MATCH (n) RETURN labels(n) AS labels, count(*) AS c "
+      "ORDER BY c DESC, labels");
+
+  ASSERT_EQ(result.columns, (std::vector<std::string>{"labels", "c"}));
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{{"[\"Person\"]", "2"},
+                                                   {"[\"Language\"]", "1"}}));
+}
+
+TEST(QueryExecutorTest, AggregationsIgnoreNullValues) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "MATCH (n) RETURN count(n.missing) AS c, collect(n.missing) AS values, "
+      "sum(n.missing) AS total, avg(n.missing) AS average, "
+      "min(n.missing) AS minimum, max(n.missing) AS maximum");
+
+  ASSERT_EQ(result.columns,
+            (std::vector<std::string>{"c", "values", "total", "average",
+                                      "minimum", "maximum"}));
+  EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{
+                                    {"0", "[]", "0", "null", "null", "null"}}));
+}
+
+TEST(QueryExecutorTest, GlobalAggregationsProduceRowForEmptyInput) {
+  rg::InMemoryGraph graph;
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "MATCH (n:Person) RETURN count(*) AS rows, count(n.age) AS ages, "
+      "collect(n.name) AS names, sum(n.age) AS total, avg(n.age) AS average, "
+      "min(n.age) AS minimum, max(n.age) AS maximum");
+
+  ASSERT_EQ(result.columns,
+            (std::vector<std::string>{"rows", "ages", "names", "total",
+                                      "average", "minimum", "maximum"}));
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{
+                {"0", "0", "[]", "0", "null", "null", "null"}}));
 }
 
 TEST(QueryExecutorTest, ExecutesUnionAll) {
