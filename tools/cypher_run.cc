@@ -56,14 +56,14 @@ void PrintResult(const rg::QueryResult &result) {
 }
 
 void PrintUsage() {
-  std::cerr << "Usage:\n  rg-server [--seed_demo_graph] [--] <cypher...>\n";
+  std::cerr << "Usage:\n  cypher_run [--seed_demo_graph] [--] <cypher...>\n";
 }
 
 }  // namespace
 
 int main(int argc, char **argv) {
   gflags::SetUsageMessage(
-      "Usage:\n  rg-server [--seed_demo_graph] [--] <cypher...>");
+      "Usage:\n  cypher_run [--seed_demo_graph] [--] <cypher...>");
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
   if (argc <= 1) {

@@ -165,10 +165,10 @@ target_include_directories(rocksgraph_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
 target_link_libraries(rocksgraph_runtime PUBLIC rocksgraph_storage
                                                 rocksgraph_ir)
 
-add_executable(rg-server main.cc)
-target_link_libraries(rg-server PRIVATE rocksgraph_runtime ${GFLAGS_TARGET}
-                                        ${SPDLOG_TARGET})
-set_target_properties(rg-server PROPERTIES BUILD_RPATH "/usr/local/lib")
+add_executable(cypher_run tools/cypher_run.cc)
+target_link_libraries(cypher_run PRIVATE rocksgraph_runtime ${GFLAGS_TARGET}
+                                         ${SPDLOG_TARGET})
+set_target_properties(cypher_run PROPERTIES BUILD_RPATH "/usr/local/lib")
 
 add_executable(cypher_dump tools/cypher_dump.cc)
 target_link_libraries(cypher_dump PRIVATE rocksgraph_ir ${GFLAGS_TARGET}
