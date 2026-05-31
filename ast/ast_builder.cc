@@ -935,7 +935,8 @@ class ASTBuilder {
     return nullptr;
   }
 
-  std::unique_ptr<Literal> BuildLiteral(CypherParser::OC_LiteralContext *ctx) {
+  std::unique_ptr<Expression> BuildLiteral(
+      CypherParser::OC_LiteralContext *ctx) {
     if (ctx->oC_BooleanLiteral() != nullptr) {
       auto node = std::make_unique<BooleanLiteral>();
       node->value = ctx->oC_BooleanLiteral()->TRUE() != nullptr;
@@ -965,7 +966,25 @@ class ASTBuilder {
     }
     if (ctx->oC_ListLiteral() != nullptr) {
       auto node = std::make_unique<ListLiteral>();
-      for (auto *expr : ctx->oC_ListLiteral()->oC_Expression()) {
+      auto exprs = ctx->oC_ListLiteral()->oC_Expression();
+      if (exprs.size() == 1) {
+        auto element = BuildExpression(exprs[0]);
+        if (element != nullptr &&
+            element->Is(ASTNodeType::kListPredicateExpression)) {
+          auto *predicate = CastAst<ListPredicateExpression>(element.get());
+          if (predicate->element != nullptr &&
+              predicate->element->Is(ASTNodeType::kVariable)) {
+            auto *variable = CastAst<Variable>(predicate->element.get());
+            auto comprehension = std::make_unique<ListComprehension>();
+            comprehension->variable = variable->name;
+            comprehension->list_expr = std::move(predicate->list);
+            return comprehension;
+          }
+        }
+        node->elements.push_back(std::move(element));
+        return node;
+      }
+      for (auto *expr : exprs) {
         node->elements.push_back(BuildExpression(expr));
       }
       return node;

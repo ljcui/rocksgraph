@@ -93,6 +93,29 @@ Value NumericValue(double value, bool integral) {
   return Value(value);
 }
 
+std::optional<std::int64_t> IntegerValue(const Value &value) {
+  if (!value.IsInteger()) {
+    return std::nullopt;
+  }
+  return value.AsInteger();
+}
+
+std::int64_t NormalizeListIndex(std::int64_t index, std::size_t size) {
+  if (index < 0) {
+    index += static_cast<std::int64_t>(size);
+  }
+  return index;
+}
+
+std::int64_t ClampListSliceIndex(std::int64_t index, std::size_t size) {
+  index = NormalizeListIndex(index, size);
+  if (index < 0) {
+    return 0;
+  }
+  const std::int64_t list_size = static_cast<std::int64_t>(size);
+  return index > list_size ? list_size : index;
+}
+
 bool ValueLess(const Value &left, const Value &right) {
   if (left.IsNull() || right.IsNull()) {
     return !left.IsNull() && right.IsNull();
@@ -222,6 +245,129 @@ Value EvaluateFunction(const ast::FunctionInvocation &function,
         "unsupported function in executor: " + function.function_name);
 }
 
+Value EvaluateListIndex(const ast::ListIndexExpression &expression,
+                        const QueryRow &row) {
+  CHECK(expression.list != nullptr, common::InvalidArgumentError,
+        "list index base expression is null");
+  CHECK(expression.index != nullptr, common::InvalidArgumentError,
+        "list index expression is null");
+
+  Value list = EvaluateExpression(*expression.list, row);
+  Value index_value = EvaluateExpression(*expression.index, row);
+  std::optional<std::int64_t> index = IntegerValue(index_value);
+  if (!list.IsList() || !index.has_value()) {
+    return Value::Null();
+  }
+
+  const Value::List &items = list.AsList();
+  const std::int64_t normalized = NormalizeListIndex(*index, items.size());
+  if (normalized < 0 || normalized >= static_cast<std::int64_t>(items.size())) {
+    return Value::Null();
+  }
+  return items[static_cast<std::size_t>(normalized)];
+}
+
+Value EvaluateListSlice(const ast::ListSliceExpression &expression,
+                        const QueryRow &row) {
+  CHECK(expression.list != nullptr, common::InvalidArgumentError,
+        "list slice base expression is null");
+
+  Value list = EvaluateExpression(*expression.list, row);
+  if (!list.IsList()) {
+    return Value::Null();
+  }
+
+  const Value::List &items = list.AsList();
+  std::int64_t start = 0;
+  std::int64_t end = static_cast<std::int64_t>(items.size());
+  if (expression.start_index != nullptr) {
+    Value start_value = EvaluateExpression(*expression.start_index, row);
+    std::optional<std::int64_t> maybe_start = IntegerValue(start_value);
+    if (!maybe_start.has_value()) {
+      return Value::Null();
+    }
+    start = ClampListSliceIndex(*maybe_start, items.size());
+  }
+  if (expression.end_index != nullptr) {
+    Value end_value = EvaluateExpression(*expression.end_index, row);
+    std::optional<std::int64_t> maybe_end = IntegerValue(end_value);
+    if (!maybe_end.has_value()) {
+      return Value::Null();
+    }
+    end = ClampListSliceIndex(*maybe_end, items.size());
+  }
+  if (end < start) {
+    end = start;
+  }
+
+  Value::List sliced;
+  sliced.reserve(static_cast<std::size_t>(end - start));
+  for (std::int64_t index = start; index < end; ++index) {
+    sliced.push_back(items[static_cast<std::size_t>(index)]);
+  }
+  return Value(std::move(sliced));
+}
+
+Value EvaluateCaseExpression(const ast::CaseExpression &expression,
+                             const QueryRow &row) {
+  std::optional<Value> test_value;
+  if (expression.test != nullptr) {
+    test_value = EvaluateExpression(*expression.test, row);
+  }
+
+  for (const auto &[when_expression, then_expression] :
+       expression.alternatives) {
+    CHECK(when_expression != nullptr, common::InvalidArgumentError,
+          "CASE WHEN expression is null");
+    CHECK(then_expression != nullptr, common::InvalidArgumentError,
+          "CASE THEN expression is null");
+
+    bool matched = false;
+    if (test_value.has_value()) {
+      matched = *test_value == EvaluateExpression(*when_expression, row);
+    } else {
+      matched = IsTruthy(EvaluateExpression(*when_expression, row));
+    }
+    if (matched) {
+      return EvaluateExpression(*then_expression, row);
+    }
+  }
+
+  if (expression.else_expr != nullptr) {
+    return EvaluateExpression(*expression.else_expr, row);
+  }
+  return Value::Null();
+}
+
+Value EvaluateListComprehension(const ast::ListComprehension &expression,
+                                const QueryRow &row) {
+  CHECK(!expression.variable.empty(), common::InvalidArgumentError,
+        "list comprehension variable is empty");
+  CHECK(expression.list_expr != nullptr, common::InvalidArgumentError,
+        "list comprehension list expression is null");
+
+  Value list = EvaluateExpression(*expression.list_expr, row);
+  if (!list.IsList()) {
+    return Value::Null();
+  }
+
+  Value::List output;
+  for (const auto &item : list.AsList()) {
+    QueryRow scoped = row;
+    scoped[expression.variable] = item;
+    if (expression.where_expr != nullptr &&
+        !IsTruthy(EvaluateExpression(*expression.where_expr, scoped))) {
+      continue;
+    }
+    if (expression.eval_expr != nullptr) {
+      output.push_back(EvaluateExpression(*expression.eval_expr, scoped));
+    } else {
+      output.push_back(item);
+    }
+  }
+  return Value(std::move(output));
+}
+
 Value EvaluateQuantifier(const ast::Quantifier &quantifier, QuantifierMode mode,
                          const QueryRow &row) {
   CHECK(!quantifier.variable.empty(), common::InvalidArgumentError,
@@ -297,6 +443,12 @@ Value EvaluateExpression(const ast::Expression &expression,
       const Value *value = FindProperty(object, property.property_key);
       return value != nullptr ? *value : Value::Null();
     }
+    case ast::ASTNodeType::kListIndexExpression:
+      return EvaluateListIndex(
+          ast::CastAst<ast::ListIndexExpression>(expression), row);
+    case ast::ASTNodeType::kListSliceExpression:
+      return EvaluateListSlice(
+          ast::CastAst<ast::ListSliceExpression>(expression), row);
     case ast::ASTNodeType::kListLiteral: {
       const auto &list = ast::CastAst<ast::ListLiteral>(expression);
       Value::List values;
@@ -501,6 +653,12 @@ Value EvaluateExpression(const ast::Expression &expression,
     case ast::ASTNodeType::kFunctionInvocation:
       return EvaluateFunction(ast::CastAst<ast::FunctionInvocation>(expression),
                               row);
+    case ast::ASTNodeType::kCaseExpression:
+      return EvaluateCaseExpression(
+          ast::CastAst<ast::CaseExpression>(expression), row);
+    case ast::ASTNodeType::kListComprehension:
+      return EvaluateListComprehension(
+          ast::CastAst<ast::ListComprehension>(expression), row);
     case ast::ASTNodeType::kAllQuantifier:
       return EvaluateQuantifier(ast::CastAst<ast::AllQuantifier>(expression),
                                 QuantifierMode::kAll, row);

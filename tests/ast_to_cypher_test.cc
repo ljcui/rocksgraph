@@ -41,6 +41,11 @@ TEST(AstToCypherTest, ListComprehensionWithWhereAndEval) {
             "RETURN [x IN [1, 2, 3] WHERE (x > 1) | (x * 2)]");
 }
 
+TEST(AstToCypherTest, ListComprehensionWithoutEval) {
+  const std::string query = "RETURN [x IN [1,2,3]]";
+  EXPECT_EQ(ToCypherOrFail(query), "RETURN [x IN [1, 2, 3]]");
+}
+
 TEST(AstToCypherTest, RelationshipPatternDetails) {
   const std::string query =
       "MATCH (a)-[r:KNOWS|LIKES*1..3 {since: 2020}]->(b) RETURN r";

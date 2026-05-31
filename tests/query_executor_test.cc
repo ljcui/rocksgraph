@@ -309,6 +309,55 @@ TEST(QueryExecutorTest, ExecutesQuantifierExpressions) {
                                     {"true", "true", "true", "true"}}));
 }
 
+TEST(QueryExecutorTest, ExecutesListIndexAndSliceExpressions) {
+  rg::InMemoryGraph graph;
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "RETURN [10, 20, 30][1] AS second, [10, 20, 30][-1] AS last, "
+      "[10, 20, 30][99] AS missing, [10, 20, 30][0..2] AS head, "
+      "[10, 20, 30][1..] AS tail, [10, 20, 30][..2] AS prefix");
+
+  ASSERT_EQ(result.columns,
+            (std::vector<std::string>{"second", "last", "missing", "head",
+                                      "tail", "prefix"}));
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{
+                {"20", "30", "null", "[10, 20]", "[20, 30]", "[10, 20]"}}));
+}
+
+TEST(QueryExecutorTest, ExecutesCaseExpressions) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "MATCH (n:Person) RETURN n.name AS name, "
+      "CASE WHEN n.age > 40 THEN 'senior' ELSE 'junior' END AS bucket, "
+      "CASE n.name WHEN 'Ada' THEN 1 ELSE 2 END AS rank ORDER BY rank");
+
+  ASSERT_EQ(result.columns,
+            (std::vector<std::string>{"name", "bucket", "rank"}));
+  EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{
+                                    {"\"Ada\"", "\"junior\"", "1"},
+                                    {"\"Grace\"", "\"senior\"", "2"}}));
+}
+
+TEST(QueryExecutorTest, ExecutesListComprehension) {
+  rg::InMemoryGraph graph;
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "RETURN [x IN [1, 2, 3] WHERE x > 1 | x * 10] AS scaled, "
+      "[x IN [1, 2, 3] WHERE x > 1] AS filtered, "
+      "[x IN [1, 2, 3]] AS copy");
+
+  ASSERT_EQ(result.columns,
+            (std::vector<std::string>{"scaled", "filtered", "copy"}));
+  EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{
+                                    {"[20, 30]", "[2, 3]", "[1, 2, 3]"}}));
+}
+
 TEST(QueryExecutorTest, ExecutesVariableLengthExpand) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
