@@ -24,6 +24,8 @@
 #include "ast/expression_to_string.h"
 #include "common/exception.h"
 #include "ir/logical_plan_builder.h"
+#include "ir/planner/catalog.h"
+#include "ir/planner/cost_model.h"
 #include "ir/planner_query.h"
 
 namespace rg {
@@ -265,6 +267,24 @@ bool RuntimeNodeHasLabels(const Node &node,
                           const std::vector<std::string> &labels);
 bool RuntimeRelationshipHasAnyType(const Relationship &relationship,
                                    const std::vector<std::string> &types);
+
+const Value *FindProperty(const Value &value, std::string_view property_key) {
+  const auto find_in_map =
+      [property_key](const Value::Map &properties) -> const Value * {
+    const auto found = properties.find(std::string(property_key));
+    return found != properties.end() ? &found->second : nullptr;
+  };
+  if (value.IsMap()) {
+    return find_in_map(value.AsMap());
+  }
+  if (value.IsNode()) {
+    return find_in_map(value.AsNode().properties);
+  }
+  if (value.IsRelationship()) {
+    return find_in_map(value.AsRelationship().properties);
+  }
+  return nullptr;
+}
 
 Value EvaluateFunction(
     const ast::FunctionInvocation &function, const QueryRow &row,
@@ -1102,41 +1122,6 @@ bool RuntimeRelationshipHasAnyType(const Relationship &relationship,
                                     relationship.type) != types.end();
 }
 
-void PopulateLabels(Node *node, const std::vector<std::string> &labels) {
-  CHECK(node != nullptr, common::InternalError, "node is null");
-  for (const auto &label : labels) {
-    if (std::find(node->labels.begin(), node->labels.end(), label) ==
-        node->labels.end()) {
-      node->labels.push_back(label);
-    }
-  }
-  std::sort(node->labels.begin(), node->labels.end());
-}
-
-void RemoveLabels(Node *node, const std::vector<std::string> &labels) {
-  CHECK(node != nullptr, common::InternalError, "node is null");
-  node->labels.erase(std::remove_if(node->labels.begin(), node->labels.end(),
-                                    [&labels](const std::string &label) {
-                                      return std::find(labels.begin(),
-                                                       labels.end(),
-                                                       label) != labels.end();
-                                    }),
-                     node->labels.end());
-}
-
-std::vector<EntityRef> RelationshipsToDelete(const InMemoryGraph &graph,
-                                             std::int64_t node_id) {
-  std::vector<EntityRef> refs;
-  for (const auto &relationship : graph.Relationships()) {
-    if (relationship->start_node_id == node_id ||
-        relationship->end_node_id == node_id) {
-      refs.push_back(
-          EntityRef{EntityRef::Kind::kRelationship, relationship->id});
-    }
-  }
-  return refs;
-}
-
 Value CopyOrNull(const Value *value) {
   return value != nullptr ? *value : Value::Null();
 }
@@ -1168,10 +1153,21 @@ Value EnsureMapValue(const Value &value) {
   return value;
 }
 
+ir::LogicalPlanBuilderOptions PlannerOptionsFor(const AccessPath &access_path) {
+  return ir::LogicalPlanBuilderOptions{
+      .max_idp_candidates_per_relationship_count = 128,
+      .planner_statistics =
+          dynamic_cast<const ir::PlannerStatistics *>(&access_path),
+      .planner_catalog =
+          dynamic_cast<const ir::PlannerCatalog *>(&access_path)};
+}
+
 class QueryExecutorImpl {
  public:
-  explicit QueryExecutorImpl(InMemoryGraph *graph) : graph_(graph) {
-    CHECK(graph_ != nullptr, common::InvalidArgumentError, "graph is null");
+  QueryExecutorImpl(const AccessPath *access_path, Storage *storage)
+      : access_path_(access_path), storage_(storage) {
+    CHECK(access_path_ != nullptr, common::InvalidArgumentError,
+          "access path is null");
   }
 
   QueryResult Execute(const ir::LogicalPlan &plan) {
@@ -1347,7 +1343,7 @@ class QueryExecutorImpl {
   Rows ExecuteAllNodeScan(const ir::AllNodeScanPlan &plan, const Rows &input) {
     Rows out;
     for (const auto &row : input) {
-      for (const auto &node : graph_->Nodes()) {
+      for (const auto &node : access_path_->ScanNodes()) {
         QueryRow next = row;
         if (TryBind(&next, plan.Variable(), Value(node))) {
           out.push_back(std::move(next));
@@ -1361,7 +1357,7 @@ class QueryExecutorImpl {
                               const Rows &input) {
     Rows out;
     for (const auto &row : input) {
-      for (const auto &node : graph_->Nodes()) {
+      for (const auto &node : access_path_->ScanNodes()) {
         if (!RuntimeNodeHasLabels(*node, plan.Labels())) {
           continue;
         }
@@ -1379,7 +1375,7 @@ class QueryExecutorImpl {
     Rows out;
     for (const auto &row : input) {
       Value expected = EvaluateExpression(*plan.ValueExpression(), row);
-      for (const auto &node : graph_->FindNodesByIndex(
+      for (const auto &node : access_path_->FindNodesByIndex(
                plan.Labels(), plan.PropertyKey(), expected)) {
         QueryRow next = row;
         if (TryBind(&next, plan.Variable(), Value(node))) {
@@ -1395,7 +1391,7 @@ class QueryExecutorImpl {
     Rows out;
     for (const auto &row : input) {
       for (const auto &node :
-           graph_->NodesInIndex(plan.Labels(), plan.PropertyKey())) {
+           access_path_->NodesInIndex(plan.Labels(), plan.PropertyKey())) {
         QueryRow next = row;
         if (!TryBind(&next, plan.Variable(), Value(node))) {
           continue;
@@ -1418,14 +1414,9 @@ class QueryExecutorImpl {
                                    const Rows &input) {
     Rows out;
     for (const auto &row : input) {
-      for (const auto &relationship : graph_->Relationships()) {
+      for (const auto &relationship : access_path_->ScanRelationships()) {
         if (!RuntimeRelationshipHasAnyType(*relationship, plan.Types())) {
           continue;
-        }
-        if (const auto *from =
-                graph_->NodeById(relationship->start_node_id).get();
-            from != nullptr) {
-          (void)from;
         }
         AddRelationshipRow(row, *relationship, plan.FromNode(),
                            plan.Relationship(), plan.ToNode(), plan.Direction(),
@@ -1440,7 +1431,7 @@ class QueryExecutorImpl {
     Rows out;
     for (const auto &row : input) {
       Value expected = EvaluateExpression(*plan.ValueExpression(), row);
-      for (const auto &relationship : graph_->FindRelationshipsByIndex(
+      for (const auto &relationship : access_path_->FindRelationshipsByIndex(
                plan.Types(), plan.PropertyKey(), expected)) {
         AddRelationshipRow(row, *relationship, plan.FromNode(),
                            plan.Relationship(), plan.ToNode(), plan.Direction(),
@@ -1454,8 +1445,8 @@ class QueryExecutorImpl {
       const ir::RelationshipIndexRangeSeekPlan &plan, const Rows &input) {
     Rows out;
     for (const auto &row : input) {
-      for (const auto &relationship :
-           graph_->RelationshipsInIndex(plan.Types(), plan.PropertyKey())) {
+      for (const auto &relationship : access_path_->RelationshipsInIndex(
+               plan.Types(), plan.PropertyKey())) {
         Rows candidate_rows;
         AddRelationshipRow(row, *relationship, plan.FromNode(),
                            plan.Relationship(), plan.ToNode(), plan.Direction(),
@@ -1512,14 +1503,14 @@ class QueryExecutorImpl {
                                   std::int64_t from_id, std::int64_t to_id,
                                   Rows *out) {
     QueryRow next = row;
-    if (!TryBind(&next, from_node, Value(graph_->NodeById(from_id)))) {
+    if (!TryBind(&next, from_node, Value(access_path_->NodeById(from_id)))) {
       return;
     }
     if (!TryBind(&next, relationship_variable,
-                 Value(graph_->RelationshipById(relationship.id)))) {
+                 Value(access_path_->RelationshipById(relationship.id)))) {
       return;
     }
-    if (!TryBind(&next, to_node, Value(graph_->NodeById(to_id)))) {
+    if (!TryBind(&next, to_node, Value(access_path_->NodeById(to_id)))) {
       return;
     }
     out->push_back(std::move(next));
@@ -1556,10 +1547,11 @@ class QueryExecutorImpl {
                                        : relationship->start_node_id;
         QueryRow next = row;
         if (!TryBind(&next, plan.Relationship(),
-                     Value(graph_->RelationshipById(relationship->id)))) {
+                     Value(access_path_->RelationshipById(relationship->id)))) {
           continue;
         }
-        if (!TryBind(&next, plan.ToNode(), Value(graph_->NodeById(to_id)))) {
+        if (!TryBind(&next, plan.ToNode(),
+                     Value(access_path_->NodeById(to_id)))) {
           continue;
         }
         out.push_back(std::move(next));
@@ -1599,7 +1591,7 @@ class QueryExecutorImpl {
         }
         QueryRow next = row;
         if (TryBind(&next, plan.Relationship(),
-                    Value(graph_->RelationshipById(relationship->id)))) {
+                    Value(access_path_->RelationshipById(relationship->id)))) {
           out.push_back(std::move(next));
         }
       }
@@ -1607,15 +1599,15 @@ class QueryExecutorImpl {
     return out;
   }
 
-  std::vector<InMemoryGraph::RelationshipPtr> ExpandCandidates(
+  std::vector<AccessPath::RelationshipPtr> ExpandCandidates(
       std::int64_t from_node_id, ir::ExpandDirection direction) const {
     if (direction == ir::ExpandDirection::kOutgoing) {
-      return graph_->OutgoingRelationships(from_node_id);
+      return access_path_->OutgoingRelationships(from_node_id);
     }
     if (direction == ir::ExpandDirection::kIncoming) {
-      return graph_->IncomingRelationships(from_node_id);
+      return access_path_->IncomingRelationships(from_node_id);
     }
-    return graph_->RelationshipsConnectedTo(from_node_id);
+    return access_path_->RelationshipsConnectedTo(from_node_id);
   }
 
   Rows ExecuteVarExpand(const ir::VarExpandPlan &plan, const Rows &input) {
@@ -1640,7 +1632,7 @@ class QueryExecutorImpl {
         continue;
       }
 
-      std::vector<InMemoryGraph::RelationshipPtr> path;
+      std::vector<AccessPath::RelationshipPtr> path;
       std::unordered_set<std::int64_t> used_relationships;
       ExpandVariableLengthPath(plan, row, from.AsNode().id, bound_to_id,
                                min_length, max_length, &path,
@@ -1662,7 +1654,7 @@ class QueryExecutorImpl {
   std::size_t VarExpandMaxLength(
       const ir::LogicalVariableLength &length) const {
     if (!length.max.has_value()) {
-      return graph_->Relationships().size();
+      return access_path_->RelationshipCount();
     }
     CHECK(*length.max >= 0, common::InvalidArgumentError,
           "variable expand maximum length is negative");
@@ -1697,7 +1689,7 @@ class QueryExecutorImpl {
       const ir::VarExpandPlan &plan, const QueryRow &row,
       std::int64_t current_node_id, std::optional<std::int64_t> bound_to_id,
       std::size_t min_length, std::size_t max_length,
-      std::vector<InMemoryGraph::RelationshipPtr> *path,
+      std::vector<AccessPath::RelationshipPtr> *path,
       std::unordered_set<std::int64_t> *used_relationships, Rows *out) {
     CHECK(path != nullptr, common::InternalError,
           "variable expand path is null");
@@ -1740,7 +1732,7 @@ class QueryExecutorImpl {
 
   void EmitVarExpandRow(const ir::VarExpandPlan &plan, const QueryRow &row,
                         std::int64_t current_node_id,
-                        const std::vector<InMemoryGraph::RelationshipPtr> &path,
+                        const std::vector<AccessPath::RelationshipPtr> &path,
                         Rows *out) {
     CHECK(out != nullptr, common::InternalError,
           "variable expand output is null");
@@ -1757,7 +1749,7 @@ class QueryExecutorImpl {
       return;
     }
     if (!TryBind(&next, plan.ToNode(),
-                 Value(graph_->NodeById(current_node_id)))) {
+                 Value(access_path_->NodeById(current_node_id)))) {
       return;
     }
     out->push_back(std::move(next));
@@ -1793,12 +1785,12 @@ class QueryExecutorImpl {
     CHECK(start_node.IsNode(), common::InvalidArgumentError,
           "path node is not a node: " + pattern.nodes.front());
     std::int64_t current_node_id = start_node.AsNode().id;
-    path->nodes.push_back(graph_->NodeById(current_node_id));
+    path->nodes.push_back(access_path_->NodeById(current_node_id));
 
     for (std::size_t index = 0; index < pattern.relationships.size(); ++index) {
       const std::string &relationship_variable = pattern.relationships[index];
       const Value &relationship = LookupVariable(row, relationship_variable);
-      std::vector<InMemoryGraph::RelationshipPtr> relationships;
+      std::vector<AccessPath::RelationshipPtr> relationships;
       if (relationship.IsList()) {
         relationships.reserve(relationship.AsList().size());
         for (const auto &item : relationship.AsList()) {
@@ -1806,14 +1798,14 @@ class QueryExecutorImpl {
                 "path relationship list item is not a relationship: " +
                     relationship_variable);
           relationships.push_back(
-              graph_->RelationshipById(item.AsRelationship().id));
+              access_path_->RelationshipById(item.AsRelationship().id));
         }
       } else {
         CHECK(relationship.IsRelationship(), common::InvalidArgumentError,
               "path relationship is not a relationship: " +
                   relationship_variable);
         relationships.push_back(
-            graph_->RelationshipById(relationship.AsRelationship().id));
+            access_path_->RelationshipById(relationship.AsRelationship().id));
       }
 
       const Value &target_node = LookupVariable(row, pattern.nodes[index + 1]);
@@ -1823,7 +1815,7 @@ class QueryExecutorImpl {
 
       if (!CanTraverseRelationshipSequence(relationships, current_node_id,
                                            target_node_id)) {
-        std::vector<InMemoryGraph::RelationshipPtr> reversed(
+        std::vector<AccessPath::RelationshipPtr> reversed(
             relationships.rbegin(), relationships.rend());
         CHECK(CanTraverseRelationshipSequence(reversed, current_node_id,
                                               target_node_id),
@@ -1844,7 +1836,7 @@ class QueryExecutorImpl {
   }
 
   bool CanTraverseRelationshipSequence(
-      const std::vector<InMemoryGraph::RelationshipPtr> &relationships,
+      const std::vector<AccessPath::RelationshipPtr> &relationships,
       std::int64_t start_node_id, std::int64_t target_node_id) const {
     std::int64_t current_node_id = start_node_id;
     for (const auto &relationship : relationships) {
@@ -1866,7 +1858,8 @@ class QueryExecutorImpl {
     CHECK(path != nullptr, common::InternalError, "path is null");
     CHECK(current_node_id != nullptr, common::InternalError,
           "path current node id is null");
-    path->relationships.push_back(graph_->RelationshipById(relationship.id));
+    path->relationships.push_back(
+        access_path_->RelationshipById(relationship.id));
     if (relationship.start_node_id == *current_node_id) {
       *current_node_id = relationship.end_node_id;
     } else if (relationship.end_node_id == *current_node_id) {
@@ -1875,7 +1868,7 @@ class QueryExecutorImpl {
       THROW(common::InvalidArgumentError,
             "path relationship is not connected to current node");
     }
-    path->nodes.push_back(graph_->NodeById(*current_node_id));
+    path->nodes.push_back(access_path_->NodeById(*current_node_id));
   }
 
   Rows ExecuteFilter(const ir::FilterPlan &plan, const Rows &input) {
@@ -2361,7 +2354,7 @@ class QueryExecutorImpl {
 
   std::set<std::string> CollectLabels() const {
     std::set<std::string> labels;
-    for (const auto &node : graph_->Nodes()) {
+    for (const auto &node : access_path_->ScanNodes()) {
       for (const auto &label : node->labels) {
         labels.insert(label);
       }
@@ -2371,7 +2364,7 @@ class QueryExecutorImpl {
 
   std::set<std::string> CollectRelationshipTypes() const {
     std::set<std::string> types;
-    for (const auto &relationship : graph_->Relationships()) {
+    for (const auto &relationship : access_path_->ScanRelationships()) {
       if (!relationship->type.empty()) {
         types.insert(relationship->type);
       }
@@ -2381,13 +2374,13 @@ class QueryExecutorImpl {
 
   std::set<std::string> CollectPropertyKeys() const {
     std::set<std::string> keys;
-    for (const auto &node : graph_->Nodes()) {
+    for (const auto &node : access_path_->ScanNodes()) {
       for (const auto &[key, value] : node->properties) {
         (void)value;
         keys.insert(key);
       }
     }
-    for (const auto &relationship : graph_->Relationships()) {
+    for (const auto &relationship : access_path_->ScanRelationships()) {
       for (const auto &[key, value] : relationship->properties) {
         (void)value;
         keys.insert(key);
@@ -2457,6 +2450,7 @@ class QueryExecutorImpl {
   }
 
   Rows ExecuteCreateNode(const ir::CreateNodePlan &plan, const Rows &input) {
+    Storage &storage = WritableStorage();
     Rows rows = ExecutePlan(plan.Child(0), input);
     Rows out;
     for (const auto &row : rows) {
@@ -2466,7 +2460,7 @@ class QueryExecutorImpl {
               "CREATE node property value is null");
         properties[entry.key] = EvaluateExpression(*entry.value, row);
       }
-      auto node = graph_->CreateNode(plan.Node().labels, std::move(properties));
+      auto node = storage.CreateNode(plan.Node().labels, std::move(properties));
       QueryRow next = row;
       next[plan.Node().variable] = Value(node);
       out.push_back(std::move(next));
@@ -2476,6 +2470,7 @@ class QueryExecutorImpl {
 
   Rows ExecuteCreateRelationship(const ir::CreateRelationshipPlan &plan,
                                  const Rows &input) {
+    Storage &storage = WritableStorage();
     Rows rows = ExecutePlan(plan.Child(0), input);
     Rows out;
     for (const auto &row : rows) {
@@ -2489,7 +2484,7 @@ class QueryExecutorImpl {
               "CREATE relationship property value is null");
         properties[entry.key] = EvaluateExpression(*entry.value, row);
       }
-      auto relationship = graph_->CreateRelationship(
+      auto relationship = storage.CreateRelationship(
           left.AsNode().id, right.AsNode().id,
           plan.Relationship().types.empty() ? std::string()
                                             : plan.Relationship().types[0],
@@ -2535,6 +2530,7 @@ class QueryExecutorImpl {
   }
 
   QueryRow ExecuteMergeCreate(const ir::CreatePattern &pattern, QueryRow row) {
+    Storage &storage = WritableStorage();
     for (const auto &command : pattern.commands) {
       if (command.kind == ir::CreateEntityKind::kNode) {
         const auto &node_pattern = pattern.nodes.at(command.index);
@@ -2545,7 +2541,7 @@ class QueryExecutorImpl {
           properties[entry.key] = EvaluateExpression(*entry.value, row);
         }
         auto node =
-            graph_->CreateNode(node_pattern.labels, std::move(properties));
+            storage.CreateNode(node_pattern.labels, std::move(properties));
         row[node_pattern.variable] = Value(node);
       } else {
         const auto &relationship_pattern =
@@ -2561,7 +2557,7 @@ class QueryExecutorImpl {
                 "MERGE relationship property value is null");
           properties[entry.key] = EvaluateExpression(*entry.value, row);
         }
-        auto relationship = graph_->CreateRelationship(
+        auto relationship = storage.CreateRelationship(
             left.AsNode().id, right.AsNode().id,
             relationship_pattern.types.empty() ? std::string()
                                                : relationship_pattern.types[0],
@@ -2594,17 +2590,17 @@ class QueryExecutorImpl {
   }
 
   void ApplySetProperty(const ir::SetMutatingPattern &pattern, QueryRow *row) {
+    Storage &storage = WritableStorage();
     const Value &entity = EvaluateExpression(*pattern.entity, *row);
     Value value = EvaluateExpression(*pattern.value, *row);
     if (entity.IsNode()) {
-      graph_->SetNodeProperty(graph_->NodeById(entity.AsNode().id),
-                              pattern.property_key, std::move(value));
+      storage.SetNodeProperty(entity.AsNode().id, pattern.property_key,
+                              std::move(value));
       return;
     }
     if (entity.IsRelationship()) {
-      graph_->SetRelationshipProperty(
-          graph_->RelationshipById(entity.AsRelationship().id),
-          pattern.property_key, std::move(value));
+      storage.SetRelationshipProperty(entity.AsRelationship().id,
+                                      pattern.property_key, std::move(value));
       return;
     }
     THROW(common::InvalidArgumentError, "SET property target is not an entity");
@@ -2612,12 +2608,13 @@ class QueryExecutorImpl {
 
   void ApplySetProperties(const ir::SetMutatingPattern &pattern, QueryRow *row,
                           bool include_existing) {
+    Storage &storage = WritableStorage();
     const Value &entity = EvaluateExpression(*pattern.entity, *row);
     Value map_value = EvaluateExpression(*pattern.value, *row);
     CHECK(map_value.IsMap(), common::InvalidArgumentError,
           "SET properties requires a map value");
     if (entity.IsNode()) {
-      graph_->SetNodeProperties(graph_->NodeById(entity.AsNode().id),
+      storage.SetNodeProperties(entity.AsNode().id,
                                 std::move(map_value.AsMap()), include_existing);
       return;
     }
@@ -2625,11 +2622,12 @@ class QueryExecutorImpl {
   }
 
   void ApplySetLabels(const ir::SetMutatingPattern &pattern, QueryRow *row) {
+    Storage &storage = WritableStorage();
     const Value &entity = EvaluateExpression(*pattern.entity, *row);
     if (!entity.IsNode()) {
       THROW(common::InvalidArgumentError, "SET labels target is not a node");
     }
-    graph_->SetLabels(graph_->NodeById(entity.AsNode().id), pattern.labels);
+    storage.SetLabels(entity.AsNode().id, pattern.labels);
   }
 
   Rows ExecuteSetProperty(const ir::SetPropertyPlan &plan, const Rows &input) {
@@ -2675,16 +2673,15 @@ class QueryExecutorImpl {
 
   Rows ExecuteRemoveProperty(const ir::RemovePropertyPlan &plan,
                              const Rows &input) {
+    Storage &storage = WritableStorage();
     Rows rows = ExecutePlan(plan.Child(0), input);
     for (auto &row : rows) {
       const Value &entity = EvaluateExpression(*plan.Entity(), row);
       if (entity.IsNode()) {
-        graph_->RemoveNodeProperty(graph_->NodeById(entity.AsNode().id),
-                                   plan.PropertyKey());
+        storage.RemoveNodeProperty(entity.AsNode().id, plan.PropertyKey());
       } else if (entity.IsRelationship()) {
-        graph_->RemoveRelationshipProperty(
-            graph_->RelationshipById(entity.AsRelationship().id),
-            plan.PropertyKey());
+        storage.RemoveRelationshipProperty(entity.AsRelationship().id,
+                                           plan.PropertyKey());
       } else {
         THROW(common::InvalidArgumentError,
               "REMOVE property target is not an entity");
@@ -2695,6 +2692,7 @@ class QueryExecutorImpl {
 
   Rows ExecuteRemoveLabels(const ir::RemoveLabelsPlan &plan,
                            const Rows &input) {
+    Storage &storage = WritableStorage();
     Rows rows = ExecutePlan(plan.Child(0), input);
     for (auto &row : rows) {
       const Value &entity = EvaluateExpression(*plan.Entity(), row);
@@ -2702,13 +2700,14 @@ class QueryExecutorImpl {
         THROW(common::InvalidArgumentError,
               "REMOVE labels target is not a node");
       }
-      graph_->RemoveLabels(graph_->NodeById(entity.AsNode().id), plan.Labels());
+      storage.RemoveLabels(entity.AsNode().id, plan.Labels());
     }
     return rows;
   }
 
   Rows ExecuteDelete(const ir::LogicalPlan &plan, const Rows &input,
                      bool detach) {
+    Storage &storage = WritableStorage();
     Rows rows = ExecutePlan(plan.Child(0), input);
     for (const auto &row : rows) {
       std::vector<EntityRef> entities;
@@ -2732,69 +2731,77 @@ class QueryExecutorImpl {
       }
       for (const auto &entity : entities) {
         if (entity.kind == EntityRef::Kind::kRelationship) {
-          graph_->DeleteRelationship(graph_->RelationshipById(entity.id));
+          storage.DeleteRelationship(entity.id);
           continue;
         }
         if (detach) {
           for (const auto &relationship :
-               graph_->RelationshipsConnectedTo(entity.id)) {
-            graph_->DeleteRelationship(relationship);
+               storage.RelationshipsConnectedTo(entity.id)) {
+            storage.DeleteRelationship(relationship->id);
           }
         } else {
-          CHECK(graph_->RelationshipsConnectedTo(entity.id).empty(),
+          CHECK(storage.RelationshipsConnectedTo(entity.id).empty(),
                 common::InvalidArgumentError,
                 "DELETE node still has relationships");
         }
-        graph_->DeleteNode(graph_->NodeById(entity.id));
+        storage.DeleteNode(entity.id);
       }
     }
     return rows;
   }
 
-  InMemoryGraph *graph_ = nullptr;
+  Storage &WritableStorage() const {
+    CHECK(storage_ != nullptr, common::InvalidArgumentError,
+          "write execution requires storage");
+    return *storage_;
+  }
+
+  const AccessPath *access_path_ = nullptr;
+  Storage *storage_ = nullptr;
 };
 
 }  // namespace
 
 QueryResult QueryExecutor::Execute(const ir::LogicalPlan &plan) const {
-  CHECK(graph_ != nullptr, common::InternalError, "graph is null");
-  return QueryExecutorImpl(graph_).Execute(plan);
+  CHECK(access_path_ != nullptr, common::InternalError, "access path is null");
+  return QueryExecutorImpl(access_path_, storage_).Execute(plan);
 }
 
 void QueryExecutor::ExecuteWrite(const ir::LogicalPlan &plan) {
-  CHECK(graph_ != nullptr, common::InternalError, "graph is null");
-  QueryExecutorImpl(graph_).ExecuteWrite(plan);
+  CHECK(storage_ != nullptr, common::InternalError,
+        "write execution requires storage");
+  QueryExecutorImpl(storage_, storage_).ExecuteWrite(plan);
 }
 
-QueryResult ExecuteReadQuery(const InMemoryGraph &graph,
+QueryResult ExecuteReadQuery(const AccessPath &access_path,
                              std::string_view cypher) {
-  return ExecuteQuery(const_cast<InMemoryGraph &>(graph), cypher);
-}
-
-QueryResult ExecuteQuery(InMemoryGraph &graph, std::string_view cypher) {
   std::unique_ptr<ast::Statement> statement =
       ast::ParseCypherAndRewrite(std::string(cypher));
   std::unique_ptr<ir::PlannerQuery> planner_query =
       ir::CreatePlannerQuery(*statement);
-  std::unique_ptr<ir::LogicalPlan> logical_plan = ir::CreateLogicalPlan(
-      *planner_query, ir::LogicalPlanBuilderOptions{
-                          .max_idp_candidates_per_relationship_count = 128,
-                          .planner_statistics = &graph,
-                          .planner_catalog = &graph});
-  return QueryExecutor(graph).Execute(*logical_plan);
+  std::unique_ptr<ir::LogicalPlan> logical_plan =
+      ir::CreateLogicalPlan(*planner_query, PlannerOptionsFor(access_path));
+  return QueryExecutor(access_path).Execute(*logical_plan);
 }
 
-void ExecuteWriteQuery(InMemoryGraph &graph, std::string_view cypher) {
+QueryResult ExecuteQuery(Storage &storage, std::string_view cypher) {
   std::unique_ptr<ast::Statement> statement =
       ast::ParseCypherAndRewrite(std::string(cypher));
   std::unique_ptr<ir::PlannerQuery> planner_query =
       ir::CreatePlannerQuery(*statement);
-  std::unique_ptr<ir::LogicalPlan> logical_plan = ir::CreateLogicalPlan(
-      *planner_query, ir::LogicalPlanBuilderOptions{
-                          .max_idp_candidates_per_relationship_count = 128,
-                          .planner_statistics = &graph,
-                          .planner_catalog = &graph});
-  QueryExecutor(graph).ExecuteWrite(*logical_plan);
+  std::unique_ptr<ir::LogicalPlan> logical_plan =
+      ir::CreateLogicalPlan(*planner_query, PlannerOptionsFor(storage));
+  return QueryExecutor(storage).Execute(*logical_plan);
+}
+
+void ExecuteWriteQuery(Storage &storage, std::string_view cypher) {
+  std::unique_ptr<ast::Statement> statement =
+      ast::ParseCypherAndRewrite(std::string(cypher));
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  std::unique_ptr<ir::LogicalPlan> logical_plan =
+      ir::CreateLogicalPlan(*planner_query, PlannerOptionsFor(storage));
+  QueryExecutor(storage).ExecuteWrite(*logical_plan);
 }
 
 }  // namespace rg

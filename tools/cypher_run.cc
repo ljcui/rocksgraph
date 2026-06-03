@@ -6,6 +6,7 @@
 #include "gflags/gflags.h"
 #include "runtime/query_executor.h"
 #include "spdlog/spdlog.h"
+#include "storage/in_memory_graph.h"
 
 DEFINE_bool(seed_demo_graph, true,
             "Load a small in-memory demo graph before executing the query.");

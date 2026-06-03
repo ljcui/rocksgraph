@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -11,21 +12,23 @@
 
 #include "ir/planner/catalog.h"
 #include "ir/planner/cost_model.h"
+#include "storage/storage.h"
 #include "value/value.h"
 
 namespace rg {
 
-class InMemoryGraph final : public ir::PlannerCatalog,
+class InMemoryGraph final : public Storage,
+                            public ir::PlannerCatalog,
                             public ir::PlannerStatistics {
  public:
   using NodePtr = Value::NodePtr;
   using RelationshipPtr = Value::RelationshipPtr;
 
   NodePtr CreateNode(std::vector<std::string> labels,
-                     Value::Map properties = {});
+                     Value::Map properties = {}) override;
   RelationshipPtr CreateRelationship(int64_t start_node_id, int64_t end_node_id,
                                      std::string type,
-                                     Value::Map properties = {});
+                                     Value::Map properties = {}) override;
   RelationshipPtr CreateRelationship(const NodePtr &start_node,
                                      const NodePtr &end_node, std::string type,
                                      Value::Map properties = {});
@@ -44,15 +47,31 @@ class InMemoryGraph final : public ir::PlannerCatalog,
                     const std::vector<std::string> &labels);
   void DeleteNode(const NodePtr &node);
   void DeleteRelationship(const RelationshipPtr &relationship);
+  void SetNodeProperty(int64_t node_id, std::string property_key,
+                       Value value) override;
+  void SetRelationshipProperty(int64_t relationship_id,
+                               std::string property_key, Value value) override;
+  void SetNodeProperties(int64_t node_id, Value::Map properties,
+                         bool include_existing) override;
+  void SetLabels(int64_t node_id, std::vector<std::string> labels) override;
+  void RemoveNodeProperty(int64_t node_id,
+                          std::string_view property_key) override;
+  void RemoveRelationshipProperty(int64_t relationship_id,
+                                  std::string_view property_key) override;
+  void RemoveLabels(int64_t node_id,
+                    const std::vector<std::string> &labels) override;
+  void DeleteNode(int64_t node_id) override;
+  void DeleteRelationship(int64_t relationship_id) override;
 
   [[nodiscard]] bool HasRelationship(int64_t id) const noexcept;
-  [[nodiscard]] const RelationshipPtr &RelationshipById(int64_t id) const;
+  [[nodiscard]] const RelationshipPtr &RelationshipById(
+      int64_t id) const override;
   [[nodiscard]] std::vector<RelationshipPtr> RelationshipsConnectedTo(
-      int64_t node_id) const;
+      int64_t node_id) const override;
   [[nodiscard]] std::vector<RelationshipPtr> OutgoingRelationships(
-      int64_t node_id) const;
+      int64_t node_id) const override;
   [[nodiscard]] std::vector<RelationshipPtr> IncomingRelationships(
-      int64_t node_id) const;
+      int64_t node_id) const override;
 
   void AddNodeIndex(std::vector<std::string> labels,
                     std::string_view property_key, bool unique = false);
@@ -60,17 +79,27 @@ class InMemoryGraph final : public ir::PlannerCatalog,
                             std::string_view property_key, bool unique = false);
   [[nodiscard]] std::vector<NodePtr> FindNodesByIndex(
       const std::vector<std::string> &labels, std::string_view property_key,
-      const Value &value) const;
+      const Value &value) const override;
   [[nodiscard]] std::vector<NodePtr> NodesInIndex(
       const std::vector<std::string> &labels,
-      std::string_view property_key) const;
+      std::string_view property_key) const override;
   [[nodiscard]] std::vector<RelationshipPtr> FindRelationshipsByIndex(
       const std::vector<std::string> &relationship_types,
-      std::string_view property_key, const Value &value) const;
+      std::string_view property_key, const Value &value) const override;
   [[nodiscard]] std::vector<RelationshipPtr> RelationshipsInIndex(
       const std::vector<std::string> &relationship_types,
-      std::string_view property_key) const;
+      std::string_view property_key) const override;
 
+  [[nodiscard]] std::vector<NodePtr> ScanNodes() const override {
+    return nodes_;
+  }
+  [[nodiscard]] std::vector<RelationshipPtr> ScanRelationships()
+      const override {
+    return relationships_;
+  }
+  [[nodiscard]] std::size_t RelationshipCount() const override {
+    return relationships_.size();
+  }
   [[nodiscard]] const std::vector<NodePtr> &Nodes() const noexcept {
     return nodes_;
   }
@@ -83,7 +112,7 @@ class InMemoryGraph final : public ir::PlannerCatalog,
     return relationships_by_id_;
   }
 
-  [[nodiscard]] const NodePtr &NodeById(int64_t id) const;
+  [[nodiscard]] const NodePtr &NodeById(int64_t id) const override;
   [[nodiscard]] bool HasNode(int64_t id) const noexcept;
 
   [[nodiscard]] std::optional<ir::NodeIndexDescriptor> FindNodeIndex(

@@ -8,8 +8,10 @@
 #include <vector>
 
 #include "ast/ast_builder.h"
+#include "common/exception.h"
 #include "ir/logical_plan_builder.h"
 #include "ir/planner_query.h"
+#include "storage/in_memory_graph.h"
 
 namespace {
 
@@ -787,6 +789,18 @@ TEST(QueryExecutorTest, ExecutesCreateNodeAndRelationship) {
   rg::QueryResult check = rg::ExecuteReadQuery(
       graph, "MATCH (a:Person)-[r:KNOWS]->(b:Person) RETURN count(r) AS c");
   EXPECT_EQ(StringRows(check), (std::vector<std::vector<std::string>>{{"1"}}));
+}
+
+TEST(QueryExecutorTest, ExecuteReadQueryRejectsWritesWithAccessPathOnly) {
+  rg::InMemoryGraph graph;
+  const rg::AccessPath &access_path = graph;
+
+  EXPECT_THROW((void)rg::ExecuteReadQuery(access_path, "CREATE (n) RETURN n"),
+               common::InvalidArgumentError);
+
+  rg::QueryResult check =
+      rg::ExecuteReadQuery(access_path, "MATCH (n) RETURN count(n) AS c");
+  EXPECT_EQ(StringRows(check), (std::vector<std::vector<std::string>>{{"0"}}));
 }
 
 TEST(QueryExecutorTest, ExecutesSetRemoveAndDetachDelete) {

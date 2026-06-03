@@ -180,6 +180,51 @@ void InMemoryGraph::DeleteRelationship(const RelationshipPtr &relationship) {
       relationships_.end());
 }
 
+void InMemoryGraph::SetNodeProperty(int64_t node_id, std::string property_key,
+                                    Value value) {
+  SetNodeProperty(NodeById(node_id), std::move(property_key), std::move(value));
+}
+
+void InMemoryGraph::SetRelationshipProperty(int64_t relationship_id,
+                                            std::string property_key,
+                                            Value value) {
+  SetRelationshipProperty(RelationshipById(relationship_id),
+                          std::move(property_key), std::move(value));
+}
+
+void InMemoryGraph::SetNodeProperties(int64_t node_id, Value::Map properties,
+                                      bool include_existing) {
+  SetNodeProperties(NodeById(node_id), std::move(properties), include_existing);
+}
+
+void InMemoryGraph::SetLabels(int64_t node_id,
+                              std::vector<std::string> labels) {
+  SetLabels(NodeById(node_id), std::move(labels));
+}
+
+void InMemoryGraph::RemoveNodeProperty(int64_t node_id,
+                                       std::string_view property_key) {
+  RemoveNodeProperty(NodeById(node_id), property_key);
+}
+
+void InMemoryGraph::RemoveRelationshipProperty(int64_t relationship_id,
+                                               std::string_view property_key) {
+  RemoveRelationshipProperty(RelationshipById(relationship_id), property_key);
+}
+
+void InMemoryGraph::RemoveLabels(int64_t node_id,
+                                 const std::vector<std::string> &labels) {
+  RemoveLabels(NodeById(node_id), labels);
+}
+
+void InMemoryGraph::DeleteNode(int64_t node_id) {
+  DeleteNode(NodeById(node_id));
+}
+
+void InMemoryGraph::DeleteRelationship(int64_t relationship_id) {
+  DeleteRelationship(RelationshipById(relationship_id));
+}
+
 bool InMemoryGraph::HasRelationship(int64_t id) const noexcept {
   return relationships_by_id_.find(id) != relationships_by_id_.end();
 }
