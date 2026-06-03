@@ -47,11 +47,27 @@ class InMemoryGraph final : public ir::PlannerCatalog {
   [[nodiscard]] const RelationshipPtr &RelationshipById(int64_t id) const;
   [[nodiscard]] std::vector<RelationshipPtr> RelationshipsConnectedTo(
       int64_t node_id) const;
+  [[nodiscard]] std::vector<RelationshipPtr> OutgoingRelationships(
+      int64_t node_id) const;
+  [[nodiscard]] std::vector<RelationshipPtr> IncomingRelationships(
+      int64_t node_id) const;
 
   void AddNodeIndex(std::vector<std::string> labels,
                     std::string_view property_key, bool unique = false);
   void AddRelationshipIndex(std::vector<std::string> relationship_types,
                             std::string_view property_key, bool unique = false);
+  [[nodiscard]] std::vector<NodePtr> FindNodesByIndex(
+      const std::vector<std::string> &labels, std::string_view property_key,
+      const Value &value) const;
+  [[nodiscard]] std::vector<NodePtr> NodesInIndex(
+      const std::vector<std::string> &labels,
+      std::string_view property_key) const;
+  [[nodiscard]] std::vector<RelationshipPtr> FindRelationshipsByIndex(
+      const std::vector<std::string> &relationship_types,
+      std::string_view property_key, const Value &value) const;
+  [[nodiscard]] std::vector<RelationshipPtr> RelationshipsInIndex(
+      const std::vector<std::string> &relationship_types,
+      std::string_view property_key) const;
 
   [[nodiscard]] const std::vector<NodePtr> &Nodes() const noexcept {
     return nodes_;
@@ -76,8 +92,38 @@ class InMemoryGraph final : public ir::PlannerCatalog {
                         std::string_view property_key) const override;
 
  private:
+  struct IndexDescriptor {
+    std::vector<std::string> qualifiers;
+    std::string property_key;
+    bool unique = false;
+  };
+
+  using NodeIndexBuckets =
+      std::unordered_map<std::string, std::vector<NodePtr>>;
+  using RelationshipIndexBuckets =
+      std::unordered_map<std::string, std::vector<RelationshipPtr>>;
+
   [[nodiscard]] static std::string IndexKey(std::vector<std::string> qualifiers,
                                             std::string_view property_key);
+  [[nodiscard]] static std::string ValueIndexKey(const Value &value);
+
+  void AddNodeToIndexes(const NodePtr &node);
+  void RemoveNodeFromIndexes(const NodePtr &node);
+  void AddRelationshipToIndexes(const RelationshipPtr &relationship);
+  void RemoveRelationshipFromIndexes(const RelationshipPtr &relationship);
+  void AddNodeToIndex(const std::string &index_key,
+                      const IndexDescriptor &descriptor, const NodePtr &node);
+  void RemoveNodeFromIndex(const std::string &index_key,
+                           const IndexDescriptor &descriptor,
+                           const NodePtr &node);
+  void AddRelationshipToIndex(const std::string &index_key,
+                              const IndexDescriptor &descriptor,
+                              const RelationshipPtr &relationship);
+  void RemoveRelationshipFromIndex(const std::string &index_key,
+                                   const IndexDescriptor &descriptor,
+                                   const RelationshipPtr &relationship);
+  void AddRelationshipToAdjacency(const RelationshipPtr &relationship);
+  void RemoveRelationshipFromAdjacency(const RelationshipPtr &relationship);
 
   int64_t next_node_id_ = 0;
   int64_t next_relationship_id_ = 0;
@@ -85,8 +131,15 @@ class InMemoryGraph final : public ir::PlannerCatalog {
   std::vector<RelationshipPtr> relationships_;
   std::unordered_map<int64_t, NodePtr> nodes_by_id_;
   std::unordered_map<int64_t, RelationshipPtr> relationships_by_id_;
-  std::unordered_map<std::string, bool> node_indexes_;
-  std::unordered_map<std::string, bool> relationship_indexes_;
+  std::unordered_map<std::string, IndexDescriptor> node_indexes_;
+  std::unordered_map<std::string, IndexDescriptor> relationship_indexes_;
+  std::unordered_map<std::string, NodeIndexBuckets> node_index_buckets_;
+  std::unordered_map<std::string, RelationshipIndexBuckets>
+      relationship_index_buckets_;
+  std::unordered_map<int64_t, std::vector<RelationshipPtr>>
+      outgoing_relationships_;
+  std::unordered_map<int64_t, std::vector<RelationshipPtr>>
+      incoming_relationships_;
 };
 
 [[nodiscard]] bool NodeHasLabels(const Node &node,

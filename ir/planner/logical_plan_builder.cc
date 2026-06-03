@@ -140,6 +140,9 @@ bool AddUniqueString(std::vector<std::string> *values,
   return true;
 }
 
+bool ContainsExpression(const ast::Expression &haystack,
+                        const ast::Expression &needle);
+
 std::vector<std::string> ProjectionTailPassthroughVariables(
     const LogicalPlan &input, const QueryProjection &projection,
     const std::vector<std::string> &aliases) {
@@ -151,28 +154,29 @@ std::vector<std::string> ProjectionTailPassthroughVariables(
     }
     (void)AddUniqueString(&variables, variable);
   };
-  for (const auto &item : projection.required_order.items) {
-    if (item.expression == nullptr) {
-      continue;
-    }
-    for (const auto &dependency :
-         ast::CollectExpressionDependencies(*item.expression)) {
-      add_variable(dependency);
-    }
-  }
-  for (const ast::Expression *expression :
-       {projection.pagination.skip, projection.pagination.limit}) {
+  const std::vector<LogicalPrecomputedExpression> precomputed_expressions =
+      PrecomputedExpressions(projection.nested_expressions);
+  const auto add_expression_variables = [&](const ast::Expression *expression) {
     if (expression == nullptr) {
-      continue;
+      return;
     }
     for (const auto &dependency :
          ast::CollectExpressionDependencies(*expression)) {
       add_variable(dependency);
     }
+    for (const auto &precomputed : precomputed_expressions) {
+      if (precomputed.expression != nullptr &&
+          ContainsExpression(*expression, *precomputed.expression)) {
+        add_variable(precomputed.variable);
+      }
+    }
+  };
+  for (const auto &item : projection.required_order.items) {
+    add_expression_variables(item.expression);
   }
-  for (const auto &precomputed :
-       PrecomputedExpressions(projection.nested_expressions)) {
-    add_variable(precomputed.variable);
+  for (const ast::Expression *expression :
+       {projection.pagination.skip, projection.pagination.limit}) {
+    add_expression_variables(expression);
   }
   return variables;
 }

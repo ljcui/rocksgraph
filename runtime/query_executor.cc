@@ -1379,14 +1379,8 @@ class QueryExecutorImpl {
     Rows out;
     for (const auto &row : input) {
       Value expected = EvaluateExpression(*plan.ValueExpression(), row);
-      for (const auto &node : graph_->Nodes()) {
-        if (!RuntimeNodeHasLabels(*node, plan.Labels())) {
-          continue;
-        }
-        const auto found = node->properties.find(plan.PropertyKey());
-        if (found == node->properties.end() || found->second != expected) {
-          continue;
-        }
+      for (const auto &node : graph_->FindNodesByIndex(
+               plan.Labels(), plan.PropertyKey(), expected)) {
         QueryRow next = row;
         if (TryBind(&next, plan.Variable(), Value(node))) {
           out.push_back(std::move(next));
@@ -1400,10 +1394,8 @@ class QueryExecutorImpl {
                                  const Rows &input) {
     Rows out;
     for (const auto &row : input) {
-      for (const auto &node : graph_->Nodes()) {
-        if (!RuntimeNodeHasLabels(*node, plan.Labels())) {
-          continue;
-        }
+      for (const auto &node :
+           graph_->NodesInIndex(plan.Labels(), plan.PropertyKey())) {
         QueryRow next = row;
         if (!TryBind(&next, plan.Variable(), Value(node))) {
           continue;
@@ -1448,15 +1440,8 @@ class QueryExecutorImpl {
     Rows out;
     for (const auto &row : input) {
       Value expected = EvaluateExpression(*plan.ValueExpression(), row);
-      for (const auto &relationship : graph_->Relationships()) {
-        if (!RuntimeRelationshipHasAnyType(*relationship, plan.Types())) {
-          continue;
-        }
-        const auto found = relationship->properties.find(plan.PropertyKey());
-        if (found == relationship->properties.end() ||
-            found->second != expected) {
-          continue;
-        }
+      for (const auto &relationship : graph_->FindRelationshipsByIndex(
+               plan.Types(), plan.PropertyKey(), expected)) {
         AddRelationshipRow(row, *relationship, plan.FromNode(),
                            plan.Relationship(), plan.ToNode(), plan.Direction(),
                            &out);
@@ -1469,10 +1454,8 @@ class QueryExecutorImpl {
       const ir::RelationshipIndexRangeSeekPlan &plan, const Rows &input) {
     Rows out;
     for (const auto &row : input) {
-      for (const auto &relationship : graph_->Relationships()) {
-        if (!RuntimeRelationshipHasAnyType(*relationship, plan.Types())) {
-          continue;
-        }
+      for (const auto &relationship :
+           graph_->RelationshipsInIndex(plan.Types(), plan.PropertyKey())) {
         Rows candidate_rows;
         AddRelationshipRow(row, *relationship, plan.FromNode(),
                            plan.Relationship(), plan.ToNode(), plan.Direction(),
@@ -1550,7 +1533,8 @@ class QueryExecutorImpl {
       CHECK(from.IsNode(), common::InvalidArgumentError,
             "expand source is not a node: " + plan.FromNode());
       const std::int64_t from_id = from.AsNode().id;
-      for (const auto &relationship : graph_->Relationships()) {
+      for (const auto &relationship :
+           ExpandCandidates(from_id, plan.Direction())) {
         if (!RuntimeRelationshipHasAnyType(*relationship, plan.Types())) {
           continue;
         }
@@ -1592,7 +1576,8 @@ class QueryExecutorImpl {
       const Value &to = LookupVariable(row, plan.ToNode());
       CHECK(from.IsNode() && to.IsNode(), common::InvalidArgumentError,
             "expand-into endpoints must be nodes");
-      for (const auto &relationship : graph_->Relationships()) {
+      for (const auto &relationship :
+           ExpandCandidates(from.AsNode().id, plan.Direction())) {
         if (!RuntimeRelationshipHasAnyType(*relationship, plan.Types())) {
           continue;
         }
@@ -1620,6 +1605,17 @@ class QueryExecutorImpl {
       }
     }
     return out;
+  }
+
+  std::vector<InMemoryGraph::RelationshipPtr> ExpandCandidates(
+      std::int64_t from_node_id, ir::ExpandDirection direction) const {
+    if (direction == ir::ExpandDirection::kOutgoing) {
+      return graph_->OutgoingRelationships(from_node_id);
+    }
+    if (direction == ir::ExpandDirection::kIncoming) {
+      return graph_->IncomingRelationships(from_node_id);
+    }
+    return graph_->RelationshipsConnectedTo(from_node_id);
   }
 
   Rows ExecuteVarExpand(const ir::VarExpandPlan &plan, const Rows &input) {
@@ -1718,7 +1714,8 @@ class QueryExecutorImpl {
       return;
     }
 
-    for (const auto &relationship : graph_->Relationships()) {
+    for (const auto &relationship :
+         ExpandCandidates(current_node_id, plan.Direction())) {
       if (used_relationships->contains(relationship->id)) {
         continue;
       }
