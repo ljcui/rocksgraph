@@ -10,6 +10,7 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -65,6 +66,45 @@ double AsDoubleValue(const Value &value) {
   THROW(common::InvalidArgumentError, "expected numeric value");
 }
 
+std::optional<std::int64_t> ParseInteger(std::string_view text) {
+  try {
+    std::size_t parsed = 0;
+    std::int64_t value = std::stoll(std::string(text), &parsed);
+    if (parsed == text.size()) {
+      return value;
+    }
+  } catch (const std::invalid_argument &) {
+  } catch (const std::out_of_range &) {
+  }
+  return std::nullopt;
+}
+
+std::optional<double> ParseDouble(std::string_view text) {
+  try {
+    std::size_t parsed = 0;
+    double value = std::stod(std::string(text), &parsed);
+    if (parsed == text.size()) {
+      return value;
+    }
+  } catch (const std::invalid_argument &) {
+  } catch (const std::out_of_range &) {
+  }
+  return std::nullopt;
+}
+
+bool AddWouldOverflow(std::int64_t lhs, std::int64_t rhs) {
+  if (rhs > 0) {
+    return lhs > std::numeric_limits<std::int64_t>::max() - rhs;
+  }
+  if (rhs < 0) {
+    if (rhs == std::numeric_limits<std::int64_t>::min()) {
+      return lhs < 0;
+    }
+    return lhs < std::numeric_limits<std::int64_t>::min() - rhs;
+  }
+  return false;
+}
+
 bool IsTruthy(const Value &value) {
   if (value.IsNull()) {
     return false;
@@ -85,6 +125,18 @@ bool IsTruthy(const Value &value) {
     return !value.AsList().empty();
   }
   return true;
+}
+
+std::string TrimAscii(std::string value) {
+  const auto is_space = [](unsigned char ch) { return std::isspace(ch) != 0; };
+  value.erase(value.begin(),
+              std::find_if(value.begin(), value.end(),
+                           [&](unsigned char ch) { return !is_space(ch); }));
+  value.erase(std::find_if(value.rbegin(), value.rend(),
+                           [&](unsigned char ch) { return !is_space(ch); })
+                  .base(),
+              value.end());
+  return value;
 }
 
 Value NumericValue(double value, bool integral) {
@@ -275,6 +327,268 @@ Value EvaluateFunction(
           arguments[0].AsPath().relationships.size()));
     }
     return Value::Null();
+  }
+  if (name == "coalesce") {
+    for (const Value &argument : arguments) {
+      if (!argument.IsNull()) {
+        return argument;
+      }
+    }
+    return Value::Null();
+  }
+  if (name == "isempty") {
+    CHECK(arguments.size() == 1, common::InvalidArgumentError,
+          "isEmpty() expects one argument");
+    if (arguments[0].IsNull()) {
+      return Value::Null();
+    }
+    if (arguments[0].IsString()) {
+      return Value(arguments[0].AsString().empty());
+    }
+    if (arguments[0].IsList()) {
+      return Value(arguments[0].AsList().empty());
+    }
+    if (arguments[0].IsMap()) {
+      return Value(arguments[0].AsMap().empty());
+    }
+    return Value::Null();
+  }
+  if (name == "keys") {
+    CHECK(arguments.size() == 1, common::InvalidArgumentError,
+          "keys() expects one argument");
+    Value::List keys;
+    if (arguments[0].IsMap()) {
+      keys.reserve(arguments[0].AsMap().size());
+      for (const auto &[key, value] : arguments[0].AsMap()) {
+        (void)value;
+        keys.emplace_back(key);
+      }
+      return Value(std::move(keys));
+    }
+    if (arguments[0].IsNode()) {
+      keys.reserve(arguments[0].AsNode().properties.size());
+      for (const auto &[key, value] : arguments[0].AsNode().properties) {
+        (void)value;
+        keys.emplace_back(key);
+      }
+      return Value(std::move(keys));
+    }
+    if (arguments[0].IsRelationship()) {
+      keys.reserve(arguments[0].AsRelationship().properties.size());
+      for (const auto &[key, value] :
+           arguments[0].AsRelationship().properties) {
+        (void)value;
+        keys.emplace_back(key);
+      }
+      return Value(std::move(keys));
+    }
+    return Value::Null();
+  }
+  if (name == "properties") {
+    CHECK(arguments.size() == 1, common::InvalidArgumentError,
+          "properties() expects one argument");
+    if (arguments[0].IsMap()) {
+      return Value(arguments[0].AsMap());
+    }
+    if (arguments[0].IsNode()) {
+      return Value(arguments[0].AsNode().properties);
+    }
+    if (arguments[0].IsRelationship()) {
+      return Value(arguments[0].AsRelationship().properties);
+    }
+    return Value::Null();
+  }
+  if (name == "range") {
+    CHECK(arguments.size() == 2 || arguments.size() == 3,
+          common::InvalidArgumentError,
+          "range() expects two or three arguments");
+    if (!arguments[0].IsInteger() || !arguments[1].IsInteger() ||
+        (arguments.size() == 3 && !arguments[2].IsInteger())) {
+      return Value::Null();
+    }
+    const std::int64_t start = arguments[0].AsInteger();
+    const std::int64_t end = arguments[1].AsInteger();
+    const std::int64_t step =
+        arguments.size() == 3 ? arguments[2].AsInteger() : 1;
+    CHECK(step != 0, common::InvalidArgumentError, "range() step is zero");
+    Value::List values;
+    if (step > 0) {
+      for (std::int64_t value = start; value <= end;) {
+        values.emplace_back(value);
+        if (AddWouldOverflow(value, step)) {
+          break;
+        }
+        const std::int64_t next = value + step;
+        if (next > end) {
+          break;
+        }
+        value = next;
+      }
+    } else {
+      for (std::int64_t value = start; value >= end;) {
+        values.emplace_back(value);
+        if (AddWouldOverflow(value, step)) {
+          break;
+        }
+        const std::int64_t next = value + step;
+        if (next < end) {
+          break;
+        }
+        value = next;
+      }
+    }
+    return Value(std::move(values));
+  }
+  if (name == "split") {
+    CHECK(arguments.size() == 2, common::InvalidArgumentError,
+          "split() expects two arguments");
+    if (!arguments[0].IsString() || !arguments[1].IsString()) {
+      return Value::Null();
+    }
+    const std::string &text = arguments[0].AsString();
+    const std::string &delimiter = arguments[1].AsString();
+    Value::List parts;
+    if (delimiter.empty()) {
+      parts.reserve(text.size());
+      for (char ch : text) {
+        parts.emplace_back(std::string(1, ch));
+      }
+      return Value(std::move(parts));
+    }
+    std::size_t start = 0;
+    while (true) {
+      const std::size_t found = text.find(delimiter, start);
+      if (found == std::string::npos) {
+        parts.emplace_back(text.substr(start));
+        break;
+      }
+      parts.emplace_back(text.substr(start, found - start));
+      start = found + delimiter.size();
+    }
+    return Value(std::move(parts));
+  }
+  if (name == "nodes") {
+    CHECK(arguments.size() == 1, common::InvalidArgumentError,
+          "nodes() expects one argument");
+    if (!arguments[0].IsPath()) {
+      return Value::Null();
+    }
+    Value::List nodes;
+    nodes.reserve(arguments[0].AsPath().nodes.size());
+    for (const auto &node : arguments[0].AsPath().nodes) {
+      nodes.emplace_back(node);
+    }
+    return Value(std::move(nodes));
+  }
+  if (name == "relationships") {
+    CHECK(arguments.size() == 1, common::InvalidArgumentError,
+          "relationships() expects one argument");
+    if (!arguments[0].IsPath()) {
+      return Value::Null();
+    }
+    Value::List relationships;
+    relationships.reserve(arguments[0].AsPath().relationships.size());
+    for (const auto &relationship : arguments[0].AsPath().relationships) {
+      relationships.emplace_back(relationship);
+    }
+    return Value(std::move(relationships));
+  }
+  if (name == "tostring") {
+    CHECK(arguments.size() == 1, common::InvalidArgumentError,
+          "toString() expects one argument");
+    if (arguments[0].IsNull()) {
+      return Value::Null();
+    }
+    if (arguments[0].IsString()) {
+      return arguments[0];
+    }
+    return Value(arguments[0].ToString());
+  }
+  if (name == "tointeger") {
+    CHECK(arguments.size() == 1, common::InvalidArgumentError,
+          "toInteger() expects one argument");
+    if (arguments[0].IsNull()) {
+      return Value::Null();
+    }
+    if (arguments[0].IsInteger()) {
+      return arguments[0];
+    }
+    if (arguments[0].IsDouble()) {
+      return Value(static_cast<std::int64_t>(arguments[0].AsDouble()));
+    }
+    if (arguments[0].IsBool()) {
+      return Value(arguments[0].AsBool() ? 1 : 0);
+    }
+    if (arguments[0].IsString()) {
+      std::optional<std::int64_t> value = ParseInteger(arguments[0].AsString());
+      return value.has_value() ? Value(*value) : Value::Null();
+    }
+    return Value::Null();
+  }
+  if (name == "tofloat") {
+    CHECK(arguments.size() == 1, common::InvalidArgumentError,
+          "toFloat() expects one argument");
+    if (arguments[0].IsNull()) {
+      return Value::Null();
+    }
+    if (arguments[0].IsDouble()) {
+      return arguments[0];
+    }
+    if (arguments[0].IsInteger()) {
+      return Value(static_cast<double>(arguments[0].AsInteger()));
+    }
+    if (arguments[0].IsBool()) {
+      return Value(arguments[0].AsBool() ? 1.0 : 0.0);
+    }
+    if (arguments[0].IsString()) {
+      std::optional<double> value = ParseDouble(arguments[0].AsString());
+      return value.has_value() ? Value(*value) : Value::Null();
+    }
+    return Value::Null();
+  }
+  if (name == "toboolean") {
+    CHECK(arguments.size() == 1, common::InvalidArgumentError,
+          "toBoolean() expects one argument");
+    if (arguments[0].IsNull()) {
+      return Value::Null();
+    }
+    if (arguments[0].IsBool()) {
+      return arguments[0];
+    }
+    if (arguments[0].IsString()) {
+      const std::string value = LowerAscii(TrimAscii(arguments[0].AsString()));
+      if (value == "true") {
+        return Value(true);
+      }
+      if (value == "false") {
+        return Value(false);
+      }
+    }
+    return Value::Null();
+  }
+  if (name == "tolower") {
+    CHECK(arguments.size() == 1, common::InvalidArgumentError,
+          "toLower() expects one argument");
+    return arguments[0].IsString() ? Value(LowerAscii(arguments[0].AsString()))
+                                   : Value::Null();
+  }
+  if (name == "toupper") {
+    CHECK(arguments.size() == 1, common::InvalidArgumentError,
+          "toUpper() expects one argument");
+    if (!arguments[0].IsString()) {
+      return Value::Null();
+    }
+    std::string value = arguments[0].AsString();
+    std::transform(
+        value.begin(), value.end(), value.begin(),
+        [](unsigned char ch) { return static_cast<char>(std::toupper(ch)); });
+    return Value(std::move(value));
+  }
+  if (name == "trim") {
+    CHECK(arguments.size() == 1, common::InvalidArgumentError,
+          "trim() expects one argument");
+    return arguments[0].IsString() ? Value(TrimAscii(arguments[0].AsString()))
+                                   : Value::Null();
   }
 
   THROW(common::InvalidArgumentError,

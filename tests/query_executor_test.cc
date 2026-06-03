@@ -295,6 +295,24 @@ TEST(QueryExecutorTest, ExecutesNamedPathLength) {
   EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{{"1"}}));
 }
 
+TEST(QueryExecutorTest, ExecutesPathBuiltInFunctions) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "MATCH p = (a:Person {name: 'Ada'})-[r:KNOWS]->(b:Person) "
+      "RETURN size(nodes(p)) AS node_count, "
+      "size(relationships(p)) AS rel_count, "
+      "nodes(p)[0].name AS first, relationships(p)[0].since AS since");
+
+  ASSERT_EQ(result.columns, (std::vector<std::string>{"node_count", "rel_count",
+                                                      "first", "since"}));
+  EXPECT_EQ(
+      StringRows(result),
+      (std::vector<std::vector<std::string>>{{"2", "1", "\"Ada\"", "2020"}}));
+}
+
 TEST(QueryExecutorTest, ExecutesNamedCreatePathLength) {
   rg::InMemoryGraph graph;
 
@@ -336,6 +354,53 @@ TEST(QueryExecutorTest, ExecutesListIndexAndSliceExpressions) {
   EXPECT_EQ(StringRows(result),
             (std::vector<std::vector<std::string>>{
                 {"20", "30", "null", "[10, 20]", "[20, 30]", "[10, 20]"}}));
+}
+
+TEST(QueryExecutorTest, ExecutesScalarBuiltInFunctions) {
+  rg::InMemoryGraph graph;
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "RETURN coalesce(null, 'fallback') AS c, isEmpty([]) AS empty_list, "
+      "isEmpty('') AS empty_string, range(1, 5, 2) AS forward, "
+      "range(3, 1, -1) AS backward, split('Ada,Grace', ',') AS parts, "
+      "toString(42) AS text, toInteger('42') AS integer, "
+      "toInteger('bad') AS bad_integer, toFloat('1.5') AS float, "
+      "toBoolean('TRUE') AS truth, toLower('ADA') AS lower, "
+      "toUpper('ada') AS upper, trim(' Ada ') AS trimmed");
+
+  ASSERT_EQ(result.columns,
+            (std::vector<std::string>{"c", "empty_list", "empty_string",
+                                      "forward", "backward", "parts", "text",
+                                      "integer", "bad_integer", "float",
+                                      "truth", "lower", "upper", "trimmed"}));
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{
+                {"\"fallback\"", "true", "true", "[1, 3, 5]", "[3, 2, 1]",
+                 "[\"Ada\", \"Grace\"]", "\"42\"", "42", "null", "1.5", "true",
+                 "\"ada\"", "\"ADA\"", "\"Ada\""}}));
+}
+
+TEST(QueryExecutorTest, ExecutesMapAndEntityBuiltInFunctions) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result =
+      rg::ExecuteReadQuery(graph,
+                           "MATCH (n:Person {name: 'Ada'})-[r:KNOWS]->() "
+                           "RETURN keys({age: 36, name: 'Ada'}) AS map_keys, "
+                           "properties({age: 36, name: 'Ada'}) AS map_props, "
+                           "keys(n) AS node_keys, properties(n) AS node_props, "
+                           "keys(r) AS rel_keys, properties(r) AS rel_props");
+
+  ASSERT_EQ(result.columns,
+            (std::vector<std::string>{"map_keys", "map_props", "node_keys",
+                                      "node_props", "rel_keys", "rel_props"}));
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{
+                {"[\"age\", \"name\"]", "{age: 36, name: \"Ada\"}",
+                 "[\"age\", \"name\"]", "{age: 36, name: \"Ada\"}",
+                 "[\"since\"]", "{since: 2020}"}}));
 }
 
 TEST(QueryExecutorTest, ExecutesCaseExpressions) {
