@@ -2,8 +2,14 @@
 
 #include <gtest/gtest.h>
 
+#include <memory>
 #include <string>
+#include <unordered_set>
 #include <vector>
+
+#include "ast/ast_builder.h"
+#include "ir/logical_plan_builder.h"
+#include "ir/planner_query.h"
 
 namespace {
 
@@ -32,6 +38,36 @@ std::vector<std::vector<std::string>> StringRows(
     rows.push_back(std::move(values));
   }
   return rows;
+}
+
+std::unique_ptr<ir::LogicalPlan> LogicalPlanFor(const rg::InMemoryGraph &graph,
+                                                const std::string &cypher) {
+  std::unique_ptr<ast::Statement> statement =
+      ast::ParseCypherAndRewrite(cypher);
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  return ir::CreateLogicalPlan(
+      *planner_query, ir::LogicalPlanBuilderOptions{
+                          .max_idp_candidates_per_relationship_count = 128,
+                          .planner_statistics = &graph,
+                          .planner_catalog = &graph});
+}
+
+const ir::LogicalPlan *FindPlanNode(const ir::LogicalPlan &plan,
+                                    ir::LogicalPlanNodeType type) {
+  if (plan.Type() == type) {
+    return &plan;
+  }
+  for (const auto &child : plan.Children()) {
+    if (child == nullptr) {
+      continue;
+    }
+    const ir::LogicalPlan *found = FindPlanNode(*child, type);
+    if (found != nullptr) {
+      return found;
+    }
+  }
+  return nullptr;
 }
 
 }  // namespace
@@ -798,6 +834,70 @@ TEST(QueryExecutorTest, ExecutesMergeCreateAndMatchActions) {
   ASSERT_EQ(matched.columns, (std::vector<std::string>{"created", "seen"}));
   EXPECT_EQ(StringRows(matched),
             (std::vector<std::vector<std::string>>{{"true", "true"}}));
+}
+
+TEST(QueryExecutorTest,
+     InMemoryGraphEstimatesPlannerStatisticsFromCurrentData) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  EXPECT_DOUBLE_EQ(graph.EstimateNodeCount(std::unordered_set<std::string>{}),
+                   3.0);
+  EXPECT_DOUBLE_EQ(
+      graph.EstimateNodeCount(std::unordered_set<std::string>{"Person"}), 2.0);
+  EXPECT_DOUBLE_EQ(graph.EstimateNodeCount(
+                       std::unordered_set<std::string>{"Person", "Language"}),
+                   0.0);
+  EXPECT_DOUBLE_EQ(graph.EstimateRelationshipCount({}), 2.0);
+  EXPECT_DOUBLE_EQ(graph.EstimateRelationshipCount({"KNOWS"}), 1.0);
+  EXPECT_DOUBLE_EQ(graph.EstimateRelationshipCount({"MISSING"}), 0.0);
+
+  EXPECT_DOUBLE_EQ(graph.EstimateExpandFanout({"KNOWS"}), 1.0 / 3.0);
+  EXPECT_DOUBLE_EQ(graph.EstimateExpandIntoSelectivity({}), 2.0 / 9.0);
+  EXPECT_DOUBLE_EQ(graph.EstimateNodeIndexSeekSelectivity(
+                       std::unordered_set<std::string>{"Person"}, "name"),
+                   0.5);
+  EXPECT_DOUBLE_EQ(graph.EstimateNodeIndexRangeSeekSelectivity(
+                       std::unordered_set<std::string>{"Person"}, "age", 2),
+                   0.25);
+  EXPECT_DOUBLE_EQ(graph.EstimateRelationshipIndexSeekSelectivity({}, "since"),
+                   0.5);
+  EXPECT_DOUBLE_EQ(graph.EstimateRelationshipIndexRangeSeekSelectivity(
+                       {"KNOWS"}, "since", 1),
+                   0.5);
+
+  EXPECT_DOUBLE_EQ(graph.EstimateProcedureRows("db.labels", 1), 2.0);
+  EXPECT_DOUBLE_EQ(graph.EstimateProcedureRows("db.relationshipTypes", 1), 2.0);
+  EXPECT_DOUBLE_EQ(graph.EstimateProcedureRows("db.propertyKeys", 1), 3.0);
+}
+
+TEST(QueryExecutorTest, LogicalPlanUsesInMemoryGraphStatistics) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  std::unique_ptr<ir::LogicalPlan> label_scan_plan =
+      LogicalPlanFor(graph, "MATCH (n:Person) RETURN n");
+  ASSERT_NE(label_scan_plan, nullptr);
+  const ir::LogicalPlan *label_scan =
+      FindPlanNode(*label_scan_plan, ir::LogicalPlanNodeType::kNodeByLabelScan);
+  ASSERT_NE(label_scan, nullptr);
+  ASSERT_TRUE(label_scan->EstimatedRows().has_value());
+  EXPECT_DOUBLE_EQ(*label_scan->EstimatedRows(), 2.0);
+
+  std::unique_ptr<ir::LogicalPlan> all_scan_plan =
+      LogicalPlanFor(graph, "MATCH (n) RETURN n");
+  ASSERT_NE(all_scan_plan, nullptr);
+  const ir::LogicalPlan *all_scan =
+      FindPlanNode(*all_scan_plan, ir::LogicalPlanNodeType::kAllNodeScan);
+  ASSERT_NE(all_scan, nullptr);
+  ASSERT_TRUE(all_scan->EstimatedRows().has_value());
+  EXPECT_DOUBLE_EQ(*all_scan->EstimatedRows(), 3.0);
+
+  std::unique_ptr<ir::LogicalPlan> procedure_plan =
+      LogicalPlanFor(graph, "CALL db.propertyKeys()");
+  ASSERT_NE(procedure_plan, nullptr);
+  ASSERT_TRUE(procedure_plan->EstimatedRows().has_value());
+  EXPECT_DOUBLE_EQ(*procedure_plan->EstimatedRows(), 3.0);
 }
 
 TEST(QueryExecutorTest, MaintainsNodeIndexAcrossWrites) {

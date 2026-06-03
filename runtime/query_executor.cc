@@ -2777,7 +2777,10 @@ QueryResult ExecuteQuery(InMemoryGraph &graph, std::string_view cypher) {
   std::unique_ptr<ir::PlannerQuery> planner_query =
       ir::CreatePlannerQuery(*statement);
   std::unique_ptr<ir::LogicalPlan> logical_plan = ir::CreateLogicalPlan(
-      *planner_query, ir::LogicalPlanBuilderOptions{.planner_catalog = &graph});
+      *planner_query, ir::LogicalPlanBuilderOptions{
+                          .max_idp_candidates_per_relationship_count = 128,
+                          .planner_statistics = &graph,
+                          .planner_catalog = &graph});
   return QueryExecutor(graph).Execute(*logical_plan);
 }
 
@@ -2787,7 +2790,10 @@ void ExecuteWriteQuery(InMemoryGraph &graph, std::string_view cypher) {
   std::unique_ptr<ir::PlannerQuery> planner_query =
       ir::CreatePlannerQuery(*statement);
   std::unique_ptr<ir::LogicalPlan> logical_plan = ir::CreateLogicalPlan(
-      *planner_query, ir::LogicalPlanBuilderOptions{.planner_catalog = &graph});
+      *planner_query, ir::LogicalPlanBuilderOptions{
+                          .max_idp_candidates_per_relationship_count = 128,
+                          .planner_statistics = &graph,
+                          .planner_catalog = &graph});
   QueryExecutor(graph).ExecuteWrite(*logical_plan);
 }
 

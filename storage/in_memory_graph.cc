@@ -1,7 +1,9 @@
 #include "storage/in_memory_graph.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
+#include <string>
 #include <unordered_set>
 #include <utility>
 
@@ -14,6 +16,25 @@ bool ContainsString(const std::vector<std::string> &items,
                     std::string_view value) {
   return std::find(items.begin(), items.end(), value) != items.end();
 }
+
+bool NodeHasLabelSet(const Node &node,
+                     const std::unordered_set<std::string> &labels) {
+  for (const auto &label : labels) {
+    if (!ContainsString(node.labels, label)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+std::string LowerAscii(std::string value) {
+  std::transform(
+      value.begin(), value.end(), value.begin(),
+      [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return value;
+}
+
+double ClampSelectivity(double value) { return std::clamp(value, 0.0, 1.0); }
 
 template <typename Ptr>
 void RemovePointer(std::vector<Ptr> *items, const Ptr &ptr) {
@@ -404,6 +425,133 @@ InMemoryGraph::FindRelationshipIndex(
       .unique = found->second.unique};
 }
 
+double InMemoryGraph::EstimateNodeCount(
+    const std::unordered_set<std::string> &labels) const {
+  double count = 0.0;
+  for (const auto &node : nodes_) {
+    if (node != nullptr && NodeHasLabelSet(*node, labels)) {
+      count += 1.0;
+    }
+  }
+  return count;
+}
+
+double InMemoryGraph::EstimateExpandFanout(
+    const std::vector<std::string> &relationship_types) const {
+  const double node_count = static_cast<double>(nodes_.size());
+  if (node_count <= 0.0) {
+    return 0.0;
+  }
+  return EstimateRelationshipCount(relationship_types) / node_count;
+}
+
+double InMemoryGraph::EstimateExpandIntoSelectivity(
+    const std::vector<std::string> &relationship_types) const {
+  const double node_count = static_cast<double>(nodes_.size());
+  if (node_count <= 0.0) {
+    return 0.0;
+  }
+  return ClampSelectivity(EstimateRelationshipCount(relationship_types) /
+                          (node_count * node_count));
+}
+
+double InMemoryGraph::EstimateFilterSelectivity() const { return 0.1; }
+
+double InMemoryGraph::EstimateNodeHashJoinSelectivity(
+    std::size_t key_count) const {
+  return key_count == 0 ? 1.0 : 1.0 / static_cast<double>(key_count);
+}
+
+double InMemoryGraph::EstimateNodeIndexSeekSelectivity(
+    const std::unordered_set<std::string> &labels,
+    std::string_view property_key) const {
+  return EqualitySelectivity(NodePropertyDistribution(labels, property_key));
+}
+
+double InMemoryGraph::EstimateNodeIndexRangeSeekSelectivity(
+    const std::unordered_set<std::string> &labels,
+    std::string_view property_key, std::size_t bound_count) const {
+  return RangeSelectivity(NodePropertyDistribution(labels, property_key),
+                          bound_count);
+}
+
+double InMemoryGraph::EstimateRelationshipCount(
+    const std::vector<std::string> &relationship_types) const {
+  double count = 0.0;
+  for (const auto &relationship : relationships_) {
+    if (relationship != nullptr &&
+        RelationshipHasAnyType(*relationship, relationship_types)) {
+      count += 1.0;
+    }
+  }
+  return count;
+}
+
+double InMemoryGraph::EstimateRelationshipIndexSeekSelectivity(
+    const std::vector<std::string> &relationship_types,
+    std::string_view property_key) const {
+  return EqualitySelectivity(
+      RelationshipPropertyDistribution(relationship_types, property_key));
+}
+
+double InMemoryGraph::EstimateRelationshipIndexRangeSeekSelectivity(
+    const std::vector<std::string> &relationship_types,
+    std::string_view property_key, std::size_t bound_count) const {
+  return RangeSelectivity(
+      RelationshipPropertyDistribution(relationship_types, property_key),
+      bound_count);
+}
+
+double InMemoryGraph::EstimateProcedureRows(std::string_view procedure_name,
+                                            std::size_t yield_count) const {
+  const std::string normalized = LowerAscii(std::string(procedure_name));
+  if (normalized == "db.labels") {
+    std::unordered_set<std::string> labels;
+    for (const auto &node : nodes_) {
+      if (node == nullptr) {
+        continue;
+      }
+      for (const auto &label : node->labels) {
+        labels.insert(label);
+      }
+    }
+    return static_cast<double>(labels.size());
+  }
+  if (normalized == "db.relationshiptypes") {
+    std::unordered_set<std::string> types;
+    for (const auto &relationship : relationships_) {
+      if (relationship != nullptr && !relationship->type.empty()) {
+        types.insert(relationship->type);
+      }
+    }
+    return static_cast<double>(types.size());
+  }
+  if (normalized == "db.propertykeys") {
+    std::unordered_set<std::string> keys;
+    for (const auto &node : nodes_) {
+      if (node == nullptr) {
+        continue;
+      }
+      for (const auto &[key, value] : node->properties) {
+        (void)value;
+        keys.insert(key);
+      }
+    }
+    for (const auto &relationship : relationships_) {
+      if (relationship == nullptr) {
+        continue;
+      }
+      for (const auto &[key, value] : relationship->properties) {
+        (void)value;
+        keys.insert(key);
+      }
+    }
+    return static_cast<double>(keys.size());
+  }
+  return ir::PlannerStatistics::EstimateProcedureRows(procedure_name,
+                                                      yield_count);
+}
+
 std::string InMemoryGraph::IndexKey(std::vector<std::string> qualifiers,
                                     std::string_view property_key) {
   std::sort(qualifiers.begin(), qualifiers.end());
@@ -556,6 +704,82 @@ void InMemoryGraph::RemoveRelationshipFromAdjacency(
       incoming_relationships_.erase(incoming);
     }
   }
+}
+
+InMemoryGraph::PropertyDistribution InMemoryGraph::NodePropertyDistribution(
+    const std::unordered_set<std::string> &labels,
+    std::string_view property_key) const {
+  PropertyDistribution distribution;
+  std::unordered_set<std::string> distinct_values;
+  const std::string key(property_key);
+  for (const auto &node : nodes_) {
+    if (node == nullptr || !NodeHasLabelSet(*node, labels)) {
+      continue;
+    }
+    distribution.total_entities += 1.0;
+    const auto property = node->properties.find(key);
+    if (property == node->properties.end()) {
+      continue;
+    }
+    distribution.entities_with_property += 1.0;
+    distinct_values.insert(ValueIndexKey(property->second));
+  }
+  distribution.distinct_values = static_cast<double>(distinct_values.size());
+  return distribution;
+}
+
+InMemoryGraph::PropertyDistribution
+InMemoryGraph::RelationshipPropertyDistribution(
+    const std::vector<std::string> &relationship_types,
+    std::string_view property_key) const {
+  PropertyDistribution distribution;
+  std::unordered_set<std::string> distinct_values;
+  const std::string key(property_key);
+  for (const auto &relationship : relationships_) {
+    if (relationship == nullptr ||
+        !RelationshipHasAnyType(*relationship, relationship_types)) {
+      continue;
+    }
+    distribution.total_entities += 1.0;
+    const auto property = relationship->properties.find(key);
+    if (property == relationship->properties.end()) {
+      continue;
+    }
+    distribution.entities_with_property += 1.0;
+    distinct_values.insert(ValueIndexKey(property->second));
+  }
+  distribution.distinct_values = static_cast<double>(distinct_values.size());
+  return distribution;
+}
+
+double InMemoryGraph::EqualitySelectivity(
+    const PropertyDistribution &distribution) {
+  if (distribution.total_entities <= 0.0) {
+    return 1.0;
+  }
+  if (distribution.entities_with_property <= 0.0 ||
+      distribution.distinct_values <= 0.0) {
+    return 0.0;
+  }
+  return ClampSelectivity(distribution.entities_with_property /
+                          distribution.total_entities /
+                          distribution.distinct_values);
+}
+
+double InMemoryGraph::RangeSelectivity(const PropertyDistribution &distribution,
+                                       std::size_t bound_count) {
+  if (distribution.total_entities <= 0.0) {
+    return 1.0;
+  }
+  if (distribution.entities_with_property <= 0.0) {
+    return 0.0;
+  }
+  const double property_coverage =
+      distribution.entities_with_property / distribution.total_entities;
+  if (bound_count == 0) {
+    return ClampSelectivity(property_coverage);
+  }
+  return ClampSelectivity(property_coverage * (bound_count > 1 ? 0.25 : 0.5));
 }
 
 bool NodeHasLabels(const Node &node, const std::vector<std::string> &labels) {
