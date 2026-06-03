@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <map>
 #include <memory>
 #include <string>
@@ -10,6 +11,13 @@
 #include "storage/storage.h"
 #include "value/value.h"
 
+namespace ir {
+
+class PlannerCatalog;
+class PlannerStatistics;
+
+}  // namespace ir
+
 namespace rg {
 
 using QueryRow = std::map<std::string, Value>;
@@ -17,6 +25,12 @@ using QueryRow = std::map<std::string, Value>;
 struct QueryResult {
   std::vector<std::string> columns;
   std::vector<std::vector<Value>> rows;
+};
+
+struct QueryOptions {
+  std::size_t max_idp_candidates_per_relationship_count = 128;
+  const ir::PlannerStatistics *planner_statistics = nullptr;
+  const ir::PlannerCatalog *planner_catalog = nullptr;
 };
 
 class QueryExecutor final {
@@ -35,9 +49,12 @@ class QueryExecutor final {
 };
 
 [[nodiscard]] QueryResult ExecuteReadQuery(const AccessPath &access_path,
-                                           std::string_view cypher);
+                                           std::string_view cypher,
+                                           QueryOptions options = {});
 [[nodiscard]] QueryResult ExecuteQuery(Storage &storage,
-                                       std::string_view cypher);
-void ExecuteWriteQuery(Storage &storage, std::string_view cypher);
+                                       std::string_view cypher,
+                                       QueryOptions options = {});
+void ExecuteWriteQuery(Storage &storage, std::string_view cypher,
+                       QueryOptions options = {});
 
 }  // namespace rg

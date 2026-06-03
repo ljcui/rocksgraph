@@ -25,7 +25,6 @@
 #include "common/exception.h"
 #include "ir/logical_plan_builder.h"
 #include "ir/planner/catalog.h"
-#include "ir/planner/cost_model.h"
 #include "ir/planner_query.h"
 
 namespace rg {
@@ -1153,13 +1152,38 @@ Value EnsureMapValue(const Value &value) {
   return value;
 }
 
-ir::LogicalPlanBuilderOptions PlannerOptionsFor(const AccessPath &access_path) {
+class NoIndexPlannerCatalog final : public ir::PlannerCatalog {
+ public:
+  [[nodiscard]] std::optional<ir::NodeIndexDescriptor> FindNodeIndex(
+      const std::vector<std::string> &labels,
+      std::string_view property_key) const override {
+    (void)labels;
+    (void)property_key;
+    return std::nullopt;
+  }
+
+  [[nodiscard]] std::optional<ir::RelationshipIndexDescriptor>
+  FindRelationshipIndex(const std::vector<std::string> &relationship_types,
+                        std::string_view property_key) const override {
+    (void)relationship_types;
+    (void)property_key;
+    return std::nullopt;
+  }
+};
+
+const ir::PlannerCatalog &DefaultRuntimePlannerCatalog() {
+  static const NoIndexPlannerCatalog catalog;
+  return catalog;
+}
+
+ir::LogicalPlanBuilderOptions PlannerOptionsFor(const QueryOptions &options) {
   return ir::LogicalPlanBuilderOptions{
-      .max_idp_candidates_per_relationship_count = 128,
-      .planner_statistics =
-          dynamic_cast<const ir::PlannerStatistics *>(&access_path),
-      .planner_catalog =
-          dynamic_cast<const ir::PlannerCatalog *>(&access_path)};
+      .max_idp_candidates_per_relationship_count =
+          options.max_idp_candidates_per_relationship_count,
+      .planner_statistics = options.planner_statistics,
+      .planner_catalog = options.planner_catalog != nullptr
+                             ? options.planner_catalog
+                             : &DefaultRuntimePlannerCatalog()};
 }
 
 class QueryExecutorImpl {
@@ -2774,33 +2798,35 @@ void QueryExecutor::ExecuteWrite(const ir::LogicalPlan &plan) {
 }
 
 QueryResult ExecuteReadQuery(const AccessPath &access_path,
-                             std::string_view cypher) {
+                             std::string_view cypher, QueryOptions options) {
   std::unique_ptr<ast::Statement> statement =
       ast::ParseCypherAndRewrite(std::string(cypher));
   std::unique_ptr<ir::PlannerQuery> planner_query =
       ir::CreatePlannerQuery(*statement);
   std::unique_ptr<ir::LogicalPlan> logical_plan =
-      ir::CreateLogicalPlan(*planner_query, PlannerOptionsFor(access_path));
+      ir::CreateLogicalPlan(*planner_query, PlannerOptionsFor(options));
   return QueryExecutor(access_path).Execute(*logical_plan);
 }
 
-QueryResult ExecuteQuery(Storage &storage, std::string_view cypher) {
+QueryResult ExecuteQuery(Storage &storage, std::string_view cypher,
+                         QueryOptions options) {
   std::unique_ptr<ast::Statement> statement =
       ast::ParseCypherAndRewrite(std::string(cypher));
   std::unique_ptr<ir::PlannerQuery> planner_query =
       ir::CreatePlannerQuery(*statement);
   std::unique_ptr<ir::LogicalPlan> logical_plan =
-      ir::CreateLogicalPlan(*planner_query, PlannerOptionsFor(storage));
+      ir::CreateLogicalPlan(*planner_query, PlannerOptionsFor(options));
   return QueryExecutor(storage).Execute(*logical_plan);
 }
 
-void ExecuteWriteQuery(Storage &storage, std::string_view cypher) {
+void ExecuteWriteQuery(Storage &storage, std::string_view cypher,
+                       QueryOptions options) {
   std::unique_ptr<ast::Statement> statement =
       ast::ParseCypherAndRewrite(std::string(cypher));
   std::unique_ptr<ir::PlannerQuery> planner_query =
       ir::CreatePlannerQuery(*statement);
   std::unique_ptr<ir::LogicalPlan> logical_plan =
-      ir::CreateLogicalPlan(*planner_query, PlannerOptionsFor(storage));
+      ir::CreateLogicalPlan(*planner_query, PlannerOptionsFor(options));
   QueryExecutor(storage).ExecuteWrite(*logical_plan);
 }
 

@@ -27,6 +27,11 @@ void SeedDemoGraph(rg::InMemoryGraph *graph) {
   graph->AddRelationshipIndex({"KNOWS"}, "since");
 }
 
+rg::QueryOptions QueryOptionsFor(const rg::InMemoryGraph &graph) {
+  return rg::QueryOptions{.planner_statistics = &graph,
+                          .planner_catalog = &graph};
+}
+
 std::vector<std::vector<std::string>> StringRows(
     const rg::QueryResult &result) {
   std::vector<std::vector<std::string>> rows;
@@ -917,37 +922,46 @@ TEST(QueryExecutorTest, LogicalPlanUsesInMemoryGraphStatistics) {
 TEST(QueryExecutorTest, MaintainsNodeIndexAcrossWrites) {
   rg::InMemoryGraph graph;
   graph.AddNodeIndex({"Person"}, "name");
+  const rg::QueryOptions options = QueryOptionsFor(graph);
 
   rg::ExecuteWriteQuery(
-      graph, "CREATE (:Person {name: 'Ada'}), (:Person {name: 'Grace'})");
+      graph, "CREATE (:Person {name: 'Ada'}), (:Person {name: 'Grace'})",
+      options);
 
   rg::QueryResult created = rg::ExecuteReadQuery(
-      graph, "MATCH (n:Person) WHERE n.name = 'Ada' RETURN count(n) AS c");
+      graph, "MATCH (n:Person) WHERE n.name = 'Ada' RETURN count(n) AS c",
+      options);
   EXPECT_EQ(StringRows(created),
             (std::vector<std::vector<std::string>>{{"1"}}));
 
   rg::ExecuteWriteQuery(graph,
                         "MATCH (n:Person) WHERE n.name = 'Ada' "
-                        "SET n.name = 'Lovelace'");
+                        "SET n.name = 'Lovelace'",
+                        options);
   rg::ExecuteWriteQuery(graph,
                         "MATCH (n:Person) WHERE n.name = 'Lovelace' "
-                        "SET n.name = 'Lovelace'");
+                        "SET n.name = 'Lovelace'",
+                        options);
 
   rg::QueryResult old_name = rg::ExecuteReadQuery(
-      graph, "MATCH (n:Person) WHERE n.name = 'Ada' RETURN count(n) AS c");
+      graph, "MATCH (n:Person) WHERE n.name = 'Ada' RETURN count(n) AS c",
+      options);
   EXPECT_EQ(StringRows(old_name),
             (std::vector<std::vector<std::string>>{{"0"}}));
 
   rg::QueryResult new_name = rg::ExecuteReadQuery(
-      graph, "MATCH (n:Person) WHERE n.name = 'Lovelace' RETURN count(n) AS c");
+      graph, "MATCH (n:Person) WHERE n.name = 'Lovelace' RETURN count(n) AS c",
+      options);
   EXPECT_EQ(StringRows(new_name),
             (std::vector<std::vector<std::string>>{{"1"}}));
 
   rg::ExecuteWriteQuery(graph,
                         "MATCH (n:Person) WHERE n.name = 'Lovelace' "
-                        "REMOVE n.name");
+                        "REMOVE n.name",
+                        options);
   rg::QueryResult removed = rg::ExecuteReadQuery(
-      graph, "MATCH (n:Person) WHERE n.name = 'Lovelace' RETURN count(n) AS c");
+      graph, "MATCH (n:Person) WHERE n.name = 'Lovelace' RETURN count(n) AS c",
+      options);
   EXPECT_EQ(StringRows(removed),
             (std::vector<std::vector<std::string>>{{"0"}}));
 }
@@ -955,43 +969,48 @@ TEST(QueryExecutorTest, MaintainsNodeIndexAcrossWrites) {
 TEST(QueryExecutorTest, MaintainsRelationshipIndexAcrossWrites) {
   rg::InMemoryGraph graph;
   graph.AddRelationshipIndex({"KNOWS"}, "since");
+  const rg::QueryOptions options = QueryOptionsFor(graph);
 
   rg::ExecuteWriteQuery(
       graph,
       "CREATE (:Person {name: 'Ada'})-[r:KNOWS {since: 2020}]->"
-      "(:Person {name: 'Grace'})");
+      "(:Person {name: 'Grace'})",
+      options);
 
   rg::QueryResult created = rg::ExecuteReadQuery(
-      graph,
-      "MATCH ()-[r:KNOWS]->() WHERE r.since = 2020 RETURN count(r) AS c");
+      graph, "MATCH ()-[r:KNOWS]->() WHERE r.since = 2020 RETURN count(r) AS c",
+      options);
   EXPECT_EQ(StringRows(created),
             (std::vector<std::vector<std::string>>{{"1"}}));
 
   rg::ExecuteWriteQuery(graph,
                         "MATCH ()-[r:KNOWS]->() WHERE r.since = 2020 "
-                        "SET r.since = 2021");
+                        "SET r.since = 2021",
+                        options);
   rg::ExecuteWriteQuery(graph,
                         "MATCH ()-[r:KNOWS]->() WHERE r.since = 2021 "
-                        "SET r.since = 2021");
+                        "SET r.since = 2021",
+                        options);
 
   rg::QueryResult old_since = rg::ExecuteReadQuery(
-      graph,
-      "MATCH ()-[r:KNOWS]->() WHERE r.since = 2020 RETURN count(r) AS c");
+      graph, "MATCH ()-[r:KNOWS]->() WHERE r.since = 2020 RETURN count(r) AS c",
+      options);
   EXPECT_EQ(StringRows(old_since),
             (std::vector<std::vector<std::string>>{{"0"}}));
 
   rg::QueryResult new_since = rg::ExecuteReadQuery(
-      graph,
-      "MATCH ()-[r:KNOWS]->() WHERE r.since = 2021 RETURN count(r) AS c");
+      graph, "MATCH ()-[r:KNOWS]->() WHERE r.since = 2021 RETURN count(r) AS c",
+      options);
   EXPECT_EQ(StringRows(new_since),
             (std::vector<std::vector<std::string>>{{"1"}}));
 
   rg::ExecuteWriteQuery(graph,
                         "MATCH ()-[r:KNOWS]->() WHERE r.since = 2021 "
-                        "REMOVE r.since");
+                        "REMOVE r.since",
+                        options);
   rg::QueryResult removed = rg::ExecuteReadQuery(
-      graph,
-      "MATCH ()-[r:KNOWS]->() WHERE r.since = 2021 RETURN count(r) AS c");
+      graph, "MATCH ()-[r:KNOWS]->() WHERE r.since = 2021 RETURN count(r) AS c",
+      options);
   EXPECT_EQ(StringRows(removed),
             (std::vector<std::vector<std::string>>{{"0"}}));
 }
@@ -999,25 +1018,29 @@ TEST(QueryExecutorTest, MaintainsRelationshipIndexAcrossWrites) {
 TEST(QueryExecutorTest, UsesMaintainedNodeRangeIndexCandidates) {
   rg::InMemoryGraph graph;
   graph.AddNodeIndex({"Person"}, "age");
+  const rg::QueryOptions options = QueryOptionsFor(graph);
 
   rg::ExecuteWriteQuery(graph,
                         "CREATE (:Person {name: 'Ada', age: 36}), "
-                        "(:Person {name: 'Grace', age: 85})");
+                        "(:Person {name: 'Grace', age: 85})",
+                        options);
 
   rg::QueryResult initial = rg::ExecuteReadQuery(
       graph,
       "MATCH (n:Person) WHERE n.age >= 40 RETURN n.name AS name "
-      "ORDER BY name");
+      "ORDER BY name",
+      options);
   EXPECT_EQ(StringRows(initial),
             (std::vector<std::vector<std::string>>{{"\"Grace\""}}));
 
-  rg::ExecuteWriteQuery(graph,
-                        "MATCH (n:Person) WHERE n.age = 36 SET n.age = 41");
+  rg::ExecuteWriteQuery(
+      graph, "MATCH (n:Person) WHERE n.age = 36 SET n.age = 41", options);
 
   rg::QueryResult updated = rg::ExecuteReadQuery(
       graph,
       "MATCH (n:Person) WHERE n.age >= 40 RETURN n.name AS name "
-      "ORDER BY name");
+      "ORDER BY name",
+      options);
   EXPECT_EQ(StringRows(updated), (std::vector<std::vector<std::string>>{
                                      {"\"Ada\""}, {"\"Grace\""}}));
 }
@@ -1025,29 +1048,34 @@ TEST(QueryExecutorTest, UsesMaintainedNodeRangeIndexCandidates) {
 TEST(QueryExecutorTest, UsesMaintainedRelationshipRangeIndexCandidates) {
   rg::InMemoryGraph graph;
   graph.AddRelationshipIndex({"KNOWS"}, "since");
+  const rg::QueryOptions options = QueryOptionsFor(graph);
 
   rg::ExecuteWriteQuery(
       graph,
       "CREATE (:Person {name: 'Ada'})-[:KNOWS {since: 2020}]->"
       "(:Person {name: 'Grace'}), "
       "(:Person {name: 'Grace'})-[:KNOWS {since: 2026}]->"
-      "(:Person {name: 'Katherine'})");
+      "(:Person {name: 'Katherine'})",
+      options);
 
   rg::QueryResult initial =
       rg::ExecuteReadQuery(graph,
                            "MATCH ()-[r:KNOWS]->() WHERE r.since >= 2021 "
-                           "RETURN r.since AS since ORDER BY since");
+                           "RETURN r.since AS since ORDER BY since",
+                           options);
   EXPECT_EQ(StringRows(initial),
             (std::vector<std::vector<std::string>>{{"2026"}}));
 
   rg::ExecuteWriteQuery(graph,
                         "MATCH ()-[r:KNOWS]->() WHERE r.since = 2020 "
-                        "SET r.since = 2027");
+                        "SET r.since = 2027",
+                        options);
 
   rg::QueryResult updated =
       rg::ExecuteReadQuery(graph,
                            "MATCH ()-[r:KNOWS]->() WHERE r.since >= 2021 "
-                           "RETURN r.since AS since ORDER BY since");
+                           "RETURN r.since AS since ORDER BY since",
+                           options);
   EXPECT_EQ(StringRows(updated),
             (std::vector<std::vector<std::string>>{{"2026"}, {"2027"}}));
 }
