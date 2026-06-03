@@ -4,6 +4,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <utility>
+#include <vector>
 
 #include "ast/expression_to_string.h"
 #include "common/exception.h"
@@ -883,6 +884,17 @@ FilterPlan::FilterPlan(LogicalPlanPtr source, const ast::Expression *predicate)
   SetOutputColumns(Child(0).OutputColumns());
 }
 
+FilterPlan::FilterPlan(
+    LogicalPlanPtr source, const ast::Expression *predicate,
+    std::vector<LogicalPrecomputedExpression> precomputed_expressions)
+    : LogicalPlan(LogicalPlanNodeType::kFilter,
+                  UnaryChildren(std::move(source), "Filter")),
+      predicate_(predicate),
+      precomputed_expressions_(std::move(precomputed_expressions)) {
+  SetSolvedSymbols(Child(0).SolvedSymbols());
+  SetOutputColumns(Child(0).OutputColumns());
+}
+
 std::string FilterPlan::Details() const {
   if (predicate_ == nullptr) {
     return "null";
@@ -971,6 +983,17 @@ SkipPlan::SkipPlan(LogicalPlanPtr source, const ast::Expression *skip)
   SetOutputColumns(Child(0).OutputColumns());
 }
 
+SkipPlan::SkipPlan(
+    LogicalPlanPtr source, const ast::Expression *skip,
+    std::vector<LogicalPrecomputedExpression> precomputed_expressions)
+    : LogicalPlan(LogicalPlanNodeType::kSkip,
+                  UnaryChildren(std::move(source), "Skip")),
+      skip_(skip),
+      precomputed_expressions_(std::move(precomputed_expressions)) {
+  SetSolvedSymbols(Child(0).SolvedSymbols());
+  SetOutputColumns(Child(0).OutputColumns());
+}
+
 std::string SkipPlan::Details() const {
   if (skip_ == nullptr) {
     return "null";
@@ -982,6 +1005,17 @@ LimitPlan::LimitPlan(LogicalPlanPtr source, const ast::Expression *limit)
     : LogicalPlan(LogicalPlanNodeType::kLimit,
                   UnaryChildren(std::move(source), "Limit")),
       limit_(limit) {
+  SetSolvedSymbols(Child(0).SolvedSymbols());
+  SetOutputColumns(Child(0).OutputColumns());
+}
+
+LimitPlan::LimitPlan(
+    LogicalPlanPtr source, const ast::Expression *limit,
+    std::vector<LogicalPrecomputedExpression> precomputed_expressions)
+    : LogicalPlan(LogicalPlanNodeType::kLimit,
+                  UnaryChildren(std::move(source), "Limit")),
+      limit_(limit),
+      precomputed_expressions_(std::move(precomputed_expressions)) {
   SetSolvedSymbols(Child(0).SolvedSymbols());
   SetOutputColumns(Child(0).OutputColumns());
 }

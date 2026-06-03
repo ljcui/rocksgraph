@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "ast/ast_builder.h"
+#include "ast/ast_equal.h"
 #include "ast/ast_node.h"
 #include "ast/expression_to_string.h"
 #include "common/exception.h"
@@ -172,22 +173,57 @@ bool MergeRows(const QueryRow &left, const QueryRow &right, QueryRow *out) {
   return true;
 }
 
-Value EvaluateExpression(const ast::Expression &expression,
-                         const QueryRow &row);
+const Value *LookupPrecomputedExpression(
+    const ast::Expression &expression, const QueryRow &row,
+    const std::vector<ir::LogicalPrecomputedExpression> &precomputed) {
+  for (const auto &entry : precomputed) {
+    if (entry.expression == nullptr ||
+        !ast::ASTEqual::Equal(&expression, entry.expression)) {
+      continue;
+    }
+    const auto found = row.find(entry.variable);
+    CHECK(found != row.end(), common::InvalidArgumentError,
+          "precomputed expression variable is not bound: " + entry.variable);
+    return &found->second;
+  }
+  return nullptr;
+}
+
+Value EvaluateExpression(
+    const ast::Expression &expression, const QueryRow &row,
+    const std::vector<ir::LogicalPrecomputedExpression> &precomputed = {});
+
+Value EvaluateLogicalProjectionItem(const ir::LogicalProjectionItem &item,
+                                    const QueryRow &row) {
+  CHECK(item.expression != nullptr, common::InvalidArgumentError,
+        "projection expression is null");
+  return EvaluateExpression(*item.expression, row,
+                            item.precomputed_expressions);
+}
+
+Value EvaluateLogicalSortItem(const ir::LogicalSortItem &item,
+                              const QueryRow &row) {
+  CHECK(item.expression != nullptr, common::InvalidArgumentError,
+        "sort expression is null");
+  return EvaluateExpression(*item.expression, row,
+                            item.precomputed_expressions);
+}
+
 bool RuntimeNodeHasLabels(const Node &node,
                           const std::vector<std::string> &labels);
 bool RuntimeRelationshipHasAnyType(const Relationship &relationship,
                                    const std::vector<std::string> &types);
 
-Value EvaluateFunction(const ast::FunctionInvocation &function,
-                       const QueryRow &row) {
+Value EvaluateFunction(
+    const ast::FunctionInvocation &function, const QueryRow &row,
+    const std::vector<ir::LogicalPrecomputedExpression> &precomputed) {
   const std::string name = LowerAscii(function.function_name);
   std::vector<Value> arguments;
   arguments.reserve(function.arguments.size());
   for (const auto &argument : function.arguments) {
     CHECK(argument != nullptr, common::InvalidArgumentError,
           "function argument is null");
-    arguments.push_back(EvaluateExpression(*argument, row));
+    arguments.push_back(EvaluateExpression(*argument, row, precomputed));
   }
 
   if (name == "id") {
@@ -245,15 +281,16 @@ Value EvaluateFunction(const ast::FunctionInvocation &function,
         "unsupported function in executor: " + function.function_name);
 }
 
-Value EvaluateListIndex(const ast::ListIndexExpression &expression,
-                        const QueryRow &row) {
+Value EvaluateListIndex(
+    const ast::ListIndexExpression &expression, const QueryRow &row,
+    const std::vector<ir::LogicalPrecomputedExpression> &precomputed) {
   CHECK(expression.list != nullptr, common::InvalidArgumentError,
         "list index base expression is null");
   CHECK(expression.index != nullptr, common::InvalidArgumentError,
         "list index expression is null");
 
-  Value list = EvaluateExpression(*expression.list, row);
-  Value index_value = EvaluateExpression(*expression.index, row);
+  Value list = EvaluateExpression(*expression.list, row, precomputed);
+  Value index_value = EvaluateExpression(*expression.index, row, precomputed);
   std::optional<std::int64_t> index = IntegerValue(index_value);
   if (!list.IsList() || !index.has_value()) {
     return Value::Null();
@@ -267,12 +304,13 @@ Value EvaluateListIndex(const ast::ListIndexExpression &expression,
   return items[static_cast<std::size_t>(normalized)];
 }
 
-Value EvaluateListSlice(const ast::ListSliceExpression &expression,
-                        const QueryRow &row) {
+Value EvaluateListSlice(
+    const ast::ListSliceExpression &expression, const QueryRow &row,
+    const std::vector<ir::LogicalPrecomputedExpression> &precomputed) {
   CHECK(expression.list != nullptr, common::InvalidArgumentError,
         "list slice base expression is null");
 
-  Value list = EvaluateExpression(*expression.list, row);
+  Value list = EvaluateExpression(*expression.list, row, precomputed);
   if (!list.IsList()) {
     return Value::Null();
   }
@@ -281,7 +319,8 @@ Value EvaluateListSlice(const ast::ListSliceExpression &expression,
   std::int64_t start = 0;
   std::int64_t end = static_cast<std::int64_t>(items.size());
   if (expression.start_index != nullptr) {
-    Value start_value = EvaluateExpression(*expression.start_index, row);
+    Value start_value =
+        EvaluateExpression(*expression.start_index, row, precomputed);
     std::optional<std::int64_t> maybe_start = IntegerValue(start_value);
     if (!maybe_start.has_value()) {
       return Value::Null();
@@ -289,7 +328,8 @@ Value EvaluateListSlice(const ast::ListSliceExpression &expression,
     start = ClampListSliceIndex(*maybe_start, items.size());
   }
   if (expression.end_index != nullptr) {
-    Value end_value = EvaluateExpression(*expression.end_index, row);
+    Value end_value =
+        EvaluateExpression(*expression.end_index, row, precomputed);
     std::optional<std::int64_t> maybe_end = IntegerValue(end_value);
     if (!maybe_end.has_value()) {
       return Value::Null();
@@ -308,11 +348,12 @@ Value EvaluateListSlice(const ast::ListSliceExpression &expression,
   return Value(std::move(sliced));
 }
 
-Value EvaluateCaseExpression(const ast::CaseExpression &expression,
-                             const QueryRow &row) {
+Value EvaluateCaseExpression(
+    const ast::CaseExpression &expression, const QueryRow &row,
+    const std::vector<ir::LogicalPrecomputedExpression> &precomputed) {
   std::optional<Value> test_value;
   if (expression.test != nullptr) {
-    test_value = EvaluateExpression(*expression.test, row);
+    test_value = EvaluateExpression(*expression.test, row, precomputed);
   }
 
   for (const auto &[when_expression, then_expression] :
@@ -324,29 +365,32 @@ Value EvaluateCaseExpression(const ast::CaseExpression &expression,
 
     bool matched = false;
     if (test_value.has_value()) {
-      matched = *test_value == EvaluateExpression(*when_expression, row);
+      matched =
+          *test_value == EvaluateExpression(*when_expression, row, precomputed);
     } else {
-      matched = IsTruthy(EvaluateExpression(*when_expression, row));
+      matched =
+          IsTruthy(EvaluateExpression(*when_expression, row, precomputed));
     }
     if (matched) {
-      return EvaluateExpression(*then_expression, row);
+      return EvaluateExpression(*then_expression, row, precomputed);
     }
   }
 
   if (expression.else_expr != nullptr) {
-    return EvaluateExpression(*expression.else_expr, row);
+    return EvaluateExpression(*expression.else_expr, row, precomputed);
   }
   return Value::Null();
 }
 
-Value EvaluateListComprehension(const ast::ListComprehension &expression,
-                                const QueryRow &row) {
+Value EvaluateListComprehension(
+    const ast::ListComprehension &expression, const QueryRow &row,
+    const std::vector<ir::LogicalPrecomputedExpression> &precomputed) {
   CHECK(!expression.variable.empty(), common::InvalidArgumentError,
         "list comprehension variable is empty");
   CHECK(expression.list_expr != nullptr, common::InvalidArgumentError,
         "list comprehension list expression is null");
 
-  Value list = EvaluateExpression(*expression.list_expr, row);
+  Value list = EvaluateExpression(*expression.list_expr, row, precomputed);
   if (!list.IsList()) {
     return Value::Null();
   }
@@ -356,11 +400,13 @@ Value EvaluateListComprehension(const ast::ListComprehension &expression,
     QueryRow scoped = row;
     scoped[expression.variable] = item;
     if (expression.where_expr != nullptr &&
-        !IsTruthy(EvaluateExpression(*expression.where_expr, scoped))) {
+        !IsTruthy(
+            EvaluateExpression(*expression.where_expr, scoped, precomputed))) {
       continue;
     }
     if (expression.eval_expr != nullptr) {
-      output.push_back(EvaluateExpression(*expression.eval_expr, scoped));
+      output.push_back(
+          EvaluateExpression(*expression.eval_expr, scoped, precomputed));
     } else {
       output.push_back(item);
     }
@@ -368,8 +414,9 @@ Value EvaluateListComprehension(const ast::ListComprehension &expression,
   return Value(std::move(output));
 }
 
-Value EvaluateQuantifier(const ast::Quantifier &quantifier, QuantifierMode mode,
-                         const QueryRow &row) {
+Value EvaluateQuantifier(
+    const ast::Quantifier &quantifier, QuantifierMode mode, const QueryRow &row,
+    const std::vector<ir::LogicalPrecomputedExpression> &precomputed) {
   CHECK(!quantifier.variable.empty(), common::InvalidArgumentError,
         "quantifier variable is empty");
   CHECK(quantifier.list_expr != nullptr, common::InvalidArgumentError,
@@ -377,7 +424,7 @@ Value EvaluateQuantifier(const ast::Quantifier &quantifier, QuantifierMode mode,
   CHECK(quantifier.predicate != nullptr, common::InvalidArgumentError,
         "quantifier predicate is null");
 
-  Value list = EvaluateExpression(*quantifier.list_expr, row);
+  Value list = EvaluateExpression(*quantifier.list_expr, row, precomputed);
   if (!list.IsList()) {
     return Value(false);
   }
@@ -386,8 +433,8 @@ Value EvaluateQuantifier(const ast::Quantifier &quantifier, QuantifierMode mode,
   for (const auto &item : list.AsList()) {
     QueryRow scoped = row;
     scoped[quantifier.variable] = item;
-    const bool matched =
-        IsTruthy(EvaluateExpression(*quantifier.predicate, scoped));
+    const bool matched = IsTruthy(
+        EvaluateExpression(*quantifier.predicate, scoped, precomputed));
     if (mode == QuantifierMode::kAll && !matched) {
       return Value(false);
     }
@@ -418,8 +465,15 @@ Value EvaluateQuantifier(const ast::Quantifier &quantifier, QuantifierMode mode,
   THROW(common::InternalError, "unknown quantifier mode");
 }
 
-Value EvaluateExpression(const ast::Expression &expression,
-                         const QueryRow &row) {
+Value EvaluateExpression(
+    const ast::Expression &expression, const QueryRow &row,
+    const std::vector<ir::LogicalPrecomputedExpression> &precomputed) {
+  if (const Value *value =
+          LookupPrecomputedExpression(expression, row, precomputed);
+      value != nullptr) {
+    return *value;
+  }
+
   switch (expression.node_type) {
     case ast::ASTNodeType::kBooleanLiteral:
       return Value(ast::CastAst<ast::BooleanLiteral>(expression).value);
@@ -439,16 +493,16 @@ Value EvaluateExpression(const ast::Expression &expression,
       const auto &property = ast::CastAst<ast::PropertyExpression>(expression);
       CHECK(property.object != nullptr, common::InvalidArgumentError,
             "property object is null");
-      Value object = EvaluateExpression(*property.object, row);
+      Value object = EvaluateExpression(*property.object, row, precomputed);
       const Value *value = FindProperty(object, property.property_key);
       return value != nullptr ? *value : Value::Null();
     }
     case ast::ASTNodeType::kListIndexExpression:
       return EvaluateListIndex(
-          ast::CastAst<ast::ListIndexExpression>(expression), row);
+          ast::CastAst<ast::ListIndexExpression>(expression), row, precomputed);
     case ast::ASTNodeType::kListSliceExpression:
       return EvaluateListSlice(
-          ast::CastAst<ast::ListSliceExpression>(expression), row);
+          ast::CastAst<ast::ListSliceExpression>(expression), row, precomputed);
     case ast::ASTNodeType::kListLiteral: {
       const auto &list = ast::CastAst<ast::ListLiteral>(expression);
       Value::List values;
@@ -456,7 +510,7 @@ Value EvaluateExpression(const ast::Expression &expression,
       for (const auto &element : list.elements) {
         CHECK(element != nullptr, common::InvalidArgumentError,
               "list element is null");
-        values.push_back(EvaluateExpression(*element, row));
+        values.push_back(EvaluateExpression(*element, row, precomputed));
       }
       return Value(std::move(values));
     }
@@ -466,7 +520,7 @@ Value EvaluateExpression(const ast::Expression &expression,
       for (const auto &[key, value] : map.entries) {
         CHECK(value != nullptr, common::InvalidArgumentError,
               "map value is null");
-        values[key] = EvaluateExpression(*value, row);
+        values[key] = EvaluateExpression(*value, row, precomputed);
       }
       return Value(std::move(values));
     }
@@ -474,40 +528,44 @@ Value EvaluateExpression(const ast::Expression &expression,
       const auto &binary = ast::CastAst<ast::AndExpression>(expression);
       CHECK(binary.left != nullptr && binary.right != nullptr,
             common::InvalidArgumentError, "AND expression is incomplete");
-      return Value(IsTruthy(EvaluateExpression(*binary.left, row)) &&
-                   IsTruthy(EvaluateExpression(*binary.right, row)));
+      return Value(
+          IsTruthy(EvaluateExpression(*binary.left, row, precomputed)) &&
+          IsTruthy(EvaluateExpression(*binary.right, row, precomputed)));
     }
     case ast::ASTNodeType::kOrExpression: {
       const auto &binary = ast::CastAst<ast::OrExpression>(expression);
       CHECK(binary.left != nullptr && binary.right != nullptr,
             common::InvalidArgumentError, "OR expression is incomplete");
-      return Value(IsTruthy(EvaluateExpression(*binary.left, row)) ||
-                   IsTruthy(EvaluateExpression(*binary.right, row)));
+      return Value(
+          IsTruthy(EvaluateExpression(*binary.left, row, precomputed)) ||
+          IsTruthy(EvaluateExpression(*binary.right, row, precomputed)));
     }
     case ast::ASTNodeType::kXorExpression: {
       const auto &binary = ast::CastAst<ast::XorExpression>(expression);
       CHECK(binary.left != nullptr && binary.right != nullptr,
             common::InvalidArgumentError, "XOR expression is incomplete");
-      return Value(IsTruthy(EvaluateExpression(*binary.left, row)) !=
-                   IsTruthy(EvaluateExpression(*binary.right, row)));
+      return Value(
+          IsTruthy(EvaluateExpression(*binary.left, row, precomputed)) !=
+          IsTruthy(EvaluateExpression(*binary.right, row, precomputed)));
     }
     case ast::ASTNodeType::kNotExpression: {
       const auto &unary = ast::CastAst<ast::NotExpression>(expression);
       CHECK(unary.operand != nullptr, common::InvalidArgumentError,
             "NOT expression operand is null");
-      return Value(!IsTruthy(EvaluateExpression(*unary.operand, row)));
+      return Value(
+          !IsTruthy(EvaluateExpression(*unary.operand, row, precomputed)));
     }
     case ast::ASTNodeType::kUnaryPlusExpression: {
       const auto &unary = ast::CastAst<ast::UnaryPlusExpression>(expression);
       CHECK(unary.operand != nullptr, common::InvalidArgumentError,
             "unary plus operand is null");
-      return EvaluateExpression(*unary.operand, row);
+      return EvaluateExpression(*unary.operand, row, precomputed);
     }
     case ast::ASTNodeType::kUnaryMinusExpression: {
       const auto &unary = ast::CastAst<ast::UnaryMinusExpression>(expression);
       CHECK(unary.operand != nullptr, common::InvalidArgumentError,
             "unary minus operand is null");
-      Value value = EvaluateExpression(*unary.operand, row);
+      Value value = EvaluateExpression(*unary.operand, row, precomputed);
       CHECK(IsNumeric(value), common::InvalidArgumentError,
             "unary minus requires numeric value");
       return value.IsInteger() ? Value(-value.AsInteger())
@@ -523,8 +581,8 @@ Value EvaluateExpression(const ast::Expression &expression,
       CHECK(binary.left != nullptr && binary.right != nullptr,
             common::InvalidArgumentError,
             "arithmetic expression is incomplete");
-      Value left = EvaluateExpression(*binary.left, row);
-      Value right = EvaluateExpression(*binary.right, row);
+      Value left = EvaluateExpression(*binary.left, row, precomputed);
+      Value right = EvaluateExpression(*binary.right, row, precomputed);
       if (expression.node_type == ast::ASTNodeType::kAddExpression &&
           left.IsString() && right.IsString()) {
         return Value(left.AsString() + right.AsString());
@@ -563,8 +621,8 @@ Value EvaluateExpression(const ast::Expression &expression,
       CHECK(comparison.left != nullptr && comparison.right != nullptr,
             common::InvalidArgumentError,
             "comparison expression is incomplete");
-      Value left = EvaluateExpression(*comparison.left, row);
-      Value right = EvaluateExpression(*comparison.right, row);
+      Value left = EvaluateExpression(*comparison.left, row, precomputed);
+      Value right = EvaluateExpression(*comparison.right, row, precomputed);
       if (comparison.op == "=") {
         return Value(left == right);
       }
@@ -592,8 +650,8 @@ Value EvaluateExpression(const ast::Expression &expression,
       CHECK(predicate.left != nullptr && predicate.right != nullptr,
             common::InvalidArgumentError,
             "string predicate expression is incomplete");
-      Value left = EvaluateExpression(*predicate.left, row);
-      Value right = EvaluateExpression(*predicate.right, row);
+      Value left = EvaluateExpression(*predicate.left, row, precomputed);
+      Value right = EvaluateExpression(*predicate.right, row, precomputed);
       if (!left.IsString() || !right.IsString()) {
         return Value(false);
       }
@@ -619,8 +677,8 @@ Value EvaluateExpression(const ast::Expression &expression,
       CHECK(predicate.element != nullptr && predicate.list != nullptr,
             common::InvalidArgumentError,
             "list predicate expression is incomplete");
-      Value element = EvaluateExpression(*predicate.element, row);
-      Value list = EvaluateExpression(*predicate.list, row);
+      Value element = EvaluateExpression(*predicate.element, row, precomputed);
+      Value list = EvaluateExpression(*predicate.list, row, precomputed);
       if (!list.IsList()) {
         return Value(false);
       }
@@ -632,7 +690,7 @@ Value EvaluateExpression(const ast::Expression &expression,
           ast::CastAst<ast::LabelPredicateExpression>(expression);
       CHECK(predicate.expr != nullptr, common::InvalidArgumentError,
             "label predicate expression is incomplete");
-      Value value = EvaluateExpression(*predicate.expr, row);
+      Value value = EvaluateExpression(*predicate.expr, row, precomputed);
       if (value.IsNode()) {
         return Value(RuntimeNodeHasLabels(value.AsNode(), predicate.labels));
       }
@@ -647,36 +705,37 @@ Value EvaluateExpression(const ast::Expression &expression,
           ast::CastAst<ast::NullPredicateExpression>(expression);
       CHECK(predicate.operand != nullptr, common::InvalidArgumentError,
             "null predicate operand is null");
-      return Value(EvaluateExpression(*predicate.operand, row).IsNull() ==
-                   predicate.is_null);
+      return Value(
+          EvaluateExpression(*predicate.operand, row, precomputed).IsNull() ==
+          predicate.is_null);
     }
     case ast::ASTNodeType::kFunctionInvocation:
       return EvaluateFunction(ast::CastAst<ast::FunctionInvocation>(expression),
-                              row);
+                              row, precomputed);
     case ast::ASTNodeType::kCaseExpression:
       return EvaluateCaseExpression(
-          ast::CastAst<ast::CaseExpression>(expression), row);
+          ast::CastAst<ast::CaseExpression>(expression), row, precomputed);
     case ast::ASTNodeType::kListComprehension:
       return EvaluateListComprehension(
-          ast::CastAst<ast::ListComprehension>(expression), row);
+          ast::CastAst<ast::ListComprehension>(expression), row, precomputed);
     case ast::ASTNodeType::kAllQuantifier:
       return EvaluateQuantifier(ast::CastAst<ast::AllQuantifier>(expression),
-                                QuantifierMode::kAll, row);
+                                QuantifierMode::kAll, row, precomputed);
     case ast::ASTNodeType::kAnyQuantifier:
       return EvaluateQuantifier(ast::CastAst<ast::AnyQuantifier>(expression),
-                                QuantifierMode::kAny, row);
+                                QuantifierMode::kAny, row, precomputed);
     case ast::ASTNodeType::kNoneQuantifier:
       return EvaluateQuantifier(ast::CastAst<ast::NoneQuantifier>(expression),
-                                QuantifierMode::kNone, row);
+                                QuantifierMode::kNone, row, precomputed);
     case ast::ASTNodeType::kSingleQuantifier:
       return EvaluateQuantifier(ast::CastAst<ast::SingleQuantifier>(expression),
-                                QuantifierMode::kSingle, row);
+                                QuantifierMode::kSingle, row, precomputed);
     case ast::ASTNodeType::kParenthesizedExpression: {
       const auto &parenthesized =
           ast::CastAst<ast::ParenthesizedExpression>(expression);
       CHECK(parenthesized.expr != nullptr, common::InvalidArgumentError,
             "parenthesized expression is empty");
-      return EvaluateExpression(*parenthesized.expr, row);
+      return EvaluateExpression(*parenthesized.expr, row, precomputed);
     }
     default:
       THROW(common::InvalidArgumentError,
@@ -1512,7 +1571,8 @@ class QueryExecutorImpl {
     Rows rows = ExecutePlan(plan.Child(0), input);
     Rows out;
     for (auto &row : rows) {
-      if (IsTruthy(EvaluateExpression(*plan.Predicate(), row))) {
+      if (IsTruthy(EvaluateExpression(*plan.Predicate(), row,
+                                      plan.PrecomputedExpressions()))) {
         out.push_back(std::move(row));
       }
     }
@@ -1526,9 +1586,14 @@ class QueryExecutorImpl {
     for (const auto &row : rows) {
       QueryRow projected;
       for (const auto &item : plan.Items()) {
-        CHECK(item.expression != nullptr, common::InvalidArgumentError,
-              "projection expression is null");
-        projected[item.alias] = EvaluateExpression(*item.expression, row);
+        if (item.passthrough) {
+          const auto found = row.find(item.alias);
+          CHECK(found != row.end(), common::InvalidArgumentError,
+                "passthrough projection variable is not bound: " + item.alias);
+          projected[item.alias] = found->second;
+        } else {
+          projected[item.alias] = EvaluateLogicalProjectionItem(item, row);
+        }
       }
       out.push_back(std::move(projected));
     }
@@ -1543,9 +1608,7 @@ class QueryExecutorImpl {
       QueryRow projected;
       std::string key;
       for (const auto &item : plan.GroupingItems()) {
-        CHECK(item.expression != nullptr, common::InvalidArgumentError,
-              "distinct expression is null");
-        Value value = EvaluateExpression(*item.expression, row);
+        Value value = EvaluateLogicalProjectionItem(item, row);
         key += item.alias;
         key += '=';
         key += ValueKey(value);
@@ -1575,9 +1638,7 @@ class QueryExecutorImpl {
       QueryRow group_row;
       std::string key;
       for (const auto &item : plan.GroupingItems()) {
-        CHECK(item.expression != nullptr, common::InvalidArgumentError,
-              "grouping expression is null");
-        Value value = EvaluateExpression(*item.expression, row);
+        Value value = EvaluateLogicalProjectionItem(item, row);
         key += item.alias;
         key += '=';
         key += ValueKey(value);
@@ -1596,16 +1657,17 @@ class QueryExecutorImpl {
       for (const auto &item : plan.AggregationItems()) {
         CHECK(item.expression != nullptr, common::InvalidArgumentError,
               "aggregation expression is null");
-        row[item.alias] =
-            EvaluateAggregationExpression(*item.expression, state.rows);
+        row[item.alias] = EvaluateAggregationExpression(
+            *item.expression, state.rows, item.precomputed_expressions);
       }
       out.push_back(std::move(row));
     }
     return out;
   }
 
-  Value EvaluateAggregationExpression(const ast::Expression &expression,
-                                      const Rows &rows) const {
+  Value EvaluateAggregationExpression(
+      const ast::Expression &expression, const Rows &rows,
+      const std::vector<ir::LogicalPrecomputedExpression> &precomputed) const {
     if (expression.Is(ast::ASTNodeType::kCountStarExpression)) {
       return Value(static_cast<std::int64_t>(rows.size()));
     }
@@ -1618,22 +1680,22 @@ class QueryExecutorImpl {
     const auto &function = ast::CastAst<ast::FunctionInvocation>(expression);
     const std::string name = LowerAscii(function.function_name);
     if (name == "count") {
-      return EvaluateCountAggregation(function, rows);
+      return EvaluateCountAggregation(function, rows, precomputed);
     }
     if (name == "collect") {
-      return EvaluateCollectAggregation(function, rows);
+      return EvaluateCollectAggregation(function, rows, precomputed);
     }
     if (name == "sum") {
-      return EvaluateSumAggregation(function, rows);
+      return EvaluateSumAggregation(function, rows, precomputed);
     }
     if (name == "avg") {
-      return EvaluateAvgAggregation(function, rows);
+      return EvaluateAvgAggregation(function, rows, precomputed);
     }
     if (name == "min") {
-      return EvaluateMinMaxAggregation(function, rows, true);
+      return EvaluateMinMaxAggregation(function, rows, precomputed, true);
     }
     if (name == "max") {
-      return EvaluateMinMaxAggregation(function, rows, false);
+      return EvaluateMinMaxAggregation(function, rows, precomputed, false);
     }
 
     THROW(common::InvalidArgumentError,
@@ -1642,7 +1704,8 @@ class QueryExecutorImpl {
   }
 
   std::vector<Value> EvaluateAggregationValues(
-      const ast::FunctionInvocation &function, const Rows &rows) const {
+      const ast::FunctionInvocation &function, const Rows &rows,
+      const std::vector<ir::LogicalPrecomputedExpression> &precomputed) const {
     CHECK(function.arguments.size() == 1, common::InvalidArgumentError,
           function.function_name + "() expects one argument");
     CHECK(function.arguments[0] != nullptr, common::InvalidArgumentError,
@@ -1652,7 +1715,8 @@ class QueryExecutorImpl {
     values.reserve(rows.size());
     std::set<std::string> seen;
     for (const auto &row : rows) {
-      Value value = EvaluateExpression(*function.arguments[0], row);
+      Value value =
+          EvaluateExpression(*function.arguments[0], row, precomputed);
       if (value.IsNull()) {
         continue;
       }
@@ -1664,20 +1728,25 @@ class QueryExecutorImpl {
     return values;
   }
 
-  Value EvaluateCountAggregation(const ast::FunctionInvocation &function,
-                                 const Rows &rows) const {
+  Value EvaluateCountAggregation(
+      const ast::FunctionInvocation &function, const Rows &rows,
+      const std::vector<ir::LogicalPrecomputedExpression> &precomputed) const {
     return Value(static_cast<std::int64_t>(
-        EvaluateAggregationValues(function, rows).size()));
+        EvaluateAggregationValues(function, rows, precomputed).size()));
   }
 
-  Value EvaluateCollectAggregation(const ast::FunctionInvocation &function,
-                                   const Rows &rows) const {
-    return Value(Value::List(EvaluateAggregationValues(function, rows)));
+  Value EvaluateCollectAggregation(
+      const ast::FunctionInvocation &function, const Rows &rows,
+      const std::vector<ir::LogicalPrecomputedExpression> &precomputed) const {
+    return Value(
+        Value::List(EvaluateAggregationValues(function, rows, precomputed)));
   }
 
-  Value EvaluateSumAggregation(const ast::FunctionInvocation &function,
-                               const Rows &rows) const {
-    std::vector<Value> values = EvaluateAggregationValues(function, rows);
+  Value EvaluateSumAggregation(
+      const ast::FunctionInvocation &function, const Rows &rows,
+      const std::vector<ir::LogicalPrecomputedExpression> &precomputed) const {
+    std::vector<Value> values =
+        EvaluateAggregationValues(function, rows, precomputed);
     bool integral = true;
     std::int64_t integer_sum = 0;
     double double_sum = 0.0;
@@ -1695,9 +1764,11 @@ class QueryExecutorImpl {
     return integral ? Value(integer_sum) : Value(double_sum);
   }
 
-  Value EvaluateAvgAggregation(const ast::FunctionInvocation &function,
-                               const Rows &rows) const {
-    std::vector<Value> values = EvaluateAggregationValues(function, rows);
+  Value EvaluateAvgAggregation(
+      const ast::FunctionInvocation &function, const Rows &rows,
+      const std::vector<ir::LogicalPrecomputedExpression> &precomputed) const {
+    std::vector<Value> values =
+        EvaluateAggregationValues(function, rows, precomputed);
     if (values.empty()) {
       return Value::Null();
     }
@@ -1710,9 +1781,12 @@ class QueryExecutorImpl {
     return Value(sum / static_cast<double>(values.size()));
   }
 
-  Value EvaluateMinMaxAggregation(const ast::FunctionInvocation &function,
-                                  const Rows &rows, bool min) const {
-    std::vector<Value> values = EvaluateAggregationValues(function, rows);
+  Value EvaluateMinMaxAggregation(
+      const ast::FunctionInvocation &function, const Rows &rows,
+      const std::vector<ir::LogicalPrecomputedExpression> &precomputed,
+      bool min) const {
+    std::vector<Value> values =
+        EvaluateAggregationValues(function, rows, precomputed);
     if (values.empty()) {
       return Value::Null();
     }
@@ -1729,29 +1803,34 @@ class QueryExecutorImpl {
 
   Rows ExecuteSort(const ir::SortPlan &plan, const Rows &input) {
     Rows rows = ExecutePlan(plan.Child(0), input);
-    std::stable_sort(
-        rows.begin(), rows.end(),
-        [&plan](const QueryRow &left, const QueryRow &right) {
-          for (const auto &item : plan.Items()) {
-            Value lhs = EvaluateExpression(*item.expression, left);
-            Value rhs = EvaluateExpression(*item.expression, right);
-            if (lhs == rhs) {
-              continue;
-            }
-            const bool less = ValueLess(lhs, rhs);
-            return item.direction == ir::LogicalOrderDirection::kAscending
-                       ? less
-                       : !less;
-          }
-          return false;
-        });
+    std::stable_sort(rows.begin(), rows.end(),
+                     [&plan](const QueryRow &left, const QueryRow &right) {
+                       for (const auto &item : plan.Items()) {
+                         Value lhs = EvaluateLogicalSortItem(item, left);
+                         Value rhs = EvaluateLogicalSortItem(item, right);
+                         if (lhs == rhs) {
+                           continue;
+                         }
+                         const bool less = ValueLess(lhs, rhs);
+                         return item.direction ==
+                                        ir::LogicalOrderDirection::kAscending
+                                    ? less
+                                    : !less;
+                       }
+                       return false;
+                     });
     return rows;
   }
 
   Rows ExecuteSkip(const ir::SkipPlan &plan, const Rows &input) {
     Rows rows = ExecutePlan(plan.Child(0), input);
+    if (rows.empty()) {
+      return rows;
+    }
     const std::size_t skip = static_cast<std::size_t>(std::max<double>(
-        0.0, EvaluateExpression(*plan.Skip(), QueryRow{}).AsInteger()));
+        0.0,
+        EvaluateExpression(*plan.Skip(), rows[0], plan.PrecomputedExpressions())
+            .AsInteger()));
     if (skip >= rows.size()) {
       return {};
     }
@@ -1760,8 +1839,13 @@ class QueryExecutorImpl {
 
   Rows ExecuteLimit(const ir::LimitPlan &plan, const Rows &input) {
     Rows rows = ExecutePlan(plan.Child(0), input);
-    const std::size_t limit = static_cast<std::size_t>(std::max<double>(
-        0.0, EvaluateExpression(*plan.Limit(), QueryRow{}).AsInteger()));
+    if (rows.empty()) {
+      return rows;
+    }
+    const std::size_t limit = static_cast<std::size_t>(
+        std::max<double>(0.0, EvaluateExpression(*plan.Limit(), rows[0],
+                                                 plan.PrecomputedExpressions())
+                                  .AsInteger()));
     if (limit < rows.size()) {
       rows.resize(limit);
     }

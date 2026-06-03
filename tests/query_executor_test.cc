@@ -76,6 +76,18 @@ TEST(QueryExecutorTest, ExecutesSortSkipLimit) {
             (std::vector<std::vector<std::string>>{{"\"Grace\""}}));
 }
 
+TEST(QueryExecutorTest, OrdersByPreProjectionExpression) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph, "MATCH (n:Person) RETURN n.name AS name ORDER BY n.age");
+
+  ASSERT_EQ(result.columns, std::vector<std::string>{"name"});
+  EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{
+                                    {"\"Ada\""}, {"\"Grace\""}}));
+}
+
 TEST(QueryExecutorTest, ExecutesCountAggregation) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
@@ -356,6 +368,161 @@ TEST(QueryExecutorTest, ExecutesListComprehension) {
             (std::vector<std::string>{"scaled", "filtered", "copy"}));
   EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{
                                     {"[20, 30]", "[2, 3]", "[1, 2, 3]"}}));
+}
+
+TEST(QueryExecutorTest, ExecutesExistsSubqueryProjection) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result =
+      rg::ExecuteReadQuery(graph,
+                           "MATCH (n:Person) "
+                           "RETURN n.name AS name, "
+                           "EXISTS { MATCH (n)-[:KNOWS]->(m) RETURN 1 } AS has "
+                           "ORDER BY name");
+
+  ASSERT_EQ(result.columns, (std::vector<std::string>{"name", "has"}));
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{{"\"Ada\"", "true"},
+                                                   {"\"Grace\"", "false"}}));
+}
+
+TEST(QueryExecutorTest, OrdersByExistsSubquery) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "MATCH (n:Person) "
+      "RETURN n.name AS name "
+      "ORDER BY EXISTS { MATCH (n)-[:KNOWS]->(m) RETURN 1 }, name");
+
+  ASSERT_EQ(result.columns, std::vector<std::string>{"name"});
+  EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{
+                                    {"\"Grace\""}, {"\"Ada\""}}));
+}
+
+TEST(QueryExecutorTest, ExecutesNotExistsSubqueryProjection) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "MATCH (n:Person) "
+      "RETURN n.name AS name, "
+      "NOT EXISTS { MATCH (n)-[:KNOWS]->(m) RETURN 1 } AS no_out "
+      "ORDER BY name");
+
+  ASSERT_EQ(result.columns, (std::vector<std::string>{"name", "no_out"}));
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{{"\"Ada\"", "false"},
+                                                   {"\"Grace\"", "true"}}));
+}
+
+TEST(QueryExecutorTest, ExecutesNestedExistsInFilterAndCaseExpression) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "MATCH (n:Person) "
+      "WITH n "
+      "WHERE EXISTS { MATCH (n)-[:KNOWS]->(m) RETURN 1 } = true "
+      "RETURN n.name AS name, "
+      "CASE WHEN EXISTS { MATCH (n)-[:KNOWS]->(m) RETURN 1 } "
+      "THEN 'yes' ELSE 'no' END AS outgoing");
+
+  ASSERT_EQ(result.columns, (std::vector<std::string>{"name", "outgoing"}));
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{{"\"Ada\"", "\"yes\""}}));
+}
+
+TEST(QueryExecutorTest, ExecutesPatternComprehension) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "MATCH (n:Person) "
+      "RETURN n.name AS name, [(n)-[:KNOWS]->(m) | m.name] AS names "
+      "ORDER BY name");
+
+  ASSERT_EQ(result.columns, (std::vector<std::string>{"name", "names"}));
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{{"\"Ada\"", "[\"Grace\"]"},
+                                                   {"\"Grace\"", "[]"}}));
+}
+
+TEST(QueryExecutorTest, UsesPatternComprehensionInPagination) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result =
+      rg::ExecuteReadQuery(graph,
+                           "MATCH (n:Person) "
+                           "RETURN n.name AS name "
+                           "ORDER BY name SKIP size([(n)-[:KNOWS]->(m) | m])");
+
+  ASSERT_EQ(result.columns, std::vector<std::string>{"name"});
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{{"\"Grace\""}}));
+}
+
+TEST(QueryExecutorTest, WithDropsOrderByPassthroughColumnsAfterOrdering) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result =
+      rg::ExecuteReadQuery(graph,
+                           "MATCH (n:Person) "
+                           "WITH n.name AS name ORDER BY n.age "
+                           "RETURN name");
+
+  ASSERT_EQ(result.columns, std::vector<std::string>{"name"});
+  EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{
+                                    {"\"Ada\""}, {"\"Grace\""}}));
+}
+
+TEST(QueryExecutorTest, ExecutesDistinctExistsSubqueryProjection) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "MATCH (n:Person) "
+      "RETURN DISTINCT EXISTS { MATCH (n)-[:KNOWS]->(m) RETURN 1 } AS has "
+      "ORDER BY has");
+
+  ASSERT_EQ(result.columns, std::vector<std::string>{"has"});
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{{"false"}, {"true"}}));
+}
+
+TEST(QueryExecutorTest, ExecutesExistsSubqueryGroupedAggregation) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "MATCH (n:Person) "
+      "RETURN EXISTS { MATCH (n)-[:KNOWS]->(m) RETURN 1 } AS has, "
+      "count(*) AS c "
+      "ORDER BY has");
+
+  ASSERT_EQ(result.columns, (std::vector<std::string>{"has", "c"}));
+  EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{
+                                    {"false", "1"}, {"true", "1"}}));
+}
+
+TEST(QueryExecutorTest, ExecutesUnwind) {
+  rg::InMemoryGraph graph;
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph, "UNWIND [1, 2, 3] AS x RETURN x, x * 10 AS y ORDER BY x");
+
+  ASSERT_EQ(result.columns, (std::vector<std::string>{"x", "y"}));
+  EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{
+                                    {"1", "10"}, {"2", "20"}, {"3", "30"}}));
 }
 
 TEST(QueryExecutorTest, ExecutesVariableLengthExpand) {

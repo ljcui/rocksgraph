@@ -83,7 +83,8 @@ std::unique_ptr<LogicalPlan> CloneComponentPlanWithoutMetadata(
     case LogicalPlanNodeType::kFilter: {
       const auto &filter = static_cast<const FilterPlan &>(plan);
       return std::make_unique<FilterPlan>(CloneComponentPlan(filter.Child(0)),
-                                          filter.Predicate());
+                                          filter.Predicate(),
+                                          filter.PrecomputedExpressions());
     }
     case LogicalPlanNodeType::kProjection: {
       const auto &projection = static_cast<const ProjectionPlan &>(plan);
@@ -109,12 +110,14 @@ std::unique_ptr<LogicalPlan> CloneComponentPlanWithoutMetadata(
     case LogicalPlanNodeType::kSkip: {
       const auto &skip = static_cast<const SkipPlan &>(plan);
       return std::make_unique<SkipPlan>(CloneComponentPlan(skip.Child(0)),
-                                        skip.Skip());
+                                        skip.Skip(),
+                                        skip.PrecomputedExpressions());
     }
     case LogicalPlanNodeType::kLimit: {
       const auto &limit = static_cast<const LimitPlan &>(plan);
       return std::make_unique<LimitPlan>(CloneComponentPlan(limit.Child(0)),
-                                         limit.Limit());
+                                         limit.Limit(),
+                                         limit.PrecomputedExpressions());
     }
     case LogicalPlanNodeType::kProduceResults:
       return std::make_unique<ProduceResultsPlan>(

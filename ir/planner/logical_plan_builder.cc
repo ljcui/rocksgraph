@@ -10,6 +10,8 @@
 #include <utility>
 #include <vector>
 
+#include "ast/ast_const_walker.h"
+#include "ast/ast_equal.h"
 #include "ast/ast_node.h"
 #include "ast/expression_dependency.h"
 #include "common/exception.h"
@@ -50,8 +52,37 @@ std::vector<std::string> ProjectionAliases(
   return aliases;
 }
 
+std::vector<LogicalPrecomputedExpression> PrecomputedExpressions(
+    const std::vector<NestedIRExpression> &nested_expressions) {
+  std::vector<LogicalPrecomputedExpression> out;
+  out.reserve(nested_expressions.size());
+  for (const auto &nested : nested_expressions) {
+    if (nested.expression == nullptr) {
+      continue;
+    }
+    switch (nested.kind) {
+      case NestedIRExpressionKind::kExists:
+        if (!nested.value_variable.empty()) {
+          out.push_back({.expression = nested.expression,
+                         .variable = nested.value_variable});
+        }
+        break;
+      case NestedIRExpressionKind::kList:
+        if (!nested.collection_variable.empty()) {
+          out.push_back({.expression = nested.expression,
+                         .variable = nested.collection_variable});
+        }
+        break;
+    }
+  }
+  return out;
+}
+
 std::vector<LogicalProjectionItem> LogicalProjectionItems(
-    const std::vector<ProjectionItem> &items) {
+    const std::vector<ProjectionItem> &items,
+    const std::vector<NestedIRExpression> &nested_expressions = {}) {
+  std::vector<LogicalPrecomputedExpression> precomputed_expressions =
+      PrecomputedExpressions(nested_expressions);
   std::vector<LogicalProjectionItem> logical_items;
   logical_items.reserve(items.size());
   for (const auto &item : items) {
@@ -59,10 +90,172 @@ std::vector<LogicalProjectionItem> LogicalProjectionItems(
           "projection expression is null");
     CHECK(!item.alias.empty(), common::InvalidArgumentError,
           "projection alias is empty");
-    logical_items.push_back(
-        {.expression = item.expression, .alias = item.alias});
+    logical_items.push_back({
+        .expression = item.expression,
+        .alias = item.alias,
+        .precomputed_expressions = precomputed_expressions,
+    });
   }
   return logical_items;
+}
+
+std::vector<LogicalProjectionItem> PassthroughProjectionItems(
+    const std::vector<std::string> &aliases) {
+  std::vector<LogicalProjectionItem> logical_items;
+  logical_items.reserve(aliases.size());
+  for (const auto &alias : aliases) {
+    logical_items.push_back({
+        .alias = alias,
+        .passthrough = true,
+    });
+  }
+  return logical_items;
+}
+
+void AppendPassthroughProjectionItem(
+    std::string alias, std::vector<LogicalProjectionItem> *items) {
+  CHECK(items != nullptr, common::InternalError,
+        "logical projection item list is null");
+  if (alias.empty()) {
+    return;
+  }
+  for (const auto &item : *items) {
+    if (item.alias == alias) {
+      return;
+    }
+  }
+  items->push_back({
+      .alias = std::move(alias),
+      .passthrough = true,
+  });
+}
+
+bool AddUniqueString(std::vector<std::string> *values,
+                     const std::string &value) {
+  CHECK(values != nullptr, common::InternalError, "string list is null");
+  if (StringVectorContains(*values, value)) {
+    return false;
+  }
+  values->push_back(value);
+  return true;
+}
+
+std::vector<std::string> ProjectionTailPassthroughVariables(
+    const LogicalPlan &input, const QueryProjection &projection,
+    const std::vector<std::string> &aliases) {
+  std::vector<std::string> variables;
+  const auto add_variable = [&](const std::string &variable) {
+    if (variable.empty() || StringVectorContains(aliases, variable) ||
+        !StringVectorContains(input.OutputColumns(), variable)) {
+      return;
+    }
+    (void)AddUniqueString(&variables, variable);
+  };
+  for (const auto &item : projection.required_order.items) {
+    if (item.expression == nullptr) {
+      continue;
+    }
+    for (const auto &dependency :
+         ast::CollectExpressionDependencies(*item.expression)) {
+      add_variable(dependency);
+    }
+  }
+  for (const ast::Expression *expression :
+       {projection.pagination.skip, projection.pagination.limit}) {
+    if (expression == nullptr) {
+      continue;
+    }
+    for (const auto &dependency :
+         ast::CollectExpressionDependencies(*expression)) {
+      add_variable(dependency);
+    }
+  }
+  for (const auto &precomputed :
+       PrecomputedExpressions(projection.nested_expressions)) {
+    add_variable(precomputed.variable);
+  }
+  return variables;
+}
+
+void AppendPassthroughProjectionItems(
+    const LogicalPlan &input, const QueryProjection &projection,
+    const std::vector<std::string> &aliases,
+    std::vector<LogicalProjectionItem> *items) {
+  CHECK(items != nullptr, common::InternalError,
+        "logical projection item list is null");
+  for (const auto &variable :
+       ProjectionTailPassthroughVariables(input, projection, aliases)) {
+    AppendPassthroughProjectionItem(variable, items);
+  }
+}
+
+bool ContainsExpression(const ast::Expression &haystack,
+                        const ast::Expression &needle) {
+  class Finder final : public ast::ASTConstWalker {
+   public:
+    explicit Finder(const ast::Expression &needle) : needle_(needle) {}
+
+    [[nodiscard]] bool found() const noexcept { return found_; }
+
+   protected:
+    void Visit(const ast::ExistentialSubquery &node) override {
+      found_ = found_ || ast::ASTEqual::Equal(&node, &needle_);
+      ast::ASTConstWalker::Visit(node);
+    }
+
+    void Visit(const ast::PatternComprehension &node) override {
+      found_ = found_ || ast::ASTEqual::Equal(&node, &needle_);
+      ast::ASTConstWalker::Visit(node);
+    }
+
+   private:
+    const ast::Expression &needle_;
+    bool found_ = false;
+  };
+
+  Finder finder(needle);
+  haystack.Accept(finder);
+  return finder.found();
+}
+
+void ValidateProjectionTailExpressionsAvailable(
+    const LogicalPlan &input, const QueryProjection &projection) {
+  const std::unordered_set<std::string> available(input.OutputColumns().begin(),
+                                                  input.OutputColumns().end());
+  const std::vector<LogicalPrecomputedExpression> precomputed_expressions =
+      PrecomputedExpressions(projection.nested_expressions);
+  const auto validate_dependencies = [&](const ast::Expression *expression,
+                                         std::string_view context) {
+    if (expression == nullptr) {
+      return;
+    }
+    if (!DependenciesMet(ast::CollectExpressionDependencies(*expression),
+                         available)) {
+      THROW(
+          common::InvalidArgumentError,
+          UnsupportedInStage(kLogicalPlanStage,
+                             std::string(context) +
+                                 " with unmet dependencies after projection"));
+    }
+    for (const auto &precomputed : precomputed_expressions) {
+      if (precomputed.expression == nullptr ||
+          !ContainsExpression(*expression, *precomputed.expression)) {
+        continue;
+      }
+      if (precomputed.variable.empty() ||
+          !StringVectorContains(input.OutputColumns(), precomputed.variable)) {
+        THROW(common::InvalidArgumentError,
+              UnsupportedInStage(kLogicalPlanStage,
+                                 std::string(context) +
+                                     " nested expression after projection"));
+      }
+    }
+  };
+  for (const auto &item : projection.required_order.items) {
+    validate_dependencies(item.expression, "ORDER BY expression");
+  }
+  validate_dependencies(projection.pagination.skip, "SKIP expression");
+  validate_dependencies(projection.pagination.limit, "LIMIT expression");
 }
 
 LogicalOrderDirection ToLogicalOrderDirection(OrderDirection direction) {
@@ -83,6 +276,18 @@ std::vector<LogicalSortItem> SortItems(const RequiredOrder &required_order) {
           "sort expression is null");
     items.push_back({.expression = item.expression,
                      .direction = ToLogicalOrderDirection(item.direction)});
+  }
+  return items;
+}
+
+std::vector<LogicalSortItem> SortItems(
+    const RequiredOrder &required_order,
+    const std::vector<NestedIRExpression> &nested_expressions) {
+  std::vector<LogicalSortItem> items = SortItems(required_order);
+  std::vector<LogicalPrecomputedExpression> precomputed_expressions =
+      PrecomputedExpressions(nested_expressions);
+  for (auto &item : items) {
+    item.precomputed_expressions = precomputed_expressions;
   }
   return items;
 }
@@ -966,8 +1171,10 @@ class LogicalPlanBuilder {
     plan =
         ApplyNestedExpressions(std::move(plan), projection.nested_expressions);
     std::vector<std::string> aliases = ProjectionAliases(projection.items);
-    plan = std::make_unique<ProjectionPlan>(
-        std::move(plan), LogicalProjectionItems(projection.items));
+    std::vector<LogicalProjectionItem> items =
+        LogicalProjectionItems(projection.items, projection.nested_expressions);
+    AppendPassthroughProjectionItems(*plan, projection, aliases, &items);
+    plan = std::make_unique<ProjectionPlan>(std::move(plan), std::move(items));
     return ApplyProjectionTail(std::move(plan), projection, std::move(aliases));
   }
 
@@ -978,8 +1185,10 @@ class LogicalPlanBuilder {
         ApplyNestedExpressions(std::move(plan), projection.nested_expressions);
     std::vector<std::string> aliases =
         ProjectionAliases(projection.grouping_items);
-    plan = std::make_unique<DistinctPlan>(
-        std::move(plan), LogicalProjectionItems(projection.grouping_items));
+    std::vector<LogicalProjectionItem> grouping_items = LogicalProjectionItems(
+        projection.grouping_items, projection.nested_expressions);
+    plan = std::make_unique<DistinctPlan>(std::move(plan),
+                                          std::move(grouping_items));
     return ApplyProjectionTail(std::move(plan), projection, std::move(aliases));
   }
 
@@ -990,9 +1199,12 @@ class LogicalPlanBuilder {
         ApplyNestedExpressions(std::move(plan), projection.nested_expressions);
     std::vector<std::string> aliases = ProjectionAliases(
         projection.grouping_items, projection.aggregation_items);
+    std::vector<LogicalProjectionItem> grouping_items = LogicalProjectionItems(
+        projection.grouping_items, projection.nested_expressions);
     plan = std::make_unique<AggregationPlan>(
-        std::move(plan), LogicalProjectionItems(projection.grouping_items),
-        LogicalProjectionItems(projection.aggregation_items));
+        std::move(plan), std::move(grouping_items),
+        LogicalProjectionItems(projection.aggregation_items,
+                               projection.nested_expressions));
     return ApplyProjectionTail(std::move(plan), projection, std::move(aliases));
   }
 
@@ -1066,22 +1278,29 @@ class LogicalPlanBuilder {
       std::unique_ptr<LogicalPlan> plan, const QueryProjection &projection,
       std::vector<std::string> aliases) {
     plan = ApplyProjectionSelections(std::move(plan), projection.selections);
+    ValidateProjectionTailExpressionsAvailable(*plan, projection);
 
     if (!projection.required_order.empty()) {
-      plan = std::make_unique<SortPlan>(std::move(plan),
-                                        SortItems(projection.required_order));
+      plan = std::make_unique<SortPlan>(
+          std::move(plan),
+          SortItems(projection.required_order, projection.nested_expressions));
     }
     if (projection.pagination.skip != nullptr) {
-      plan = std::make_unique<SkipPlan>(std::move(plan),
-                                        projection.pagination.skip);
+      plan = std::make_unique<SkipPlan>(
+          std::move(plan), projection.pagination.skip,
+          PrecomputedExpressions(projection.nested_expressions));
     }
     if (projection.pagination.limit != nullptr) {
-      plan = std::make_unique<LimitPlan>(std::move(plan),
-                                         projection.pagination.limit);
+      plan = std::make_unique<LimitPlan>(
+          std::move(plan), projection.pagination.limit,
+          PrecomputedExpressions(projection.nested_expressions));
     }
     if (projection.position == ProjectionPosition::kFinal) {
       plan = std::make_unique<ProduceResultsPlan>(std::move(plan),
                                                   std::move(aliases));
+    } else if (plan->OutputColumns() != aliases) {
+      plan = std::make_unique<ProjectionPlan>(
+          std::move(plan), PassthroughProjectionItems(aliases));
     }
     return plan;
   }

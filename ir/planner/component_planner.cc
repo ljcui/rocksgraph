@@ -83,6 +83,32 @@ std::vector<const ast::Expression *> PredicateExpressions(
   return expressions;
 }
 
+std::vector<LogicalPrecomputedExpression> PrecomputedExpressions(
+    const std::vector<NestedIRExpression> &nested_expressions) {
+  std::vector<LogicalPrecomputedExpression> out;
+  out.reserve(nested_expressions.size());
+  for (const auto &nested : nested_expressions) {
+    if (nested.expression == nullptr) {
+      continue;
+    }
+    switch (nested.kind) {
+      case NestedIRExpressionKind::kExists:
+        if (!nested.value_variable.empty()) {
+          out.push_back({.expression = nested.expression,
+                         .variable = nested.value_variable});
+        }
+        break;
+      case NestedIRExpressionKind::kList:
+        if (!nested.collection_variable.empty()) {
+          out.push_back({.expression = nested.expression,
+                         .variable = nested.collection_variable});
+        }
+        break;
+    }
+  }
+  return out;
+}
+
 const ast::Expression *PredicateValueExpression(const Predicate &predicate) {
   CHECK(predicate.property_value != nullptr, common::InvalidArgumentError,
         "index seek predicate value is null");
@@ -792,8 +818,9 @@ std::size_t QueryGraphPlanningContext::ApplyAvailableFilters(
             std::move(*plan), BuildNestedPlan(*predicate.subquery));
       } else {
         ApplyNestedExpressions(predicate.nested_expressions, plan);
-        *plan = std::make_unique<FilterPlan>(std::move(*plan),
-                                             predicate.expression);
+        *plan = std::make_unique<FilterPlan>(
+            std::move(*plan), predicate.expression,
+            PrecomputedExpressions(predicate.nested_expressions));
       }
       planned_predicates_->insert(&predicate);
       ++applied_count;
