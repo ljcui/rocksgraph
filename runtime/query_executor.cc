@@ -10,7 +10,6 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -22,11 +21,13 @@
 #include "ir/planner_query.h"
 #include "runtime/aggregation_evaluator.h"
 #include "runtime/expression_evaluator.h"
+#include "runtime/graph_access_executor.h"
+#include "runtime/query_row_util.h"
 
 namespace rg {
 namespace {
 
-using Rows = std::vector<QueryRow>;
+using Rows = QueryRows;
 
 struct EntityRef {
   enum class Kind { kNode, kRelationship };
@@ -40,37 +41,6 @@ std::string LowerAscii(std::string value) {
       value.begin(), value.end(), value.begin(),
       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
   return value;
-}
-
-const Value &LookupVariable(const QueryRow &row, const std::string &name) {
-  const auto found = row.find(name);
-  CHECK(found != row.end(), common::InvalidArgumentError,
-        "variable is not bound: " + name);
-  return found->second;
-}
-
-bool TryBind(QueryRow *row, const std::string &variable, Value value) {
-  CHECK(row != nullptr, common::InternalError, "query row is null");
-  if (variable.empty()) {
-    return true;
-  }
-  const auto found = row->find(variable);
-  if (found == row->end()) {
-    row->emplace(variable, std::move(value));
-    return true;
-  }
-  return ValuesEqual(found->second, value);
-}
-
-bool MergeRows(const QueryRow &left, const QueryRow &right, QueryRow *out) {
-  CHECK(out != nullptr, common::InternalError, "query row is null");
-  *out = left;
-  for (const auto &[key, value] : right) {
-    if (!TryBind(out, key, value)) {
-      return false;
-    }
-  }
-  return true;
 }
 
 std::optional<double> EvaluateNumericOptional(const ast::Expression *expression,
@@ -98,23 +68,6 @@ Value MakeValueFromLiteralMap(
     map[key] = EvaluateExpression(*expression, row);
   }
   return Value(std::move(map));
-}
-
-bool RuntimeNodeHasLabels(const Node &node,
-                          const std::vector<std::string> &labels) {
-  for (const auto &label : labels) {
-    if (std::find(node.labels.begin(), node.labels.end(), label) ==
-        node.labels.end()) {
-      return false;
-    }
-  }
-  return true;
-}
-
-bool RuntimeRelationshipHasAnyType(const Relationship &relationship,
-                                   const std::vector<std::string> &types) {
-  return types.empty() || std::find(types.begin(), types.end(),
-                                    relationship.type) != types.end();
 }
 
 Value CopyOrNull(const Value *value) {
@@ -182,13 +135,18 @@ ir::LogicalPlanBuilderOptions PlannerOptionsFor(const QueryOptions &options) {
                              : &DefaultRuntimePlannerCatalog()};
 }
 
+const AccessPath &RequireAccessPath(const AccessPath *access_path) {
+  CHECK(access_path != nullptr, common::InvalidArgumentError,
+        "access path is null");
+  return *access_path;
+}
+
 class QueryExecutorImpl {
  public:
   QueryExecutorImpl(const AccessPath *access_path, Storage *storage)
-      : access_path_(access_path), storage_(storage) {
-    CHECK(access_path_ != nullptr, common::InvalidArgumentError,
-          "access path is null");
-  }
+      : access_path_(access_path),
+        storage_(storage),
+        graph_access_(RequireAccessPath(access_path)) {}
 
   QueryResult Execute(const ir::LogicalPlan &plan) {
     Rows rows = ExecutePlan(plan, Rows{QueryRow{}});
@@ -223,38 +181,43 @@ class QueryExecutorImpl {
         return ExecuteArgument(static_cast<const ir::ArgumentPlan &>(plan),
                                input);
       case ir::LogicalPlanNodeType::kAllNodeScan:
-        return ExecuteAllNodeScan(
+        return graph_access_.ExecuteAllNodeScan(
             static_cast<const ir::AllNodeScanPlan &>(plan), input);
       case ir::LogicalPlanNodeType::kNodeByLabelScan:
-        return ExecuteNodeByLabelScan(
+        return graph_access_.ExecuteNodeByLabelScan(
             static_cast<const ir::NodeByLabelScanPlan &>(plan), input);
       case ir::LogicalPlanNodeType::kNodeIndexSeek:
-        return ExecuteNodeIndexSeek(
+        return graph_access_.ExecuteNodeIndexSeek(
             static_cast<const ir::NodeIndexSeekPlan &>(plan), input);
       case ir::LogicalPlanNodeType::kNodeIndexRangeSeek:
-        return ExecuteNodeIndexRangeSeek(
+        return graph_access_.ExecuteNodeIndexRangeSeek(
             static_cast<const ir::NodeIndexRangeSeekPlan &>(plan), input);
       case ir::LogicalPlanNodeType::kRelationshipTypeScan:
-        return ExecuteRelationshipTypeScan(
+        return graph_access_.ExecuteRelationshipTypeScan(
             static_cast<const ir::RelationshipTypeScanPlan &>(plan), input);
       case ir::LogicalPlanNodeType::kRelationshipIndexSeek:
-        return ExecuteRelationshipIndexSeek(
+        return graph_access_.ExecuteRelationshipIndexSeek(
             static_cast<const ir::RelationshipIndexSeekPlan &>(plan), input);
       case ir::LogicalPlanNodeType::kRelationshipIndexRangeSeek:
-        return ExecuteRelationshipIndexRangeSeek(
+        return graph_access_.ExecuteRelationshipIndexRangeSeek(
             static_cast<const ir::RelationshipIndexRangeSeekPlan &>(plan),
             input);
       case ir::LogicalPlanNodeType::kExpand:
-        return ExecuteExpand(static_cast<const ir::ExpandPlan &>(plan), input);
+        return graph_access_.ExecuteExpand(
+            static_cast<const ir::ExpandPlan &>(plan),
+            ExecutePlan(plan.Child(0), input));
       case ir::LogicalPlanNodeType::kExpandInto:
-        return ExecuteExpandInto(static_cast<const ir::ExpandIntoPlan &>(plan),
-                                 input);
+        return graph_access_.ExecuteExpandInto(
+            static_cast<const ir::ExpandIntoPlan &>(plan),
+            ExecutePlan(plan.Child(0), input));
       case ir::LogicalPlanNodeType::kVarExpand:
-        return ExecuteVarExpand(static_cast<const ir::VarExpandPlan &>(plan),
-                                input);
+        return graph_access_.ExecuteVarExpand(
+            static_cast<const ir::VarExpandPlan &>(plan),
+            ExecutePlan(plan.Child(0), input));
       case ir::LogicalPlanNodeType::kPathBuild:
-        return ExecutePathBuild(static_cast<const ir::PathBuildPlan &>(plan),
-                                input);
+        return graph_access_.ExecutePathBuild(
+            static_cast<const ir::PathBuildPlan &>(plan),
+            ExecutePlan(plan.Child(0), input));
       case ir::LogicalPlanNodeType::kFilter:
         return ExecuteFilter(static_cast<const ir::FilterPlan &>(plan), input);
       case ir::LogicalPlanNodeType::kProjection:
@@ -360,538 +323,6 @@ class QueryExecutorImpl {
     return out;
   }
 
-  Rows ExecuteAllNodeScan(const ir::AllNodeScanPlan &plan, const Rows &input) {
-    Rows out;
-    for (const auto &row : input) {
-      for (const auto &node : access_path_->ScanNodes()) {
-        QueryRow next = row;
-        if (TryBind(&next, plan.Variable(), Value(node))) {
-          out.push_back(std::move(next));
-        }
-      }
-    }
-    return out;
-  }
-
-  Rows ExecuteNodeByLabelScan(const ir::NodeByLabelScanPlan &plan,
-                              const Rows &input) {
-    Rows out;
-    for (const auto &row : input) {
-      for (const auto &node : access_path_->ScanNodes()) {
-        if (!RuntimeNodeHasLabels(*node, plan.Labels())) {
-          continue;
-        }
-        QueryRow next = row;
-        if (TryBind(&next, plan.Variable(), Value(node))) {
-          out.push_back(std::move(next));
-        }
-      }
-    }
-    return out;
-  }
-
-  Rows ExecuteNodeIndexSeek(const ir::NodeIndexSeekPlan &plan,
-                            const Rows &input) {
-    Rows out;
-    for (const auto &row : input) {
-      Value expected = EvaluateExpression(*plan.ValueExpression(), row);
-      for (const auto &node : access_path_->FindNodesByIndex(
-               plan.Labels(), plan.PropertyKey(), expected)) {
-        QueryRow next = row;
-        if (TryBind(&next, plan.Variable(), Value(node))) {
-          out.push_back(std::move(next));
-        }
-      }
-    }
-    return out;
-  }
-
-  Rows ExecuteNodeIndexRangeSeek(const ir::NodeIndexRangeSeekPlan &plan,
-                                 const Rows &input) {
-    Rows out;
-    for (const auto &row : input) {
-      for (const auto &node :
-           access_path_->NodesInIndex(plan.Labels(), plan.PropertyKey())) {
-        QueryRow next = row;
-        if (!TryBind(&next, plan.Variable(), Value(node))) {
-          continue;
-        }
-        bool keep = true;
-        for (const ast::Expression *predicate : plan.Predicates()) {
-          CHECK(predicate != nullptr, common::InvalidArgumentError,
-                "index range predicate is null");
-          keep = keep && PredicateIsTrue(EvaluateExpression(*predicate, next));
-        }
-        if (keep) {
-          out.push_back(std::move(next));
-        }
-      }
-    }
-    return out;
-  }
-
-  Rows ExecuteRelationshipTypeScan(const ir::RelationshipTypeScanPlan &plan,
-                                   const Rows &input) {
-    Rows out;
-    for (const auto &row : input) {
-      for (const auto &relationship : access_path_->ScanRelationships()) {
-        if (!RuntimeRelationshipHasAnyType(*relationship, plan.Types())) {
-          continue;
-        }
-        AddRelationshipRow(row, *relationship, plan.FromNode(),
-                           plan.Relationship(), plan.ToNode(), plan.Direction(),
-                           &out);
-      }
-    }
-    return out;
-  }
-
-  Rows ExecuteRelationshipIndexSeek(const ir::RelationshipIndexSeekPlan &plan,
-                                    const Rows &input) {
-    Rows out;
-    for (const auto &row : input) {
-      Value expected = EvaluateExpression(*plan.ValueExpression(), row);
-      for (const auto &relationship : access_path_->FindRelationshipsByIndex(
-               plan.Types(), plan.PropertyKey(), expected)) {
-        AddRelationshipRow(row, *relationship, plan.FromNode(),
-                           plan.Relationship(), plan.ToNode(), plan.Direction(),
-                           &out);
-      }
-    }
-    return out;
-  }
-
-  Rows ExecuteRelationshipIndexRangeSeek(
-      const ir::RelationshipIndexRangeSeekPlan &plan, const Rows &input) {
-    Rows out;
-    for (const auto &row : input) {
-      for (const auto &relationship : access_path_->RelationshipsInIndex(
-               plan.Types(), plan.PropertyKey())) {
-        Rows candidate_rows;
-        AddRelationshipRow(row, *relationship, plan.FromNode(),
-                           plan.Relationship(), plan.ToNode(), plan.Direction(),
-                           &candidate_rows);
-        for (QueryRow &candidate : candidate_rows) {
-          bool keep = true;
-          for (const ast::Expression *predicate : plan.Predicates()) {
-            CHECK(predicate != nullptr, common::InvalidArgumentError,
-                  "index range predicate is null");
-            keep = keep &&
-                   PredicateIsTrue(EvaluateExpression(*predicate, candidate));
-          }
-          if (keep) {
-            out.push_back(std::move(candidate));
-          }
-        }
-      }
-    }
-    return out;
-  }
-
-  void AddRelationshipRow(const QueryRow &row, const Relationship &relationship,
-                          const std::string &from_node,
-                          const std::string &relationship_variable,
-                          const std::string &to_node,
-                          ir::ExpandDirection direction, Rows *out) {
-    CHECK(out != nullptr, common::InternalError, "row output is null");
-    if (direction == ir::ExpandDirection::kBoth) {
-      AddDirectedRelationshipRow(
-          row, relationship, from_node, relationship_variable, to_node,
-          relationship.start_node_id, relationship.end_node_id, out);
-      if (relationship.start_node_id != relationship.end_node_id) {
-        AddDirectedRelationshipRow(
-            row, relationship, from_node, relationship_variable, to_node,
-            relationship.end_node_id, relationship.start_node_id, out);
-      }
-      return;
-    }
-    const std::int64_t from_id = direction == ir::ExpandDirection::kOutgoing
-                                     ? relationship.start_node_id
-                                     : relationship.end_node_id;
-    const std::int64_t to_id = direction == ir::ExpandDirection::kOutgoing
-                                   ? relationship.end_node_id
-                                   : relationship.start_node_id;
-    AddDirectedRelationshipRow(row, relationship, from_node,
-                               relationship_variable, to_node, from_id, to_id,
-                               out);
-  }
-
-  void AddDirectedRelationshipRow(const QueryRow &row,
-                                  const Relationship &relationship,
-                                  const std::string &from_node,
-                                  const std::string &relationship_variable,
-                                  const std::string &to_node,
-                                  std::int64_t from_id, std::int64_t to_id,
-                                  Rows *out) {
-    QueryRow next = row;
-    if (!TryBind(&next, from_node, Value(access_path_->NodeById(from_id)))) {
-      return;
-    }
-    if (!TryBind(&next, relationship_variable,
-                 Value(access_path_->RelationshipById(relationship.id)))) {
-      return;
-    }
-    if (!TryBind(&next, to_node, Value(access_path_->NodeById(to_id)))) {
-      return;
-    }
-    out->push_back(std::move(next));
-  }
-
-  Rows ExecuteExpand(const ir::ExpandPlan &plan, const Rows &input) {
-    Rows child_rows = ExecutePlan(plan.Child(0), input);
-    Rows out;
-    for (const auto &row : child_rows) {
-      const Value &from = LookupVariable(row, plan.FromNode());
-      CHECK(from.IsNode(), common::InvalidArgumentError,
-            "expand source is not a node: " + plan.FromNode());
-      const std::int64_t from_id = from.AsNode().id;
-      for (const auto &relationship :
-           ExpandCandidates(from_id, plan.Direction())) {
-        if (!RuntimeRelationshipHasAnyType(*relationship, plan.Types())) {
-          continue;
-        }
-        if (plan.Direction() == ir::ExpandDirection::kOutgoing &&
-            relationship->start_node_id != from_id) {
-          continue;
-        }
-        if (plan.Direction() == ir::ExpandDirection::kIncoming &&
-            relationship->end_node_id != from_id) {
-          continue;
-        }
-        if (plan.Direction() == ir::ExpandDirection::kBoth &&
-            relationship->start_node_id != from_id &&
-            relationship->end_node_id != from_id) {
-          continue;
-        }
-        const std::int64_t to_id = relationship->start_node_id == from_id
-                                       ? relationship->end_node_id
-                                       : relationship->start_node_id;
-        QueryRow next = row;
-        if (!TryBind(&next, plan.Relationship(),
-                     Value(access_path_->RelationshipById(relationship->id)))) {
-          continue;
-        }
-        if (!TryBind(&next, plan.ToNode(),
-                     Value(access_path_->NodeById(to_id)))) {
-          continue;
-        }
-        out.push_back(std::move(next));
-      }
-    }
-    return out;
-  }
-
-  Rows ExecuteExpandInto(const ir::ExpandIntoPlan &plan, const Rows &input) {
-    Rows child_rows = ExecutePlan(plan.Child(0), input);
-    Rows out;
-    for (const auto &row : child_rows) {
-      const Value &from = LookupVariable(row, plan.FromNode());
-      const Value &to = LookupVariable(row, plan.ToNode());
-      CHECK(from.IsNode() && to.IsNode(), common::InvalidArgumentError,
-            "expand-into endpoints must be nodes");
-      for (const auto &relationship :
-           ExpandCandidates(from.AsNode().id, plan.Direction())) {
-        if (!RuntimeRelationshipHasAnyType(*relationship, plan.Types())) {
-          continue;
-        }
-        bool match = false;
-        if (plan.Direction() == ir::ExpandDirection::kOutgoing) {
-          match = relationship->start_node_id == from.AsNode().id &&
-                  relationship->end_node_id == to.AsNode().id;
-        } else if (plan.Direction() == ir::ExpandDirection::kIncoming) {
-          match = relationship->end_node_id == from.AsNode().id &&
-                  relationship->start_node_id == to.AsNode().id;
-        } else {
-          match = (relationship->start_node_id == from.AsNode().id &&
-                   relationship->end_node_id == to.AsNode().id) ||
-                  (relationship->end_node_id == from.AsNode().id &&
-                   relationship->start_node_id == to.AsNode().id);
-        }
-        if (!match) {
-          continue;
-        }
-        QueryRow next = row;
-        if (TryBind(&next, plan.Relationship(),
-                    Value(access_path_->RelationshipById(relationship->id)))) {
-          out.push_back(std::move(next));
-        }
-      }
-    }
-    return out;
-  }
-
-  std::vector<AccessPath::RelationshipPtr> ExpandCandidates(
-      std::int64_t from_node_id, ir::ExpandDirection direction) const {
-    if (direction == ir::ExpandDirection::kOutgoing) {
-      return access_path_->OutgoingRelationships(from_node_id);
-    }
-    if (direction == ir::ExpandDirection::kIncoming) {
-      return access_path_->IncomingRelationships(from_node_id);
-    }
-    return access_path_->RelationshipsConnectedTo(from_node_id);
-  }
-
-  Rows ExecuteVarExpand(const ir::VarExpandPlan &plan, const Rows &input) {
-    Rows child_rows = ExecutePlan(plan.Child(0), input);
-    Rows out;
-    for (const auto &row : child_rows) {
-      const Value &from = LookupVariable(row, plan.FromNode());
-      CHECK(from.IsNode(), common::InvalidArgumentError,
-            "variable expand source is not a node: " + plan.FromNode());
-
-      std::optional<std::int64_t> bound_to_id;
-      const auto to_found = row.find(plan.ToNode());
-      if (to_found != row.end()) {
-        CHECK(to_found->second.IsNode(), common::InvalidArgumentError,
-              "variable expand target is not a node: " + plan.ToNode());
-        bound_to_id = to_found->second.AsNode().id;
-      }
-
-      const std::size_t min_length = VarExpandMinLength(plan.Length());
-      const std::size_t max_length = VarExpandMaxLength(plan.Length());
-      if (max_length < min_length) {
-        continue;
-      }
-
-      std::vector<AccessPath::RelationshipPtr> path;
-      std::unordered_set<std::int64_t> used_relationships;
-      ExpandVariableLengthPath(plan, row, from.AsNode().id, bound_to_id,
-                               min_length, max_length, &path,
-                               &used_relationships, &out);
-    }
-    return out;
-  }
-
-  std::size_t VarExpandMinLength(
-      const ir::LogicalVariableLength &length) const {
-    if (!length.min.has_value()) {
-      return 1;
-    }
-    CHECK(*length.min >= 0, common::InvalidArgumentError,
-          "variable expand minimum length is negative");
-    return static_cast<std::size_t>(*length.min);
-  }
-
-  std::size_t VarExpandMaxLength(
-      const ir::LogicalVariableLength &length) const {
-    if (!length.max.has_value()) {
-      return access_path_->RelationshipCount();
-    }
-    CHECK(*length.max >= 0, common::InvalidArgumentError,
-          "variable expand maximum length is negative");
-    return static_cast<std::size_t>(*length.max);
-  }
-
-  std::optional<std::int64_t> NextVarExpandNode(
-      const Relationship &relationship, std::int64_t current_node_id,
-      ir::ExpandDirection direction) const {
-    if (direction == ir::ExpandDirection::kOutgoing) {
-      if (relationship.start_node_id != current_node_id) {
-        return std::nullopt;
-      }
-      return relationship.end_node_id;
-    }
-    if (direction == ir::ExpandDirection::kIncoming) {
-      if (relationship.end_node_id != current_node_id) {
-        return std::nullopt;
-      }
-      return relationship.start_node_id;
-    }
-    if (relationship.start_node_id == current_node_id) {
-      return relationship.end_node_id;
-    }
-    if (relationship.end_node_id == current_node_id) {
-      return relationship.start_node_id;
-    }
-    return std::nullopt;
-  }
-
-  void ExpandVariableLengthPath(
-      const ir::VarExpandPlan &plan, const QueryRow &row,
-      std::int64_t current_node_id, std::optional<std::int64_t> bound_to_id,
-      std::size_t min_length, std::size_t max_length,
-      std::vector<AccessPath::RelationshipPtr> *path,
-      std::unordered_set<std::int64_t> *used_relationships, Rows *out) {
-    CHECK(path != nullptr, common::InternalError,
-          "variable expand path is null");
-    CHECK(used_relationships != nullptr, common::InternalError,
-          "variable expand used relationship set is null");
-    CHECK(out != nullptr, common::InternalError,
-          "variable expand output is null");
-
-    if (path->size() >= min_length &&
-        (!bound_to_id.has_value() || *bound_to_id == current_node_id)) {
-      EmitVarExpandRow(plan, row, current_node_id, *path, out);
-    }
-    if (path->size() == max_length) {
-      return;
-    }
-
-    for (const auto &relationship :
-         ExpandCandidates(current_node_id, plan.Direction())) {
-      if (used_relationships->contains(relationship->id)) {
-        continue;
-      }
-      if (!RuntimeRelationshipHasAnyType(*relationship, plan.Types())) {
-        continue;
-      }
-      std::optional<std::int64_t> next_node_id =
-          NextVarExpandNode(*relationship, current_node_id, plan.Direction());
-      if (!next_node_id.has_value()) {
-        continue;
-      }
-
-      used_relationships->insert(relationship->id);
-      path->push_back(relationship);
-      ExpandVariableLengthPath(plan, row, *next_node_id, bound_to_id,
-                               min_length, max_length, path, used_relationships,
-                               out);
-      path->pop_back();
-      used_relationships->erase(relationship->id);
-    }
-  }
-
-  void EmitVarExpandRow(const ir::VarExpandPlan &plan, const QueryRow &row,
-                        std::int64_t current_node_id,
-                        const std::vector<AccessPath::RelationshipPtr> &path,
-                        Rows *out) {
-    CHECK(out != nullptr, common::InternalError,
-          "variable expand output is null");
-    Value::List relationships;
-    relationships.reserve(path.size());
-    for (const auto &relationship : path) {
-      CHECK(relationship != nullptr, common::InternalError,
-            "variable expand relationship is null");
-      relationships.emplace_back(relationship);
-    }
-
-    QueryRow next = row;
-    if (!TryBind(&next, plan.Relationship(), Value(std::move(relationships)))) {
-      return;
-    }
-    if (!TryBind(&next, plan.ToNode(),
-                 Value(access_path_->NodeById(current_node_id)))) {
-      return;
-    }
-    out->push_back(std::move(next));
-  }
-
-  Rows ExecutePathBuild(const ir::PathBuildPlan &plan, const Rows &input) {
-    Rows rows = ExecutePlan(plan.Child(0), input);
-    Rows out;
-    out.reserve(rows.size());
-    for (const auto &row : rows) {
-      QueryRow next = row;
-      if (TryBind(&next, plan.PathVariable(),
-                  BuildPathValue(plan.Path(), row))) {
-        out.push_back(std::move(next));
-      }
-    }
-    return out;
-  }
-
-  Value BuildPathValue(const ir::PathPattern &pattern, const QueryRow &row) {
-    CHECK(!pattern.nodes.empty(), common::InvalidArgumentError,
-          "path has no nodes: " + pattern.variable);
-    CHECK(
-        pattern.nodes.size() == pattern.relationships.size() + 1,
-        common::InvalidArgumentError,
-        "path node and relationship counts do not match: " + pattern.variable);
-
-    auto path = std::make_shared<Path>();
-    path->nodes.reserve(pattern.nodes.size());
-    path->relationships.reserve(pattern.relationships.size());
-
-    const Value &start_node = LookupVariable(row, pattern.nodes.front());
-    CHECK(start_node.IsNode(), common::InvalidArgumentError,
-          "path node is not a node: " + pattern.nodes.front());
-    std::int64_t current_node_id = start_node.AsNode().id;
-    path->nodes.push_back(access_path_->NodeById(current_node_id));
-
-    for (std::size_t index = 0; index < pattern.relationships.size(); ++index) {
-      const std::string &relationship_variable = pattern.relationships[index];
-      const Value &relationship = LookupVariable(row, relationship_variable);
-      std::vector<AccessPath::RelationshipPtr> relationships;
-      if (relationship.IsList()) {
-        relationships.reserve(relationship.AsList().size());
-        for (const auto &item : relationship.AsList()) {
-          CHECK(item.IsRelationship(), common::InvalidArgumentError,
-                "path relationship list item is not a relationship: " +
-                    relationship_variable);
-          relationships.push_back(
-              access_path_->RelationshipById(item.AsRelationship().id));
-        }
-      } else {
-        CHECK(relationship.IsRelationship(), common::InvalidArgumentError,
-              "path relationship is not a relationship: " +
-                  relationship_variable);
-        relationships.push_back(
-            access_path_->RelationshipById(relationship.AsRelationship().id));
-      }
-
-      const Value &target_node = LookupVariable(row, pattern.nodes[index + 1]);
-      CHECK(target_node.IsNode(), common::InvalidArgumentError,
-            "path node is not a node: " + pattern.nodes[index + 1]);
-      const std::int64_t target_node_id = target_node.AsNode().id;
-
-      if (!CanTraverseRelationshipSequence(relationships, current_node_id,
-                                           target_node_id)) {
-        std::vector<AccessPath::RelationshipPtr> reversed(
-            relationships.rbegin(), relationships.rend());
-        CHECK(CanTraverseRelationshipSequence(reversed, current_node_id,
-                                              target_node_id),
-              common::InvalidArgumentError,
-              "path relationship sequence does not connect nodes: " +
-                  relationship_variable);
-        relationships = std::move(reversed);
-      }
-
-      for (const auto &item : relationships) {
-        AppendPathRelationship(*item, path.get(), &current_node_id);
-      }
-      CHECK(current_node_id == target_node_id, common::InvalidArgumentError,
-            "path node does not match traversed relationship endpoint: " +
-                pattern.nodes[index + 1]);
-    }
-    return Value(std::move(path));
-  }
-
-  bool CanTraverseRelationshipSequence(
-      const std::vector<AccessPath::RelationshipPtr> &relationships,
-      std::int64_t start_node_id, std::int64_t target_node_id) const {
-    std::int64_t current_node_id = start_node_id;
-    for (const auto &relationship : relationships) {
-      CHECK(relationship != nullptr, common::InternalError,
-            "path relationship is null");
-      if (relationship->start_node_id == current_node_id) {
-        current_node_id = relationship->end_node_id;
-      } else if (relationship->end_node_id == current_node_id) {
-        current_node_id = relationship->start_node_id;
-      } else {
-        return false;
-      }
-    }
-    return current_node_id == target_node_id;
-  }
-
-  void AppendPathRelationship(const Relationship &relationship, Path *path,
-                              std::int64_t *current_node_id) {
-    CHECK(path != nullptr, common::InternalError, "path is null");
-    CHECK(current_node_id != nullptr, common::InternalError,
-          "path current node id is null");
-    path->relationships.push_back(
-        access_path_->RelationshipById(relationship.id));
-    if (relationship.start_node_id == *current_node_id) {
-      *current_node_id = relationship.end_node_id;
-    } else if (relationship.end_node_id == *current_node_id) {
-      *current_node_id = relationship.start_node_id;
-    } else {
-      THROW(common::InvalidArgumentError,
-            "path relationship is not connected to current node");
-    }
-    path->nodes.push_back(access_path_->NodeById(*current_node_id));
-  }
-
   Rows ExecuteFilter(const ir::FilterPlan &plan, const Rows &input) {
     Rows rows = ExecutePlan(plan.Child(0), input);
     Rows out;
@@ -994,7 +425,7 @@ class QueryExecutorImpl {
       for (const auto &left : left_rows) {
         for (const auto &right : right_rows) {
           QueryRow merged;
-          if (!MergeRows(left, right, &merged)) {
+          if (!MergeQueryRows(left, right, &merged)) {
             continue;
           }
           if (!JoinPredicateMatches(plan, merged)) {
@@ -1044,7 +475,7 @@ class QueryExecutorImpl {
       Rows right_rows = ExecutePlan(plan.Child(1), Rows{left});
       for (const auto &row : right_rows) {
         QueryRow merged;
-        if (MergeRows(left, row, &merged)) {
+        if (MergeQueryRows(left, row, &merged)) {
           out.push_back(std::move(merged));
         }
       }
@@ -1125,7 +556,7 @@ class QueryExecutorImpl {
       }
       for (const auto &row : right_rows) {
         QueryRow merged;
-        if (MergeRows(left, row, &merged)) {
+        if (MergeQueryRows(left, row, &merged)) {
           out.push_back(std::move(merged));
         }
       }
@@ -1304,8 +735,10 @@ class QueryExecutorImpl {
     Rows rows = ExecutePlan(plan.Child(0), input);
     Rows out;
     for (const auto &row : rows) {
-      const Value &left = LookupVariable(row, plan.Relationship().left_node);
-      const Value &right = LookupVariable(row, plan.Relationship().right_node);
+      const Value &left =
+          LookupQueryVariable(row, plan.Relationship().left_node);
+      const Value &right =
+          LookupQueryVariable(row, plan.Relationship().right_node);
       CHECK(left.IsNode() && right.IsNode(), common::InvalidArgumentError,
             "CREATE relationship endpoints must be nodes");
       Value::Map properties;
@@ -1334,7 +767,7 @@ class QueryExecutorImpl {
       if (!matches.empty()) {
         for (auto &match : matches) {
           QueryRow next;
-          if (!MergeRows(row, match, &next)) {
+          if (!MergeQueryRows(row, match, &next)) {
             continue;
           }
           for (const auto &action : plan.Merge().actions) {
@@ -1376,9 +809,10 @@ class QueryExecutorImpl {
       } else {
         const auto &relationship_pattern =
             pattern.relationships.at(command.index);
-        const Value &left = LookupVariable(row, relationship_pattern.left_node);
+        const Value &left =
+            LookupQueryVariable(row, relationship_pattern.left_node);
         const Value &right =
-            LookupVariable(row, relationship_pattern.right_node);
+            LookupQueryVariable(row, relationship_pattern.right_node);
         CHECK(left.IsNode() && right.IsNode(), common::InvalidArgumentError,
               "MERGE relationship endpoints must be nodes");
         Value::Map properties;
@@ -1588,6 +1022,7 @@ class QueryExecutorImpl {
 
   const AccessPath *access_path_ = nullptr;
   Storage *storage_ = nullptr;
+  GraphAccessExecutor graph_access_;
 };
 
 }  // namespace

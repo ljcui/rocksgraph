@@ -16,6 +16,7 @@
 #include "ast/ast_equal.h"
 #include "ast/ast_node.h"
 #include "common/exception.h"
+#include "runtime/query_row_util.h"
 
 namespace rg {
 namespace {
@@ -148,13 +149,6 @@ TruthValue EqualityTruth(const Value &left, const Value &right) {
     return saw_null ? TruthValue::kNull : TruthValue::kTrue;
   }
   return ValuesEqual(left, right) ? TruthValue::kTrue : TruthValue::kFalse;
-}
-
-const Value &LookupVariable(const QueryRow &row, const std::string &name) {
-  const auto found = row.find(name);
-  CHECK(found != row.end(), common::InvalidArgumentError,
-        "variable is not bound: " + name);
-  return found->second;
 }
 
 const Value *LookupPrecomputedExpression(
@@ -866,7 +860,8 @@ Value EvaluateExpression(
     case ast::ASTNodeType::kNullLiteral:
       return Value::Null();
     case ast::ASTNodeType::kVariable:
-      return LookupVariable(row, ast::CastAst<ast::Variable>(expression).name);
+      return LookupQueryVariable(row,
+                                 ast::CastAst<ast::Variable>(expression).name);
     case ast::ASTNodeType::kPropertyExpression: {
       const auto &property = ast::CastAst<ast::PropertyExpression>(expression);
       CHECK(property.object != nullptr, common::InvalidArgumentError,
