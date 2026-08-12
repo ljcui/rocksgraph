@@ -2,11 +2,8 @@
 
 #include <algorithm>
 #include <cctype>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <limits>
-#include <map>
 #include <memory>
 #include <optional>
 #include <set>
@@ -19,11 +16,11 @@
 
 #include "ast/ast_builder.h"
 #include "ast/ast_node.h"
-#include "ast/expression_to_string.h"
 #include "common/exception.h"
 #include "ir/logical_plan_builder.h"
 #include "ir/planner/catalog.h"
 #include "ir/planner_query.h"
+#include "runtime/aggregation_evaluator.h"
 #include "runtime/expression_evaluator.h"
 
 namespace rg {
@@ -43,12 +40,6 @@ std::string LowerAscii(std::string value) {
       value.begin(), value.end(), value.begin(),
       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
   return value;
-}
-
-bool AddWouldOverflow(std::int64_t left, std::int64_t right) {
-  return (right > 0 &&
-          left > std::numeric_limits<std::int64_t>::max() - right) ||
-         (right < 0 && left < std::numeric_limits<std::int64_t>::min() - right);
 }
 
 const Value &LookupVariable(const QueryRow &row, const std::string &name) {
@@ -936,209 +927,12 @@ class QueryExecutorImpl {
 
   Rows ExecuteDistinct(const ir::DistinctPlan &plan, const Rows &input) {
     Rows rows = ExecutePlan(plan.Child(0), input);
-    Rows out;
-    std::set<std::string> seen;
-    for (const auto &row : rows) {
-      QueryRow projected;
-      std::string key;
-      for (const auto &item : plan.GroupingItems()) {
-        Value value = EvaluateLogicalProjectionItem(item, row);
-        key += item.alias;
-        key += '=';
-        key += ValueKey(value);
-        key += '\n';
-        projected[item.alias] = std::move(value);
-      }
-      if (seen.insert(std::move(key)).second) {
-        out.push_back(std::move(projected));
-      }
-    }
-    return out;
+    return ProjectDistinctRows(plan.GroupingItems(), rows);
   }
 
   Rows ExecuteAggregation(const ir::AggregationPlan &plan, const Rows &input) {
     Rows rows = ExecutePlan(plan.Child(0), input);
-    struct GroupState {
-      QueryRow row;
-      Rows rows;
-    };
-
-    std::map<std::string, GroupState> groups;
-    if (plan.GroupingItems().empty()) {
-      groups.emplace("", GroupState{});
-    }
-
-    for (const auto &row : rows) {
-      QueryRow group_row;
-      std::string key;
-      for (const auto &item : plan.GroupingItems()) {
-        Value value = EvaluateLogicalProjectionItem(item, row);
-        key += item.alias;
-        key += '=';
-        key += ValueKey(value);
-        key += '\n';
-        group_row[item.alias] = std::move(value);
-      }
-      auto [it, inserted] = groups.emplace(key, GroupState{group_row, {}});
-      (void)inserted;
-      it->second.rows.push_back(row);
-    }
-
-    Rows out;
-    for (auto &[key, state] : groups) {
-      (void)key;
-      QueryRow row = std::move(state.row);
-      for (const auto &item : plan.AggregationItems()) {
-        CHECK(item.expression != nullptr, common::InvalidArgumentError,
-              "aggregation expression is null");
-        row[item.alias] = EvaluateAggregationExpression(
-            *item.expression, state.rows, item.precomputed_expressions);
-      }
-      out.push_back(std::move(row));
-    }
-    return out;
-  }
-
-  Value EvaluateAggregationExpression(
-      const ast::Expression &expression, const Rows &rows,
-      const std::vector<ir::LogicalPrecomputedExpression> &precomputed) const {
-    if (expression.Is(ast::ASTNodeType::kCountStarExpression)) {
-      return Value(static_cast<std::int64_t>(rows.size()));
-    }
-    if (!expression.Is(ast::ASTNodeType::kFunctionInvocation)) {
-      THROW(common::InvalidArgumentError,
-            "unsupported aggregation expression: " +
-                ast::ExpressionToString(expression));
-    }
-
-    const auto &function = ast::CastAst<ast::FunctionInvocation>(expression);
-    const std::string name = LowerAscii(function.function_name);
-    if (name == "count") {
-      return EvaluateCountAggregation(function, rows, precomputed);
-    }
-    if (name == "collect") {
-      return EvaluateCollectAggregation(function, rows, precomputed);
-    }
-    if (name == "sum") {
-      return EvaluateSumAggregation(function, rows, precomputed);
-    }
-    if (name == "avg") {
-      return EvaluateAvgAggregation(function, rows, precomputed);
-    }
-    if (name == "min") {
-      return EvaluateMinMaxAggregation(function, rows, precomputed, true);
-    }
-    if (name == "max") {
-      return EvaluateMinMaxAggregation(function, rows, precomputed, false);
-    }
-
-    THROW(common::InvalidArgumentError,
-          "unsupported aggregation expression: " +
-              ast::ExpressionToString(expression));
-  }
-
-  std::vector<Value> EvaluateAggregationValues(
-      const ast::FunctionInvocation &function, const Rows &rows,
-      const std::vector<ir::LogicalPrecomputedExpression> &precomputed) const {
-    CHECK(function.arguments.size() == 1, common::InvalidArgumentError,
-          function.function_name + "() expects one argument");
-    CHECK(function.arguments[0] != nullptr, common::InvalidArgumentError,
-          function.function_name + "() argument is null");
-
-    std::vector<Value> values;
-    values.reserve(rows.size());
-    std::set<std::string> seen;
-    for (const auto &row : rows) {
-      Value value =
-          EvaluateExpression(*function.arguments[0], row, precomputed);
-      if (value.IsNull()) {
-        continue;
-      }
-      if (function.distinct && !seen.insert(ValueKey(value)).second) {
-        continue;
-      }
-      values.push_back(std::move(value));
-    }
-    return values;
-  }
-
-  Value EvaluateCountAggregation(
-      const ast::FunctionInvocation &function, const Rows &rows,
-      const std::vector<ir::LogicalPrecomputedExpression> &precomputed) const {
-    return Value(static_cast<std::int64_t>(
-        EvaluateAggregationValues(function, rows, precomputed).size()));
-  }
-
-  Value EvaluateCollectAggregation(
-      const ast::FunctionInvocation &function, const Rows &rows,
-      const std::vector<ir::LogicalPrecomputedExpression> &precomputed) const {
-    return Value(
-        Value::List(EvaluateAggregationValues(function, rows, precomputed)));
-  }
-
-  Value EvaluateSumAggregation(
-      const ast::FunctionInvocation &function, const Rows &rows,
-      const std::vector<ir::LogicalPrecomputedExpression> &precomputed) const {
-    std::vector<Value> values =
-        EvaluateAggregationValues(function, rows, precomputed);
-    for (const Value &value : values) {
-      CHECK(IsNumeric(value), common::InvalidArgumentError,
-            function.function_name + "() expects numeric values");
-    }
-    const bool integral =
-        std::all_of(values.begin(), values.end(),
-                    [](const Value &value) { return value.IsInteger(); });
-    if (integral) {
-      std::int64_t integer_sum = 0;
-      for (const Value &value : values) {
-        CHECK(!AddWouldOverflow(integer_sum, value.AsInteger()),
-              common::InvalidArgumentError, "integer sum overflow");
-        integer_sum += value.AsInteger();
-      }
-      return Value(integer_sum);
-    }
-    double double_sum = 0.0;
-    for (const Value &value : values) {
-      double_sum += AsDoubleValue(value);
-    }
-    return Value(double_sum);
-  }
-
-  Value EvaluateAvgAggregation(
-      const ast::FunctionInvocation &function, const Rows &rows,
-      const std::vector<ir::LogicalPrecomputedExpression> &precomputed) const {
-    std::vector<Value> values =
-        EvaluateAggregationValues(function, rows, precomputed);
-    if (values.empty()) {
-      return Value::Null();
-    }
-    double sum = 0.0;
-    for (const Value &value : values) {
-      CHECK(IsNumeric(value), common::InvalidArgumentError,
-            function.function_name + "() expects numeric values");
-      sum += AsDoubleValue(value);
-    }
-    return Value(sum / static_cast<double>(values.size()));
-  }
-
-  Value EvaluateMinMaxAggregation(
-      const ast::FunctionInvocation &function, const Rows &rows,
-      const std::vector<ir::LogicalPrecomputedExpression> &precomputed,
-      bool min) const {
-    std::vector<Value> values =
-        EvaluateAggregationValues(function, rows, precomputed);
-    if (values.empty()) {
-      return Value::Null();
-    }
-    Value best = values.front();
-    for (std::size_t index = 1; index < values.size(); ++index) {
-      const Value &candidate = values[index];
-      if ((min && ValueLess(candidate, best)) ||
-          (!min && ValueLess(best, candidate))) {
-        best = candidate;
-      }
-    }
-    return best;
+    return AggregateRows(plan.GroupingItems(), plan.AggregationItems(), rows);
   }
 
   Rows ExecuteSort(const ir::SortPlan &plan, const Rows &input) {

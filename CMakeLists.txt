@@ -140,7 +140,8 @@ set(ROCKSGRAPH_IR_SOURCES
 
 set(ROCKSGRAPH_STORAGE_SOURCES storage/in_memory_graph.cc)
 
-set(ROCKSGRAPH_RUNTIME_SOURCES runtime/expression_evaluator.cc
+set(ROCKSGRAPH_RUNTIME_SOURCES runtime/aggregation_evaluator.cc
+                              runtime/expression_evaluator.cc
                               runtime/query_executor.cc)
 
 add_library(rocksgraph_ast STATIC ${ROCKSGRAPH_AST_SOURCES})
@@ -248,3 +249,11 @@ target_link_libraries(query_executor_test PRIVATE GTest::gtest_main
 set_target_properties(query_executor_test PROPERTIES BUILD_RPATH
                                                      "/usr/local/lib")
 add_test(NAME query_executor_test COMMAND query_executor_test)
+
+add_executable(aggregation_evaluator_test
+               tests/aggregation_evaluator_test.cc)
+target_link_libraries(aggregation_evaluator_test PRIVATE GTest::gtest_main
+                                                         rocksgraph_runtime)
+set_target_properties(aggregation_evaluator_test PROPERTIES BUILD_RPATH
+                                                            "/usr/local/lib")
+add_test(NAME aggregation_evaluator_test COMMAND aggregation_evaluator_test)
