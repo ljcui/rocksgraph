@@ -10,7 +10,6 @@
 #include <memory>
 #include <optional>
 #include <set>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -19,13 +18,13 @@
 #include <vector>
 
 #include "ast/ast_builder.h"
-#include "ast/ast_equal.h"
 #include "ast/ast_node.h"
 #include "ast/expression_to_string.h"
 #include "common/exception.h"
 #include "ir/logical_plan_builder.h"
 #include "ir/planner/catalog.h"
 #include "ir/planner_query.h"
+#include "runtime/expression_evaluator.h"
 
 namespace rg {
 namespace {
@@ -39,8 +38,6 @@ struct EntityRef {
   std::int64_t id = -1;
 };
 
-enum class QuantifierMode { kAll, kAny, kNone, kSingle };
-
 std::string LowerAscii(std::string value) {
   std::transform(
       value.begin(), value.end(), value.begin(),
@@ -48,151 +45,10 @@ std::string LowerAscii(std::string value) {
   return value;
 }
 
-std::string ValueKey(const Value &value) {
-  return std::to_string(static_cast<int>(value.Type())) + ":" +
-         value.ToString();
-}
-
-bool IsNumeric(const Value &value) {
-  return value.IsInteger() || value.IsDouble();
-}
-
-double AsDoubleValue(const Value &value) {
-  if (value.IsInteger()) {
-    return static_cast<double>(value.AsInteger());
-  }
-  if (value.IsDouble()) {
-    return value.AsDouble();
-  }
-  THROW(common::InvalidArgumentError, "expected numeric value");
-}
-
-std::optional<std::int64_t> ParseInteger(std::string_view text) {
-  try {
-    std::size_t parsed = 0;
-    std::int64_t value = std::stoll(std::string(text), &parsed);
-    if (parsed == text.size()) {
-      return value;
-    }
-  } catch (const std::invalid_argument &) {
-  } catch (const std::out_of_range &) {
-  }
-  return std::nullopt;
-}
-
-std::optional<double> ParseDouble(std::string_view text) {
-  try {
-    std::size_t parsed = 0;
-    double value = std::stod(std::string(text), &parsed);
-    if (parsed == text.size()) {
-      return value;
-    }
-  } catch (const std::invalid_argument &) {
-  } catch (const std::out_of_range &) {
-  }
-  return std::nullopt;
-}
-
-bool AddWouldOverflow(std::int64_t lhs, std::int64_t rhs) {
-  if (rhs > 0) {
-    return lhs > std::numeric_limits<std::int64_t>::max() - rhs;
-  }
-  if (rhs < 0) {
-    if (rhs == std::numeric_limits<std::int64_t>::min()) {
-      return lhs < 0;
-    }
-    return lhs < std::numeric_limits<std::int64_t>::min() - rhs;
-  }
-  return false;
-}
-
-bool IsTruthy(const Value &value) {
-  if (value.IsNull()) {
-    return false;
-  }
-  if (value.IsBool()) {
-    return value.AsBool();
-  }
-  if (value.IsInteger()) {
-    return value.AsInteger() != 0;
-  }
-  if (value.IsDouble()) {
-    return value.AsDouble() != 0.0;
-  }
-  if (value.IsString()) {
-    return !value.AsString().empty();
-  }
-  if (value.IsList()) {
-    return !value.AsList().empty();
-  }
-  return true;
-}
-
-std::string TrimAscii(std::string value) {
-  const auto is_space = [](unsigned char ch) { return std::isspace(ch) != 0; };
-  value.erase(value.begin(),
-              std::find_if(value.begin(), value.end(),
-                           [&](unsigned char ch) { return !is_space(ch); }));
-  value.erase(std::find_if(value.rbegin(), value.rend(),
-                           [&](unsigned char ch) { return !is_space(ch); })
-                  .base(),
-              value.end());
-  return value;
-}
-
-Value NumericValue(double value, bool integral) {
-  if (integral) {
-    return Value(static_cast<std::int64_t>(value));
-  }
-  return Value(value);
-}
-
-std::optional<std::int64_t> IntegerValue(const Value &value) {
-  if (!value.IsInteger()) {
-    return std::nullopt;
-  }
-  return value.AsInteger();
-}
-
-std::int64_t NormalizeListIndex(std::int64_t index, std::size_t size) {
-  if (index < 0) {
-    index += static_cast<std::int64_t>(size);
-  }
-  return index;
-}
-
-std::int64_t ClampListSliceIndex(std::int64_t index, std::size_t size) {
-  index = NormalizeListIndex(index, size);
-  if (index < 0) {
-    return 0;
-  }
-  const std::int64_t list_size = static_cast<std::int64_t>(size);
-  return index > list_size ? list_size : index;
-}
-
-bool ValueLess(const Value &left, const Value &right) {
-  if (left.IsNull() || right.IsNull()) {
-    return !left.IsNull() && right.IsNull();
-  }
-  if (IsNumeric(left) && IsNumeric(right)) {
-    return AsDoubleValue(left) < AsDoubleValue(right);
-  }
-  if (left.Type() != right.Type()) {
-    return static_cast<int>(left.Type()) < static_cast<int>(right.Type());
-  }
-  if (left.IsString()) {
-    return left.AsString() < right.AsString();
-  }
-  if (left.IsBool()) {
-    return !left.AsBool() && right.AsBool();
-  }
-  if (left.IsNode()) {
-    return left.AsNode().id < right.AsNode().id;
-  }
-  if (left.IsRelationship()) {
-    return left.AsRelationship().id < right.AsRelationship().id;
-  }
-  return left.ToString() < right.ToString();
+bool AddWouldOverflow(std::int64_t left, std::int64_t right) {
+  return (right > 0 &&
+          left > std::numeric_limits<std::int64_t>::max() - right) ||
+         (right < 0 && left < std::numeric_limits<std::int64_t>::min() - right);
 }
 
 const Value &LookupVariable(const QueryRow &row, const std::string &name) {
@@ -212,7 +68,7 @@ bool TryBind(QueryRow *row, const std::string &variable, Value value) {
     row->emplace(variable, std::move(value));
     return true;
   }
-  return found->second == value;
+  return ValuesEqual(found->second, value);
 }
 
 bool MergeRows(const QueryRow &left, const QueryRow &right, QueryRow *out) {
@@ -224,857 +80,6 @@ bool MergeRows(const QueryRow &left, const QueryRow &right, QueryRow *out) {
     }
   }
   return true;
-}
-
-const Value *LookupPrecomputedExpression(
-    const ast::Expression &expression, const QueryRow &row,
-    const std::vector<ir::LogicalPrecomputedExpression> &precomputed) {
-  for (const auto &entry : precomputed) {
-    if (entry.expression == nullptr ||
-        !ast::ASTEqual::Equal(&expression, entry.expression)) {
-      continue;
-    }
-    const auto found = row.find(entry.variable);
-    CHECK(found != row.end(), common::InvalidArgumentError,
-          "precomputed expression variable is not bound: " + entry.variable);
-    return &found->second;
-  }
-  return nullptr;
-}
-
-Value EvaluateExpression(
-    const ast::Expression &expression, const QueryRow &row,
-    const std::vector<ir::LogicalPrecomputedExpression> &precomputed = {});
-
-Value EvaluateLogicalProjectionItem(const ir::LogicalProjectionItem &item,
-                                    const QueryRow &row) {
-  CHECK(item.expression != nullptr, common::InvalidArgumentError,
-        "projection expression is null");
-  return EvaluateExpression(*item.expression, row,
-                            item.precomputed_expressions);
-}
-
-Value EvaluateLogicalSortItem(const ir::LogicalSortItem &item,
-                              const QueryRow &row) {
-  CHECK(item.expression != nullptr, common::InvalidArgumentError,
-        "sort expression is null");
-  return EvaluateExpression(*item.expression, row,
-                            item.precomputed_expressions);
-}
-
-bool RuntimeNodeHasLabels(const Node &node,
-                          const std::vector<std::string> &labels);
-bool RuntimeRelationshipHasAnyType(const Relationship &relationship,
-                                   const std::vector<std::string> &types);
-
-const Value *FindProperty(const Value &value, std::string_view property_key) {
-  const auto find_in_map =
-      [property_key](const Value::Map &properties) -> const Value * {
-    const auto found = properties.find(std::string(property_key));
-    return found != properties.end() ? &found->second : nullptr;
-  };
-  if (value.IsMap()) {
-    return find_in_map(value.AsMap());
-  }
-  if (value.IsNode()) {
-    return find_in_map(value.AsNode().properties);
-  }
-  if (value.IsRelationship()) {
-    return find_in_map(value.AsRelationship().properties);
-  }
-  return nullptr;
-}
-
-Value EvaluateFunction(
-    const ast::FunctionInvocation &function, const QueryRow &row,
-    const std::vector<ir::LogicalPrecomputedExpression> &precomputed) {
-  const std::string name = LowerAscii(function.function_name);
-  std::vector<Value> arguments;
-  arguments.reserve(function.arguments.size());
-  for (const auto &argument : function.arguments) {
-    CHECK(argument != nullptr, common::InvalidArgumentError,
-          "function argument is null");
-    arguments.push_back(EvaluateExpression(*argument, row, precomputed));
-  }
-
-  if (name == "id") {
-    CHECK(arguments.size() == 1, common::InvalidArgumentError,
-          "id() expects one argument");
-    if (arguments[0].IsNode()) {
-      return Value(arguments[0].AsNode().id);
-    }
-    if (arguments[0].IsRelationship()) {
-      return Value(arguments[0].AsRelationship().id);
-    }
-    return Value::Null();
-  }
-  if (name == "labels") {
-    CHECK(arguments.size() == 1, common::InvalidArgumentError,
-          "labels() expects one argument");
-    Value::List labels;
-    if (arguments[0].IsNode()) {
-      for (const auto &label : arguments[0].AsNode().labels) {
-        labels.emplace_back(label);
-      }
-    }
-    return Value(std::move(labels));
-  }
-  if (name == "type") {
-    CHECK(arguments.size() == 1, common::InvalidArgumentError,
-          "type() expects one argument");
-    if (arguments[0].IsRelationship()) {
-      return Value(arguments[0].AsRelationship().type);
-    }
-    return Value::Null();
-  }
-  if (name == "size") {
-    CHECK(arguments.size() == 1, common::InvalidArgumentError,
-          "size() expects one argument");
-    if (arguments[0].IsList()) {
-      return Value(static_cast<std::int64_t>(arguments[0].AsList().size()));
-    }
-    if (arguments[0].IsString()) {
-      return Value(static_cast<std::int64_t>(arguments[0].AsString().size()));
-    }
-    return Value::Null();
-  }
-  if (name == "length") {
-    CHECK(arguments.size() == 1, common::InvalidArgumentError,
-          "length() expects one argument");
-    if (arguments[0].IsPath()) {
-      return Value(static_cast<std::int64_t>(
-          arguments[0].AsPath().relationships.size()));
-    }
-    return Value::Null();
-  }
-  if (name == "coalesce") {
-    for (const Value &argument : arguments) {
-      if (!argument.IsNull()) {
-        return argument;
-      }
-    }
-    return Value::Null();
-  }
-  if (name == "isempty") {
-    CHECK(arguments.size() == 1, common::InvalidArgumentError,
-          "isEmpty() expects one argument");
-    if (arguments[0].IsNull()) {
-      return Value::Null();
-    }
-    if (arguments[0].IsString()) {
-      return Value(arguments[0].AsString().empty());
-    }
-    if (arguments[0].IsList()) {
-      return Value(arguments[0].AsList().empty());
-    }
-    if (arguments[0].IsMap()) {
-      return Value(arguments[0].AsMap().empty());
-    }
-    return Value::Null();
-  }
-  if (name == "keys") {
-    CHECK(arguments.size() == 1, common::InvalidArgumentError,
-          "keys() expects one argument");
-    Value::List keys;
-    if (arguments[0].IsMap()) {
-      keys.reserve(arguments[0].AsMap().size());
-      for (const auto &[key, value] : arguments[0].AsMap()) {
-        (void)value;
-        keys.emplace_back(key);
-      }
-      return Value(std::move(keys));
-    }
-    if (arguments[0].IsNode()) {
-      keys.reserve(arguments[0].AsNode().properties.size());
-      for (const auto &[key, value] : arguments[0].AsNode().properties) {
-        (void)value;
-        keys.emplace_back(key);
-      }
-      return Value(std::move(keys));
-    }
-    if (arguments[0].IsRelationship()) {
-      keys.reserve(arguments[0].AsRelationship().properties.size());
-      for (const auto &[key, value] :
-           arguments[0].AsRelationship().properties) {
-        (void)value;
-        keys.emplace_back(key);
-      }
-      return Value(std::move(keys));
-    }
-    return Value::Null();
-  }
-  if (name == "properties") {
-    CHECK(arguments.size() == 1, common::InvalidArgumentError,
-          "properties() expects one argument");
-    if (arguments[0].IsMap()) {
-      return Value(arguments[0].AsMap());
-    }
-    if (arguments[0].IsNode()) {
-      return Value(arguments[0].AsNode().properties);
-    }
-    if (arguments[0].IsRelationship()) {
-      return Value(arguments[0].AsRelationship().properties);
-    }
-    return Value::Null();
-  }
-  if (name == "range") {
-    CHECK(arguments.size() == 2 || arguments.size() == 3,
-          common::InvalidArgumentError,
-          "range() expects two or three arguments");
-    if (!arguments[0].IsInteger() || !arguments[1].IsInteger() ||
-        (arguments.size() == 3 && !arguments[2].IsInteger())) {
-      return Value::Null();
-    }
-    const std::int64_t start = arguments[0].AsInteger();
-    const std::int64_t end = arguments[1].AsInteger();
-    const std::int64_t step =
-        arguments.size() == 3 ? arguments[2].AsInteger() : 1;
-    CHECK(step != 0, common::InvalidArgumentError, "range() step is zero");
-    Value::List values;
-    if (step > 0) {
-      for (std::int64_t value = start; value <= end;) {
-        values.emplace_back(value);
-        if (AddWouldOverflow(value, step)) {
-          break;
-        }
-        const std::int64_t next = value + step;
-        if (next > end) {
-          break;
-        }
-        value = next;
-      }
-    } else {
-      for (std::int64_t value = start; value >= end;) {
-        values.emplace_back(value);
-        if (AddWouldOverflow(value, step)) {
-          break;
-        }
-        const std::int64_t next = value + step;
-        if (next < end) {
-          break;
-        }
-        value = next;
-      }
-    }
-    return Value(std::move(values));
-  }
-  if (name == "split") {
-    CHECK(arguments.size() == 2, common::InvalidArgumentError,
-          "split() expects two arguments");
-    if (!arguments[0].IsString() || !arguments[1].IsString()) {
-      return Value::Null();
-    }
-    const std::string &text = arguments[0].AsString();
-    const std::string &delimiter = arguments[1].AsString();
-    Value::List parts;
-    if (delimiter.empty()) {
-      parts.reserve(text.size());
-      for (char ch : text) {
-        parts.emplace_back(std::string(1, ch));
-      }
-      return Value(std::move(parts));
-    }
-    std::size_t start = 0;
-    while (true) {
-      const std::size_t found = text.find(delimiter, start);
-      if (found == std::string::npos) {
-        parts.emplace_back(text.substr(start));
-        break;
-      }
-      parts.emplace_back(text.substr(start, found - start));
-      start = found + delimiter.size();
-    }
-    return Value(std::move(parts));
-  }
-  if (name == "nodes") {
-    CHECK(arguments.size() == 1, common::InvalidArgumentError,
-          "nodes() expects one argument");
-    if (!arguments[0].IsPath()) {
-      return Value::Null();
-    }
-    Value::List nodes;
-    nodes.reserve(arguments[0].AsPath().nodes.size());
-    for (const auto &node : arguments[0].AsPath().nodes) {
-      nodes.emplace_back(node);
-    }
-    return Value(std::move(nodes));
-  }
-  if (name == "relationships") {
-    CHECK(arguments.size() == 1, common::InvalidArgumentError,
-          "relationships() expects one argument");
-    if (!arguments[0].IsPath()) {
-      return Value::Null();
-    }
-    Value::List relationships;
-    relationships.reserve(arguments[0].AsPath().relationships.size());
-    for (const auto &relationship : arguments[0].AsPath().relationships) {
-      relationships.emplace_back(relationship);
-    }
-    return Value(std::move(relationships));
-  }
-  if (name == "tostring") {
-    CHECK(arguments.size() == 1, common::InvalidArgumentError,
-          "toString() expects one argument");
-    if (arguments[0].IsNull()) {
-      return Value::Null();
-    }
-    if (arguments[0].IsString()) {
-      return arguments[0];
-    }
-    return Value(arguments[0].ToString());
-  }
-  if (name == "tointeger") {
-    CHECK(arguments.size() == 1, common::InvalidArgumentError,
-          "toInteger() expects one argument");
-    if (arguments[0].IsNull()) {
-      return Value::Null();
-    }
-    if (arguments[0].IsInteger()) {
-      return arguments[0];
-    }
-    if (arguments[0].IsDouble()) {
-      return Value(static_cast<std::int64_t>(arguments[0].AsDouble()));
-    }
-    if (arguments[0].IsBool()) {
-      return Value(arguments[0].AsBool() ? 1 : 0);
-    }
-    if (arguments[0].IsString()) {
-      std::optional<std::int64_t> value = ParseInteger(arguments[0].AsString());
-      return value.has_value() ? Value(*value) : Value::Null();
-    }
-    return Value::Null();
-  }
-  if (name == "tofloat") {
-    CHECK(arguments.size() == 1, common::InvalidArgumentError,
-          "toFloat() expects one argument");
-    if (arguments[0].IsNull()) {
-      return Value::Null();
-    }
-    if (arguments[0].IsDouble()) {
-      return arguments[0];
-    }
-    if (arguments[0].IsInteger()) {
-      return Value(static_cast<double>(arguments[0].AsInteger()));
-    }
-    if (arguments[0].IsBool()) {
-      return Value(arguments[0].AsBool() ? 1.0 : 0.0);
-    }
-    if (arguments[0].IsString()) {
-      std::optional<double> value = ParseDouble(arguments[0].AsString());
-      return value.has_value() ? Value(*value) : Value::Null();
-    }
-    return Value::Null();
-  }
-  if (name == "toboolean") {
-    CHECK(arguments.size() == 1, common::InvalidArgumentError,
-          "toBoolean() expects one argument");
-    if (arguments[0].IsNull()) {
-      return Value::Null();
-    }
-    if (arguments[0].IsBool()) {
-      return arguments[0];
-    }
-    if (arguments[0].IsString()) {
-      const std::string value = LowerAscii(TrimAscii(arguments[0].AsString()));
-      if (value == "true") {
-        return Value(true);
-      }
-      if (value == "false") {
-        return Value(false);
-      }
-    }
-    return Value::Null();
-  }
-  if (name == "tolower") {
-    CHECK(arguments.size() == 1, common::InvalidArgumentError,
-          "toLower() expects one argument");
-    return arguments[0].IsString() ? Value(LowerAscii(arguments[0].AsString()))
-                                   : Value::Null();
-  }
-  if (name == "toupper") {
-    CHECK(arguments.size() == 1, common::InvalidArgumentError,
-          "toUpper() expects one argument");
-    if (!arguments[0].IsString()) {
-      return Value::Null();
-    }
-    std::string value = arguments[0].AsString();
-    std::transform(
-        value.begin(), value.end(), value.begin(),
-        [](unsigned char ch) { return static_cast<char>(std::toupper(ch)); });
-    return Value(std::move(value));
-  }
-  if (name == "trim") {
-    CHECK(arguments.size() == 1, common::InvalidArgumentError,
-          "trim() expects one argument");
-    return arguments[0].IsString() ? Value(TrimAscii(arguments[0].AsString()))
-                                   : Value::Null();
-  }
-
-  THROW(common::InvalidArgumentError,
-        "unsupported function in executor: " + function.function_name);
-}
-
-Value EvaluateListIndex(
-    const ast::ListIndexExpression &expression, const QueryRow &row,
-    const std::vector<ir::LogicalPrecomputedExpression> &precomputed) {
-  CHECK(expression.list != nullptr, common::InvalidArgumentError,
-        "list index base expression is null");
-  CHECK(expression.index != nullptr, common::InvalidArgumentError,
-        "list index expression is null");
-
-  Value list = EvaluateExpression(*expression.list, row, precomputed);
-  Value index_value = EvaluateExpression(*expression.index, row, precomputed);
-  std::optional<std::int64_t> index = IntegerValue(index_value);
-  if (!list.IsList() || !index.has_value()) {
-    return Value::Null();
-  }
-
-  const Value::List &items = list.AsList();
-  const std::int64_t normalized = NormalizeListIndex(*index, items.size());
-  if (normalized < 0 || normalized >= static_cast<std::int64_t>(items.size())) {
-    return Value::Null();
-  }
-  return items[static_cast<std::size_t>(normalized)];
-}
-
-Value EvaluateListSlice(
-    const ast::ListSliceExpression &expression, const QueryRow &row,
-    const std::vector<ir::LogicalPrecomputedExpression> &precomputed) {
-  CHECK(expression.list != nullptr, common::InvalidArgumentError,
-        "list slice base expression is null");
-
-  Value list = EvaluateExpression(*expression.list, row, precomputed);
-  if (!list.IsList()) {
-    return Value::Null();
-  }
-
-  const Value::List &items = list.AsList();
-  std::int64_t start = 0;
-  std::int64_t end = static_cast<std::int64_t>(items.size());
-  if (expression.start_index != nullptr) {
-    Value start_value =
-        EvaluateExpression(*expression.start_index, row, precomputed);
-    std::optional<std::int64_t> maybe_start = IntegerValue(start_value);
-    if (!maybe_start.has_value()) {
-      return Value::Null();
-    }
-    start = ClampListSliceIndex(*maybe_start, items.size());
-  }
-  if (expression.end_index != nullptr) {
-    Value end_value =
-        EvaluateExpression(*expression.end_index, row, precomputed);
-    std::optional<std::int64_t> maybe_end = IntegerValue(end_value);
-    if (!maybe_end.has_value()) {
-      return Value::Null();
-    }
-    end = ClampListSliceIndex(*maybe_end, items.size());
-  }
-  if (end < start) {
-    end = start;
-  }
-
-  Value::List sliced;
-  sliced.reserve(static_cast<std::size_t>(end - start));
-  for (std::int64_t index = start; index < end; ++index) {
-    sliced.push_back(items[static_cast<std::size_t>(index)]);
-  }
-  return Value(std::move(sliced));
-}
-
-Value EvaluateCaseExpression(
-    const ast::CaseExpression &expression, const QueryRow &row,
-    const std::vector<ir::LogicalPrecomputedExpression> &precomputed) {
-  std::optional<Value> test_value;
-  if (expression.test != nullptr) {
-    test_value = EvaluateExpression(*expression.test, row, precomputed);
-  }
-
-  for (const auto &[when_expression, then_expression] :
-       expression.alternatives) {
-    CHECK(when_expression != nullptr, common::InvalidArgumentError,
-          "CASE WHEN expression is null");
-    CHECK(then_expression != nullptr, common::InvalidArgumentError,
-          "CASE THEN expression is null");
-
-    bool matched = false;
-    if (test_value.has_value()) {
-      matched =
-          *test_value == EvaluateExpression(*when_expression, row, precomputed);
-    } else {
-      matched =
-          IsTruthy(EvaluateExpression(*when_expression, row, precomputed));
-    }
-    if (matched) {
-      return EvaluateExpression(*then_expression, row, precomputed);
-    }
-  }
-
-  if (expression.else_expr != nullptr) {
-    return EvaluateExpression(*expression.else_expr, row, precomputed);
-  }
-  return Value::Null();
-}
-
-Value EvaluateListComprehension(
-    const ast::ListComprehension &expression, const QueryRow &row,
-    const std::vector<ir::LogicalPrecomputedExpression> &precomputed) {
-  CHECK(!expression.variable.empty(), common::InvalidArgumentError,
-        "list comprehension variable is empty");
-  CHECK(expression.list_expr != nullptr, common::InvalidArgumentError,
-        "list comprehension list expression is null");
-
-  Value list = EvaluateExpression(*expression.list_expr, row, precomputed);
-  if (!list.IsList()) {
-    return Value::Null();
-  }
-
-  Value::List output;
-  for (const auto &item : list.AsList()) {
-    QueryRow scoped = row;
-    scoped[expression.variable] = item;
-    if (expression.where_expr != nullptr &&
-        !IsTruthy(
-            EvaluateExpression(*expression.where_expr, scoped, precomputed))) {
-      continue;
-    }
-    if (expression.eval_expr != nullptr) {
-      output.push_back(
-          EvaluateExpression(*expression.eval_expr, scoped, precomputed));
-    } else {
-      output.push_back(item);
-    }
-  }
-  return Value(std::move(output));
-}
-
-Value EvaluateQuantifier(
-    const ast::Quantifier &quantifier, QuantifierMode mode, const QueryRow &row,
-    const std::vector<ir::LogicalPrecomputedExpression> &precomputed) {
-  CHECK(!quantifier.variable.empty(), common::InvalidArgumentError,
-        "quantifier variable is empty");
-  CHECK(quantifier.list_expr != nullptr, common::InvalidArgumentError,
-        "quantifier list expression is null");
-  CHECK(quantifier.predicate != nullptr, common::InvalidArgumentError,
-        "quantifier predicate is null");
-
-  Value list = EvaluateExpression(*quantifier.list_expr, row, precomputed);
-  if (!list.IsList()) {
-    return Value(false);
-  }
-
-  std::int64_t matches = 0;
-  for (const auto &item : list.AsList()) {
-    QueryRow scoped = row;
-    scoped[quantifier.variable] = item;
-    const bool matched = IsTruthy(
-        EvaluateExpression(*quantifier.predicate, scoped, precomputed));
-    if (mode == QuantifierMode::kAll && !matched) {
-      return Value(false);
-    }
-    if (mode == QuantifierMode::kAny && matched) {
-      return Value(true);
-    }
-    if (mode == QuantifierMode::kNone && matched) {
-      return Value(false);
-    }
-    if (mode == QuantifierMode::kSingle && matched) {
-      ++matches;
-      if (matches > 1) {
-        return Value(false);
-      }
-    }
-  }
-
-  switch (mode) {
-    case QuantifierMode::kAll:
-      return Value(true);
-    case QuantifierMode::kAny:
-      return Value(false);
-    case QuantifierMode::kNone:
-      return Value(true);
-    case QuantifierMode::kSingle:
-      return Value(matches == 1);
-  }
-  THROW(common::InternalError, "unknown quantifier mode");
-}
-
-Value EvaluateExpression(
-    const ast::Expression &expression, const QueryRow &row,
-    const std::vector<ir::LogicalPrecomputedExpression> &precomputed) {
-  if (const Value *value =
-          LookupPrecomputedExpression(expression, row, precomputed);
-      value != nullptr) {
-    return *value;
-  }
-
-  switch (expression.node_type) {
-    case ast::ASTNodeType::kBooleanLiteral:
-      return Value(ast::CastAst<ast::BooleanLiteral>(expression).value);
-    case ast::ASTNodeType::kIntegerLiteral:
-      return Value(ast::CastAst<ast::IntegerLiteral>(expression).value);
-    case ast::ASTNodeType::kDoubleLiteral:
-      return Value(ast::CastAst<ast::DoubleLiteral>(expression).value);
-    case ast::ASTNodeType::kStringLiteral:
-      return Value(ast::CastAst<ast::StringLiteral>(expression).value);
-    case ast::ASTNodeType::kNullLiteral:
-      return Value::Null();
-    case ast::ASTNodeType::kVariable: {
-      const auto &variable = ast::CastAst<ast::Variable>(expression);
-      return LookupVariable(row, variable.name);
-    }
-    case ast::ASTNodeType::kPropertyExpression: {
-      const auto &property = ast::CastAst<ast::PropertyExpression>(expression);
-      CHECK(property.object != nullptr, common::InvalidArgumentError,
-            "property object is null");
-      Value object = EvaluateExpression(*property.object, row, precomputed);
-      const Value *value = FindProperty(object, property.property_key);
-      return value != nullptr ? *value : Value::Null();
-    }
-    case ast::ASTNodeType::kListIndexExpression:
-      return EvaluateListIndex(
-          ast::CastAst<ast::ListIndexExpression>(expression), row, precomputed);
-    case ast::ASTNodeType::kListSliceExpression:
-      return EvaluateListSlice(
-          ast::CastAst<ast::ListSliceExpression>(expression), row, precomputed);
-    case ast::ASTNodeType::kListLiteral: {
-      const auto &list = ast::CastAst<ast::ListLiteral>(expression);
-      Value::List values;
-      values.reserve(list.elements.size());
-      for (const auto &element : list.elements) {
-        CHECK(element != nullptr, common::InvalidArgumentError,
-              "list element is null");
-        values.push_back(EvaluateExpression(*element, row, precomputed));
-      }
-      return Value(std::move(values));
-    }
-    case ast::ASTNodeType::kMapLiteral: {
-      const auto &map = ast::CastAst<ast::MapLiteral>(expression);
-      Value::Map values;
-      for (const auto &[key, value] : map.entries) {
-        CHECK(value != nullptr, common::InvalidArgumentError,
-              "map value is null");
-        values[key] = EvaluateExpression(*value, row, precomputed);
-      }
-      return Value(std::move(values));
-    }
-    case ast::ASTNodeType::kAndExpression: {
-      const auto &binary = ast::CastAst<ast::AndExpression>(expression);
-      CHECK(binary.left != nullptr && binary.right != nullptr,
-            common::InvalidArgumentError, "AND expression is incomplete");
-      return Value(
-          IsTruthy(EvaluateExpression(*binary.left, row, precomputed)) &&
-          IsTruthy(EvaluateExpression(*binary.right, row, precomputed)));
-    }
-    case ast::ASTNodeType::kOrExpression: {
-      const auto &binary = ast::CastAst<ast::OrExpression>(expression);
-      CHECK(binary.left != nullptr && binary.right != nullptr,
-            common::InvalidArgumentError, "OR expression is incomplete");
-      return Value(
-          IsTruthy(EvaluateExpression(*binary.left, row, precomputed)) ||
-          IsTruthy(EvaluateExpression(*binary.right, row, precomputed)));
-    }
-    case ast::ASTNodeType::kXorExpression: {
-      const auto &binary = ast::CastAst<ast::XorExpression>(expression);
-      CHECK(binary.left != nullptr && binary.right != nullptr,
-            common::InvalidArgumentError, "XOR expression is incomplete");
-      return Value(
-          IsTruthy(EvaluateExpression(*binary.left, row, precomputed)) !=
-          IsTruthy(EvaluateExpression(*binary.right, row, precomputed)));
-    }
-    case ast::ASTNodeType::kNotExpression: {
-      const auto &unary = ast::CastAst<ast::NotExpression>(expression);
-      CHECK(unary.operand != nullptr, common::InvalidArgumentError,
-            "NOT expression operand is null");
-      return Value(
-          !IsTruthy(EvaluateExpression(*unary.operand, row, precomputed)));
-    }
-    case ast::ASTNodeType::kUnaryPlusExpression: {
-      const auto &unary = ast::CastAst<ast::UnaryPlusExpression>(expression);
-      CHECK(unary.operand != nullptr, common::InvalidArgumentError,
-            "unary plus operand is null");
-      return EvaluateExpression(*unary.operand, row, precomputed);
-    }
-    case ast::ASTNodeType::kUnaryMinusExpression: {
-      const auto &unary = ast::CastAst<ast::UnaryMinusExpression>(expression);
-      CHECK(unary.operand != nullptr, common::InvalidArgumentError,
-            "unary minus operand is null");
-      Value value = EvaluateExpression(*unary.operand, row, precomputed);
-      CHECK(IsNumeric(value), common::InvalidArgumentError,
-            "unary minus requires numeric value");
-      return value.IsInteger() ? Value(-value.AsInteger())
-                               : Value(-value.AsDouble());
-    }
-    case ast::ASTNodeType::kAddExpression:
-    case ast::ASTNodeType::kSubtractExpression:
-    case ast::ASTNodeType::kMultiplyExpression:
-    case ast::ASTNodeType::kDivideExpression:
-    case ast::ASTNodeType::kModuloExpression:
-    case ast::ASTNodeType::kPowerExpression: {
-      const auto &binary = ast::CastAst<ast::BinaryExpression>(expression);
-      CHECK(binary.left != nullptr && binary.right != nullptr,
-            common::InvalidArgumentError,
-            "arithmetic expression is incomplete");
-      Value left = EvaluateExpression(*binary.left, row, precomputed);
-      Value right = EvaluateExpression(*binary.right, row, precomputed);
-      if (expression.node_type == ast::ASTNodeType::kAddExpression &&
-          left.IsString() && right.IsString()) {
-        return Value(left.AsString() + right.AsString());
-      }
-      CHECK(IsNumeric(left) && IsNumeric(right), common::InvalidArgumentError,
-            "arithmetic expression requires numeric values");
-      const bool integral =
-          left.IsInteger() && right.IsInteger() &&
-          expression.node_type != ast::ASTNodeType::kDivideExpression &&
-          expression.node_type != ast::ASTNodeType::kPowerExpression;
-      const double lhs = AsDoubleValue(left);
-      const double rhs = AsDoubleValue(right);
-      switch (expression.node_type) {
-        case ast::ASTNodeType::kAddExpression:
-          return NumericValue(lhs + rhs, integral);
-        case ast::ASTNodeType::kSubtractExpression:
-          return NumericValue(lhs - rhs, integral);
-        case ast::ASTNodeType::kMultiplyExpression:
-          return NumericValue(lhs * rhs, integral);
-        case ast::ASTNodeType::kDivideExpression:
-          return Value(lhs / rhs);
-        case ast::ASTNodeType::kModuloExpression:
-          CHECK(right.AsInteger() != 0, common::InvalidArgumentError,
-                "modulo by zero");
-          return Value(left.AsInteger() % right.AsInteger());
-        case ast::ASTNodeType::kPowerExpression:
-          return Value(std::pow(lhs, rhs));
-        default:
-          break;
-      }
-      THROW(common::InternalError, "unknown arithmetic expression");
-    }
-    case ast::ASTNodeType::kComparisonExpression: {
-      const auto &comparison =
-          ast::CastAst<ast::ComparisonExpression>(expression);
-      CHECK(comparison.left != nullptr && comparison.right != nullptr,
-            common::InvalidArgumentError,
-            "comparison expression is incomplete");
-      Value left = EvaluateExpression(*comparison.left, row, precomputed);
-      Value right = EvaluateExpression(*comparison.right, row, precomputed);
-      if (comparison.op == "=") {
-        return Value(left == right);
-      }
-      if (comparison.op == "<>") {
-        return Value(left != right);
-      }
-      if (comparison.op == "<") {
-        return Value(ValueLess(left, right));
-      }
-      if (comparison.op == ">") {
-        return Value(ValueLess(right, left));
-      }
-      if (comparison.op == "<=") {
-        return Value(!ValueLess(right, left));
-      }
-      if (comparison.op == ">=") {
-        return Value(!ValueLess(left, right));
-      }
-      THROW(common::InvalidArgumentError,
-            "unsupported comparison operator: " + comparison.op);
-    }
-    case ast::ASTNodeType::kStringPredicateExpression: {
-      const auto &predicate =
-          ast::CastAst<ast::StringPredicateExpression>(expression);
-      CHECK(predicate.left != nullptr && predicate.right != nullptr,
-            common::InvalidArgumentError,
-            "string predicate expression is incomplete");
-      Value left = EvaluateExpression(*predicate.left, row, precomputed);
-      Value right = EvaluateExpression(*predicate.right, row, precomputed);
-      if (!left.IsString() || !right.IsString()) {
-        return Value(false);
-      }
-      const std::string &text = left.AsString();
-      const std::string &needle = right.AsString();
-      if (predicate.op == "STARTS WITH") {
-        return Value(text.rfind(needle, 0) == 0);
-      }
-      if (predicate.op == "ENDS WITH") {
-        return Value(text.size() >= needle.size() &&
-                     text.compare(text.size() - needle.size(), needle.size(),
-                                  needle) == 0);
-      }
-      if (predicate.op == "CONTAINS") {
-        return Value(text.find(needle) != std::string::npos);
-      }
-      THROW(common::InvalidArgumentError,
-            "unsupported string predicate: " + predicate.op);
-    }
-    case ast::ASTNodeType::kListPredicateExpression: {
-      const auto &predicate =
-          ast::CastAst<ast::ListPredicateExpression>(expression);
-      CHECK(predicate.element != nullptr && predicate.list != nullptr,
-            common::InvalidArgumentError,
-            "list predicate expression is incomplete");
-      Value element = EvaluateExpression(*predicate.element, row, precomputed);
-      Value list = EvaluateExpression(*predicate.list, row, precomputed);
-      if (!list.IsList()) {
-        return Value(false);
-      }
-      return Value(std::find(list.AsList().begin(), list.AsList().end(),
-                             element) != list.AsList().end());
-    }
-    case ast::ASTNodeType::kLabelPredicateExpression: {
-      const auto &predicate =
-          ast::CastAst<ast::LabelPredicateExpression>(expression);
-      CHECK(predicate.expr != nullptr, common::InvalidArgumentError,
-            "label predicate expression is incomplete");
-      Value value = EvaluateExpression(*predicate.expr, row, precomputed);
-      if (value.IsNode()) {
-        return Value(RuntimeNodeHasLabels(value.AsNode(), predicate.labels));
-      }
-      if (value.IsRelationship()) {
-        return Value(RuntimeRelationshipHasAnyType(value.AsRelationship(),
-                                                   predicate.labels));
-      }
-      return Value(false);
-    }
-    case ast::ASTNodeType::kNullPredicateExpression: {
-      const auto &predicate =
-          ast::CastAst<ast::NullPredicateExpression>(expression);
-      CHECK(predicate.operand != nullptr, common::InvalidArgumentError,
-            "null predicate operand is null");
-      return Value(
-          EvaluateExpression(*predicate.operand, row, precomputed).IsNull() ==
-          predicate.is_null);
-    }
-    case ast::ASTNodeType::kFunctionInvocation:
-      return EvaluateFunction(ast::CastAst<ast::FunctionInvocation>(expression),
-                              row, precomputed);
-    case ast::ASTNodeType::kCaseExpression:
-      return EvaluateCaseExpression(
-          ast::CastAst<ast::CaseExpression>(expression), row, precomputed);
-    case ast::ASTNodeType::kListComprehension:
-      return EvaluateListComprehension(
-          ast::CastAst<ast::ListComprehension>(expression), row, precomputed);
-    case ast::ASTNodeType::kAllQuantifier:
-      return EvaluateQuantifier(ast::CastAst<ast::AllQuantifier>(expression),
-                                QuantifierMode::kAll, row, precomputed);
-    case ast::ASTNodeType::kAnyQuantifier:
-      return EvaluateQuantifier(ast::CastAst<ast::AnyQuantifier>(expression),
-                                QuantifierMode::kAny, row, precomputed);
-    case ast::ASTNodeType::kNoneQuantifier:
-      return EvaluateQuantifier(ast::CastAst<ast::NoneQuantifier>(expression),
-                                QuantifierMode::kNone, row, precomputed);
-    case ast::ASTNodeType::kSingleQuantifier:
-      return EvaluateQuantifier(ast::CastAst<ast::SingleQuantifier>(expression),
-                                QuantifierMode::kSingle, row, precomputed);
-    case ast::ASTNodeType::kParenthesizedExpression: {
-      const auto &parenthesized =
-          ast::CastAst<ast::ParenthesizedExpression>(expression);
-      CHECK(parenthesized.expr != nullptr, common::InvalidArgumentError,
-            "parenthesized expression is empty");
-      return EvaluateExpression(*parenthesized.expr, row, precomputed);
-    }
-    default:
-      THROW(common::InvalidArgumentError,
-            "unsupported expression in executor: " +
-                std::string(ast::ToString(expression.node_type)));
-  }
 }
 
 std::optional<double> EvaluateNumericOptional(const ast::Expression *expression,
@@ -1424,7 +429,7 @@ class QueryExecutorImpl {
         for (const ast::Expression *predicate : plan.Predicates()) {
           CHECK(predicate != nullptr, common::InvalidArgumentError,
                 "index range predicate is null");
-          keep = keep && IsTruthy(EvaluateExpression(*predicate, next));
+          keep = keep && PredicateIsTrue(EvaluateExpression(*predicate, next));
         }
         if (keep) {
           out.push_back(std::move(next));
@@ -1480,7 +485,8 @@ class QueryExecutorImpl {
           for (const ast::Expression *predicate : plan.Predicates()) {
             CHECK(predicate != nullptr, common::InvalidArgumentError,
                   "index range predicate is null");
-            keep = keep && IsTruthy(EvaluateExpression(*predicate, candidate));
+            keep = keep &&
+                   PredicateIsTrue(EvaluateExpression(*predicate, candidate));
           }
           if (keep) {
             out.push_back(std::move(candidate));
@@ -1899,8 +905,8 @@ class QueryExecutorImpl {
     Rows rows = ExecutePlan(plan.Child(0), input);
     Rows out;
     for (auto &row : rows) {
-      if (IsTruthy(EvaluateExpression(*plan.Predicate(), row,
-                                      plan.PrecomputedExpressions()))) {
+      if (PredicateIsTrue(EvaluateExpression(*plan.Predicate(), row,
+                                             plan.PrecomputedExpressions()))) {
         out.push_back(std::move(row));
       }
     }
@@ -2075,21 +1081,27 @@ class QueryExecutorImpl {
       const std::vector<ir::LogicalPrecomputedExpression> &precomputed) const {
     std::vector<Value> values =
         EvaluateAggregationValues(function, rows, precomputed);
-    bool integral = true;
-    std::int64_t integer_sum = 0;
-    double double_sum = 0.0;
     for (const Value &value : values) {
       CHECK(IsNumeric(value), common::InvalidArgumentError,
             function.function_name + "() expects numeric values");
-      if (value.IsInteger()) {
-        integer_sum += value.AsInteger();
-        double_sum += static_cast<double>(value.AsInteger());
-      } else {
-        integral = false;
-        double_sum += value.AsDouble();
-      }
     }
-    return integral ? Value(integer_sum) : Value(double_sum);
+    const bool integral =
+        std::all_of(values.begin(), values.end(),
+                    [](const Value &value) { return value.IsInteger(); });
+    if (integral) {
+      std::int64_t integer_sum = 0;
+      for (const Value &value : values) {
+        CHECK(!AddWouldOverflow(integer_sum, value.AsInteger()),
+              common::InvalidArgumentError, "integer sum overflow");
+        integer_sum += value.AsInteger();
+      }
+      return Value(integer_sum);
+    }
+    double double_sum = 0.0;
+    for (const Value &value : values) {
+      double_sum += AsDoubleValue(value);
+    }
+    return Value(double_sum);
   }
 
   Value EvaluateAvgAggregation(
@@ -2136,7 +1148,7 @@ class QueryExecutorImpl {
                        for (const auto &item : plan.Items()) {
                          Value lhs = EvaluateLogicalSortItem(item, left);
                          Value rhs = EvaluateLogicalSortItem(item, right);
-                         if (lhs == rhs) {
+                         if (ValuesEqual(lhs, rhs)) {
                            continue;
                          }
                          const bool less = ValueLess(lhs, rhs);
@@ -2210,7 +1222,7 @@ class QueryExecutorImpl {
       case ir::LogicalPlanNodeType::kValueHashJoin: {
         const auto &join = static_cast<const ir::ValueHashJoinPlan &>(plan);
         for (const ast::Expression *predicate : join.Predicates()) {
-          if (!IsTruthy(EvaluateExpression(*predicate, row))) {
+          if (!PredicateIsTrue(EvaluateExpression(*predicate, row))) {
             return false;
           }
         }
@@ -2219,7 +1231,7 @@ class QueryExecutorImpl {
       case ir::LogicalPlanNodeType::kPredicateJoin: {
         const auto &join = static_cast<const ir::PredicateJoinPlan &>(plan);
         for (const ast::Expression *predicate : join.Predicates()) {
-          if (!IsTruthy(EvaluateExpression(*predicate, row))) {
+          if (!PredicateIsTrue(EvaluateExpression(*predicate, row))) {
             return false;
           }
         }

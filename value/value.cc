@@ -1,6 +1,9 @@
 #include "value/value.h"
 
 #include <cassert>
+#include <cmath>
+#include <iomanip>
+#include <limits>
 #include <sstream>
 
 namespace rg {
@@ -525,6 +528,94 @@ bool Value::operator==(const Value &other) const {
 }
 
 bool Value::operator!=(const Value &other) const { return !(*this == other); }
+
+bool ValuesEqual(const Value &left, const Value &right) {
+  const bool left_numeric = left.IsInteger() || left.IsDouble();
+  const bool right_numeric = right.IsInteger() || right.IsDouble();
+  if (left_numeric && right_numeric) {
+    if (left.IsInteger() && right.IsInteger()) {
+      return left.AsInteger() == right.AsInteger();
+    }
+    const Value &integer = left.IsInteger() ? left : right;
+    const Value &floating = left.IsDouble() ? left : right;
+    const double number = floating.AsDouble();
+    if (!std::isfinite(number) || std::trunc(number) != number ||
+        number <
+            static_cast<double>(std::numeric_limits<std::int64_t>::min()) ||
+        number >=
+            static_cast<double>(std::numeric_limits<std::int64_t>::max())) {
+      return false;
+    }
+    return integer.AsInteger() == static_cast<std::int64_t>(number);
+  }
+  if (left.Type() != right.Type()) {
+    return false;
+  }
+  if (left.IsList()) {
+    if (left.AsList().size() != right.AsList().size()) {
+      return false;
+    }
+    for (std::size_t index = 0; index < left.AsList().size(); ++index) {
+      if (!ValuesEqual(left.AsList()[index], right.AsList()[index])) {
+        return false;
+      }
+    }
+    return true;
+  }
+  if (left.IsMap()) {
+    if (left.AsMap().size() != right.AsMap().size()) {
+      return false;
+    }
+    for (const auto &[key, value] : left.AsMap()) {
+      const auto found = right.AsMap().find(key);
+      if (found == right.AsMap().end() || !ValuesEqual(value, found->second)) {
+        return false;
+      }
+    }
+    return true;
+  }
+  return left == right;
+}
+
+std::string ValueKey(const Value &value) {
+  if (value.IsInteger()) {
+    return "number:" + std::to_string(value.AsInteger());
+  }
+  if (value.IsDouble()) {
+    const double number = value.AsDouble();
+    if (std::isfinite(number) && std::trunc(number) == number &&
+        number >=
+            static_cast<double>(std::numeric_limits<std::int64_t>::min()) &&
+        number <
+            static_cast<double>(std::numeric_limits<std::int64_t>::max())) {
+      return "number:" + std::to_string(static_cast<std::int64_t>(number));
+    }
+    std::ostringstream key;
+    key << "number:"
+        << std::setprecision(std::numeric_limits<double>::max_digits10)
+        << number;
+    return key.str();
+  }
+  if (value.IsList()) {
+    std::string key = "list:[";
+    for (const Value &item : value.AsList()) {
+      const std::string item_key = ValueKey(item);
+      key += std::to_string(item_key.size()) + ":" + item_key;
+    }
+    return key + "]";
+  }
+  if (value.IsMap()) {
+    std::string key = "map:{";
+    for (const auto &[name, item] : value.AsMap()) {
+      const std::string item_key = ValueKey(item);
+      key += std::to_string(name.size()) + ":" + name +
+             std::to_string(item_key.size()) + ":" + item_key;
+    }
+    return key + "}";
+  }
+  return std::to_string(static_cast<int>(value.Type())) + ":" +
+         value.ToString();
+}
 
 bool operator==(const Node &left, const Node &right) {
   return left.id == right.id && left.labels == right.labels &&

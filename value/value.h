@@ -191,4 +191,7 @@ bool operator==(const DateTime &left, const DateTime &right);
 bool operator==(const Duration &left, const Duration &right);
 bool operator==(const Point &left, const Point &right);
 
+[[nodiscard]] bool ValuesEqual(const Value &left, const Value &right);
+[[nodiscard]] std::string ValueKey(const Value &value);
+
 }  // namespace rg

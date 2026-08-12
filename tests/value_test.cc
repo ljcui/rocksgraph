@@ -2,6 +2,8 @@
 
 #include <gtest/gtest.h>
 
+#include <limits>
+
 TEST(ValueTest, ScalarTypes) {
   rg::Value null_value;
   EXPECT_TRUE(null_value.IsNull());
@@ -40,6 +42,22 @@ TEST(ValueTest, ListAndMapTypes) {
   ASSERT_EQ(map_value.AsMap().size(), 2U);
   EXPECT_EQ(map_value.AsMap().at("a"), rg::Value(1));
   EXPECT_EQ(map_value.AsMap().at("b"), list_value);
+}
+
+TEST(ValueTest, QueryEqualityAndKeysNormalizeNumericValues) {
+  EXPECT_TRUE(rg::ValuesEqual(rg::Value(1), rg::Value(1.0)));
+  EXPECT_EQ(rg::ValueKey(rg::Value(1)), rg::ValueKey(rg::Value(1.0)));
+
+  const rg::Value integer_list(rg::Value::List{rg::Value(1)});
+  const rg::Value double_list(rg::Value::List{rg::Value(1.0)});
+  EXPECT_TRUE(rg::ValuesEqual(integer_list, double_list));
+  EXPECT_EQ(rg::ValueKey(integer_list), rg::ValueKey(double_list));
+
+  EXPECT_NE(rg::ValueKey(rg::Value(1.0000001)),
+            rg::ValueKey(rg::Value(1.0000002)));
+  EXPECT_FALSE(
+      rg::ValuesEqual(rg::Value(std::numeric_limits<std::int64_t>::max()),
+                      rg::Value(9.223372036854776e18)));
 }
 
 TEST(ValueTest, GraphTypes) {

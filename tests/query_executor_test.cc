@@ -91,6 +91,177 @@ TEST(QueryExecutorTest, ExecutesNodeLabelAndPropertyQuery) {
             (std::vector<std::vector<std::string>>{{"\"Ada\""}}));
 }
 
+TEST(QueryExecutorTest, ImplementsThreeValuedBooleanLogic) {
+  rg::InMemoryGraph graph;
+
+  rg::QueryResult result =
+      rg::ExecuteReadQuery(graph,
+                           "RETURN true AND null AS true_and_null, "
+                           "false AND null AS false_and_null, "
+                           "true OR null AS true_or_null, "
+                           "false OR null AS false_or_null, "
+                           "true XOR null AS xor_null, NOT null AS not_null");
+
+  ASSERT_EQ(result.columns,
+            (std::vector<std::string>{"true_and_null", "false_and_null",
+                                      "true_or_null", "false_or_null",
+                                      "xor_null", "not_null"}));
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{
+                {"null", "false", "true", "null", "null", "null"}}));
+}
+
+TEST(QueryExecutorTest, ShortCircuitsBooleanExpressions) {
+  rg::InMemoryGraph graph;
+
+  rg::QueryResult result =
+      rg::ExecuteReadQuery(graph,
+                           "RETURN false AND (1 / 0 = 1) AS conjunction, "
+                           "true OR (1 / 0 = 1) AS disjunction");
+
+  ASSERT_EQ(result.columns,
+            (std::vector<std::string>{"conjunction", "disjunction"}));
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{{"false", "true"}}));
+}
+
+TEST(QueryExecutorTest, PropagatesNullThroughScalarOperators) {
+  rg::InMemoryGraph graph;
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "RETURN null = null AS equals_null, null <> 1 AS not_equals_null, "
+      "null < 1 AS less_null, 1 + null AS add_null, -null AS negate_null, "
+      "null STARTS WITH 'a' AS string_null, null:Person AS label_null");
+
+  ASSERT_EQ(result.columns,
+            (std::vector<std::string>{"equals_null", "not_equals_null",
+                                      "less_null", "add_null", "negate_null",
+                                      "string_null", "label_null"}));
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{
+                {"null", "null", "null", "null", "null", "null", "null"}}));
+}
+
+TEST(QueryExecutorTest, PropagatesNullThroughCollectionEquality) {
+  rg::InMemoryGraph graph;
+
+  rg::QueryResult result =
+      rg::ExecuteReadQuery(graph,
+                           "RETURN [null] = [null] AS list_unknown, "
+                           "[1, null] = [2, null] AS list_false, "
+                           "[1, null] IN [[1, null]] AS in_unknown");
+
+  ASSERT_EQ(result.columns, (std::vector<std::string>{
+                                "list_unknown", "list_false", "in_unknown"}));
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{{"null", "false", "null"}}));
+}
+
+TEST(QueryExecutorTest, ImplementsNullAwareInAndQuantifierSemantics) {
+  rg::InMemoryGraph graph;
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "RETURN 1 IN [null, 1] AS in_match, 2 IN [null, 1] AS in_unknown, "
+      "null IN [] AS null_in_empty, "
+      "ALL(x IN [true, null] WHERE x) AS all_unknown, "
+      "ALL(x IN [false, null] WHERE x) AS all_false, "
+      "ANY(x IN [false, null] WHERE x) AS any_unknown, "
+      "ANY(x IN [true, null] WHERE x) AS any_true, "
+      "NONE(x IN [false, null] WHERE x) AS none_unknown, "
+      "SINGLE(x IN [true, null] WHERE x) AS single_unknown, "
+      "SINGLE(x IN [true, true, null] WHERE x) AS single_false");
+
+  ASSERT_EQ(result.columns,
+            (std::vector<std::string>{"in_match", "in_unknown", "null_in_empty",
+                                      "all_unknown", "all_false", "any_unknown",
+                                      "any_true", "none_unknown",
+                                      "single_unknown", "single_false"}));
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{
+                {"true", "null", "false", "null", "false", "null", "true",
+                 "null", "null", "false"}}));
+}
+
+TEST(QueryExecutorTest, UsesNumericEqualityAcrossIntegerAndDoubleValues) {
+  rg::InMemoryGraph graph;
+
+  rg::QueryResult comparison = rg::ExecuteReadQuery(
+      graph, "RETURN 1 = 1.0 AS equal, 1 IN [1.0] AS contained");
+  rg::QueryResult aggregation = rg::ExecuteReadQuery(
+      graph, "UNWIND [1, 1.0] AS x RETURN count(DISTINCT x) AS distinct_count");
+  rg::QueryResult nested = rg::ExecuteReadQuery(
+      graph,
+      "UNWIND [[1], [1.0]] AS x RETURN count(DISTINCT x) AS distinct_count");
+  rg::QueryResult precise =
+      rg::ExecuteReadQuery(graph,
+                           "UNWIND [1.0000001, 1.0000002] AS x "
+                           "RETURN count(DISTINCT x) AS distinct_count");
+  rg::QueryResult boundary = rg::ExecuteReadQuery(
+      graph,
+      "RETURN 9223372036854775807 < 9.223372036854776e18 AS ordered, "
+      "9223372036854775807 = 9.223372036854776e18 AS equal");
+
+  ASSERT_EQ(comparison.columns,
+            (std::vector<std::string>{"equal", "contained"}));
+  EXPECT_EQ(StringRows(comparison),
+            (std::vector<std::vector<std::string>>{{"true", "true"}}));
+  ASSERT_EQ(aggregation.columns, (std::vector<std::string>{"distinct_count"}));
+  EXPECT_EQ(StringRows(aggregation),
+            (std::vector<std::vector<std::string>>{{"1"}}));
+  EXPECT_EQ(StringRows(nested), (std::vector<std::vector<std::string>>{{"1"}}));
+  EXPECT_EQ(StringRows(precise),
+            (std::vector<std::vector<std::string>>{{"2"}}));
+  EXPECT_EQ(StringRows(boundary),
+            (std::vector<std::vector<std::string>>{{"true", "false"}}));
+}
+
+TEST(QueryExecutorTest, UsesNumericEqualityForIndexSeeks) {
+  rg::InMemoryGraph graph;
+  graph.CreateNode({"Item"}, {{"score", rg::Value(1)}});
+  graph.AddNodeIndex({"Item"}, "score");
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph, "MATCH (n:Item) WHERE n.score = 1.0 RETURN count(n) AS matches",
+      QueryOptionsFor(graph));
+
+  ASSERT_EQ(result.columns, std::vector<std::string>{"matches"});
+  EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{{"1"}}));
+}
+
+TEST(QueryExecutorTest, RejectsInvalidPredicatesAndUnsafeIntegerArithmetic) {
+  rg::InMemoryGraph graph;
+
+  EXPECT_THROW((void)rg::ExecuteReadQuery(graph, "RETURN NOT 1 AS value"),
+               common::InvalidArgumentError);
+  EXPECT_THROW((void)rg::ExecuteReadQuery(
+                   graph, "RETURN 9223372036854775807 + 1 AS value"),
+               common::InvalidArgumentError);
+  EXPECT_THROW((void)rg::ExecuteReadQuery(
+                   graph, "RETURN -9223372036854775807 - 2 AS value"),
+               common::InvalidArgumentError);
+  EXPECT_THROW((void)rg::ExecuteReadQuery(
+                   graph, "RETURN 3037000500 * 3037000500 AS value"),
+               common::InvalidArgumentError);
+  EXPECT_THROW((void)rg::ExecuteReadQuery(graph, "RETURN 1 / 0 AS value"),
+               common::InvalidArgumentError);
+  EXPECT_THROW((void)rg::ExecuteReadQuery(graph, "RETURN 1 % 0 AS value"),
+               common::InvalidArgumentError);
+  EXPECT_THROW((void)rg::ExecuteReadQuery(
+                   graph, "RETURN (-9223372036854775807 - 1) % -1 AS value"),
+               common::InvalidArgumentError);
+  EXPECT_THROW(
+      (void)rg::ExecuteReadQuery(
+          graph, "UNWIND [9223372036854775807, 1] AS x RETURN sum(x) AS value"),
+      common::InvalidArgumentError);
+
+  rg::QueryResult conversion = rg::ExecuteReadQuery(
+      graph, "RETURN toInteger(9.223372036854776e18) AS value");
+  EXPECT_EQ(StringRows(conversion),
+            (std::vector<std::vector<std::string>>{{"null"}}));
+}
+
 TEST(QueryExecutorTest, ExecutesRelationshipExpandQuery) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);

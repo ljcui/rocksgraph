@@ -1,13 +1,13 @@
 #pragma once
 
 #include <cstddef>
-#include <map>
 #include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include "ir/logical_plan.h"
+#include "runtime/query_row.h"
 #include "storage/storage.h"
 #include "value/value.h"
 
@@ -19,8 +19,6 @@ class PlannerStatistics;
 }  // namespace ir
 
 namespace rg {
-
-using QueryRow = std::map<std::string, Value>;
 
 struct QueryResult {
   std::vector<std::string> columns;

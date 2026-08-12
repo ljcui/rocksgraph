@@ -330,7 +330,8 @@ std::vector<InMemoryGraph::NodePtr> InMemoryGraph::FindNodesByIndex(
     }
     const auto property =
         node->properties.find(index_found->second.property_key);
-    if (property != node->properties.end() && property->second == value) {
+    if (property != node->properties.end() &&
+        ValuesEqual(property->second, value)) {
       result.push_back(node);
     }
   }
@@ -395,7 +396,7 @@ InMemoryGraph::FindRelationshipsByIndex(
     const auto property =
         relationship->properties.find(index_found->second.property_key);
     if (property != relationship->properties.end() &&
-        property->second == value) {
+        ValuesEqual(property->second, value)) {
       result.push_back(relationship);
     }
   }
@@ -610,8 +611,7 @@ std::string InMemoryGraph::IndexKey(std::vector<std::string> qualifiers,
 }
 
 std::string InMemoryGraph::ValueIndexKey(const Value &value) {
-  return std::to_string(static_cast<int>(value.Type())) + ":" +
-         value.ToString();
+  return ValueKey(value);
 }
 
 void InMemoryGraph::AddNodeToIndexes(const NodePtr &node) {

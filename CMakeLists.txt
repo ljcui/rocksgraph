@@ -140,7 +140,8 @@ set(ROCKSGRAPH_IR_SOURCES
 
 set(ROCKSGRAPH_STORAGE_SOURCES storage/in_memory_graph.cc)
 
-set(ROCKSGRAPH_RUNTIME_SOURCES runtime/query_executor.cc)
+set(ROCKSGRAPH_RUNTIME_SOURCES runtime/expression_evaluator.cc
+                              runtime/query_executor.cc)
 
 add_library(rocksgraph_ast STATIC ${ROCKSGRAPH_AST_SOURCES})
 target_include_directories(rocksgraph_ast PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
