@@ -384,6 +384,52 @@ std::string FormatMap(const rg::Value::Map &map) {
   return result + "}";
 }
 
+std::string FormatNode(const rg::Node &node) {
+  std::string result = "(";
+  for (const auto &label : node.labels) {
+    result += ":" + label;
+  }
+  if (!node.properties.empty()) {
+    if (!node.labels.empty()) {
+      result.push_back(' ');
+    }
+    result += FormatMap(node.properties);
+  }
+  return result + ")";
+}
+
+std::string FormatRelationship(const rg::Relationship &relationship) {
+  std::string result = "[:" + relationship.type;
+  if (!relationship.properties.empty()) {
+    result += " " + FormatMap(relationship.properties);
+  }
+  return result + "]";
+}
+
+std::string FormatPath(const rg::Path &path) {
+  if (path.nodes.empty() ||
+      path.nodes.size() != path.relationships.size() + 1 ||
+      path.nodes.front() == nullptr) {
+    return "<>";
+  }
+  std::string result = "<" + FormatNode(*path.nodes.front());
+  for (std::size_t index = 0; index < path.relationships.size(); ++index) {
+    const auto &relationship = path.relationships[index];
+    const auto &next_node = path.nodes[index + 1];
+    if (relationship == nullptr || next_node == nullptr) {
+      return "<>";
+    }
+    const bool outgoing =
+        relationship->start_node_id == path.nodes[index]->id &&
+        relationship->end_node_id == next_node->id;
+    result += outgoing ? "-" : "<-";
+    result += FormatRelationship(*relationship);
+    result += outgoing ? "->" : "-";
+    result += FormatNode(*next_node);
+  }
+  return result + ">";
+}
+
 std::string FormatValue(const rg::Value &value) {
   if (value.IsNull() || value.IsBool() || value.IsInteger()) {
     return value.ToString();
@@ -420,24 +466,13 @@ std::string FormatValue(const rg::Value &value) {
     return FormatMap(value.AsMap());
   }
   if (value.IsNode()) {
-    std::string result = "(";
-    for (const auto &label : value.AsNode().labels) {
-      result += ":" + label;
-    }
-    if (!value.AsNode().properties.empty()) {
-      if (!value.AsNode().labels.empty()) {
-        result.push_back(' ');
-      }
-      result += FormatMap(value.AsNode().properties);
-    }
-    return result + ")";
+    return FormatNode(value.AsNode());
   }
   if (value.IsRelationship()) {
-    std::string result = "[:" + value.AsRelationship().type;
-    if (!value.AsRelationship().properties.empty()) {
-      result += " " + FormatMap(value.AsRelationship().properties);
-    }
-    return result + "]";
+    return FormatRelationship(value.AsRelationship());
+  }
+  if (value.IsPath()) {
+    return FormatPath(value.AsPath());
   }
   return value.ToString();
 }
@@ -652,6 +687,16 @@ TEST(TckScenarioTest, ExecutesConformanceSubset) {
       {"expressions/precedence/Precedence2.feature",
        "[2] Exponentiation takes precedence over numeric multiplicative "
        "operations"},
+      {"clauses/create/Create3.feature",
+       "[10] WITH-UNWIND-CREATE: A bound node should be recognized after "
+       "projection with WITH + UNWIND"},
+      {"clauses/create/Create3.feature",
+       "[12] WITH-MERGE-CREATE: A bound node should be recognized after "
+       "projection with WITH + MERGE pattern"},
+      {"clauses/merge/Merge1.feature", "[13] Merge should bind a path"},
+      {"clauses/merge/Merge5.feature",
+       "[9] Creating relationship using merged nodes"},
+      {"clauses/merge/Merge5.feature", "[10] Merge should bind a path"},
   };
 
   std::map<std::string, std::vector<Scenario>> cache;

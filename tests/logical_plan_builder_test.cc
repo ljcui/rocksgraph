@@ -1273,6 +1273,18 @@ TEST(LogicalPlanBuilderTest, BuildsMergeMatchPlanWithIndexablePredicates) {
 )");
 }
 
+TEST(LogicalPlanBuilderTest, BuildsNamedMergePathAfterMergePlan) {
+  ExpectLogicalPlanText("MERGE p = (a {num: 1}) RETURN p",
+                        R"(ProduceResults [p]
+  Projection [p]
+    PathBuild [p]
+      Merge [a {num: 1}, p]
+        WriteBarrier
+          Argument
+        NodeIndexSeek [a WHERE a.num = 1]
+)");
+}
+
 TEST(LogicalPlanBuilderTest, RejectsPlannerHintsWithLogicalPlanStage) {
   ir::SinglePlannerQuery query;
   query.query_graph.hints.push_back(ir::Hint{});

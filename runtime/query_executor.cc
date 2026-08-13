@@ -82,8 +82,14 @@ bool IsWritePlan(const ir::LogicalPlan &plan) {
     case ir::LogicalPlanNodeType::kDetachDelete:
       return true;
     default:
-      return false;
+      break;
   }
+  for (const auto &child : plan.Children()) {
+    if (child != nullptr && IsWritePlan(*child)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 class QueryExecutorImpl {
@@ -101,7 +107,8 @@ class QueryExecutorImpl {
 
   QueryResult Execute(const ir::LogicalPlan &plan) {
     Rows rows = ExecutePlan(plan, Rows{QueryRow{}});
-    if (IsWritePlan(plan)) {
+    if (plan.Type() != ir::LogicalPlanNodeType::kProduceResults &&
+        IsWritePlan(plan)) {
       return {};
     }
     return Materialize(plan.OutputColumns(), rows);

@@ -2236,6 +2236,45 @@ TEST(PlannerQueryTest, BuildsRelationshipMergeMatchGraph) {
   EXPECT_EQ(merge.merge.actions[0].set_patterns[0].property_key, "seen");
 }
 
+TEST(PlannerQueryTest, PreservesInputsAcrossConsecutiveMergeSegments) {
+  auto statement = ParseOrFail(
+      "CREATE (a) WITH a MERGE (x) MERGE (y) "
+      "MERGE (x)-[:T]->(y) CREATE (b) CREATE (a)<-[:T]-(b)");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::SinglePlannerQuery *segment = &planner_query->RequireSingle();
+  ASSERT_NE(segment->tail, nullptr);
+  segment = segment->tail.get();
+  EXPECT_TRUE(Contains(segment->query_graph.argument_ids, "a"));
+  ASSERT_NE(segment->tail, nullptr);
+  segment = segment->tail.get();
+  EXPECT_TRUE(Contains(segment->query_graph.argument_ids, "a"));
+  EXPECT_TRUE(Contains(segment->query_graph.argument_ids, "x"));
+  ASSERT_NE(segment->tail, nullptr);
+  segment = segment->tail.get();
+  EXPECT_TRUE(Contains(segment->query_graph.argument_ids, "a"));
+  EXPECT_TRUE(Contains(segment->query_graph.argument_ids, "x"));
+  EXPECT_TRUE(Contains(segment->query_graph.argument_ids, "y"));
+}
+
+TEST(PlannerQueryTest, PreservesInputsAcrossUnwindSegments) {
+  auto statement = ParseOrFail(
+      "CREATE (a) WITH a UNWIND [0] AS i CREATE (b) "
+      "CREATE (a)<-[:T]-(b)");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::SinglePlannerQuery &unwind = *planner_query->RequireSingle().tail;
+  EXPECT_TRUE(Contains(unwind.query_graph.argument_ids, "a"));
+  ASSERT_TRUE(unwind.tail);
+  const ir::SinglePlannerQuery &create = *unwind.tail;
+  EXPECT_TRUE(Contains(create.query_graph.argument_ids, "a"));
+  EXPECT_TRUE(Contains(create.query_graph.argument_ids, "i"));
+}
+
 TEST(PlannerQueryTest, SinglePlannerQueryIsMoveOnly) {
   EXPECT_FALSE(std::is_copy_constructible_v<ir::SinglePlannerQuery>);
   EXPECT_FALSE(std::is_copy_assignable_v<ir::SinglePlannerQuery>);

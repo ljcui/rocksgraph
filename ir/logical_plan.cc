@@ -381,9 +381,6 @@ std::string CreatePatternDetails(const CreatePattern &pattern) {
 std::unordered_set<std::string> CreatePatternSolvedSymbols(
     const CreatePattern &pattern) {
   std::unordered_set<std::string> symbols;
-  for (const auto &path_variable : pattern.path_variables) {
-    AddSymbol(&symbols, path_variable);
-  }
   for (const auto &node : pattern.nodes) {
     AddSymbol(&symbols, node.variable);
   }

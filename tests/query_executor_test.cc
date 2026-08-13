@@ -1243,6 +1243,72 @@ TEST(QueryExecutorTest, ExecutesMergeCreateAndMatchActions) {
             (std::vector<std::vector<std::string>>{{"true", "true"}}));
 }
 
+TEST(QueryExecutorTest, PreservesBindingsAcrossConsecutiveMerges) {
+  rg::InMemoryGraph graph;
+
+  rg::QueryResult result =
+      rg::ExecuteQuery(graph,
+                       "CREATE (a) WITH a MERGE (x) MERGE (y) "
+                       "MERGE (x)-[:T]->(y) CREATE (b) CREATE (a)<-[:T]-(b)");
+
+  EXPECT_TRUE(result.columns.empty());
+  EXPECT_TRUE(result.rows.empty());
+  EXPECT_EQ(graph.Nodes().size(), 2U);
+  EXPECT_EQ(graph.Relationships().size(), 2U);
+}
+
+TEST(QueryExecutorTest, PreservesBindingsAcrossUnwind) {
+  rg::InMemoryGraph graph;
+
+  rg::QueryResult result =
+      rg::ExecuteQuery(graph,
+                       "CREATE (a) WITH a UNWIND [0] AS i CREATE (b) "
+                       "CREATE (a)<-[:T]-(b)");
+
+  EXPECT_TRUE(result.columns.empty());
+  EXPECT_TRUE(result.rows.empty());
+  EXPECT_EQ(graph.Nodes().size(), 2U);
+  EXPECT_EQ(graph.Relationships().size(), 1U);
+}
+
+TEST(QueryExecutorTest, ExecutesNamedMergePaths) {
+  rg::InMemoryGraph graph;
+
+  rg::QueryResult node_path =
+      rg::ExecuteQuery(graph, "MERGE p = (a {num: 1}) RETURN p");
+  ASSERT_EQ(node_path.rows.size(), 1U);
+  ASSERT_TRUE(node_path.rows[0][0].IsPath());
+  EXPECT_EQ(node_path.rows[0][0].AsPath().nodes.size(), 1U);
+  EXPECT_TRUE(node_path.rows[0][0].AsPath().relationships.empty());
+
+  rg::QueryResult matched_node_path =
+      rg::ExecuteQuery(graph, "MERGE p = (a {num: 1}) RETURN p");
+  ASSERT_EQ(matched_node_path.rows.size(), 1U);
+  ASSERT_TRUE(matched_node_path.rows[0][0].IsPath());
+  EXPECT_EQ(matched_node_path.rows[0][0].AsPath().nodes.size(), 1U);
+
+  rg::QueryResult relationship_path =
+      rg::ExecuteQuery(graph,
+                       "MERGE (a {num: 1}) MERGE (b {num: 2}) "
+                       "MERGE p = (a)-[:R]->(b) RETURN p");
+  ASSERT_EQ(relationship_path.rows.size(), 1U);
+  ASSERT_TRUE(relationship_path.rows[0][0].IsPath());
+  EXPECT_EQ(relationship_path.rows[0][0].AsPath().nodes.size(), 2U);
+  EXPECT_EQ(relationship_path.rows[0][0].AsPath().relationships.size(), 1U);
+
+  rg::QueryResult matched_relationship_path =
+      rg::ExecuteQuery(graph,
+                       "MERGE (a {num: 1}) MERGE (b {num: 2}) "
+                       "MERGE p = (a)-[:R]->(b) RETURN p");
+  ASSERT_EQ(matched_relationship_path.rows.size(), 1U);
+  ASSERT_TRUE(matched_relationship_path.rows[0][0].IsPath());
+  EXPECT_EQ(matched_relationship_path.rows[0][0].AsPath().nodes.size(), 2U);
+  EXPECT_EQ(matched_relationship_path.rows[0][0].AsPath().relationships.size(),
+            1U);
+  EXPECT_EQ(graph.Nodes().size(), 2U);
+  EXPECT_EQ(graph.Relationships().size(), 1U);
+}
+
 TEST(QueryExecutorTest,
      InMemoryGraphEstimatesPlannerStatisticsFromCurrentData) {
   rg::InMemoryGraph graph;

@@ -122,6 +122,11 @@ class PlannerQueryArgumentFinalizer {
           SinglePlannerQueryDependencies(*segment);
       segment->query_graph.argument_ids =
           IntersectSymbols(dependencies, available_symbols);
+      if (segment->horizon.kind == QueryHorizonKind::kUnwind ||
+          segment->horizon.kind == QueryHorizonKind::kProcedureCall ||
+          segment->horizon.kind == QueryHorizonKind::kPassthrough) {
+        AddSymbols(&segment->query_graph.argument_ids, available_symbols);
+      }
       FinalizeQueryGraphArguments(&segment->query_graph);
       std::unordered_set<std::string> output_symbols =
           SinglePlannerQueryOutputSymbols(*segment);

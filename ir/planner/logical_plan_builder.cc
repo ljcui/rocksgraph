@@ -1023,8 +1023,9 @@ class LogicalPlanBuilder {
   std::unique_ptr<LogicalPlan> ApplyMergePattern(
       std::unique_ptr<LogicalPlan> plan, const MergePattern &merge) {
     CHECK(plan != nullptr, common::InternalError, "logical plan is null");
-    return std::make_unique<MergePlan>(
+    plan = std::make_unique<MergePlan>(
         std::move(plan), BuildMergeMatchPlan(merge.match_graph), merge);
+    return ApplyPathBuilds(std::move(plan), merge.create_pattern.path_patterns);
   }
 
   std::unique_ptr<LogicalPlan> BuildMergeMatchPlan(
