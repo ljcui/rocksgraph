@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -8,12 +9,26 @@
 
 namespace rg {
 
-[[nodiscard]] Value ConstructDate(const Value *argument);
-[[nodiscard]] Value ConstructLocalTime(const Value *argument);
-[[nodiscard]] Value ConstructTime(const Value *argument);
-[[nodiscard]] Value ConstructLocalDateTime(const Value *argument);
-[[nodiscard]] Value ConstructDateTime(const Value *argument);
+[[nodiscard]] Value ConstructDate(const Value *argument,
+                                  std::chrono::system_clock::time_point now =
+                                      std::chrono::system_clock::now());
+[[nodiscard]] Value ConstructLocalTime(
+    const Value *argument, std::chrono::system_clock::time_point now =
+                               std::chrono::system_clock::now());
+[[nodiscard]] Value ConstructTime(const Value *argument,
+                                  std::chrono::system_clock::time_point now =
+                                      std::chrono::system_clock::now());
+[[nodiscard]] Value ConstructLocalDateTime(
+    const Value *argument, std::chrono::system_clock::time_point now =
+                               std::chrono::system_clock::now());
+[[nodiscard]] Value ConstructDateTime(
+    const Value *argument, std::chrono::system_clock::time_point now =
+                               std::chrono::system_clock::now());
 [[nodiscard]] Value ConstructDuration(const Value *argument);
+[[nodiscard]] Value DurationBetween(const Value &left, const Value &right);
+[[nodiscard]] Value DurationInMonths(const Value &left, const Value &right);
+[[nodiscard]] Value DurationInDays(const Value &left, const Value &right);
+[[nodiscard]] Value DurationInSeconds(const Value &left, const Value &right);
 
 [[nodiscard]] std::optional<Value> TemporalProperty(const Value &value,
                                                     std::string_view property);

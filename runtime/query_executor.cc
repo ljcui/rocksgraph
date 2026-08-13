@@ -1,5 +1,6 @@
 #include "runtime/query_executor.h"
 
+#include <chrono>
 #include <cstddef>
 #include <iterator>
 #include <memory>
@@ -97,7 +98,8 @@ class QueryExecutorImpl {
   QueryExecutorImpl(const AccessPath *access_path, Storage *storage,
                     const QueryParameters &parameters)
       : access_path_(access_path),
-        context_{.parameters = &parameters},
+        context_{.parameters = &parameters,
+                 .query_time = std::chrono::system_clock::now()},
         graph_access_(RequireAccessPath(access_path), context_),
         join_executor_(context_),
         procedure_executor_(RequireAccessPath(access_path)),

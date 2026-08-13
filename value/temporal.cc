@@ -25,6 +25,8 @@ using namespace std::chrono_literals;
 constexpr std::int64_t kNanosecondsPerSecond = 1'000'000'000;
 constexpr std::int64_t kSecondsPerDay = 86'400;
 constexpr long double kAverageMonthSeconds = 2'629'746.0L;
+constexpr int kMinimumYear = -999'999'999;
+constexpr int kMaximumYear = 999'999'999;
 
 [[noreturn]] void InvalidTemporal(std::string message) {
   THROW(common::InvalidArgumentError, std::move(message));
@@ -64,22 +66,67 @@ int CheckedInt(std::int64_t value, int minimum, int maximum,
   return static_cast<int>(value);
 }
 
-SysDays ToSysDays(const Date &date) {
-  const std::chrono::year_month_day ymd{
-      std::chrono::year{date.year},
-      std::chrono::month{static_cast<unsigned>(date.month)},
-      std::chrono::day{static_cast<unsigned>(date.day)}};
-  if (!ymd.ok()) {
+bool LeapYear(int year) {
+  return year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+}
+
+int DaysInMonth(int year, int month) {
+  static constexpr int kDays[] = {31, 28, 31, 30, 31, 30,
+                                  31, 31, 30, 31, 30, 31};
+  if (month < 1 || month > 12) {
+    InvalidTemporal("month is out of range");
+  }
+  return month == 2 && LeapYear(year) ? 29 : kDays[month - 1];
+}
+
+void ValidateDate(const Date &date) {
+  if (date.year < kMinimumYear || date.year > kMaximumYear) {
+    InvalidTemporal("year is out of range");
+  }
+  if (date.day < 1 || date.day > DaysInMonth(date.year, date.month)) {
     InvalidTemporal("invalid calendar date");
   }
-  return SysDays{ymd};
+}
+
+std::int64_t DaysFromCivil(int year, unsigned month, unsigned day) {
+  std::int64_t adjusted_year = year;
+  adjusted_year -= month <= 2;
+  const std::int64_t era =
+      (adjusted_year >= 0 ? adjusted_year : adjusted_year - 399) / 400;
+  const unsigned year_of_era = static_cast<unsigned>(adjusted_year - era * 400);
+  const unsigned day_of_year =
+      (153 * (month > 2 ? month - 3 : month + 9) + 2) / 5 + day - 1;
+  const unsigned day_of_era =
+      year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+  return era * 146097 + static_cast<std::int64_t>(day_of_era) - 719468;
+}
+
+SysDays ToSysDays(const Date &date) {
+  ValidateDate(date);
+  return SysDays{
+      Days{DaysFromCivil(date.year, static_cast<unsigned>(date.month),
+                         static_cast<unsigned>(date.day))}};
 }
 
 Date FromSysDays(SysDays value) {
-  const std::chrono::year_month_day ymd{value};
-  return {static_cast<int>(ymd.year()),
-          static_cast<int>(static_cast<unsigned>(ymd.month())),
-          static_cast<int>(static_cast<unsigned>(ymd.day()))};
+  std::int64_t days = value.time_since_epoch().count() + 719468;
+  const std::int64_t era = (days >= 0 ? days : days - 146096) / 146097;
+  const unsigned day_of_era = static_cast<unsigned>(days - era * 146097);
+  const unsigned year_of_era = (day_of_era - day_of_era / 1460 +
+                                day_of_era / 36524 - day_of_era / 146096) /
+                               365;
+  std::int64_t year = static_cast<std::int64_t>(year_of_era) + era * 400;
+  const unsigned day_of_year =
+      day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+  const unsigned month_part = (5 * day_of_year + 2) / 153;
+  const unsigned day = day_of_year - (153 * month_part + 2) / 5 + 1;
+  const unsigned month = month_part < 10 ? month_part + 3 : month_part - 9;
+  year += month <= 2;
+  if (year < kMinimumYear || year > kMaximumYear) {
+    InvalidTemporal("year is out of range");
+  }
+  return {static_cast<int>(year), static_cast<int>(month),
+          static_cast<int>(day)};
 }
 
 int IsoWeekday(SysDays day) { return std::chrono::weekday{day}.iso_encoding(); }
@@ -94,10 +141,8 @@ IsoWeek IsoWeekComponents(const Date &date) {
   const SysDays day = ToSysDays(date);
   const int weekday = IsoWeekday(day);
   const SysDays thursday = day + Days{4 - weekday};
-  const int week_year =
-      static_cast<int>(std::chrono::year_month_day{thursday}.year());
-  const SysDays january_four =
-      SysDays{std::chrono::year{week_year} / std::chrono::January / 4};
+  const int week_year = FromSysDays(thursday).year;
+  const SysDays january_four = ToSysDays(Date{week_year, 1, 4});
   const SysDays week_one = january_four - Days{IsoWeekday(january_four) - 1};
   return {week_year, static_cast<int>((day - week_one).count() / 7) + 1,
           weekday};
@@ -107,8 +152,7 @@ Date DateFromIsoWeek(int year, int week, int weekday) {
   if (week < 1 || week > 53 || weekday < 1 || weekday > 7) {
     InvalidTemporal("invalid ISO week date");
   }
-  const SysDays january_four =
-      SysDays{std::chrono::year{year} / std::chrono::January / 4};
+  const SysDays january_four = ToSysDays(Date{year, 1, 4});
   const SysDays week_one = january_four - Days{IsoWeekday(january_four) - 1};
   const Date result =
       FromSysDays(week_one + Days{(week - 1) * 7 + weekday - 1});
@@ -120,21 +164,16 @@ Date DateFromIsoWeek(int year, int week, int weekday) {
   return result;
 }
 
-bool LeapYear(int year) { return std::chrono::year{year}.is_leap(); }
-
 Date DateFromOrdinal(int year, int ordinal) {
   const int maximum = LeapYear(year) ? 366 : 365;
   if (ordinal < 1 || ordinal > maximum) {
     InvalidTemporal("ordinal day is out of range");
   }
-  return FromSysDays(
-      SysDays{std::chrono::year{year} / std::chrono::January / 1} +
-      Days{ordinal - 1});
+  return FromSysDays(ToSysDays(Date{year, 1, 1}) + Days{ordinal - 1});
 }
 
 int OrdinalDay(const Date &date) {
-  const SysDays first =
-      SysDays{std::chrono::year{date.year} / std::chrono::January / 1};
+  const SysDays first = ToSysDays(Date{date.year, 1, 1});
   return static_cast<int>((ToSysDays(date) - first).count()) + 1;
 }
 
@@ -143,15 +182,9 @@ Date DateFromQuarter(int year, int quarter, int day_of_quarter) {
     InvalidTemporal("quarter is out of range");
   }
   const int first_month = (quarter - 1) * 3 + 1;
-  const SysDays start =
-      SysDays{std::chrono::year{year} /
-              std::chrono::month{static_cast<unsigned>(first_month)} / 1};
-  const SysDays end =
-      quarter == 4
-          ? SysDays{std::chrono::year{year + 1} / std::chrono::January / 1}
-          : SysDays{std::chrono::year{year} /
-                    std::chrono::month{static_cast<unsigned>(first_month + 3)} /
-                    1};
+  const SysDays start = ToSysDays(Date{year, first_month, 1});
+  const SysDays end = quarter == 4 ? ToSysDays(Date{year + 1, 1, 1})
+                                   : ToSysDays(Date{year, first_month + 3, 1});
   if (day_of_quarter < 1 || day_of_quarter > (end - start).count()) {
     InvalidTemporal("day of quarter is out of range");
   }
@@ -244,7 +277,7 @@ Date ApplyDateComponents(const Value::Map &map, std::optional<Date> base) {
   if (MapInteger(map, "week").has_value()) {
     int year = base.has_value() ? IsoWeekComponents(*base).year : 0;
     if (const auto specified = MapInteger(map, "year"); specified.has_value()) {
-      year = CheckedInt(*specified, -32767, 32767, "year");
+      year = CheckedInt(*specified, kMinimumYear, kMaximumYear, "year");
     }
     if (year == 0) {
       InvalidTemporal("year is required for ISO week date");
@@ -258,7 +291,7 @@ Date ApplyDateComponents(const Value::Map &map, std::optional<Date> base) {
 
   int year = base.has_value() ? base->year : 0;
   if (const auto specified = MapInteger(map, "year"); specified.has_value()) {
-    year = CheckedInt(*specified, -32767, 32767, "year");
+    year = CheckedInt(*specified, kMinimumYear, kMaximumYear, "year");
   }
   if (year == 0) {
     InvalidTemporal("year is required for date construction");
@@ -384,7 +417,8 @@ Date ParseDate(std::string_view text) {
   const std::string input(text);
   if (std::regex_match(input, match, kWeek)) {
     return DateFromIsoWeek(
-        CheckedInt(ParseInteger(match[1].str(), "year"), -32767, 32767, "year"),
+        CheckedInt(ParseInteger(match[1].str(), "year"), kMinimumYear,
+                   kMaximumYear, "year"),
         CheckedInt(ParseInteger(match[2].str(), "week"), 1, 53, "week"),
         match[3].matched ? CheckedInt(ParseInteger(match[3].str(), "weekday"),
                                       1, 7, "weekday")
@@ -392,13 +426,15 @@ Date ParseDate(std::string_view text) {
   }
   if (std::regex_match(input, match, kExtendedOrdinal)) {
     return DateFromOrdinal(
-        CheckedInt(ParseInteger(match[1].str(), "year"), -32767, 32767, "year"),
+        CheckedInt(ParseInteger(match[1].str(), "year"), kMinimumYear,
+                   kMaximumYear, "year"),
         CheckedInt(ParseInteger(match[2].str(), "ordinal day"), 1, 366,
                    "ordinal day"));
   }
   if (std::regex_match(input, match, kExtendedCalendar)) {
     const Date result{
-        CheckedInt(ParseInteger(match[1].str(), "year"), -32767, 32767, "year"),
+        CheckedInt(ParseInteger(match[1].str(), "year"), kMinimumYear,
+                   kMaximumYear, "year"),
         CheckedInt(ParseInteger(match[2].str(), "month"), 1, 12, "month"),
         match[3].matched
             ? CheckedInt(ParseInteger(match[3].str(), "day"), 1, 31, "day")
@@ -412,13 +448,14 @@ Date ParseDate(std::string_view text) {
   const std::string digits = match[2].str();
   const int sign = match[1].str() == "-" ? -1 : 1;
   if (digits.size() == 4) {
-    return {sign * CheckedInt(ParseInteger(digits, "year"), 1, 32767, "year"),
+    return {sign * CheckedInt(ParseInteger(digits, "year"), 1, kMaximumYear,
+                              "year"),
             1, 1};
   }
   if (digits.size() == 6 || digits.size() == 8) {
     const Date result{
-        sign * CheckedInt(ParseInteger(digits.substr(0, 4), "year"), 1, 32767,
-                          "year"),
+        sign * CheckedInt(ParseInteger(digits.substr(0, 4), "year"), 1,
+                          kMaximumYear, "year"),
         CheckedInt(ParseInteger(digits.substr(4, 2), "month"), 1, 12, "month"),
         digits.size() == 8
             ? CheckedInt(ParseInteger(digits.substr(6, 2), "day"), 1, 31, "day")
@@ -428,8 +465,8 @@ Date ParseDate(std::string_view text) {
   }
   if (digits.size() == 7) {
     return DateFromOrdinal(
-        sign * CheckedInt(ParseInteger(digits.substr(0, 4), "year"), 1, 32767,
-                          "year"),
+        sign * CheckedInt(ParseInteger(digits.substr(0, 4), "year"), 1,
+                          kMaximumYear, "year"),
         CheckedInt(ParseInteger(digits.substr(4), "ordinal day"), 1, 366,
                    "ordinal day"));
   }
@@ -553,7 +590,7 @@ ParsedTime ParseOffsetTime(std::string text, bool require_offset) {
 LocalDateTime ParseLocalDateTime(std::string_view text) {
   const std::size_t separator = text.find_first_of("Tt");
   if (separator == std::string_view::npos) {
-    InvalidTemporal("invalid local date-time");
+    return {ParseDate(text), LocalTime{0, 0, 0, 0, false}};
   }
   return {ParseDate(text.substr(0, separator)),
           ParseLocalTime(text.substr(separator + 1))};
@@ -670,8 +707,14 @@ Duration NormalizeDuration(std::int64_t months, std::int64_t days,
     InvalidTemporal("duration is out of range");
   }
   const std::int64_t total_nanoseconds = static_cast<std::int64_t>(nanoseconds);
-  return {months, days, total_nanoseconds / kNanosecondsPerSecond,
-          static_cast<std::int32_t>(total_nanoseconds % kNanosecondsPerSecond)};
+  std::int64_t whole_seconds = total_nanoseconds / kNanosecondsPerSecond;
+  std::int64_t nanosecond_remainder = total_nanoseconds % kNanosecondsPerSecond;
+  if (nanosecond_remainder < 0) {
+    --whole_seconds;
+    nanosecond_remainder += kNanosecondsPerSecond;
+  }
+  return {months, days, whole_seconds,
+          static_cast<std::int32_t>(nanosecond_remainder)};
 }
 
 Duration DurationFromMap(const Value::Map &map) {
@@ -746,8 +789,11 @@ std::string FormatYear(int year) {
   std::ostringstream out;
   if (year < 0) {
     out << '-';
+  } else if (year > 9999) {
+    out << '+';
   }
-  out << std::setw(4) << std::setfill('0') << std::abs(year);
+  out << std::setw(4) << std::setfill('0')
+      << std::abs(static_cast<std::int64_t>(year));
   return out.str();
 }
 
@@ -762,6 +808,186 @@ std::string FormatFraction(int nanosecond) {
     digits.pop_back();
   }
   return digits;
+}
+
+LocalDateTime UtcDateTime(std::chrono::system_clock::time_point now) {
+  const auto seconds = std::chrono::floor<std::chrono::seconds>(now);
+  const auto day = std::chrono::floor<Days>(seconds);
+  const auto time = seconds - day;
+  const auto hours = std::chrono::duration_cast<std::chrono::hours>(time);
+  const auto minutes =
+      std::chrono::duration_cast<std::chrono::minutes>(time - hours);
+  const auto whole_seconds =
+      std::chrono::duration_cast<std::chrono::seconds>(time - hours - minutes);
+  const auto nanoseconds =
+      std::chrono::duration_cast<std::chrono::nanoseconds>(now - seconds);
+  return {FromSysDays(SysDays{day.time_since_epoch()}),
+          {static_cast<int>(hours.count()), static_cast<int>(minutes.count()),
+           static_cast<int>(whole_seconds.count()),
+           static_cast<int>(nanoseconds.count()), true}};
+}
+
+enum class TemporalShape { kDate, kTime, kDateTime };
+
+struct TemporalOperand {
+  TemporalShape shape = TemporalShape::kDate;
+  Date date{1970, 1, 1};
+  LocalTime time{0, 0, 0, 0, false};
+  int offset_seconds = 0;
+  std::string timezone;
+  bool has_date = false;
+  bool has_offset = false;
+};
+
+TemporalOperand ToTemporalOperand(const Value &value) {
+  if (value.IsDate()) {
+    return {.shape = TemporalShape::kDate,
+            .date = value.AsDate(),
+            .has_date = true};
+  }
+  if (value.IsLocalTime()) {
+    return {.shape = TemporalShape::kTime, .time = value.AsLocalTime()};
+  }
+  if (value.IsTime()) {
+    const Time &time = value.AsTime();
+    return {.shape = TemporalShape::kTime,
+            .time = time.local_time,
+            .offset_seconds = time.utc_offset_seconds,
+            .timezone = time.timezone,
+            .has_offset = true};
+  }
+  if (value.IsLocalDateTime()) {
+    const LocalDateTime &date_time = value.AsLocalDateTime();
+    return {.shape = TemporalShape::kDateTime,
+            .date = date_time.date,
+            .time = date_time.time,
+            .has_date = true};
+  }
+  if (value.IsDateTime()) {
+    const DateTime &date_time = value.AsDateTime();
+    return {.shape = TemporalShape::kDateTime,
+            .date = date_time.local_date_time.date,
+            .time = date_time.local_date_time.time,
+            .offset_seconds = date_time.utc_offset_seconds,
+            .timezone = date_time.timezone,
+            .has_date = true,
+            .has_offset = true};
+  }
+  InvalidTemporal("duration endpoints must be temporal values");
+}
+
+std::int64_t LocalSecondsSinceEpoch(const TemporalOperand &operand,
+                                    bool include_date) {
+  const std::int64_t days =
+      include_date ? DaysFromCivil(operand.date.year, operand.date.month,
+                                   operand.date.day)
+                   : 0;
+  return days * kSecondsPerDay + operand.time.hour * 3600 +
+         operand.time.minute * 60 + operand.time.second;
+}
+
+std::string SharedTimezone(const TemporalOperand &left,
+                           const TemporalOperand &right) {
+  if (!left.timezone.empty()) return left.timezone;
+  return right.timezone;
+}
+
+int EffectiveOffset(const TemporalOperand &operand,
+                    const std::string &shared_timezone, const Date &anchor_date,
+                    bool both_have_offsets) {
+  if (!shared_timezone.empty()) {
+    if (operand.has_offset) return operand.offset_seconds;
+    return ZoneOffset(
+        shared_timezone,
+        {operand.has_date ? operand.date : anchor_date, operand.time});
+  }
+  return both_have_offsets ? operand.offset_seconds : 0;
+}
+
+struct NanosecondDifference {
+  std::int64_t seconds = 0;
+  int nanoseconds = 0;
+};
+
+NanosecondDifference DifferenceInSeconds(const TemporalOperand &left,
+                                         const TemporalOperand &right) {
+  const std::string timezone = SharedTimezone(left, right);
+  const bool include_date = left.has_date && right.has_date;
+  const Date anchor_date = left.has_date ? left.date : right.date;
+  const bool both_have_offsets = left.has_offset && right.has_offset;
+  std::int64_t seconds = LocalSecondsSinceEpoch(right, include_date) -
+                         LocalSecondsSinceEpoch(left, include_date);
+  if (left.shape != TemporalShape::kDate ||
+      right.shape != TemporalShape::kDate) {
+    seconds += EffectiveOffset(left, timezone, anchor_date, both_have_offsets) -
+               EffectiveOffset(right, timezone, anchor_date, both_have_offsets);
+  }
+  int nanoseconds = right.time.nanosecond - left.time.nanosecond;
+  if (nanoseconds < 0) {
+    --seconds;
+    nanoseconds += kNanosecondsPerSecond;
+  }
+  return {seconds, nanoseconds};
+}
+
+Date AddMonthsClamped(const Date &date, std::int64_t months) {
+  const std::int64_t month_index =
+      static_cast<std::int64_t>(date.year) * 12 + date.month - 1 + months;
+  std::int64_t year = month_index / 12;
+  int month = static_cast<int>(month_index % 12) + 1;
+  if (month <= 0) {
+    month += 12;
+    --year;
+  }
+  if (year < kMinimumYear || year > kMaximumYear) {
+    InvalidTemporal("duration month difference is out of range");
+  }
+  return {static_cast<int>(year), month,
+          std::min(date.day, DaysInMonth(static_cast<int>(year), month))};
+}
+
+std::int64_t DifferenceInMonths(const TemporalOperand &left,
+                                const TemporalOperand &right) {
+  if (!left.has_date || !right.has_date) {
+    return 0;
+  }
+  std::int64_t months =
+      (static_cast<std::int64_t>(right.date.year) - left.date.year) * 12 +
+      right.date.month - left.date.month;
+  TemporalOperand candidate = left;
+  candidate.date = AddMonthsClamped(left.date, months);
+  const NanosecondDifference remaining = DifferenceInSeconds(candidate, right);
+  const int comparison =
+      remaining.seconds < 0
+          ? 1
+          : (remaining.seconds > 0 || remaining.nanoseconds > 0 ? -1 : 0);
+  if (months > 0 && comparison > 0) {
+    --months;
+  } else if (months < 0 && comparison < 0) {
+    ++months;
+  }
+  return months;
+}
+
+Duration SecondsDuration(const NanosecondDifference &difference) {
+  return {0, 0, difference.seconds, difference.nanoseconds};
+}
+
+Duration CalendarDuration(const TemporalOperand &left,
+                          const TemporalOperand &right) {
+  if (!left.has_date || !right.has_date) {
+    return SecondsDuration(DifferenceInSeconds(left, right));
+  }
+  const std::int64_t months = DifferenceInMonths(left, right);
+  TemporalOperand month_boundary = left;
+  month_boundary.date = AddMonthsClamped(left.date, months);
+  NanosecondDifference remainder = DifferenceInSeconds(month_boundary, right);
+  const std::int64_t division_seconds =
+      remainder.seconds < 0 && remainder.nanoseconds > 0 ? remainder.seconds + 1
+                                                         : remainder.seconds;
+  const std::int64_t days = division_seconds / kSecondsPerDay;
+  remainder.seconds -= days * kSecondsPerDay;
+  return {months, days, remainder.seconds, remainder.nanoseconds};
 }
 
 Value IntegerProperty(std::int64_t value) { return Value(value); }
@@ -814,8 +1040,9 @@ std::optional<Value> OffsetProperty(int offset, const std::string &timezone,
 
 }  // namespace
 
-Value ConstructDate(const Value *argument) {
-  if (argument == nullptr) InvalidTemporal("date() requires an argument");
+Value ConstructDate(const Value *argument,
+                    std::chrono::system_clock::time_point now) {
+  if (argument == nullptr) return Value(UtcDateTime(now).date);
   if (argument->IsNull()) return Value::Null();
   if (argument->IsDate()) return *argument;
   if (argument->IsString()) return Value(ParseDate(argument->AsString()));
@@ -826,8 +1053,9 @@ Value ConstructDate(const Value *argument) {
   return Value::Null();
 }
 
-Value ConstructLocalTime(const Value *argument) {
-  if (argument == nullptr) InvalidTemporal("localtime() requires an argument");
+Value ConstructLocalTime(const Value *argument,
+                         std::chrono::system_clock::time_point now) {
+  if (argument == nullptr) return Value(UtcDateTime(now).time);
   if (argument->IsNull()) return Value::Null();
   if (argument->IsLocalTime()) return *argument;
   if (argument->IsString()) return Value(ParseLocalTime(argument->AsString()));
@@ -839,12 +1067,13 @@ Value ConstructLocalTime(const Value *argument) {
   return Value::Null();
 }
 
-Value ConstructTime(const Value *argument) {
-  if (argument == nullptr) InvalidTemporal("time() requires an argument");
+Value ConstructTime(const Value *argument,
+                    std::chrono::system_clock::time_point now) {
+  if (argument == nullptr) return Value(Time{UtcDateTime(now).time, 0, {}});
   if (argument->IsNull()) return Value::Null();
   if (argument->IsTime()) return *argument;
   if (argument->IsString()) {
-    ParsedTime parsed = ParseOffsetTime(argument->AsString(), true);
+    ParsedTime parsed = ParseOffsetTime(argument->AsString(), false);
     if (!parsed.timezone.empty()) {
       InvalidTemporal("named timezone requires a date");
     }
@@ -883,10 +1112,9 @@ Value ConstructTime(const Value *argument) {
   return Value::Null();
 }
 
-Value ConstructLocalDateTime(const Value *argument) {
-  if (argument == nullptr) {
-    InvalidTemporal("localdatetime() requires an argument");
-  }
+Value ConstructLocalDateTime(const Value *argument,
+                             std::chrono::system_clock::time_point now) {
+  if (argument == nullptr) return Value(UtcDateTime(now));
   if (argument->IsNull()) return Value::Null();
   if (argument->IsLocalDateTime()) return *argument;
   if (argument->IsString()) {
@@ -902,8 +1130,9 @@ Value ConstructLocalDateTime(const Value *argument) {
   return Value::Null();
 }
 
-Value ConstructDateTime(const Value *argument) {
-  if (argument == nullptr) InvalidTemporal("datetime() requires an argument");
+Value ConstructDateTime(const Value *argument,
+                        std::chrono::system_clock::time_point now) {
+  if (argument == nullptr) return Value(DateTime{UtcDateTime(now), 0, {}});
   if (argument->IsNull()) return Value::Null();
   if (argument->IsDateTime()) return *argument;
   if (argument->IsString()) return Value(ParseDateTime(argument->AsString()));
@@ -949,6 +1178,43 @@ Value ConstructDuration(const Value *argument) {
   if (argument->IsString()) return Value(ParseDuration(argument->AsString()));
   if (argument->IsMap()) return Value(DurationFromMap(argument->AsMap()));
   return Value::Null();
+}
+
+Value DurationBetween(const Value &left, const Value &right) {
+  if (left.IsNull() || right.IsNull()) return Value::Null();
+  return Value(
+      CalendarDuration(ToTemporalOperand(left), ToTemporalOperand(right)));
+}
+
+Value DurationInMonths(const Value &left, const Value &right) {
+  if (left.IsNull() || right.IsNull()) return Value::Null();
+  const TemporalOperand left_temporal = ToTemporalOperand(left);
+  const TemporalOperand right_temporal = ToTemporalOperand(right);
+  return Value(
+      Duration{DifferenceInMonths(left_temporal, right_temporal), 0, 0, 0});
+}
+
+Value DurationInDays(const Value &left, const Value &right) {
+  if (left.IsNull() || right.IsNull()) return Value::Null();
+  const TemporalOperand left_temporal = ToTemporalOperand(left);
+  const TemporalOperand right_temporal = ToTemporalOperand(right);
+  if (!left_temporal.has_date || !right_temporal.has_date) {
+    return Value(Duration{});
+  }
+  const NanosecondDifference difference =
+      DifferenceInSeconds(left_temporal, right_temporal);
+  const std::int64_t whole_seconds =
+      difference.seconds < 0 && difference.nanoseconds > 0
+          ? difference.seconds + 1
+          : difference.seconds;
+  const std::int64_t days = whole_seconds / kSecondsPerDay;
+  return Value(Duration{0, days, 0, 0});
+}
+
+Value DurationInSeconds(const Value &left, const Value &right) {
+  if (left.IsNull() || right.IsNull()) return Value::Null();
+  return Value(SecondsDuration(
+      DifferenceInSeconds(ToTemporalOperand(left), ToTemporalOperand(right))));
 }
 
 std::optional<Value> TemporalProperty(const Value &value,
@@ -1091,7 +1357,14 @@ std::string FormatDuration(const Duration &duration) {
   if (months != 0) out << months << 'M';
   if (duration.days != 0) out << duration.days << 'D';
 
-  std::int64_t seconds = duration.seconds;
+  const bool negative_time = duration.seconds < 0;
+  std::int64_t seconds =
+      negative_time ? -(duration.seconds + (duration.nanoseconds > 0 ? 1 : 0))
+                    : duration.seconds;
+  const int nanoseconds =
+      negative_time && duration.nanoseconds > 0
+          ? static_cast<int>(kNanosecondsPerSecond) - duration.nanoseconds
+          : duration.nanoseconds;
   const std::int64_t hours = seconds / 3600;
   seconds %= 3600;
   const std::int64_t minutes = seconds / 60;
@@ -1099,14 +1372,12 @@ std::string FormatDuration(const Duration &duration) {
   if (hours != 0 || minutes != 0 || seconds != 0 || duration.nanoseconds != 0 ||
       (years == 0 && months == 0 && duration.days == 0)) {
     out << 'T';
-    if (hours != 0) out << hours << 'H';
-    if (minutes != 0) out << minutes << 'M';
-    if (seconds != 0 || duration.nanoseconds != 0 ||
-        (hours == 0 && minutes == 0)) {
-      const bool negative_fraction = seconds == 0 && duration.nanoseconds < 0;
-      if (negative_fraction) out << '-';
-      out << seconds;
-      const std::string fraction = FormatFraction(duration.nanoseconds);
+    const char *sign = negative_time ? "-" : "";
+    if (hours != 0) out << sign << hours << 'H';
+    if (minutes != 0) out << sign << minutes << 'M';
+    if (seconds != 0 || nanoseconds != 0 || (hours == 0 && minutes == 0)) {
+      out << sign << seconds;
+      const std::string fraction = FormatFraction(nanoseconds);
       if (!fraction.empty()) out << '.' << fraction;
       out << 'S';
     }

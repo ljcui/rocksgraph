@@ -1265,6 +1265,10 @@ class SemanticValidator : public ASTWalker {
       case BuiltinFunctionKind::kDate:
       case BuiltinFunctionKind::kDateTime:
       case BuiltinFunctionKind::kDuration:
+      case BuiltinFunctionKind::kDurationBetween:
+      case BuiltinFunctionKind::kDurationInDays:
+      case BuiltinFunctionKind::kDurationInMonths:
+      case BuiltinFunctionKind::kDurationInSeconds:
       case BuiltinFunctionKind::kLocalDateTime:
       case BuiltinFunctionKind::kLocalTime:
       case BuiltinFunctionKind::kTime:

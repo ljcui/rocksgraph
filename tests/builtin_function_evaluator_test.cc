@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <cstdint>
 #include <limits>
 #include <vector>
@@ -158,6 +159,40 @@ TEST(BuiltinFunctionEvaluatorTest, RejectsInvalidTemporalValues) {
   EXPECT_THROW((void)EvaluateBuiltinFunction(BuiltinFunctionKind::kTime,
                                              {Value("12:00+18:01")}),
                common::InvalidArgumentError);
+}
+
+TEST(BuiltinFunctionEvaluatorTest, ComputesTemporalDifferences) {
+  const Value left = EvaluateBuiltinFunction(
+      BuiltinFunctionKind::kLocalDateTime, {Value("2018-01-02T10:00:00.1")});
+  const Value right = EvaluateBuiltinFunction(
+      BuiltinFunctionKind::kLocalDateTime, {Value("2018-01-01T10:00:00.2")});
+
+  const Value between = EvaluateBuiltinFunction(
+      BuiltinFunctionKind::kDurationBetween, {left, right});
+  const Value seconds = EvaluateBuiltinFunction(
+      BuiltinFunctionKind::kDurationInSeconds, {left, right});
+
+  EXPECT_EQ(between.ToString(), "PT-23H-59M-59.9S");
+  EXPECT_EQ(between.AsDuration().seconds, -86'400);
+  EXPECT_EQ(between.AsDuration().nanoseconds, 100'000'000);
+  EXPECT_EQ(seconds.ToString(), "PT-23H-59M-59.9S");
+}
+
+TEST(BuiltinFunctionEvaluatorTest, UsesOneTimestampForCurrentTemporals) {
+  const auto now =
+      std::chrono::sys_days{std::chrono::year{2024} / std::chrono::May / 6} +
+      std::chrono::hours{7} + std::chrono::minutes{8} + std::chrono::seconds{9};
+
+  const Value date =
+      EvaluateBuiltinFunction(BuiltinFunctionKind::kDate, {}, now);
+  const Value time =
+      EvaluateBuiltinFunction(BuiltinFunctionKind::kTime, {}, now);
+  const Value date_time =
+      EvaluateBuiltinFunction(BuiltinFunctionKind::kDateTime, {}, now);
+
+  EXPECT_EQ(date.ToString(), "2024-05-06");
+  EXPECT_EQ(time.ToString(), "07:08:09Z");
+  EXPECT_EQ(date_time.ToString(), "2024-05-06T07:08:09Z");
 }
 
 }  // namespace

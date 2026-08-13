@@ -105,7 +105,8 @@ double RandomUnitDouble() {
 }  // namespace
 
 Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
-                              const std::vector<Value> &arguments) {
+                              const std::vector<Value> &arguments,
+                              std::chrono::system_clock::time_point now) {
   const ast::BuiltinFunction *builtin = ast::FindBuiltinFunction(kind);
   CHECK(builtin != nullptr, common::InternalError,
         "unknown built-in function kind");
@@ -173,9 +174,11 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
                        arguments[0].AsPath().relationships.size()))
                  : Value::Null();
     case ast::BuiltinFunctionKind::kLocalDateTime:
-      return ConstructLocalDateTime(&arguments[0]);
+      return ConstructLocalDateTime(arguments.empty() ? nullptr : &arguments[0],
+                                    now);
     case ast::BuiltinFunctionKind::kLocalTime:
-      return ConstructLocalTime(&arguments[0]);
+      return ConstructLocalTime(arguments.empty() ? nullptr : &arguments[0],
+                                now);
     case ast::BuiltinFunctionKind::kCoalesce:
       for (const Value &argument : arguments) {
         if (!argument.IsNull()) {
@@ -184,11 +187,20 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
       }
       return Value::Null();
     case ast::BuiltinFunctionKind::kDate:
-      return ConstructDate(&arguments[0]);
+      return ConstructDate(arguments.empty() ? nullptr : &arguments[0], now);
     case ast::BuiltinFunctionKind::kDateTime:
-      return ConstructDateTime(&arguments[0]);
+      return ConstructDateTime(arguments.empty() ? nullptr : &arguments[0],
+                               now);
     case ast::BuiltinFunctionKind::kDuration:
       return ConstructDuration(&arguments[0]);
+    case ast::BuiltinFunctionKind::kDurationBetween:
+      return DurationBetween(arguments[0], arguments[1]);
+    case ast::BuiltinFunctionKind::kDurationInDays:
+      return DurationInDays(arguments[0], arguments[1]);
+    case ast::BuiltinFunctionKind::kDurationInMonths:
+      return DurationInMonths(arguments[0], arguments[1]);
+    case ast::BuiltinFunctionKind::kDurationInSeconds:
+      return DurationInSeconds(arguments[0], arguments[1]);
     case ast::BuiltinFunctionKind::kIsEmpty:
       if (arguments[0].IsString()) {
         return Value(arguments[0].AsString().empty());
@@ -329,7 +341,7 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
       return Value(Value::List(arguments[0].AsList().begin() + 1,
                                arguments[0].AsList().end()));
     case ast::BuiltinFunctionKind::kTime:
-      return ConstructTime(&arguments[0]);
+      return ConstructTime(arguments.empty() ? nullptr : &arguments[0], now);
     case ast::BuiltinFunctionKind::kNodes:
     case ast::BuiltinFunctionKind::kRelationships: {
       if (!arguments[0].IsPath()) {
