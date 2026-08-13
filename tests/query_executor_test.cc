@@ -973,6 +973,9 @@ TEST(QueryExecutorTest, ExecuteReadQueryRejectsWritesWithAccessPathOnly) {
 
   EXPECT_THROW((void)rg::ExecuteReadQuery(access_path, "CREATE (n) RETURN n"),
                common::InvalidArgumentError);
+  EXPECT_THROW((void)rg::ExecuteReadQuery(
+                   access_path, "MATCH (n:Missing) SET n.value = 1 RETURN n"),
+               common::InvalidArgumentError);
 
   rg::QueryResult check =
       rg::ExecuteReadQuery(access_path, "MATCH (n) RETURN count(n) AS c");
@@ -1004,6 +1007,57 @@ TEST(QueryExecutorTest, ExecutesSetRemoveAndDetachDelete) {
       graph, "MATCH (n:Person) WHERE n.name = 'Ada' RETURN count(n) AS c");
   EXPECT_EQ(StringRows(deleted),
             (std::vector<std::vector<std::string>>{{"0"}}));
+}
+
+TEST(QueryExecutorTest, RemovesNullPropertiesAndUpdatesRelationshipMaps) {
+  rg::InMemoryGraph graph;
+  graph.AddNodeIndex({"Person"}, "name");
+  graph.AddRelationshipIndex({"KNOWS"}, "since");
+  const rg::QueryOptions options = QueryOptionsFor(graph);
+  rg::ExecuteWriteQuery(
+      graph,
+      "CREATE (:Person {name: 'Ada', missing: null})"
+      "-[r:KNOWS {since: 2020, missing: null}]->(:Person {name: 'Grace'})",
+      options);
+
+  rg::ExecuteWriteQuery(
+      graph,
+      "MATCH (a:Person {name: 'Ada'})-[r:KNOWS]->() "
+      "SET a.name = null, r = {kind: 'friend', missing: null}, "
+      "r += {since: 2026, kind: null}",
+      options);
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "MATCH (a:Person)-[r:KNOWS]->() "
+      "RETURN a.name AS name, a.missing AS node_missing, "
+      "r.since AS since, r.kind AS kind, r.missing AS rel_missing",
+      options);
+  EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{
+                                    {"null", "null", "2026", "null", "null"}}));
+  EXPECT_TRUE(graph.Nodes()[0]->properties.empty());
+  EXPECT_EQ(graph.Relationships()[0]->properties,
+            (rg::Value::Map{{"since", rg::Value(2026)}}));
+  EXPECT_TRUE(
+      graph.FindNodesByIndex({"Person"}, "name", rg::Value("Ada")).empty());
+  EXPECT_TRUE(
+      graph.FindRelationshipsByIndex({"KNOWS"}, "since", rg::Value(2020))
+          .empty());
+  EXPECT_EQ(graph.FindRelationshipsByIndex({"KNOWS"}, "since", rg::Value(2026))
+                .size(),
+            1U);
+}
+
+TEST(QueryExecutorTest, DeduplicatesDeleteTargetsAcrossRows) {
+  rg::InMemoryGraph graph;
+  rg::ExecuteWriteQuery(graph,
+                        "CREATE (a:Node)-[:LINK]->(:Node), "
+                        "(a)-[:LINK]->(:Node)");
+
+  EXPECT_NO_THROW(
+      rg::ExecuteWriteQuery(graph, "MATCH (a:Node)-[r:LINK]->() DELETE r, a"));
+  EXPECT_EQ(graph.Nodes().size(), 2U);
+  EXPECT_TRUE(graph.Relationships().empty());
 }
 
 TEST(QueryExecutorTest, ExecutesMergeCreateAndMatchActions) {

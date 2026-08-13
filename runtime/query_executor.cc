@@ -3,14 +3,12 @@
 #include <algorithm>
 #include <cctype>
 #include <cstddef>
-#include <cstdint>
 #include <iterator>
 #include <memory>
 #include <optional>
 #include <set>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -26,18 +24,12 @@
 #include "runtime/graph_access_executor.h"
 #include "runtime/join_executor.h"
 #include "runtime/query_row_util.h"
+#include "runtime/write_executor.h"
 
 namespace rg {
 namespace {
 
 using Rows = QueryRows;
-
-struct EntityRef {
-  enum class Kind { kNode, kRelationship };
-
-  Kind kind = Kind::kNode;
-  std::int64_t id = -1;
-};
 
 std::string LowerAscii(std::string value) {
   std::transform(
@@ -59,49 +51,6 @@ std::optional<double> EvaluateNumericOptional(const ast::Expression *expression,
     return value.AsDouble();
   }
   return std::nullopt;
-}
-
-Value MakeValueFromLiteralMap(
-    const std::vector<std::pair<std::string, const ast::Expression *>> &entries,
-    const QueryRow &row) {
-  Value::Map map;
-  for (const auto &[key, expression] : entries) {
-    CHECK(expression != nullptr, common::InvalidArgumentError,
-          "map value is null");
-    map[key] = EvaluateExpression(*expression, row);
-  }
-  return Value(std::move(map));
-}
-
-Value CopyOrNull(const Value *value) {
-  return value != nullptr ? *value : Value::Null();
-}
-
-EntityRef MakeEntityRef(const Value &value) {
-  CHECK(value.IsNode() || value.IsRelationship(), common::InvalidArgumentError,
-        "expected node or relationship value");
-  if (value.IsNode()) {
-    return EntityRef{EntityRef::Kind::kNode, value.AsNode().id};
-  }
-  return EntityRef{EntityRef::Kind::kRelationship, value.AsRelationship().id};
-}
-
-Value::Map ParseMapLiteral(const ast::Expression &expression,
-                           const QueryRow &row) {
-  CHECK(expression.Is(ast::ASTNodeType::kMapLiteral),
-        common::InvalidArgumentError, "expected map literal");
-  const auto &map = ast::CastAst<ast::MapLiteral>(expression);
-  Value::Map values;
-  for (const auto &[key, value] : map.entries) {
-    CHECK(value != nullptr, common::InvalidArgumentError, "map value is null");
-    values[key] = EvaluateExpression(*value, row);
-  }
-  return values;
-}
-
-Value EnsureMapValue(const Value &value) {
-  CHECK(value.IsMap(), common::InvalidArgumentError, "expected map value");
-  return value;
 }
 
 class NoIndexPlannerCatalog final : public ir::PlannerCatalog {
@@ -148,8 +97,8 @@ class QueryExecutorImpl {
  public:
   QueryExecutorImpl(const AccessPath *access_path, Storage *storage)
       : access_path_(access_path),
-        storage_(storage),
-        graph_access_(RequireAccessPath(access_path)) {}
+        graph_access_(RequireAccessPath(access_path)),
+        write_executor_(storage) {}
 
   QueryResult Execute(const ir::LogicalPlan &plan) {
     Rows rows = ExecutePlan(plan, Rows{QueryRow{}});
@@ -262,34 +211,16 @@ class QueryExecutorImpl {
       case ir::LogicalPlanNodeType::kWriteBarrier:
         return ExecutePlan(plan.Child(0), input);
       case ir::LogicalPlanNodeType::kCreateNode:
-        return ExecuteCreateNode(static_cast<const ir::CreateNodePlan &>(plan),
-                                 input);
       case ir::LogicalPlanNodeType::kCreateRelationship:
-        return ExecuteCreateRelationship(
-            static_cast<const ir::CreateRelationshipPlan &>(plan), input);
       case ir::LogicalPlanNodeType::kMerge:
-        return ExecuteMerge(static_cast<const ir::MergePlan &>(plan), input);
       case ir::LogicalPlanNodeType::kSetProperty:
-        return ExecuteSetProperty(
-            static_cast<const ir::SetPropertyPlan &>(plan), input);
       case ir::LogicalPlanNodeType::kSetProperties:
-        return ExecuteSetProperties(
-            static_cast<const ir::SetPropertiesPlan &>(plan), input);
       case ir::LogicalPlanNodeType::kSetLabels:
-        return ExecuteSetLabels(static_cast<const ir::SetLabelsPlan &>(plan),
-                                input);
       case ir::LogicalPlanNodeType::kRemoveProperty:
-        return ExecuteRemoveProperty(
-            static_cast<const ir::RemovePropertyPlan &>(plan), input);
       case ir::LogicalPlanNodeType::kRemoveLabels:
-        return ExecuteRemoveLabels(
-            static_cast<const ir::RemoveLabelsPlan &>(plan), input);
       case ir::LogicalPlanNodeType::kDelete:
-        return ExecuteDelete(static_cast<const ir::DeletePlan &>(plan), input,
-                             false);
       case ir::LogicalPlanNodeType::kDetachDelete:
-        return ExecuteDelete(static_cast<const ir::DetachDeletePlan &>(plan),
-                             input, true);
+        return ExecuteWritePlan(plan, input);
       case ir::LogicalPlanNodeType::kAssertIsNode:
         return ExecutePlan(plan.Child(0), input);
       default:
@@ -628,321 +559,58 @@ class QueryExecutorImpl {
     return out;
   }
 
-  Rows ExecuteCreateNode(const ir::CreateNodePlan &plan, const Rows &input) {
-    Storage &storage = WritableStorage();
-    Rows rows = ExecutePlan(plan.Child(0), input);
-    Rows out;
-    for (const auto &row : rows) {
-      Value::Map properties;
-      for (const auto &entry : plan.Node().properties.entries) {
-        CHECK(entry.value != nullptr, common::InvalidArgumentError,
-              "CREATE node property value is null");
-        properties[entry.key] = EvaluateExpression(*entry.value, row);
-      }
-      auto node = storage.CreateNode(plan.Node().labels, std::move(properties));
-      QueryRow next = row;
-      next[plan.Node().variable] = Value(node);
-      out.push_back(std::move(next));
+  Rows ExecuteWritePlan(const ir::LogicalPlan &plan, const Rows &input) {
+    const WritePlanExecutor execute_plan =
+        [this](const ir::LogicalPlan &child, const QueryRows &child_input) {
+          return ExecutePlan(child, child_input);
+        };
+    switch (plan.Type()) {
+      case ir::LogicalPlanNodeType::kCreateNode:
+        return write_executor_.Execute(
+            static_cast<const ir::CreateNodePlan &>(plan), input, execute_plan);
+      case ir::LogicalPlanNodeType::kCreateRelationship:
+        return write_executor_.Execute(
+            static_cast<const ir::CreateRelationshipPlan &>(plan), input,
+            execute_plan);
+      case ir::LogicalPlanNodeType::kMerge:
+        return write_executor_.Execute(static_cast<const ir::MergePlan &>(plan),
+                                       input, execute_plan);
+      case ir::LogicalPlanNodeType::kSetProperty:
+        return write_executor_.Execute(
+            static_cast<const ir::SetPropertyPlan &>(plan), input,
+            execute_plan);
+      case ir::LogicalPlanNodeType::kSetProperties:
+        return write_executor_.Execute(
+            static_cast<const ir::SetPropertiesPlan &>(plan), input,
+            execute_plan);
+      case ir::LogicalPlanNodeType::kSetLabels:
+        return write_executor_.Execute(
+            static_cast<const ir::SetLabelsPlan &>(plan), input, execute_plan);
+      case ir::LogicalPlanNodeType::kRemoveProperty:
+        return write_executor_.Execute(
+            static_cast<const ir::RemovePropertyPlan &>(plan), input,
+            execute_plan);
+      case ir::LogicalPlanNodeType::kRemoveLabels:
+        return write_executor_.Execute(
+            static_cast<const ir::RemoveLabelsPlan &>(plan), input,
+            execute_plan);
+      case ir::LogicalPlanNodeType::kDelete:
+        return write_executor_.Execute(
+            static_cast<const ir::DeletePlan &>(plan), input, execute_plan);
+      case ir::LogicalPlanNodeType::kDetachDelete:
+        return write_executor_.Execute(
+            static_cast<const ir::DetachDeletePlan &>(plan), input,
+            execute_plan);
+      default:
+        THROW(common::InternalError, "unknown write plan");
     }
-    return out;
-  }
-
-  Rows ExecuteCreateRelationship(const ir::CreateRelationshipPlan &plan,
-                                 const Rows &input) {
-    Storage &storage = WritableStorage();
-    Rows rows = ExecutePlan(plan.Child(0), input);
-    Rows out;
-    for (const auto &row : rows) {
-      const Value &left =
-          LookupQueryVariable(row, plan.Relationship().left_node);
-      const Value &right =
-          LookupQueryVariable(row, plan.Relationship().right_node);
-      CHECK(left.IsNode() && right.IsNode(), common::InvalidArgumentError,
-            "CREATE relationship endpoints must be nodes");
-      Value::Map properties;
-      for (const auto &entry : plan.Relationship().properties.entries) {
-        CHECK(entry.value != nullptr, common::InvalidArgumentError,
-              "CREATE relationship property value is null");
-        properties[entry.key] = EvaluateExpression(*entry.value, row);
-      }
-      auto relationship = storage.CreateRelationship(
-          left.AsNode().id, right.AsNode().id,
-          plan.Relationship().types.empty() ? std::string()
-                                            : plan.Relationship().types[0],
-          std::move(properties));
-      QueryRow next = row;
-      next[plan.Relationship().variable] = Value(relationship);
-      out.push_back(std::move(next));
-    }
-    return out;
-  }
-
-  Rows ExecuteMerge(const ir::MergePlan &plan, const Rows &input) {
-    Rows rows = ExecutePlan(plan.Child(0), input);
-    Rows out;
-    for (const auto &row : rows) {
-      Rows matches = ExecutePlan(plan.Child(1), Rows{row});
-      if (!matches.empty()) {
-        for (auto &match : matches) {
-          QueryRow next;
-          if (!MergeQueryRows(row, match, &next)) {
-            continue;
-          }
-          for (const auto &action : plan.Merge().actions) {
-            if (action.on_match) {
-              ExecuteSetPatterns(action.set_patterns, &next);
-            }
-          }
-          out.push_back(std::move(next));
-        }
-        continue;
-      }
-
-      QueryRow next = row;
-      { next = ExecuteMergeCreate(plan.Merge().create_pattern, next); }
-      for (const auto &action : plan.Merge().actions) {
-        if (!action.on_match) {
-          ExecuteSetPatterns(action.set_patterns, &next);
-        }
-      }
-      out.push_back(std::move(next));
-    }
-    return out;
-  }
-
-  QueryRow ExecuteMergeCreate(const ir::CreatePattern &pattern, QueryRow row) {
-    Storage &storage = WritableStorage();
-    for (const auto &command : pattern.commands) {
-      if (command.kind == ir::CreateEntityKind::kNode) {
-        const auto &node_pattern = pattern.nodes.at(command.index);
-        Value::Map properties;
-        for (const auto &entry : node_pattern.properties.entries) {
-          CHECK(entry.value != nullptr, common::InvalidArgumentError,
-                "MERGE node property value is null");
-          properties[entry.key] = EvaluateExpression(*entry.value, row);
-        }
-        auto node =
-            storage.CreateNode(node_pattern.labels, std::move(properties));
-        row[node_pattern.variable] = Value(node);
-      } else {
-        const auto &relationship_pattern =
-            pattern.relationships.at(command.index);
-        const Value &left =
-            LookupQueryVariable(row, relationship_pattern.left_node);
-        const Value &right =
-            LookupQueryVariable(row, relationship_pattern.right_node);
-        CHECK(left.IsNode() && right.IsNode(), common::InvalidArgumentError,
-              "MERGE relationship endpoints must be nodes");
-        Value::Map properties;
-        for (const auto &entry : relationship_pattern.properties.entries) {
-          CHECK(entry.value != nullptr, common::InvalidArgumentError,
-                "MERGE relationship property value is null");
-          properties[entry.key] = EvaluateExpression(*entry.value, row);
-        }
-        auto relationship = storage.CreateRelationship(
-            left.AsNode().id, right.AsNode().id,
-            relationship_pattern.types.empty() ? std::string()
-                                               : relationship_pattern.types[0],
-            std::move(properties));
-        row[relationship_pattern.variable] = Value(relationship);
-      }
-    }
-    return row;
-  }
-
-  void ExecuteSetPatterns(const std::vector<ir::SetMutatingPattern> &patterns,
-                          QueryRow *row) {
-    CHECK(row != nullptr, common::InternalError, "query row is null");
-    for (const auto &pattern : patterns) {
-      switch (pattern.kind) {
-        case ir::SetMutatingPatternKind::kSetProperty:
-          ApplySetProperty(pattern, row);
-          break;
-        case ir::SetMutatingPatternKind::kSetExactPropertiesFromMap:
-          ApplySetProperties(pattern, row, false);
-          break;
-        case ir::SetMutatingPatternKind::kSetIncludingPropertiesFromMap:
-          ApplySetProperties(pattern, row, true);
-          break;
-        case ir::SetMutatingPatternKind::kSetLabels:
-          ApplySetLabels(pattern, row);
-          break;
-      }
-    }
-  }
-
-  void ApplySetProperty(const ir::SetMutatingPattern &pattern, QueryRow *row) {
-    Storage &storage = WritableStorage();
-    const Value &entity = EvaluateExpression(*pattern.entity, *row);
-    Value value = EvaluateExpression(*pattern.value, *row);
-    if (entity.IsNode()) {
-      storage.SetNodeProperty(entity.AsNode().id, pattern.property_key,
-                              std::move(value));
-      return;
-    }
-    if (entity.IsRelationship()) {
-      storage.SetRelationshipProperty(entity.AsRelationship().id,
-                                      pattern.property_key, std::move(value));
-      return;
-    }
-    THROW(common::InvalidArgumentError, "SET property target is not an entity");
-  }
-
-  void ApplySetProperties(const ir::SetMutatingPattern &pattern, QueryRow *row,
-                          bool include_existing) {
-    Storage &storage = WritableStorage();
-    const Value &entity = EvaluateExpression(*pattern.entity, *row);
-    Value map_value = EvaluateExpression(*pattern.value, *row);
-    CHECK(map_value.IsMap(), common::InvalidArgumentError,
-          "SET properties requires a map value");
-    if (entity.IsNode()) {
-      storage.SetNodeProperties(entity.AsNode().id,
-                                std::move(map_value.AsMap()), include_existing);
-      return;
-    }
-    THROW(common::InvalidArgumentError, "SET properties target is not a node");
-  }
-
-  void ApplySetLabels(const ir::SetMutatingPattern &pattern, QueryRow *row) {
-    Storage &storage = WritableStorage();
-    const Value &entity = EvaluateExpression(*pattern.entity, *row);
-    if (!entity.IsNode()) {
-      THROW(common::InvalidArgumentError, "SET labels target is not a node");
-    }
-    storage.SetLabels(entity.AsNode().id, pattern.labels);
-  }
-
-  Rows ExecuteSetProperty(const ir::SetPropertyPlan &plan, const Rows &input) {
-    Rows rows = ExecutePlan(plan.Child(0), input);
-    for (auto &row : rows) {
-      ir::SetMutatingPattern pattern;
-      pattern.kind = ir::SetMutatingPatternKind::kSetProperty;
-      pattern.entity = plan.Entity();
-      pattern.property_key = plan.PropertyKey();
-      pattern.value = plan.Value();
-      ExecuteSetPatterns({pattern}, &row);
-    }
-    return rows;
-  }
-
-  Rows ExecuteSetProperties(const ir::SetPropertiesPlan &plan,
-                            const Rows &input) {
-    Rows rows = ExecutePlan(plan.Child(0), input);
-    for (auto &row : rows) {
-      ir::SetMutatingPattern pattern;
-      pattern.kind =
-          plan.IncludeExisting()
-              ? ir::SetMutatingPatternKind::kSetIncludingPropertiesFromMap
-              : ir::SetMutatingPatternKind::kSetExactPropertiesFromMap;
-      pattern.entity = plan.Entity();
-      pattern.value = plan.Value();
-      ExecuteSetPatterns({pattern}, &row);
-    }
-    return rows;
-  }
-
-  Rows ExecuteSetLabels(const ir::SetLabelsPlan &plan, const Rows &input) {
-    Rows rows = ExecutePlan(plan.Child(0), input);
-    for (auto &row : rows) {
-      ir::SetMutatingPattern pattern;
-      pattern.kind = ir::SetMutatingPatternKind::kSetLabels;
-      pattern.entity = plan.Entity();
-      pattern.labels = plan.Labels();
-      ExecuteSetPatterns({pattern}, &row);
-    }
-    return rows;
-  }
-
-  Rows ExecuteRemoveProperty(const ir::RemovePropertyPlan &plan,
-                             const Rows &input) {
-    Storage &storage = WritableStorage();
-    Rows rows = ExecutePlan(plan.Child(0), input);
-    for (auto &row : rows) {
-      const Value &entity = EvaluateExpression(*plan.Entity(), row);
-      if (entity.IsNode()) {
-        storage.RemoveNodeProperty(entity.AsNode().id, plan.PropertyKey());
-      } else if (entity.IsRelationship()) {
-        storage.RemoveRelationshipProperty(entity.AsRelationship().id,
-                                           plan.PropertyKey());
-      } else {
-        THROW(common::InvalidArgumentError,
-              "REMOVE property target is not an entity");
-      }
-    }
-    return rows;
-  }
-
-  Rows ExecuteRemoveLabels(const ir::RemoveLabelsPlan &plan,
-                           const Rows &input) {
-    Storage &storage = WritableStorage();
-    Rows rows = ExecutePlan(plan.Child(0), input);
-    for (auto &row : rows) {
-      const Value &entity = EvaluateExpression(*plan.Entity(), row);
-      if (!entity.IsNode()) {
-        THROW(common::InvalidArgumentError,
-              "REMOVE labels target is not a node");
-      }
-      storage.RemoveLabels(entity.AsNode().id, plan.Labels());
-    }
-    return rows;
-  }
-
-  Rows ExecuteDelete(const ir::LogicalPlan &plan, const Rows &input,
-                     bool detach) {
-    Storage &storage = WritableStorage();
-    Rows rows = ExecutePlan(plan.Child(0), input);
-    for (const auto &row : rows) {
-      std::vector<EntityRef> entities;
-      if (plan.Type() == ir::LogicalPlanNodeType::kDelete) {
-        const auto &del = static_cast<const ir::DeletePlan &>(plan);
-        for (const auto *expression : del.Expressions()) {
-          CHECK(expression != nullptr, common::InvalidArgumentError,
-                "DELETE expression is null");
-          Value value = EvaluateExpression(*expression, row);
-          entities.push_back(MakeEntityRef(value));
-        }
-      } else {
-        const auto &del = static_cast<const ir::DetachDeletePlan &>(plan);
-        for (const auto *expression : del.Expressions()) {
-          CHECK(expression != nullptr, common::InvalidArgumentError,
-                "DETACH DELETE expression is null");
-          Value value = EvaluateExpression(*expression, row);
-          entities.push_back(MakeEntityRef(value));
-        }
-        detach = true;
-      }
-      for (const auto &entity : entities) {
-        if (entity.kind == EntityRef::Kind::kRelationship) {
-          storage.DeleteRelationship(entity.id);
-          continue;
-        }
-        if (detach) {
-          for (const auto &relationship :
-               storage.RelationshipsConnectedTo(entity.id)) {
-            storage.DeleteRelationship(relationship->id);
-          }
-        } else {
-          CHECK(storage.RelationshipsConnectedTo(entity.id).empty(),
-                common::InvalidArgumentError,
-                "DELETE node still has relationships");
-        }
-        storage.DeleteNode(entity.id);
-      }
-    }
-    return rows;
-  }
-
-  Storage &WritableStorage() const {
-    CHECK(storage_ != nullptr, common::InvalidArgumentError,
-          "write execution requires storage");
-    return *storage_;
   }
 
   const AccessPath *access_path_ = nullptr;
-  Storage *storage_ = nullptr;
   GraphAccessExecutor graph_access_;
   JoinExecutor join_executor_;
   ApplyExecutor apply_executor_;
+  WriteExecutor write_executor_;
 };
 
 }  // namespace

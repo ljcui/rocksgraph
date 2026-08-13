@@ -39,6 +39,8 @@ class InMemoryGraph final : public Storage,
                                std::string property_key, Value value);
   void SetNodeProperties(const NodePtr &node, Value::Map properties,
                          bool include_existing);
+  void SetRelationshipProperties(const RelationshipPtr &relationship,
+                                 Value::Map properties, bool include_existing);
   void SetLabels(const NodePtr &node, std::vector<std::string> labels);
   void RemoveNodeProperty(const NodePtr &node, std::string_view property_key);
   void RemoveRelationshipProperty(const RelationshipPtr &relationship,
@@ -53,6 +55,8 @@ class InMemoryGraph final : public Storage,
                                std::string property_key, Value value) override;
   void SetNodeProperties(int64_t node_id, Value::Map properties,
                          bool include_existing) override;
+  void SetRelationshipProperties(int64_t relationship_id, Value::Map properties,
+                                 bool include_existing) override;
   void SetLabels(int64_t node_id, std::vector<std::string> labels) override;
   void RemoveNodeProperty(int64_t node_id,
                           std::string_view property_key) override;

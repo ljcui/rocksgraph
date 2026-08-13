@@ -34,6 +34,9 @@ class Storage : public AccessPath {
                                        Value value) = 0;
   virtual void SetNodeProperties(std::int64_t node_id, Value::Map properties,
                                  bool include_existing) = 0;
+  virtual void SetRelationshipProperties(std::int64_t relationship_id,
+                                         Value::Map properties,
+                                         bool include_existing) = 0;
   virtual void SetLabels(std::int64_t node_id,
                          std::vector<std::string> labels) = 0;
   virtual void RemoveNodeProperty(std::int64_t node_id,

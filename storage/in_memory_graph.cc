@@ -41,6 +41,21 @@ void RemovePointer(std::vector<Ptr> *items, const Ptr &ptr) {
   items->erase(std::remove(items->begin(), items->end(), ptr), items->end());
 }
 
+void ApplyPropertyMap(Value::Map properties, bool include_existing,
+                      Value::Map *target) {
+  CHECK(target != nullptr, common::InternalError, "property map is null");
+  if (!include_existing) {
+    target->clear();
+  }
+  for (auto &[key, value] : properties) {
+    if (value.IsNull()) {
+      target->erase(key);
+    } else {
+      target->insert_or_assign(std::move(key), std::move(value));
+    }
+  }
+}
+
 }  // namespace
 
 InMemoryGraph::NodePtr InMemoryGraph::CreateNode(
@@ -48,7 +63,7 @@ InMemoryGraph::NodePtr InMemoryGraph::CreateNode(
   auto node = std::make_shared<Node>();
   node->id = next_node_id_++;
   node->labels = std::move(labels);
-  node->properties = std::move(properties);
+  ApplyPropertyMap(std::move(properties), false, &node->properties);
   nodes_by_id_.emplace(node->id, node);
   nodes_.push_back(node);
   AddNodeToIndexes(node);
@@ -68,7 +83,7 @@ InMemoryGraph::RelationshipPtr InMemoryGraph::CreateRelationship(
   relationship->start_node_id = start_node_id;
   relationship->end_node_id = end_node_id;
   relationship->type = std::move(type);
-  relationship->properties = std::move(properties);
+  ApplyPropertyMap(std::move(properties), false, &relationship->properties);
   relationships_by_id_.emplace(relationship->id, relationship);
   relationships_.push_back(relationship);
   AddRelationshipToAdjacency(relationship);
@@ -91,7 +106,12 @@ void InMemoryGraph::SetNodeProperty(const NodePtr &node,
                                     std::string property_key, Value value) {
   CHECK(node != nullptr, common::InvalidArgumentError, "node is null");
   RemoveNodeFromIndexes(node);
-  node->properties[std::move(property_key)] = std::move(value);
+  if (value.IsNull()) {
+    node->properties.erase(property_key);
+  } else {
+    node->properties.insert_or_assign(std::move(property_key),
+                                      std::move(value));
+  }
   AddNodeToIndexes(node);
 }
 
@@ -101,7 +121,12 @@ void InMemoryGraph::SetRelationshipProperty(const RelationshipPtr &relationship,
   CHECK(relationship != nullptr, common::InvalidArgumentError,
         "relationship is null");
   RemoveRelationshipFromIndexes(relationship);
-  relationship->properties[std::move(property_key)] = std::move(value);
+  if (value.IsNull()) {
+    relationship->properties.erase(property_key);
+  } else {
+    relationship->properties.insert_or_assign(std::move(property_key),
+                                              std::move(value));
+  }
   AddRelationshipToIndexes(relationship);
 }
 
@@ -110,13 +135,19 @@ void InMemoryGraph::SetNodeProperties(const NodePtr &node,
                                       bool include_existing) {
   CHECK(node != nullptr, common::InvalidArgumentError, "node is null");
   RemoveNodeFromIndexes(node);
-  if (!include_existing) {
-    node->properties.clear();
-  }
-  for (auto &entry : properties) {
-    node->properties[std::move(entry.first)] = std::move(entry.second);
-  }
+  ApplyPropertyMap(std::move(properties), include_existing, &node->properties);
   AddNodeToIndexes(node);
+}
+
+void InMemoryGraph::SetRelationshipProperties(
+    const RelationshipPtr &relationship, Value::Map properties,
+    bool include_existing) {
+  CHECK(relationship != nullptr, common::InvalidArgumentError,
+        "relationship is null");
+  RemoveRelationshipFromIndexes(relationship);
+  ApplyPropertyMap(std::move(properties), include_existing,
+                   &relationship->properties);
+  AddRelationshipToIndexes(relationship);
 }
 
 void InMemoryGraph::SetLabels(const NodePtr &node,
@@ -195,6 +226,13 @@ void InMemoryGraph::SetRelationshipProperty(int64_t relationship_id,
 void InMemoryGraph::SetNodeProperties(int64_t node_id, Value::Map properties,
                                       bool include_existing) {
   SetNodeProperties(NodeById(node_id), std::move(properties), include_existing);
+}
+
+void InMemoryGraph::SetRelationshipProperties(int64_t relationship_id,
+                                              Value::Map properties,
+                                              bool include_existing) {
+  SetRelationshipProperties(RelationshipById(relationship_id),
+                            std::move(properties), include_existing);
 }
 
 void InMemoryGraph::SetLabels(int64_t node_id,

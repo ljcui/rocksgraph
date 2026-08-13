@@ -146,7 +146,8 @@ set(ROCKSGRAPH_RUNTIME_SOURCES runtime/aggregation_evaluator.cc
                               runtime/graph_access_executor.cc
                               runtime/join_executor.cc
                               runtime/query_executor.cc
-                              runtime/query_row_util.cc)
+                              runtime/query_row_util.cc
+                              runtime/write_executor.cc)
 
 add_library(rocksgraph_ast STATIC ${ROCKSGRAPH_AST_SOURCES})
 target_include_directories(rocksgraph_ast PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -283,3 +284,10 @@ target_link_libraries(apply_executor_test PRIVATE GTest::gtest_main
 set_target_properties(apply_executor_test PROPERTIES BUILD_RPATH
                                                     "/usr/local/lib")
 add_test(NAME apply_executor_test COMMAND apply_executor_test)
+
+add_executable(write_executor_test tests/write_executor_test.cc)
+target_link_libraries(write_executor_test PRIVATE GTest::gtest_main
+                                                  rocksgraph_runtime)
+set_target_properties(write_executor_test PROPERTIES BUILD_RPATH
+                                                    "/usr/local/lib")
+add_test(NAME write_executor_test COMMAND write_executor_test)
