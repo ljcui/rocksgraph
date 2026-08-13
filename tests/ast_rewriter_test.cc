@@ -110,6 +110,22 @@ TEST(PatternPredicateNormalizationRewriterTest,
       "MATCH (n)-[r:KNOWS]->(m) WHERE r.since = 2020 RETURN r");
 }
 
+TEST(PatternPredicateNormalizationRewriterTest,
+     FiltersPropertiesOnVariableLengthRelationships) {
+  ExpectRewriteEqualsWith<ast::PatternPredicateNormalizationRewriter>(
+      "MATCH (a)-[r:WORKED_WITH* {year: 1988}]->(b) RETURN *",
+      "MATCH (a)-[r:WORKED_WITH*]->(b) WHERE ALL(__rel_prop_0 IN r "
+      "WHERE __rel_prop_0.year = 1988) RETURN *");
+}
+
+TEST(PatternPredicateNormalizationRewriterTest,
+     AvoidsVariableCollisionsForVariableLengthProperties) {
+  ExpectRewriteEqualsWith<ast::PatternPredicateNormalizationRewriter>(
+      "MATCH (__rel_prop_0), (a)-[r* {year: 1988}]->(b) RETURN b",
+      "MATCH (__rel_prop_0), (a)-[r*]->(b) WHERE ALL(__rel_prop_1 IN r "
+      "WHERE __rel_prop_1.year = 1988) RETURN b");
+}
+
 TEST(ExistentialSubqueryRewriterTest, PatternToMatchQuery) {
   ExpectRewriteEqualsWith<ast::ExistentialSubqueryRewriter>(
       "MATCH (n) WHERE EXISTS { (n)-[:R]->() } RETURN n",

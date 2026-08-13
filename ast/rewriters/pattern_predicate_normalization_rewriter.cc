@@ -1,9 +1,121 @@
 #include "pattern_predicate_normalization_rewriter.h"
 
+#include <cstddef>
+#include <string>
+#include <unordered_set>
 #include <utility>
 
 namespace ast {
 namespace {
+
+class NameCollector final : public ASTWalker {
+ public:
+  std::unordered_set<std::string> Collect(ASTNode &node) {
+    names_.clear();
+    node.Accept(*this);
+    return std::move(names_);
+  }
+
+ protected:
+  void Visit(Variable &node) override { Add(node.name); }
+
+  void Visit(NodePattern &node) override {
+    Add(node.variable);
+    ASTWalker::Visit(node);
+  }
+
+  void Visit(RelationshipDetail &node) override {
+    Add(node.variable);
+    ASTWalker::Visit(node);
+  }
+
+  void Visit(PatternPart &node) override {
+    Add(node.variable);
+    ASTWalker::Visit(node);
+  }
+
+  void Visit(ProjectionItem &node) override {
+    Add(node.alias);
+    ASTWalker::Visit(node);
+  }
+
+  void Visit(StandaloneCall &node) override {
+    for (const auto &item : node.yield_items) {
+      Add(item.variable);
+    }
+    ASTWalker::Visit(node);
+  }
+
+  void Visit(Unwind &node) override {
+    Add(node.variable);
+    ASTWalker::Visit(node);
+  }
+
+  void Visit(InQueryCall &node) override {
+    for (const auto &item : node.yield_items) {
+      Add(item.variable);
+    }
+    ASTWalker::Visit(node);
+  }
+
+  void Visit(ListComprehension &node) override {
+    Add(node.variable);
+    ASTWalker::Visit(node);
+  }
+
+  void Visit(PatternComprehension &node) override {
+    Add(node.variable);
+    ASTWalker::Visit(node);
+  }
+
+  void Visit(AllQuantifier &node) override {
+    Add(node.variable);
+    ASTWalker::Visit(node);
+  }
+
+  void Visit(AnyQuantifier &node) override {
+    Add(node.variable);
+    ASTWalker::Visit(node);
+  }
+
+  void Visit(NoneQuantifier &node) override {
+    Add(node.variable);
+    ASTWalker::Visit(node);
+  }
+
+  void Visit(SingleQuantifier &node) override {
+    Add(node.variable);
+    ASTWalker::Visit(node);
+  }
+
+ private:
+  void Add(const std::string &name) {
+    if (!name.empty()) {
+      names_.insert(name);
+    }
+  }
+
+  std::unordered_set<std::string> names_;
+};
+
+class PropertyVariableGenerator final {
+ public:
+  explicit PropertyVariableGenerator(ASTNode &node)
+      : used_names_(NameCollector().Collect(node)) {}
+
+  std::string Next() {
+    for (;;) {
+      std::string name = "__rel_prop_" + std::to_string(next_id_++);
+      if (used_names_.insert(name).second) {
+        return name;
+      }
+    }
+  }
+
+ private:
+  std::unordered_set<std::string> used_names_;
+  std::size_t next_id_ = 0;
+};
 
 std::unique_ptr<Expression> MakeVariable(const std::string &name) {
   auto node = std::make_unique<Variable>();
@@ -30,6 +142,16 @@ std::unique_ptr<Expression> MakePropertyEquals(
   node->left = std::move(prop);
   node->op = "=";
   node->right = std::move(value);
+  return node;
+}
+
+std::unique_ptr<Expression> MakeAllPropertyEquals(
+    const std::string &relationship_name, const std::string &item_name,
+    const std::string &key, std::unique_ptr<Expression> value) {
+  auto node = std::make_unique<AllQuantifier>();
+  node->variable = item_name;
+  node->list_expr = MakeVariable(relationship_name);
+  node->predicate = MakePropertyEquals(item_name, key, std::move(value));
   return node;
 }
 
@@ -68,8 +190,8 @@ void CollectFromNodePattern(NodePattern &node,
 }
 
 void CollectFromRelationshipDetail(
-    RelationshipDetail &detail,
-    std::vector<std::unique_ptr<Expression>> &preds) {
+    RelationshipDetail &detail, std::vector<std::unique_ptr<Expression>> &preds,
+    PropertyVariableGenerator *property_variables) {
   if (detail.variable.empty()) {
     return;
   }
@@ -78,29 +200,37 @@ void CollectFromRelationshipDetail(
   }
   auto entries = std::move(detail.properties->map->entries);
   for (auto &entry : entries) {
-    preds.push_back(MakePropertyEquals(detail.variable, entry.first,
-                                       std::move(entry.second)));
+    if (detail.range.has_value()) {
+      const std::string item_name = property_variables->Next();
+      preds.push_back(MakeAllPropertyEquals(
+          detail.variable, item_name, entry.first, std::move(entry.second)));
+    } else {
+      preds.push_back(MakePropertyEquals(detail.variable, entry.first,
+                                         std::move(entry.second)));
+    }
   }
   detail.properties.reset();
 }
 
 void CollectFromRelationshipPattern(
     RelationshipPattern &pattern,
-    std::vector<std::unique_ptr<Expression>> &preds) {
+    std::vector<std::unique_ptr<Expression>> &preds,
+    PropertyVariableGenerator *property_variables) {
   if (!pattern.detail) {
     return;
   }
-  CollectFromRelationshipDetail(*pattern.detail, preds);
+  CollectFromRelationshipDetail(*pattern.detail, preds, property_variables);
 }
 
-void CollectFromPatternElement(
-    PatternElement &element, std::vector<std::unique_ptr<Expression>> &preds) {
+void CollectFromPatternElement(PatternElement &element,
+                               std::vector<std::unique_ptr<Expression>> &preds,
+                               PropertyVariableGenerator *property_variables) {
   if (element.node_pattern) {
     CollectFromNodePattern(*element.node_pattern, preds);
   }
   for (auto &link : element.chain) {
     if (link.first) {
-      CollectFromRelationshipPattern(*link.first, preds);
+      CollectFromRelationshipPattern(*link.first, preds, property_variables);
     }
     if (link.second) {
       CollectFromNodePattern(*link.second, preds);
@@ -109,10 +239,11 @@ void CollectFromPatternElement(
 }
 
 void CollectFromPattern(Pattern &pattern,
-                        std::vector<std::unique_ptr<Expression>> &preds) {
+                        std::vector<std::unique_ptr<Expression>> &preds,
+                        PropertyVariableGenerator *property_variables) {
   for (auto &part : pattern.parts) {
     if (part && part->element) {
-      CollectFromPatternElement(*part->element, preds);
+      CollectFromPatternElement(*part->element, preds, property_variables);
     }
   }
 }
@@ -134,7 +265,8 @@ void PatternPredicateNormalizationRewriter::Visit(Match &node) {
     return;
   }
   std::vector<std::unique_ptr<Expression>> predicates;
-  CollectFromPattern(*node.pattern, predicates);
+  PropertyVariableGenerator property_variables(node);
+  CollectFromPattern(*node.pattern, predicates, &property_variables);
   if (predicates.empty()) {
     return;
   }

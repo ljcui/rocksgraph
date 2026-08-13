@@ -697,6 +697,8 @@ TEST(TckScenarioTest, ExecutesConformanceSubset) {
       {"clauses/merge/Merge5.feature",
        "[9] Creating relationship using merged nodes"},
       {"clauses/merge/Merge5.feature", "[10] Merge should bind a path"},
+      {"clauses/match/Match4.feature",
+       "[5] Matching variable length pattern with property predicate"},
   };
 
   std::map<std::string, std::vector<Scenario>> cache;

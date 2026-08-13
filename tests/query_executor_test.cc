@@ -960,6 +960,24 @@ TEST(QueryExecutorTest, ExecutesVariableLengthExpandWithTypeFilter) {
             (std::vector<std::vector<std::string>>{{"\"Grace\"", "1"}}));
 }
 
+TEST(QueryExecutorTest, FiltersPropertiesOnVariableLengthRelationships) {
+  rg::InMemoryGraph graph;
+  auto a = graph.CreateNode({"Artist"});
+  auto b = graph.CreateNode({"Artist"});
+  auto c = graph.CreateNode({"Artist"});
+  graph.CreateRelationship(a, b, "WORKED_WITH", {{"year", rg::Value(1987)}});
+  graph.CreateRelationship(b, c, "WORKED_WITH", {{"year", rg::Value(1988)}});
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "MATCH (a:Artist)-[:WORKED_WITH* {year: 1988}]->(b:Artist) "
+      "RETURN b");
+
+  ASSERT_EQ(result.columns, std::vector<std::string>{"b"});
+  ASSERT_EQ(result.rows.size(), 1U);
+  EXPECT_EQ(result.rows[0][0].AsNode().id, c->id);
+}
+
 TEST(QueryExecutorTest, ExecutesVariableLengthExpandIntoBoundEndpoint) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
