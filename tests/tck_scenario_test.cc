@@ -681,6 +681,13 @@ TEST(TckScenarioTest, ExecutesConformanceSubset) {
        "[8] Handling non-string operands for ENDS WITH"},
       {"expressions/string/String10.feature",
        "[8] Handling non-string operands for CONTAINS"},
+      {"expressions/string/String1.feature",
+       "[1] `substring()` with default second argument"},
+      {"expressions/string/String3.feature", "[1] `reverse()`"},
+      {"expressions/mathematical/Mathematical11.feature",
+       "[1] Absolute function"},
+      {"expressions/mathematical/Mathematical13.feature",
+       "[1] `sqrt()` returning float values"},
       {"expressions/precedence/Precedence2.feature",
        "[1] Numeric multiplicative operations takes precedence over numeric "
        "additive operations"},

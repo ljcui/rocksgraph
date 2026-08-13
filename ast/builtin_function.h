@@ -17,18 +17,27 @@ enum class BuiltinFunctionKind {
   kMaximum,
   kMinimum,
   kSum,
+  kAbs,
+  kCeil,
   kCoalesce,
   kId,
   kIsEmpty,
   kKeys,
   kLabels,
+  kLast,
   kLength,
   kNodes,
   kProperties,
+  kRand,
   kRange,
   kRelationships,
+  kReverse,
+  kSign,
   kSize,
   kSplit,
+  kSqrt,
+  kSubstring,
+  kTail,
   kToBoolean,
   kToFloat,
   kToInteger,
@@ -48,6 +57,7 @@ struct BuiltinFunction {
   std::optional<std::size_t> maximum_argument_count;
   bool aggregate = false;
   bool allows_distinct = false;
+  bool deterministic = true;
 };
 
 [[nodiscard]] const std::vector<BuiltinFunction> &BuiltinFunctions();

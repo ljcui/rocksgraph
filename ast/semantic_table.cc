@@ -90,14 +90,6 @@ std::optional<bool> LookupProcedureReadOnly(std::string_view procedure_name) {
   return procedure->read_only;
 }
 
-SemanticVariableType InferFunctionResultType(std::string_view function_name) {
-  const BuiltinFunction *function = FindBuiltinFunction(function_name);
-  if (function != nullptr) {
-    return function->result_type;
-  }
-  return SemanticVariableType::kUnknown;
-}
-
 bool IsAggregationExpression(const Expression &expression) {
   class AggregationScanner final : public ASTConstWalker {
    public:
@@ -481,6 +473,12 @@ class SemanticTableAnalyzer final : public ASTConstWalker {
           return *builtin->list_element_type;
         }
         if (builtin != nullptr &&
+            (builtin->kind == BuiltinFunctionKind::kTail ||
+             builtin->kind == BuiltinFunctionKind::kReverse) &&
+            function.arguments.size() == 1 && function.arguments[0]) {
+          return InferListElementType(*function.arguments[0]);
+        }
+        if (builtin != nullptr &&
             builtin->kind == BuiltinFunctionKind::kCollect &&
             function.arguments.size() == 1 && function.arguments[0]) {
           return InferExpressionType(*function.arguments[0]);
@@ -534,7 +532,20 @@ class SemanticTableAnalyzer final : public ASTConstWalker {
         return SemanticVariableType::kList;
       case ASTNodeType::kFunctionInvocation: {
         const auto &function = CastAst<FunctionInvocation>(expression);
-        return InferFunctionResultType(function.function_name);
+        const BuiltinFunction *builtin =
+            FindBuiltinFunction(function.function_name);
+        if (builtin == nullptr) {
+          return SemanticVariableType::kUnknown;
+        }
+        if (function.arguments.size() == 1 && function.arguments[0]) {
+          if (builtin->kind == BuiltinFunctionKind::kLast) {
+            return InferListElementType(*function.arguments[0]);
+          }
+          if (builtin->kind == BuiltinFunctionKind::kReverse) {
+            return InferExpressionType(*function.arguments[0]);
+          }
+        }
+        return builtin->result_type;
       }
       case ASTNodeType::kCountStarExpression:
         return SemanticVariableType::kScalar;

@@ -188,7 +188,9 @@ TEST(SemanticValidatorTest, RejectsUnknownProcedureYieldField) {
 TEST(SemanticValidatorTest, AcceptsRegisteredFunctionContracts) {
   EXPECT_NO_THROW(ast::ParseCypher(
       "RETURN COALESCE(null, 1) AS value, range(1, 3) AS short_range, "
-      "range(1, 3, 2) AS stepped_range"));
+      "range(1, 3, 2) AS stepped_range, abs(-1) AS absolute, rand() AS random, "
+      "tail([1, 2]) AS rest, last([1, 2]) AS final, "
+      "reverse('abc') AS reversed, substring('abc', 1, 1) AS middle"));
   EXPECT_NO_THROW(
       ast::ParseCypher("UNWIND [1, 1] AS x RETURN count(DISTINCT x) AS c"));
 }
@@ -209,6 +211,15 @@ TEST(SemanticValidatorTest, RejectsFunctionArgumentCountMismatch) {
   ExpectSemanticError("RETURN coalesce() AS value",
                       "coalesce() expects at least 1 argument");
   ExpectSemanticError("RETURN count() AS value", "count() expects 1 argument");
+  ExpectSemanticError("RETURN rand(1) AS value", "rand() expects 0 arguments");
+  ExpectSemanticError("RETURN substring('abc') AS value",
+                      "substring() expects 2 to 3 arguments");
+}
+
+TEST(SemanticValidatorTest, RejectsNonDeterministicFunctionInAggregation) {
+  ExpectSemanticError(
+      "RETURN count(rand())",
+      "non-deterministic function is not allowed inside aggregation: rand");
 }
 
 TEST(SemanticValidatorTest, RejectsDistinctForScalarFunctions) {
@@ -287,6 +298,14 @@ TEST(SemanticValidatorTest, RejectsKnownInvalidFunctionArguments) {
   ExpectSemanticError(
       "MATCH p = (n)-[:R]->(m) RETURN size(p)",
       "invalid argument type: size() argument has invalid type");
+  ExpectSemanticError("RETURN abs('x')",
+                      "invalid argument type: abs() argument has invalid type");
+  ExpectSemanticError(
+      "RETURN tail('x')",
+      "invalid argument type: tail() argument has invalid type");
+  ExpectSemanticError(
+      "RETURN substring('abc', '1')",
+      "invalid argument type: substring() argument has invalid type");
 }
 
 TEST(SemanticValidatorTest, RejectsQuantifierPredicateTypeMismatch) {

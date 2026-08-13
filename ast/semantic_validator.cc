@@ -518,6 +518,12 @@ class SemanticValidator : public ASTWalker {
     if (node.distinct && !function->allows_distinct) {
       ReportSemantic("DISTINCT is only supported for aggregate functions");
     }
+    if (!function->deterministic && aggregation_depth_ > 0) {
+      ReportSemantic(
+          "non-deterministic function is not allowed inside "
+          "aggregation: " +
+          function->name);
+    }
     ValidateFunctionArguments(*function, node);
 
     const bool aggregate = function->aggregate;
@@ -997,10 +1003,14 @@ class SemanticValidator : public ASTWalker {
       case BuiltinFunctionKind::kCount:
       case BuiltinFunctionKind::kId:
       case BuiltinFunctionKind::kLength:
+      case BuiltinFunctionKind::kSign:
       case BuiltinFunctionKind::kSize:
       case BuiltinFunctionKind::kToInteger:
         return {StaticType::kInteger};
       case BuiltinFunctionKind::kAverage:
+      case BuiltinFunctionKind::kCeil:
+      case BuiltinFunctionKind::kRand:
+      case BuiltinFunctionKind::kSqrt:
       case BuiltinFunctionKind::kToFloat:
         return {StaticType::kFloat};
       case BuiltinFunctionKind::kToBoolean:
@@ -1017,8 +1027,16 @@ class SemanticValidator : public ASTWalker {
         return {StaticType::kList, StaticType::kRelationship};
       case BuiltinFunctionKind::kRange:
         return {StaticType::kList, StaticType::kInteger};
+      case BuiltinFunctionKind::kTail: {
+        const StaticValue input =
+            function.arguments.empty()
+                ? StaticValue{}
+                : InferType(function.arguments.front().get());
+        return {StaticType::kList, input.element_type};
+      }
       case BuiltinFunctionKind::kProperties:
         return {StaticType::kMap};
+      case BuiltinFunctionKind::kSubstring:
       case BuiltinFunctionKind::kToLower:
       case BuiltinFunctionKind::kToString:
       case BuiltinFunctionKind::kToUpper:
@@ -1038,6 +1056,14 @@ class SemanticValidator : public ASTWalker {
           }
         }
         return {};
+      case BuiltinFunctionKind::kAbs:
+      case BuiltinFunctionKind::kLast:
+      case BuiltinFunctionKind::kReverse:
+        return function.arguments.empty()
+                   ? StaticValue{}
+                   : (builtin->kind == BuiltinFunctionKind::kLast
+                          ? ListElementType(function.arguments[0].get())
+                          : InferType(function.arguments[0].get()));
       case BuiltinFunctionKind::kMaximum:
       case BuiltinFunctionKind::kMinimum:
       case BuiltinFunctionKind::kSum:
@@ -1148,6 +1174,12 @@ class SemanticValidator : public ASTWalker {
     const StaticValue argument = InferType(invocation.arguments[0].get());
     bool accepted = true;
     switch (function.kind) {
+      case BuiltinFunctionKind::kAbs:
+      case BuiltinFunctionKind::kCeil:
+      case BuiltinFunctionKind::kSign:
+      case BuiltinFunctionKind::kSqrt:
+        accepted = IsNumericCompatible(argument);
+        break;
       case BuiltinFunctionKind::kId:
         accepted = AcceptsType(argument,
                                {StaticType::kNode, StaticType::kRelationship});
@@ -1176,6 +1208,22 @@ class SemanticValidator : public ASTWalker {
       case BuiltinFunctionKind::kIsEmpty:
         accepted =
             AcceptsType(argument, {StaticType::kList, StaticType::kString});
+        break;
+      case BuiltinFunctionKind::kLast:
+      case BuiltinFunctionKind::kTail:
+        accepted = AcceptsType(argument, {StaticType::kList});
+        break;
+      case BuiltinFunctionKind::kReverse:
+        accepted =
+            AcceptsType(argument, {StaticType::kList, StaticType::kString});
+        break;
+      case BuiltinFunctionKind::kSubstring:
+        accepted = AcceptsType(argument, {StaticType::kString});
+        for (std::size_t index = 1;
+             accepted && index < invocation.arguments.size(); ++index) {
+          accepted = AcceptsType(InferType(invocation.arguments[index].get()),
+                                 {StaticType::kInteger});
+        }
         break;
       case BuiltinFunctionKind::kSplit:
       case BuiltinFunctionKind::kToLower:

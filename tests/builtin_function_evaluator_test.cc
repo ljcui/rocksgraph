@@ -2,6 +2,8 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdint>
+#include <limits>
 #include <vector>
 
 #include "common/exception.h"
@@ -27,6 +29,50 @@ TEST(BuiltinFunctionEvaluatorTest, EvaluatesScalarFunctionFamilies) {
             Value(Value::List{Value("a"), Value("b")}));
 }
 
+TEST(BuiltinFunctionEvaluatorTest, EvaluatesNumericFunctions) {
+  EXPECT_EQ(EvaluateBuiltinFunction(BuiltinFunctionKind::kAbs, {Value(-7)}),
+            Value(7));
+  EXPECT_EQ(EvaluateBuiltinFunction(BuiltinFunctionKind::kAbs, {Value(-1.5)}),
+            Value(1.5));
+  EXPECT_EQ(EvaluateBuiltinFunction(BuiltinFunctionKind::kCeil, {Value(1.2)}),
+            Value(2.0));
+  EXPECT_EQ(EvaluateBuiltinFunction(BuiltinFunctionKind::kSqrt, {Value(12.96)}),
+            Value(3.6));
+  EXPECT_EQ(EvaluateBuiltinFunction(BuiltinFunctionKind::kSign, {Value(-5)}),
+            Value(-1));
+  EXPECT_EQ(EvaluateBuiltinFunction(BuiltinFunctionKind::kSign, {Value(0.0)}),
+            Value(0));
+}
+
+TEST(BuiltinFunctionEvaluatorTest, EvaluatesListAndStringFunctions) {
+  const Value list(Value::List{Value(1), Value(2), Value(3)});
+  EXPECT_EQ(EvaluateBuiltinFunction(BuiltinFunctionKind::kTail, {list}),
+            Value(Value::List{Value(2), Value(3)}));
+  EXPECT_EQ(EvaluateBuiltinFunction(BuiltinFunctionKind::kLast, {list}),
+            Value(3));
+  EXPECT_EQ(EvaluateBuiltinFunction(BuiltinFunctionKind::kReverse, {list}),
+            Value(Value::List{Value(3), Value(2), Value(1)}));
+  EXPECT_EQ(EvaluateBuiltinFunction(BuiltinFunctionKind::kLast,
+                                    {Value(Value::List{})}),
+            Value::Null());
+  EXPECT_EQ(EvaluateBuiltinFunction(BuiltinFunctionKind::kReverse,
+                                    {Value("A\xC3\xA9")}),
+            Value("\xC3\xA9"
+                  "A"));
+  EXPECT_EQ(EvaluateBuiltinFunction(BuiltinFunctionKind::kSubstring,
+                                    {Value("A\xC3\xA9Z"), Value(1), Value(1)}),
+            Value("\xC3\xA9"));
+}
+
+TEST(BuiltinFunctionEvaluatorTest, RandReturnsUnitIntervalValues) {
+  for (int index = 0; index < 32; ++index) {
+    const Value value = EvaluateBuiltinFunction(BuiltinFunctionKind::kRand, {});
+    ASSERT_TRUE(value.IsDouble());
+    EXPECT_GE(value.AsDouble(), 0.0);
+    EXPECT_LT(value.AsDouble(), 1.0);
+  }
+}
+
 TEST(BuiltinFunctionEvaluatorTest, ReturnsNullForUnsupportedArgumentTypes) {
   EXPECT_EQ(EvaluateBuiltinFunction(BuiltinFunctionKind::kSize, {Value(1)}),
             Value::Null());
@@ -44,6 +90,13 @@ TEST(BuiltinFunctionEvaluatorTest, EnforcesFunctionContracts) {
   EXPECT_THROW(
       (void)EvaluateBuiltinFunction(BuiltinFunctionKind::kCount, {Value(1)}),
       common::InvalidArgumentError);
+  EXPECT_THROW((void)EvaluateBuiltinFunction(
+                   BuiltinFunctionKind::kAbs,
+                   {Value(std::numeric_limits<std::int64_t>::min())}),
+               common::InvalidArgumentError);
+  EXPECT_THROW((void)EvaluateBuiltinFunction(BuiltinFunctionKind::kSubstring,
+                                             {Value("abc"), Value(-1)}),
+               common::InvalidArgumentError);
 }
 
 }  // namespace

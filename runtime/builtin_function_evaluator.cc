@@ -7,9 +7,11 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <random>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "ast/builtin_function.h"
 #include "common/exception.h"
@@ -62,6 +64,43 @@ bool AddWouldOverflow(std::int64_t left, std::int64_t right) {
          (right < 0 && left < std::numeric_limits<std::int64_t>::min() - right);
 }
 
+std::size_t Utf8CodePointSize(std::string_view text, std::size_t offset) {
+  const unsigned char lead = static_cast<unsigned char>(text[offset]);
+  std::size_t size = 1;
+  if ((lead & 0xE0U) == 0xC0U) {
+    size = 2;
+  } else if ((lead & 0xF0U) == 0xE0U) {
+    size = 3;
+  } else if ((lead & 0xF8U) == 0xF0U) {
+    size = 4;
+  }
+  if (offset + size > text.size()) {
+    return 1;
+  }
+  for (std::size_t index = 1; index < size; ++index) {
+    if ((static_cast<unsigned char>(text[offset + index]) & 0xC0U) != 0x80U) {
+      return 1;
+    }
+  }
+  return size;
+}
+
+std::vector<std::size_t> Utf8Offsets(std::string_view text) {
+  std::vector<std::size_t> offsets;
+  for (std::size_t offset = 0; offset < text.size();) {
+    offsets.push_back(offset);
+    offset += Utf8CodePointSize(text, offset);
+  }
+  offsets.push_back(text.size());
+  return offsets;
+}
+
+double RandomUnitDouble() {
+  thread_local std::mt19937_64 generator(std::random_device{}());
+  thread_local std::uniform_real_distribution<double> distribution(0.0, 1.0);
+  return distribution(generator);
+}
+
 }  // namespace
 
 Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
@@ -75,6 +114,23 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
         common::InvalidArgumentError,
         ast::BuiltinFunctionArgumentCountError(*builtin));
   switch (builtin->kind) {
+    case ast::BuiltinFunctionKind::kAbs:
+      if (arguments[0].IsInteger()) {
+        const std::int64_t value = arguments[0].AsInteger();
+        CHECK(value != std::numeric_limits<std::int64_t>::min(),
+              common::InvalidArgumentError, "abs() integer overflow");
+        return Value(value < 0 ? -value : value);
+      }
+      if (arguments[0].IsDouble()) {
+        return Value(std::fabs(arguments[0].AsDouble()));
+      }
+      return Value::Null();
+    case ast::BuiltinFunctionKind::kCeil:
+      if (arguments[0].IsInteger()) {
+        return Value(static_cast<double>(arguments[0].AsInteger()));
+      }
+      return arguments[0].IsDouble() ? Value(std::ceil(arguments[0].AsDouble()))
+                                     : Value::Null();
     case ast::BuiltinFunctionKind::kId:
       if (arguments[0].IsNode()) {
         return Value(arguments[0].AsNode().id);
@@ -93,6 +149,11 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
       }
       return Value(std::move(labels));
     }
+    case ast::BuiltinFunctionKind::kLast:
+      if (!arguments[0].IsList() || arguments[0].AsList().empty()) {
+        return Value::Null();
+      }
+      return arguments[0].AsList().back();
     case ast::BuiltinFunctionKind::kType:
       return arguments[0].IsRelationship()
                  ? Value(arguments[0].AsRelationship().type)
@@ -159,6 +220,8 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
         return Value(arguments[0].AsRelationship().properties);
       }
       return Value::Null();
+    case ast::BuiltinFunctionKind::kRand:
+      return Value(RandomUnitDouble());
     case ast::BuiltinFunctionKind::kRange: {
       if (!arguments[0].IsInteger() || !arguments[1].IsInteger() ||
           (arguments.size() == 3 && !arguments[2].IsInteger())) {
@@ -209,6 +272,51 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
       }
       return Value(std::move(parts));
     }
+    case ast::BuiltinFunctionKind::kSqrt:
+      if (arguments[0].IsInteger()) {
+        return Value(std::sqrt(static_cast<double>(arguments[0].AsInteger())));
+      }
+      return arguments[0].IsDouble() ? Value(std::sqrt(arguments[0].AsDouble()))
+                                     : Value::Null();
+    case ast::BuiltinFunctionKind::kSubstring: {
+      if (!arguments[0].IsString() || !arguments[1].IsInteger() ||
+          (arguments.size() == 3 && !arguments[2].IsInteger())) {
+        return Value::Null();
+      }
+      const std::int64_t start = arguments[1].AsInteger();
+      const std::int64_t length =
+          arguments.size() == 3 ? arguments[2].AsInteger() : -1;
+      CHECK(start >= 0, common::InvalidArgumentError,
+            "substring() start is negative");
+      CHECK(length >= 0 || arguments.size() == 2, common::InvalidArgumentError,
+            "substring() length is negative");
+
+      const std::string &input = arguments[0].AsString();
+      const std::vector<std::size_t> offsets = Utf8Offsets(input);
+      const std::size_t code_points = offsets.size() - 1;
+      if (static_cast<std::uint64_t>(start) >= code_points) {
+        return Value("");
+      }
+      const std::size_t first = static_cast<std::size_t>(start);
+      std::size_t last = code_points;
+      if (arguments.size() == 3) {
+        const std::uint64_t requested_last = static_cast<std::uint64_t>(start) +
+                                             static_cast<std::uint64_t>(length);
+        last = static_cast<std::size_t>(
+            std::min<std::uint64_t>(requested_last, code_points));
+      }
+      return Value(
+          input.substr(offsets[first], offsets[last] - offsets[first]));
+    }
+    case ast::BuiltinFunctionKind::kTail:
+      if (!arguments[0].IsList()) {
+        return Value::Null();
+      }
+      if (arguments[0].AsList().empty()) {
+        return Value(Value::List{});
+      }
+      return Value(Value::List(arguments[0].AsList().begin() + 1,
+                               arguments[0].AsList().end()));
     case ast::BuiltinFunctionKind::kNodes:
     case ast::BuiltinFunctionKind::kRelationships: {
       if (!arguments[0].IsPath()) {
@@ -226,6 +334,34 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
       }
       return Value(std::move(values));
     }
+    case ast::BuiltinFunctionKind::kReverse:
+      if (arguments[0].IsList()) {
+        Value::List values = arguments[0].AsList();
+        std::reverse(values.begin(), values.end());
+        return Value(std::move(values));
+      }
+      if (arguments[0].IsString()) {
+        const std::string &input = arguments[0].AsString();
+        const std::vector<std::size_t> offsets = Utf8Offsets(input);
+        std::string reversed;
+        reversed.reserve(input.size());
+        for (std::size_t index = offsets.size() - 1; index > 0; --index) {
+          reversed.append(input, offsets[index - 1],
+                          offsets[index] - offsets[index - 1]);
+        }
+        return Value(std::move(reversed));
+      }
+      return Value::Null();
+    case ast::BuiltinFunctionKind::kSign:
+      if (arguments[0].IsInteger()) {
+        const std::int64_t value = arguments[0].AsInteger();
+        return Value(value > 0 ? 1 : value < 0 ? -1 : 0);
+      }
+      if (arguments[0].IsDouble()) {
+        const double value = arguments[0].AsDouble();
+        return Value(value > 0.0 ? 1 : value < 0.0 ? -1 : 0);
+      }
+      return Value::Null();
     case ast::BuiltinFunctionKind::kToString:
       if (arguments[0].IsNull()) {
         return Value::Null();

@@ -153,7 +153,9 @@ TEST(SemanticTableTest, UsesBuiltinFunctionRegistryForProjectionTypes) {
       "MATCH p = (a)-[r]->(b) RETURN labels(a) AS labels, "
       "keys({name: 'Ada'}) AS keys, range(1, 3) AS nums, properties(a) AS "
       "props, nodes(p) AS path_nodes, relationships(p) AS path_rels, type(r) "
-      "AS rel_type, toString(a.name) AS name");
+      "AS rel_type, toString(a.name) AS name, tail(nodes(p)) AS remaining, "
+      "last(nodes(p)) AS last_node, reverse(nodes(p)) AS reversed_nodes, "
+      "substring('abc', 1) AS suffix");
   ASSERT_TRUE(statement);
 
   ast::SemanticTable table = ast::AnalyzeSemanticTable(*statement);
@@ -174,6 +176,11 @@ TEST(SemanticTableTest, UsesBuiltinFunctionRegistryForProjectionTypes) {
   EXPECT_EQ(table.VariableType("path_rels"), ast::SemanticVariableType::kList);
   EXPECT_EQ(table.VariableType("rel_type"), ast::SemanticVariableType::kScalar);
   EXPECT_EQ(table.VariableType("name"), ast::SemanticVariableType::kScalar);
+  EXPECT_EQ(table.VariableType("remaining"), ast::SemanticVariableType::kList);
+  EXPECT_EQ(table.VariableType("last_node"), ast::SemanticVariableType::kNode);
+  EXPECT_EQ(table.VariableType("reversed_nodes"),
+            ast::SemanticVariableType::kList);
+  EXPECT_EQ(table.VariableType("suffix"), ast::SemanticVariableType::kScalar);
 }
 
 TEST(SemanticTableTest, UsesBuiltinProcedureRegistryForYieldTypes) {

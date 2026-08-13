@@ -1,5 +1,7 @@
 #include "expression_to_string.h"
 
+#include <array>
+#include <charconv>
 #include <string>
 #include <utility>
 #include <vector>
@@ -50,6 +52,16 @@ std::string EscapeStringLiteral(const std::string &value) {
   }
   out.push_back('\'');
   return out;
+}
+
+std::string FormatDouble(double value) {
+  std::array<char, 64> buffer{};
+  const auto [end, error] =
+      std::to_chars(buffer.data(), buffer.data() + buffer.size(), value);
+  if (error != std::errc{}) {
+    return {};
+  }
+  return std::string(buffer.data(), end);
 }
 
 std::string WrapIfNeeded(const ExprText &child, int parent_prec,
@@ -233,7 +245,7 @@ ExprText ExpressionText(const Expression &expr) {
     }
     case ASTNodeType::kDoubleLiteral: {
       const auto &node = CastAst<DoubleLiteral>(expr);
-      return {std::to_string(node.value), kPrimary};
+      return {FormatDouble(node.value), kPrimary};
     }
     case ASTNodeType::kStringLiteral: {
       const auto &node = CastAst<StringLiteral>(expr);

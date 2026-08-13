@@ -706,6 +706,51 @@ TEST(QueryExecutorTest, ExecutesScalarBuiltInFunctions) {
                  "\"ada\"", "\"ADA\"", "\"Ada\""}}));
 }
 
+TEST(QueryExecutorTest, ExecutesNumericListAndStringBuiltInFunctions) {
+  rg::InMemoryGraph graph;
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "RETURN abs(-7) AS absolute, ceil(1.2) AS ceiling, sqrt(12.96) AS root, "
+      "sign(-5) AS negative_sign, sign(0) AS zero_sign, "
+      "tail([1, 2, 3]) AS rest, last([1, 2, 3]) AS final, "
+      "last([]) AS missing, reverse([1, 2, 3]) AS reversed_list, "
+      "reverse('raksO') AS reversed_text, "
+      "substring('0123456789', 1) AS suffix, "
+      "substring('0123456789', 2, 3) AS middle");
+
+  ASSERT_EQ(result.columns,
+            (std::vector<std::string>{"absolute", "ceiling", "root",
+                                      "negative_sign", "zero_sign", "rest",
+                                      "final", "missing", "reversed_list",
+                                      "reversed_text", "suffix", "middle"}));
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{
+                {"7", "2", "3.6", "-1", "0", "[2, 3]", "3", "null", "[3, 2, 1]",
+                 "\"Oskar\"", "\"123456789\"", "\"234\""}}));
+}
+
+TEST(QueryExecutorTest, PreservesCompactDoubleLiteralsInResultColumns) {
+  rg::InMemoryGraph graph;
+
+  rg::QueryResult result = rg::ExecuteReadQuery(graph, "RETURN sqrt(12.96)");
+
+  ASSERT_EQ(result.columns, std::vector<std::string>{"sqrt(12.96)"});
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{{"3.6"}}));
+}
+
+TEST(QueryExecutorTest, RandReturnsValueInUnitInterval) {
+  rg::InMemoryGraph graph;
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph, "RETURN rand() >= 0.0 AND rand() < 1.0 AS in_range");
+
+  ASSERT_EQ(result.columns, std::vector<std::string>{"in_range"});
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{{"true"}}));
+}
+
 TEST(QueryExecutorTest, ExecutesRegisteredFunctionsCaseInsensitively) {
   rg::InMemoryGraph graph;
 
