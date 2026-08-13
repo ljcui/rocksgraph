@@ -52,6 +52,8 @@ struct BuiltinFunction {
 
 [[nodiscard]] const std::vector<BuiltinFunction> &BuiltinFunctions();
 [[nodiscard]] const BuiltinFunction *FindBuiltinFunction(std::string_view name);
+[[nodiscard]] const BuiltinFunction *FindBuiltinFunction(
+    BuiltinFunctionKind kind);
 [[nodiscard]] bool BuiltinFunctionAcceptsArgumentCount(
     const BuiltinFunction &function, std::size_t argument_count);
 [[nodiscard]] std::string BuiltinFunctionArgumentCountError(

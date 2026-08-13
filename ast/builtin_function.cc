@@ -166,6 +166,15 @@ const BuiltinFunction *FindBuiltinFunction(std::string_view name) {
   return nullptr;
 }
 
+const BuiltinFunction *FindBuiltinFunction(BuiltinFunctionKind kind) {
+  for (const auto &function : BuiltinFunctions()) {
+    if (function.kind == kind) {
+      return &function;
+    }
+  }
+  return nullptr;
+}
+
 bool BuiltinFunctionAcceptsArgumentCount(const BuiltinFunction &function,
                                          std::size_t argument_count) {
   return argument_count >= function.minimum_argument_count &&

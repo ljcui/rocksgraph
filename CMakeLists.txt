@@ -144,6 +144,7 @@ set(ROCKSGRAPH_STORAGE_SOURCES storage/in_memory_graph.cc)
 
 set(ROCKSGRAPH_RUNTIME_SOURCES runtime/aggregation_evaluator.cc
                               runtime/apply_executor.cc
+                              runtime/builtin_function_evaluator.cc
                               runtime/expression_evaluator.cc
                               runtime/graph_access_executor.cc
                               runtime/join_executor.cc
@@ -265,6 +266,15 @@ target_link_libraries(expression_evaluator_test PRIVATE GTest::gtest_main
 set_target_properties(expression_evaluator_test PROPERTIES BUILD_RPATH
                                                         "/usr/local/lib")
 add_test(NAME expression_evaluator_test COMMAND expression_evaluator_test)
+
+add_executable(builtin_function_evaluator_test
+               tests/builtin_function_evaluator_test.cc)
+target_link_libraries(builtin_function_evaluator_test PRIVATE GTest::gtest_main
+                                                              rocksgraph_runtime)
+set_target_properties(builtin_function_evaluator_test PROPERTIES BUILD_RPATH
+                                                                  "/usr/local/lib")
+add_test(NAME builtin_function_evaluator_test
+         COMMAND builtin_function_evaluator_test)
 
 add_executable(procedure_executor_test tests/procedure_executor_test.cc)
 target_link_libraries(procedure_executor_test PRIVATE GTest::gtest_main
