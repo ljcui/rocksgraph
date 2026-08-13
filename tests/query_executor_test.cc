@@ -297,6 +297,40 @@ TEST(QueryExecutorTest, RejectsInvalidPredicatesAndUnsafeIntegerArithmetic) {
             (std::vector<std::vector<std::string>>{{"null"}}));
 }
 
+TEST(QueryExecutorTest, ExecutesCypherArithmeticAndStringPredicateSemantics) {
+  rg::InMemoryGraph graph;
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "RETURN [1, 2] + [3, 4] AS concatenated, "
+      "[1, 2] + 3 AS appended, 0 + [1, 2] AS prepended, "
+      "4 / 2 AS integer_division, 5.0 % 2 AS floating_modulo, "
+      "1 STARTS WITH '1' AS non_string_predicate");
+
+  ASSERT_EQ(result.columns,
+            (std::vector<std::string>{"concatenated", "appended", "prepended",
+                                      "integer_division", "floating_modulo",
+                                      "non_string_predicate"}));
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{
+                {"[1, 2, 3, 4]", "[1, 2, 3]", "[0, 1, 2]", "2", "1", "null"}}));
+}
+
+TEST(QueryExecutorTest, ImplementsIeeeFloatingDivisionAndNanComparisons) {
+  rg::InMemoryGraph graph;
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "RETURN 0.0 / 0.0 = 0.0 / 0.0 AS equal, "
+      "0.0 / 0.0 <> 1 AS not_equal, "
+      "0.0 / 0.0 < 1 AS less, 0.0 / 0.0 <= 1 AS less_equal, "
+      "0.0 / 0.0 > 'a' AS cross_type, 1 < 'a' AS numeric_string");
+
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{
+                {"false", "true", "false", "false", "null", "null"}}));
+}
+
 TEST(QueryExecutorTest, ExecutesRelationshipExpandQuery) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);

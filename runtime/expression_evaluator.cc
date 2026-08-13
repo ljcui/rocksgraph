@@ -414,6 +414,22 @@ Value EvaluateArithmetic(
         common::InvalidArgumentError, "arithmetic expression is incomplete");
   Value left = EvaluateExpression(*binary.left, row, precomputed, context);
   Value right = EvaluateExpression(*binary.right, row, precomputed, context);
+  if (expression.Is(ast::ASTNodeType::kAddExpression) && left.IsList()) {
+    Value::List result = left.AsList();
+    if (right.IsList()) {
+      result.insert(result.end(), right.AsList().begin(), right.AsList().end());
+    } else {
+      result.push_back(std::move(right));
+    }
+    return Value(std::move(result));
+  }
+  if (expression.Is(ast::ASTNodeType::kAddExpression) && right.IsList()) {
+    Value::List result;
+    result.reserve(right.AsList().size() + 1);
+    result.push_back(std::move(left));
+    result.insert(result.end(), right.AsList().begin(), right.AsList().end());
+    return Value(std::move(result));
+  }
   if (left.IsNull() || right.IsNull()) {
     return Value::Null();
   }
@@ -424,7 +440,6 @@ Value EvaluateArithmetic(
   CHECK(IsNumeric(left) && IsNumeric(right), common::InvalidArgumentError,
         "arithmetic expression requires numeric values");
   if (left.IsInteger() && right.IsInteger() &&
-      !expression.Is(ast::ASTNodeType::kDivideExpression) &&
       !expression.Is(ast::ASTNodeType::kPowerExpression)) {
     const auto lhs = left.AsInteger();
     const auto rhs = right.AsInteger();
@@ -443,6 +458,12 @@ Value EvaluateArithmetic(
             "integer multiplication overflow");
       return Value(lhs * rhs);
     }
+    if (expression.Is(ast::ASTNodeType::kDivideExpression)) {
+      CHECK(rhs != 0, common::InvalidArgumentError, "division by zero");
+      CHECK(!(lhs == std::numeric_limits<std::int64_t>::min() && rhs == -1),
+            common::InvalidArgumentError, "integer division overflow");
+      return Value(lhs / rhs);
+    }
     CHECK(rhs != 0, common::InvalidArgumentError, "modulo by zero");
     CHECK(!(lhs == std::numeric_limits<std::int64_t>::min() && rhs == -1),
           common::InvalidArgumentError, "integer modulo overflow");
@@ -451,7 +472,6 @@ Value EvaluateArithmetic(
   const double lhs = AsDoubleValue(left);
   const double rhs = AsDoubleValue(right);
   if (expression.Is(ast::ASTNodeType::kDivideExpression)) {
-    CHECK(rhs != 0.0, common::InvalidArgumentError, "division by zero");
     return Value(lhs / rhs);
   }
   if (expression.Is(ast::ASTNodeType::kPowerExpression)) {
@@ -466,8 +486,44 @@ Value EvaluateArithmetic(
   if (expression.Is(ast::ASTNodeType::kMultiplyExpression)) {
     return Value(lhs * rhs);
   }
-  CHECK(false, common::InvalidArgumentError,
-        "modulo requires integer operands");
+  return Value(std::fmod(lhs, rhs));
+}
+
+bool ValuesAreOrderComparable(const Value &left, const Value &right) {
+  if (IsNumeric(left) && IsNumeric(right)) {
+    return true;
+  }
+  return left.Type() == right.Type();
+}
+
+Value EvaluateOrderingComparison(const Value &left, const Value &right,
+                                 std::string_view op) {
+  if (!ValuesAreOrderComparable(left, right)) {
+    return Value::Null();
+  }
+  if ((left.IsDouble() && std::isnan(left.AsDouble())) ||
+      (right.IsDouble() && std::isnan(right.AsDouble()))) {
+    return Value(false);
+  }
+  const TruthValue equality = EqualityTruth(left, right);
+  if (op == "<") {
+    return Value(ValueLess(left, right));
+  }
+  if (op == ">") {
+    return Value(ValueLess(right, left));
+  }
+  if (equality == TruthValue::kNull) {
+    return Value::Null();
+  }
+  const bool equal = equality == TruthValue::kTrue;
+  if (op == "<=") {
+    return Value(equal || ValueLess(left, right));
+  }
+  if (op == ">=") {
+    return Value(equal || ValueLess(right, left));
+  }
+  THROW(common::InvalidArgumentError,
+        "unsupported comparison operator: " + std::string(op));
 }
 
 }  // namespace
@@ -709,16 +765,16 @@ Value EvaluateExpression(
         return FromTruthValue(Not(EqualityTruth(left, right)));
       }
       if (comparison.op == "<") {
-        return Value(ValueLess(left, right));
+        return EvaluateOrderingComparison(left, right, comparison.op);
       }
       if (comparison.op == ">") {
-        return Value(ValueLess(right, left));
+        return EvaluateOrderingComparison(left, right, comparison.op);
       }
       if (comparison.op == "<=") {
-        return Value(!ValueLess(right, left));
+        return EvaluateOrderingComparison(left, right, comparison.op);
       }
       if (comparison.op == ">=") {
-        return Value(!ValueLess(left, right));
+        return EvaluateOrderingComparison(left, right, comparison.op);
       }
       THROW(common::InvalidArgumentError,
             "unsupported comparison operator: " + comparison.op);
@@ -736,8 +792,9 @@ Value EvaluateExpression(
       if (left.IsNull() || right.IsNull()) {
         return Value::Null();
       }
-      CHECK(left.IsString() && right.IsString(), common::InvalidArgumentError,
-            "string predicate requires string values");
+      if (!left.IsString() || !right.IsString()) {
+        return Value::Null();
+      }
       if (predicate.op == "STARTS WITH") {
         return Value(left.AsString().starts_with(right.AsString()));
       }

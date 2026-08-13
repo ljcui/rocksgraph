@@ -2,9 +2,11 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <map>
 #include <optional>
 #include <set>
@@ -387,8 +389,18 @@ std::string FormatValue(const rg::Value &value) {
     return value.ToString();
   }
   if (value.IsDouble()) {
+    if (std::isnan(value.AsDouble())) {
+      return "NaN";
+    }
+    if (std::isinf(value.AsDouble())) {
+      return value.AsDouble() < 0 ? "-Inf" : "Inf";
+    }
     std::ostringstream stream;
-    stream << value.AsDouble();
+    if (std::trunc(value.AsDouble()) == value.AsDouble()) {
+      stream << std::fixed << std::setprecision(1) << value.AsDouble();
+    } else {
+      stream << value.AsDouble();
+    }
     return stream.str();
   }
   if (value.IsString()) {
@@ -560,7 +572,7 @@ struct ScenarioSelection {
   const char *name;
 };
 
-TEST(TckScenarioTest, ExecutesParameterAndNullSemanticsSubset) {
+TEST(TckScenarioTest, ExecutesConformanceSubset) {
   const std::filesystem::path root = ROCKSGRAPH_TCK_DIR;
   if (!std::filesystem::exists(root / "features")) {
     GTEST_SKIP() << "openCypher TCK checkout not found at " << root;
@@ -603,6 +615,43 @@ TEST(TckScenarioTest, ExecutesParameterAndNullSemanticsSubset) {
        "[2] Fail when returning an undefined variable"},
       {"clauses/delete/Delete1.feature",
        "[7] Failing when deleting connected nodes"},
+      {"clauses/set/Set1.feature",
+       "[6] Concatenate elements onto a list property"},
+      {"clauses/set/Set1.feature",
+       "[7] Concatenate elements in reverse onto a list property"},
+      {"clauses/unwind/Unwind1.feature",
+       "[3] Unwinding a concatenation of lists"},
+      {"expressions/list/List4.feature",
+       "[1] Concatenating lists of same type"},
+      {"expressions/list/List4.feature",
+       "[2] Concatenating a list with a scalar of same type"},
+      {"expressions/list/List6.feature",
+       "[3] Concatenating and returning the size of literal lists"},
+      {"expressions/precedence/Precedence3.feature",
+       "[1] List element access takes precedence over list appending"},
+      {"expressions/precedence/Precedence3.feature",
+       "[2] List element access takes precedence over list concatenation"},
+      {"expressions/precedence/Precedence3.feature",
+       "[3] List slicing takes precedence over list concatenation"},
+      {"expressions/precedence/Precedence3.feature",
+       "[4] List appending takes precedence over list element containment"},
+      {"expressions/precedence/Precedence3.feature",
+       "[5] List concatenation takes precedence over list element containment"},
+      {"expressions/comparison/Comparison1.feature",
+       "[8] Equality and inequality of NaN"},
+      {"expressions/comparison/Comparison2.feature", "[5] Comparing NaN"},
+      {"expressions/string/String8.feature",
+       "[8] Handling non-string operands for STARTS WITH"},
+      {"expressions/string/String9.feature",
+       "[8] Handling non-string operands for ENDS WITH"},
+      {"expressions/string/String10.feature",
+       "[8] Handling non-string operands for CONTAINS"},
+      {"expressions/precedence/Precedence2.feature",
+       "[1] Numeric multiplicative operations takes precedence over numeric "
+       "additive operations"},
+      {"expressions/precedence/Precedence2.feature",
+       "[2] Exponentiation takes precedence over numeric multiplicative "
+       "operations"},
   };
 
   std::map<std::string, std::vector<Scenario>> cache;
