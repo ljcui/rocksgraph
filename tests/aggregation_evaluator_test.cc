@@ -177,3 +177,23 @@ TEST(AggregationEvaluatorTest, RejectsInvalidValuesAndIntegerOverflow) {
                                        {{{"value", rg::Value("not numeric")}}}),
                common::InvalidArgumentError);
 }
+
+TEST(AggregationEvaluatorTest, ValidatesRegisteredFunctionContract) {
+  ast::FunctionInvocation unknown = Function("unknown", "value");
+  ast::FunctionInvocation scalar = Function("size", "value");
+  ast::FunctionInvocation count_without_argument;
+  count_without_argument.function_name = "count";
+  const std::vector<rg::QueryRow> rows = {{{"value", rg::Value(1)}}};
+
+  EXPECT_THROW((void)rg::AggregateRows(
+                   {}, {{.expression = &unknown, .alias = "value"}}, rows),
+               common::InvalidArgumentError);
+  EXPECT_THROW((void)rg::AggregateRows(
+                   {}, {{.expression = &scalar, .alias = "value"}}, rows),
+               common::InvalidArgumentError);
+  EXPECT_THROW(
+      (void)rg::AggregateRows(
+          {}, {{.expression = &count_without_argument, .alias = "value"}},
+          rows),
+      common::InvalidArgumentError);
+}

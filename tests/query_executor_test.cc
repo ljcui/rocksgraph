@@ -637,6 +637,21 @@ TEST(QueryExecutorTest, ExecutesScalarBuiltInFunctions) {
                  "\"ada\"", "\"ADA\"", "\"Ada\""}}));
 }
 
+TEST(QueryExecutorTest, ExecutesRegisteredFunctionsCaseInsensitively) {
+  rg::InMemoryGraph graph;
+
+  rg::QueryResult result =
+      rg::ExecuteReadQuery(graph,
+                           "UNWIND [1, 2, null] AS x "
+                           "RETURN COUNT(x) AS count, CoLlEcT(x) AS values, "
+                           "MAX(x) AS maximum");
+
+  ASSERT_EQ(result.columns,
+            (std::vector<std::string>{"count", "values", "maximum"}));
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{{"2", "[1, 2]", "2"}}));
+}
+
 TEST(QueryExecutorTest, ExecutesMapAndEntityBuiltInFunctions) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);

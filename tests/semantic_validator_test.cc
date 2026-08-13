@@ -182,3 +182,34 @@ TEST(SemanticValidatorTest, RejectsUnknownProcedureYieldField) {
   ExpectSemanticError("CALL db.labels() YIELD missing RETURN missing",
                       "unknown yield field for db.labels: missing");
 }
+
+TEST(SemanticValidatorTest, AcceptsRegisteredFunctionContracts) {
+  EXPECT_NO_THROW(ast::ParseCypher(
+      "RETURN COALESCE(null, 1) AS value, range(1, 3) AS short_range, "
+      "range(1, 3, 2) AS stepped_range"));
+  EXPECT_NO_THROW(
+      ast::ParseCypher("UNWIND [1, 1] AS x RETURN count(DISTINCT x) AS c"));
+}
+
+TEST(SemanticValidatorTest, RejectsUnknownAndUnimplementedFunctions) {
+  ExpectSemanticError("RETURN unknownFunction(1) AS value",
+                      "unknown function: unknownFunction");
+  ExpectSemanticError("RETURN startNode(null) AS value",
+                      "unknown function: startNode");
+}
+
+TEST(SemanticValidatorTest, RejectsFunctionArgumentCountMismatch) {
+  ExpectSemanticError("RETURN size() AS value", "size() expects 1 argument");
+  ExpectSemanticError("RETURN range(1) AS value",
+                      "range() expects 2 to 3 arguments");
+  ExpectSemanticError("RETURN split('a', ',', 'extra') AS value",
+                      "split() expects 2 arguments");
+  ExpectSemanticError("RETURN coalesce() AS value",
+                      "coalesce() expects at least 1 argument");
+  ExpectSemanticError("RETURN count() AS value", "count() expects 1 argument");
+}
+
+TEST(SemanticValidatorTest, RejectsDistinctForScalarFunctions) {
+  ExpectSemanticError("RETURN size(DISTINCT [1]) AS value",
+                      "DISTINCT is only supported for aggregate functions");
+}

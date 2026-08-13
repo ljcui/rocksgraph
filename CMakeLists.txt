@@ -97,6 +97,7 @@ endif()
 
 set(ROCKSGRAPH_AST_SOURCES
   ast/ast_builder.cc
+  ast/builtin_function.cc
   ast/builtin_procedure.cc
   ast/ast_clone.cc
   ast/ast_const_walker.cc
@@ -257,6 +258,13 @@ target_link_libraries(query_executor_test PRIVATE GTest::gtest_main
 set_target_properties(query_executor_test PROPERTIES BUILD_RPATH
                                                      "/usr/local/lib")
 add_test(NAME query_executor_test COMMAND query_executor_test)
+
+add_executable(expression_evaluator_test tests/expression_evaluator_test.cc)
+target_link_libraries(expression_evaluator_test PRIVATE GTest::gtest_main
+                                                       rocksgraph_runtime)
+set_target_properties(expression_evaluator_test PROPERTIES BUILD_RPATH
+                                                        "/usr/local/lib")
+add_test(NAME expression_evaluator_test COMMAND expression_evaluator_test)
 
 add_executable(procedure_executor_test tests/procedure_executor_test.cc)
 target_link_libraries(procedure_executor_test PRIVATE GTest::gtest_main

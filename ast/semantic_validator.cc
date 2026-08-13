@@ -1,6 +1,5 @@
 #include "semantic_validator.h"
 
-#include <cctype>
 #include <optional>
 #include <ranges>
 #include <string_view>
@@ -11,6 +10,7 @@
 #include "ast_equal.h"
 #include "ast_exception.h"
 #include "ast_walker.h"
+#include "builtin_function.h"
 #include "builtin_procedure.h"
 #include "common/exception.h"
 #include "expression_to_string.h"
@@ -18,31 +18,9 @@
 namespace ast {
 namespace {
 
-std::string LowerAscii(std::string_view input) {
-  std::string out;
-  out.reserve(input.size());
-  for (char ch : input) {
-    out.push_back(
-        static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
-  }
-  return out;
-}
-
 bool IsAggregateFunction(std::string_view function_name) {
-  const std::string name = LowerAscii(function_name);
-  static const std::unordered_set<std::string> kAggregates = {
-      "avg",
-      "collect",
-      "count",
-      "max",
-      "min",
-      "percentilecont",
-      "percentiledisc",
-      "stdev",
-      "stdevp",
-      "sum",
-  };
-  return kAggregates.contains(name);
+  const BuiltinFunction *function = FindBuiltinFunction(function_name);
+  return function != nullptr && function->aggregate;
 }
 
 Expression *UnwrapParenthesized(Expression *expression) {
@@ -377,7 +355,21 @@ class SemanticValidator : public ASTWalker {
   }
 
   void Visit(FunctionInvocation &node) override {
-    const bool aggregate = IsAggregateFunction(node.function_name);
+    const BuiltinFunction *function = FindBuiltinFunction(node.function_name);
+    if (function == nullptr) {
+      ReportSemantic("unknown function: " + node.function_name);
+      ASTWalker::Visit(node);
+      return;
+    }
+    if (!BuiltinFunctionAcceptsArgumentCount(*function,
+                                             node.arguments.size())) {
+      ReportSemantic(BuiltinFunctionArgumentCountError(*function));
+    }
+    if (node.distinct && !function->allows_distinct) {
+      ReportSemantic("DISTINCT is only supported for aggregate functions");
+    }
+
+    const bool aggregate = function->aggregate;
     if (aggregate && aggregation_depth_ > 0) {
       ReportSemantic("nested aggregation is not allowed");
     }

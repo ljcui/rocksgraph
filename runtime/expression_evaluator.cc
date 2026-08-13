@@ -15,6 +15,7 @@
 
 #include "ast/ast_equal.h"
 #include "ast/ast_node.h"
+#include "ast/builtin_function.h"
 #include "common/exception.h"
 #include "runtime/query_row_util.h"
 
@@ -255,7 +256,19 @@ bool MultiplyWouldOverflow(std::int64_t left, std::int64_t right) {
 Value EvaluateFunction(
     const ast::FunctionInvocation &function, const QueryRow &row,
     const std::vector<ir::LogicalPrecomputedExpression> &precomputed) {
-  const std::string name = LowerAscii(function.function_name);
+  const ast::BuiltinFunction *builtin =
+      ast::FindBuiltinFunction(function.function_name);
+  CHECK(builtin != nullptr, common::InvalidArgumentError,
+        "unknown function: " + function.function_name);
+  CHECK(!builtin->aggregate, common::InvalidArgumentError,
+        "aggregate function requires aggregation execution: " + builtin->name);
+  CHECK(ast::BuiltinFunctionAcceptsArgumentCount(*builtin,
+                                                 function.arguments.size()),
+        common::InvalidArgumentError,
+        ast::BuiltinFunctionArgumentCountError(*builtin));
+  CHECK(!function.distinct, common::InvalidArgumentError,
+        "DISTINCT is only supported for aggregate functions");
+
   std::vector<Value> arguments;
   arguments.reserve(function.arguments.size());
   for (const auto &argument : function.arguments) {
@@ -264,9 +277,7 @@ Value EvaluateFunction(
     arguments.push_back(EvaluateExpression(*argument, row, precomputed));
   }
 
-  if (name == "id") {
-    CHECK(arguments.size() == 1, common::InvalidArgumentError,
-          "id() expects one argument");
+  if (builtin->kind == ast::BuiltinFunctionKind::kId) {
     if (arguments[0].IsNode()) {
       return Value(arguments[0].AsNode().id);
     }
@@ -275,9 +286,7 @@ Value EvaluateFunction(
     }
     return Value::Null();
   }
-  if (name == "labels") {
-    CHECK(arguments.size() == 1, common::InvalidArgumentError,
-          "labels() expects one argument");
+  if (builtin->kind == ast::BuiltinFunctionKind::kLabels) {
     if (!arguments[0].IsNode()) {
       return Value::Null();
     }
@@ -287,16 +296,12 @@ Value EvaluateFunction(
     }
     return Value(std::move(labels));
   }
-  if (name == "type") {
-    CHECK(arguments.size() == 1, common::InvalidArgumentError,
-          "type() expects one argument");
+  if (builtin->kind == ast::BuiltinFunctionKind::kType) {
     return arguments[0].IsRelationship()
                ? Value(arguments[0].AsRelationship().type)
                : Value::Null();
   }
-  if (name == "size") {
-    CHECK(arguments.size() == 1, common::InvalidArgumentError,
-          "size() expects one argument");
+  if (builtin->kind == ast::BuiltinFunctionKind::kSize) {
     if (arguments[0].IsList()) {
       return Value(static_cast<std::int64_t>(arguments[0].AsList().size()));
     }
@@ -305,15 +310,13 @@ Value EvaluateFunction(
     }
     return Value::Null();
   }
-  if (name == "length") {
-    CHECK(arguments.size() == 1, common::InvalidArgumentError,
-          "length() expects one argument");
+  if (builtin->kind == ast::BuiltinFunctionKind::kLength) {
     return arguments[0].IsPath()
                ? Value(static_cast<std::int64_t>(
                      arguments[0].AsPath().relationships.size()))
                : Value::Null();
   }
-  if (name == "coalesce") {
+  if (builtin->kind == ast::BuiltinFunctionKind::kCoalesce) {
     for (const Value &argument : arguments) {
       if (!argument.IsNull()) {
         return argument;
@@ -321,9 +324,7 @@ Value EvaluateFunction(
     }
     return Value::Null();
   }
-  if (name == "isempty") {
-    CHECK(arguments.size() == 1, common::InvalidArgumentError,
-          "isEmpty() expects one argument");
+  if (builtin->kind == ast::BuiltinFunctionKind::kIsEmpty) {
     if (arguments[0].IsString()) {
       return Value(arguments[0].AsString().empty());
     }
@@ -335,9 +336,7 @@ Value EvaluateFunction(
     }
     return Value::Null();
   }
-  if (name == "keys") {
-    CHECK(arguments.size() == 1, common::InvalidArgumentError,
-          "keys() expects one argument");
+  if (builtin->kind == ast::BuiltinFunctionKind::kKeys) {
     const Value::Map *properties = nullptr;
     if (arguments[0].IsMap()) {
       properties = &arguments[0].AsMap();
@@ -357,9 +356,7 @@ Value EvaluateFunction(
     }
     return Value(std::move(keys));
   }
-  if (name == "properties") {
-    CHECK(arguments.size() == 1, common::InvalidArgumentError,
-          "properties() expects one argument");
+  if (builtin->kind == ast::BuiltinFunctionKind::kProperties) {
     if (arguments[0].IsMap()) {
       return Value(arguments[0].AsMap());
     }
@@ -371,10 +368,7 @@ Value EvaluateFunction(
     }
     return Value::Null();
   }
-  if (name == "range") {
-    CHECK(arguments.size() == 2 || arguments.size() == 3,
-          common::InvalidArgumentError,
-          "range() expects two or three arguments");
+  if (builtin->kind == ast::BuiltinFunctionKind::kRange) {
     if (!arguments[0].IsInteger() || !arguments[1].IsInteger() ||
         (arguments.size() == 3 && !arguments[2].IsInteger())) {
       return Value::Null();
@@ -398,9 +392,7 @@ Value EvaluateFunction(
     }
     return Value(std::move(values));
   }
-  if (name == "split") {
-    CHECK(arguments.size() == 2, common::InvalidArgumentError,
-          "split() expects two arguments");
+  if (builtin->kind == ast::BuiltinFunctionKind::kSplit) {
     if (!arguments[0].IsString() || !arguments[1].IsString()) {
       return Value::Null();
     }
@@ -425,14 +417,13 @@ Value EvaluateFunction(
     }
     return Value(std::move(parts));
   }
-  if (name == "nodes" || name == "relationships") {
-    CHECK(arguments.size() == 1, common::InvalidArgumentError,
-          name + "() expects one argument");
+  if (builtin->kind == ast::BuiltinFunctionKind::kNodes ||
+      builtin->kind == ast::BuiltinFunctionKind::kRelationships) {
     if (!arguments[0].IsPath()) {
       return Value::Null();
     }
     Value::List values;
-    if (name == "nodes") {
+    if (builtin->kind == ast::BuiltinFunctionKind::kNodes) {
       for (const auto &node : arguments[0].AsPath().nodes) {
         values.emplace_back(node);
       }
@@ -443,18 +434,14 @@ Value EvaluateFunction(
     }
     return Value(std::move(values));
   }
-  if (name == "tostring") {
-    CHECK(arguments.size() == 1, common::InvalidArgumentError,
-          "toString() expects one argument");
+  if (builtin->kind == ast::BuiltinFunctionKind::kToString) {
     if (arguments[0].IsNull()) {
       return Value::Null();
     }
     return arguments[0].IsString() ? arguments[0]
                                    : Value(arguments[0].ToString());
   }
-  if (name == "tointeger") {
-    CHECK(arguments.size() == 1, common::InvalidArgumentError,
-          "toInteger() expects one argument");
+  if (builtin->kind == ast::BuiltinFunctionKind::kToInteger) {
     if (arguments[0].IsNull() || arguments[0].IsInteger()) {
       return arguments[0];
     }
@@ -478,9 +465,7 @@ Value EvaluateFunction(
     }
     return Value::Null();
   }
-  if (name == "tofloat") {
-    CHECK(arguments.size() == 1, common::InvalidArgumentError,
-          "toFloat() expects one argument");
+  if (builtin->kind == ast::BuiltinFunctionKind::kToFloat) {
     if (arguments[0].IsNull() || arguments[0].IsDouble()) {
       return arguments[0];
     }
@@ -496,9 +481,7 @@ Value EvaluateFunction(
     }
     return Value::Null();
   }
-  if (name == "toboolean") {
-    CHECK(arguments.size() == 1, common::InvalidArgumentError,
-          "toBoolean() expects one argument");
+  if (builtin->kind == ast::BuiltinFunctionKind::kToBoolean) {
     if (arguments[0].IsNull() || arguments[0].IsBool()) {
       return arguments[0];
     }
@@ -513,16 +496,16 @@ Value EvaluateFunction(
     }
     return Value::Null();
   }
-  if (name == "tolower" || name == "toupper" || name == "trim") {
-    CHECK(arguments.size() == 1, common::InvalidArgumentError,
-          function.function_name + "() expects one argument");
+  if (builtin->kind == ast::BuiltinFunctionKind::kToLower ||
+      builtin->kind == ast::BuiltinFunctionKind::kToUpper ||
+      builtin->kind == ast::BuiltinFunctionKind::kTrim) {
     if (!arguments[0].IsString()) {
       return Value::Null();
     }
     std::string value = arguments[0].AsString();
-    if (name == "tolower") {
+    if (builtin->kind == ast::BuiltinFunctionKind::kToLower) {
       value = LowerAscii(std::move(value));
-    } else if (name == "toupper") {
+    } else if (builtin->kind == ast::BuiltinFunctionKind::kToUpper) {
       std::transform(
           value.begin(), value.end(), value.begin(),
           [](unsigned char ch) { return static_cast<char>(std::toupper(ch)); });
@@ -532,8 +515,8 @@ Value EvaluateFunction(
     return Value(std::move(value));
   }
 
-  THROW(common::InvalidArgumentError,
-        "unsupported function in executor: " + function.function_name);
+  THROW(common::InternalError,
+        "built-in function has no scalar implementation: " + builtin->name);
 }
 
 Value EvaluateListIndex(

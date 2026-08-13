@@ -1,7 +1,6 @@
 #include "runtime/aggregation_evaluator.h"
 
 #include <algorithm>
-#include <cctype>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -12,6 +11,7 @@
 #include <vector>
 
 #include "ast/ast_node.h"
+#include "ast/builtin_function.h"
 #include "ast/expression_to_string.h"
 #include "common/exception.h"
 #include "runtime/expression_evaluator.h"
@@ -29,13 +29,6 @@ struct GroupState {
   QueryRow row;
   std::vector<QueryRow> rows;
 };
-
-std::string LowerAscii(std::string value) {
-  std::transform(
-      value.begin(), value.end(), value.begin(),
-      [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-  return value;
-}
 
 bool AddWouldOverflow(std::int64_t left, std::int64_t right) {
   return (right > 0 &&
@@ -73,8 +66,6 @@ GroupingProjection EvaluateGrouping(
 std::vector<Value> EvaluateAggregationValues(
     const ast::FunctionInvocation &function, const std::vector<QueryRow> &rows,
     const std::vector<ir::LogicalPrecomputedExpression> &precomputed) {
-  CHECK(function.arguments.size() == 1, common::InvalidArgumentError,
-        function.function_name + "() expects one argument");
   CHECK(function.arguments[0] != nullptr, common::InvalidArgumentError,
         function.function_name + "() argument is null");
 
@@ -162,35 +153,40 @@ Value EvaluateAggregationExpression(
   }
 
   const auto &function = ast::CastAst<ast::FunctionInvocation>(expression);
-  const std::string name = LowerAscii(function.function_name);
-  if (name != "count" && name != "collect" && name != "sum" && name != "avg" &&
-      name != "min" && name != "max") {
-    THROW(common::InvalidArgumentError,
-          "unsupported aggregation expression: " +
-              ast::ExpressionToString(expression));
-  }
+  const ast::BuiltinFunction *builtin =
+      ast::FindBuiltinFunction(function.function_name);
+  CHECK(builtin != nullptr, common::InvalidArgumentError,
+        "unknown function: " + function.function_name);
+  CHECK(builtin->aggregate, common::InvalidArgumentError,
+        "function is not an aggregate: " + builtin->name);
+  CHECK(ast::BuiltinFunctionAcceptsArgumentCount(*builtin,
+                                                 function.arguments.size()),
+        common::InvalidArgumentError,
+        ast::BuiltinFunctionArgumentCountError(*builtin));
+  CHECK(!function.distinct || builtin->allows_distinct,
+        common::InvalidArgumentError,
+        "DISTINCT is not supported for function: " + builtin->name);
+
   std::vector<Value> values =
       EvaluateAggregationValues(function, rows, precomputed);
-  if (name == "count") {
-    return Value(CountValue(values.size()));
+  switch (builtin->kind) {
+    case ast::BuiltinFunctionKind::kCount:
+      return Value(CountValue(values.size()));
+    case ast::BuiltinFunctionKind::kCollect:
+      return Value(Value::List(std::move(values)));
+    case ast::BuiltinFunctionKind::kSum:
+      return EvaluateSum(function, values);
+    case ast::BuiltinFunctionKind::kAverage:
+      return EvaluateAverage(function, values);
+    case ast::BuiltinFunctionKind::kMinimum:
+      return EvaluateMinMax(values, true);
+    case ast::BuiltinFunctionKind::kMaximum:
+      return EvaluateMinMax(values, false);
+    default:
+      THROW(common::InternalError,
+            "built-in function has no aggregate implementation: " +
+                builtin->name);
   }
-  if (name == "collect") {
-    return Value(Value::List(std::move(values)));
-  }
-  if (name == "sum") {
-    return EvaluateSum(function, values);
-  }
-  if (name == "avg") {
-    return EvaluateAverage(function, values);
-  }
-  if (name == "min") {
-    return EvaluateMinMax(values, true);
-  }
-  if (name == "max") {
-    return EvaluateMinMax(values, false);
-  }
-
-  THROW(common::InternalError, "unreachable aggregation function");
 }
 
 }  // namespace

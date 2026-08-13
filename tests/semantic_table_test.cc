@@ -148,12 +148,12 @@ TEST(SemanticTableTest, InfersFunctionProjectionResultTypes) {
   EXPECT_EQ(table.VariableType("name"), ast::SemanticVariableType::kScalar);
 }
 
-TEST(SemanticTableTest, UsesFunctionSignatureTableForProjectionTypes) {
+TEST(SemanticTableTest, UsesBuiltinFunctionRegistryForProjectionTypes) {
   auto statement = ParseOrFail(
-      "MATCH (a)-[r]->(b) RETURN labels(a) AS labels, keys({name: 'Ada'}) AS "
-      "keys, range(1, 3) AS nums, properties(a) AS props, startNode(r) AS "
-      "start, endNode(r) AS finish, type(r) AS rel_type, toString(a.name) AS "
-      "name");
+      "MATCH p = (a)-[r]->(b) RETURN labels(a) AS labels, "
+      "keys({name: 'Ada'}) AS keys, range(1, 3) AS nums, properties(a) AS "
+      "props, nodes(p) AS path_nodes, relationships(p) AS path_rels, type(r) "
+      "AS rel_type, toString(a.name) AS name");
   ASSERT_TRUE(statement);
 
   ast::SemanticTable table = ast::AnalyzeSemanticTable(*statement);
@@ -162,14 +162,16 @@ TEST(SemanticTableTest, UsesFunctionSignatureTableForProjectionTypes) {
             ast::SemanticVariableType::kList);
   EXPECT_EQ(table.KnownFunctionResultType("properties"),
             ast::SemanticVariableType::kMap);
+  EXPECT_EQ(table.KnownFunctionResultType("TOSTRING"),
+            ast::SemanticVariableType::kScalar);
   EXPECT_FALSE(table.KnownFunctionResultType("unknownFunction").has_value());
 
   EXPECT_EQ(table.VariableType("labels"), ast::SemanticVariableType::kList);
   EXPECT_EQ(table.VariableType("keys"), ast::SemanticVariableType::kList);
   EXPECT_EQ(table.VariableType("nums"), ast::SemanticVariableType::kList);
   EXPECT_EQ(table.VariableType("props"), ast::SemanticVariableType::kMap);
-  EXPECT_EQ(table.VariableType("start"), ast::SemanticVariableType::kNode);
-  EXPECT_EQ(table.VariableType("finish"), ast::SemanticVariableType::kNode);
+  EXPECT_EQ(table.VariableType("path_nodes"), ast::SemanticVariableType::kList);
+  EXPECT_EQ(table.VariableType("path_rels"), ast::SemanticVariableType::kList);
   EXPECT_EQ(table.VariableType("rel_type"), ast::SemanticVariableType::kScalar);
   EXPECT_EQ(table.VariableType("name"), ast::SemanticVariableType::kScalar);
 }

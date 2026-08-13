@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cctype>
 #include <optional>
 #include <ranges>
 #include <string>
@@ -13,6 +12,7 @@
 #include <vector>
 
 #include "ast_const_walker.h"
+#include "builtin_function.h"
 #include "builtin_procedure.h"
 #include "common/exception.h"
 #include "expression_dependency.h"
@@ -22,13 +22,6 @@ namespace ast {
 namespace {
 
 using TypeMap = std::unordered_map<std::string, SemanticVariableType>;
-
-struct FunctionSignature {
-  std::string_view name;
-  SemanticVariableType result_type = SemanticVariableType::kScalar;
-  std::optional<SemanticVariableType> list_element_type = std::nullopt;
-  bool aggregate = false;
-};
 
 const std::unordered_set<std::string> &EmptyStringSet() {
   static const std::unordered_set<std::string> kEmpty;
@@ -59,73 +52,9 @@ std::optional<SemanticVariableType> LookupVariableType(const TypeMap &types,
   return std::nullopt;
 }
 
-std::string LowerAscii(std::string_view input) {
-  std::string out;
-  out.reserve(input.size());
-  for (char ch : input) {
-    out.push_back(
-        static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
-  }
-  return out;
-}
-
-const std::vector<FunctionSignature> &FunctionSignatures() {
-  static const std::vector<FunctionSignature> kSignatures = {
-      {"avg", SemanticVariableType::kScalar, std::nullopt, true},
-      {"collect", SemanticVariableType::kList, std::nullopt, true},
-      {"count", SemanticVariableType::kScalar, std::nullopt, true},
-      {"max", SemanticVariableType::kScalar, std::nullopt, true},
-      {"min", SemanticVariableType::kScalar, std::nullopt, true},
-      {"percentilecont", SemanticVariableType::kScalar, std::nullopt, true},
-      {"percentiledisc", SemanticVariableType::kScalar, std::nullopt, true},
-      {"stdev", SemanticVariableType::kScalar, std::nullopt, true},
-      {"stdevp", SemanticVariableType::kScalar, std::nullopt, true},
-      {"sum", SemanticVariableType::kScalar, std::nullopt, true},
-
-      {"coalesce", SemanticVariableType::kScalar},
-      {"elementid", SemanticVariableType::kScalar},
-      {"endnode", SemanticVariableType::kNode},
-      {"exists", SemanticVariableType::kScalar},
-      {"id", SemanticVariableType::kScalar},
-      {"isempty", SemanticVariableType::kScalar},
-      {"keys", SemanticVariableType::kList, SemanticVariableType::kScalar},
-      {"labels", SemanticVariableType::kList, SemanticVariableType::kScalar},
-      {"length", SemanticVariableType::kScalar},
-      {"nodes", SemanticVariableType::kList, SemanticVariableType::kNode},
-      {"properties", SemanticVariableType::kMap},
-      {"range", SemanticVariableType::kList, SemanticVariableType::kScalar},
-      {"relationships", SemanticVariableType::kList,
-       SemanticVariableType::kRelationship},
-      {"size", SemanticVariableType::kScalar},
-      {"split", SemanticVariableType::kList, SemanticVariableType::kScalar},
-      {"startnode", SemanticVariableType::kNode},
-      {"timestamp", SemanticVariableType::kScalar},
-      {"toboolean", SemanticVariableType::kScalar},
-      {"tofloat", SemanticVariableType::kScalar},
-      {"tointeger", SemanticVariableType::kScalar},
-      {"tolower", SemanticVariableType::kScalar},
-      {"tostring", SemanticVariableType::kScalar},
-      {"toupper", SemanticVariableType::kScalar},
-      {"trim", SemanticVariableType::kScalar},
-      {"type", SemanticVariableType::kScalar},
-  };
-  return kSignatures;
-}
-
-const FunctionSignature *LookupFunctionSignature(
-    std::string_view function_name) {
-  const std::string name = LowerAscii(function_name);
-  for (const auto &signature : FunctionSignatures()) {
-    if (signature.name == name) {
-      return &signature;
-    }
-  }
-  return nullptr;
-}
-
 bool IsAggregateFunction(std::string_view function_name) {
-  const FunctionSignature *signature = LookupFunctionSignature(function_name);
-  return signature != nullptr && signature->aggregate;
+  const BuiltinFunction *function = FindBuiltinFunction(function_name);
+  return function != nullptr && function->aggregate;
 }
 
 std::optional<SemanticVariableType> LookupProcedureYieldType(
@@ -162,11 +91,11 @@ std::optional<bool> LookupProcedureReadOnly(std::string_view procedure_name) {
 }
 
 SemanticVariableType InferFunctionResultType(std::string_view function_name) {
-  const FunctionSignature *signature = LookupFunctionSignature(function_name);
-  if (signature != nullptr) {
-    return signature->result_type;
+  const BuiltinFunction *function = FindBuiltinFunction(function_name);
+  if (function != nullptr) {
+    return function->result_type;
   }
-  return SemanticVariableType::kScalar;
+  return SemanticVariableType::kUnknown;
 }
 
 bool IsAggregationExpression(const Expression &expression) {
@@ -546,12 +475,13 @@ class SemanticTableAnalyzer final : public ASTConstWalker {
       }
       case ASTNodeType::kFunctionInvocation: {
         const auto &function = CastAst<FunctionInvocation>(expression);
-        const FunctionSignature *signature =
-            LookupFunctionSignature(function.function_name);
-        if (signature != nullptr && signature->list_element_type.has_value()) {
-          return *signature->list_element_type;
+        const BuiltinFunction *builtin =
+            FindBuiltinFunction(function.function_name);
+        if (builtin != nullptr && builtin->list_element_type.has_value()) {
+          return *builtin->list_element_type;
         }
-        if (LowerAscii(function.function_name) == "collect" &&
+        if (builtin != nullptr &&
+            builtin->kind == BuiltinFunctionKind::kCollect &&
             function.arguments.size() == 1 && function.arguments[0]) {
           return InferExpressionType(*function.arguments[0]);
         }
@@ -793,11 +723,11 @@ SemanticTable::VariableTypesAt(const ASTNode &node) const {
 
 std::optional<SemanticVariableType> SemanticTable::KnownFunctionResultType(
     std::string_view function_name) const {
-  const FunctionSignature *signature = LookupFunctionSignature(function_name);
-  if (signature == nullptr) {
+  const BuiltinFunction *function = FindBuiltinFunction(function_name);
+  if (function == nullptr) {
     return std::nullopt;
   }
-  return signature->result_type;
+  return function->result_type;
 }
 
 std::optional<SemanticVariableType> SemanticTable::KnownProcedureYieldType(
