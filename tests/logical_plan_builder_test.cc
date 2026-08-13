@@ -1197,11 +1197,11 @@ TEST(LogicalPlanBuilderTest, BuildsCreateWithBoundEndpointPlan) {
 }
 
 TEST(LogicalPlanBuilderTest, BuildsNamedCreatePathPlan) {
-  ExpectLogicalPlanText("CREATE p = (a)-[r]->(b) RETURN p",
+  ExpectLogicalPlanText("CREATE p = (a)-[r:R]->(b) RETURN p",
                         R"(ProduceResults [p]
   Projection [p]
     PathBuild [p]
-      CreateRelationship [(a)-[r]->(b)]
+      CreateRelationship [(a)-[r:R]->(b)]
         CreateNode [b]
           CreateNode [a]
             WriteBarrier

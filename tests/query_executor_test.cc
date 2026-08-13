@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "ast/ast_builder.h"
+#include "ast/ast_exception.h"
 #include "common/exception.h"
 #include "ir/logical_plan_builder.h"
 #include "ir/planner_query.h"
@@ -234,7 +235,7 @@ TEST(QueryExecutorTest, RejectsInvalidPredicatesAndUnsafeIntegerArithmetic) {
   rg::InMemoryGraph graph;
 
   EXPECT_THROW((void)rg::ExecuteReadQuery(graph, "RETURN NOT 1 AS value"),
-               common::InvalidArgumentError);
+               ast::SemanticError);
   EXPECT_THROW((void)rg::ExecuteReadQuery(
                    graph, "RETURN 9223372036854775807 + 1 AS value"),
                common::InvalidArgumentError);
@@ -294,9 +295,9 @@ TEST(QueryExecutorTest, RejectsInvalidSkipAndLimitCounts) {
   rg::InMemoryGraph graph;
 
   EXPECT_THROW((void)rg::ExecuteReadQuery(graph, "RETURN 1 AS x SKIP -1"),
-               common::InvalidArgumentError);
+               ast::SemanticError);
   EXPECT_THROW((void)rg::ExecuteReadQuery(graph, "RETURN 1 AS x LIMIT 1.5"),
-               common::InvalidArgumentError);
+               ast::SemanticError);
   EXPECT_THROW((void)rg::ExecuteReadQuery(
                    graph, "MATCH (n:Missing) RETURN n LIMIT null"),
                common::InvalidArgumentError);
@@ -797,7 +798,8 @@ TEST(QueryExecutorTest, UsesPatternComprehensionInPagination) {
       rg::ExecuteReadQuery(graph,
                            "MATCH (n:Person) "
                            "RETURN n.name AS name "
-                           "ORDER BY name SKIP size([(n)-[:KNOWS]->(m) | m])");
+                           "ORDER BY name "
+                           "SKIP size([()-[:KNOWS]->(m) | m])");
 
   ASSERT_EQ(result.columns, std::vector<std::string>{"name"});
   EXPECT_EQ(StringRows(result),

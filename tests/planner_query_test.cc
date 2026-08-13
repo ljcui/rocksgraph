@@ -110,7 +110,7 @@ TEST(PlannerQueryInputContractTest, RejectsRawInlineReadPatternPredicates) {
 
 TEST(PlannerQueryInputContractTest, RejectsRawPatternPredicateExpression) {
   ExpectPlannerQueryContractError(
-      "MATCH (n) WHERE (n)-->(m) RETURN n AS n",
+      "MATCH (n) WHERE (n)-->() RETURN n AS n",
       "pattern predicates must be rewritten to existential subqueries");
 }
 

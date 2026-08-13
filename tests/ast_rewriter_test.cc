@@ -93,8 +93,8 @@ TEST(ParenthesizedExpressionRewriterTest, WhereExpression) {
 
 TEST(PatternPredicateRewriterTest, WherePattern) {
   ExpectRewriteEqualsWith<ast::PatternPredicateRewriter>(
-      "MATCH (n) WHERE (n)-[:R]->(m) RETURN n",
-      "MATCH (n) WHERE EXISTS { (n)-[:R]->(m) } RETURN n");
+      "MATCH (n) WHERE (n)-[:R]->() RETURN n",
+      "MATCH (n) WHERE EXISTS { (n)-[:R]->() } RETURN n");
 }
 
 TEST(PatternPredicateNormalizationRewriterTest, PullsNodePredicatesToWhere) {
@@ -112,8 +112,8 @@ TEST(PatternPredicateNormalizationRewriterTest,
 
 TEST(ExistentialSubqueryRewriterTest, PatternToMatchQuery) {
   ExpectRewriteEqualsWith<ast::ExistentialSubqueryRewriter>(
-      "MATCH (n) WHERE EXISTS { (n)-[:R]->(m) } RETURN n",
-      "MATCH (n) WHERE EXISTS { MATCH (n)-[:R]->(m) RETURN 1 } RETURN n");
+      "MATCH (n) WHERE EXISTS { (n)-[:R]->() } RETURN n",
+      "MATCH (n) WHERE EXISTS { MATCH (n)-[:R]->() RETURN 1 } RETURN n");
 }
 
 TEST(OrderByAliasRewriterTest, RewritesExpressionToAlias) {
@@ -189,26 +189,6 @@ TEST(AddUniquenessPredicatesRewriterTest,
       "__uniq_rel_0 = __uniq_rel_1)) RETURN *");
 }
 
-TEST(AddUniquenessPredicatesRewriterTest,
-     RepeatedRelationshipVariableBecomesFalse) {
-  ExpectRewriteEqualsWith<ast::AddUniquenessPredicatesRewriter>(
-      "MATCH (a)-[r]->(b)-[r]->(c) RETURN *",
-      "MATCH (a)-[r]->(b)-[r]->(c) WHERE false RETURN *");
-}
-
-TEST(AddUniquenessPredicatesRewriterTest,
-     RepeatedNonEmptyVarLengthRelationshipIncludesFalse) {
-  ExpectRewriteEqualsWith<ast::AddUniquenessPredicatesRewriter>(
-      "MATCH (a)-[r*1..2]->(b)-[r*1..2]->(c) RETURN *",
-      "MATCH (a)-[r*1..2]->(b)-[r*1..2]->(c) "
-      "WHERE false AND "
-      "ALL(__uniq_rel_0 IN r WHERE SINGLE(__uniq_rel_1 IN r WHERE __uniq_rel_0 "
-      "= __uniq_rel_1)) AND "
-      "ALL(__uniq_rel_2 IN r WHERE SINGLE(__uniq_rel_3 IN r WHERE __uniq_rel_2 "
-      "= __uniq_rel_3)) "
-      "RETURN *");
-}
-
 TEST(RewriterPipelineTest, DefaultPipelineUsesReturnStar) {
   auto statement = ParseOrFail("MATCH (n) RETURN *");
   auto expected_statement = ParseOrFail("MATCH (n) RETURN n AS n");
@@ -240,33 +220,11 @@ TEST(RewriterPipelineTest, DefaultPipelineAddsUniquenessPredicates) {
       << "rewrite mismatch for uniqueness in pipeline";
 }
 
-TEST(RewriterPipelineTest, DefaultPipelineAddsFalseForRepeatedRelationship) {
-  auto statement = ParseOrFail("MATCH (a)-[r]->(b)-[r]->(c) RETURN *");
-  auto expected_statement = ParseOrFail(
-      "MATCH (a)-[r]->(b)-[r]->(c) WHERE false "
-      "RETURN a AS a, r AS r, b AS b, c AS c");
-
-  ast::ApplyDefaultRewriters(*statement);
-
-  EXPECT_TRUE(ast::ASTEqual::Equal(statement.get(), expected_statement.get()))
-      << "rewrite mismatch for repeated relationship variable";
-}
-
-TEST(RewriterPipelineTest,
-     DefaultPipelineAddsFalseForRepeatedNonEmptyVarLengthRelationship) {
-  auto statement =
-      ParseOrFail("MATCH (a)-[r*1..2]->(b)-[r*1..2]->(c) RETURN *");
-  auto expected_statement = ParseOrFail(
-      "MATCH (a)-[r*1..2]->(b)-[r*1..2]->(c) "
-      "WHERE false AND "
-      "ALL(__uniq_rel_0 IN r WHERE SINGLE(__uniq_rel_1 IN r WHERE __uniq_rel_0 "
-      "= __uniq_rel_1)) AND "
-      "ALL(__uniq_rel_2 IN r WHERE SINGLE(__uniq_rel_3 IN r WHERE __uniq_rel_2 "
-      "= __uniq_rel_3)) "
-      "RETURN a AS a, r AS r, b AS b, c AS c");
-
-  ast::ApplyDefaultRewriters(*statement);
-
-  EXPECT_TRUE(ast::ASTEqual::Equal(statement.get(), expected_statement.get()))
-      << "rewrite mismatch for repeated non-empty var-length relationship";
+TEST(RewriterPipelineTest, RejectsRepeatedRelationshipBeforeRewrite) {
+  EXPECT_THROW(
+      (void)ast::ParseCypherAndRewrite("MATCH (a)-[r]->(b)-[r]->(c) RETURN *"),
+      ast::SemanticError);
+  EXPECT_THROW((void)ast::ParseCypherAndRewrite(
+                   "MATCH (a)-[r*1..2]->(b)-[r*1..2]->(c) RETURN *"),
+               ast::SemanticError);
 }

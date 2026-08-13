@@ -3,6 +3,7 @@
 #include <optional>
 #include <ranges>
 #include <string_view>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -13,6 +14,7 @@
 #include "builtin_function.h"
 #include "builtin_procedure.h"
 #include "common/exception.h"
+#include "expression_dependency.h"
 #include "expression_to_string.h"
 
 namespace ast {
@@ -92,6 +94,66 @@ bool ProjectionContainsAggregation(const ProjectionBody &body) {
   return false;
 }
 
+class PatternPredicateScanner final : public ASTWalker {
+ public:
+  bool Scan(Expression &expression) {
+    contains_ = false;
+    expression.Accept(*this);
+    return contains_;
+  }
+
+ protected:
+  void Visit(PatternPredicateExpression &node) override {
+    (void)node;
+    contains_ = true;
+  }
+
+ private:
+  bool contains_ = false;
+};
+
+bool ContainsPatternPredicate(Expression *expression) {
+  if (expression == nullptr) {
+    return false;
+  }
+  PatternPredicateScanner scanner;
+  return scanner.Scan(*expression);
+}
+
+class UpdatingClauseScanner final : public ASTWalker {
+ public:
+  bool Scan(ASTNode &node) {
+    contains_ = false;
+    node.Accept(*this);
+    return contains_;
+  }
+
+ protected:
+  void Visit(Create &node) override {
+    (void)node;
+    contains_ = true;
+  }
+  void Visit(Merge &node) override {
+    (void)node;
+    contains_ = true;
+  }
+  void Visit(Delete &node) override {
+    (void)node;
+    contains_ = true;
+  }
+  void Visit(Set &node) override {
+    (void)node;
+    contains_ = true;
+  }
+  void Visit(Remove &node) override {
+    (void)node;
+    contains_ = true;
+  }
+
+ private:
+  bool contains_ = false;
+};
+
 const ProjectionBody *TerminalProjectionBody(const SingleQuery &query) {
   switch (query.node_type) {
     case ASTNodeType::kSinglePartQuery: {
@@ -164,6 +226,15 @@ class SemanticValidator : public ASTWalker {
 
  protected:
   void Visit(RegularQuery &node) override {
+    if (!node.unions.empty()) {
+      const bool union_all = node.unions.front()->all;
+      for (const auto &part : node.unions) {
+        if (part != nullptr && part->all != union_all) {
+          ReportSemantic("cannot mix UNION and UNION ALL");
+          break;
+        }
+      }
+    }
     const Scope base = CurrentScope();
     if (node.single_query) {
       PushScope(base);
@@ -212,16 +283,18 @@ class SemanticValidator : public ASTWalker {
 
   void Visit(Match &node) override {
     if (node.pattern) {
-      CollectFromPattern(*node.pattern, CurrentScope());
+      ValidateRelationshipUniqueness(*node.pattern);
+      BindPattern(*node.pattern);
     }
     WalkMaybe(node.pattern);
     ValidateNoAggregation(node.where.get(), "WHERE");
+    ValidateBooleanExpression(node.where.get(), "WHERE");
     WalkMaybe(node.where);
   }
 
   void Visit(Unwind &node) override {
-    ASTWalker::Visit(node);
-    Define(node.variable);
+    WalkMaybe(node.expression);
+    Define(node.variable, ListElementType(node.expression.get()));
   }
 
   void Visit(InQueryCall &node) override {
@@ -246,20 +319,34 @@ class SemanticValidator : public ASTWalker {
 
   void Visit(Create &node) override {
     if (node.pattern) {
-      CollectFromPattern(*node.pattern, CurrentScope());
+      BindUpdatingPattern(*node.pattern, "CREATE");
     }
     ASTWalker::Visit(node);
   }
 
   void Visit(Merge &node) override {
     if (node.pattern_part) {
-      CollectFromPatternPart(*node.pattern_part, CurrentScope());
+      BindUpdatingPatternPart(*node.pattern_part, "MERGE");
+    }
+    ASTWalker::Visit(node);
+  }
+
+  void Visit(Delete &node) override {
+    for (const auto &expression : node.expressions) {
+      const StaticValue type = InferType(expression.get());
+      if (IsKnown(type) && type.type != StaticType::kNull &&
+          type.type != StaticType::kNode &&
+          type.type != StaticType::kRelationship &&
+          type.type != StaticType::kPath) {
+        ReportInvalidArgument("DELETE requires a node, relationship, or path");
+      }
     }
     ASTWalker::Visit(node);
   }
 
   void Visit(ProjectionBody &node) override {
     ValidateProjectionAggregations(node);
+    ValidateProjectionColumns(node);
     const Scope pre = CurrentScope();
     for (auto &item : node.items) {
       WalkMaybe(item);
@@ -273,20 +360,24 @@ class SemanticValidator : public ASTWalker {
     ValidateNoAggregation(node.order_by, "ORDER BY");
     WalkList(node.order_by);
     ValidateNoAggregation(node.skip.get(), "SKIP");
+    ValidatePagination(node.skip.get(), "SKIP");
     WalkMaybe(node.skip);
     ValidateNoAggregation(node.limit.get(), "LIMIT");
+    ValidatePagination(node.limit.get(), "LIMIT");
     WalkMaybe(node.limit);
     PopScope();
   }
 
   void Visit(With &node) override {
     CHECK(node.body != nullptr, common::InternalError, "WITH body is null");
+    ValidateWithAliases(*node.body);
     const Scope pre = CurrentScope();
     node.body->Accept(*this);
 
     const Scope projected = ScopeFromProjection(*node.body, pre);
     ReplaceCurrentScope(projected);
     ValidateNoAggregation(node.where.get(), "WHERE");
+    ValidateBooleanExpression(node.where.get(), "WHERE");
     WalkMaybe(node.where);
   }
 
@@ -294,7 +385,8 @@ class SemanticValidator : public ASTWalker {
     WalkMaybe(node.list_expr);
 
     PushScope(CurrentScope());
-    Define(node.variable);
+    Define(node.variable, ListElementType(node.list_expr.get()));
+    ValidateBooleanExpression(node.where_expr.get(), "list comprehension");
     WalkMaybe(node.where_expr);
     WalkMaybe(node.eval_expr);
     PopScope();
@@ -302,23 +394,19 @@ class SemanticValidator : public ASTWalker {
 
   void Visit(PatternComprehension &node) override {
     PushScope(CurrentScope());
-    Define(node.variable);
+    Define(node.variable, {StaticType::kPath});
     if (node.relationships_pattern) {
-      CollectFromRelationshipsPattern(*node.relationships_pattern,
-                                      CurrentScope());
+      BindRelationshipsPattern(*node.relationships_pattern);
     }
     ASTWalker::Visit(node);
     PopScope();
   }
 
   void Visit(PatternPredicateExpression &node) override {
-    PushScope(CurrentScope());
     if (node.relationships_pattern) {
-      CollectFromRelationshipsPattern(*node.relationships_pattern,
-                                      CurrentScope());
+      ValidatePatternPredicateVariables(*node.relationships_pattern);
     }
     ASTWalker::Visit(node);
-    PopScope();
   }
 
   void Visit(AllQuantifier &node) override { ValidateQuantifier(node); }
@@ -328,6 +416,10 @@ class SemanticValidator : public ASTWalker {
 
   void Visit(ExistentialSubquery &node) override {
     if (node.query) {
+      UpdatingClauseScanner scanner;
+      if (scanner.Scan(*node.query)) {
+        ReportSemantic("existential subquery cannot contain updates");
+      }
       PushScope(CurrentScope());
       WalkMaybe(node.query);
       PopScope();
@@ -335,7 +427,7 @@ class SemanticValidator : public ASTWalker {
     }
     if (node.pattern) {
       PushScope(CurrentScope());
-      CollectFromPattern(*node.pattern, CurrentScope());
+      BindPattern(*node.pattern);
       WalkMaybe(node.pattern);
       WalkMaybe(node.where_expr);
       PopScope();
@@ -354,6 +446,64 @@ class SemanticValidator : public ASTWalker {
     }
   }
 
+  void Visit(OrExpression &node) override {
+    ValidateBooleanOperands(node, "OR");
+  }
+
+  void Visit(XorExpression &node) override {
+    ValidateBooleanOperands(node, "XOR");
+  }
+
+  void Visit(AndExpression &node) override {
+    ValidateBooleanOperands(node, "AND");
+  }
+
+  void Visit(NotExpression &node) override {
+    ValidateBooleanExpression(node.operand.get(), "NOT");
+    ASTWalker::Visit(node);
+  }
+
+  void Visit(SubtractExpression &node) override {
+    ValidateNumericOperands(node, "subtraction");
+  }
+
+  void Visit(MultiplyExpression &node) override {
+    ValidateNumericOperands(node, "multiplication");
+  }
+
+  void Visit(DivideExpression &node) override {
+    ValidateNumericOperands(node, "division");
+  }
+
+  void Visit(ModuloExpression &node) override {
+    ValidateNumericOperands(node, "modulo");
+  }
+
+  void Visit(PowerExpression &node) override {
+    ValidateNumericOperands(node, "power");
+  }
+
+  void Visit(ListPredicateExpression &node) override {
+    const StaticValue list_type = InferType(node.list.get());
+    if (IsKnown(list_type) && list_type.type != StaticType::kNull &&
+        list_type.type != StaticType::kList) {
+      ReportInvalidArgument("IN requires a list on the right-hand side");
+    }
+    ASTWalker::Visit(node);
+  }
+
+  void Visit(PropertyExpression &node) override {
+    const StaticValue object_type = InferType(node.object.get());
+    if (IsKnown(object_type) && object_type.type != StaticType::kNull &&
+        object_type.type != StaticType::kNode &&
+        object_type.type != StaticType::kRelationship &&
+        object_type.type != StaticType::kMap) {
+      ReportInvalidArgument(
+          "property access requires a node, relationship, or map");
+    }
+    ASTWalker::Visit(node);
+  }
+
   void Visit(FunctionInvocation &node) override {
     const BuiltinFunction *function = FindBuiltinFunction(node.function_name);
     if (function == nullptr) {
@@ -368,6 +518,7 @@ class SemanticValidator : public ASTWalker {
     if (node.distinct && !function->allows_distinct) {
       ReportSemantic("DISTINCT is only supported for aggregate functions");
     }
+    ValidateFunctionArguments(*function, node);
 
     const bool aggregate = function->aggregate;
     if (aggregate && aggregation_depth_ > 0) {
@@ -390,6 +541,25 @@ class SemanticValidator : public ASTWalker {
   }
 
  private:
+  enum class StaticType {
+    kUnknown,
+    kNull,
+    kBoolean,
+    kInteger,
+    kFloat,
+    kString,
+    kList,
+    kMap,
+    kNode,
+    kRelationship,
+    kPath,
+  };
+
+  struct StaticValue {
+    StaticType type = StaticType::kUnknown;
+    StaticType element_type = StaticType::kUnknown;
+  };
+
   void ValidateProcedureCall(
       std::string_view procedure_name, std::size_t argument_count,
       const std::vector<StandaloneCall::YieldItem> &yield_items) {
@@ -444,16 +614,27 @@ class SemanticValidator : public ASTWalker {
   }
 
   struct Scope {
-    std::unordered_set<std::string> names;
+    std::unordered_map<std::string, StaticValue> bindings;
 
-    void Add(const std::string &name) {
+    void Add(const std::string &name) { Add(name, StaticValue{}); }
+
+    void Add(const std::string &name, StaticValue value) {
       if (!name.empty()) {
-        names.insert(name);
+        bindings[name] = value;
       }
     }
 
     [[nodiscard]] bool Contains(const std::string &name) const {
-      return names.find(name) != names.end();
+      return bindings.contains(name);
+    }
+
+    [[nodiscard]] std::optional<StaticValue> Find(
+        const std::string &name) const {
+      const auto it = bindings.find(name);
+      if (it == bindings.end()) {
+        return std::nullopt;
+      }
+      return it->second;
     }
   };
 
@@ -524,22 +705,32 @@ class SemanticValidator : public ASTWalker {
   void PushEmptyScope() { scope_stack_.emplace_back(); }
   void PopScope() { scope_stack_.pop_back(); }
 
-  void Define(const std::string &name) { CurrentScope().Add(name); }
+  void Define(const std::string &name) { Define(name, StaticValue{}); }
+
+  void Define(const std::string &name, StaticValue value) {
+    CurrentScope().Add(name, value);
+  }
 
   void ReplaceCurrentScope(const Scope &scope) { scope_stack_.back() = scope; }
 
   [[nodiscard]] bool IsDefined(const std::string &name) const {
+    return Lookup(name).has_value();
+  }
+
+  [[nodiscard]] std::optional<StaticValue> Lookup(
+      const std::string &name) const {
     for (const auto &it : std::ranges::reverse_view(scope_stack_)) {
-      if (it.Contains(name)) {
-        return true;
+      const auto value = it.Find(name);
+      if (value.has_value()) {
+        return value;
       }
     }
-    return false;
+    return std::nullopt;
   }
 
   static Scope MergeScopes(const Scope &lhs, const Scope &rhs) {
     Scope out = lhs;
-    out.names.insert(rhs.names.begin(), rhs.names.end());
+    out.bindings.insert(rhs.bindings.begin(), rhs.bindings.end());
     return out;
   }
 
@@ -584,6 +775,34 @@ class SemanticValidator : public ASTWalker {
     }
   }
 
+  void ValidateProjectionColumns(ProjectionBody &body) {
+    std::unordered_set<std::string> names;
+    for (const auto &item : body.items) {
+      if (!item || !item->expression) {
+        continue;
+      }
+      const std::string name = !item->alias.empty()
+                                   ? item->alias
+                                   : ExpressionToString(*item->expression);
+      if (!name.empty() && !names.insert(name).second) {
+        ReportSemantic("duplicate projection column: " + name);
+      }
+      if (ContainsPatternPredicate(item->expression.get())) {
+        ReportSemantic("pattern expressions are not allowed in projections");
+      }
+    }
+  }
+
+  void ValidateWithAliases(const ProjectionBody &body) {
+    for (const auto &item : body.items) {
+      if (!item || !item->expression || !item->alias.empty() ||
+          item->expression->Is(ASTNodeType::kVariable)) {
+        continue;
+      }
+      ReportSemantic("WITH expressions must be aliased");
+    }
+  }
+
   void ValidateRestrictedProjectionOrderBy(const ProjectionBody &body,
                                            const Scope &pre_projection_scope,
                                            const Scope &projected_scope) {
@@ -619,74 +838,596 @@ class SemanticValidator : public ASTWalker {
         name);
   }
 
-  void CollectFromPattern(const Pattern &pattern, Scope &scope) const {
+  static bool IsKnown(StaticValue value) {
+    return value.type != StaticType::kUnknown;
+  }
+
+  static bool IsBooleanCompatible(StaticValue value) {
+    return value.type == StaticType::kUnknown ||
+           value.type == StaticType::kNull ||
+           value.type == StaticType::kBoolean;
+  }
+
+  static bool IsNumericCompatible(StaticValue value) {
+    return value.type == StaticType::kUnknown ||
+           value.type == StaticType::kNull ||
+           value.type == StaticType::kInteger ||
+           value.type == StaticType::kFloat;
+  }
+
+  void ReportInvalidArgument(std::string_view detail) {
+    ReportSemantic("invalid argument type: " + std::string(detail));
+  }
+
+  void ReportVariableTypeConflict(const std::string &name) {
+    ReportSemantic("variable type conflict: " + name);
+  }
+
+  void ReportVariableAlreadyBound(const std::string &name) {
+    ReportSemantic("variable already bound: " + name);
+  }
+
+  StaticValue InferType(const Expression *expression) const {
+    if (expression == nullptr) {
+      return {};
+    }
+    switch (expression->node_type) {
+      case ASTNodeType::kVariable: {
+        const auto &variable = CastAst<Variable>(*expression);
+        return Lookup(variable.name).value_or(StaticValue{});
+      }
+      case ASTNodeType::kBooleanLiteral:
+      case ASTNodeType::kOrExpression:
+      case ASTNodeType::kXorExpression:
+      case ASTNodeType::kAndExpression:
+      case ASTNodeType::kComparisonExpression:
+      case ASTNodeType::kComparisonChainExpression:
+      case ASTNodeType::kNotExpression:
+      case ASTNodeType::kStringPredicateExpression:
+      case ASTNodeType::kListPredicateExpression:
+      case ASTNodeType::kLabelPredicateExpression:
+      case ASTNodeType::kNullPredicateExpression:
+      case ASTNodeType::kPatternPredicateExpression:
+      case ASTNodeType::kAllQuantifier:
+      case ASTNodeType::kAnyQuantifier:
+      case ASTNodeType::kNoneQuantifier:
+      case ASTNodeType::kSingleQuantifier:
+      case ASTNodeType::kExistentialSubquery:
+        return {StaticType::kBoolean};
+      case ASTNodeType::kIntegerLiteral:
+      case ASTNodeType::kCountStarExpression:
+        return {StaticType::kInteger};
+      case ASTNodeType::kDoubleLiteral:
+        return {StaticType::kFloat};
+      case ASTNodeType::kStringLiteral:
+        return {StaticType::kString};
+      case ASTNodeType::kNullLiteral:
+        return {StaticType::kNull};
+      case ASTNodeType::kListLiteral: {
+        const auto &list = CastAst<ListLiteral>(*expression);
+        StaticType element_type = StaticType::kUnknown;
+        for (const auto &element : list.elements) {
+          const StaticValue current = InferType(element.get());
+          if (current.type == StaticType::kUnknown ||
+              current.type == StaticType::kNull) {
+            continue;
+          }
+          if (element_type == StaticType::kUnknown) {
+            element_type = current.type;
+          } else if (element_type != current.type) {
+            element_type = StaticType::kUnknown;
+            break;
+          }
+        }
+        return {StaticType::kList, element_type};
+      }
+      case ASTNodeType::kMapLiteral:
+        return {StaticType::kMap};
+      case ASTNodeType::kParenthesizedExpression: {
+        const auto &parenthesized =
+            CastAst<ParenthesizedExpression>(*expression);
+        return InferType(parenthesized.expr.get());
+      }
+      case ASTNodeType::kUnaryPlusExpression:
+      case ASTNodeType::kUnaryMinusExpression: {
+        const auto &unary = CastAst<UnaryExpression>(*expression);
+        return InferType(unary.operand.get());
+      }
+      case ASTNodeType::kSubtractExpression:
+      case ASTNodeType::kMultiplyExpression:
+      case ASTNodeType::kDivideExpression:
+      case ASTNodeType::kModuloExpression:
+      case ASTNodeType::kPowerExpression: {
+        const auto &binary = CastAst<BinaryExpression>(*expression);
+        const StaticValue left = InferType(binary.left.get());
+        const StaticValue right = InferType(binary.right.get());
+        if (left.type == StaticType::kFloat ||
+            right.type == StaticType::kFloat) {
+          return {StaticType::kFloat};
+        }
+        if (left.type == StaticType::kInteger &&
+            right.type == StaticType::kInteger) {
+          return {StaticType::kInteger};
+        }
+        return {};
+      }
+      case ASTNodeType::kAddExpression: {
+        const auto &binary = CastAst<BinaryExpression>(*expression);
+        const StaticValue left = InferType(binary.left.get());
+        const StaticValue right = InferType(binary.right.get());
+        if (left.type == StaticType::kList || right.type == StaticType::kList) {
+          return {StaticType::kList};
+        }
+        if (left.type == StaticType::kFloat ||
+            right.type == StaticType::kFloat) {
+          return {StaticType::kFloat};
+        }
+        if (left.type == StaticType::kInteger &&
+            right.type == StaticType::kInteger) {
+          return {StaticType::kInteger};
+        }
+        if (left.type == StaticType::kString &&
+            right.type == StaticType::kString) {
+          return {StaticType::kString};
+        }
+        return {};
+      }
+      case ASTNodeType::kListComprehension:
+      case ASTNodeType::kPatternComprehension:
+      case ASTNodeType::kListSliceExpression:
+        return {StaticType::kList};
+      case ASTNodeType::kListIndexExpression: {
+        const auto &index = CastAst<ListIndexExpression>(*expression);
+        return ListElementType(index.list.get());
+      }
+      case ASTNodeType::kFunctionInvocation:
+        return InferFunctionType(CastAst<FunctionInvocation>(*expression));
+      default:
+        return {};
+    }
+  }
+
+  StaticValue InferFunctionType(const FunctionInvocation &function) const {
+    const BuiltinFunction *builtin =
+        FindBuiltinFunction(function.function_name);
+    if (builtin == nullptr) {
+      return {};
+    }
+    switch (builtin->kind) {
+      case BuiltinFunctionKind::kCount:
+      case BuiltinFunctionKind::kId:
+      case BuiltinFunctionKind::kLength:
+      case BuiltinFunctionKind::kSize:
+      case BuiltinFunctionKind::kToInteger:
+        return {StaticType::kInteger};
+      case BuiltinFunctionKind::kAverage:
+      case BuiltinFunctionKind::kToFloat:
+        return {StaticType::kFloat};
+      case BuiltinFunctionKind::kToBoolean:
+      case BuiltinFunctionKind::kIsEmpty:
+        return {StaticType::kBoolean};
+      case BuiltinFunctionKind::kSplit:
+        return {StaticType::kList, StaticType::kString};
+      case BuiltinFunctionKind::kKeys:
+      case BuiltinFunctionKind::kLabels:
+        return {StaticType::kList, StaticType::kString};
+      case BuiltinFunctionKind::kNodes:
+        return {StaticType::kList, StaticType::kNode};
+      case BuiltinFunctionKind::kRelationships:
+        return {StaticType::kList, StaticType::kRelationship};
+      case BuiltinFunctionKind::kRange:
+        return {StaticType::kList, StaticType::kInteger};
+      case BuiltinFunctionKind::kProperties:
+        return {StaticType::kMap};
+      case BuiltinFunctionKind::kToLower:
+      case BuiltinFunctionKind::kToString:
+      case BuiltinFunctionKind::kToUpper:
+      case BuiltinFunctionKind::kTrim:
+      case BuiltinFunctionKind::kType:
+        return {StaticType::kString};
+      case BuiltinFunctionKind::kCollect:
+        return {StaticType::kList,
+                function.arguments.empty()
+                    ? StaticType::kUnknown
+                    : InferType(function.arguments.front().get()).type};
+      case BuiltinFunctionKind::kCoalesce:
+        for (const auto &argument : function.arguments) {
+          const StaticValue type = InferType(argument.get());
+          if (type.type != StaticType::kNull && IsKnown(type)) {
+            return type;
+          }
+        }
+        return {};
+      case BuiltinFunctionKind::kMaximum:
+      case BuiltinFunctionKind::kMinimum:
+      case BuiltinFunctionKind::kSum:
+        return function.arguments.empty()
+                   ? StaticValue{}
+                   : InferType(function.arguments[0].get());
+    }
+    return {};
+  }
+
+  StaticValue ListElementType(const Expression *expression) const {
+    const StaticValue list_type = InferType(expression);
+    if (list_type.type != StaticType::kList) {
+      return {};
+    }
+    return {list_type.element_type};
+  }
+
+  void ValidateBooleanExpression(const Expression *expression,
+                                 std::string_view context) {
+    if (expression == nullptr) {
+      return;
+    }
+    if (!IsBooleanCompatible(InferType(expression))) {
+      ReportInvalidArgument(std::string(context) +
+                            " requires a boolean expression");
+    }
+  }
+
+  void ValidateBooleanOperands(BinaryExpression &node,
+                               std::string_view operator_name) {
+    if (!IsBooleanCompatible(InferType(node.left.get())) ||
+        !IsBooleanCompatible(InferType(node.right.get()))) {
+      ReportInvalidArgument(std::string(operator_name) +
+                            " requires boolean operands");
+    }
+    ASTWalker::Visit(node);
+  }
+
+  void ValidateNumericOperands(BinaryExpression &node,
+                               std::string_view operator_name) {
+    if (!IsNumericCompatible(InferType(node.left.get())) ||
+        !IsNumericCompatible(InferType(node.right.get()))) {
+      ReportInvalidArgument(std::string(operator_name) +
+                            " requires numeric operands");
+    }
+    ASTWalker::Visit(node);
+  }
+
+  void ValidatePagination(const Expression *expression,
+                          std::string_view clause) {
+    if (expression == nullptr) {
+      return;
+    }
+    const StaticValue type = InferType(expression);
+    if (IsKnown(type) && type.type != StaticType::kNull &&
+        type.type != StaticType::kInteger) {
+      ReportInvalidArgument(std::string(clause) +
+                            " requires an integer expression");
+    }
+    std::unordered_set<std::string> scope_names;
+    for (const auto &entry : CurrentScope().bindings) {
+      scope_names.insert(entry.first);
+    }
+    if (!CollectExpressionDependencies(*expression, std::move(scope_names))
+             .empty()) {
+      ReportSemantic(std::string(clause) + " expression must be constant");
+    }
+    const auto constant = ConstantInteger(expression);
+    if (constant.has_value() && *constant < 0) {
+      ReportSemantic(std::string(clause) + " expression must be non-negative");
+    }
+  }
+
+  static std::optional<int64_t> ConstantInteger(const Expression *expression) {
+    const Expression *unwrapped =
+        UnwrapParenthesized(const_cast<Expression *>(expression));
+    if (unwrapped == nullptr) {
+      return std::nullopt;
+    }
+    if (unwrapped->Is(ASTNodeType::kIntegerLiteral)) {
+      return CastAst<IntegerLiteral>(*unwrapped).value;
+    }
+    if (!unwrapped->Is(ASTNodeType::kUnaryMinusExpression)) {
+      return std::nullopt;
+    }
+    const auto &unary = CastAst<UnaryMinusExpression>(*unwrapped);
+    const auto magnitude = ConstantInteger(unary.operand.get());
+    if (!magnitude.has_value() || *magnitude < 0) {
+      return std::nullopt;
+    }
+    return -*magnitude;
+  }
+
+  static bool AcceptsType(StaticValue value,
+                          std::initializer_list<StaticType> accepted) {
+    if (!IsKnown(value) || value.type == StaticType::kNull) {
+      return true;
+    }
+    return std::ranges::find(accepted, value.type) != accepted.end();
+  }
+
+  void ValidateFunctionArguments(const BuiltinFunction &function,
+                                 const FunctionInvocation &invocation) {
+    if (invocation.arguments.empty()) {
+      return;
+    }
+    const StaticValue argument = InferType(invocation.arguments[0].get());
+    bool accepted = true;
+    switch (function.kind) {
+      case BuiltinFunctionKind::kId:
+        accepted = AcceptsType(argument,
+                               {StaticType::kNode, StaticType::kRelationship});
+        break;
+      case BuiltinFunctionKind::kKeys:
+      case BuiltinFunctionKind::kProperties:
+        accepted = AcceptsType(
+            argument,
+            {StaticType::kNode, StaticType::kRelationship, StaticType::kMap});
+        break;
+      case BuiltinFunctionKind::kLabels:
+        accepted = AcceptsType(argument, {StaticType::kNode});
+        break;
+      case BuiltinFunctionKind::kType:
+        accepted = AcceptsType(argument, {StaticType::kRelationship});
+        break;
+      case BuiltinFunctionKind::kNodes:
+      case BuiltinFunctionKind::kRelationships:
+        accepted = AcceptsType(argument, {StaticType::kPath});
+        break;
+      case BuiltinFunctionKind::kLength:
+        accepted = AcceptsType(argument, {StaticType::kPath, StaticType::kList,
+                                          StaticType::kString});
+        break;
+      case BuiltinFunctionKind::kSize:
+      case BuiltinFunctionKind::kIsEmpty:
+        accepted =
+            AcceptsType(argument, {StaticType::kList, StaticType::kString});
+        break;
+      case BuiltinFunctionKind::kSplit:
+      case BuiltinFunctionKind::kToLower:
+      case BuiltinFunctionKind::kToUpper:
+      case BuiltinFunctionKind::kTrim:
+        accepted = AcceptsType(argument, {StaticType::kString});
+        break;
+      default:
+        break;
+    }
+    if (!accepted) {
+      ReportInvalidArgument(function.name + "() argument has invalid type");
+    }
+  }
+
+  void BindPattern(const Pattern &pattern) {
     for (const auto &part : pattern.parts) {
       if (part) {
-        CollectFromPatternPart(*part, scope);
+        BindPatternPart(*part);
       }
     }
   }
 
-  void CollectFromPatternPart(const PatternPart &part, Scope &scope) const {
-    scope.Add(part.variable);
+  void BindPatternPart(const PatternPart &part) {
+    if (!part.variable.empty()) {
+      if (IsDefined(part.variable)) {
+        ReportVariableAlreadyBound(part.variable);
+      } else {
+        Define(part.variable, {StaticType::kPath});
+      }
+    }
     if (part.element) {
-      CollectFromPatternElement(*part.element, scope);
+      BindPatternElement(*part.element);
     }
   }
 
-  void CollectFromPatternElement(const PatternElement &element,
-                                 Scope &scope) const {
+  void BindPatternElement(const PatternElement &element) {
     if (element.node_pattern) {
-      CollectFromNodePattern(*element.node_pattern, scope);
+      BindPatternVariable(element.node_pattern->variable, StaticType::kNode);
     }
     for (const auto &link : element.chain) {
       if (link.first && link.first->detail) {
-        CollectFromRelationshipDetail(*link.first->detail, scope);
+        BindRelationshipVariable(*link.first->detail);
       }
       if (link.second) {
-        CollectFromNodePattern(*link.second, scope);
+        BindPatternVariable(link.second->variable, StaticType::kNode);
       }
     }
   }
 
-  void CollectFromRelationshipsPattern(const RelationshipsPattern &pattern,
-                                       Scope &scope) const {
+  void BindRelationshipsPattern(const RelationshipsPattern &pattern) {
     if (pattern.node_pattern) {
-      CollectFromNodePattern(*pattern.node_pattern, scope);
+      BindPatternVariable(pattern.node_pattern->variable, StaticType::kNode);
     }
     for (const auto &link : pattern.chain) {
       if (link.first && link.first->detail) {
-        CollectFromRelationshipDetail(*link.first->detail, scope);
+        BindRelationshipVariable(*link.first->detail);
       }
       if (link.second) {
-        CollectFromNodePattern(*link.second, scope);
+        BindPatternVariable(link.second->variable, StaticType::kNode);
       }
     }
   }
 
-  static void CollectFromNodePattern(const NodePattern &node, Scope &scope) {
-    scope.Add(node.variable);
+  void BindPatternVariable(const std::string &name, StaticType type) {
+    if (name.empty()) {
+      return;
+    }
+    const auto existing = Lookup(name);
+    if (existing.has_value() && existing->type != StaticType::kUnknown &&
+        existing->type != StaticType::kNull && existing->type != type) {
+      ReportVariableTypeConflict(name);
+      return;
+    }
+    if (!existing.has_value()) {
+      Define(name, {type});
+    }
   }
 
-  static void CollectFromRelationshipDetail(const RelationshipDetail &detail,
-                                            Scope &scope) {
-    scope.Add(detail.variable);
+  void BindRelationshipVariable(const RelationshipDetail &detail) {
+    const StaticValue type =
+        detail.range.has_value()
+            ? StaticValue{StaticType::kList, StaticType::kRelationship}
+            : StaticValue{StaticType::kRelationship};
+    if (detail.variable.empty()) {
+      return;
+    }
+    const auto existing = Lookup(detail.variable);
+    if (existing.has_value() && existing->type != StaticType::kUnknown &&
+        existing->type != StaticType::kNull && existing->type != type.type) {
+      ReportVariableTypeConflict(detail.variable);
+      return;
+    }
+    if (!existing.has_value()) {
+      Define(detail.variable, type);
+    }
   }
 
-  static void CollectFromProjectionItem(const ProjectionItem &item,
-                                        Scope &scope) {
+  void BindUpdatingPattern(const Pattern &pattern, std::string_view clause) {
+    for (const auto &part : pattern.parts) {
+      if (part) {
+        BindUpdatingPatternPart(*part, clause);
+      }
+    }
+  }
+
+  void BindUpdatingPatternPart(const PatternPart &part,
+                               std::string_view clause) {
+    ValidateUpdatingPatternPart(part, clause);
+    if (!part.variable.empty()) {
+      if (IsDefined(part.variable)) {
+        ReportVariableAlreadyBound(part.variable);
+      } else {
+        Define(part.variable, {StaticType::kPath});
+      }
+    }
+    if (!part.element) {
+      return;
+    }
+
+    const bool standalone_node = part.element->chain.empty();
+    BindUpdatingNode(part.element->node_pattern.get(), clause, standalone_node);
+    for (const auto &link : part.element->chain) {
+      if (link.first && link.first->detail) {
+        const std::string &name = link.first->detail->variable;
+        if (!name.empty()) {
+          if (IsDefined(name)) {
+            ReportVariableAlreadyBound(name);
+          } else {
+            Define(name, {StaticType::kRelationship});
+          }
+        }
+      }
+      BindUpdatingNode(link.second.get(), clause, false);
+    }
+  }
+
+  void BindUpdatingNode(const NodePattern *node, std::string_view clause,
+                        bool standalone) {
+    if (node == nullptr || node->variable.empty()) {
+      return;
+    }
+    const auto existing = Lookup(node->variable);
+    if (!existing.has_value()) {
+      Define(node->variable, {StaticType::kNode});
+      return;
+    }
+    if (existing->type != StaticType::kUnknown &&
+        existing->type != StaticType::kNode) {
+      ReportVariableTypeConflict(node->variable);
+      return;
+    }
+    if (standalone || !node->labels.empty() || node->properties != nullptr) {
+      (void)clause;
+      ReportVariableAlreadyBound(node->variable);
+    }
+  }
+
+  void ValidateUpdatingPatternPart(const PatternPart &part,
+                                   std::string_view clause) {
+    if (!part.element) {
+      return;
+    }
+    ValidateUpdatingNodeProperties(part.element->node_pattern.get(), clause);
+    for (const auto &link : part.element->chain) {
+      if (link.first) {
+        const bool directed = link.first->left_arrow != link.first->right_arrow;
+        if (clause == "CREATE" && !directed) {
+          ReportSemantic(std::string(clause) +
+                         " relationships must have one direction");
+        }
+        const RelationshipDetail *detail = link.first->detail.get();
+        if (detail == nullptr || detail->types.size() != 1) {
+          ReportSemantic(std::string(clause) +
+                         " relationships require exactly one type");
+        }
+        if (detail != nullptr && detail->range.has_value()) {
+          ReportSemantic(std::string(clause) +
+                         " cannot create variable-length relationships");
+        }
+        if (clause == "MERGE" && detail != nullptr && detail->properties &&
+            detail->properties->parameter) {
+          ReportSemantic("MERGE relationship properties cannot be a parameter");
+        }
+      }
+      ValidateUpdatingNodeProperties(link.second.get(), clause);
+    }
+  }
+
+  void ValidateUpdatingNodeProperties(const NodePattern *node,
+                                      std::string_view clause) {
+    if (clause == "MERGE" && node != nullptr && node->properties &&
+        node->properties->parameter) {
+      ReportSemantic("MERGE node properties cannot be a parameter");
+    }
+  }
+
+  void ValidateRelationshipUniqueness(const Pattern &pattern) {
+    std::unordered_set<std::string> relationships;
+    for (const auto &part : pattern.parts) {
+      if (!part || !part->element) {
+        continue;
+      }
+      for (const auto &link : part->element->chain) {
+        if (!link.first || !link.first->detail ||
+            link.first->detail->variable.empty()) {
+          continue;
+        }
+        const std::string &name = link.first->detail->variable;
+        if (!relationships.insert(name).second) {
+          ReportSemantic("relationship variable is reused in one pattern: " +
+                         name);
+        }
+      }
+    }
+  }
+
+  void ValidatePatternPredicateVariables(const RelationshipsPattern &pattern) {
+    ValidatePatternPredicateVariable(pattern.node_pattern.get());
+    for (const auto &link : pattern.chain) {
+      if (link.first && link.first->detail) {
+        ValidatePatternPredicateVariable(link.first->detail->variable);
+      }
+      ValidatePatternPredicateVariable(link.second.get());
+    }
+  }
+
+  void ValidatePatternPredicateVariable(const NodePattern *node) {
+    if (node != nullptr) {
+      ValidatePatternPredicateVariable(node->variable);
+    }
+  }
+
+  void ValidatePatternPredicateVariable(const std::string &name) {
+    if (!name.empty() && !IsDefined(name)) {
+      ReportUndefined(name);
+    }
+  }
+
+  void CollectFromProjectionItem(const ProjectionItem &item, Scope &scope) {
     if (!item.alias.empty()) {
-      scope.Add(item.alias);
+      scope.Add(item.alias, InferType(item.expression.get()));
       return;
     }
     if (item.expression && item.expression->Is(ASTNodeType::kVariable)) {
       const auto *var = CastAst<Variable>(item.expression.get());
-      scope.Add(var->name);
+      scope.Add(var->name, Lookup(var->name).value_or(StaticValue{}));
     }
   }
 
   [[nodiscard]] Scope ScopeFromProjection(const ProjectionBody &body,
-                                          const Scope &fallback) const {
+                                          const Scope &fallback) {
     Scope scope = body.star ? fallback : Scope{};
     for (const auto &item : body.items) {
       if (item) {
@@ -698,8 +1439,14 @@ class SemanticValidator : public ASTWalker {
 
   void ValidateQuantifier(Quantifier &node) {
     WalkMaybe(node.list_expr);
+    const StaticValue list_type = InferType(node.list_expr.get());
+    if (IsKnown(list_type) && list_type.type != StaticType::kNull &&
+        list_type.type != StaticType::kList) {
+      ReportInvalidArgument("quantifier requires a list expression");
+    }
     PushScope(CurrentScope());
-    Define(node.variable);
+    Define(node.variable, ListElementType(node.list_expr.get()));
+    ValidateBooleanExpression(node.predicate.get(), "quantifier predicate");
     WalkMaybe(node.predicate);
     PopScope();
   }

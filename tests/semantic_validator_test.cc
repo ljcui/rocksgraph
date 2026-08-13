@@ -6,6 +6,8 @@
 
 #include "ast/ast_builder.h"
 #include "ast/ast_exception.h"
+#include "ast/ast_node.h"
+#include "ast/ast_to_cypher.h"
 
 namespace {
 
@@ -212,4 +214,148 @@ TEST(SemanticValidatorTest, RejectsFunctionArgumentCountMismatch) {
 TEST(SemanticValidatorTest, RejectsDistinctForScalarFunctions) {
   ExpectSemanticError("RETURN size(DISTINCT [1]) AS value",
                       "DISTINCT is only supported for aggregate functions");
+}
+
+TEST(SemanticValidatorTest, ParsesSmallestIntegerWithoutOverflow) {
+  auto statement = ast::ParseCypher("RETURN -9223372036854775808 AS value");
+  EXPECT_EQ(ast::ToCypher(*statement), "RETURN -9223372036854775808 AS value");
+}
+
+TEST(SemanticValidatorTest, RejectsIntegerLiteralOutsideInt64Range) {
+  try {
+    (void)ast::ParseCypher("RETURN 9223372036854775808 AS value");
+    FAIL() << "expected parse error";
+  } catch (const ast::ParseError &e) {
+    EXPECT_TRUE(HasError(e.Errors(), "integer literal is out of range"));
+  }
+
+  try {
+    (void)ast::ParseCypher("RETURN -9223372036854775809 AS value");
+    FAIL() << "expected parse error";
+  } catch (const ast::ParseError &e) {
+    EXPECT_TRUE(HasError(e.Errors(), "integer literal is out of range"));
+  }
+}
+
+TEST(SemanticValidatorTest, RejectsPatternVariableTypeConflicts) {
+  ExpectSemanticError("MATCH (n) MATCH ()-[n]->() RETURN n",
+                      "variable type conflict: n");
+  ExpectSemanticError("MATCH p = ()-->() MATCH (p) RETURN p",
+                      "variable type conflict: p");
+  ExpectSemanticError("WITH 1 AS n MATCH (n) RETURN n",
+                      "variable type conflict: n");
+}
+
+TEST(SemanticValidatorTest, RejectsRebindingInUpdatingPatterns) {
+  ExpectSemanticError("MATCH (n) CREATE (n)", "variable already bound: n");
+  ExpectSemanticError("MATCH ()-[r]->() CREATE ()-[r]->()",
+                      "variable already bound: r");
+  ExpectSemanticError("CREATE (n:Foo), (n:Bar)", "variable already bound: n");
+  EXPECT_NO_THROW(ast::ParseCypher("MATCH (n) CREATE (n)-[:R]->(m)"));
+}
+
+TEST(SemanticValidatorTest, RejectsStaticallyInvalidArgumentTypes) {
+  ExpectSemanticError("RETURN 1 AND true",
+                      "invalid argument type: AND requires boolean operands");
+  ExpectSemanticError(
+      "RETURN NOT 'value'",
+      "invalid argument type: NOT requires a boolean expression");
+  ExpectSemanticError(
+      "RETURN 1 IN true",
+      "invalid argument type: IN requires a list on the right-hand side");
+  ExpectSemanticError("WITH 1 AS value RETURN value.name",
+                      "invalid argument type: property access requires a node, "
+                      "relationship, or map");
+  ExpectSemanticError(
+      "MATCH (n) RETURN n SKIP 1.5",
+      "invalid argument type: SKIP requires an integer expression");
+  ExpectSemanticError(
+      "MATCH (n) DELETE 1 + 1",
+      "invalid argument type: DELETE requires a node, relationship, or path");
+}
+
+TEST(SemanticValidatorTest, RejectsKnownInvalidFunctionArguments) {
+  ExpectSemanticError(
+      "MATCH p = (n) RETURN labels(p)",
+      "invalid argument type: labels() argument has invalid type");
+  ExpectSemanticError(
+      "MATCH (n) RETURN type(n)",
+      "invalid argument type: type() argument has invalid type");
+  ExpectSemanticError(
+      "RETURN properties(1)",
+      "invalid argument type: properties() argument has invalid type");
+  ExpectSemanticError(
+      "MATCH p = (n)-[:R]->(m) RETURN size(p)",
+      "invalid argument type: size() argument has invalid type");
+}
+
+TEST(SemanticValidatorTest, RejectsQuantifierPredicateTypeMismatch) {
+  ExpectSemanticError(
+      "RETURN all(x IN ['one'] WHERE x % 2 = 0)",
+      "invalid argument type: modulo requires numeric operands");
+}
+
+TEST(SemanticValidatorTest, RejectsInvalidUpdatingRelationshipPatterns) {
+  ExpectSemanticError("CREATE ()-->()",
+                      "CREATE relationships require exactly one type");
+  ExpectSemanticError("CREATE ()-[:A|:B]->()",
+                      "CREATE relationships require exactly one type");
+  ExpectSemanticError("CREATE ()-[:A]-()",
+                      "CREATE relationships must have one direction");
+  ExpectSemanticError("MERGE ()-->()",
+                      "MERGE relationships require exactly one type");
+  EXPECT_NO_THROW(ast::ParseCypher("MERGE ()-[:A]-()"));
+}
+
+TEST(SemanticValidatorTest, RejectsParameterPropertiesInMergePatterns) {
+  ExpectSemanticError("MERGE (n $properties) RETURN n",
+                      "MERGE node properties cannot be a parameter");
+  ExpectSemanticError("MERGE (a)-[r:R $properties]->(b) RETURN r",
+                      "MERGE relationship properties cannot be a parameter");
+}
+
+TEST(SemanticValidatorTest, RejectsRepeatedRelationshipInOnePattern) {
+  ExpectSemanticError("MATCH (a)-[r]->()-[r]->(a) RETURN r",
+                      "relationship variable is reused in one pattern: r");
+}
+
+TEST(SemanticValidatorTest, RejectsInvalidPaginationExpressions) {
+  ExpectSemanticError("MATCH (n) RETURN n SKIP n.count",
+                      "SKIP expression must be constant");
+  ExpectSemanticError("MATCH (n) RETURN n LIMIT n.count",
+                      "LIMIT expression must be constant");
+  ExpectSemanticError("RETURN 1 SKIP -1",
+                      "SKIP expression must be non-negative");
+  ExpectSemanticError("RETURN 1 LIMIT -1",
+                      "LIMIT expression must be non-negative");
+}
+
+TEST(SemanticValidatorTest, RejectsInvalidProjectionComposition) {
+  ExpectSemanticError("RETURN 1 AS value, 2 AS value",
+                      "duplicate projection column: value");
+  ExpectSemanticError("WITH 1 AS value, 2 AS value RETURN value",
+                      "duplicate projection column: value");
+  ExpectSemanticError("MATCH (n) WITH n, count(*) RETURN n",
+                      "WITH expressions must be aliased");
+  ExpectSemanticError("MATCH (n) RETURN (n)-->()",
+                      "pattern expressions are not allowed in projections");
+}
+
+TEST(SemanticValidatorTest, RejectsMixedUnionComposition) {
+  ExpectSemanticError(
+      "RETURN 1 AS value UNION RETURN 2 AS value UNION ALL RETURN 3 AS value",
+      "cannot mix UNION and UNION ALL");
+}
+
+TEST(SemanticValidatorTest, RejectsNewVariablesInPatternPredicates) {
+  ExpectSemanticError("MATCH (n) WHERE (n)-[r]->() RETURN n",
+                      "undefined variable: r");
+  ExpectSemanticError("MATCH (n) WHERE (n)-->(m) RETURN n",
+                      "undefined variable: m");
+}
+
+TEST(SemanticValidatorTest, RejectsUpdatesInExistentialSubquery) {
+  ExpectSemanticError(
+      "MATCH (n) WHERE exists { MATCH (n)-->(m) SET m.value = 1 } RETURN n",
+      "existential subquery cannot contain updates");
 }

@@ -602,8 +602,13 @@ void LogicalPlan::SetSolvedSymbols(std::unordered_set<std::string> symbols) {
 
 void LogicalPlan::SetOutputColumns(std::vector<std::string> columns) {
   output_columns_.clear();
+  output_columns_.reserve(columns.size());
+  std::unordered_set<std::string> seen;
+  seen.reserve(columns.size());
   for (const auto &column : columns) {
-    AddColumn(&output_columns_, column);
+    if (!column.empty() && seen.insert(column).second) {
+      output_columns_.push_back(column);
+    }
   }
 }
 

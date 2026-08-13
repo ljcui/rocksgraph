@@ -1,8 +1,11 @@
 #include "ast_builder.h"
 
 #include <algorithm>
+#include <charconv>
 #include <cstdlib>
+#include <limits>
 #include <sstream>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -60,7 +63,7 @@ std::string UnescapeSymbolicName(const std::string &text) {
   return out;
 }
 
-int64_t ParseIntegerLiteral(const std::string &text) {
+uint64_t ParseIntegerMagnitude(const std::string &text) {
   int base = 10;
   size_t start = 0;
   if (text.size() > 2 && (text[0] == '0') &&
@@ -72,7 +75,24 @@ int64_t ParseIntegerLiteral(const std::string &text) {
     base = 8;
     start = 2;
   }
-  return std::stoll(text.substr(start), nullptr, base);
+  uint64_t value = 0;
+  const char *begin = text.data() + start;
+  const char *end = text.data() + text.size();
+  const auto result = std::from_chars(begin, end, value, base);
+  if (result.ec == std::errc::result_out_of_range || result.ptr != end) {
+    std::vector<std::string> errors = {"integer literal is out of range"};
+    THROW(ParseError, std::move(errors));
+  }
+  return value;
+}
+
+int64_t ParseIntegerLiteral(const std::string &text) {
+  const uint64_t value = ParseIntegerMagnitude(text);
+  if (value > static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
+    std::vector<std::string> errors = {"integer literal is out of range"};
+    THROW(ParseError, std::move(errors));
+  }
+  return static_cast<int64_t>(value);
 }
 
 void AppendUtf8(uint32_t codepoint, std::string &out) {
@@ -848,10 +868,26 @@ class ASTBuilder {
 
   std::unique_ptr<Expression> BuildUnaryAddOrSubtractExpression(
       CypherParser::OC_UnaryAddOrSubtractExpressionContext *ctx) {
-    auto base = BuildNonArithmeticOperatorExpression(
-        ctx->oC_NonArithmeticOperatorExpression());
     if (!ctx->children.empty()) {
       const std::string op = ctx->children.front()->getText();
+      if (op == "-") {
+        auto *non_arithmetic = ctx->oC_NonArithmeticOperatorExpression();
+        auto *atom = non_arithmetic->oC_Atom();
+        auto *literal = atom != nullptr ? atom->oC_Literal() : nullptr;
+        auto *number =
+            literal != nullptr ? literal->oC_NumberLiteral() : nullptr;
+        auto *integer =
+            number != nullptr ? number->oC_IntegerLiteral() : nullptr;
+        if (integer != nullptr &&
+            ParseIntegerMagnitude(integer->getText()) == uint64_t{1} << 63) {
+          auto minimum = std::make_unique<IntegerLiteral>();
+          minimum->value = std::numeric_limits<int64_t>::min();
+          return minimum;
+        }
+      }
+
+      auto base = BuildNonArithmeticOperatorExpression(
+          ctx->oC_NonArithmeticOperatorExpression());
       if (op == "+") {
         auto node = std::make_unique<UnaryPlusExpression>();
         node->operand = std::move(base);
@@ -862,8 +898,10 @@ class ASTBuilder {
         node->operand = std::move(base);
         return node;
       }
+      return base;
     }
-    return base;
+    return BuildNonArithmeticOperatorExpression(
+        ctx->oC_NonArithmeticOperatorExpression());
   }
 
   std::unique_ptr<Expression> BuildNonArithmeticOperatorExpression(
