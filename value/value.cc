@@ -536,6 +536,9 @@ bool ValuesEqual(const Value &left, const Value &right) {
     if (left.IsInteger() && right.IsInteger()) {
       return left.AsInteger() == right.AsInteger();
     }
+    if (left.IsDouble() && right.IsDouble()) {
+      return left.AsDouble() == right.AsDouble();
+    }
     const Value &integer = left.IsInteger() ? left : right;
     const Value &floating = left.IsDouble() ? left : right;
     const double number = floating.AsDouble();

@@ -147,6 +147,7 @@ set(ROCKSGRAPH_RUNTIME_SOURCES runtime/aggregation_evaluator.cc
                               runtime/join_executor.cc
                               runtime/query_executor.cc
                               runtime/query_row_util.cc
+                              runtime/result_set_executor.cc
                               runtime/write_executor.cc)
 
 add_library(rocksgraph_ast STATIC ${ROCKSGRAPH_AST_SOURCES})
@@ -277,6 +278,14 @@ target_link_libraries(join_executor_test PRIVATE GTest::gtest_main
 set_target_properties(join_executor_test PROPERTIES BUILD_RPATH
                                                    "/usr/local/lib")
 add_test(NAME join_executor_test COMMAND join_executor_test)
+
+add_executable(result_set_executor_test
+               tests/result_set_executor_test.cc)
+target_link_libraries(result_set_executor_test PRIVATE GTest::gtest_main
+                                                       rocksgraph_runtime)
+set_target_properties(result_set_executor_test PROPERTIES BUILD_RPATH
+                                                          "/usr/local/lib")
+add_test(NAME result_set_executor_test COMMAND result_set_executor_test)
 
 add_executable(apply_executor_test tests/apply_executor_test.cc)
 target_link_libraries(apply_executor_test PRIVATE GTest::gtest_main

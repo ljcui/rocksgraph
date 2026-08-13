@@ -24,6 +24,7 @@
 #include "runtime/graph_access_executor.h"
 #include "runtime/join_executor.h"
 #include "runtime/query_row_util.h"
+#include "runtime/result_set_executor.h"
 #include "runtime/write_executor.h"
 
 namespace rg {
@@ -182,11 +183,17 @@ class QueryExecutorImpl {
         return ExecuteAggregation(
             static_cast<const ir::AggregationPlan &>(plan), input);
       case ir::LogicalPlanNodeType::kSort:
-        return ExecuteSort(static_cast<const ir::SortPlan &>(plan), input);
+        return result_set_executor_.Execute(
+            static_cast<const ir::SortPlan &>(plan),
+            ExecutePlan(plan.Child(0), input));
       case ir::LogicalPlanNodeType::kSkip:
-        return ExecuteSkip(static_cast<const ir::SkipPlan &>(plan), input);
+        return result_set_executor_.Execute(
+            static_cast<const ir::SkipPlan &>(plan),
+            ExecutePlan(plan.Child(0), input));
       case ir::LogicalPlanNodeType::kLimit:
-        return ExecuteLimit(static_cast<const ir::LimitPlan &>(plan), input);
+        return result_set_executor_.Execute(
+            static_cast<const ir::LimitPlan &>(plan),
+            ExecutePlan(plan.Child(0), input));
       case ir::LogicalPlanNodeType::kProduceResults:
         return ExecutePlan(plan.Child(0), input);
       case ir::LogicalPlanNodeType::kCartesianProduct:
@@ -291,57 +298,6 @@ class QueryExecutorImpl {
   Rows ExecuteAggregation(const ir::AggregationPlan &plan, const Rows &input) {
     Rows rows = ExecutePlan(plan.Child(0), input);
     return AggregateRows(plan.GroupingItems(), plan.AggregationItems(), rows);
-  }
-
-  Rows ExecuteSort(const ir::SortPlan &plan, const Rows &input) {
-    Rows rows = ExecutePlan(plan.Child(0), input);
-    std::stable_sort(rows.begin(), rows.end(),
-                     [&plan](const QueryRow &left, const QueryRow &right) {
-                       for (const auto &item : plan.Items()) {
-                         Value lhs = EvaluateLogicalSortItem(item, left);
-                         Value rhs = EvaluateLogicalSortItem(item, right);
-                         if (ValuesEqual(lhs, rhs)) {
-                           continue;
-                         }
-                         const bool less = ValueLess(lhs, rhs);
-                         return item.direction ==
-                                        ir::LogicalOrderDirection::kAscending
-                                    ? less
-                                    : !less;
-                       }
-                       return false;
-                     });
-    return rows;
-  }
-
-  Rows ExecuteSkip(const ir::SkipPlan &plan, const Rows &input) {
-    Rows rows = ExecutePlan(plan.Child(0), input);
-    if (rows.empty()) {
-      return rows;
-    }
-    const std::size_t skip = static_cast<std::size_t>(std::max<double>(
-        0.0,
-        EvaluateExpression(*plan.Skip(), rows[0], plan.PrecomputedExpressions())
-            .AsInteger()));
-    if (skip >= rows.size()) {
-      return {};
-    }
-    return Rows(rows.begin() + static_cast<std::ptrdiff_t>(skip), rows.end());
-  }
-
-  Rows ExecuteLimit(const ir::LimitPlan &plan, const Rows &input) {
-    Rows rows = ExecutePlan(plan.Child(0), input);
-    if (rows.empty()) {
-      return rows;
-    }
-    const std::size_t limit = static_cast<std::size_t>(
-        std::max<double>(0.0, EvaluateExpression(*plan.Limit(), rows[0],
-                                                 plan.PrecomputedExpressions())
-                                  .AsInteger()));
-    if (limit < rows.size()) {
-      rows.resize(limit);
-    }
-    return rows;
   }
 
   Rows ExecuteJoin(const ir::LogicalPlan &plan, const Rows &input) {
@@ -610,6 +566,7 @@ class QueryExecutorImpl {
   GraphAccessExecutor graph_access_;
   JoinExecutor join_executor_;
   ApplyExecutor apply_executor_;
+  ResultSetExecutor result_set_executor_;
   WriteExecutor write_executor_;
 };
 

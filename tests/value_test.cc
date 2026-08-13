@@ -46,6 +46,8 @@ TEST(ValueTest, ListAndMapTypes) {
 
 TEST(ValueTest, QueryEqualityAndKeysNormalizeNumericValues) {
   EXPECT_TRUE(rg::ValuesEqual(rg::Value(1), rg::Value(1.0)));
+  EXPECT_TRUE(rg::ValuesEqual(rg::Value(1.5), rg::Value(1.5)));
+  EXPECT_FALSE(rg::ValuesEqual(rg::Value(1.5), rg::Value(2.5)));
   EXPECT_EQ(rg::ValueKey(rg::Value(1)), rg::ValueKey(rg::Value(1.0)));
 
   const rg::Value integer_list(rg::Value::List{rg::Value(1)});

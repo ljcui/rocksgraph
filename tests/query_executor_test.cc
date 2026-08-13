@@ -290,6 +290,18 @@ TEST(QueryExecutorTest, ExecutesSortSkipLimit) {
             (std::vector<std::vector<std::string>>{{"\"Grace\""}}));
 }
 
+TEST(QueryExecutorTest, RejectsInvalidSkipAndLimitCounts) {
+  rg::InMemoryGraph graph;
+
+  EXPECT_THROW((void)rg::ExecuteReadQuery(graph, "RETURN 1 AS x SKIP -1"),
+               common::InvalidArgumentError);
+  EXPECT_THROW((void)rg::ExecuteReadQuery(graph, "RETURN 1 AS x LIMIT 1.5"),
+               common::InvalidArgumentError);
+  EXPECT_THROW((void)rg::ExecuteReadQuery(
+                   graph, "MATCH (n:Missing) RETURN n LIMIT null"),
+               common::InvalidArgumentError);
+}
+
 TEST(QueryExecutorTest, OrdersByPreProjectionExpression) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
