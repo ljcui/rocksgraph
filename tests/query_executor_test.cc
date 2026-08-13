@@ -444,6 +444,29 @@ TEST(QueryExecutorTest, ExecutesAggregateExpressionsInOrderBy) {
                                     {"true", "3"}, {"false", "2"}}));
 }
 
+TEST(QueryExecutorTest, ConstructsAndAccessesTemporalValues) {
+  rg::InMemoryGraph graph;
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "WITH datetime({year: 1984, month: 11, day: 11, hour: 12, "
+      "minute: 31, second: 14, nanosecond: 645876123, "
+      "timezone: 'Europe/Stockholm'}) AS d, "
+      "duration({years: 1, months: 4, days: 10, hours: 1, minutes: 1, "
+      "seconds: 1, nanoseconds: 111111111}) AS span "
+      "RETURN toString(d) AS text, d.weekYear AS weekYear, "
+      "d.offset AS offset, d.epochSeconds AS epochSeconds, "
+      "span.nanoseconds AS spanNanoseconds");
+
+  ASSERT_EQ(result.columns,
+            (std::vector<std::string>{"text", "weekYear", "offset",
+                                      "epochSeconds", "spanNanoseconds"}));
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{
+                {"\"1984-11-11T12:31:14.645876123+01:00[Europe/Stockholm]\"",
+                 "1984", "\"+01:00\"", "469020674", "3661111111111"}}));
+}
+
 TEST(QueryExecutorTest, ExecutesQuantifierOverCollectedValues) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);

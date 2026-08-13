@@ -6,6 +6,8 @@
 #include <limits>
 #include <sstream>
 
+#include "value/temporal.h"
+
 namespace rg {
 
 namespace {
@@ -141,47 +143,27 @@ void AppendValue(std::ostringstream &oss, const Value &value) {
       AppendPath(oss, value.AsPath());
       break;
     case ValueType::kDate: {
-      const auto &date = value.AsDate();
-      oss << "Date{" << date.year << '-' << date.month << '-' << date.day
-          << '}';
+      oss << FormatDate(value.AsDate());
       break;
     }
     case ValueType::kLocalTime: {
-      const auto &local_time = value.AsLocalTime();
-      oss << "LocalTime{" << local_time.hour << ':' << local_time.minute << ':'
-          << local_time.second << '.' << local_time.nanosecond << '}';
+      oss << FormatLocalTime(value.AsLocalTime());
       break;
     }
     case ValueType::kTime: {
-      const auto &time = value.AsTime();
-      oss << "Time{" << time.local_time.hour << ':' << time.local_time.minute
-          << ':' << time.local_time.second << '.' << time.local_time.nanosecond
-          << ", offset=" << time.utc_offset_seconds << '}';
+      oss << FormatTime(value.AsTime());
       break;
     }
     case ValueType::kLocalDateTime: {
-      const auto &dt = value.AsLocalDateTime();
-      oss << "LocalDateTime{" << dt.date.year << '-' << dt.date.month << '-'
-          << dt.date.day << 'T' << dt.time.hour << ':' << dt.time.minute << ':'
-          << dt.time.second << '.' << dt.time.nanosecond << '}';
+      oss << FormatLocalDateTime(value.AsLocalDateTime());
       break;
     }
     case ValueType::kDateTime: {
-      const auto &dt = value.AsDateTime();
-      oss << "DateTime{" << dt.local_date_time.date.year << '-'
-          << dt.local_date_time.date.month << '-' << dt.local_date_time.date.day
-          << 'T' << dt.local_date_time.time.hour << ':'
-          << dt.local_date_time.time.minute << ':'
-          << dt.local_date_time.time.second << '.'
-          << dt.local_date_time.time.nanosecond
-          << ", offset=" << dt.utc_offset_seconds << '}';
+      oss << FormatDateTime(value.AsDateTime());
       break;
     }
     case ValueType::kDuration: {
-      const auto &duration = value.AsDuration();
-      oss << "Duration{months=" << duration.months << ", days=" << duration.days
-          << ", seconds=" << duration.seconds
-          << ", nanoseconds=" << duration.nanoseconds << '}';
+      oss << FormatDuration(value.AsDuration());
       break;
     }
     case ValueType::kPoint: {
@@ -675,7 +657,8 @@ bool operator==(const LocalTime &left, const LocalTime &right) {
 
 bool operator==(const Time &left, const Time &right) {
   return left.local_time == right.local_time &&
-         left.utc_offset_seconds == right.utc_offset_seconds;
+         left.utc_offset_seconds == right.utc_offset_seconds &&
+         left.timezone == right.timezone;
 }
 
 bool operator==(const LocalDateTime &left, const LocalDateTime &right) {
@@ -684,7 +667,8 @@ bool operator==(const LocalDateTime &left, const LocalDateTime &right) {
 
 bool operator==(const DateTime &left, const DateTime &right) {
   return left.local_date_time == right.local_date_time &&
-         left.utc_offset_seconds == right.utc_offset_seconds;
+         left.utc_offset_seconds == right.utc_offset_seconds &&
+         left.timezone == right.timezone;
 }
 
 bool operator==(const Duration &left, const Duration &right) {

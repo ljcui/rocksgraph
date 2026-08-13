@@ -99,4 +99,65 @@ TEST(BuiltinFunctionEvaluatorTest, EnforcesFunctionContracts) {
                common::InvalidArgumentError);
 }
 
+TEST(BuiltinFunctionEvaluatorTest, ConstructsTemporalValuesFromStrings) {
+  const Value date = EvaluateBuiltinFunction(BuiltinFunctionKind::kDate,
+                                             {Value("2015-W30-2")});
+  const Value local_time = EvaluateBuiltinFunction(
+      BuiltinFunctionKind::kLocalTime, {Value("214032.142")});
+  const Value time = EvaluateBuiltinFunction(BuiltinFunctionKind::kTime,
+                                             {Value("21:40-01:30")});
+  const Value local_date_time = EvaluateBuiltinFunction(
+      BuiltinFunctionKind::kLocalDateTime, {Value("2015-202T21:40:32")});
+  const Value date_time = EvaluateBuiltinFunction(
+      BuiltinFunctionKind::kDateTime,
+      {Value("2015-07-21T21:40:32.142[Europe/London]")});
+  const Value duration = EvaluateBuiltinFunction(BuiltinFunctionKind::kDuration,
+                                                 {Value("P0.75M")});
+
+  EXPECT_EQ(date.ToString(), "2015-07-21");
+  EXPECT_EQ(local_time.ToString(), "21:40:32.142");
+  EXPECT_EQ(time.ToString(), "21:40-01:30");
+  EXPECT_EQ(local_date_time.ToString(), "2015-07-21T21:40:32");
+  EXPECT_EQ(date_time.ToString(),
+            "2015-07-21T21:40:32.142+01:00[Europe/London]");
+  EXPECT_EQ(duration.ToString(), "P22DT19H51M49.5S");
+}
+
+TEST(BuiltinFunctionEvaluatorTest, ConstructsTemporalValuesFromMaps) {
+  const Value date =
+      EvaluateBuiltinFunction(BuiltinFunctionKind::kDate,
+                              {Value(Value::Map{{"year", Value(1984)},
+                                                {"quarter", Value(3)},
+                                                {"dayOfQuarter", Value(45)}})});
+  const Value time = EvaluateBuiltinFunction(
+      BuiltinFunctionKind::kTime,
+      {Value(Value::Map{{"hour", Value(12)},
+                        {"minute", Value(31)},
+                        {"second", Value(14)},
+                        {"millisecond", Value(123)},
+                        {"microsecond", Value(456)},
+                        {"nanosecond", Value(789)},
+                        {"timezone", Value("+01:00")}})});
+  const Value date_time = EvaluateBuiltinFunction(
+      BuiltinFunctionKind::kDateTime,
+      {Value(Value::Map{{"year", Value(2017)},
+                        {"month", Value(8)},
+                        {"day", Value(8)},
+                        {"hour", Value(12)},
+                        {"timezone", Value("Europe/Stockholm")}})});
+
+  EXPECT_EQ(date.ToString(), "1984-08-14");
+  EXPECT_EQ(time.ToString(), "12:31:14.123456789+01:00");
+  EXPECT_EQ(date_time.ToString(), "2017-08-08T12:00+02:00[Europe/Stockholm]");
+}
+
+TEST(BuiltinFunctionEvaluatorTest, RejectsInvalidTemporalValues) {
+  EXPECT_THROW((void)EvaluateBuiltinFunction(BuiltinFunctionKind::kDate,
+                                             {Value("2023-02-29")}),
+               common::InvalidArgumentError);
+  EXPECT_THROW((void)EvaluateBuiltinFunction(BuiltinFunctionKind::kTime,
+                                             {Value("12:00+18:01")}),
+               common::InvalidArgumentError);
+}
+
 }  // namespace

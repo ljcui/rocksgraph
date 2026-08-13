@@ -24,11 +24,13 @@ struct LocalTime {
   int32_t minute = 0;
   int32_t second = 0;
   int32_t nanosecond = 0;
+  bool has_seconds = true;
 };
 
 struct Time {
   LocalTime local_time;
   int32_t utc_offset_seconds = 0;
+  std::string timezone;
 };
 
 struct LocalDateTime {
@@ -39,6 +41,7 @@ struct LocalDateTime {
 struct DateTime {
   LocalDateTime local_date_time;
   int32_t utc_offset_seconds = 0;
+  std::string timezone;
 };
 
 struct Duration {

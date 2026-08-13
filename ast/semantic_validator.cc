@@ -1262,6 +1262,13 @@ class SemanticValidator : public ASTWalker {
           }
         }
         return {};
+      case BuiltinFunctionKind::kDate:
+      case BuiltinFunctionKind::kDateTime:
+      case BuiltinFunctionKind::kDuration:
+      case BuiltinFunctionKind::kLocalDateTime:
+      case BuiltinFunctionKind::kLocalTime:
+      case BuiltinFunctionKind::kTime:
+        return {};
       case BuiltinFunctionKind::kAbs:
       case BuiltinFunctionKind::kLast:
       case BuiltinFunctionKind::kReverse:
@@ -1436,6 +1443,15 @@ class SemanticValidator : public ASTWalker {
       case BuiltinFunctionKind::kToUpper:
       case BuiltinFunctionKind::kTrim:
         accepted = AcceptsType(argument, {StaticType::kString});
+        break;
+      case BuiltinFunctionKind::kDate:
+      case BuiltinFunctionKind::kDateTime:
+      case BuiltinFunctionKind::kDuration:
+      case BuiltinFunctionKind::kLocalDateTime:
+      case BuiltinFunctionKind::kLocalTime:
+      case BuiltinFunctionKind::kTime:
+        accepted =
+            AcceptsType(argument, {StaticType::kString, StaticType::kMap});
         break;
       default:
         break;

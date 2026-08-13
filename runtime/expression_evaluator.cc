@@ -16,6 +16,7 @@
 #include "common/exception.h"
 #include "runtime/builtin_function_evaluator.h"
 #include "runtime/query_row_util.h"
+#include "value/temporal.h"
 
 namespace rg {
 namespace {
@@ -649,7 +650,11 @@ Value EvaluateExpression(
       Value object =
           EvaluateExpression(*property.object, row, precomputed, context);
       const Value *value = FindProperty(object, property.property_key);
-      return value != nullptr ? *value : Value::Null();
+      if (value != nullptr) {
+        return *value;
+      }
+      return TemporalProperty(object, property.property_key)
+          .value_or(Value::Null());
     }
     case ast::ASTNodeType::kListIndexExpression:
       return EvaluateListIndex(

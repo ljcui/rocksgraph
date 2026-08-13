@@ -15,6 +15,7 @@
 
 #include "ast/builtin_function.h"
 #include "common/exception.h"
+#include "value/temporal.h"
 
 namespace rg {
 namespace {
@@ -171,6 +172,10 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
                  ? Value(static_cast<std::int64_t>(
                        arguments[0].AsPath().relationships.size()))
                  : Value::Null();
+    case ast::BuiltinFunctionKind::kLocalDateTime:
+      return ConstructLocalDateTime(&arguments[0]);
+    case ast::BuiltinFunctionKind::kLocalTime:
+      return ConstructLocalTime(&arguments[0]);
     case ast::BuiltinFunctionKind::kCoalesce:
       for (const Value &argument : arguments) {
         if (!argument.IsNull()) {
@@ -178,6 +183,12 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
         }
       }
       return Value::Null();
+    case ast::BuiltinFunctionKind::kDate:
+      return ConstructDate(&arguments[0]);
+    case ast::BuiltinFunctionKind::kDateTime:
+      return ConstructDateTime(&arguments[0]);
+    case ast::BuiltinFunctionKind::kDuration:
+      return ConstructDuration(&arguments[0]);
     case ast::BuiltinFunctionKind::kIsEmpty:
       if (arguments[0].IsString()) {
         return Value(arguments[0].AsString().empty());
@@ -317,6 +328,8 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
       }
       return Value(Value::List(arguments[0].AsList().begin() + 1,
                                arguments[0].AsList().end()));
+    case ast::BuiltinFunctionKind::kTime:
+      return ConstructTime(&arguments[0]);
     case ast::BuiltinFunctionKind::kNodes:
     case ast::BuiltinFunctionKind::kRelationships: {
       if (!arguments[0].IsPath()) {

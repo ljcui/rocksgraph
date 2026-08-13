@@ -169,7 +169,7 @@ target_include_directories(rocksgraph_ir PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(rocksgraph_ir PUBLIC rocksgraph_ast)
 set_target_properties(rocksgraph_ir PROPERTIES BUILD_RPATH "/usr/local/lib")
 
-add_library(rocksgraph_value STATIC value/value.cc)
+add_library(rocksgraph_value STATIC value/temporal.cc value/value.cc)
 target_include_directories(rocksgraph_value PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_library(rocksgraph_storage STATIC ${ROCKSGRAPH_STORAGE_SOURCES})
