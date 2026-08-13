@@ -1,11 +1,9 @@
 #include "runtime/query_executor.h"
 
-#include <algorithm>
 #include <cstddef>
 #include <iterator>
 #include <memory>
 #include <optional>
-#include <set>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -17,35 +15,18 @@
 #include "ir/logical_plan_builder.h"
 #include "ir/planner/catalog.h"
 #include "ir/planner_query.h"
-#include "runtime/aggregation_evaluator.h"
 #include "runtime/apply_executor.h"
-#include "runtime/expression_evaluator.h"
 #include "runtime/graph_access_executor.h"
 #include "runtime/join_executor.h"
 #include "runtime/procedure_executor.h"
-#include "runtime/query_row_util.h"
 #include "runtime/result_set_executor.h"
+#include "runtime/row_operator_executor.h"
 #include "runtime/write_executor.h"
 
 namespace rg {
 namespace {
 
 using Rows = QueryRows;
-
-std::optional<double> EvaluateNumericOptional(const ast::Expression *expression,
-                                              const QueryRow &row) {
-  if (expression == nullptr) {
-    return std::nullopt;
-  }
-  Value value = EvaluateExpression(*expression, row);
-  if (value.IsInteger()) {
-    return static_cast<double>(value.AsInteger());
-  }
-  if (value.IsDouble()) {
-    return value.AsDouble();
-  }
-  return std::nullopt;
-}
 
 class NoIndexPlannerCatalog final : public ir::PlannerCatalog {
  public:
@@ -125,8 +106,8 @@ class QueryExecutorImpl {
   Rows ExecutePlan(const ir::LogicalPlan &plan, const Rows &input) {
     switch (plan.Type()) {
       case ir::LogicalPlanNodeType::kArgument:
-        return ExecuteArgument(static_cast<const ir::ArgumentPlan &>(plan),
-                               input);
+        return row_operator_executor_.Execute(
+            static_cast<const ir::ArgumentPlan &>(plan), input);
       case ir::LogicalPlanNodeType::kAllNodeScan:
         return graph_access_.ExecuteAllNodeScan(
             static_cast<const ir::AllNodeScanPlan &>(plan), input);
@@ -166,16 +147,21 @@ class QueryExecutorImpl {
             static_cast<const ir::PathBuildPlan &>(plan),
             ExecutePlan(plan.Child(0), input));
       case ir::LogicalPlanNodeType::kFilter:
-        return ExecuteFilter(static_cast<const ir::FilterPlan &>(plan), input);
+        return row_operator_executor_.Execute(
+            static_cast<const ir::FilterPlan &>(plan),
+            ExecutePlan(plan.Child(0), input));
       case ir::LogicalPlanNodeType::kProjection:
-        return ExecuteProjection(static_cast<const ir::ProjectionPlan &>(plan),
-                                 input);
+        return row_operator_executor_.Execute(
+            static_cast<const ir::ProjectionPlan &>(plan),
+            ExecutePlan(plan.Child(0), input));
       case ir::LogicalPlanNodeType::kDistinct:
-        return ExecuteDistinct(static_cast<const ir::DistinctPlan &>(plan),
-                               input);
+        return row_operator_executor_.Execute(
+            static_cast<const ir::DistinctPlan &>(plan),
+            ExecutePlan(plan.Child(0), input));
       case ir::LogicalPlanNodeType::kAggregation:
-        return ExecuteAggregation(
-            static_cast<const ir::AggregationPlan &>(plan), input);
+        return row_operator_executor_.Execute(
+            static_cast<const ir::AggregationPlan &>(plan),
+            ExecutePlan(plan.Child(0), input));
       case ir::LogicalPlanNodeType::kSort:
         return result_set_executor_.Execute(
             static_cast<const ir::SortPlan &>(plan),
@@ -203,7 +189,9 @@ class QueryExecutorImpl {
       case ir::LogicalPlanNodeType::kOptionalApply:
         return ExecuteApply(plan, input);
       case ir::LogicalPlanNodeType::kUnwind:
-        return ExecuteUnwind(static_cast<const ir::UnwindPlan &>(plan), input);
+        return row_operator_executor_.Execute(
+            static_cast<const ir::UnwindPlan &>(plan),
+            ExecutePlan(plan.Child(0), input));
       case ir::LogicalPlanNodeType::kProcedureCall:
         return procedure_executor_.Execute(
             static_cast<const ir::ProcedureCallPlan &>(plan),
@@ -230,69 +218,6 @@ class QueryExecutorImpl {
               "unsupported logical plan in executor: " +
                   std::string(plan.Name()));
     }
-  }
-
-  Rows ExecuteArgument(const ir::ArgumentPlan &plan, const Rows &input) {
-    Rows out;
-    out.reserve(input.size());
-    for (const auto &row : input) {
-      QueryRow projected;
-      if (plan.OutputColumns().empty()) {
-        projected = row;
-      } else {
-        for (const auto &column : plan.OutputColumns()) {
-          const auto found = row.find(column);
-          CHECK(found != row.end(), common::InvalidArgumentError,
-                "argument variable is not bound: " + column);
-          projected.emplace(column, found->second);
-        }
-      }
-      out.push_back(std::move(projected));
-    }
-    return out;
-  }
-
-  Rows ExecuteFilter(const ir::FilterPlan &plan, const Rows &input) {
-    Rows rows = ExecutePlan(plan.Child(0), input);
-    Rows out;
-    for (auto &row : rows) {
-      if (PredicateIsTrue(EvaluateExpression(*plan.Predicate(), row,
-                                             plan.PrecomputedExpressions()))) {
-        out.push_back(std::move(row));
-      }
-    }
-    return out;
-  }
-
-  Rows ExecuteProjection(const ir::ProjectionPlan &plan, const Rows &input) {
-    Rows rows = ExecutePlan(plan.Child(0), input);
-    Rows out;
-    out.reserve(rows.size());
-    for (const auto &row : rows) {
-      QueryRow projected;
-      for (const auto &item : plan.Items()) {
-        if (item.passthrough) {
-          const auto found = row.find(item.alias);
-          CHECK(found != row.end(), common::InvalidArgumentError,
-                "passthrough projection variable is not bound: " + item.alias);
-          projected[item.alias] = found->second;
-        } else {
-          projected[item.alias] = EvaluateLogicalProjectionItem(item, row);
-        }
-      }
-      out.push_back(std::move(projected));
-    }
-    return out;
-  }
-
-  Rows ExecuteDistinct(const ir::DistinctPlan &plan, const Rows &input) {
-    Rows rows = ExecutePlan(plan.Child(0), input);
-    return ProjectDistinctRows(plan.GroupingItems(), rows);
-  }
-
-  Rows ExecuteAggregation(const ir::AggregationPlan &plan, const Rows &input) {
-    Rows rows = ExecutePlan(plan.Child(0), input);
-    return AggregateRows(plan.GroupingItems(), plan.AggregationItems(), rows);
   }
 
   Rows ExecuteJoin(const ir::LogicalPlan &plan, const Rows &input) {
@@ -364,54 +289,10 @@ class QueryExecutorImpl {
     }
   }
 
-  Rows ExecuteUnwind(const ir::UnwindPlan &plan, const Rows &input) {
-    Rows rows = ExecutePlan(plan.Child(0), input);
-    Rows out;
-    for (const auto &row : rows) {
-      Value list = EvaluateExpression(*plan.Expression(), row);
-      if (!list.IsList()) {
-        continue;
-      }
-      for (const auto &item : list.AsList()) {
-        QueryRow next = row;
-        next[plan.Alias()] = item;
-        out.push_back(std::move(next));
-      }
-    }
-    return out;
-  }
-
   Rows ExecuteUnion(const ir::UnionPlan &plan, const Rows &input) {
-    Rows out;
-    std::set<std::string> seen;
-
-    auto append_rows = [&](const Rows &rows, bool left_side) {
-      for (const auto &row : rows) {
-        QueryRow mapped;
-        std::string key;
-        for (const auto &mapping : plan.Mappings()) {
-          const std::string &source =
-              left_side ? mapping.lhs_variable : mapping.rhs_variable;
-          const auto found = row.find(source);
-          CHECK(found != row.end(), common::InvalidArgumentError,
-                "UNION source variable is not bound: " + source);
-          mapped[mapping.output_variable] = found->second;
-          if (!plan.All()) {
-            key += mapping.output_variable;
-            key += '=';
-            key += ValueKey(found->second);
-            key += '\n';
-          }
-        }
-        if (plan.All() || seen.insert(std::move(key)).second) {
-          out.push_back(std::move(mapped));
-        }
-      }
-    };
-
-    append_rows(ExecutePlan(plan.Child(0), input), true);
-    append_rows(ExecutePlan(plan.Child(1), input), false);
-    return out;
+    Rows left_rows = ExecutePlan(plan.Child(0), input);
+    Rows right_rows = ExecutePlan(plan.Child(1), input);
+    return row_operator_executor_.Execute(plan, left_rows, right_rows);
   }
 
   Rows ExecuteWritePlan(const ir::LogicalPlan &plan, const Rows &input) {
@@ -467,6 +348,7 @@ class QueryExecutorImpl {
   ApplyExecutor apply_executor_;
   ProcedureExecutor procedure_executor_;
   ResultSetExecutor result_set_executor_;
+  RowOperatorExecutor row_operator_executor_;
   WriteExecutor write_executor_;
 };
 
