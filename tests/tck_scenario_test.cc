@@ -706,6 +706,27 @@ TEST(TckScenarioTest, ExecutesConformanceSubset) {
       {"clauses/merge/Merge5.feature", "[10] Merge should bind a path"},
       {"clauses/match/Match4.feature",
        "[5] Matching variable length pattern with property predicate"},
+      {"clauses/return/Return2.feature",
+       "[10] Return count aggregation over an empty graph"},
+      {"clauses/return/Return6.feature",
+       "[2] Projecting an arithmetic expression with aggregation"},
+      {"clauses/return/Return6.feature",
+       "[5] Aggregates inside normal functions"},
+      {"clauses/return/Return6.feature", "[9] Aggregates with arithmetics"},
+      {"clauses/return/Return6.feature",
+       "[17] Handle constants and parameters inside an expression which "
+       "contains an aggregation expression"},
+      {"clauses/return/Return6.feature",
+       "[20] Fail if not returned variables are used inside an expression "
+       "which contains an aggregation expression"},
+      {"clauses/return/Return6.feature",
+       "[21] Fail if more complex expressions, even if returned, are used "
+       "inside expression which contains an aggregation expression"},
+      {"expressions/list/List11.feature",
+       "[3] Create an empty list if range direction and step direction are "
+       "inconsistent"},
+      {"expressions/list/List12.feature",
+       "[7] Fail when using aggregation in list comprehension"},
   };
 
   std::map<std::string, std::vector<Scenario>> cache;

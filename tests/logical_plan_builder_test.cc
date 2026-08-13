@@ -813,6 +813,28 @@ TEST(LogicalPlanBuilderTest, BuildsGroupingAggregationPlan) {
 )");
 }
 
+TEST(LogicalPlanBuilderTest, BuildsPostAggregationProjectionPlan) {
+  ExpectLogicalPlanText(
+      "MATCH (n) RETURN n.age AS age, n.age + count(*) AS total",
+      R"(ProduceResults [age, total]
+  Projection [age, total]
+    Aggregation [age, anon_aggregate_0]
+      AllNodeScan [n]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, DeduplicatesAggregateSubexpressions) {
+  std::unique_ptr<ir::LogicalPlan> plan =
+      LogicalPlanFor("MATCH (n) RETURN count(n) + count(n) AS doubled");
+  ASSERT_NE(plan, nullptr);
+  ASSERT_EQ(plan->Type(), ir::LogicalPlanNodeType::kProduceResults);
+  const ir::LogicalPlan &projection = plan->Child(0);
+  ASSERT_EQ(projection.Type(), ir::LogicalPlanNodeType::kProjection);
+  const auto &aggregation =
+      static_cast<const ir::AggregationPlan &>(projection.Child(0));
+  EXPECT_EQ(aggregation.AggregationItems().size(), 1U);
+}
+
 TEST(LogicalPlanBuilderTest, BuildsAggregationOrderBySkipAndLimitPlan) {
   ExpectLogicalPlanText(
       "MATCH (n) RETURN n.name AS name, count(*) AS c ORDER BY n.name DESC "

@@ -858,6 +858,7 @@ class PlannerQueryBuilder {
 
     if (!parts.aggregation_items.empty()) {
       AggregatingQueryProjection projection;
+      projection.items = std::move(parts.items);
       projection.grouping_items = std::move(parts.grouping_items);
       projection.aggregation_items = std::move(parts.aggregation_items);
       MoveProjectionTail(&parts, &projection);

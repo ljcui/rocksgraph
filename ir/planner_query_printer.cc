@@ -449,6 +449,7 @@ class PlannerQueryPrinter {
       const AggregatingQueryProjection &projection) {
     Line("aggregating_projection:");
     Indent();
+    PrintProjectionItems("items", projection.items);
     PrintProjectionItems("grouping_items", projection.grouping_items);
     PrintProjectionItems("aggregation_items", projection.aggregation_items);
     PrintProjectionTail(projection);

@@ -396,6 +396,7 @@ struct DistinctQueryProjection : QueryProjection {
 };
 
 struct AggregatingQueryProjection : QueryProjection {
+  std::vector<ProjectionItem> items;
   std::vector<ProjectionItem> grouping_items;
   std::vector<ProjectionItem> aggregation_items;
 };

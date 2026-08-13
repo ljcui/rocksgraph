@@ -90,6 +90,7 @@ struct LogicalPrecomputedExpression {
 
 struct LogicalProjectionItem {
   const ast::Expression *expression = nullptr;
+  std::shared_ptr<ast::Expression> owned_expression;
   std::string alias;
   std::vector<LogicalPrecomputedExpression> precomputed_expressions;
   bool passthrough = false;

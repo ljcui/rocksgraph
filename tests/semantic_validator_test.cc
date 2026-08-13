@@ -103,9 +103,24 @@ TEST(SemanticValidatorTest, AllowsTopLevelAggregationProjectionItems) {
   EXPECT_NO_THROW(ast::ParseCypher("MATCH (n) RETURN count(n) AS c"));
 }
 
-TEST(SemanticValidatorTest, RejectsMixedAggregationProjectionExpression) {
+TEST(SemanticValidatorTest, RejectsAmbiguousAggregationProjectionExpression) {
   ExpectSemanticError("MATCH (n) RETURN n + count(*) AS bad",
-                      "aggregation must be a top-level projection item");
+                      "ambiguous aggregation expression");
+}
+
+TEST(SemanticValidatorTest, AllowsAggregateSubexpressions) {
+  EXPECT_NO_THROW(ast::ParseCypher("MATCH (n) RETURN count(n) + 3 AS count"));
+  EXPECT_NO_THROW(
+      ast::ParseCypher("MATCH (n) RETURN n.age, n.age + count(*) AS count"));
+  EXPECT_NO_THROW(ast::ParseCypher(
+      "MATCH (n) RETURN ALL(ok IN collect(n.age > 40) WHERE ok) AS okay"));
+}
+
+TEST(SemanticValidatorTest, RejectsAggregationInsideListComprehension) {
+  ExpectSemanticError(
+      "MATCH (n) RETURN [x IN [1, 2, 3] | count(*)] AS bad",
+      "aggregation is not allowed in a comprehension predicate or mapping "
+      "expression");
 }
 
 TEST(SemanticValidatorTest, RejectsNestedAggregation) {

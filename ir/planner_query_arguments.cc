@@ -52,12 +52,8 @@ std::vector<std::string> InternalSinglePlannerQueryOutputAliases(
       return ProjectionItemAliasList(
           last->horizon.RequireDistinctProjection().grouping_items);
     case QueryHorizonKind::kAggregatingProjection: {
-      std::vector<std::string> aliases = ProjectionItemAliasList(
-          last->horizon.RequireAggregatingProjection().grouping_items);
-      std::vector<std::string> aggregations = ProjectionItemAliasList(
-          last->horizon.RequireAggregatingProjection().aggregation_items);
-      aliases.insert(aliases.end(), aggregations.begin(), aggregations.end());
-      return aliases;
+      return ProjectionItemAliasList(
+          last->horizon.RequireAggregatingProjection().items);
     }
     case QueryHorizonKind::kProcedureCall: {
       std::vector<std::string> aliases;
@@ -391,13 +387,8 @@ std::unordered_set<std::string> SinglePlannerQueryOutputSymbols(
       return ProjectionItemAliases(
           query.horizon.RequireDistinctProjection().grouping_items);
     case QueryHorizonKind::kAggregatingProjection: {
-      std::unordered_set<std::string> symbols = ProjectionItemAliases(
-          query.horizon.RequireAggregatingProjection().grouping_items);
-      AddSymbols(
-          &symbols,
-          ProjectionItemAliases(
-              query.horizon.RequireAggregatingProjection().aggregation_items));
-      return symbols;
+      return ProjectionItemAliases(
+          query.horizon.RequireAggregatingProjection().items);
     }
     case QueryHorizonKind::kUnwind: {
       std::unordered_set<std::string> symbols =

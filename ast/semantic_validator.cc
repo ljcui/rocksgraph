@@ -85,6 +85,131 @@ bool IsTopLevelAggregation(Expression *expression) {
   return IsAggregateFunction(function->function_name);
 }
 
+const Expression *UnwrapParenthesized(const Expression *expression) {
+  return UnwrapParenthesized(const_cast<Expression *>(expression));
+}
+
+bool IsSimpleGroupingExpression(const Expression *expression) {
+  const Expression *unwrapped = UnwrapParenthesized(expression);
+  return unwrapped != nullptr &&
+         (unwrapped->Is(ASTNodeType::kVariable) ||
+          unwrapped->Is(ASTNodeType::kPropertyExpression));
+}
+
+class MixedAggregationScanner final : public ASTWalker {
+ public:
+  explicit MixedAggregationScanner(
+      std::vector<const Expression *> grouping_expressions)
+      : grouping_expressions_(std::move(grouping_expressions)) {}
+
+  void Scan(Expression &expression) {
+    ambiguous_ = false;
+    invalid_comprehension_aggregation_ = false;
+    local_scopes_.clear();
+    expression.Accept(*this);
+  }
+
+  [[nodiscard]] bool Ambiguous() const noexcept { return ambiguous_; }
+  [[nodiscard]] bool InvalidComprehensionAggregation() const noexcept {
+    return invalid_comprehension_aggregation_;
+  }
+
+ protected:
+  void Visit(FunctionInvocation &node) override {
+    if (IsAggregateFunction(node.function_name)) {
+      return;
+    }
+    ASTWalker::Visit(node);
+  }
+
+  void Visit(CountStarExpression &node) override { (void)node; }
+
+  void Visit(Variable &node) override {
+    if (!IsLocal(node.name) && !IsGroupingExpression(node)) {
+      ambiguous_ = true;
+    }
+  }
+
+  void Visit(PropertyExpression &node) override {
+    if (!ReferencesLocal(node) && IsGroupingExpression(node)) {
+      return;
+    }
+    ASTWalker::Visit(node);
+  }
+
+  void Visit(ListComprehension &node) override {
+    WalkMaybe(node.list_expr);
+    PushLocal(node.variable);
+    if (ContainsAggregation(node.where_expr.get()) ||
+        ContainsAggregation(node.eval_expr.get())) {
+      invalid_comprehension_aggregation_ = true;
+    }
+    WalkMaybe(node.where_expr);
+    WalkMaybe(node.eval_expr);
+    PopLocal();
+  }
+
+  void Visit(AllQuantifier &node) override { VisitQuantifier(node); }
+  void Visit(AnyQuantifier &node) override { VisitQuantifier(node); }
+  void Visit(NoneQuantifier &node) override { VisitQuantifier(node); }
+  void Visit(SingleQuantifier &node) override { VisitQuantifier(node); }
+
+ private:
+  [[nodiscard]] bool IsGroupingExpression(const Expression &expression) const {
+    for (const Expression *grouping : grouping_expressions_) {
+      if (grouping != nullptr && ASTEqual::Equal(&expression, grouping)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  [[nodiscard]] bool IsLocal(const std::string &name) const {
+    for (auto scope = local_scopes_.rbegin(); scope != local_scopes_.rend();
+         ++scope) {
+      if (scope->contains(name)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  [[nodiscard]] bool ReferencesLocal(const Expression &expression) const {
+    const std::unordered_set<std::string> dependencies =
+        CollectExpressionDependencies(expression);
+    for (const auto &dependency : dependencies) {
+      if (IsLocal(dependency)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void VisitQuantifier(Quantifier &node) {
+    WalkMaybe(node.list_expr);
+    PushLocal(node.variable);
+    if (ContainsAggregation(node.predicate.get())) {
+      invalid_comprehension_aggregation_ = true;
+    }
+    WalkMaybe(node.predicate);
+    PopLocal();
+  }
+
+  void PushLocal(const std::string &name) {
+    local_scopes_.emplace_back();
+    if (!name.empty()) {
+      local_scopes_.back().insert(name);
+    }
+  }
+
+  void PopLocal() { local_scopes_.pop_back(); }
+
+  std::vector<const Expression *> grouping_expressions_;
+  std::vector<std::unordered_set<std::string>> local_scopes_;
+  bool ambiguous_ = false;
+  bool invalid_comprehension_aggregation_ = false;
+};
+
 bool ProjectionContainsAggregation(const ProjectionBody &body) {
   for (const auto &item : body.items) {
     if (item != nullptr && ContainsAggregation(item->expression.get())) {
@@ -769,14 +894,36 @@ class SemanticValidator : public ASTWalker {
   }
 
   void ValidateProjectionAggregations(ProjectionBody &body) {
+    std::vector<const Expression *> grouping_expressions;
+    grouping_expressions.reserve(body.items.size());
+    for (const auto &item : body.items) {
+      if (!item || !item->expression ||
+          ContainsAggregation(item->expression.get()) ||
+          !IsSimpleGroupingExpression(item->expression.get())) {
+        continue;
+      }
+      grouping_expressions.push_back(
+          UnwrapParenthesized(item->expression.get()));
+    }
+
     for (const auto &item : body.items) {
       if (!item || !item->expression) {
         continue;
       }
       Expression *expression = item->expression.get();
-      if (ContainsAggregation(expression) &&
-          !IsTopLevelAggregation(expression)) {
-        ReportSemantic("aggregation must be a top-level projection item");
+      if (!ContainsAggregation(expression) ||
+          IsTopLevelAggregation(expression)) {
+        continue;
+      }
+      MixedAggregationScanner scanner(grouping_expressions);
+      scanner.Scan(*expression);
+      if (scanner.InvalidComprehensionAggregation()) {
+        ReportSemantic(
+            "aggregation is not allowed in a comprehension predicate or "
+            "mapping expression");
+      }
+      if (scanner.Ambiguous()) {
+        ReportSemantic("ambiguous aggregation expression");
       }
     }
   }

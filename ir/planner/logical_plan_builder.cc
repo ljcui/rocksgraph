@@ -10,9 +10,12 @@
 #include <utility>
 #include <vector>
 
+#include "ast/ast_clone.h"
 #include "ast/ast_const_walker.h"
 #include "ast/ast_equal.h"
 #include "ast/ast_node.h"
+#include "ast/ast_rewriter.h"
+#include "ast/builtin_function.h"
 #include "ast/expression_dependency.h"
 #include "common/exception.h"
 #include "ir/planner/component_planner.h"
@@ -36,17 +39,6 @@ std::vector<std::string> ProjectionAliases(
   std::vector<std::string> aliases;
   aliases.reserve(items.size());
   for (const auto &item : items) {
-    aliases.push_back(item.alias);
-  }
-  return aliases;
-}
-
-std::vector<std::string> ProjectionAliases(
-    const std::vector<ProjectionItem> &lhs,
-    const std::vector<ProjectionItem> &rhs) {
-  std::vector<std::string> aliases = ProjectionAliases(lhs);
-  aliases.reserve(lhs.size() + rhs.size());
-  for (const auto &item : rhs) {
     aliases.push_back(item.alias);
   }
   return aliases;
@@ -98,6 +90,166 @@ std::vector<LogicalProjectionItem> LogicalProjectionItems(
   }
   return logical_items;
 }
+
+bool IsAggregationExpression(const ast::Expression &expression) {
+  const ast::Expression *unwrapped = UnwrapParenthesized(&expression);
+  if (unwrapped == nullptr) {
+    return false;
+  }
+  if (unwrapped->Is(ast::ASTNodeType::kCountStarExpression)) {
+    return true;
+  }
+  if (!unwrapped->Is(ast::ASTNodeType::kFunctionInvocation)) {
+    return false;
+  }
+  const auto *function = ast::CastAst<ast::FunctionInvocation>(unwrapped);
+  const ast::BuiltinFunction *builtin =
+      ast::FindBuiltinFunction(function->function_name);
+  return builtin != nullptr && builtin->aggregate;
+}
+
+LogicalProjectionItem OwnedLogicalProjectionItem(
+    std::unique_ptr<ast::Expression> expression, std::string alias,
+    const std::vector<NestedIRExpression> &nested_expressions) {
+  CHECK(expression != nullptr, common::InternalError,
+        "owned projection expression is null");
+  std::shared_ptr<ast::Expression> owned(std::move(expression));
+  const ast::Expression *raw = owned.get();
+  return {
+      .expression = raw,
+      .owned_expression = std::move(owned),
+      .alias = std::move(alias),
+      .precomputed_expressions = PrecomputedExpressions(nested_expressions),
+  };
+}
+
+class AggregateSubexpressionRewriter final : public ast::ASTRewriter {
+ public:
+  AggregateSubexpressionRewriter(
+      const std::vector<ProjectionItem> &grouping_items,
+      const std::vector<NestedIRExpression> &nested_expressions,
+      std::unordered_set<std::string> used_aliases,
+      std::vector<LogicalProjectionItem> *aggregation_items)
+      : grouping_items_(grouping_items),
+        nested_expressions_(nested_expressions),
+        used_aliases_(std::move(used_aliases)),
+        aggregation_items_(aggregation_items) {
+    CHECK(aggregation_items_ != nullptr, common::InternalError,
+          "aggregation item list is null");
+  }
+
+  std::unique_ptr<ast::Expression> Rewrite(const ast::Expression &expression) {
+    std::unique_ptr<ast::Expression> rewritten =
+        ast::CloneExpression(expression);
+    RewriteExpression(rewritten);
+    return rewritten;
+  }
+
+ protected:
+  void RewriteExpression(
+      std::unique_ptr<ast::Expression> &expression) override {
+    if (!expression) {
+      return;
+    }
+    if (IsAggregationExpression(*expression)) {
+      ReplaceAggregation(expression);
+      return;
+    }
+    if (!ReferencesLocal(*expression)) {
+      for (const auto &grouping : grouping_items_) {
+        if (grouping.expression != nullptr &&
+            ast::ASTEqual::Equal(expression.get(), grouping.expression)) {
+          expression = MakeVariable(grouping.alias);
+          return;
+        }
+      }
+    }
+    ast::ASTRewriter::RewriteExpression(expression);
+  }
+
+  void Visit(ast::ListComprehension &node) override {
+    RewriteMaybe(node.list_expr);
+    PushLocal(node.variable);
+    RewriteMaybe(node.where_expr);
+    RewriteMaybe(node.eval_expr);
+    PopLocal();
+  }
+
+  void Visit(ast::AllQuantifier &node) override { RewriteQuantifier(node); }
+  void Visit(ast::AnyQuantifier &node) override { RewriteQuantifier(node); }
+  void Visit(ast::NoneQuantifier &node) override { RewriteQuantifier(node); }
+  void Visit(ast::SingleQuantifier &node) override { RewriteQuantifier(node); }
+
+ private:
+  static std::unique_ptr<ast::Expression> MakeVariable(
+      const std::string &name) {
+    auto variable = std::make_unique<ast::Variable>();
+    variable->name = name;
+    return variable;
+  }
+
+  void ReplaceAggregation(std::unique_ptr<ast::Expression> &expression) {
+    for (const auto &item : *aggregation_items_) {
+      if (item.expression != nullptr &&
+          ast::ASTEqual::Equal(expression.get(), item.expression)) {
+        expression = MakeVariable(item.alias);
+        return;
+      }
+    }
+
+    const std::string alias = NextAggregateAlias();
+    aggregation_items_->push_back(OwnedLogicalProjectionItem(
+        std::move(expression), alias, nested_expressions_));
+    expression = MakeVariable(alias);
+  }
+
+  [[nodiscard]] std::string NextAggregateAlias() {
+    while (true) {
+      std::string alias =
+          "anon_aggregate_" + std::to_string(next_aggregate_alias_++);
+      if (used_aliases_.insert(alias).second) {
+        return alias;
+      }
+    }
+  }
+
+  [[nodiscard]] bool ReferencesLocal(const ast::Expression &expression) const {
+    const std::unordered_set<std::string> dependencies =
+        ast::CollectExpressionDependencies(expression);
+    for (const auto &dependency : dependencies) {
+      for (auto scope = local_scopes_.rbegin(); scope != local_scopes_.rend();
+           ++scope) {
+        if (scope->contains(dependency)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  void RewriteQuantifier(ast::Quantifier &node) {
+    RewriteMaybe(node.list_expr);
+    PushLocal(node.variable);
+    RewriteMaybe(node.predicate);
+    PopLocal();
+  }
+
+  void PushLocal(const std::string &name) {
+    local_scopes_.emplace_back();
+    if (!name.empty()) {
+      local_scopes_.back().insert(name);
+    }
+  }
+
+  void PopLocal() { local_scopes_.pop_back(); }
+
+  const std::vector<ProjectionItem> &grouping_items_;
+  const std::vector<NestedIRExpression> &nested_expressions_;
+  std::unordered_set<std::string> used_aliases_;
+  std::vector<LogicalProjectionItem> *aggregation_items_ = nullptr;
+  std::vector<std::unordered_set<std::string>> local_scopes_;
+  std::size_t next_aggregate_alias_ = 0;
+};
 
 std::vector<LogicalProjectionItem> PassthroughProjectionItems(
     const std::vector<std::string> &aliases) {
@@ -1202,14 +1354,55 @@ class LogicalPlanBuilder {
       const AggregatingQueryProjection &projection) {
     plan =
         ApplyNestedExpressions(std::move(plan), projection.nested_expressions);
-    std::vector<std::string> aliases = ProjectionAliases(
-        projection.grouping_items, projection.aggregation_items);
+    std::vector<std::string> aliases = ProjectionAliases(projection.items);
     std::vector<LogicalProjectionItem> grouping_items = LogicalProjectionItems(
         projection.grouping_items, projection.nested_expressions);
-    plan = std::make_unique<AggregationPlan>(
-        std::move(plan), std::move(grouping_items),
-        LogicalProjectionItems(projection.aggregation_items,
-                               projection.nested_expressions));
+
+    std::vector<LogicalProjectionItem> aggregation_items;
+    std::vector<LogicalProjectionItem> post_aggregation_items;
+    std::unordered_set<std::string> used_aliases(aliases.begin(),
+                                                 aliases.end());
+    AggregateSubexpressionRewriter rewriter(
+        projection.grouping_items, projection.nested_expressions,
+        std::move(used_aliases), &aggregation_items);
+    for (const auto &item : projection.aggregation_items) {
+      CHECK(item.expression != nullptr, common::InvalidArgumentError,
+            "aggregation expression is null");
+      if (IsAggregationExpression(*item.expression)) {
+        aggregation_items.push_back({
+            .expression = item.expression,
+            .alias = item.alias,
+            .precomputed_expressions =
+                PrecomputedExpressions(projection.nested_expressions),
+        });
+        continue;
+      }
+      post_aggregation_items.push_back(OwnedLogicalProjectionItem(
+          rewriter.Rewrite(*item.expression), item.alias,
+          projection.nested_expressions));
+    }
+
+    plan = std::make_unique<AggregationPlan>(std::move(plan),
+                                             std::move(grouping_items),
+                                             std::move(aggregation_items));
+    if (!post_aggregation_items.empty()) {
+      std::vector<LogicalProjectionItem> final_items;
+      final_items.reserve(projection.items.size());
+      for (const auto &item : projection.items) {
+        auto post_item = std::find_if(
+            post_aggregation_items.begin(), post_aggregation_items.end(),
+            [&](const LogicalProjectionItem &candidate) {
+              return candidate.alias == item.alias;
+            });
+        if (post_item != post_aggregation_items.end()) {
+          final_items.push_back(std::move(*post_item));
+        } else {
+          AppendPassthroughProjectionItem(item.alias, &final_items);
+        }
+      }
+      plan = std::make_unique<ProjectionPlan>(std::move(plan),
+                                              std::move(final_items));
+    }
     return ApplyProjectionTail(std::move(plan), projection, std::move(aliases));
   }
 

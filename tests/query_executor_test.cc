@@ -411,6 +411,39 @@ TEST(QueryExecutorTest, ExecutesNumericAggregations) {
       (std::vector<std::vector<std::string>>{{"121", "60.5", "36", "85"}}));
 }
 
+TEST(QueryExecutorTest, ExecutesAggregateSubexpressions) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "MATCH (n:Person) "
+      "RETURN n.age AS age, n.age + count(*) AS total, "
+      "{names: collect(n.name), count: count(*)} AS summary "
+      "ORDER BY age");
+
+  ASSERT_EQ(result.columns,
+            (std::vector<std::string>{"age", "total", "summary"}));
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{
+                {"36", "37", "{count: 1, names: [\"Ada\"]}"},
+                {"85", "86", "{count: 1, names: [\"Grace\"]}"}}));
+}
+
+TEST(QueryExecutorTest, ExecutesQuantifierOverCollectedValues) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "MATCH (n:Person) "
+      "RETURN ALL(ok IN collect(n.age >= 36) WHERE ok) AS okay");
+
+  ASSERT_EQ(result.columns, std::vector<std::string>{"okay"});
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{{"true"}}));
+}
+
 TEST(QueryExecutorTest, ExecutesCollectAggregation) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);

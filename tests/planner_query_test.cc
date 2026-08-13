@@ -648,6 +648,9 @@ TEST(PlannerQueryPrinterTest, DumpsCountStarSnapshot) {
     mutating_patterns: 0
   horizon:
     aggregating_projection:
+      items:
+        - alias: count(*)
+          expression: count(*)
       grouping_items:
         []
       aggregation_items:
@@ -863,10 +866,32 @@ TEST(PlannerQueryTest, BuildsAggregatingProjectionItems) {
   const ir::AggregatingQueryProjection &projection =
       horizon.RequireAggregatingProjection();
 
+  ASSERT_EQ(projection.items.size(), 2U);
   ASSERT_EQ(projection.grouping_items.size(), 1U);
   ASSERT_EQ(projection.aggregation_items.size(), 1U);
+  EXPECT_EQ(projection.items[0].alias, "name");
+  EXPECT_EQ(projection.items[1].alias, "c");
   EXPECT_EQ(projection.grouping_items[0].alias, "name");
   EXPECT_EQ(projection.aggregation_items[0].alias, "c");
+}
+
+TEST(PlannerQueryTest, PreservesMixedAggregationProjectionOrder) {
+  auto statement =
+      ParseOrFail("MATCH (n) RETURN count(n) + 1 AS total, n.age AS age");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::PlannerQuery> planner_query =
+      ir::CreatePlannerQuery(*statement);
+  const ir::AggregatingQueryProjection &projection =
+      planner_query->RequireSingle().horizon.RequireAggregatingProjection();
+
+  ASSERT_EQ(projection.items.size(), 2U);
+  EXPECT_EQ(projection.items[0].alias, "total");
+  EXPECT_EQ(projection.items[1].alias, "age");
+  ASSERT_EQ(projection.grouping_items.size(), 1U);
+  EXPECT_EQ(projection.grouping_items[0].alias, "age");
+  ASSERT_EQ(projection.aggregation_items.size(), 1U);
+  EXPECT_EQ(projection.aggregation_items[0].alias, "total");
 }
 
 TEST(PlannerQueryTest, PreservesCountStarAggregationExpression) {
