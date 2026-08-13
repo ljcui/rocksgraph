@@ -1643,9 +1643,8 @@ TEST(PlannerQueryTest, BuildsInQueryProcedureCallWithYieldWhere) {
   EXPECT_TRUE(Contains(return_segment.query_graph.argument_ids, "l"));
 }
 
-TEST(PlannerQueryTest, MarksUnknownProcedureCallsAsNotReadOnly) {
-  auto statement =
-      ParseOrFail("MATCH (n) CALL db.unknown(n) YIELD value RETURN value");
+TEST(PlannerQueryTest, BuildsProcedureMetadataCallAsReadOnly) {
+  auto statement = ParseOrFail("CALL dbms.procedures()");
   ASSERT_TRUE(statement);
 
   std::unique_ptr<ir::PlannerQuery> planner_query =
@@ -1653,11 +1652,15 @@ TEST(PlannerQueryTest, MarksUnknownProcedureCallsAsNotReadOnly) {
   const ir::ProcedureCallHorizon &call =
       planner_query->RequireSingle().horizon.RequireProcedureCall();
 
-  EXPECT_FALSE(call.read_only);
-  ASSERT_EQ(call.arguments.size(), 1U);
-  EXPECT_EQ(ast::ExpressionToString(*call.arguments[0]), "n");
-  ASSERT_EQ(call.yield_items.size(), 1U);
-  EXPECT_EQ(call.yield_items[0].variable, "value");
+  EXPECT_EQ(call.procedure_name, "dbms.procedures");
+  EXPECT_TRUE(call.read_only);
+  EXPECT_TRUE(call.arguments.empty());
+  ASSERT_EQ(call.yield_items.size(), 5U);
+  EXPECT_EQ(call.yield_items[0].variable, "name");
+  EXPECT_EQ(call.yield_items[1].variable, "signature");
+  EXPECT_EQ(call.yield_items[2].variable, "description");
+  EXPECT_EQ(call.yield_items[3].variable, "mode");
+  EXPECT_EQ(call.yield_items[4].variable, "worksOnSystem");
 }
 
 TEST(PlannerQueryTest, SkipsPassthroughWithAfterUnwindSegment) {

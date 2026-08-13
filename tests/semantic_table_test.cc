@@ -174,7 +174,7 @@ TEST(SemanticTableTest, UsesFunctionSignatureTableForProjectionTypes) {
   EXPECT_EQ(table.VariableType("name"), ast::SemanticVariableType::kScalar);
 }
 
-TEST(SemanticTableTest, UsesProcedureSignaturePlaceholdersForYieldTypes) {
+TEST(SemanticTableTest, UsesBuiltinProcedureRegistryForYieldTypes) {
   auto statement =
       ParseOrFail("CALL db.labels() YIELD label AS labelName RETURN labelName");
   ASSERT_TRUE(statement);
@@ -194,16 +194,11 @@ TEST(SemanticTableTest, UsesProcedureSignaturePlaceholdersForYieldTypes) {
       table.KnownProcedureYieldType("db.unknown", "label").has_value());
   EXPECT_EQ(table.VariableType("labelName"),
             ast::SemanticVariableType::kScalar);
-}
-
-TEST(SemanticTableTest, FallsBackToUnknownForUnknownProcedureYieldTypes) {
-  auto statement =
-      ParseOrFail("CALL db.labels() YIELD missing AS yielded RETURN yielded");
-  ASSERT_TRUE(statement);
-
-  ast::SemanticTable table = ast::AnalyzeSemanticTable(*statement);
-
-  EXPECT_EQ(table.VariableType("yielded"), ast::SemanticVariableType::kUnknown);
+  EXPECT_EQ(table.KnownProcedureYieldFields("dbms.procedures"),
+            (std::vector<std::string>{"name", "signature", "description",
+                                      "mode", "worksOnSystem"}));
+  EXPECT_EQ(table.KnownProcedureYieldType("DBMS.PROCEDURES", "worksOnSystem"),
+            ast::SemanticVariableType::kScalar);
 }
 
 TEST(SemanticTableTest, InfersStructuredExpressionResultTypes) {

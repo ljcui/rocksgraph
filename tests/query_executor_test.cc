@@ -493,6 +493,36 @@ TEST(QueryExecutorTest, ExecutesDbPropertyKeysProcedureWithYieldWhere) {
             (std::vector<std::vector<std::string>>{{"\"since\""}}));
 }
 
+TEST(QueryExecutorTest, ExecutesDbmsProcedures) {
+  rg::InMemoryGraph graph;
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "CALL dbms.procedures() "
+      "YIELD name, signature, description, mode, worksOnSystem "
+      "RETURN name, signature, description, mode, worksOnSystem "
+      "ORDER BY name");
+
+  ASSERT_EQ(result.columns,
+            (std::vector<std::string>{"name", "signature", "description",
+                                      "mode", "worksOnSystem"}));
+  EXPECT_EQ(
+      StringRows(result),
+      (std::vector<std::vector<std::string>>{
+          {"\"db.labels\"", "\"db.labels() :: (label)\"",
+           "\"List all node labels in the graph.\"", "\"READ\"", "false"},
+          {"\"db.propertyKeys\"", "\"db.propertyKeys() :: (propertyKey)\"",
+           "\"List all property keys in the graph.\"", "\"READ\"", "false"},
+          {"\"db.relationshipTypes\"",
+           "\"db.relationshipTypes() :: (relationshipType)\"",
+           "\"List all relationship types in the graph.\"", "\"READ\"",
+           "false"},
+          {"\"dbms.procedures\"",
+           "\"dbms.procedures() :: (name, signature, description, mode, "
+           "worksOnSystem)\"",
+           "\"List all built-in procedures.\"", "\"READ\"", "false"}}));
+}
+
 TEST(QueryExecutorTest, ExecutesNamedPath) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
@@ -1125,6 +1155,7 @@ TEST(QueryExecutorTest,
   EXPECT_DOUBLE_EQ(graph.EstimateProcedureRows("db.labels", 1), 2.0);
   EXPECT_DOUBLE_EQ(graph.EstimateProcedureRows("db.relationshipTypes", 1), 2.0);
   EXPECT_DOUBLE_EQ(graph.EstimateProcedureRows("db.propertyKeys", 1), 3.0);
+  EXPECT_DOUBLE_EQ(graph.EstimateProcedureRows("dbms.procedures", 5), 4.0);
 }
 
 TEST(QueryExecutorTest, LogicalPlanUsesInMemoryGraphStatistics) {

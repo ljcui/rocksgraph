@@ -1,7 +1,6 @@
 #include "runtime/query_executor.h"
 
 #include <algorithm>
-#include <cctype>
 #include <cstddef>
 #include <iterator>
 #include <memory>
@@ -23,6 +22,7 @@
 #include "runtime/expression_evaluator.h"
 #include "runtime/graph_access_executor.h"
 #include "runtime/join_executor.h"
+#include "runtime/procedure_executor.h"
 #include "runtime/query_row_util.h"
 #include "runtime/result_set_executor.h"
 #include "runtime/write_executor.h"
@@ -31,13 +31,6 @@ namespace rg {
 namespace {
 
 using Rows = QueryRows;
-
-std::string LowerAscii(std::string value) {
-  std::transform(
-      value.begin(), value.end(), value.begin(),
-      [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-  return value;
-}
 
 std::optional<double> EvaluateNumericOptional(const ast::Expression *expression,
                                               const QueryRow &row) {
@@ -99,6 +92,7 @@ class QueryExecutorImpl {
   QueryExecutorImpl(const AccessPath *access_path, Storage *storage)
       : access_path_(access_path),
         graph_access_(RequireAccessPath(access_path)),
+        procedure_executor_(RequireAccessPath(access_path)),
         write_executor_(storage) {}
 
   QueryResult Execute(const ir::LogicalPlan &plan) {
@@ -211,8 +205,9 @@ class QueryExecutorImpl {
       case ir::LogicalPlanNodeType::kUnwind:
         return ExecuteUnwind(static_cast<const ir::UnwindPlan &>(plan), input);
       case ir::LogicalPlanNodeType::kProcedureCall:
-        return ExecuteProcedureCall(
-            static_cast<const ir::ProcedureCallPlan &>(plan), input);
+        return procedure_executor_.Execute(
+            static_cast<const ir::ProcedureCallPlan &>(plan),
+            ExecutePlan(plan.Child(0), input));
       case ir::LogicalPlanNodeType::kUnion:
         return ExecuteUnion(static_cast<const ir::UnionPlan &>(plan), input);
       case ir::LogicalPlanNodeType::kWriteBarrier:
@@ -386,102 +381,6 @@ class QueryExecutorImpl {
     return out;
   }
 
-  Rows ExecuteProcedureCall(const ir::ProcedureCallPlan &plan,
-                            const Rows &input) {
-    CHECK(plan.ReadOnly(), common::InvalidArgumentError,
-          "write procedure calls are not supported");
-    const std::string procedure_name = LowerAscii(plan.ProcedureName());
-    if (procedure_name == "db.labels") {
-      return ExecuteMetadataProcedure(plan, input, "label", CollectLabels());
-    }
-    if (procedure_name == "db.relationshiptypes") {
-      return ExecuteMetadataProcedure(plan, input, "relationshipType",
-                                      CollectRelationshipTypes());
-    }
-    if (procedure_name == "db.propertykeys") {
-      return ExecuteMetadataProcedure(plan, input, "propertyKey",
-                                      CollectPropertyKeys());
-    }
-
-    Rows rows = ExecutePlan(plan.Child(0), input);
-    Rows out;
-    for (const auto &row : rows) {
-      QueryRow next = row;
-      for (const auto &item : plan.YieldItems()) {
-        if (item.variable.empty()) {
-          continue;
-        }
-        next[item.variable] = Value::Null();
-      }
-      out.push_back(std::move(next));
-    }
-    return out;
-  }
-
-  [[nodiscard]] std::set<std::string> CollectLabels() const {
-    std::set<std::string> labels;
-    for (const auto &node : access_path_->ScanNodes()) {
-      for (const auto &label : node->labels) {
-        labels.insert(label);
-      }
-    }
-    return labels;
-  }
-
-  [[nodiscard]] std::set<std::string> CollectRelationshipTypes() const {
-    std::set<std::string> types;
-    for (const auto &relationship : access_path_->ScanRelationships()) {
-      if (!relationship->type.empty()) {
-        types.insert(relationship->type);
-      }
-    }
-    return types;
-  }
-
-  [[nodiscard]] std::set<std::string> CollectPropertyKeys() const {
-    std::set<std::string> keys;
-    for (const auto &node : access_path_->ScanNodes()) {
-      for (const auto &[key, value] : node->properties) {
-        (void)value;
-        keys.insert(key);
-      }
-    }
-    for (const auto &relationship : access_path_->ScanRelationships()) {
-      for (const auto &[key, value] : relationship->properties) {
-        (void)value;
-        keys.insert(key);
-      }
-    }
-    return keys;
-  }
-
-  Rows ExecuteMetadataProcedure(const ir::ProcedureCallPlan &plan,
-                                const Rows &input, std::string_view field_name,
-                                const std::set<std::string> &values) {
-    CHECK(plan.Arguments().empty(), common::InvalidArgumentError,
-          plan.ProcedureName() + "() expects no arguments");
-
-    Rows rows = ExecutePlan(plan.Child(0), input);
-    Rows out;
-    for (const auto &row : rows) {
-      for (const auto &value : values) {
-        QueryRow next = row;
-        for (const auto &item : plan.YieldItems()) {
-          if (item.variable.empty()) {
-            continue;
-          }
-          const std::string field = item.result_field.value_or(item.variable);
-          CHECK(
-              field == field_name, common::InvalidArgumentError,
-              "unsupported " + plan.ProcedureName() + " yield field: " + field);
-          next[item.variable] = Value(value);
-        }
-        out.push_back(std::move(next));
-      }
-    }
-    return out;
-  }
-
   Rows ExecuteUnion(const ir::UnionPlan &plan, const Rows &input) {
     Rows out;
     std::set<std::string> seen;
@@ -566,6 +465,7 @@ class QueryExecutorImpl {
   GraphAccessExecutor graph_access_;
   JoinExecutor join_executor_;
   ApplyExecutor apply_executor_;
+  ProcedureExecutor procedure_executor_;
   ResultSetExecutor result_set_executor_;
   WriteExecutor write_executor_;
 };

@@ -7,6 +7,7 @@
 #include <unordered_set>
 #include <utility>
 
+#include "ast/builtin_procedure.h"
 #include "common/exception.h"
 
 namespace rg {
@@ -631,6 +632,9 @@ double InMemoryGraph::EstimateProcedureRows(std::string_view procedure_name,
       }
     }
     return static_cast<double>(keys.size());
+  }
+  if (normalized == "dbms.procedures") {
+    return static_cast<double>(ast::BuiltinProcedures().size());
   }
   return ir::PlannerStatistics::EstimateProcedureRows(procedure_name,
                                                       yield_count);

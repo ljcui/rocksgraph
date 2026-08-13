@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "ast_const_walker.h"
+#include "builtin_procedure.h"
 #include "common/exception.h"
 #include "expression_dependency.h"
 #include "expression_to_string.h"
@@ -27,17 +28,6 @@ struct FunctionSignature {
   SemanticVariableType result_type = SemanticVariableType::kScalar;
   std::optional<SemanticVariableType> list_element_type = std::nullopt;
   bool aggregate = false;
-};
-
-struct ProcedureYieldSignature {
-  std::string_view field;
-  SemanticVariableType type = SemanticVariableType::kUnknown;
-};
-
-struct ProcedureSignature {
-  std::string_view name;
-  std::vector<ProcedureYieldSignature> yields;
-  bool read_only = true;
 };
 
 const std::unordered_set<std::string> &EmptyStringSet() {
@@ -138,70 +128,37 @@ bool IsAggregateFunction(std::string_view function_name) {
   return signature != nullptr && signature->aggregate;
 }
 
-const std::vector<ProcedureSignature> &ProcedureSignatures() {
-  static const std::vector<ProcedureSignature> kSignatures = {
-      {"db.labels", {{"label", SemanticVariableType::kScalar}}},
-      {"db.propertykeys", {{"propertyKey", SemanticVariableType::kScalar}}},
-      {"db.relationshiptypes",
-       {{"relationshipType", SemanticVariableType::kScalar}}},
-      {"dbms.procedures",
-       {{"name", SemanticVariableType::kScalar},
-        {"signature", SemanticVariableType::kScalar},
-        {"description", SemanticVariableType::kScalar},
-        {"mode", SemanticVariableType::kScalar},
-        {"worksOnSystem", SemanticVariableType::kScalar}}},
-  };
-  return kSignatures;
-}
-
-const ProcedureSignature *LookupProcedureSignature(
-    std::string_view procedure_name) {
-  const std::string name = LowerAscii(procedure_name);
-  for (const auto &signature : ProcedureSignatures()) {
-    if (signature.name == name) {
-      return &signature;
-    }
-  }
-  return nullptr;
-}
-
 std::optional<SemanticVariableType> LookupProcedureYieldType(
     std::string_view procedure_name, std::string_view field_name) {
-  const ProcedureSignature *signature =
-      LookupProcedureSignature(procedure_name);
-  if (signature == nullptr) {
+  const BuiltinProcedure *procedure = FindBuiltinProcedure(procedure_name);
+  if (procedure == nullptr) {
     return std::nullopt;
   }
-  for (const auto &yield : signature->yields) {
-    if (yield.field == field_name) {
-      return yield.type;
-    }
-  }
-  return std::nullopt;
+  const BuiltinProcedureYield *yield =
+      FindBuiltinProcedureYield(*procedure, field_name);
+  return yield != nullptr ? std::optional(yield->type) : std::nullopt;
 }
 
 std::vector<std::string> LookupProcedureYieldFields(
     std::string_view procedure_name) {
-  const ProcedureSignature *signature =
-      LookupProcedureSignature(procedure_name);
-  if (signature == nullptr) {
+  const BuiltinProcedure *procedure = FindBuiltinProcedure(procedure_name);
+  if (procedure == nullptr) {
     return {};
   }
   std::vector<std::string> fields;
-  fields.reserve(signature->yields.size());
-  for (const auto &yield : signature->yields) {
-    fields.emplace_back(yield.field);
+  fields.reserve(procedure->yields.size());
+  for (const auto &yield : procedure->yields) {
+    fields.push_back(yield.name);
   }
   return fields;
 }
 
 std::optional<bool> LookupProcedureReadOnly(std::string_view procedure_name) {
-  const ProcedureSignature *signature =
-      LookupProcedureSignature(procedure_name);
-  if (signature == nullptr) {
+  const BuiltinProcedure *procedure = FindBuiltinProcedure(procedure_name);
+  if (procedure == nullptr) {
     return std::nullopt;
   }
-  return signature->read_only;
+  return procedure->read_only;
 }
 
 SemanticVariableType InferFunctionResultType(std::string_view function_name) {
@@ -517,13 +474,12 @@ class SemanticTableAnalyzer final : public ASTConstWalker {
   }
 
   void DefineProcedureYieldStar(std::string_view procedure_name) {
-    const ProcedureSignature *signature =
-        LookupProcedureSignature(procedure_name);
-    if (signature == nullptr) {
+    const BuiltinProcedure *procedure = FindBuiltinProcedure(procedure_name);
+    if (procedure == nullptr) {
       return;
     }
-    for (const auto &yield : signature->yields) {
-      Define(std::string(yield.field), yield.type);
+    for (const auto &yield : procedure->yields) {
+      Define(yield.name, yield.type);
     }
   }
 

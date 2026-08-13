@@ -169,3 +169,16 @@ TEST(SemanticValidatorTest, RejectsAggregationInPagination) {
   ExpectSemanticError("RETURN 1 AS x LIMIT count(x)",
                       "LIMIT cannot contain aggregation");
 }
+
+TEST(SemanticValidatorTest, RejectsUnknownProcedure) {
+  ExpectSemanticError("CALL db.unknown()", "unknown procedure: db.unknown");
+}
+
+TEST(SemanticValidatorTest, RejectsProcedureArgumentCountMismatch) {
+  ExpectSemanticError("CALL db.labels(1)", "db.labels expects 0 arguments");
+}
+
+TEST(SemanticValidatorTest, RejectsUnknownProcedureYieldField) {
+  ExpectSemanticError("CALL db.labels() YIELD missing RETURN missing",
+                      "unknown yield field for db.labels: missing");
+}

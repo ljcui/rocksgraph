@@ -955,14 +955,11 @@ TEST(LogicalPlanBuilderTest, BuildsInQueryProcedureCallPlan) {
 )");
 }
 
-TEST(LogicalPlanBuilderTest, BuildsProcedureCallWithArgumentDependencyPlan) {
+TEST(LogicalPlanBuilderTest, BuildsProcedureMetadataCallPlan) {
   ExpectLogicalPlanText(
-      "MATCH (n) CALL db.unknown(n.name) YIELD value RETURN n, value",
-      R"(ProduceResults [n, value]
-  Projection [n, value]
-    ProcedureCall [CALL db.unknown(n.name) YIELD value]
-      WriteBarrier
-        AllNodeScan [n]
+      "CALL dbms.procedures()",
+      R"(ProcedureCall [CALL dbms.procedures() YIELD name, signature, description, mode, worksOnSystem]
+  Argument
 )");
 }
 

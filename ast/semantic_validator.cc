@@ -11,6 +11,7 @@
 #include "ast_equal.h"
 #include "ast_exception.h"
 #include "ast_walker.h"
+#include "builtin_procedure.h"
 #include "common/exception.h"
 #include "expression_to_string.h"
 
@@ -204,6 +205,8 @@ class SemanticValidator : public ASTWalker {
   }
 
   void Visit(StandaloneCall &node) override {
+    ValidateProcedureCall(node.procedure_name, node.arguments.size(),
+                          node.yield_items);
     WalkList(node.arguments);
 
     Scope yield_scope = CurrentScope();
@@ -244,6 +247,8 @@ class SemanticValidator : public ASTWalker {
   }
 
   void Visit(InQueryCall &node) override {
+    ValidateProcedureCall(node.procedure_name, node.arguments.size(),
+                          node.yield_items);
     WalkList(node.arguments);
 
     Scope yield_scope = CurrentScope();
@@ -393,6 +398,28 @@ class SemanticValidator : public ASTWalker {
   }
 
  private:
+  void ValidateProcedureCall(
+      std::string_view procedure_name, std::size_t argument_count,
+      const std::vector<StandaloneCall::YieldItem> &yield_items) {
+    const BuiltinProcedure *procedure = FindBuiltinProcedure(procedure_name);
+    if (procedure == nullptr) {
+      ReportSemantic("unknown procedure: " + std::string(procedure_name));
+      return;
+    }
+    if (argument_count != procedure->argument_count) {
+      ReportSemantic(procedure->name + " expects " +
+                     std::to_string(procedure->argument_count) + " arguments");
+    }
+    for (const auto &item : yield_items) {
+      const std::string &field =
+          item.result_field.has_value() ? *item.result_field : item.variable;
+      if (FindBuiltinProcedureYield(*procedure, field) == nullptr) {
+        ReportSemantic("unknown yield field for " + procedure->name + ": " +
+                       field);
+      }
+    }
+  }
+
   void ValidateUnionColumns(const RegularQuery &query) {
     if (!query.single_query || query.unions.empty()) {
       return;
