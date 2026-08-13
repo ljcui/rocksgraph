@@ -23,12 +23,14 @@ class InMemoryGraph final : public Storage,
  public:
   using NodePtr = Value::NodePtr;
   using RelationshipPtr = Value::RelationshipPtr;
+  using Storage::CreateNode;
+  using Storage::CreateRelationship;
 
   NodePtr CreateNode(std::vector<std::string> labels,
-                     Value::Map properties = {}) override;
+                     Value::Map properties) override;
   RelationshipPtr CreateRelationship(int64_t start_node_id, int64_t end_node_id,
                                      std::string type,
-                                     Value::Map properties = {}) override;
+                                     Value::Map properties) override;
   RelationshipPtr CreateRelationship(const NodePtr &start_node,
                                      const NodePtr &end_node, std::string type,
                                      Value::Map properties = {});

@@ -522,7 +522,7 @@ double InMemoryGraph::EstimateNodeCount(
 
 double InMemoryGraph::EstimateExpandFanout(
     const std::vector<std::string> &relationship_types) const {
-  const double node_count = static_cast<double>(nodes_.size());
+  const auto node_count = static_cast<double>(nodes_.size());
   if (node_count <= 0.0) {
     return 0.0;
   }
@@ -531,7 +531,7 @@ double InMemoryGraph::EstimateExpandFanout(
 
 double InMemoryGraph::EstimateExpandIntoSelectivity(
     const std::vector<std::string> &relationship_types) const {
-  const double node_count = static_cast<double>(nodes_.size());
+  const auto node_count = static_cast<double>(nodes_.size());
   if (node_count <= 0.0) {
     return 0.0;
   }

@@ -4,6 +4,7 @@
 #include <array>
 #include <cctype>
 #include <optional>
+#include <ranges>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -40,18 +41,18 @@ struct ProcedureSignature {
 };
 
 const std::unordered_set<std::string> &EmptyStringSet() {
-  static const std::unordered_set<std::string> empty;
-  return empty;
+  static const std::unordered_set<std::string> kEmpty;
+  return kEmpty;
 }
 
 const std::vector<std::string> &EmptyStringVector() {
-  static const std::vector<std::string> empty;
-  return empty;
+  static const std::vector<std::string> kEmpty;
+  return kEmpty;
 }
 
 const TypeMap &EmptyTypeMap() {
-  static const TypeMap empty;
-  return empty;
+  static const TypeMap kEmpty;
+  return kEmpty;
 }
 
 bool StringEquals(const std::string &value, std::string_view expected) {
@@ -79,7 +80,7 @@ std::string LowerAscii(std::string_view input) {
 }
 
 const std::vector<FunctionSignature> &FunctionSignatures() {
-  static const std::vector<FunctionSignature> signatures = {
+  static const std::vector<FunctionSignature> kSignatures = {
       {"avg", SemanticVariableType::kScalar, std::nullopt, true},
       {"collect", SemanticVariableType::kList, std::nullopt, true},
       {"count", SemanticVariableType::kScalar, std::nullopt, true},
@@ -118,7 +119,7 @@ const std::vector<FunctionSignature> &FunctionSignatures() {
       {"trim", SemanticVariableType::kScalar},
       {"type", SemanticVariableType::kScalar},
   };
-  return signatures;
+  return kSignatures;
 }
 
 const FunctionSignature *LookupFunctionSignature(
@@ -138,7 +139,7 @@ bool IsAggregateFunction(std::string_view function_name) {
 }
 
 const std::vector<ProcedureSignature> &ProcedureSignatures() {
-  static const std::vector<ProcedureSignature> signatures = {
+  static const std::vector<ProcedureSignature> kSignatures = {
       {"db.labels", {{"label", SemanticVariableType::kScalar}}},
       {"db.propertykeys", {{"propertyKey", SemanticVariableType::kScalar}}},
       {"db.relationshiptypes",
@@ -150,7 +151,7 @@ const std::vector<ProcedureSignature> &ProcedureSignatures() {
         {"mode", SemanticVariableType::kScalar},
         {"worksOnSystem", SemanticVariableType::kScalar}}},
   };
-  return signatures;
+  return kSignatures;
 }
 
 const ProcedureSignature *LookupProcedureSignature(
@@ -528,8 +529,8 @@ class SemanticTableAnalyzer final : public ASTConstWalker {
 
   [[nodiscard]] std::optional<SemanticVariableType> Lookup(
       const std::string &name) const {
-    for (auto it = scope_stack_.rbegin(); it != scope_stack_.rend(); ++it) {
-      const auto type = it->Find(name);
+    for (const auto &scope : std::ranges::reverse_view(scope_stack_)) {
+      const auto type = scope.Find(name);
       if (type.has_value()) {
         return type;
       }
@@ -793,17 +794,17 @@ class SemanticTableAnalyzer final : public ASTConstWalker {
 };
 
 std::string_view ToString(SemanticVariableType type) {
-  constexpr auto kNames = std::array{
+  constexpr auto k_names = std::array{
       std::string_view{"Unknown"},      std::string_view{"Node"},
       std::string_view{"Relationship"}, std::string_view{"Path"},
       std::string_view{"Scalar"},       std::string_view{"List"},
       std::string_view{"Map"},
   };
   const auto index = static_cast<std::size_t>(type);
-  if (index >= kNames.size()) {
+  if (index >= k_names.size()) {
     return "Unknown";
   }
-  return kNames[index];
+  return k_names[index];
 }
 
 std::ostream &operator<<(std::ostream &out, SemanticVariableType type) {

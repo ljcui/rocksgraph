@@ -29,7 +29,7 @@ std::string LowerAscii(std::string_view input) {
 
 bool IsAggregateFunction(std::string_view function_name) {
   const std::string name = LowerAscii(function_name);
-  static const std::unordered_set<std::string> aggregates = {
+  static const std::unordered_set<std::string> kAggregates = {
       "avg",
       "collect",
       "count",
@@ -41,7 +41,7 @@ bool IsAggregateFunction(std::string_view function_name) {
       "stdevp",
       "sum",
   };
-  return aggregates.contains(name);
+  return kAggregates.contains(name);
 }
 
 Expression *UnwrapParenthesized(Expression *expression) {
@@ -407,14 +407,16 @@ class SemanticValidator : public ASTWalker {
       if (!main_columns.has_value() || !branch_columns.has_value()) {
         continue;
       }
-      if (main_columns->size() != branch_columns->size()) {
-        errors_.push_back(
+      const auto &main_column_names = main_columns.value();
+      const auto &branch_column_names = branch_columns.value();
+      if (main_column_names.size() != branch_column_names.size()) {
+        errors_.emplace_back(
             "UNION branches must return the same number of columns");
         continue;
       }
-      for (size_t index = 0; index < main_columns->size(); ++index) {
-        if ((*main_columns)[index] != (*branch_columns)[index]) {
-          errors_.push_back(
+      for (size_t index = 0; index < main_column_names.size(); ++index) {
+        if (main_column_names[index] != branch_column_names[index]) {
+          errors_.emplace_back(
               "UNION branches must return the same column names by position");
           break;
         }

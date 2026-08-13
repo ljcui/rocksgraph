@@ -231,7 +231,7 @@ class PlannerQueryArgumentFinalizer {
     THROW(common::InternalError, "unknown query horizon kind");
   }
 
-  std::unordered_set<std::string> SinglePlannerQueryDependencies(
+  [[nodiscard]] std::unordered_set<std::string> SinglePlannerQueryDependencies(
       const SinglePlannerQuery &query) const {
     std::unordered_set<std::string> dependencies =
         QueryGraphDependencies(query.query_graph);
@@ -239,7 +239,7 @@ class PlannerQueryArgumentFinalizer {
     return dependencies;
   }
 
-  std::unordered_set<std::string> QueryGraphDependencies(
+  [[nodiscard]] std::unordered_set<std::string> QueryGraphDependencies(
       const QueryGraph &query_graph) const {
     std::unordered_set<std::string> dependencies;
     AddSymbols(&dependencies, query_graph.pattern_paths);
@@ -324,7 +324,7 @@ class PlannerQueryArgumentFinalizer {
     AddSymbols(dependencies, MutatingPatternDependencies(mutating_pattern));
   }
 
-  std::unordered_set<std::string> QueryHorizonDependencies(
+  [[nodiscard]] std::unordered_set<std::string> QueryHorizonDependencies(
       const QueryHorizon &horizon) const {
     std::unordered_set<std::string> dependencies;
     switch (horizon.kind) {

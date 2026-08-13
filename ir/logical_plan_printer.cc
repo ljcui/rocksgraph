@@ -98,7 +98,7 @@ class LogicalPlanPrinter {
       entries.push_back("order=[" + FormatOrdering(metadata.ordering) + "]");
     }
     if (metadata.distinct) {
-      entries.push_back("distinct=true");
+      entries.emplace_back("distinct=true");
     }
 
     line->append(" {");

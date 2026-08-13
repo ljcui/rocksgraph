@@ -1138,7 +1138,7 @@ TEST(QueryExecutorTest, LogicalPlanUsesInMemoryGraphStatistics) {
       FindPlanNode(*label_scan_plan, ir::LogicalPlanNodeType::kNodeByLabelScan);
   ASSERT_NE(label_scan, nullptr);
   ASSERT_TRUE(label_scan->EstimatedRows().has_value());
-  EXPECT_DOUBLE_EQ(*label_scan->EstimatedRows(), 2.0);
+  EXPECT_EQ(label_scan->EstimatedRows(), 2.0);
 
   std::unique_ptr<ir::LogicalPlan> all_scan_plan =
       LogicalPlanFor(graph, "MATCH (n) RETURN n");
@@ -1147,13 +1147,13 @@ TEST(QueryExecutorTest, LogicalPlanUsesInMemoryGraphStatistics) {
       FindPlanNode(*all_scan_plan, ir::LogicalPlanNodeType::kAllNodeScan);
   ASSERT_NE(all_scan, nullptr);
   ASSERT_TRUE(all_scan->EstimatedRows().has_value());
-  EXPECT_DOUBLE_EQ(*all_scan->EstimatedRows(), 3.0);
+  EXPECT_EQ(all_scan->EstimatedRows(), 3.0);
 
   std::unique_ptr<ir::LogicalPlan> procedure_plan =
       LogicalPlanFor(graph, "CALL db.propertyKeys()");
   ASSERT_NE(procedure_plan, nullptr);
   ASSERT_TRUE(procedure_plan->EstimatedRows().has_value());
-  EXPECT_DOUBLE_EQ(*procedure_plan->EstimatedRows(), 3.0);
+  EXPECT_EQ(procedure_plan->EstimatedRows(), 3.0);
 }
 
 TEST(QueryExecutorTest, MaintainsNodeIndexAcrossWrites) {

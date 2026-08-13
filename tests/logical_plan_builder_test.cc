@@ -170,10 +170,10 @@ TEST(LogicalPlanBuilderTest, AnnotatesCostMetadataAndPrintsWhenRequested) {
 
   EXPECT_TRUE(plan->EstimatedRows().has_value());
   EXPECT_TRUE(plan->Cost().has_value());
-  EXPECT_DOUBLE_EQ(*plan->EstimatedRows(), 100.0);
-  EXPECT_DOUBLE_EQ(*plan->Cost(), 102.0);
-  EXPECT_DOUBLE_EQ(*plan->Child(0).Cost(), 101.0);
-  EXPECT_DOUBLE_EQ(*plan->Child(0).Child(0).Cost(), 100.0);
+  EXPECT_EQ(plan->EstimatedRows(), 100.0);
+  EXPECT_EQ(plan->Cost(), 102.0);
+  EXPECT_EQ(plan->Child(0).Cost(), 101.0);
+  EXPECT_EQ(plan->Child(0).Child(0).Cost(), 100.0);
 
   EXPECT_EQ(ir::LogicalPlanToString(
                 *plan, ir::LogicalPlanPrinterOptions{.include_metadata = true}),
@@ -975,9 +975,9 @@ TEST(LogicalPlanBuilderTest, AnnotatesProcedureCallCostMetadata) {
   ASSERT_NE(plan, nullptr);
 
   EXPECT_EQ(plan->Type(), ir::LogicalPlanNodeType::kProcedureCall);
-  EXPECT_DOUBLE_EQ(*plan->EstimatedRows(), 3.0);
-  EXPECT_DOUBLE_EQ(*plan->Cost(), 3.25);
-  EXPECT_DOUBLE_EQ(*plan->Child(0).Cost(), 0.1);
+  EXPECT_EQ(plan->EstimatedRows(), 3.0);
+  EXPECT_DOUBLE_EQ(plan->Cost().value_or(-1.0), 3.25);
+  EXPECT_EQ(plan->Child(0).Cost(), 0.1);
 
   EXPECT_EQ(ir::LogicalPlanToString(
                 *plan, ir::LogicalPlanPrinterOptions{.include_metadata = true}),

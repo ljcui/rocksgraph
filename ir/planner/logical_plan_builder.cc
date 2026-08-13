@@ -199,7 +199,7 @@ bool ContainsExpression(const ast::Expression &haystack,
    public:
     explicit Finder(const ast::Expression &needle) : needle_(needle) {}
 
-    [[nodiscard]] bool found() const noexcept { return found_; }
+    [[nodiscard]] bool Found() const noexcept { return found_; }
 
    protected:
     void Visit(const ast::ExistentialSubquery &node) override {
@@ -219,7 +219,7 @@ bool ContainsExpression(const ast::Expression &haystack,
 
   Finder finder(needle);
   haystack.Accept(finder);
-  return finder.found();
+  return finder.Found();
 }
 
 void ValidateProjectionTailExpressionsAvailable(
@@ -697,7 +697,7 @@ CostEstimate AnnotateLogicalPlanMetadata(LogicalPlan *plan,
   CHECK(plan != nullptr, common::InternalError, "logical plan is null");
   std::vector<CostEstimate> child_estimates;
   child_estimates.reserve(plan->ChildCount());
-  for (auto &child : plan->Children()) {
+  for (const auto &child : plan->Children()) {
     CHECK(child != nullptr, common::InternalError,
           "logical plan child is null");
     child_estimates.push_back(

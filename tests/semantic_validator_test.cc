@@ -127,15 +127,15 @@ TEST(SemanticValidatorTest, RejectsAggregationInOrderBy) {
 }
 
 TEST(SemanticValidatorTest, RestrictsOrderByAfterDistinct) {
-  constexpr char kRestrictedOrderBy[] =
+  constexpr std::string_view k_restricted_order_by =
       "In a WITH/RETURN with DISTINCT or an aggregation, it is not possible to "
       "access variables declared before the WITH/RETURN: n";
 
   ExpectSemanticError("MATCH (n) RETURN DISTINCT n.name AS name ORDER BY n.age",
-                      kRestrictedOrderBy);
+                      std::string(k_restricted_order_by));
   ExpectSemanticError(
       "MATCH (n) WITH DISTINCT n.name AS name ORDER BY n.age RETURN name",
-      kRestrictedOrderBy);
+      std::string(k_restricted_order_by));
 }
 
 TEST(SemanticValidatorTest, AllowsOrderByProjectedValuesAfterDistinct) {

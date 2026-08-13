@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "storage/access_path.h"
@@ -20,12 +21,20 @@ class Storage : public AccessPath {
   Storage &operator=(const Storage &) = delete;
   ~Storage() override = default;
 
+  NodePtr CreateNode(std::vector<std::string> labels) {
+    return CreateNode(std::move(labels), {});
+  }
   virtual NodePtr CreateNode(std::vector<std::string> labels,
-                             Value::Map properties = {}) = 0;
+                             Value::Map properties) = 0;
+  RelationshipPtr CreateRelationship(std::int64_t start_node_id,
+                                     std::int64_t end_node_id,
+                                     std::string type) {
+    return CreateRelationship(start_node_id, end_node_id, std::move(type), {});
+  }
   virtual RelationshipPtr CreateRelationship(std::int64_t start_node_id,
                                              std::int64_t end_node_id,
                                              std::string type,
-                                             Value::Map properties = {}) = 0;
+                                             Value::Map properties) = 0;
 
   virtual void SetNodeProperty(std::int64_t node_id, std::string property_key,
                                Value value) = 0;

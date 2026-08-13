@@ -448,7 +448,7 @@ class PlannerQueryBuilder {
     return nested;
   }
 
-  bool IsPureVariablePassthrough(
+  [[nodiscard]] bool IsPureVariablePassthrough(
       const ast::ProjectionBody &body,
       const std::unordered_set<std::string> &available_symbols) const {
     if (body.star || body.distinct || !body.order_by.empty() || body.skip ||
@@ -476,10 +476,10 @@ class PlannerQueryBuilder {
     return StringSetEquals(projected_symbols, available_symbols);
   }
 
-  bool CanInlineWith(const ast::With &with_clause,
-                     const std::unordered_set<std::string> &available_symbols,
-                     bool has_optional_boundary,
-                     bool has_update_boundary) const {
+  [[nodiscard]] bool CanInlineWith(
+      const ast::With &with_clause,
+      const std::unordered_set<std::string> &available_symbols,
+      bool has_optional_boundary, bool has_update_boundary) const {
     if (has_optional_boundary || has_update_boundary) {
       return false;
     }
@@ -934,7 +934,7 @@ class PlannerQueryBuilder {
     return horizon;
   }
 
-  std::vector<ProcedureYieldItem> BuildProcedureYieldItems(
+  [[nodiscard]] std::vector<ProcedureYieldItem> BuildProcedureYieldItems(
       std::string_view procedure_name,
       const std::vector<ast::StandaloneCall::YieldItem> &items,
       bool expand_implicit_yields) const {

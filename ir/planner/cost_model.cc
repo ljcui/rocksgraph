@@ -7,8 +7,8 @@ namespace ir {
 namespace {
 
 const HeuristicPlannerStatistics &DefaultStatistics() {
-  static const HeuristicPlannerStatistics statistics;
-  return statistics;
+  static const HeuristicPlannerStatistics kStatistics;
+  return kStatistics;
 }
 
 double AtLeastOne(double value) { return std::max(1.0, value); }
@@ -82,7 +82,8 @@ PlannerStatistics::RelationshipPropertyHistogram(
 
 double PlannerStatistics::EstimateValueHashJoinSelectivity(
     std::size_t predicate_count) const {
-  return predicate_count == 0 ? 1.0 : 1.0 / predicate_count;
+  return predicate_count == 0 ? 1.0
+                              : 1.0 / static_cast<double>(predicate_count);
 }
 
 double PlannerStatistics::EstimatePredicateJoinSelectivity(
@@ -141,14 +142,15 @@ double HeuristicPlannerStatistics::EstimateFilterSelectivity() const {
 
 double HeuristicPlannerStatistics::EstimateNodeHashJoinSelectivity(
     std::size_t key_count) const {
-  return key_count == 0 ? 1.0 : 1.0 / key_count;
+  return key_count == 0 ? 1.0 : 1.0 / static_cast<double>(key_count);
 }
 
 CostModel::CostModel(const PlannerStatistics *statistics)
     : statistics_(statistics) {}
 
 CostEstimate CostModel::EstimateArgument(std::size_t symbol_count) const {
-  return {.estimated_rows = 1.0, .cost = 0.1 + 0.01 * symbol_count};
+  return {.estimated_rows = 1.0,
+          .cost = 0.1 + 0.01 * static_cast<double>(symbol_count)};
 }
 
 CostEstimate CostModel::EstimateNodeScan(

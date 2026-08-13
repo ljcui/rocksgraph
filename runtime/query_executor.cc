@@ -74,8 +74,8 @@ class NoIndexPlannerCatalog final : public ir::PlannerCatalog {
 };
 
 const ir::PlannerCatalog &DefaultRuntimePlannerCatalog() {
-  static const NoIndexPlannerCatalog catalog;
-  return catalog;
+  static const NoIndexPlannerCatalog kCatalog;
+  return kCatalog;
 }
 
 ir::LogicalPlanBuilderOptions PlannerOptionsFor(const QueryOptions &options) {
@@ -111,8 +111,8 @@ class QueryExecutorImpl {
   }
 
  private:
-  QueryResult Materialize(const std::vector<std::string> &columns,
-                          const Rows &rows) const {
+  [[nodiscard]] QueryResult Materialize(const std::vector<std::string> &columns,
+                                        const Rows &rows) const {
     QueryResult result;
     result.columns = columns;
     result.rows.reserve(rows.size());
@@ -418,7 +418,7 @@ class QueryExecutorImpl {
     return out;
   }
 
-  std::set<std::string> CollectLabels() const {
+  [[nodiscard]] std::set<std::string> CollectLabels() const {
     std::set<std::string> labels;
     for (const auto &node : access_path_->ScanNodes()) {
       for (const auto &label : node->labels) {
@@ -428,7 +428,7 @@ class QueryExecutorImpl {
     return labels;
   }
 
-  std::set<std::string> CollectRelationshipTypes() const {
+  [[nodiscard]] std::set<std::string> CollectRelationshipTypes() const {
     std::set<std::string> types;
     for (const auto &relationship : access_path_->ScanRelationships()) {
       if (!relationship->type.empty()) {
@@ -438,7 +438,7 @@ class QueryExecutorImpl {
     return types;
   }
 
-  std::set<std::string> CollectPropertyKeys() const {
+  [[nodiscard]] std::set<std::string> CollectPropertyKeys() const {
     std::set<std::string> keys;
     for (const auto &node : access_path_->ScanNodes()) {
       for (const auto &[key, value] : node->properties) {

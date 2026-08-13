@@ -1210,8 +1210,8 @@ TEST(PlannerQueryTest, BuildsVariableLengthRelationshipPattern) {
   EXPECT_TRUE(relationship.length.variable);
   ASSERT_TRUE(relationship.length.min.has_value());
   ASSERT_TRUE(relationship.length.max.has_value());
-  EXPECT_EQ(*relationship.length.min, 1);
-  EXPECT_EQ(*relationship.length.max, 3);
+  EXPECT_EQ(relationship.length.min, 1);
+  EXPECT_EQ(relationship.length.max, 3);
 }
 
 TEST(PlannerQueryTest, InlinesPassthroughWithWhereForMultiPartQuery) {
