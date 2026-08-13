@@ -551,6 +551,12 @@ bool ValuesEqual(const Value &left, const Value &right) {
   if (left.Type() != right.Type()) {
     return false;
   }
+  if (left.IsNode()) {
+    return left.AsNode().id == right.AsNode().id;
+  }
+  if (left.IsRelationship()) {
+    return left.AsRelationship().id == right.AsRelationship().id;
+  }
   if (left.IsList()) {
     if (left.AsList().size() != right.AsList().size()) {
       return false;
@@ -578,6 +584,12 @@ bool ValuesEqual(const Value &left, const Value &right) {
 }
 
 std::string ValueKey(const Value &value) {
+  if (value.IsNode()) {
+    return "node:" + std::to_string(value.AsNode().id);
+  }
+  if (value.IsRelationship()) {
+    return "relationship:" + std::to_string(value.AsRelationship().id);
+  }
   if (value.IsInteger()) {
     return "number:" + std::to_string(value.AsInteger());
   }

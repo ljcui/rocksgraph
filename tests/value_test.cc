@@ -60,6 +60,30 @@ TEST(ValueTest, QueryEqualityAndKeysNormalizeNumericValues) {
                       rg::Value(9.223372036854776e18)));
 }
 
+TEST(ValueTest, QueryEqualityUsesGraphEntityIdentity) {
+  auto first_node = std::make_shared<rg::Node>();
+  first_node->id = 7;
+  first_node->labels = {"Before"};
+  auto second_node = std::make_shared<rg::Node>();
+  second_node->id = 7;
+  second_node->labels = {"After"};
+
+  auto first_relationship = std::make_shared<rg::Relationship>();
+  first_relationship->id = 9;
+  first_relationship->type = "BEFORE";
+  auto second_relationship = std::make_shared<rg::Relationship>();
+  second_relationship->id = 9;
+  second_relationship->type = "AFTER";
+
+  EXPECT_TRUE(rg::ValuesEqual(rg::Value(first_node), rg::Value(second_node)));
+  EXPECT_EQ(rg::ValueKey(rg::Value(first_node)),
+            rg::ValueKey(rg::Value(second_node)));
+  EXPECT_TRUE(rg::ValuesEqual(rg::Value(first_relationship),
+                              rg::Value(second_relationship)));
+  EXPECT_EQ(rg::ValueKey(rg::Value(first_relationship)),
+            rg::ValueKey(rg::Value(second_relationship)));
+}
+
 TEST(ValueTest, GraphTypes) {
   auto node = std::make_shared<rg::Node>();
   node->id = 7;

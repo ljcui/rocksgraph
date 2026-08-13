@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <set>
@@ -22,6 +23,7 @@
 #include "runtime/aggregation_evaluator.h"
 #include "runtime/expression_evaluator.h"
 #include "runtime/graph_access_executor.h"
+#include "runtime/join_executor.h"
 #include "runtime/query_row_util.h"
 
 namespace rg {
@@ -422,50 +424,35 @@ class QueryExecutorImpl {
     for (const auto &base : input) {
       Rows left_rows = ExecutePlan(plan.Child(0), Rows{base});
       Rows right_rows = ExecutePlan(plan.Child(1), Rows{base});
-      for (const auto &left : left_rows) {
-        for (const auto &right : right_rows) {
-          QueryRow merged;
-          if (!MergeQueryRows(left, right, &merged)) {
-            continue;
-          }
-          if (!JoinPredicateMatches(plan, merged)) {
-            continue;
-          }
-          out.push_back(std::move(merged));
-        }
+      Rows joined;
+      switch (plan.Type()) {
+        case ir::LogicalPlanNodeType::kCartesianProduct:
+          joined = join_executor_.Execute(
+              static_cast<const ir::CartesianProductPlan &>(plan), left_rows,
+              right_rows);
+          break;
+        case ir::LogicalPlanNodeType::kNodeHashJoin:
+          joined = join_executor_.Execute(
+              static_cast<const ir::NodeHashJoinPlan &>(plan), left_rows,
+              right_rows);
+          break;
+        case ir::LogicalPlanNodeType::kValueHashJoin:
+          joined = join_executor_.Execute(
+              static_cast<const ir::ValueHashJoinPlan &>(plan), left_rows,
+              right_rows);
+          break;
+        case ir::LogicalPlanNodeType::kPredicateJoin:
+          joined = join_executor_.Execute(
+              static_cast<const ir::PredicateJoinPlan &>(plan), left_rows,
+              right_rows);
+          break;
+        default:
+          THROW(common::InternalError, "unknown join plan");
       }
+      out.insert(out.end(), std::make_move_iterator(joined.begin()),
+                 std::make_move_iterator(joined.end()));
     }
     return out;
-  }
-
-  bool JoinPredicateMatches(const ir::LogicalPlan &plan, const QueryRow &row) {
-    switch (plan.Type()) {
-      case ir::LogicalPlanNodeType::kCartesianProduct:
-        return true;
-      case ir::LogicalPlanNodeType::kNodeHashJoin:
-        return true;
-      case ir::LogicalPlanNodeType::kValueHashJoin: {
-        const auto &join = static_cast<const ir::ValueHashJoinPlan &>(plan);
-        for (const ast::Expression *predicate : join.Predicates()) {
-          if (!PredicateIsTrue(EvaluateExpression(*predicate, row))) {
-            return false;
-          }
-        }
-        return true;
-      }
-      case ir::LogicalPlanNodeType::kPredicateJoin: {
-        const auto &join = static_cast<const ir::PredicateJoinPlan &>(plan);
-        for (const ast::Expression *predicate : join.Predicates()) {
-          if (!PredicateIsTrue(EvaluateExpression(*predicate, row))) {
-            return false;
-          }
-        }
-        return true;
-      }
-      default:
-        break;
-    }
-    THROW(common::InternalError, "unknown join plan");
   }
 
   Rows ExecuteApply(const ir::LogicalPlan &plan, const Rows &input) {
@@ -1023,6 +1010,7 @@ class QueryExecutorImpl {
   const AccessPath *access_path_ = nullptr;
   Storage *storage_ = nullptr;
   GraphAccessExecutor graph_access_;
+  JoinExecutor join_executor_;
 };
 
 }  // namespace
