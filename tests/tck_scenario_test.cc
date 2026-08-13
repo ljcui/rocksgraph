@@ -722,6 +722,38 @@ TEST(TckScenarioTest, ExecutesConformanceSubset) {
       {"clauses/return/Return6.feature",
        "[21] Fail if more complex expressions, even if returned, are used "
        "inside expression which contains an aggregation expression"},
+      {"clauses/return-orderby/ReturnOrderBy2.feature",
+       "[3] Sort on aggregated function"},
+      {"clauses/return-orderby/ReturnOrderBy2.feature",
+       "[6] Count star should count everything in scope"},
+      {"clauses/return-orderby/ReturnOrderBy3.feature",
+       "[1] Sort on aggregate function and normal property"},
+      {"clauses/return-orderby/ReturnOrderBy6.feature",
+       "[1] Handle constants and parameters inside an order by item which "
+       "contains an aggregation expression"},
+      {"clauses/return-orderby/ReturnOrderBy6.feature",
+       "[2] Handle returned aliases inside an order by item which contains an "
+       "aggregation expression"},
+      {"clauses/return-orderby/ReturnOrderBy6.feature",
+       "[3] Handle returned property accesses inside an order by item which "
+       "contains an aggregation expression"},
+      {"clauses/return-orderby/ReturnOrderBy6.feature",
+       "[4] Fail if not returned variables are used inside an order by item "
+       "which contains an aggregation expression"},
+      {"clauses/return-orderby/ReturnOrderBy6.feature",
+       "[5] Fail if more complex expressions, even if returned, are used "
+       "inside an order by item which contains an aggregation expression"},
+      {"clauses/with-orderBy/WithOrderBy4.feature",
+       "[11] Sort by an aggregate projection"},
+      {"clauses/with-orderBy/WithOrderBy4.feature",
+       "[16] Handle constants and parameters inside an order by item which "
+       "contains an aggregation expression"},
+      {"clauses/with-orderBy/WithOrderBy4.feature",
+       "[17] Handle projected variables inside an order by item which "
+       "contains an aggregation expression"},
+      {"clauses/with-orderBy/WithOrderBy4.feature",
+       "[18]  Handle projected property accesses inside an order by item "
+       "which contains an aggregation expression"},
       {"expressions/list/List11.feature",
        "[3] Create an empty list if range direction and step direction are "
        "inconsistent"},

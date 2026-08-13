@@ -430,6 +430,20 @@ TEST(QueryExecutorTest, ExecutesAggregateSubexpressions) {
                 {"85", "86", "{count: 1, names: [\"Grace\"]}"}}));
 }
 
+TEST(QueryExecutorTest, ExecutesAggregateExpressionsInOrderBy) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "MATCH (n) RETURN n:Person AS person, count(*) + 1 AS total "
+      "ORDER BY count(1) + total DESC");
+
+  ASSERT_EQ(result.columns, (std::vector<std::string>{"person", "total"}));
+  EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{
+                                    {"true", "3"}, {"false", "2"}}));
+}
+
 TEST(QueryExecutorTest, ExecutesQuantifierOverCollectedValues) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);

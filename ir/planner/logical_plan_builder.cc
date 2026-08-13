@@ -123,6 +123,22 @@ LogicalProjectionItem OwnedLogicalProjectionItem(
   };
 }
 
+LogicalSortItem OwnedLogicalSortItem(
+    std::unique_ptr<ast::Expression> expression,
+    LogicalOrderDirection direction,
+    const std::vector<NestedIRExpression> &nested_expressions) {
+  CHECK(expression != nullptr, common::InternalError,
+        "owned sort expression is null");
+  std::shared_ptr<ast::Expression> owned(std::move(expression));
+  const ast::Expression *raw = owned.get();
+  return {
+      .expression = raw,
+      .owned_expression = std::move(owned),
+      .direction = direction,
+      .precomputed_expressions = PrecomputedExpressions(nested_expressions),
+  };
+}
+
 class AggregateSubexpressionRewriter final : public ast::ASTRewriter {
  public:
   AggregateSubexpressionRewriter(
@@ -375,7 +391,8 @@ bool ContainsExpression(const ast::Expression &haystack,
 }
 
 void ValidateProjectionTailExpressionsAvailable(
-    const LogicalPlan &input, const QueryProjection &projection) {
+    const LogicalPlan &input, const QueryProjection &projection,
+    const std::vector<LogicalSortItem> *sort_items = nullptr) {
   const std::unordered_set<std::string> available(input.OutputColumns().begin(),
                                                   input.OutputColumns().end());
   const std::vector<LogicalPrecomputedExpression> precomputed_expressions =
@@ -407,8 +424,14 @@ void ValidateProjectionTailExpressionsAvailable(
       }
     }
   };
-  for (const auto &item : projection.required_order.items) {
-    validate_dependencies(item.expression, "ORDER BY expression");
+  if (sort_items != nullptr) {
+    for (const auto &item : *sort_items) {
+      validate_dependencies(item.expression, "ORDER BY expression");
+    }
+  } else {
+    for (const auto &item : projection.required_order.items) {
+      validate_dependencies(item.expression, "ORDER BY expression");
+    }
   }
   validate_dependencies(projection.pagination.skip, "SKIP expression");
   validate_dependencies(projection.pagination.limit, "LIMIT expression");
@@ -1382,6 +1405,39 @@ class LogicalPlanBuilder {
           projection.nested_expressions));
     }
 
+    std::optional<std::vector<LogicalSortItem>> rewritten_order;
+    if (!projection.required_order.empty()) {
+      rewritten_order.emplace();
+      rewritten_order->reserve(projection.required_order.items.size());
+      for (const auto &item : projection.required_order.items) {
+        CHECK(item.expression != nullptr, common::InvalidArgumentError,
+              "sort expression is null");
+        rewritten_order->push_back(
+            OwnedLogicalSortItem(rewriter.Rewrite(*item.expression),
+                                 ToLogicalOrderDirection(item.direction),
+                                 projection.nested_expressions));
+      }
+    }
+
+    std::unordered_set<std::string> order_dependencies;
+    if (rewritten_order != std::nullopt) {
+      for (const auto &item : *rewritten_order) {
+        if (item.expression == nullptr) {
+          continue;
+        }
+        const auto dependencies =
+            ast::CollectExpressionDependencies(*item.expression);
+        order_dependencies.insert(dependencies.begin(), dependencies.end());
+      }
+    }
+    std::vector<std::string> order_aggregation_aliases;
+    order_aggregation_aliases.reserve(aggregation_items.size());
+    for (const auto &item : aggregation_items) {
+      if (!item.alias.empty() && order_dependencies.contains(item.alias)) {
+        order_aggregation_aliases.push_back(item.alias);
+      }
+    }
+
     plan = std::make_unique<AggregationPlan>(std::move(plan),
                                              std::move(grouping_items),
                                              std::move(aggregation_items));
@@ -1400,10 +1456,14 @@ class LogicalPlanBuilder {
           AppendPassthroughProjectionItem(item.alias, &final_items);
         }
       }
+      for (const auto &alias : order_aggregation_aliases) {
+        AppendPassthroughProjectionItem(alias, &final_items);
+      }
       plan = std::make_unique<ProjectionPlan>(std::move(plan),
                                               std::move(final_items));
     }
-    return ApplyProjectionTail(std::move(plan), projection, std::move(aliases));
+    return ApplyProjectionTail(std::move(plan), projection, std::move(aliases),
+                               std::move(rewritten_order));
   }
 
   std::unique_ptr<LogicalPlan> ApplyUnwind(std::unique_ptr<LogicalPlan> plan,
@@ -1474,14 +1534,19 @@ class LogicalPlanBuilder {
 
   std::unique_ptr<LogicalPlan> ApplyProjectionTail(
       std::unique_ptr<LogicalPlan> plan, const QueryProjection &projection,
-      std::vector<std::string> aliases) {
+      std::vector<std::string> aliases,
+      std::optional<std::vector<LogicalSortItem>> sort_items = std::nullopt) {
     plan = ApplyProjectionSelections(std::move(plan), projection.selections);
-    ValidateProjectionTailExpressionsAvailable(*plan, projection);
+    ValidateProjectionTailExpressionsAvailable(
+        *plan, projection, sort_items != std::nullopt ? &*sort_items : nullptr);
 
     if (!projection.required_order.empty()) {
-      plan = std::make_unique<SortPlan>(
-          std::move(plan),
-          SortItems(projection.required_order, projection.nested_expressions));
+      std::vector<LogicalSortItem> logical_sort_items =
+          sort_items != std::nullopt ? std::move(*sort_items)
+                                     : SortItems(projection.required_order,
+                                                 projection.nested_expressions);
+      plan = std::make_unique<SortPlan>(std::move(plan),
+                                        std::move(logical_sort_items));
     }
     if (projection.pagination.skip != nullptr) {
       plan = std::make_unique<SkipPlan>(

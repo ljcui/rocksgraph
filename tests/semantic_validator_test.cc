@@ -143,6 +143,24 @@ TEST(SemanticValidatorTest, RejectsAggregationInOrderBy) {
                       "ORDER BY cannot contain aggregation");
 }
 
+TEST(SemanticValidatorTest, AllowsAggregationInOrderByAfterAggregation) {
+  EXPECT_NO_THROW(
+      ast::ParseCypher("MATCH (person) RETURN avg(person.age) AS avgAge "
+                       "ORDER BY $age + avg(person.age) - 1000"));
+  EXPECT_NO_THROW(
+      ast::ParseCypher("MATCH (me)--(you) "
+                       "RETURN me.age AS age, count(you.age) AS cnt "
+                       "ORDER BY age, me.age + count(you.age)"));
+}
+
+TEST(SemanticValidatorTest, RejectsAmbiguousAggregationInOrderBy) {
+  ExpectSemanticError(
+      "MATCH (me)--(you) "
+      "RETURN me.age + you.age, count(*) AS cnt "
+      "ORDER BY me.age + you.age + count(*)",
+      "ambiguous aggregation expression");
+}
+
 TEST(SemanticValidatorTest, RestrictsOrderByAfterDistinct) {
   constexpr std::string_view k_restricted_order_by =
       "In a WITH/RETURN with DISTINCT or an aggregation, it is not possible to "
@@ -169,6 +187,13 @@ TEST(SemanticValidatorTest, AllowsOrderByProjectedValuesAfterDistinct) {
 TEST(SemanticValidatorTest, RestrictsOrderByAfterAggregation) {
   ExpectSemanticError(
       "MATCH (n) RETURN n.name AS name, count(*) AS c ORDER BY n.age",
+      "In a WITH/RETURN with DISTINCT or an aggregation, it is not possible to "
+      "access variables declared before the WITH/RETURN: n");
+}
+
+TEST(SemanticValidatorTest, RestrictsUnprojectedOrderByAggregationInputs) {
+  ExpectSemanticError(
+      "MATCH (n) RETURN count(*) AS c ORDER BY max(n.age)",
       "In a WITH/RETURN with DISTINCT or an aggregation, it is not possible to "
       "access variables declared before the WITH/RETURN: n");
 }

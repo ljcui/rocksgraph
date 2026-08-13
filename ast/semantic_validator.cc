@@ -99,8 +99,10 @@ bool IsSimpleGroupingExpression(const Expression *expression) {
 class MixedAggregationScanner final : public ASTWalker {
  public:
   explicit MixedAggregationScanner(
-      std::vector<const Expression *> grouping_expressions)
-      : grouping_expressions_(std::move(grouping_expressions)) {}
+      std::vector<const Expression *> grouping_expressions,
+      std::unordered_set<std::string> grouping_variables = {})
+      : grouping_expressions_(std::move(grouping_expressions)),
+        grouping_variables_(std::move(grouping_variables)) {}
 
   void Scan(Expression &expression) {
     ambiguous_ = false;
@@ -125,7 +127,8 @@ class MixedAggregationScanner final : public ASTWalker {
   void Visit(CountStarExpression &node) override { (void)node; }
 
   void Visit(Variable &node) override {
-    if (!IsLocal(node.name) && !IsGroupingExpression(node)) {
+    if (!IsLocal(node.name) && !IsGroupingExpression(node) &&
+        !grouping_variables_.contains(node.name)) {
       ambiguous_ = true;
     }
   }
@@ -205,6 +208,7 @@ class MixedAggregationScanner final : public ASTWalker {
   void PopLocal() { local_scopes_.pop_back(); }
 
   std::vector<const Expression *> grouping_expressions_;
+  std::unordered_set<std::string> grouping_variables_;
   std::vector<std::unordered_set<std::string>> local_scopes_;
   bool ambiguous_ = false;
   bool invalid_comprehension_aggregation_ = false;
@@ -480,9 +484,9 @@ class SemanticValidator : public ASTWalker {
     const Scope projected = ScopeFromProjection(node, pre);
     const Scope order_scope = MergeScopes(pre, projected);
     ValidateRestrictedProjectionOrderBy(node, pre, projected);
+    ValidateProjectionOrderByAggregations(node, projected);
 
     PushScope(order_scope);
-    ValidateNoAggregation(node.order_by, "ORDER BY");
     WalkList(node.order_by);
     ValidateNoAggregation(node.skip.get(), "SKIP");
     ValidatePagination(node.skip.get(), "SKIP");
@@ -917,6 +921,61 @@ class SemanticValidator : public ASTWalker {
       }
       MixedAggregationScanner scanner(grouping_expressions);
       scanner.Scan(*expression);
+      if (scanner.InvalidComprehensionAggregation()) {
+        ReportSemantic(
+            "aggregation is not allowed in a comprehension predicate or "
+            "mapping expression");
+      }
+      if (scanner.Ambiguous()) {
+        ReportSemantic("ambiguous aggregation expression");
+      }
+    }
+  }
+
+  void ValidateProjectionOrderByAggregations(const ProjectionBody &body,
+                                             const Scope &projected_scope) {
+    bool contains_order_aggregation = false;
+    for (const auto &item : body.order_by) {
+      if (item != nullptr && ContainsAggregation(item->expression.get())) {
+        contains_order_aggregation = true;
+        break;
+      }
+    }
+    if (!contains_order_aggregation) {
+      return;
+    }
+
+    if (!ProjectionContainsAggregation(body)) {
+      ReportSemantic("ORDER BY cannot contain aggregation");
+      return;
+    }
+
+    std::vector<const Expression *> grouping_expressions;
+    grouping_expressions.reserve(body.items.size());
+    for (const auto &item : body.items) {
+      if (!item || !item->expression ||
+          ContainsAggregation(item->expression.get()) ||
+          !IsSimpleGroupingExpression(item->expression.get())) {
+        continue;
+      }
+      grouping_expressions.push_back(
+          UnwrapParenthesized(item->expression.get()));
+    }
+
+    std::unordered_set<std::string> grouping_variables;
+    grouping_variables.reserve(projected_scope.bindings.size());
+    for (const auto &[name, value] : projected_scope.bindings) {
+      (void)value;
+      grouping_variables.insert(name);
+    }
+
+    for (const auto &item : body.order_by) {
+      if (item == nullptr || item->expression == nullptr ||
+          !ContainsAggregation(item->expression.get())) {
+        continue;
+      }
+      MixedAggregationScanner scanner(grouping_expressions, grouping_variables);
+      scanner.Scan(*item->expression);
       if (scanner.InvalidComprehensionAggregation()) {
         ReportSemantic(
             "aggregation is not allowed in a comprehension predicate or "

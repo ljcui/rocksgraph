@@ -848,6 +848,26 @@ TEST(LogicalPlanBuilderTest, BuildsAggregationOrderBySkipAndLimitPlan) {
 )");
 }
 
+TEST(LogicalPlanBuilderTest, BuildsAggregateExpressionOrderByPlan) {
+  ExpectLogicalPlanText("MATCH (n) RETURN count(*) AS c ORDER BY count(1) + c",
+                        R"(ProduceResults [c]
+  Sort [anon_aggregate_0 + c ASC]
+    Aggregation [c, anon_aggregate_0]
+      AllNodeScan [n]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, PreservesOrderAggregateThroughPostProjection) {
+  ExpectLogicalPlanText(
+      "MATCH (n) RETURN count(*) + 1 AS c ORDER BY count(1) + c",
+      R"(ProduceResults [c]
+  Sort [anon_aggregate_1 + c ASC]
+    Projection [c, anon_aggregate_1]
+      Aggregation [anon_aggregate_0, anon_aggregate_1]
+        AllNodeScan [n]
+)");
+}
+
 TEST(LogicalPlanBuilderTest, BuildsProjectionOnlyTailPlan) {
   ExpectLogicalPlanText("MATCH (n) WITH n.name AS name RETURN name",
                         R"(ProduceResults [name]

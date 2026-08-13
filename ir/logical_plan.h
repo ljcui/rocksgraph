@@ -98,6 +98,7 @@ struct LogicalProjectionItem {
 
 struct LogicalSortItem {
   const ast::Expression *expression = nullptr;
+  std::shared_ptr<ast::Expression> owned_expression;
   LogicalOrderDirection direction = LogicalOrderDirection::kAscending;
   std::vector<LogicalPrecomputedExpression> precomputed_expressions;
 };
