@@ -72,7 +72,8 @@ QueryRows GraphAccessExecutor::ExecuteNodeIndexSeek(
     const ir::NodeIndexSeekPlan &plan, const QueryRows &input) const {
   QueryRows out;
   for (const auto &row : input) {
-    Value expected = EvaluateExpression(*plan.ValueExpression(), row);
+    Value expected =
+        EvaluateExpression(*plan.ValueExpression(), row, {}, context_);
     for (const auto &node : access_path_->FindNodesByIndex(
              plan.Labels(), plan.PropertyKey(), expected)) {
       QueryRow next = row;
@@ -98,7 +99,8 @@ QueryRows GraphAccessExecutor::ExecuteNodeIndexRangeSeek(
       for (const ast::Expression *predicate : plan.Predicates()) {
         CHECK(predicate != nullptr, common::InvalidArgumentError,
               "index range predicate is null");
-        keep = keep && PredicateIsTrue(EvaluateExpression(*predicate, next));
+        keep = keep && PredicateIsTrue(
+                           EvaluateExpression(*predicate, next, {}, context_));
       }
       if (keep) {
         out.push_back(std::move(next));
@@ -128,7 +130,8 @@ QueryRows GraphAccessExecutor::ExecuteRelationshipIndexSeek(
     const ir::RelationshipIndexSeekPlan &plan, const QueryRows &input) const {
   QueryRows out;
   for (const auto &row : input) {
-    Value expected = EvaluateExpression(*plan.ValueExpression(), row);
+    Value expected =
+        EvaluateExpression(*plan.ValueExpression(), row, {}, context_);
     for (const auto &relationship : access_path_->FindRelationshipsByIndex(
              plan.Types(), plan.PropertyKey(), expected)) {
       AddRelationshipRow(row, *relationship, plan.FromNode(),
@@ -155,8 +158,8 @@ QueryRows GraphAccessExecutor::ExecuteRelationshipIndexRangeSeek(
         for (const ast::Expression *predicate : plan.Predicates()) {
           CHECK(predicate != nullptr, common::InvalidArgumentError,
                 "index range predicate is null");
-          keep = keep &&
-                 PredicateIsTrue(EvaluateExpression(*predicate, candidate));
+          keep = keep && PredicateIsTrue(EvaluateExpression(
+                             *predicate, candidate, {}, context_));
         }
         if (keep) {
           out.push_back(std::move(candidate));
@@ -222,6 +225,9 @@ QueryRows GraphAccessExecutor::ExecuteExpand(const ir::ExpandPlan &plan,
   QueryRows out;
   for (const auto &row : input) {
     const Value &from = LookupQueryVariable(row, plan.FromNode());
+    if (from.IsNull()) {
+      continue;
+    }
     CHECK(from.IsNode(), common::InvalidArgumentError,
           "expand source is not a node: " + plan.FromNode());
     const std::int64_t from_id = from.AsNode().id;
@@ -268,6 +274,9 @@ QueryRows GraphAccessExecutor::ExecuteExpandInto(const ir::ExpandIntoPlan &plan,
   for (const auto &row : input) {
     const Value &from = LookupQueryVariable(row, plan.FromNode());
     const Value &to = LookupQueryVariable(row, plan.ToNode());
+    if (from.IsNull() || to.IsNull()) {
+      continue;
+    }
     CHECK(from.IsNode() && to.IsNode(), common::InvalidArgumentError,
           "expand-into endpoints must be nodes");
     for (const auto &relationship :
@@ -318,12 +327,18 @@ QueryRows GraphAccessExecutor::ExecuteVarExpand(const ir::VarExpandPlan &plan,
   QueryRows out;
   for (const auto &row : input) {
     const Value &from = LookupQueryVariable(row, plan.FromNode());
+    if (from.IsNull()) {
+      continue;
+    }
     CHECK(from.IsNode(), common::InvalidArgumentError,
           "variable expand source is not a node: " + plan.FromNode());
 
     std::optional<std::int64_t> bound_to_id;
     const auto to_found = row.find(plan.ToNode());
     if (to_found != row.end()) {
+      if (to_found->second.IsNull()) {
+        continue;
+      }
       CHECK(to_found->second.IsNode(), common::InvalidArgumentError,
             "variable expand target is not a node: " + plan.ToNode());
       bound_to_id = to_found->second.AsNode().id;

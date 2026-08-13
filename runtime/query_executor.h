@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "ir/logical_plan.h"
+#include "runtime/execution_context.h"
 #include "runtime/query_row.h"
 #include "storage/storage.h"
 #include "value/value.h"
@@ -29,6 +30,7 @@ struct QueryOptions {
   std::size_t max_idp_candidates_per_relationship_count = 128;
   const ir::PlannerStatistics *planner_statistics = nullptr;
   const ir::PlannerCatalog *planner_catalog = nullptr;
+  QueryParameters parameters;
 };
 
 class QueryExecutor final {
@@ -38,8 +40,11 @@ class QueryExecutor final {
   explicit QueryExecutor(const AccessPath &access_path)
       : access_path_(&access_path) {}
 
-  [[nodiscard]] QueryResult Execute(const ir::LogicalPlan &plan) const;
-  void ExecuteWrite(const ir::LogicalPlan &plan);
+  [[nodiscard]] QueryResult Execute(
+      const ir::LogicalPlan &plan,
+      const QueryParameters &parameters = {}) const;
+  void ExecuteWrite(const ir::LogicalPlan &plan,
+                    const QueryParameters &parameters = {});
 
  private:
   const AccessPath *access_path_ = nullptr;

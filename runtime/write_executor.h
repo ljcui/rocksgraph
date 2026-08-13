@@ -3,6 +3,7 @@
 #include <functional>
 
 #include "ir/logical_plan.h"
+#include "runtime/execution_context.h"
 #include "runtime/query_row.h"
 #include "storage/storage.h"
 
@@ -13,7 +14,8 @@ using WritePlanExecutor =
 
 class WriteExecutor final {
  public:
-  explicit WriteExecutor(Storage *storage) : storage_(storage) {}
+  explicit WriteExecutor(Storage *storage, ExecutionContext context = {})
+      : storage_(storage), context_(context) {}
 
   [[nodiscard]] QueryRows Execute(const ir::CreateNodePlan &plan,
                                   const QueryRows &input,
@@ -65,6 +67,7 @@ class WriteExecutor final {
   [[nodiscard]] Storage &WritableStorage() const;
 
   Storage *storage_ = nullptr;
+  ExecutionContext context_;
 };
 
 }  // namespace rg

@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "ir/logical_plan.h"
+#include "runtime/execution_context.h"
 #include "runtime/query_row.h"
 #include "storage/access_path.h"
 
@@ -15,8 +16,9 @@ namespace rg {
 
 class GraphAccessExecutor final {
  public:
-  explicit GraphAccessExecutor(const AccessPath &access_path)
-      : access_path_(&access_path) {}
+  explicit GraphAccessExecutor(const AccessPath &access_path,
+                               ExecutionContext context = {})
+      : access_path_(&access_path), context_(context) {}
 
   [[nodiscard]] QueryRows ExecuteAllNodeScan(const ir::AllNodeScanPlan &plan,
                                              const QueryRows &input) const;
@@ -84,6 +86,7 @@ class GraphAccessExecutor final {
                               std::int64_t *current_node_id) const;
 
   const AccessPath *access_path_ = nullptr;
+  ExecutionContext context_;
 };
 
 }  // namespace rg

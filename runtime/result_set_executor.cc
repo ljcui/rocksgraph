@@ -91,9 +91,10 @@ ValueOrder CompareValues(const Value &left, const Value &right) {
 }
 
 ValueOrder CompareSortItem(const ir::LogicalSortItem &item,
-                           const QueryRow &left, const QueryRow &right) {
-  const Value lhs = EvaluateLogicalSortItem(item, left);
-  const Value rhs = EvaluateLogicalSortItem(item, right);
+                           const QueryRow &left, const QueryRow &right,
+                           ExecutionContext context) {
+  const Value lhs = EvaluateLogicalSortItem(item, left, context);
+  const Value rhs = EvaluateLogicalSortItem(item, right, context);
   const ValueOrder order = CompareValues(lhs, rhs);
   if (item.direction == ir::LogicalOrderDirection::kAscending) {
     return order;
@@ -110,7 +111,8 @@ ValueOrder CompareSortItem(const ir::LogicalSortItem &item,
 std::optional<std::int64_t> EvaluatePaginationCount(
     const ast::Expression *expression,
     const std::vector<ir::LogicalPrecomputedExpression> &precomputed,
-    const QueryRows &rows, const std::string &operator_name) {
+    const QueryRows &rows, const std::string &operator_name,
+    ExecutionContext context) {
   CHECK(expression != nullptr, common::InvalidArgumentError,
         operator_name + " expression is null");
   if (rows.empty() && RequiresInputRow(*expression, precomputed)) {
@@ -119,7 +121,8 @@ std::optional<std::int64_t> EvaluatePaginationCount(
 
   const QueryRow empty_row;
   const QueryRow &row = rows.empty() ? empty_row : rows.front();
-  const Value value = EvaluateExpression(*expression, row, precomputed);
+  const Value value =
+      EvaluateExpression(*expression, row, precomputed, context);
   CHECK(value.IsInteger(), common::InvalidArgumentError,
         operator_name + " requires a non-negative integer");
   CHECK(value.AsInteger() >= 0, common::InvalidArgumentError,
@@ -132,10 +135,10 @@ std::optional<std::int64_t> EvaluatePaginationCount(
 QueryRows ResultSetExecutor::Execute(const ir::SortPlan &plan,
                                      QueryRows rows) const {
   std::stable_sort(rows.begin(), rows.end(),
-                   [&plan](const QueryRow &left, const QueryRow &right) {
+                   [this, &plan](const QueryRow &left, const QueryRow &right) {
                      for (const auto &item : plan.Items()) {
                        const ValueOrder order =
-                           CompareSortItem(item, left, right);
+                           CompareSortItem(item, left, right, context_);
                        if (order == ValueOrder::kLess) {
                          return true;
                        }
@@ -151,7 +154,7 @@ QueryRows ResultSetExecutor::Execute(const ir::SortPlan &plan,
 QueryRows ResultSetExecutor::Execute(const ir::SkipPlan &plan,
                                      QueryRows rows) const {
   const std::optional<std::int64_t> count = EvaluatePaginationCount(
-      plan.Skip(), plan.PrecomputedExpressions(), rows, "SKIP");
+      plan.Skip(), plan.PrecomputedExpressions(), rows, "SKIP", context_);
   if (!count.has_value() || static_cast<std::uint64_t>(*count) >= rows.size()) {
     return {};
   }
@@ -161,7 +164,7 @@ QueryRows ResultSetExecutor::Execute(const ir::SkipPlan &plan,
 QueryRows ResultSetExecutor::Execute(const ir::LimitPlan &plan,
                                      QueryRows rows) const {
   const std::optional<std::int64_t> count = EvaluatePaginationCount(
-      plan.Limit(), plan.PrecomputedExpressions(), rows, "LIMIT");
+      plan.Limit(), plan.PrecomputedExpressions(), rows, "LIMIT", context_);
   if (count.has_value() && static_cast<std::uint64_t>(*count) < rows.size()) {
     rows.resize(static_cast<std::size_t>(*count));
   }

@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.15)
 project(rocksgraph)
 
+set(ROCKSGRAPH_TCK_DIR
+    "${CMAKE_SOURCE_DIR}/../openCypher/tck"
+    CACHE PATH "Path to an openCypher TCK checkout")
+
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE
       "Debug"
@@ -260,6 +264,15 @@ target_link_libraries(query_executor_test PRIVATE GTest::gtest_main
 set_target_properties(query_executor_test PROPERTIES BUILD_RPATH
                                                      "/usr/local/lib")
 add_test(NAME query_executor_test COMMAND query_executor_test)
+
+add_executable(tck_scenario_test tests/tck_scenario_test.cc)
+target_link_libraries(tck_scenario_test PRIVATE GTest::gtest_main
+                                                rocksgraph_runtime)
+target_compile_definitions(
+  tck_scenario_test PRIVATE ROCKSGRAPH_TCK_DIR="${ROCKSGRAPH_TCK_DIR}")
+set_target_properties(tck_scenario_test PROPERTIES BUILD_RPATH
+                                                   "/usr/local/lib")
+add_test(NAME tck_scenario_test COMMAND tck_scenario_test)
 
 add_executable(expression_evaluator_test tests/expression_evaluator_test.cc)
 target_link_libraries(expression_evaluator_test PRIVATE GTest::gtest_main

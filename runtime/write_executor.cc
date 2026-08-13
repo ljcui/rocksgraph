@@ -35,14 +35,21 @@ QueryRows ExecuteSource(const ir::LogicalPlan &plan, const QueryRows &input,
 }
 
 Value::Map EvaluateProperties(const ir::PatternPropertyMap &property_map,
-                              const QueryRow &row, std::string_view context) {
-  CHECK(property_map.parameter == nullptr, common::InvalidArgumentError,
-        std::string(context) + " parameter properties are not supported");
+                              const QueryRow &row, std::string_view context,
+                              ExecutionContext execution_context) {
+  if (property_map.parameter != nullptr) {
+    Value value =
+        EvaluateExpression(*property_map.parameter, row, {}, execution_context);
+    CHECK(value.IsMap(), common::InvalidArgumentError,
+          std::string(context) + " properties parameter must be a map");
+    return value.AsMap();
+  }
   Value::Map properties;
   for (const auto &entry : property_map.entries) {
     CHECK(entry.value != nullptr, common::InvalidArgumentError,
           std::string(context) + " property value is null");
-    properties[entry.key] = EvaluateExpression(*entry.value, row);
+    properties[entry.key] =
+        EvaluateExpression(*entry.value, row, {}, execution_context);
   }
   return properties;
 }
@@ -67,8 +74,8 @@ QueryRows WriteExecutor::Execute(const ir::CreateNodePlan &plan,
   out.reserve(rows.size());
   for (const auto &row : rows) {
     auto node = storage.CreateNode(
-        plan.Node().labels,
-        EvaluateProperties(plan.Node().properties, row, "CREATE node"));
+        plan.Node().labels, EvaluateProperties(plan.Node().properties, row,
+                                               "CREATE node", context_));
     QueryRow next = row;
     next[plan.Node().variable] = Value(node);
     out.push_back(std::move(next));
@@ -96,7 +103,7 @@ QueryRows WriteExecutor::Execute(const ir::CreateRelationshipPlan &plan,
         relationship_pattern.types.empty() ? std::string()
                                            : relationship_pattern.types[0],
         EvaluateProperties(relationship_pattern.properties, row,
-                           "CREATE relationship"));
+                           "CREATE relationship", context_));
     QueryRow next = row;
     next[relationship_pattern.variable] = Value(relationship);
     out.push_back(std::move(next));
@@ -145,8 +152,8 @@ QueryRow WriteExecutor::ExecuteMergeCreate(const ir::CreatePattern &pattern,
   for (const auto &command : pattern.commands) {
     if (command.kind == ir::CreateEntityKind::kNode) {
       const auto &node_pattern = pattern.nodes.at(command.index);
-      Value::Map properties =
-          EvaluateProperties(node_pattern.properties, row, "MERGE node");
+      Value::Map properties = EvaluateProperties(node_pattern.properties, row,
+                                                 "MERGE node", context_);
       for (const auto &[key, value] : properties) {
         (void)key;
         CHECK(!value.IsNull(), common::InvalidArgumentError,
@@ -165,8 +172,8 @@ QueryRow WriteExecutor::ExecuteMergeCreate(const ir::CreatePattern &pattern,
         LookupQueryVariable(row, relationship_pattern.right_node);
     CHECK(left.IsNode() && right.IsNode(), common::InvalidArgumentError,
           "MERGE relationship endpoints must be nodes");
-    Value::Map properties = EvaluateProperties(relationship_pattern.properties,
-                                               row, "MERGE relationship");
+    Value::Map properties = EvaluateProperties(
+        relationship_pattern.properties, row, "MERGE relationship", context_);
     for (const auto &[key, value] : properties) {
       (void)key;
       CHECK(!value.IsNull(), common::InvalidArgumentError,
@@ -208,8 +215,11 @@ void WriteExecutor::ApplySetProperty(const ir::SetMutatingPattern &pattern,
   Storage &storage = WritableStorage();
   CHECK(pattern.entity != nullptr && pattern.value != nullptr,
         common::InvalidArgumentError, "SET property expression is null");
-  const Value &entity = EvaluateExpression(*pattern.entity, *row);
-  Value value = EvaluateExpression(*pattern.value, *row);
+  const Value &entity = EvaluateExpression(*pattern.entity, *row, {}, context_);
+  if (entity.IsNull()) {
+    return;
+  }
+  Value value = EvaluateExpression(*pattern.value, *row, {}, context_);
   if (entity.IsNode()) {
     storage.SetNodeProperty(entity.AsNode().id, pattern.property_key,
                             std::move(value));
@@ -229,8 +239,11 @@ void WriteExecutor::ApplySetProperties(const ir::SetMutatingPattern &pattern,
   Storage &storage = WritableStorage();
   CHECK(pattern.entity != nullptr && pattern.value != nullptr,
         common::InvalidArgumentError, "SET properties expression is null");
-  const Value &entity = EvaluateExpression(*pattern.entity, *row);
-  Value map_value = EvaluateExpression(*pattern.value, *row);
+  const Value &entity = EvaluateExpression(*pattern.entity, *row, {}, context_);
+  if (entity.IsNull()) {
+    return;
+  }
+  Value map_value = EvaluateExpression(*pattern.value, *row, {}, context_);
   CHECK(map_value.IsMap(), common::InvalidArgumentError,
         "SET properties requires a map value");
   if (entity.IsNode()) {
@@ -251,7 +264,10 @@ void WriteExecutor::ApplySetLabels(const ir::SetMutatingPattern &pattern,
                                    QueryRow *row) const {
   CHECK(pattern.entity != nullptr, common::InvalidArgumentError,
         "SET labels expression is null");
-  const Value &entity = EvaluateExpression(*pattern.entity, *row);
+  const Value &entity = EvaluateExpression(*pattern.entity, *row, {}, context_);
+  if (entity.IsNull()) {
+    return;
+  }
   CHECK(entity.IsNode(), common::InvalidArgumentError,
         "SET labels target is not a node");
   WritableStorage().SetLabels(entity.AsNode().id, pattern.labels);
@@ -310,7 +326,10 @@ QueryRows WriteExecutor::Execute(const ir::RemovePropertyPlan &plan,
   for (auto &row : rows) {
     CHECK(plan.Entity() != nullptr, common::InvalidArgumentError,
           "REMOVE property expression is null");
-    const Value &entity = EvaluateExpression(*plan.Entity(), row);
+    const Value &entity = EvaluateExpression(*plan.Entity(), row, {}, context_);
+    if (entity.IsNull()) {
+      continue;
+    }
     if (entity.IsNode()) {
       storage.RemoveNodeProperty(entity.AsNode().id, plan.PropertyKey());
     } else if (entity.IsRelationship()) {
@@ -332,7 +351,10 @@ QueryRows WriteExecutor::Execute(const ir::RemoveLabelsPlan &plan,
   for (auto &row : rows) {
     CHECK(plan.Entity() != nullptr, common::InvalidArgumentError,
           "REMOVE labels expression is null");
-    const Value &entity = EvaluateExpression(*plan.Entity(), row);
+    const Value &entity = EvaluateExpression(*plan.Entity(), row, {}, context_);
+    if (entity.IsNull()) {
+      continue;
+    }
     CHECK(entity.IsNode(), common::InvalidArgumentError,
           "REMOVE labels target is not a node");
     storage.RemoveLabels(entity.AsNode().id, plan.Labels());
@@ -365,8 +387,11 @@ QueryRows WriteExecutor::ExecuteDelete(
     for (const ast::Expression *expression : expressions) {
       CHECK(expression != nullptr, common::InvalidArgumentError,
             "DELETE expression is null");
-      const EntityRef entity =
-          MakeEntityRef(EvaluateExpression(*expression, row));
+      const Value value = EvaluateExpression(*expression, row, {}, context_);
+      if (value.IsNull()) {
+        continue;
+      }
+      const EntityRef entity = MakeEntityRef(value);
       if (entity.kind == EntityKind::kNode) {
         node_ids.insert(entity.id);
       } else {

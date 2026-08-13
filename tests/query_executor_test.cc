@@ -92,6 +92,40 @@ TEST(QueryExecutorTest, ExecutesNodeLabelAndPropertyQuery) {
             (std::vector<std::vector<std::string>>{{"\"Ada\""}}));
 }
 
+TEST(QueryExecutorTest, ExecutesQueriesWithParameters) {
+  rg::InMemoryGraph graph;
+  graph.AddNodeIndex({"Person"}, "name");
+  rg::QueryOptions options = QueryOptionsFor(graph);
+  options.parameters = {
+      {"name", rg::Value("Ada")},
+      {"ages", rg::Value(rg::Value::List{rg::Value(36), rg::Value(85)})},
+      {"s", rg::Value(1)},
+      {"l", rg::Value(1)},
+      {"properties", rg::Value(rg::Value::Map{{"name", rg::Value("Grace")},
+                                              {"age", rg::Value(85)}})}};
+
+  rg::ExecuteWriteQuery(graph, "CREATE (:Person {name: $name, age: $ages[0]})",
+                        options);
+  rg::ExecuteWriteQuery(graph, "CREATE (:Person $properties)", options);
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "MATCH (n:Person) WHERE n.name = $name OR n.age IN $ages "
+      "RETURN n.name AS name ORDER BY name SKIP $s LIMIT $l",
+      options);
+
+  ASSERT_EQ(result.columns, std::vector<std::string>{"name"});
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{{"\"Grace\""}}));
+}
+
+TEST(QueryExecutorTest, RejectsMissingQueryParameters) {
+  rg::InMemoryGraph graph;
+
+  EXPECT_THROW((void)rg::ExecuteReadQuery(graph, "RETURN $missing AS value"),
+               common::InvalidArgumentError);
+}
+
 TEST(QueryExecutorTest, ImplementsThreeValuedBooleanLogic) {
   rg::InMemoryGraph graph;
 
@@ -961,6 +995,19 @@ TEST(QueryExecutorTest, OptionalMatchNullExtendsMissingRows) {
       (std::vector<std::vector<std::string>>{{"\"C++\"", "null", "null"}}));
 }
 
+TEST(QueryExecutorTest, NullExpandSourceProducesNoMatches) {
+  rg::InMemoryGraph graph;
+
+  rg::QueryResult required = rg::ExecuteQuery(
+      graph, "OPTIONAL MATCH (a) WITH a MATCH (a)-->(b) RETURN b");
+  EXPECT_TRUE(required.rows.empty());
+
+  rg::QueryResult optional = rg::ExecuteQuery(
+      graph, "OPTIONAL MATCH (a) WITH a OPTIONAL MATCH (a)-->(b) RETURN b");
+  EXPECT_EQ(StringRows(optional),
+            (std::vector<std::vector<std::string>>{{"null"}}));
+}
+
 TEST(QueryExecutorTest, OptionalMatchPreservesMatchedRows) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
@@ -1066,6 +1113,29 @@ TEST(QueryExecutorTest, ExecutesSetRemoveAndDetachDelete) {
       graph, "MATCH (n:Person) WHERE n.name = 'Ada' RETURN count(n) AS c");
   EXPECT_EQ(StringRows(deleted),
             (std::vector<std::vector<std::string>>{{"0"}}));
+}
+
+TEST(QueryExecutorTest, NullWriteTargetsAreIgnored) {
+  rg::InMemoryGraph graph;
+
+  const std::vector<std::string> queries = {
+      "OPTIONAL MATCH (a:Missing) SET a.value = 1 RETURN a",
+      "OPTIONAL MATCH (a:Missing) SET a = {value: 1} RETURN a",
+      "OPTIONAL MATCH (a:Missing) SET a += {value: 1} RETURN a",
+      "OPTIONAL MATCH (a:Missing) SET a:Label RETURN a",
+      "OPTIONAL MATCH (a:Missing) REMOVE a.value RETURN a",
+      "OPTIONAL MATCH (a:Missing) REMOVE a:Label RETURN a",
+      "OPTIONAL MATCH (a:Missing) DELETE a RETURN a",
+      "OPTIONAL MATCH (a:Missing) DETACH DELETE a RETURN a",
+  };
+  for (const auto &query : queries) {
+    rg::QueryResult result = rg::ExecuteQuery(graph, query);
+    EXPECT_EQ(StringRows(result),
+              (std::vector<std::vector<std::string>>{{"null"}}))
+        << query;
+  }
+  EXPECT_TRUE(graph.Nodes().empty());
+  EXPECT_TRUE(graph.Relationships().empty());
 }
 
 TEST(QueryExecutorTest, RemovesNullPropertiesAndUpdatesRelationshipMaps) {

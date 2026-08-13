@@ -53,10 +53,10 @@ void AppendKeyPart(const Value &value, std::string *key) {
 
 GroupingProjection EvaluateGrouping(
     const std::vector<ir::LogicalProjectionItem> &grouping_items,
-    const QueryRow &input) {
+    const QueryRow &input, ExecutionContext context) {
   GroupingProjection projection;
   for (const auto &item : grouping_items) {
-    Value value = EvaluateLogicalProjectionItem(item, input);
+    Value value = EvaluateLogicalProjectionItem(item, input, context);
     AppendKeyPart(value, &projection.key);
     projection.row[item.alias] = std::move(value);
   }
@@ -65,7 +65,8 @@ GroupingProjection EvaluateGrouping(
 
 std::vector<Value> EvaluateAggregationValues(
     const ast::FunctionInvocation &function, const std::vector<QueryRow> &rows,
-    const std::vector<ir::LogicalPrecomputedExpression> &precomputed) {
+    const std::vector<ir::LogicalPrecomputedExpression> &precomputed,
+    ExecutionContext context) {
   CHECK(function.arguments[0] != nullptr, common::InvalidArgumentError,
         function.function_name + "() argument is null");
 
@@ -73,7 +74,8 @@ std::vector<Value> EvaluateAggregationValues(
   values.reserve(rows.size());
   std::set<std::string> seen;
   for (const auto &row : rows) {
-    Value value = EvaluateExpression(*function.arguments[0], row, precomputed);
+    Value value =
+        EvaluateExpression(*function.arguments[0], row, precomputed, context);
     if (value.IsNull()) {
       continue;
     }
@@ -142,7 +144,8 @@ Value EvaluateMinMax(const std::vector<Value> &values, bool min) {
 
 Value EvaluateAggregationExpression(
     const ast::Expression &expression, const std::vector<QueryRow> &rows,
-    const std::vector<ir::LogicalPrecomputedExpression> &precomputed) {
+    const std::vector<ir::LogicalPrecomputedExpression> &precomputed,
+    ExecutionContext context) {
   if (expression.Is(ast::ASTNodeType::kCountStarExpression)) {
     return Value(CountValue(rows.size()));
   }
@@ -168,7 +171,7 @@ Value EvaluateAggregationExpression(
         "DISTINCT is not supported for function: " + builtin->name);
 
   std::vector<Value> values =
-      EvaluateAggregationValues(function, rows, precomputed);
+      EvaluateAggregationValues(function, rows, precomputed, context);
   switch (builtin->kind) {
     case ast::BuiltinFunctionKind::kCount:
       return Value(CountValue(values.size()));
@@ -193,11 +196,12 @@ Value EvaluateAggregationExpression(
 
 std::vector<QueryRow> ProjectDistinctRows(
     const std::vector<ir::LogicalProjectionItem> &grouping_items,
-    const std::vector<QueryRow> &rows) {
+    const std::vector<QueryRow> &rows, ExecutionContext context) {
   std::vector<QueryRow> result;
   std::set<std::string> seen;
   for (const auto &row : rows) {
-    GroupingProjection projection = EvaluateGrouping(grouping_items, row);
+    GroupingProjection projection =
+        EvaluateGrouping(grouping_items, row, context);
     if (seen.insert(std::move(projection.key)).second) {
       result.push_back(std::move(projection.row));
     }
@@ -208,14 +212,15 @@ std::vector<QueryRow> ProjectDistinctRows(
 std::vector<QueryRow> AggregateRows(
     const std::vector<ir::LogicalProjectionItem> &grouping_items,
     const std::vector<ir::LogicalProjectionItem> &aggregation_items,
-    const std::vector<QueryRow> &rows) {
+    const std::vector<QueryRow> &rows, ExecutionContext context) {
   std::map<std::string, GroupState> groups;
   if (grouping_items.empty()) {
     groups.emplace("", GroupState{});
   }
 
   for (const auto &row : rows) {
-    GroupingProjection projection = EvaluateGrouping(grouping_items, row);
+    GroupingProjection projection =
+        EvaluateGrouping(grouping_items, row, context);
     auto [group, inserted] = groups.emplace(
         std::move(projection.key), GroupState{std::move(projection.row), {}});
     (void)inserted;
@@ -231,7 +236,7 @@ std::vector<QueryRow> AggregateRows(
       CHECK(item.expression != nullptr, common::InvalidArgumentError,
             "aggregation expression is null");
       row[item.alias] = EvaluateAggregationExpression(
-          *item.expression, state.rows, item.precomputed_expressions);
+          *item.expression, state.rows, item.precomputed_expressions, context);
     }
     result.push_back(std::move(row));
   }

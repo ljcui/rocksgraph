@@ -1,12 +1,15 @@
 #pragma once
 
 #include "ir/logical_plan.h"
+#include "runtime/execution_context.h"
 #include "runtime/query_row.h"
 
 namespace rg {
 
 class RowOperatorExecutor final {
  public:
+  explicit RowOperatorExecutor(ExecutionContext context = {})
+      : context_(context) {}
   [[nodiscard]] QueryRows Execute(const ir::ArgumentPlan &plan,
                                   const QueryRows &input) const;
   [[nodiscard]] QueryRows Execute(const ir::FilterPlan &plan,
@@ -22,6 +25,9 @@ class RowOperatorExecutor final {
   [[nodiscard]] QueryRows Execute(const ir::UnionPlan &plan,
                                   const QueryRows &left_rows,
                                   const QueryRows &right_rows) const;
+
+ private:
+  ExecutionContext context_;
 };
 
 }  // namespace rg

@@ -32,11 +32,11 @@ std::optional<std::string> CompositeJoinKey(
 }
 
 bool PredicatesMatch(const std::vector<const ast::Expression *> &predicates,
-                     const QueryRow &row) {
+                     const QueryRow &row, ExecutionContext context) {
   for (const ast::Expression *predicate : predicates) {
     CHECK(predicate != nullptr, common::InvalidArgumentError,
           "join predicate is null");
-    if (!PredicateIsTrue(EvaluateExpression(*predicate, row))) {
+    if (!PredicateIsTrue(EvaluateExpression(*predicate, row, {}, context))) {
       return false;
     }
   }
@@ -108,16 +108,16 @@ QueryRows JoinExecutor::Execute(const ir::NodeHashJoinPlan &plan,
 QueryRows JoinExecutor::Execute(const ir::ValueHashJoinPlan &plan,
                                 const QueryRows &left,
                                 const QueryRows &right) const {
-  return ExecuteNestedLoopJoin(left, right, [&plan](const QueryRow &row) {
-    return PredicatesMatch(plan.Predicates(), row);
+  return ExecuteNestedLoopJoin(left, right, [this, &plan](const QueryRow &row) {
+    return PredicatesMatch(plan.Predicates(), row, context_);
   });
 }
 
 QueryRows JoinExecutor::Execute(const ir::PredicateJoinPlan &plan,
                                 const QueryRows &left,
                                 const QueryRows &right) const {
-  return ExecuteNestedLoopJoin(left, right, [&plan](const QueryRow &row) {
-    return PredicatesMatch(plan.Predicates(), row);
+  return ExecuteNestedLoopJoin(left, right, [this, &plan](const QueryRow &row) {
+    return PredicatesMatch(plan.Predicates(), row, context_);
   });
 }
 

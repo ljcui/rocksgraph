@@ -36,8 +36,8 @@ QueryRows RowOperatorExecutor::Execute(const ir::FilterPlan &plan,
                                        QueryRows rows) const {
   QueryRows out;
   for (auto &row : rows) {
-    if (PredicateIsTrue(EvaluateExpression(*plan.Predicate(), row,
-                                           plan.PrecomputedExpressions()))) {
+    if (PredicateIsTrue(EvaluateExpression(
+            *plan.Predicate(), row, plan.PrecomputedExpressions(), context_))) {
       out.push_back(std::move(row));
     }
   }
@@ -57,7 +57,8 @@ QueryRows RowOperatorExecutor::Execute(const ir::ProjectionPlan &plan,
               "passthrough projection variable is not bound: " + item.alias);
         projected[item.alias] = found->second;
       } else {
-        projected[item.alias] = EvaluateLogicalProjectionItem(item, row);
+        projected[item.alias] =
+            EvaluateLogicalProjectionItem(item, row, context_);
       }
     }
     out.push_back(std::move(projected));
@@ -67,19 +68,20 @@ QueryRows RowOperatorExecutor::Execute(const ir::ProjectionPlan &plan,
 
 QueryRows RowOperatorExecutor::Execute(const ir::DistinctPlan &plan,
                                        const QueryRows &rows) const {
-  return ProjectDistinctRows(plan.GroupingItems(), rows);
+  return ProjectDistinctRows(plan.GroupingItems(), rows, context_);
 }
 
 QueryRows RowOperatorExecutor::Execute(const ir::AggregationPlan &plan,
                                        const QueryRows &rows) const {
-  return AggregateRows(plan.GroupingItems(), plan.AggregationItems(), rows);
+  return AggregateRows(plan.GroupingItems(), plan.AggregationItems(), rows,
+                       context_);
 }
 
 QueryRows RowOperatorExecutor::Execute(const ir::UnwindPlan &plan,
                                        const QueryRows &rows) const {
   QueryRows out;
   for (const auto &row : rows) {
-    Value list = EvaluateExpression(*plan.Expression(), row);
+    Value list = EvaluateExpression(*plan.Expression(), row, {}, context_);
     if (!list.IsList()) {
       continue;
     }

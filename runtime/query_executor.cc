@@ -68,16 +68,42 @@ const AccessPath &RequireAccessPath(const AccessPath *access_path) {
   return *access_path;
 }
 
+bool IsWritePlan(const ir::LogicalPlan &plan) {
+  switch (plan.Type()) {
+    case ir::LogicalPlanNodeType::kCreateNode:
+    case ir::LogicalPlanNodeType::kCreateRelationship:
+    case ir::LogicalPlanNodeType::kMerge:
+    case ir::LogicalPlanNodeType::kSetProperty:
+    case ir::LogicalPlanNodeType::kSetProperties:
+    case ir::LogicalPlanNodeType::kSetLabels:
+    case ir::LogicalPlanNodeType::kRemoveProperty:
+    case ir::LogicalPlanNodeType::kRemoveLabels:
+    case ir::LogicalPlanNodeType::kDelete:
+    case ir::LogicalPlanNodeType::kDetachDelete:
+      return true;
+    default:
+      return false;
+  }
+}
+
 class QueryExecutorImpl {
  public:
-  QueryExecutorImpl(const AccessPath *access_path, Storage *storage)
+  QueryExecutorImpl(const AccessPath *access_path, Storage *storage,
+                    const QueryParameters &parameters)
       : access_path_(access_path),
-        graph_access_(RequireAccessPath(access_path)),
+        context_{.parameters = &parameters},
+        graph_access_(RequireAccessPath(access_path), context_),
+        join_executor_(context_),
         procedure_executor_(RequireAccessPath(access_path)),
-        write_executor_(storage) {}
+        result_set_executor_(context_),
+        row_operator_executor_(context_),
+        write_executor_(storage, context_) {}
 
   QueryResult Execute(const ir::LogicalPlan &plan) {
     Rows rows = ExecutePlan(plan, Rows{QueryRow{}});
+    if (IsWritePlan(plan)) {
+      return {};
+    }
     return Materialize(plan.OutputColumns(), rows);
   }
 
@@ -90,6 +116,9 @@ class QueryExecutorImpl {
                                         const Rows &rows) const {
     QueryResult result;
     result.columns = columns;
+    if (columns.empty()) {
+      return result;
+    }
     result.rows.reserve(rows.size());
     for (const auto &row : rows) {
       std::vector<Value> values;
@@ -343,6 +372,7 @@ class QueryExecutorImpl {
   }
 
   const AccessPath *access_path_ = nullptr;
+  ExecutionContext context_;
   GraphAccessExecutor graph_access_;
   JoinExecutor join_executor_;
   ApplyExecutor apply_executor_;
@@ -354,15 +384,17 @@ class QueryExecutorImpl {
 
 }  // namespace
 
-QueryResult QueryExecutor::Execute(const ir::LogicalPlan &plan) const {
+QueryResult QueryExecutor::Execute(const ir::LogicalPlan &plan,
+                                   const QueryParameters &parameters) const {
   CHECK(access_path_ != nullptr, common::InternalError, "access path is null");
-  return QueryExecutorImpl(access_path_, storage_).Execute(plan);
+  return QueryExecutorImpl(access_path_, storage_, parameters).Execute(plan);
 }
 
-void QueryExecutor::ExecuteWrite(const ir::LogicalPlan &plan) {
+void QueryExecutor::ExecuteWrite(const ir::LogicalPlan &plan,
+                                 const QueryParameters &parameters) {
   CHECK(storage_ != nullptr, common::InternalError,
         "write execution requires storage");
-  QueryExecutorImpl(storage_, storage_).ExecuteWrite(plan);
+  QueryExecutorImpl(storage_, storage_, parameters).ExecuteWrite(plan);
 }
 
 QueryResult ExecuteReadQuery(const AccessPath &access_path,
@@ -373,7 +405,7 @@ QueryResult ExecuteReadQuery(const AccessPath &access_path,
       ir::CreatePlannerQuery(*statement);
   std::unique_ptr<ir::LogicalPlan> logical_plan =
       ir::CreateLogicalPlan(*planner_query, PlannerOptionsFor(options));
-  return QueryExecutor(access_path).Execute(*logical_plan);
+  return QueryExecutor(access_path).Execute(*logical_plan, options.parameters);
 }
 
 QueryResult ExecuteQuery(Storage &storage, std::string_view cypher,
@@ -384,7 +416,7 @@ QueryResult ExecuteQuery(Storage &storage, std::string_view cypher,
       ir::CreatePlannerQuery(*statement);
   std::unique_ptr<ir::LogicalPlan> logical_plan =
       ir::CreateLogicalPlan(*planner_query, PlannerOptionsFor(options));
-  return QueryExecutor(storage).Execute(*logical_plan);
+  return QueryExecutor(storage).Execute(*logical_plan, options.parameters);
 }
 
 void ExecuteWriteQuery(Storage &storage, std::string_view cypher,
@@ -395,7 +427,7 @@ void ExecuteWriteQuery(Storage &storage, std::string_view cypher,
       ir::CreatePlannerQuery(*statement);
   std::unique_ptr<ir::LogicalPlan> logical_plan =
       ir::CreateLogicalPlan(*planner_query, PlannerOptionsFor(options));
-  QueryExecutor(storage).ExecuteWrite(*logical_plan);
+  QueryExecutor(storage).ExecuteWrite(*logical_plan, options.parameters);
 }
 
 }  // namespace rg
