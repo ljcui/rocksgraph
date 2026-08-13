@@ -21,6 +21,7 @@
 #include "ir/planner/catalog.h"
 #include "ir/planner_query.h"
 #include "runtime/aggregation_evaluator.h"
+#include "runtime/apply_executor.h"
 #include "runtime/expression_evaluator.h"
 #include "runtime/graph_access_executor.h"
 #include "runtime/join_executor.h"
@@ -245,19 +246,12 @@ class QueryExecutorImpl {
       case ir::LogicalPlanNodeType::kPredicateJoin:
         return ExecuteJoin(plan, input);
       case ir::LogicalPlanNodeType::kApply:
-        return ExecuteApply(plan, input);
       case ir::LogicalPlanNodeType::kSemiApply:
-        return ExecuteSemiApply(plan, input);
       case ir::LogicalPlanNodeType::kAntiSemiApply:
-        return ExecuteAntiSemiApply(plan, input);
       case ir::LogicalPlanNodeType::kLetSemiApply:
-        return ExecuteLetSemiApply(
-            static_cast<const ir::LetSemiApplyPlan &>(plan), input);
       case ir::LogicalPlanNodeType::kRollUpApply:
-        return ExecuteRollUpApply(
-            static_cast<const ir::RollUpApplyPlan &>(plan), input);
       case ir::LogicalPlanNodeType::kOptionalApply:
-        return ExecuteOptionalApply(plan, input);
+        return ExecuteApply(plan, input);
       case ir::LogicalPlanNodeType::kUnwind:
         return ExecuteUnwind(static_cast<const ir::UnwindPlan &>(plan), input);
       case ir::LogicalPlanNodeType::kProcedureCall:
@@ -456,99 +450,36 @@ class QueryExecutorImpl {
   }
 
   Rows ExecuteApply(const ir::LogicalPlan &plan, const Rows &input) {
-    Rows left_rows = ExecutePlan(plan.Child(0), input);
-    Rows out;
-    for (const auto &left : left_rows) {
-      Rows right_rows = ExecutePlan(plan.Child(1), Rows{left});
-      for (const auto &row : right_rows) {
-        QueryRow merged;
-        if (MergeQueryRows(left, row, &merged)) {
-          out.push_back(std::move(merged));
-        }
-      }
+    const ApplyPlanExecutor execute_plan =
+        [this](const ir::LogicalPlan &child, const QueryRows &child_input) {
+          return ExecutePlan(child, child_input);
+        };
+    switch (plan.Type()) {
+      case ir::LogicalPlanNodeType::kApply:
+        return apply_executor_.Execute(static_cast<const ir::ApplyPlan &>(plan),
+                                       input, execute_plan);
+      case ir::LogicalPlanNodeType::kSemiApply:
+        return apply_executor_.Execute(
+            static_cast<const ir::SemiApplyPlan &>(plan), input, execute_plan);
+      case ir::LogicalPlanNodeType::kAntiSemiApply:
+        return apply_executor_.Execute(
+            static_cast<const ir::AntiSemiApplyPlan &>(plan), input,
+            execute_plan);
+      case ir::LogicalPlanNodeType::kLetSemiApply:
+        return apply_executor_.Execute(
+            static_cast<const ir::LetSemiApplyPlan &>(plan), input,
+            execute_plan);
+      case ir::LogicalPlanNodeType::kRollUpApply:
+        return apply_executor_.Execute(
+            static_cast<const ir::RollUpApplyPlan &>(plan), input,
+            execute_plan);
+      case ir::LogicalPlanNodeType::kOptionalApply:
+        return apply_executor_.Execute(
+            static_cast<const ir::OptionalApplyPlan &>(plan), input,
+            execute_plan);
+      default:
+        THROW(common::InternalError, "unknown apply plan");
     }
-    return out;
-  }
-
-  Rows ExecuteSemiApply(const ir::LogicalPlan &plan, const Rows &input) {
-    Rows left_rows = ExecutePlan(plan.Child(0), input);
-    Rows out;
-    for (const auto &left : left_rows) {
-      Rows right_rows = ExecutePlan(plan.Child(1), Rows{left});
-      if (!right_rows.empty()) {
-        out.push_back(left);
-      }
-    }
-    return out;
-  }
-
-  Rows ExecuteAntiSemiApply(const ir::LogicalPlan &plan, const Rows &input) {
-    Rows left_rows = ExecutePlan(plan.Child(0), input);
-    Rows out;
-    for (const auto &left : left_rows) {
-      Rows right_rows = ExecutePlan(plan.Child(1), Rows{left});
-      if (right_rows.empty()) {
-        out.push_back(left);
-      }
-    }
-    return out;
-  }
-
-  Rows ExecuteLetSemiApply(const ir::LetSemiApplyPlan &plan,
-                           const Rows &input) {
-    Rows left_rows = ExecutePlan(plan.Child(0), input);
-    Rows out;
-    for (const auto &left : left_rows) {
-      Rows right_rows = ExecutePlan(plan.Child(1), Rows{left});
-      QueryRow merged = left;
-      merged[plan.ValueVariable()] = Value(!right_rows.empty());
-      out.push_back(std::move(merged));
-    }
-    return out;
-  }
-
-  Rows ExecuteRollUpApply(const ir::RollUpApplyPlan &plan, const Rows &input) {
-    Rows left_rows = ExecutePlan(plan.Child(0), input);
-    Rows out;
-    for (const auto &left : left_rows) {
-      Rows right_rows = ExecutePlan(plan.Child(1), Rows{left});
-      QueryRow merged = left;
-      Value::List list;
-      for (const auto &row : right_rows) {
-        const auto found = row.find(plan.ValueVariable());
-        if (found != row.end()) {
-          list.push_back(found->second);
-        }
-      }
-      merged[plan.CollectionVariable()] = Value(std::move(list));
-      out.push_back(std::move(merged));
-    }
-    return out;
-  }
-
-  Rows ExecuteOptionalApply(const ir::LogicalPlan &plan, const Rows &input) {
-    Rows left_rows = ExecutePlan(plan.Child(0), input);
-    Rows out;
-    for (const auto &left : left_rows) {
-      Rows right_rows = ExecutePlan(plan.Child(1), Rows{left});
-      if (right_rows.empty()) {
-        QueryRow null_extended = left;
-        for (const auto &column : plan.Child(1).OutputColumns()) {
-          if (null_extended.find(column) == null_extended.end()) {
-            null_extended[column] = Value::Null();
-          }
-        }
-        out.push_back(std::move(null_extended));
-        continue;
-      }
-      for (const auto &row : right_rows) {
-        QueryRow merged;
-        if (MergeQueryRows(left, row, &merged)) {
-          out.push_back(std::move(merged));
-        }
-      }
-    }
-    return out;
   }
 
   Rows ExecuteUnwind(const ir::UnwindPlan &plan, const Rows &input) {
@@ -1011,6 +942,7 @@ class QueryExecutorImpl {
   Storage *storage_ = nullptr;
   GraphAccessExecutor graph_access_;
   JoinExecutor join_executor_;
+  ApplyExecutor apply_executor_;
 };
 
 }  // namespace

@@ -141,6 +141,7 @@ set(ROCKSGRAPH_IR_SOURCES
 set(ROCKSGRAPH_STORAGE_SOURCES storage/in_memory_graph.cc)
 
 set(ROCKSGRAPH_RUNTIME_SOURCES runtime/aggregation_evaluator.cc
+                              runtime/apply_executor.cc
                               runtime/expression_evaluator.cc
                               runtime/graph_access_executor.cc
                               runtime/join_executor.cc
@@ -275,3 +276,10 @@ target_link_libraries(join_executor_test PRIVATE GTest::gtest_main
 set_target_properties(join_executor_test PROPERTIES BUILD_RPATH
                                                    "/usr/local/lib")
 add_test(NAME join_executor_test COMMAND join_executor_test)
+
+add_executable(apply_executor_test tests/apply_executor_test.cc)
+target_link_libraries(apply_executor_test PRIVATE GTest::gtest_main
+                                                  rocksgraph_runtime)
+set_target_properties(apply_executor_test PROPERTIES BUILD_RPATH
+                                                    "/usr/local/lib")
+add_test(NAME apply_executor_test COMMAND apply_executor_test)
