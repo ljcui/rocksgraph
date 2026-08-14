@@ -1309,6 +1309,50 @@ TEST(QueryExecutorTest, ExecutesCreateNodeAndRelationship) {
   EXPECT_EQ(StringRows(check), (std::vector<std::vector<std::string>>{{"1"}}));
 }
 
+TEST(QueryExecutorTest, RollsBackWritesWhenALaterRowFails) {
+  rg::InMemoryGraph graph;
+
+  EXPECT_THROW((void)rg::ExecuteQuery(
+                   graph,
+                   "UNWIND [1, 0] AS divisor CREATE (n {value: 1 / divisor}) "
+                   "RETURN n"),
+               common::InvalidArgumentError);
+  EXPECT_TRUE(graph.Nodes().empty());
+  EXPECT_TRUE(graph.Relationships().empty());
+}
+
+TEST(QueryExecutorTest, RollsBackWritesWhenAWriteExpressionFails) {
+  rg::InMemoryGraph graph;
+
+  EXPECT_THROW(rg::ExecuteWriteQuery(graph,
+                                     "CREATE (n) SET n.value = 1 / 0 "
+                                     "RETURN n"),
+               common::InvalidArgumentError);
+  EXPECT_TRUE(graph.Nodes().empty());
+  EXPECT_TRUE(graph.Relationships().empty());
+}
+
+TEST(QueryExecutorTest, RollsBackExistingEntityMutationsAndIndexes) {
+  rg::InMemoryGraph graph;
+  auto node = graph.CreateNode({"Person"}, {{"name", rg::Value("Ada")}});
+  graph.AddNodeIndex({"Person"}, "name");
+
+  EXPECT_THROW(
+      (void)rg::ExecuteQuery(graph,
+                             "MATCH (n:Person {name: 'Ada'}) "
+                             "SET n.name = 'Bob', n.value = 1 / 0 RETURN n"),
+      common::InvalidArgumentError);
+
+  ASSERT_EQ(graph.Nodes().size(), 1U);
+  ASSERT_EQ(graph.Nodes().front(), node);
+  EXPECT_EQ(node->properties.at("name"), rg::Value("Ada"));
+  EXPECT_EQ(node->properties.find("value"), node->properties.end());
+  EXPECT_EQ(graph.FindNodesByIndex({"Person"}, "name", rg::Value("Ada")).size(),
+            1U);
+  EXPECT_TRUE(
+      graph.FindNodesByIndex({"Person"}, "name", rg::Value("Bob")).empty());
+}
+
 TEST(QueryExecutorTest, ExecuteReadQueryRejectsWritesWithGraphReaderOnly) {
   rg::InMemoryGraph graph;
   const rg::GraphReader &graph_reader = graph;

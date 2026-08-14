@@ -50,5 +50,11 @@ add_rocksgraph_test(value_test value/value_test.cc rocksgraph_value)
 
 add_rocksgraph_test(tck_scenario_test tck/tck_scenario_test.cc
                     rocksgraph_runtime)
-target_compile_definitions(tck_scenario_test
-                           PRIVATE ROCKSGRAPH_TCK_DIR="${ROCKSGRAPH_TCK_DIR}")
+set_property(
+  SOURCE tck/tck_scenario_test.cc APPEND PROPERTY OBJECT_DEPENDS
+  "${CMAKE_CURRENT_SOURCE_DIR}/tck/tck_scenario_manifest.tsv")
+target_compile_definitions(
+  tck_scenario_test
+  PRIVATE
+    ROCKSGRAPH_TCK_DIR="${ROCKSGRAPH_TCK_DIR}"
+    ROCKSGRAPH_TCK_MANIFEST="${CMAKE_CURRENT_SOURCE_DIR}/tck/tck_scenario_manifest.tsv")

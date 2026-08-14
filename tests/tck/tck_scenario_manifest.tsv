@@ -1,0 +1,135 @@
+# feature path<TAB>scenario name for scenarios expected to pass
+expressions/null/Null3.feature	[4] Using null in IN
+clauses/match-where/MatchWhere1.feature	[6] Filter node with a parameter in a property predicate on multi variables with one binding
+clauses/delete/Delete1.feature	[4] Delete on null node
+clauses/delete/Delete1.feature	[5] Ignore null when deleting node
+clauses/delete/Delete1.feature	[6] Detach delete on null node
+clauses/delete/Delete2.feature	[4] Ignore null when deleting relationship
+clauses/delete/Delete3.feature	[2] Delete on null path
+clauses/match/Match3.feature	[27] Matching from null nodes should return no results owing to finding no matches
+clauses/match/Match3.feature	[28] Matching from null nodes should return no results owing to matches being filtered out
+clauses/match/Match7.feature	[10] Optionally matching from null nodes should return null
+clauses/remove/Remove1.feature	[5] Ignore null when removing property from a node
+clauses/remove/Remove1.feature	[6] Ignore null when removing property from a relationship
+clauses/remove/Remove2.feature	[5] Ignore null when removing a node label
+clauses/set/Set1.feature	[8] Ignore null when setting property
+clauses/set/Set3.feature	[8] Ignore null when setting label
+clauses/set/Set4.feature	[5] Ignore null when setting properties using an overriding map
+clauses/set/Set5.feature	[1] Ignore null when setting properties using an appending map
+clauses/return/Return1.feature	[2] Fail when returning an undefined variable
+clauses/delete/Delete1.feature	[7] Failing when deleting connected nodes
+clauses/set/Set1.feature	[6] Concatenate elements onto a list property
+clauses/set/Set1.feature	[7] Concatenate elements in reverse onto a list property
+clauses/unwind/Unwind1.feature	[3] Unwinding a concatenation of lists
+expressions/list/List4.feature	[1] Concatenating lists of same type
+expressions/list/List4.feature	[2] Concatenating a list with a scalar of same type
+expressions/list/List6.feature	[3] Concatenating and returning the size of literal lists
+expressions/precedence/Precedence3.feature	[1] List element access takes precedence over list appending
+expressions/precedence/Precedence3.feature	[2] List element access takes precedence over list concatenation
+expressions/precedence/Precedence3.feature	[3] List slicing takes precedence over list concatenation
+expressions/precedence/Precedence3.feature	[4] List appending takes precedence over list element containment
+expressions/precedence/Precedence3.feature	[5] List concatenation takes precedence over list element containment
+expressions/comparison/Comparison1.feature	[8] Equality and inequality of NaN
+expressions/comparison/Comparison2.feature	[5] Comparing NaN
+expressions/string/String8.feature	[8] Handling non-string operands for STARTS WITH
+expressions/string/String9.feature	[8] Handling non-string operands for ENDS WITH
+expressions/string/String10.feature	[8] Handling non-string operands for CONTAINS
+expressions/string/String1.feature	[1] `substring()` with default second argument
+expressions/string/String3.feature	[1] `reverse()`
+expressions/mathematical/Mathematical11.feature	[1] Absolute function
+expressions/mathematical/Mathematical13.feature	[1] `sqrt()` returning float values
+expressions/precedence/Precedence2.feature	[1] Numeric multiplicative operations takes precedence over numeric additive operations
+expressions/precedence/Precedence2.feature	[2] Exponentiation takes precedence over numeric multiplicative operations
+clauses/create/Create3.feature	[10] WITH-UNWIND-CREATE: A bound node should be recognized after projection with WITH + UNWIND
+clauses/create/Create3.feature	[12] WITH-MERGE-CREATE: A bound node should be recognized after projection with WITH + MERGE pattern
+clauses/merge/Merge1.feature	[13] Merge should bind a path
+clauses/merge/Merge5.feature	[9] Creating relationship using merged nodes
+clauses/merge/Merge5.feature	[10] Merge should bind a path
+clauses/match/Match4.feature	[5] Matching variable length pattern with property predicate
+clauses/return/Return2.feature	[10] Return count aggregation over an empty graph
+clauses/return/Return6.feature	[2] Projecting an arithmetic expression with aggregation
+clauses/return/Return6.feature	[5] Aggregates inside normal functions
+clauses/return/Return6.feature	[9] Aggregates with arithmetics
+clauses/return/Return6.feature	[17] Handle constants and parameters inside an expression which contains an aggregation expression
+clauses/return/Return6.feature	[20] Fail if not returned variables are used inside an expression which contains an aggregation expression
+clauses/return/Return6.feature	[21] Fail if more complex expressions, even if returned, are used inside expression which contains an aggregation expression
+clauses/return-orderby/ReturnOrderBy2.feature	[3] Sort on aggregated function
+clauses/return-orderby/ReturnOrderBy2.feature	[6] Count star should count everything in scope
+clauses/return-orderby/ReturnOrderBy3.feature	[1] Sort on aggregate function and normal property
+clauses/return-orderby/ReturnOrderBy6.feature	[1] Handle constants and parameters inside an order by item which contains an aggregation expression
+clauses/return-orderby/ReturnOrderBy6.feature	[2] Handle returned aliases inside an order by item which contains an aggregation expression
+clauses/return-orderby/ReturnOrderBy6.feature	[3] Handle returned property accesses inside an order by item which contains an aggregation expression
+clauses/return-orderby/ReturnOrderBy6.feature	[4] Fail if not returned variables are used inside an order by item which contains an aggregation expression
+clauses/return-orderby/ReturnOrderBy6.feature	[5] Fail if more complex expressions, even if returned, are used inside an order by item which contains an aggregation expression
+expressions/aggregation/Aggregation6.feature	[1] `percentileDisc()`
+expressions/aggregation/Aggregation6.feature	[2] `percentileCont()`
+expressions/aggregation/Aggregation6.feature	[3] `percentileCont()` failing on bad arguments
+expressions/aggregation/Aggregation6.feature	[4] `percentileDisc()` failing on bad arguments
+clauses/with-orderBy/WithOrderBy4.feature	[11] Sort by an aggregate projection
+clauses/with-orderBy/WithOrderBy4.feature	[16] Handle constants and parameters inside an order by item which contains an aggregation expression
+clauses/with-orderBy/WithOrderBy4.feature	[17] Handle projected variables inside an order by item which contains an aggregation expression
+clauses/with-orderBy/WithOrderBy4.feature	[18]  Handle projected property accesses inside an order by item which contains an aggregation expression
+expressions/temporal/Temporal1.feature	[1] Should construct week date
+expressions/temporal/Temporal1.feature	[2] Should construct week localdatetime
+expressions/temporal/Temporal1.feature	[3] Should construct week datetime
+expressions/temporal/Temporal1.feature	[4] Should construct date
+expressions/temporal/Temporal1.feature	[5] Should construct local time
+expressions/temporal/Temporal1.feature	[6] Should construct time
+expressions/temporal/Temporal1.feature	[7] Should construct local date time
+expressions/temporal/Temporal1.feature	[8] Should construct date time with default time zone
+expressions/temporal/Temporal1.feature	[9] Should construct date time with offset time zone
+expressions/temporal/Temporal1.feature	[10] Should construct date time with named time zone
+expressions/temporal/Temporal1.feature	[11] Should construct date time from epoch
+expressions/temporal/Temporal2.feature	[1] Should parse date from string
+expressions/temporal/Temporal2.feature	[2] Should parse local time from string
+expressions/temporal/Temporal2.feature	[3] Should parse time from string
+expressions/temporal/Temporal2.feature	[4] Should parse local date time from string
+expressions/temporal/Temporal2.feature	[5] Should parse date time from string
+expressions/temporal/Temporal2.feature	[6] Should parse date time with named time zone from string
+expressions/temporal/Temporal2.feature	[7] Should parse duration from string
+expressions/temporal/Temporal3.feature	[1] Should select date
+expressions/temporal/Temporal3.feature	[2] Should select local time
+expressions/temporal/Temporal3.feature	[3] Should select time
+expressions/temporal/Temporal3.feature	[4] Should select date into local date time
+expressions/temporal/Temporal3.feature	[5] Should select time into local date time
+expressions/temporal/Temporal3.feature	[6] Should select date and time into local date time
+expressions/temporal/Temporal3.feature	[7] Should select datetime into local date time
+expressions/temporal/Temporal3.feature	[8] Should select date into date time
+expressions/temporal/Temporal3.feature	[9] Should select time into date time
+expressions/temporal/Temporal3.feature	[10] Should select date and time into date time
+expressions/temporal/Temporal3.feature	[11] Should datetime into date time
+expressions/temporal/Temporal4.feature	[13] Should propagate null
+expressions/temporal/Temporal5.feature	[1] Should provide accessors for date
+expressions/temporal/Temporal5.feature	[2] Should provide accessors for date in last weekYear
+expressions/temporal/Temporal5.feature	[3] Should provide accessors for local time
+expressions/temporal/Temporal5.feature	[4] Should provide accessors for time
+expressions/temporal/Temporal5.feature	[5] Should provide accessors for local date time
+expressions/temporal/Temporal5.feature	[6] Should provide accessors for date time
+expressions/temporal/Temporal5.feature	[7] Should provide accessors for duration
+expressions/temporal/Temporal6.feature	[1] Should serialize date
+expressions/temporal/Temporal6.feature	[2] Should serialize local time
+expressions/temporal/Temporal6.feature	[3] Should serialize time
+expressions/temporal/Temporal6.feature	[4] Should serialize local date time
+expressions/temporal/Temporal6.feature	[5] Should serialize date time
+expressions/temporal/Temporal6.feature	[6] Should serialize duration
+expressions/temporal/Temporal6.feature	[7] Should serialize timezones correctly
+expressions/temporal/Temporal10.feature	[1] Should split between boundaries correctly
+expressions/temporal/Temporal10.feature	[2] Should compute duration between two temporals
+expressions/temporal/Temporal10.feature	[3] Should compute duration between two temporals in months
+expressions/temporal/Temporal10.feature	[4] Should compute duration between two temporals in days
+expressions/temporal/Temporal10.feature	[5] Should compute duration between two temporals in seconds
+expressions/temporal/Temporal10.feature	[6] Should compute duration between if they differ only by a fraction of a second and the first comes after the second.
+expressions/temporal/Temporal10.feature	[7] Should compute negative duration between in big units
+expressions/temporal/Temporal10.feature	[8] Should handle durations at daylight saving time day
+expressions/temporal/Temporal10.feature	[9] Should handle large durations
+expressions/temporal/Temporal10.feature	[10] Should handle large durations in seconds
+expressions/temporal/Temporal10.feature	[11] Should handle when seconds and subseconds have different signs
+expressions/temporal/Temporal10.feature	[12] Should compute durations with no difference
+expressions/temporal/Temporal10.feature	[13] Should propagate null
+expressions/temporal/Temporal9.feature	[1] Should truncate date
+expressions/temporal/Temporal9.feature	[2] Should truncate datetime
+expressions/temporal/Temporal9.feature	[3] Should truncate localdatetime
+expressions/temporal/Temporal9.feature	[4] Should truncate localtime
+expressions/temporal/Temporal9.feature	[5] Should truncate time
+expressions/list/List11.feature	[3] Create an empty list if range direction and step direction are inconsistent
+expressions/list/List12.feature	[7] Fail when using aggregation in list comprehension

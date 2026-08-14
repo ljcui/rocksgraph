@@ -59,6 +59,120 @@ void ApplyPropertyMap(Value::Map properties, bool include_existing,
 
 }  // namespace
 
+class InMemoryGraph::Transaction final : public StorageTransaction {
+ public:
+  explicit Transaction(InMemoryGraph *graph) : graph_(graph) {
+    CHECK(graph_ != nullptr, common::InternalError,
+          "transaction graph is null");
+
+    next_node_id_ = graph_->next_node_id_;
+    next_relationship_id_ = graph_->next_relationship_id_;
+    nodes_ = graph_->nodes_;
+    relationships_ = graph_->relationships_;
+    node_indexes_ = graph_->node_indexes_;
+    relationship_indexes_ = graph_->relationship_indexes_;
+
+    node_states_.reserve(nodes_.size());
+    for (const auto &node : nodes_) {
+      CHECK(node != nullptr, common::InternalError,
+            "transaction contains null node");
+      node_states_.push_back({.node = node,
+                              .labels = node->labels,
+                              .properties = node->properties});
+    }
+    relationship_states_.reserve(relationships_.size());
+    for (const auto &relationship : relationships_) {
+      CHECK(relationship != nullptr, common::InternalError,
+            "transaction contains null relationship");
+      relationship_states_.push_back(
+          {.relationship = relationship,
+           .start_node_id = relationship->start_node_id,
+           .end_node_id = relationship->end_node_id,
+           .type = relationship->type,
+           .properties = relationship->properties});
+    }
+  }
+
+  void Commit() override { finished_ = true; }
+
+  void Rollback() override {
+    if (finished_) {
+      return;
+    }
+    CHECK(graph_ != nullptr, common::InternalError,
+          "transaction graph is null");
+
+    graph_->next_node_id_ = next_node_id_;
+    graph_->next_relationship_id_ = next_relationship_id_;
+    graph_->nodes_ = nodes_;
+    graph_->relationships_ = relationships_;
+    graph_->node_indexes_ = node_indexes_;
+    graph_->relationship_indexes_ = relationship_indexes_;
+
+    graph_->nodes_by_id_.clear();
+    for (const auto &state : node_states_) {
+      state.node->labels = state.labels;
+      state.node->properties = state.properties;
+      graph_->nodes_by_id_.emplace(state.node->id, state.node);
+    }
+    graph_->relationships_by_id_.clear();
+    for (const auto &state : relationship_states_) {
+      state.relationship->start_node_id = state.start_node_id;
+      state.relationship->end_node_id = state.end_node_id;
+      state.relationship->type = state.type;
+      state.relationship->properties = state.properties;
+      graph_->relationships_by_id_.emplace(state.relationship->id,
+                                           state.relationship);
+    }
+
+    graph_->node_index_buckets_.clear();
+    graph_->relationship_index_buckets_.clear();
+    graph_->outgoing_relationships_.clear();
+    graph_->incoming_relationships_.clear();
+    for (const auto &relationship : graph_->relationships_) {
+      graph_->AddRelationshipToAdjacency(relationship);
+    }
+    for (const auto &node : graph_->nodes_) {
+      graph_->AddNodeToIndexes(node);
+    }
+    for (const auto &relationship : graph_->relationships_) {
+      graph_->AddRelationshipToIndexes(relationship);
+    }
+    finished_ = true;
+  }
+
+ private:
+  struct NodeState {
+    NodePtr node;
+    std::vector<std::string> labels;
+    Value::Map properties;
+  };
+  struct RelationshipState {
+    RelationshipPtr relationship;
+    int64_t start_node_id = 0;
+    int64_t end_node_id = 0;
+    std::string type;
+    Value::Map properties;
+  };
+
+  InMemoryGraph *graph_ = nullptr;
+  bool finished_ = false;
+  int64_t next_node_id_ = 0;
+  int64_t next_relationship_id_ = 0;
+  std::vector<NodePtr> nodes_;
+  std::vector<RelationshipPtr> relationships_;
+  std::vector<NodeState> node_states_;
+  std::vector<RelationshipState> relationship_states_;
+  std::unordered_map<std::string, IndexDescriptor> node_indexes_;
+  std::unordered_map<std::string, IndexDescriptor> relationship_indexes_;
+};
+
+InMemoryGraph::~InMemoryGraph() = default;
+
+std::unique_ptr<StorageTransaction> InMemoryGraph::BeginTransaction() {
+  return std::make_unique<Transaction>(this);
+}
+
 InMemoryGraph::NodePtr InMemoryGraph::CreateNode(
     std::vector<std::string> labels, Value::Map properties) {
   auto node = std::make_shared<Node>();

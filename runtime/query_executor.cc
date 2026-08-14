@@ -82,6 +82,11 @@ bool IsWritePlan(const ir::LogicalPlan &plan) {
     case ir::LogicalPlanNodeType::kDelete:
     case ir::LogicalPlanNodeType::kDetachDelete:
       return true;
+    case ir::LogicalPlanNodeType::kProcedureCall:
+      if (!static_cast<const ir::ProcedureCallPlan &>(plan).ReadOnly()) {
+        return true;
+      }
+      break;
     default:
       break;
   }
@@ -98,6 +103,7 @@ class QueryExecutorImpl {
   QueryExecutorImpl(const GraphReader *graph_reader, Storage *storage,
                     const QueryParameters &parameters)
       : graph_reader_(graph_reader),
+        storage_(storage),
         context_{.graph_reader = graph_reader,
                  .parameters = &parameters,
                  .clock = ExecutionClock::Start()},
@@ -109,16 +115,47 @@ class QueryExecutorImpl {
         write_executor_(storage, context_) {}
 
   QueryResult Execute(const ir::LogicalPlan &plan) {
-    Rows rows = ExecutePlan(plan, Rows{QueryRow{}});
-    if (plan.Type() != ir::LogicalPlanNodeType::kProduceResults &&
-        IsWritePlan(plan)) {
-      return {};
+    std::unique_ptr<StorageTransaction> transaction;
+    if (storage_ != nullptr && IsWritePlan(plan)) {
+      transaction = storage_->BeginTransaction();
     }
-    return Materialize(plan.OutputColumns(), rows);
+    try {
+      Rows rows = ExecutePlan(plan, Rows{QueryRow{}});
+      QueryResult result;
+      if (plan.Type() != ir::LogicalPlanNodeType::kProduceResults &&
+          IsWritePlan(plan)) {
+        result = {};
+      } else {
+        result = Materialize(plan.OutputColumns(), rows);
+      }
+      if (transaction != nullptr) {
+        transaction->Commit();
+      }
+      return result;
+    } catch (...) {
+      if (transaction != nullptr) {
+        transaction->Rollback();
+      }
+      throw;
+    }
   }
 
   void ExecuteWrite(const ir::LogicalPlan &plan) {
-    (void)ExecutePlan(plan, Rows{QueryRow{}});
+    std::unique_ptr<StorageTransaction> transaction;
+    if (storage_ != nullptr && IsWritePlan(plan)) {
+      transaction = storage_->BeginTransaction();
+    }
+    try {
+      (void)ExecutePlan(plan, Rows{QueryRow{}});
+      if (transaction != nullptr) {
+        transaction->Commit();
+      }
+    } catch (...) {
+      if (transaction != nullptr) {
+        transaction->Rollback();
+      }
+      throw;
+    }
   }
 
  private:
@@ -382,6 +419,7 @@ class QueryExecutorImpl {
   }
 
   const GraphReader *graph_reader_ = nullptr;
+  Storage *storage_ = nullptr;
   ExecutionContext context_;
   GraphAccessExecutor graph_access_;
   JoinExecutor join_executor_;

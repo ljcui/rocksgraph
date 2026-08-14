@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -11,6 +12,17 @@
 
 namespace rg {
 
+class StorageTransaction {
+ public:
+  StorageTransaction() = default;
+  StorageTransaction(const StorageTransaction &) = delete;
+  StorageTransaction &operator=(const StorageTransaction &) = delete;
+  virtual ~StorageTransaction() = default;
+
+  virtual void Commit() = 0;
+  virtual void Rollback() = 0;
+};
+
 class Storage : public GraphReader {
  public:
   using NodePtr = Value::NodePtr;
@@ -20,6 +32,11 @@ class Storage : public GraphReader {
   Storage(const Storage &) = delete;
   Storage &operator=(const Storage &) = delete;
   ~Storage() override = default;
+
+  // A backend may return null when it does not provide transactional writes.
+  [[nodiscard]] virtual std::unique_ptr<StorageTransaction> BeginTransaction() {
+    return nullptr;
+  }
 
   NodePtr CreateNode(std::vector<std::string> labels) {
     return CreateNode(std::move(labels), {});

@@ -26,6 +26,10 @@ class InMemoryGraph final : public Storage,
   using Storage::CreateNode;
   using Storage::CreateRelationship;
 
+  ~InMemoryGraph() override;
+
+  [[nodiscard]] std::unique_ptr<StorageTransaction> BeginTransaction() override;
+
   NodePtr CreateNode(std::vector<std::string> labels,
                      Value::Map properties) override;
   RelationshipPtr CreateRelationship(int64_t start_node_id, int64_t end_node_id,
@@ -154,6 +158,8 @@ class InMemoryGraph final : public Storage,
       std::string_view procedure_name, std::size_t yield_count) const override;
 
  private:
+  class Transaction;
+
   struct IndexDescriptor {
     std::vector<std::string> qualifiers;
     std::string property_key;
