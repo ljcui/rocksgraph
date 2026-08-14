@@ -2,20 +2,20 @@
 
 #include "ir/logical_plan.h"
 #include "runtime/query_row.h"
-#include "storage/access_path.h"
+#include "storage/graph_reader.h"
 
 namespace rg {
 
 class ProcedureExecutor final {
  public:
-  explicit ProcedureExecutor(const AccessPath &access_path)
-      : access_path_(&access_path) {}
+  explicit ProcedureExecutor(const GraphReader &graph_reader)
+      : graph_reader_(&graph_reader) {}
 
   [[nodiscard]] QueryRows Execute(const ir::ProcedureCallPlan &plan,
                                   const QueryRows &input) const;
 
  private:
-  const AccessPath *access_path_ = nullptr;
+  const GraphReader *graph_reader_ = nullptr;
 };
 
 }  // namespace rg

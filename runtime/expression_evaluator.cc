@@ -240,7 +240,7 @@ Value EvaluateFunction(
   }
 
   return EvaluateBuiltinFunction(builtin->kind, arguments, context.clock,
-                                 context.access_path);
+                                 context.graph_reader);
 }
 
 Value EvaluateListIndex(

@@ -13,9 +13,9 @@
 #include "ast/ast_builder.h"
 #include "ast/ast_node.h"
 #include "common/exception.h"
-#include "ir/logical_plan_builder.h"
-#include "ir/planner/catalog.h"
-#include "ir/planner_query.h"
+#include "ir/query_ir.h"
+#include "planner/catalog.h"
+#include "planner/logical_plan_builder.h"
 #include "runtime/apply_executor.h"
 #include "runtime/graph_access_executor.h"
 #include "runtime/join_executor.h"
@@ -63,10 +63,10 @@ ir::LogicalPlanBuilderOptions PlannerOptionsFor(const QueryOptions &options) {
                              : &DefaultRuntimePlannerCatalog()};
 }
 
-const AccessPath &RequireAccessPath(const AccessPath *access_path) {
-  CHECK(access_path != nullptr, common::InvalidArgumentError,
+const GraphReader &RequireGraphReader(const GraphReader *graph_reader) {
+  CHECK(graph_reader != nullptr, common::InvalidArgumentError,
         "access path is null");
-  return *access_path;
+  return *graph_reader;
 }
 
 bool IsWritePlan(const ir::LogicalPlan &plan) {
@@ -95,15 +95,15 @@ bool IsWritePlan(const ir::LogicalPlan &plan) {
 
 class QueryExecutorImpl {
  public:
-  QueryExecutorImpl(const AccessPath *access_path, Storage *storage,
+  QueryExecutorImpl(const GraphReader *graph_reader, Storage *storage,
                     const QueryParameters &parameters)
-      : access_path_(access_path),
-        context_{.access_path = access_path,
+      : graph_reader_(graph_reader),
+        context_{.graph_reader = graph_reader,
                  .parameters = &parameters,
                  .clock = ExecutionClock::Start()},
-        graph_access_(RequireAccessPath(access_path), context_),
+        graph_access_(RequireGraphReader(graph_reader), context_),
         join_executor_(context_),
-        procedure_executor_(RequireAccessPath(access_path)),
+        procedure_executor_(RequireGraphReader(graph_reader)),
         result_set_executor_(context_),
         row_operator_executor_(context_),
         write_executor_(storage, context_) {}
@@ -381,7 +381,7 @@ class QueryExecutorImpl {
     }
   }
 
-  const AccessPath *access_path_ = nullptr;
+  const GraphReader *graph_reader_ = nullptr;
   ExecutionContext context_;
   GraphAccessExecutor graph_access_;
   JoinExecutor join_executor_;
@@ -396,8 +396,8 @@ class QueryExecutorImpl {
 
 QueryResult QueryExecutor::Execute(const ir::LogicalPlan &plan,
                                    const QueryParameters &parameters) const {
-  CHECK(access_path_ != nullptr, common::InternalError, "access path is null");
-  return QueryExecutorImpl(access_path_, storage_, parameters).Execute(plan);
+  CHECK(graph_reader_ != nullptr, common::InternalError, "access path is null");
+  return QueryExecutorImpl(graph_reader_, storage_, parameters).Execute(plan);
 }
 
 void QueryExecutor::ExecuteWrite(const ir::LogicalPlan &plan,
@@ -407,25 +407,23 @@ void QueryExecutor::ExecuteWrite(const ir::LogicalPlan &plan,
   QueryExecutorImpl(storage_, storage_, parameters).ExecuteWrite(plan);
 }
 
-QueryResult ExecuteReadQuery(const AccessPath &access_path,
+QueryResult ExecuteReadQuery(const GraphReader &graph_reader,
                              std::string_view cypher, QueryOptions options) {
   std::unique_ptr<ast::Statement> statement =
       ast::ParseCypherAndRewrite(std::string(cypher));
-  std::unique_ptr<ir::PlannerQuery> planner_query =
-      ir::CreatePlannerQuery(*statement);
+  std::unique_ptr<ir::QueryIR> query_ir = ir::CreateQueryIR(*statement);
   std::unique_ptr<ir::LogicalPlan> logical_plan =
-      ir::CreateLogicalPlan(*planner_query, PlannerOptionsFor(options));
-  return QueryExecutor(access_path).Execute(*logical_plan, options.parameters);
+      ir::CreateLogicalPlan(*query_ir, PlannerOptionsFor(options));
+  return QueryExecutor(graph_reader).Execute(*logical_plan, options.parameters);
 }
 
 QueryResult ExecuteQuery(Storage &storage, std::string_view cypher,
                          QueryOptions options) {
   std::unique_ptr<ast::Statement> statement =
       ast::ParseCypherAndRewrite(std::string(cypher));
-  std::unique_ptr<ir::PlannerQuery> planner_query =
-      ir::CreatePlannerQuery(*statement);
+  std::unique_ptr<ir::QueryIR> query_ir = ir::CreateQueryIR(*statement);
   std::unique_ptr<ir::LogicalPlan> logical_plan =
-      ir::CreateLogicalPlan(*planner_query, PlannerOptionsFor(options));
+      ir::CreateLogicalPlan(*query_ir, PlannerOptionsFor(options));
   return QueryExecutor(storage).Execute(*logical_plan, options.parameters);
 }
 
@@ -433,10 +431,9 @@ void ExecuteWriteQuery(Storage &storage, std::string_view cypher,
                        QueryOptions options) {
   std::unique_ptr<ast::Statement> statement =
       ast::ParseCypherAndRewrite(std::string(cypher));
-  std::unique_ptr<ir::PlannerQuery> planner_query =
-      ir::CreatePlannerQuery(*statement);
+  std::unique_ptr<ir::QueryIR> query_ir = ir::CreateQueryIR(*statement);
   std::unique_ptr<ir::LogicalPlan> logical_plan =
-      ir::CreateLogicalPlan(*planner_query, PlannerOptionsFor(options));
+      ir::CreateLogicalPlan(*query_ir, PlannerOptionsFor(options));
   QueryExecutor(storage).ExecuteWrite(*logical_plan, options.parameters);
 }
 

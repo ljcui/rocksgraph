@@ -36,9 +36,9 @@ struct QueryOptions {
 class QueryExecutor final {
  public:
   explicit QueryExecutor(Storage &storage)
-      : access_path_(&storage), storage_(&storage) {}
-  explicit QueryExecutor(const AccessPath &access_path)
-      : access_path_(&access_path) {}
+      : graph_reader_(&storage), storage_(&storage) {}
+  explicit QueryExecutor(const GraphReader &graph_reader)
+      : graph_reader_(&graph_reader) {}
 
   [[nodiscard]] QueryResult Execute(
       const ir::LogicalPlan &plan,
@@ -47,11 +47,11 @@ class QueryExecutor final {
                     const QueryParameters &parameters = {});
 
  private:
-  const AccessPath *access_path_ = nullptr;
+  const GraphReader *graph_reader_ = nullptr;
   Storage *storage_ = nullptr;
 };
 
-[[nodiscard]] QueryResult ExecuteReadQuery(const AccessPath &access_path,
+[[nodiscard]] QueryResult ExecuteReadQuery(const GraphReader &graph_reader,
                                            std::string_view cypher,
                                            QueryOptions options = {});
 [[nodiscard]] QueryResult ExecuteQuery(Storage &storage,

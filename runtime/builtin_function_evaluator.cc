@@ -16,7 +16,7 @@
 
 #include "ast/builtin_function.h"
 #include "common/exception.h"
-#include "storage/access_path.h"
+#include "storage/graph_reader.h"
 #include "value/temporal.h"
 
 namespace rg {
@@ -109,7 +109,7 @@ double RandomUnitDouble() {
 Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
                               const std::vector<Value> &arguments,
                               ExecutionClock clock,
-                              const AccessPath *access_path) {
+                              const GraphReader *graph_reader) {
   const ast::BuiltinFunction *builtin = ast::FindBuiltinFunction(kind);
   CHECK(builtin != nullptr, common::InternalError,
         "unknown built-in function kind");
@@ -268,8 +268,8 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
           builtin->kind == ast::BuiltinFunctionKind::kStartNode
               ? relationship.start_node_id
               : relationship.end_node_id;
-      if (access_path != nullptr) {
-        return Value(access_path->NodeById(node_id));
+      if (graph_reader != nullptr) {
+        return Value(graph_reader->NodeById(node_id));
       }
       auto node = std::make_shared<Node>();
       node->id = node_id;

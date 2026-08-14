@@ -6,12 +6,12 @@
 #include <utility>
 #include <vector>
 
-#include "storage/access_path.h"
+#include "storage/graph_reader.h"
 #include "value/value.h"
 
 namespace rg {
 
-class Storage : public AccessPath {
+class Storage : public GraphReader {
  public:
   using NodePtr = Value::NodePtr;
   using RelationshipPtr = Value::RelationshipPtr;

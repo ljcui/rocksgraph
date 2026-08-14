@@ -8,7 +8,7 @@
 #include <unordered_set>
 #include <vector>
 
-#include "ir/planner_query.h"
+#include "ir/query_ir.h"
 
 namespace ast {
 class Expression;

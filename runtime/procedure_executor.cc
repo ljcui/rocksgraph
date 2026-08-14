@@ -16,9 +16,9 @@ namespace {
 
 using ProcedureRecord = std::map<std::string, Value>;
 
-std::set<std::string> CollectLabels(const AccessPath &access_path) {
+std::set<std::string> CollectLabels(const GraphReader &graph_reader) {
   std::set<std::string> labels;
-  for (const auto &node : access_path.ScanNodes()) {
+  for (const auto &node : graph_reader.ScanNodes()) {
     for (const auto &label : node->labels) {
       labels.insert(label);
     }
@@ -26,9 +26,10 @@ std::set<std::string> CollectLabels(const AccessPath &access_path) {
   return labels;
 }
 
-std::set<std::string> CollectRelationshipTypes(const AccessPath &access_path) {
+std::set<std::string> CollectRelationshipTypes(
+    const GraphReader &graph_reader) {
   std::set<std::string> types;
-  for (const auto &relationship : access_path.ScanRelationships()) {
+  for (const auto &relationship : graph_reader.ScanRelationships()) {
     if (!relationship->type.empty()) {
       types.insert(relationship->type);
     }
@@ -36,15 +37,15 @@ std::set<std::string> CollectRelationshipTypes(const AccessPath &access_path) {
   return types;
 }
 
-std::set<std::string> CollectPropertyKeys(const AccessPath &access_path) {
+std::set<std::string> CollectPropertyKeys(const GraphReader &graph_reader) {
   std::set<std::string> keys;
-  for (const auto &node : access_path.ScanNodes()) {
+  for (const auto &node : graph_reader.ScanNodes()) {
     for (const auto &[key, value] : node->properties) {
       (void)value;
       keys.insert(key);
     }
   }
-  for (const auto &relationship : access_path.ScanRelationships()) {
+  for (const auto &relationship : graph_reader.ScanRelationships()) {
     for (const auto &[key, value] : relationship->properties) {
       (void)value;
       keys.insert(key);
@@ -79,16 +80,16 @@ std::vector<ProcedureRecord> ProcedureMetadataRecords() {
 }
 
 std::vector<ProcedureRecord> ExecuteBuiltinProcedure(
-    const ast::BuiltinProcedure &procedure, const AccessPath &access_path) {
+    const ast::BuiltinProcedure &procedure, const GraphReader &graph_reader) {
   switch (procedure.kind) {
     case ast::BuiltinProcedureKind::kLabels:
-      return SingleFieldRecords("label", CollectLabels(access_path));
+      return SingleFieldRecords("label", CollectLabels(graph_reader));
     case ast::BuiltinProcedureKind::kPropertyKeys:
       return SingleFieldRecords("propertyKey",
-                                CollectPropertyKeys(access_path));
+                                CollectPropertyKeys(graph_reader));
     case ast::BuiltinProcedureKind::kRelationshipTypes:
       return SingleFieldRecords("relationshipType",
-                                CollectRelationshipTypes(access_path));
+                                CollectRelationshipTypes(graph_reader));
     case ast::BuiltinProcedureKind::kProcedures:
       return ProcedureMetadataRecords();
   }
@@ -116,7 +117,7 @@ void ValidateProcedureCall(const ir::ProcedureCallPlan &plan,
 
 QueryRows ProcedureExecutor::Execute(const ir::ProcedureCallPlan &plan,
                                      const QueryRows &input) const {
-  CHECK(access_path_ != nullptr, common::InternalError, "access path is null");
+  CHECK(graph_reader_ != nullptr, common::InternalError, "access path is null");
   const ast::BuiltinProcedure *procedure =
       ast::FindBuiltinProcedure(plan.ProcedureName());
   CHECK(procedure != nullptr, common::InvalidArgumentError,
@@ -124,7 +125,7 @@ QueryRows ProcedureExecutor::Execute(const ir::ProcedureCallPlan &plan,
   ValidateProcedureCall(plan, *procedure);
 
   const std::vector<ProcedureRecord> records =
-      ExecuteBuiltinProcedure(*procedure, *access_path_);
+      ExecuteBuiltinProcedure(*procedure, *graph_reader_);
   QueryRows out;
   out.reserve(input.size() * records.size());
   for (const auto &row : input) {

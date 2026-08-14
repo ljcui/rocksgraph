@@ -41,7 +41,7 @@ QueryRows GraphAccessExecutor::ExecuteAllNodeScan(
     const ir::AllNodeScanPlan &plan, const QueryRows &input) const {
   QueryRows out;
   for (const auto &row : input) {
-    for (const auto &node : access_path_->ScanNodes()) {
+    for (const auto &node : graph_reader_->ScanNodes()) {
       QueryRow next = row;
       if (TryBindQueryVariable(&next, plan.Variable(), Value(node))) {
         out.push_back(std::move(next));
@@ -55,7 +55,7 @@ QueryRows GraphAccessExecutor::ExecuteNodeByLabelScan(
     const ir::NodeByLabelScanPlan &plan, const QueryRows &input) const {
   QueryRows out;
   for (const auto &row : input) {
-    for (const auto &node : access_path_->ScanNodes()) {
+    for (const auto &node : graph_reader_->ScanNodes()) {
       if (!NodeHasLabels(*node, plan.Labels())) {
         continue;
       }
@@ -74,7 +74,7 @@ QueryRows GraphAccessExecutor::ExecuteNodeIndexSeek(
   for (const auto &row : input) {
     Value expected =
         EvaluateExpression(*plan.ValueExpression(), row, {}, context_);
-    for (const auto &node : access_path_->FindNodesByIndex(
+    for (const auto &node : graph_reader_->FindNodesByIndex(
              plan.Labels(), plan.PropertyKey(), expected)) {
       QueryRow next = row;
       if (TryBindQueryVariable(&next, plan.Variable(), Value(node))) {
@@ -90,7 +90,7 @@ QueryRows GraphAccessExecutor::ExecuteNodeIndexRangeSeek(
   QueryRows out;
   for (const auto &row : input) {
     for (const auto &node :
-         access_path_->NodesInIndex(plan.Labels(), plan.PropertyKey())) {
+         graph_reader_->NodesInIndex(plan.Labels(), plan.PropertyKey())) {
       QueryRow next = row;
       if (!TryBindQueryVariable(&next, plan.Variable(), Value(node))) {
         continue;
@@ -114,7 +114,7 @@ QueryRows GraphAccessExecutor::ExecuteRelationshipTypeScan(
     const ir::RelationshipTypeScanPlan &plan, const QueryRows &input) const {
   QueryRows out;
   for (const auto &row : input) {
-    for (const auto &relationship : access_path_->ScanRelationships()) {
+    for (const auto &relationship : graph_reader_->ScanRelationships()) {
       if (!RelationshipHasAnyType(*relationship, plan.Types())) {
         continue;
       }
@@ -132,7 +132,7 @@ QueryRows GraphAccessExecutor::ExecuteRelationshipIndexSeek(
   for (const auto &row : input) {
     Value expected =
         EvaluateExpression(*plan.ValueExpression(), row, {}, context_);
-    for (const auto &relationship : access_path_->FindRelationshipsByIndex(
+    for (const auto &relationship : graph_reader_->FindRelationshipsByIndex(
              plan.Types(), plan.PropertyKey(), expected)) {
       AddRelationshipRow(row, *relationship, plan.FromNode(),
                          plan.Relationship(), plan.ToNode(), plan.Direction(),
@@ -147,8 +147,8 @@ QueryRows GraphAccessExecutor::ExecuteRelationshipIndexRangeSeek(
     const QueryRows &input) const {
   QueryRows out;
   for (const auto &row : input) {
-    for (const auto &relationship :
-         access_path_->RelationshipsInIndex(plan.Types(), plan.PropertyKey())) {
+    for (const auto &relationship : graph_reader_->RelationshipsInIndex(
+             plan.Types(), plan.PropertyKey())) {
       QueryRows candidates;
       AddRelationshipRow(row, *relationship, plan.FromNode(),
                          plan.Relationship(), plan.ToNode(), plan.Direction(),
@@ -205,16 +205,16 @@ void GraphAccessExecutor::AddDirectedRelationshipRow(
     QueryRows *out) const {
   QueryRow next = row;
   if (!TryBindQueryVariable(&next, from_node,
-                            Value(access_path_->NodeById(from_id)))) {
+                            Value(graph_reader_->NodeById(from_id)))) {
     return;
   }
   if (!TryBindQueryVariable(
           &next, relationship_variable,
-          Value(access_path_->RelationshipById(relationship.id)))) {
+          Value(graph_reader_->RelationshipById(relationship.id)))) {
     return;
   }
   if (!TryBindQueryVariable(&next, to_node,
-                            Value(access_path_->NodeById(to_id)))) {
+                            Value(graph_reader_->NodeById(to_id)))) {
     return;
   }
   out->push_back(std::move(next));
@@ -255,11 +255,11 @@ QueryRows GraphAccessExecutor::ExecuteExpand(const ir::ExpandPlan &plan,
       QueryRow next = row;
       if (!TryBindQueryVariable(
               &next, plan.Relationship(),
-              Value(access_path_->RelationshipById(relationship->id)))) {
+              Value(graph_reader_->RelationshipById(relationship->id)))) {
         continue;
       }
       if (!TryBindQueryVariable(&next, plan.ToNode(),
-                                Value(access_path_->NodeById(to_id)))) {
+                                Value(graph_reader_->NodeById(to_id)))) {
         continue;
       }
       out.push_back(std::move(next));
@@ -303,7 +303,7 @@ QueryRows GraphAccessExecutor::ExecuteExpandInto(const ir::ExpandIntoPlan &plan,
       QueryRow next = row;
       if (TryBindQueryVariable(
               &next, plan.Relationship(),
-              Value(access_path_->RelationshipById(relationship->id)))) {
+              Value(graph_reader_->RelationshipById(relationship->id)))) {
         out.push_back(std::move(next));
       }
     }
@@ -311,15 +311,15 @@ QueryRows GraphAccessExecutor::ExecuteExpandInto(const ir::ExpandIntoPlan &plan,
   return out;
 }
 
-std::vector<AccessPath::RelationshipPtr> GraphAccessExecutor::ExpandCandidates(
+std::vector<GraphReader::RelationshipPtr> GraphAccessExecutor::ExpandCandidates(
     std::int64_t from_node_id, ir::ExpandDirection direction) const {
   if (direction == ir::ExpandDirection::kOutgoing) {
-    return access_path_->OutgoingRelationships(from_node_id);
+    return graph_reader_->OutgoingRelationships(from_node_id);
   }
   if (direction == ir::ExpandDirection::kIncoming) {
-    return access_path_->IncomingRelationships(from_node_id);
+    return graph_reader_->IncomingRelationships(from_node_id);
   }
-  return access_path_->RelationshipsConnectedTo(from_node_id);
+  return graph_reader_->RelationshipsConnectedTo(from_node_id);
 }
 
 QueryRows GraphAccessExecutor::ExecuteVarExpand(const ir::VarExpandPlan &plan,
@@ -350,7 +350,7 @@ QueryRows GraphAccessExecutor::ExecuteVarExpand(const ir::VarExpandPlan &plan,
       continue;
     }
 
-    std::vector<AccessPath::RelationshipPtr> path;
+    std::vector<GraphReader::RelationshipPtr> path;
     std::unordered_set<std::int64_t> used_relationships;
     ExpandVariableLengthPath(plan, row, from.AsNode().id, bound_to_id,
                              min_length, max_length, &path, &used_relationships,
@@ -372,7 +372,7 @@ std::size_t GraphAccessExecutor::VarExpandMinLength(
 std::size_t GraphAccessExecutor::VarExpandMaxLength(
     const ir::LogicalVariableLength &length) const {
   if (!length.max.has_value()) {
-    return access_path_->RelationshipCount();
+    return graph_reader_->RelationshipCount();
   }
   CHECK(*length.max >= 0, common::InvalidArgumentError,
         "variable expand maximum length is negative");
@@ -407,7 +407,7 @@ void GraphAccessExecutor::ExpandVariableLengthPath(
     const ir::VarExpandPlan &plan, const QueryRow &row,
     std::int64_t current_node_id, std::optional<std::int64_t> bound_to_id,
     std::size_t min_length, std::size_t max_length,
-    std::vector<AccessPath::RelationshipPtr> *path,
+    std::vector<GraphReader::RelationshipPtr> *path,
     std::unordered_set<std::int64_t> *used_relationships,
     QueryRows *out) const {
   CHECK(path != nullptr, common::InternalError, "variable expand path is null");
@@ -450,7 +450,7 @@ void GraphAccessExecutor::ExpandVariableLengthPath(
 void GraphAccessExecutor::EmitVarExpandRow(
     const ir::VarExpandPlan &plan, const QueryRow &row,
     std::int64_t current_node_id,
-    const std::vector<AccessPath::RelationshipPtr> &path,
+    const std::vector<GraphReader::RelationshipPtr> &path,
     QueryRows *out) const {
   CHECK(out != nullptr, common::InternalError,
         "variable expand output is null");
@@ -468,7 +468,7 @@ void GraphAccessExecutor::EmitVarExpandRow(
     return;
   }
   if (!TryBindQueryVariable(&next, plan.ToNode(),
-                            Value(access_path_->NodeById(current_node_id)))) {
+                            Value(graph_reader_->NodeById(current_node_id)))) {
     return;
   }
   out->push_back(std::move(next));
@@ -504,12 +504,12 @@ Value GraphAccessExecutor::BuildPathValue(const ir::PathPattern &pattern,
   CHECK(start_node.IsNode(), common::InvalidArgumentError,
         "path node is not a node: " + pattern.nodes.front());
   std::int64_t current_node_id = start_node.AsNode().id;
-  path->nodes.push_back(access_path_->NodeById(current_node_id));
+  path->nodes.push_back(graph_reader_->NodeById(current_node_id));
 
   for (std::size_t index = 0; index < pattern.relationships.size(); ++index) {
     const std::string &relationship_variable = pattern.relationships[index];
     const Value &relationship = LookupQueryVariable(row, relationship_variable);
-    std::vector<AccessPath::RelationshipPtr> relationships;
+    std::vector<GraphReader::RelationshipPtr> relationships;
     if (relationship.IsList()) {
       relationships.reserve(relationship.AsList().size());
       for (const auto &item : relationship.AsList()) {
@@ -517,14 +517,14 @@ Value GraphAccessExecutor::BuildPathValue(const ir::PathPattern &pattern,
               "path relationship list item is not a relationship: " +
                   relationship_variable);
         relationships.push_back(
-            access_path_->RelationshipById(item.AsRelationship().id));
+            graph_reader_->RelationshipById(item.AsRelationship().id));
       }
     } else {
       CHECK(
           relationship.IsRelationship(), common::InvalidArgumentError,
           "path relationship is not a relationship: " + relationship_variable);
       relationships.push_back(
-          access_path_->RelationshipById(relationship.AsRelationship().id));
+          graph_reader_->RelationshipById(relationship.AsRelationship().id));
     }
 
     const Value &target_node =
@@ -535,8 +535,8 @@ Value GraphAccessExecutor::BuildPathValue(const ir::PathPattern &pattern,
 
     if (!CanTraverseRelationshipSequence(relationships, current_node_id,
                                          target_node_id)) {
-      std::vector<AccessPath::RelationshipPtr> reversed(relationships.rbegin(),
-                                                        relationships.rend());
+      std::vector<GraphReader::RelationshipPtr> reversed(relationships.rbegin(),
+                                                         relationships.rend());
       CHECK(CanTraverseRelationshipSequence(reversed, current_node_id,
                                             target_node_id),
             common::InvalidArgumentError,
@@ -556,7 +556,7 @@ Value GraphAccessExecutor::BuildPathValue(const ir::PathPattern &pattern,
 }
 
 bool GraphAccessExecutor::CanTraverseRelationshipSequence(
-    const std::vector<AccessPath::RelationshipPtr> &relationships,
+    const std::vector<GraphReader::RelationshipPtr> &relationships,
     std::int64_t start_node_id, std::int64_t target_node_id) const {
   std::int64_t current_node_id = start_node_id;
   for (const auto &relationship : relationships) {
@@ -580,7 +580,7 @@ void GraphAccessExecutor::AppendPathRelationship(
   CHECK(current_node_id != nullptr, common::InternalError,
         "path current node id is null");
   path->relationships.push_back(
-      access_path_->RelationshipById(relationship.id));
+      graph_reader_->RelationshipById(relationship.id));
   if (relationship.start_node_id == *current_node_id) {
     *current_node_id = relationship.end_node_id;
   } else if (relationship.end_node_id == *current_node_id) {
@@ -589,7 +589,7 @@ void GraphAccessExecutor::AppendPathRelationship(
     THROW(common::InvalidArgumentError,
           "path relationship is not connected to current node");
   }
-  path->nodes.push_back(access_path_->NodeById(*current_node_id));
+  path->nodes.push_back(graph_reader_->NodeById(*current_node_id));
 }
 
 }  // namespace rg

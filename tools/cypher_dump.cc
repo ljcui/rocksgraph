@@ -6,13 +6,13 @@
 #include "ast/ast_exception.h"
 #include "ast/ast_printer.h"
 #include "gflags/gflags.h"
-#include "ir/logical_plan_builder.h"
 #include "ir/logical_plan_printer.h"
-#include "ir/planner_query.h"
-#include "ir/planner_query_printer.h"
+#include "ir/query_ir.h"
+#include "ir/query_ir_printer.h"
+#include "planner/logical_plan_builder.h"
 #include "spdlog/spdlog.h"
 
-DEFINE_string(mode, "ast", "Dump mode: ast, planner_query, or logical_plan.");
+DEFINE_string(mode, "ast", "Dump mode: ast, query_ir, or logical_plan.");
 DEFINE_bool(rewrite, false, "Rewrite the cypher statement before printing.");
 
 std::string JoinArgs(const std::vector<std::string> &parts) {
@@ -40,7 +40,7 @@ void PrintMinimalUsage() {
 int main(int argc, char **argv) {
   using common::Exception;
   gflags::SetUsageMessage(
-      "Usage:\n  cypher_dump [--mode=ast|planner_query|logical_plan] "
+      "Usage:\n  cypher_dump [--mode=ast|query_ir|logical_plan] "
       "[--rewrite] [--] <cypher...>");
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
@@ -65,24 +65,24 @@ int main(int argc, char **argv) {
       printer.Print(*statement);
       return 0;
     }
-    if (FLAGS_mode == "planner_query") {
+    if (FLAGS_mode == "query_ir") {
       auto statement = ast::ParseCypherAndRewrite(input);
-      auto planner_query = ir::CreatePlannerQuery(*statement);
-      ir::PrintPlannerQuery(*planner_query, std::cout);
+      auto query_ir = ir::CreateQueryIR(*statement);
+      ir::PrintQueryIR(*query_ir, std::cout);
       return 0;
     }
     if (FLAGS_mode == "logical_plan") {
       auto statement = ast::ParseCypherAndRewrite(input);
-      std::unique_ptr<ir::PlannerQuery> planner_query;
+      std::unique_ptr<ir::QueryIR> query_ir;
       try {
-        planner_query = ir::CreatePlannerQuery(*statement);
+        query_ir = ir::CreateQueryIR(*statement);
       } catch (const Exception &e) {
-        spdlog::error("Planner query error: {}", e.Message());
+        spdlog::error("Query IR error: {}", e.Message());
         return 1;
       }
       std::unique_ptr<ir::LogicalPlan> logical_plan;
       try {
-        logical_plan = ir::CreateLogicalPlan(*planner_query);
+        logical_plan = ir::CreateLogicalPlan(*query_ir);
       } catch (const Exception &e) {
         spdlog::error("Logical plan error: {}", e.Message());
         return 1;

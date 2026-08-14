@@ -8,11 +8,11 @@
 
 namespace rg {
 
-class AccessPath;
+class GraphReader;
 
 [[nodiscard]] Value EvaluateBuiltinFunction(
     ast::BuiltinFunctionKind kind, const std::vector<Value> &arguments,
     ExecutionClock clock = ExecutionClock::Start(),
-    const AccessPath *access_path = nullptr);
+    const GraphReader *graph_reader = nullptr);
 
 }  // namespace rg

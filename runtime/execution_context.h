@@ -7,7 +7,7 @@
 
 namespace rg {
 
-class AccessPath;
+class GraphReader;
 
 using QueryParameters = Value::Map;
 
@@ -21,9 +21,9 @@ struct ExecutionClock {
 
   [[nodiscard]] static ExecutionClock Start() {
     const TimePoint now = SystemClock::now();
-    return {.transaction_time = now,
-            .statement_time = now,
-            .realtime_now = [] { return SystemClock::now(); }};
+    return {.transaction_time = now, .statement_time = now, .realtime_now = [] {
+              return SystemClock::now();
+            }};
   }
 
   [[nodiscard]] TimePoint Realtime() const {
@@ -32,7 +32,7 @@ struct ExecutionClock {
 };
 
 struct ExecutionContext {
-  const AccessPath *access_path = nullptr;
+  const GraphReader *graph_reader = nullptr;
   const QueryParameters *parameters = nullptr;
   ExecutionClock clock = ExecutionClock::Start();
 

@@ -10,8 +10,8 @@
 #include <unordered_set>
 #include <vector>
 
-#include "ir/planner/catalog.h"
-#include "ir/planner/cost_model.h"
+#include "planner/catalog.h"
+#include "planner/cost_model.h"
 #include "storage/storage.h"
 #include "value/value.h"
 
