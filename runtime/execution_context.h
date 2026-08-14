@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <functional>
 
 #include "value/value.h"
 
@@ -8,10 +9,29 @@ namespace rg {
 
 using QueryParameters = Value::Map;
 
+struct ExecutionClock {
+  using SystemClock = std::chrono::system_clock;
+  using TimePoint = SystemClock::time_point;
+
+  TimePoint transaction_time;
+  TimePoint statement_time;
+  std::function<TimePoint()> realtime_now;
+
+  [[nodiscard]] static ExecutionClock Start() {
+    const TimePoint now = SystemClock::now();
+    return {.transaction_time = now,
+            .statement_time = now,
+            .realtime_now = [] { return SystemClock::now(); }};
+  }
+
+  [[nodiscard]] TimePoint Realtime() const {
+    return realtime_now ? realtime_now() : SystemClock::now();
+  }
+};
+
 struct ExecutionContext {
   const QueryParameters *parameters = nullptr;
-  std::chrono::system_clock::time_point query_time =
-      std::chrono::system_clock::now();
+  ExecutionClock clock = ExecutionClock::Start();
 
   [[nodiscard]] const Value *FindParameter(const std::string &name) const {
     if (parameters == nullptr) {

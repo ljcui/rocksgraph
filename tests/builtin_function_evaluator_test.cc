@@ -12,6 +12,7 @@
 namespace {
 
 using ast::BuiltinFunctionKind;
+using rg::ExecutionClock;
 using rg::EvaluateBuiltinFunction;
 using rg::Value;
 
@@ -182,17 +183,86 @@ TEST(BuiltinFunctionEvaluatorTest, UsesOneTimestampForCurrentTemporals) {
   const auto now =
       std::chrono::sys_days{std::chrono::year{2024} / std::chrono::May / 6} +
       std::chrono::hours{7} + std::chrono::minutes{8} + std::chrono::seconds{9};
+  ExecutionClock clock;
+  clock.transaction_time = now;
+  clock.statement_time = now;
+  clock.realtime_now = [now] { return now; };
 
   const Value date =
-      EvaluateBuiltinFunction(BuiltinFunctionKind::kDate, {}, now);
+      EvaluateBuiltinFunction(BuiltinFunctionKind::kDate, {}, clock);
   const Value time =
-      EvaluateBuiltinFunction(BuiltinFunctionKind::kTime, {}, now);
+      EvaluateBuiltinFunction(BuiltinFunctionKind::kTime, {}, clock);
   const Value date_time =
-      EvaluateBuiltinFunction(BuiltinFunctionKind::kDateTime, {}, now);
+      EvaluateBuiltinFunction(BuiltinFunctionKind::kDateTime, {}, clock);
 
   EXPECT_EQ(date.ToString(), "2024-05-06");
   EXPECT_EQ(time.ToString(), "07:08:09Z");
   EXPECT_EQ(date_time.ToString(), "2024-05-06T07:08:09Z");
+}
+
+TEST(BuiltinFunctionEvaluatorTest, EvaluatesTemporalClockFunctions) {
+  const auto transaction =
+      std::chrono::sys_days{std::chrono::year{2024} / std::chrono::May / 6} +
+      std::chrono::hours{7} + std::chrono::minutes{8} +
+      std::chrono::seconds{9};
+  const auto statement =
+      std::chrono::sys_days{std::chrono::year{2025} / std::chrono::January / 2} +
+      std::chrono::hours{3} + std::chrono::minutes{4} +
+      std::chrono::seconds{5};
+  const auto realtime =
+      std::chrono::sys_days{std::chrono::year{2026} / std::chrono::February / 3} +
+      std::chrono::hours{11} + std::chrono::minutes{12} +
+      std::chrono::seconds{13};
+  ExecutionClock clock;
+  clock.transaction_time = transaction;
+  clock.statement_time = statement;
+  clock.realtime_now = [realtime] { return realtime; };
+
+  EXPECT_EQ(EvaluateBuiltinFunction(BuiltinFunctionKind::kDateTransaction, {},
+                                    clock)
+                .ToString(),
+            "2024-05-06");
+  EXPECT_EQ(EvaluateBuiltinFunction(BuiltinFunctionKind::kLocalDateTimeStatement,
+                                    {}, clock)
+                .ToString(),
+            "2025-01-02T03:04:05");
+  EXPECT_EQ(EvaluateBuiltinFunction(BuiltinFunctionKind::kDateTimeRealtime, {},
+                                    clock)
+                .ToString(),
+            "2026-02-03T11:12:13Z");
+  EXPECT_EQ(EvaluateBuiltinFunction(
+                BuiltinFunctionKind::kTimeTransaction,
+                {Value("+01:00")}, clock)
+                .ToString(),
+            "08:08:09+01:00");
+  EXPECT_EQ(EvaluateBuiltinFunction(
+                BuiltinFunctionKind::kLocalTimeStatement,
+                {Value("-02:00")}, clock)
+                .ToString(),
+            "01:04:05");
+
+  EXPECT_EQ(EvaluateBuiltinFunction(BuiltinFunctionKind::kDateRealtime,
+                                    {Value::Null()}, clock),
+            Value::Null());
+}
+
+TEST(BuiltinFunctionEvaluatorTest, ConstructsDateTimeFromEpoch) {
+  EXPECT_EQ(EvaluateBuiltinFunction(BuiltinFunctionKind::kDateTimeFromEpoch,
+                                    {Value(416779), Value(999'999'999)})
+                .ToString(),
+            "1970-01-05T19:46:19.999999999Z");
+  EXPECT_EQ(EvaluateBuiltinFunction(BuiltinFunctionKind::kDateTimeFromEpochMillis,
+                                    {Value(237'821'673'987)})
+                .ToString(),
+            "1977-07-15T13:34:33.987Z");
+  EXPECT_EQ(EvaluateBuiltinFunction(BuiltinFunctionKind::kDateTimeFromEpochMillis,
+                                    {Value(-1)})
+                .ToString(),
+            "1969-12-31T23:59:59.999Z");
+  EXPECT_THROW((void)EvaluateBuiltinFunction(
+                   BuiltinFunctionKind::kDateTimeFromEpoch,
+                   {Value(1), Value(1'000'000'000)}),
+               common::InvalidArgumentError);
 }
 
 TEST(BuiltinFunctionEvaluatorTest, TruncatesTemporalValues) {

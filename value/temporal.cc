@@ -811,21 +811,51 @@ std::string FormatFraction(int nanosecond) {
   return digits;
 }
 
+LocalDateTime UtcDateTimeFromEpoch(std::int64_t epoch_seconds,
+                                   int nanosecond) {
+  std::int64_t days = epoch_seconds / kSecondsPerDay;
+  std::int64_t second_of_day = epoch_seconds % kSecondsPerDay;
+  if (second_of_day < 0) {
+    --days;
+    second_of_day += kSecondsPerDay;
+  }
+  const int hour = static_cast<int>(second_of_day / 3600);
+  second_of_day %= 3600;
+  const int minute = static_cast<int>(second_of_day / 60);
+  const int second = static_cast<int>(second_of_day % 60);
+  return {FromSysDays(SysDays{Days{days}}),
+          {hour, minute, second, nanosecond, true}};
+}
+
 LocalDateTime UtcDateTime(std::chrono::system_clock::time_point now) {
   const auto seconds = std::chrono::floor<std::chrono::seconds>(now);
-  const auto day = std::chrono::floor<Days>(seconds);
-  const auto time = seconds - day;
-  const auto hours = std::chrono::duration_cast<std::chrono::hours>(time);
-  const auto minutes =
-      std::chrono::duration_cast<std::chrono::minutes>(time - hours);
-  const auto whole_seconds =
-      std::chrono::duration_cast<std::chrono::seconds>(time - hours - minutes);
   const auto nanoseconds =
       std::chrono::duration_cast<std::chrono::nanoseconds>(now - seconds);
-  return {FromSysDays(SysDays{day.time_since_epoch()}),
-          {static_cast<int>(hours.count()), static_cast<int>(minutes.count()),
-           static_cast<int>(whole_seconds.count()),
-           static_cast<int>(nanoseconds.count()), true}};
+  return UtcDateTimeFromEpoch(seconds.time_since_epoch().count(),
+                              static_cast<int>(nanoseconds.count()));
+}
+
+DateTime DateTimeAtInstant(std::chrono::system_clock::time_point now,
+                           const std::string &timezone) {
+  LocalDateTime local = UtcDateTime(now);
+  const int offset = timezone.empty()
+                         ? 0
+                         : TargetOffsetForConversion(timezone, local, 0);
+  local = ConvertOffset(local, 0, offset);
+  return {local, offset, StoredTimezone(timezone)};
+}
+
+bool ClockTimezone(const Value *argument, std::string *timezone) {
+  if (argument == nullptr) {
+    *timezone = "Z";
+    return true;
+  }
+  if (argument->IsNull()) return false;
+  if (!argument->IsString()) {
+    InvalidTemporal("clock timezone must be a string");
+  }
+  *timezone = argument->AsString();
+  return true;
 }
 
 enum class TemporalShape { kDate, kTime, kDateTime };
@@ -1360,6 +1390,71 @@ Value ConstructDateTime(const Value *argument,
     return Value(DateTime{argument->AsLocalDateTime(), 0, {}});
   }
   return Value::Null();
+}
+
+Value ConstructDateTimeFromEpoch(const Value &seconds,
+                                 const Value &nanoseconds) {
+  if (seconds.IsNull() || nanoseconds.IsNull()) return Value::Null();
+  if (!seconds.IsInteger() || !nanoseconds.IsInteger()) {
+    InvalidTemporal("datetime.fromepoch() arguments must be integers");
+  }
+  const int fraction =
+      CheckedInt(nanoseconds.AsInteger(), 0, 999'999'999, "nanosecond");
+  return Value(DateTime{UtcDateTimeFromEpoch(seconds.AsInteger(), fraction), 0,
+                        {}});
+}
+
+Value ConstructDateTimeFromEpochMillis(const Value &milliseconds) {
+  if (milliseconds.IsNull()) return Value::Null();
+  if (!milliseconds.IsInteger()) {
+    InvalidTemporal("datetime.fromepochmillis() argument must be an integer");
+  }
+  std::int64_t seconds = milliseconds.AsInteger() / 1000;
+  std::int64_t remainder = milliseconds.AsInteger() % 1000;
+  if (remainder < 0) {
+    --seconds;
+    remainder += 1000;
+  }
+  return Value(DateTime{
+      UtcDateTimeFromEpoch(seconds, static_cast<int>(remainder * 1'000'000)),
+      0, {}});
+}
+
+Value CurrentDate(const Value *timezone,
+                  std::chrono::system_clock::time_point now) {
+  std::string zone;
+  if (!ClockTimezone(timezone, &zone)) return Value::Null();
+  return Value(DateTimeAtInstant(now, zone).local_date_time.date);
+}
+
+Value CurrentLocalTime(const Value *timezone,
+                       std::chrono::system_clock::time_point now) {
+  std::string zone;
+  if (!ClockTimezone(timezone, &zone)) return Value::Null();
+  return Value(DateTimeAtInstant(now, zone).local_date_time.time);
+}
+
+Value CurrentTime(const Value *timezone,
+                  std::chrono::system_clock::time_point now) {
+  std::string zone;
+  if (!ClockTimezone(timezone, &zone)) return Value::Null();
+  const DateTime date_time = DateTimeAtInstant(now, zone);
+  return Value(Time{date_time.local_date_time.time,
+                    date_time.utc_offset_seconds, {}});
+}
+
+Value CurrentLocalDateTime(const Value *timezone,
+                           std::chrono::system_clock::time_point now) {
+  std::string zone;
+  if (!ClockTimezone(timezone, &zone)) return Value::Null();
+  return Value(DateTimeAtInstant(now, zone).local_date_time);
+}
+
+Value CurrentDateTime(const Value *timezone,
+                      std::chrono::system_clock::time_point now) {
+  std::string zone;
+  if (!ClockTimezone(timezone, &zone)) return Value::Null();
+  return Value(DateTimeAtInstant(now, zone));
 }
 
 Value ConstructDuration(const Value *argument) {

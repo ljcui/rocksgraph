@@ -1263,8 +1263,16 @@ class SemanticValidator : public ASTWalker {
         }
         return {};
       case BuiltinFunctionKind::kDate:
+      case BuiltinFunctionKind::kDateRealtime:
+      case BuiltinFunctionKind::kDateStatement:
+      case BuiltinFunctionKind::kDateTransaction:
       case BuiltinFunctionKind::kDateTruncate:
       case BuiltinFunctionKind::kDateTime:
+      case BuiltinFunctionKind::kDateTimeFromEpoch:
+      case BuiltinFunctionKind::kDateTimeFromEpochMillis:
+      case BuiltinFunctionKind::kDateTimeRealtime:
+      case BuiltinFunctionKind::kDateTimeStatement:
+      case BuiltinFunctionKind::kDateTimeTransaction:
       case BuiltinFunctionKind::kDateTimeTruncate:
       case BuiltinFunctionKind::kDuration:
       case BuiltinFunctionKind::kDurationBetween:
@@ -1272,10 +1280,19 @@ class SemanticValidator : public ASTWalker {
       case BuiltinFunctionKind::kDurationInMonths:
       case BuiltinFunctionKind::kDurationInSeconds:
       case BuiltinFunctionKind::kLocalDateTime:
+      case BuiltinFunctionKind::kLocalDateTimeRealtime:
+      case BuiltinFunctionKind::kLocalDateTimeStatement:
+      case BuiltinFunctionKind::kLocalDateTimeTransaction:
       case BuiltinFunctionKind::kLocalDateTimeTruncate:
       case BuiltinFunctionKind::kLocalTime:
+      case BuiltinFunctionKind::kLocalTimeRealtime:
+      case BuiltinFunctionKind::kLocalTimeStatement:
+      case BuiltinFunctionKind::kLocalTimeTransaction:
       case BuiltinFunctionKind::kLocalTimeTruncate:
       case BuiltinFunctionKind::kTime:
+      case BuiltinFunctionKind::kTimeRealtime:
+      case BuiltinFunctionKind::kTimeStatement:
+      case BuiltinFunctionKind::kTimeTransaction:
       case BuiltinFunctionKind::kTimeTruncate:
         return {};
       case BuiltinFunctionKind::kAbs:
@@ -1461,6 +1478,33 @@ class SemanticValidator : public ASTWalker {
       case BuiltinFunctionKind::kTime:
         accepted =
             AcceptsType(argument, {StaticType::kString, StaticType::kMap});
+        break;
+      case BuiltinFunctionKind::kDateRealtime:
+      case BuiltinFunctionKind::kDateStatement:
+      case BuiltinFunctionKind::kDateTransaction:
+      case BuiltinFunctionKind::kDateTimeRealtime:
+      case BuiltinFunctionKind::kDateTimeStatement:
+      case BuiltinFunctionKind::kDateTimeTransaction:
+      case BuiltinFunctionKind::kLocalDateTimeRealtime:
+      case BuiltinFunctionKind::kLocalDateTimeStatement:
+      case BuiltinFunctionKind::kLocalDateTimeTransaction:
+      case BuiltinFunctionKind::kLocalTimeRealtime:
+      case BuiltinFunctionKind::kLocalTimeStatement:
+      case BuiltinFunctionKind::kLocalTimeTransaction:
+      case BuiltinFunctionKind::kTimeRealtime:
+      case BuiltinFunctionKind::kTimeStatement:
+      case BuiltinFunctionKind::kTimeTransaction:
+        accepted = AcceptsType(argument, {StaticType::kString});
+        break;
+      case BuiltinFunctionKind::kDateTimeFromEpoch:
+        accepted = AcceptsType(argument, {StaticType::kInteger});
+        if (accepted && invocation.arguments.size() > 1) {
+          accepted = AcceptsType(InferType(invocation.arguments[1].get()),
+                                 {StaticType::kInteger});
+        }
+        break;
+      case BuiltinFunctionKind::kDateTimeFromEpochMillis:
+        accepted = AcceptsType(argument, {StaticType::kInteger});
         break;
       case BuiltinFunctionKind::kDateTruncate:
       case BuiltinFunctionKind::kDateTimeTruncate:

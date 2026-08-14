@@ -106,7 +106,7 @@ double RandomUnitDouble() {
 
 Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
                               const std::vector<Value> &arguments,
-                              std::chrono::system_clock::time_point now) {
+                              ExecutionClock clock) {
   const ast::BuiltinFunction *builtin = ast::FindBuiltinFunction(kind);
   CHECK(builtin != nullptr, common::InternalError,
         "unknown built-in function kind");
@@ -175,14 +175,32 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
                  : Value::Null();
     case ast::BuiltinFunctionKind::kLocalDateTime:
       return ConstructLocalDateTime(arguments.empty() ? nullptr : &arguments[0],
-                                    now);
+                                    clock.statement_time);
+    case ast::BuiltinFunctionKind::kLocalDateTimeRealtime:
+      return CurrentLocalDateTime(arguments.empty() ? nullptr : &arguments[0],
+                                  clock.Realtime());
+    case ast::BuiltinFunctionKind::kLocalDateTimeStatement:
+      return CurrentLocalDateTime(arguments.empty() ? nullptr : &arguments[0],
+                                  clock.statement_time);
+    case ast::BuiltinFunctionKind::kLocalDateTimeTransaction:
+      return CurrentLocalDateTime(arguments.empty() ? nullptr : &arguments[0],
+                                  clock.transaction_time);
     case ast::BuiltinFunctionKind::kLocalDateTimeTruncate:
       return TruncateLocalDateTime(
           arguments[0], arguments[1],
           arguments.size() == 3 ? &arguments[2] : nullptr);
     case ast::BuiltinFunctionKind::kLocalTime:
       return ConstructLocalTime(arguments.empty() ? nullptr : &arguments[0],
-                                now);
+                                clock.statement_time);
+    case ast::BuiltinFunctionKind::kLocalTimeRealtime:
+      return CurrentLocalTime(arguments.empty() ? nullptr : &arguments[0],
+                              clock.Realtime());
+    case ast::BuiltinFunctionKind::kLocalTimeStatement:
+      return CurrentLocalTime(arguments.empty() ? nullptr : &arguments[0],
+                              clock.statement_time);
+    case ast::BuiltinFunctionKind::kLocalTimeTransaction:
+      return CurrentLocalTime(arguments.empty() ? nullptr : &arguments[0],
+                              clock.transaction_time);
     case ast::BuiltinFunctionKind::kLocalTimeTruncate:
       return TruncateLocalTime(arguments[0], arguments[1],
                                arguments.size() == 3 ? &arguments[2] : nullptr);
@@ -194,13 +212,36 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
       }
       return Value::Null();
     case ast::BuiltinFunctionKind::kDate:
-      return ConstructDate(arguments.empty() ? nullptr : &arguments[0], now);
+      return ConstructDate(arguments.empty() ? nullptr : &arguments[0],
+                           clock.statement_time);
+    case ast::BuiltinFunctionKind::kDateRealtime:
+      return CurrentDate(arguments.empty() ? nullptr : &arguments[0],
+                         clock.Realtime());
+    case ast::BuiltinFunctionKind::kDateStatement:
+      return CurrentDate(arguments.empty() ? nullptr : &arguments[0],
+                         clock.statement_time);
+    case ast::BuiltinFunctionKind::kDateTransaction:
+      return CurrentDate(arguments.empty() ? nullptr : &arguments[0],
+                         clock.transaction_time);
     case ast::BuiltinFunctionKind::kDateTruncate:
       return TruncateDate(arguments[0], arguments[1],
                           arguments.size() == 3 ? &arguments[2] : nullptr);
     case ast::BuiltinFunctionKind::kDateTime:
       return ConstructDateTime(arguments.empty() ? nullptr : &arguments[0],
-                               now);
+                               clock.statement_time);
+    case ast::BuiltinFunctionKind::kDateTimeFromEpoch:
+      return ConstructDateTimeFromEpoch(arguments[0], arguments[1]);
+    case ast::BuiltinFunctionKind::kDateTimeFromEpochMillis:
+      return ConstructDateTimeFromEpochMillis(arguments[0]);
+    case ast::BuiltinFunctionKind::kDateTimeRealtime:
+      return CurrentDateTime(arguments.empty() ? nullptr : &arguments[0],
+                             clock.Realtime());
+    case ast::BuiltinFunctionKind::kDateTimeStatement:
+      return CurrentDateTime(arguments.empty() ? nullptr : &arguments[0],
+                             clock.statement_time);
+    case ast::BuiltinFunctionKind::kDateTimeTransaction:
+      return CurrentDateTime(arguments.empty() ? nullptr : &arguments[0],
+                             clock.transaction_time);
     case ast::BuiltinFunctionKind::kDateTimeTruncate:
       return TruncateDateTime(arguments[0], arguments[1],
                               arguments.size() == 3 ? &arguments[2] : nullptr);
@@ -354,7 +395,17 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
       return Value(Value::List(arguments[0].AsList().begin() + 1,
                                arguments[0].AsList().end()));
     case ast::BuiltinFunctionKind::kTime:
-      return ConstructTime(arguments.empty() ? nullptr : &arguments[0], now);
+      return ConstructTime(arguments.empty() ? nullptr : &arguments[0],
+                           clock.statement_time);
+    case ast::BuiltinFunctionKind::kTimeRealtime:
+      return CurrentTime(arguments.empty() ? nullptr : &arguments[0],
+                         clock.Realtime());
+    case ast::BuiltinFunctionKind::kTimeStatement:
+      return CurrentTime(arguments.empty() ? nullptr : &arguments[0],
+                         clock.statement_time);
+    case ast::BuiltinFunctionKind::kTimeTransaction:
+      return CurrentTime(arguments.empty() ? nullptr : &arguments[0],
+                         clock.transaction_time);
     case ast::BuiltinFunctionKind::kTimeTruncate:
       return TruncateTime(arguments[0], arguments[1],
                           arguments.size() == 3 ? &arguments[2] : nullptr);
