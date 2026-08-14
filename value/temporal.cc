@@ -1,6 +1,7 @@
 #include "value/temporal.h"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -990,6 +991,196 @@ Duration CalendarDuration(const TemporalOperand &left,
   return {months, days, remainder.seconds, remainder.nanoseconds};
 }
 
+enum class TruncationUnit {
+  kMillennium,
+  kCentury,
+  kDecade,
+  kYear,
+  kWeekYear,
+  kQuarter,
+  kMonth,
+  kWeek,
+  kDay,
+  kHour,
+  kMinute,
+  kSecond,
+  kMillisecond,
+  kMicrosecond,
+};
+
+TruncationUnit ParseTruncationUnit(const Value &unit) {
+  if (!unit.IsString()) {
+    InvalidTemporal("truncate unit must be a string");
+  }
+  std::string normalized = unit.AsString();
+  std::ranges::transform(normalized, normalized.begin(), [](unsigned char ch) {
+    return static_cast<char>(std::tolower(ch));
+  });
+  if (normalized == "millennium") return TruncationUnit::kMillennium;
+  if (normalized == "century") return TruncationUnit::kCentury;
+  if (normalized == "decade") return TruncationUnit::kDecade;
+  if (normalized == "year") return TruncationUnit::kYear;
+  if (normalized == "weekyear") return TruncationUnit::kWeekYear;
+  if (normalized == "quarter") return TruncationUnit::kQuarter;
+  if (normalized == "month") return TruncationUnit::kMonth;
+  if (normalized == "week") return TruncationUnit::kWeek;
+  if (normalized == "day") return TruncationUnit::kDay;
+  if (normalized == "hour") return TruncationUnit::kHour;
+  if (normalized == "minute") return TruncationUnit::kMinute;
+  if (normalized == "second") return TruncationUnit::kSecond;
+  if (normalized == "millisecond") return TruncationUnit::kMillisecond;
+  if (normalized == "microsecond") return TruncationUnit::kMicrosecond;
+  InvalidTemporal("unsupported truncate unit: " + unit.AsString());
+}
+
+bool IsDateUnit(TruncationUnit unit) {
+  return unit >= TruncationUnit::kMillennium && unit <= TruncationUnit::kDay;
+}
+
+const Value::Map &TruncationFields(const Value *fields) {
+  static const Value::Map kEmpty;
+  if (fields == nullptr) return kEmpty;
+  if (!fields->IsMap()) {
+    InvalidTemporal("truncate fields must be a map");
+  }
+  return fields->AsMap();
+}
+
+int TruncatedYear(int year, int width) {
+  const int remainder = year % width;
+  return remainder < 0 ? year - remainder - width : year - remainder;
+}
+
+Date TruncateDateValue(TruncationUnit unit, const Date &input) {
+  switch (unit) {
+    case TruncationUnit::kMillennium:
+      return {TruncatedYear(input.year, 1000), 1, 1};
+    case TruncationUnit::kCentury:
+      return {TruncatedYear(input.year, 100), 1, 1};
+    case TruncationUnit::kDecade:
+      return {TruncatedYear(input.year, 10), 1, 1};
+    case TruncationUnit::kYear:
+      return {input.year, 1, 1};
+    case TruncationUnit::kWeekYear:
+      return DateFromIsoWeek(IsoWeekComponents(input).year, 1, 1);
+    case TruncationUnit::kQuarter:
+      return {input.year, ((input.month - 1) / 3) * 3 + 1, 1};
+    case TruncationUnit::kMonth:
+      return {input.year, input.month, 1};
+    case TruncationUnit::kWeek:
+      return FromSysDays(ToSysDays(input) -
+                         Days{IsoWeekday(ToSysDays(input)) - 1});
+    case TruncationUnit::kDay:
+      return input;
+    default:
+      InvalidTemporal("date cannot be truncated to a time unit");
+  }
+}
+
+Date ApplyTruncationDateFields(TruncationUnit unit, Date date,
+                               const Value::Map &fields) {
+  if (unit == TruncationUnit::kWeek) {
+    if (const auto weekday = MapInteger(fields, "dayOfWeek");
+        weekday.has_value()) {
+      date = FromSysDays(ToSysDays(date) +
+                         Days{CheckedInt(*weekday, 1, 7, "dayOfWeek") - 1});
+    }
+  }
+  return ApplyDateComponents(fields, date);
+}
+
+LocalTime TruncateTimeValue(TruncationUnit unit, const LocalTime &input) {
+  switch (unit) {
+    case TruncationUnit::kDay:
+      return {0, 0, 0, 0, false};
+    case TruncationUnit::kHour:
+      return {input.hour, 0, 0, 0, false};
+    case TruncationUnit::kMinute:
+      return {input.hour, input.minute, 0, 0, false};
+    case TruncationUnit::kSecond:
+      return {input.hour, input.minute, input.second, 0, true};
+    case TruncationUnit::kMillisecond:
+      return {input.hour, input.minute, input.second,
+              input.nanosecond / 1'000'000 * 1'000'000, true};
+    case TruncationUnit::kMicrosecond:
+      return {input.hour, input.minute, input.second,
+              input.nanosecond / 1'000 * 1'000, true};
+    default:
+      InvalidTemporal("time cannot be truncated to a date unit");
+  }
+}
+
+LocalTime ApplyTruncationTimeFields(LocalTime time, const Value::Map &fields) {
+  Value::Map components = fields;
+  components.erase("millisecond");
+  components.erase("microsecond");
+  components.erase("nanosecond");
+  time = ApplyTimeComponents(components, time);
+  const std::int64_t addition =
+      MapInteger(fields, "millisecond").value_or(0) * 1'000'000 +
+      MapInteger(fields, "microsecond").value_or(0) * 1'000 +
+      MapInteger(fields, "nanosecond").value_or(0);
+  const bool specifies_fraction =
+      MapInteger(fields, "millisecond").has_value() ||
+      MapInteger(fields, "microsecond").has_value() ||
+      MapInteger(fields, "nanosecond").has_value();
+  if (addition != 0) {
+    time.nanosecond =
+        CheckedInt(static_cast<std::int64_t>(time.nanosecond) + addition, 0,
+                   999'999'999, "nanosecond");
+  }
+  time.has_seconds = time.has_seconds || specifies_fraction;
+  return time;
+}
+
+LocalDateTime LocalDateTimeFromTemporal(const Value &input) {
+  if (input.IsDate()) {
+    return {input.AsDate(), LocalTime{0, 0, 0, 0, false}};
+  }
+  if (input.IsLocalDateTime()) return input.AsLocalDateTime();
+  if (input.IsDateTime()) return input.AsDateTime().local_date_time;
+  InvalidTemporal("truncate input has no date-time components");
+}
+
+LocalDateTime TruncateLocalDateTimeValue(TruncationUnit unit,
+                                         const Value &input,
+                                         const Value::Map &fields) {
+  LocalDateTime result = LocalDateTimeFromTemporal(input);
+  if (IsDateUnit(unit)) {
+    result.date = TruncateDateValue(unit, result.date);
+    result.time = {0, 0, 0, 0, false};
+  } else {
+    result.time = TruncateTimeValue(unit, result.time);
+  }
+  result.date = ApplyTruncationDateFields(unit, result.date, fields);
+  result.time = ApplyTruncationTimeFields(result.time, fields);
+  return result;
+}
+
+struct TruncationTimezone {
+  int offset_seconds = 0;
+  std::string timezone;
+};
+
+TruncationTimezone TruncatedTimezone(const Value &input,
+                                     const Value::Map &fields,
+                                     const LocalDateTime &local) {
+  std::string timezone;
+  int offset = 0;
+  if (input.IsDateTime()) {
+    timezone = input.AsDateTime().timezone;
+    offset = input.AsDateTime().utc_offset_seconds;
+  }
+  if (const auto specified = MapString(fields, "timezone");
+      specified.has_value()) {
+    timezone = *specified;
+    offset = OffsetForTimezone(timezone, local);
+  } else if (!timezone.empty()) {
+    offset = ZoneOffset(timezone, local);
+  }
+  return {offset, StoredTimezone(timezone)};
+}
+
 Value IntegerProperty(std::int64_t value) { return Value(value); }
 
 std::optional<Value> DateProperty(const Date &date, std::string_view property) {
@@ -1215,6 +1406,81 @@ Value DurationInSeconds(const Value &left, const Value &right) {
   if (left.IsNull() || right.IsNull()) return Value::Null();
   return Value(SecondsDuration(
       DifferenceInSeconds(ToTemporalOperand(left), ToTemporalOperand(right))));
+}
+
+Value TruncateDate(const Value &unit, const Value &input, const Value *fields) {
+  if (unit.IsNull() || input.IsNull() ||
+      (fields != nullptr && fields->IsNull())) {
+    return Value::Null();
+  }
+  const TruncationUnit parsed_unit = ParseTruncationUnit(unit);
+  if (!IsDateUnit(parsed_unit)) {
+    InvalidTemporal("date cannot be truncated to a time unit");
+  }
+  const Value::Map &map = TruncationFields(fields);
+  Date result = TruncateDateValue(parsed_unit, DateFromTemporal(input));
+  return Value(ApplyTruncationDateFields(parsed_unit, result, map));
+}
+
+Value TruncateLocalTime(const Value &unit, const Value &input,
+                        const Value *fields) {
+  if (unit.IsNull() || input.IsNull() ||
+      (fields != nullptr && fields->IsNull())) {
+    return Value::Null();
+  }
+  const TruncationUnit parsed_unit = ParseTruncationUnit(unit);
+  const Value::Map &map = TruncationFields(fields);
+  LocalTime result = TruncateTimeValue(parsed_unit, TimeFromTemporal(input));
+  return Value(ApplyTruncationTimeFields(result, map));
+}
+
+Value TruncateTime(const Value &unit, const Value &input, const Value *fields) {
+  if (unit.IsNull() || input.IsNull() ||
+      (fields != nullptr && fields->IsNull())) {
+    return Value::Null();
+  }
+  const TruncationUnit parsed_unit = ParseTruncationUnit(unit);
+  const Value::Map &map = TruncationFields(fields);
+  LocalTime local = TruncateTimeValue(parsed_unit, TimeFromTemporal(input));
+  local = ApplyTruncationTimeFields(local, map);
+  int offset = 0;
+  if (input.IsTime()) {
+    offset = input.AsTime().utc_offset_seconds;
+  } else if (input.IsDateTime()) {
+    offset = input.AsDateTime().utc_offset_seconds;
+  }
+  if (const auto timezone = MapString(map, "timezone"); timezone.has_value()) {
+    if (!NumericTimezone(*timezone)) {
+      InvalidTemporal("named timezone requires a date");
+    }
+    offset = OffsetForTimezone(*timezone, {{1970, 1, 1}, local});
+  }
+  return Value(Time{local, offset, {}});
+}
+
+Value TruncateLocalDateTime(const Value &unit, const Value &input,
+                            const Value *fields) {
+  if (unit.IsNull() || input.IsNull() ||
+      (fields != nullptr && fields->IsNull())) {
+    return Value::Null();
+  }
+  const TruncationUnit parsed_unit = ParseTruncationUnit(unit);
+  const Value::Map &map = TruncationFields(fields);
+  return Value(TruncateLocalDateTimeValue(parsed_unit, input, map));
+}
+
+Value TruncateDateTime(const Value &unit, const Value &input,
+                       const Value *fields) {
+  if (unit.IsNull() || input.IsNull() ||
+      (fields != nullptr && fields->IsNull())) {
+    return Value::Null();
+  }
+  const TruncationUnit parsed_unit = ParseTruncationUnit(unit);
+  const Value::Map &map = TruncationFields(fields);
+  const LocalDateTime local =
+      TruncateLocalDateTimeValue(parsed_unit, input, map);
+  const TruncationTimezone timezone = TruncatedTimezone(input, map, local);
+  return Value(DateTime{local, timezone.offset_seconds, timezone.timezone});
 }
 
 std::optional<Value> TemporalProperty(const Value &value,

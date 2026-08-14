@@ -29,6 +29,16 @@ namespace rg {
 [[nodiscard]] Value DurationInMonths(const Value &left, const Value &right);
 [[nodiscard]] Value DurationInDays(const Value &left, const Value &right);
 [[nodiscard]] Value DurationInSeconds(const Value &left, const Value &right);
+[[nodiscard]] Value TruncateDate(const Value &unit, const Value &input,
+                                 const Value *fields);
+[[nodiscard]] Value TruncateLocalTime(const Value &unit, const Value &input,
+                                      const Value *fields);
+[[nodiscard]] Value TruncateTime(const Value &unit, const Value &input,
+                                 const Value *fields);
+[[nodiscard]] Value TruncateLocalDateTime(const Value &unit, const Value &input,
+                                          const Value *fields);
+[[nodiscard]] Value TruncateDateTime(const Value &unit, const Value &input,
+                                     const Value *fields);
 
 [[nodiscard]] std::optional<Value> TemporalProperty(const Value &value,
                                                     std::string_view property);

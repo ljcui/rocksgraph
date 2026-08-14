@@ -195,4 +195,31 @@ TEST(BuiltinFunctionEvaluatorTest, UsesOneTimestampForCurrentTemporals) {
   EXPECT_EQ(date_time.ToString(), "2024-05-06T07:08:09Z");
 }
 
+TEST(BuiltinFunctionEvaluatorTest, TruncatesTemporalValues) {
+  const Value date = EvaluateBuiltinFunction(BuiltinFunctionKind::kDate,
+                                             {Value("1984-10-11")});
+  const Value date_time =
+      EvaluateBuiltinFunction(BuiltinFunctionKind::kDateTime,
+                              {Value("1984-10-11T12:31:14.645876123-01:00")});
+
+  const Value week = EvaluateBuiltinFunction(
+      BuiltinFunctionKind::kDateTruncate,
+      {Value("week"), date, Value(Value::Map{{"dayOfWeek", Value(2)}})});
+  const Value milliseconds =
+      EvaluateBuiltinFunction(BuiltinFunctionKind::kLocalDateTimeTruncate,
+                              {Value("millisecond"), date_time,
+                               Value(Value::Map{{"nanosecond", Value(2)}})});
+  const Value zoned = EvaluateBuiltinFunction(
+      BuiltinFunctionKind::kDateTimeTruncate,
+      {Value("hour"), date_time,
+       Value(Value::Map{{"timezone", Value("Europe/Stockholm")}})});
+
+  EXPECT_EQ(week.ToString(), "1984-10-09");
+  EXPECT_EQ(milliseconds.ToString(), "1984-10-11T12:31:14.645000002");
+  EXPECT_EQ(zoned.ToString(), "1984-10-11T12:00+01:00[Europe/Stockholm]");
+  EXPECT_THROW((void)EvaluateBuiltinFunction(BuiltinFunctionKind::kTimeTruncate,
+                                             {Value("year"), date_time}),
+               common::InvalidArgumentError);
+}
+
 }  // namespace

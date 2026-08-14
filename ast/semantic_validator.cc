@@ -1263,15 +1263,20 @@ class SemanticValidator : public ASTWalker {
         }
         return {};
       case BuiltinFunctionKind::kDate:
+      case BuiltinFunctionKind::kDateTruncate:
       case BuiltinFunctionKind::kDateTime:
+      case BuiltinFunctionKind::kDateTimeTruncate:
       case BuiltinFunctionKind::kDuration:
       case BuiltinFunctionKind::kDurationBetween:
       case BuiltinFunctionKind::kDurationInDays:
       case BuiltinFunctionKind::kDurationInMonths:
       case BuiltinFunctionKind::kDurationInSeconds:
       case BuiltinFunctionKind::kLocalDateTime:
+      case BuiltinFunctionKind::kLocalDateTimeTruncate:
       case BuiltinFunctionKind::kLocalTime:
+      case BuiltinFunctionKind::kLocalTimeTruncate:
       case BuiltinFunctionKind::kTime:
+      case BuiltinFunctionKind::kTimeTruncate:
         return {};
       case BuiltinFunctionKind::kAbs:
       case BuiltinFunctionKind::kLast:
@@ -1456,6 +1461,17 @@ class SemanticValidator : public ASTWalker {
       case BuiltinFunctionKind::kTime:
         accepted =
             AcceptsType(argument, {StaticType::kString, StaticType::kMap});
+        break;
+      case BuiltinFunctionKind::kDateTruncate:
+      case BuiltinFunctionKind::kDateTimeTruncate:
+      case BuiltinFunctionKind::kLocalDateTimeTruncate:
+      case BuiltinFunctionKind::kLocalTimeTruncate:
+      case BuiltinFunctionKind::kTimeTruncate:
+        accepted = AcceptsType(argument, {StaticType::kString});
+        if (accepted && invocation.arguments.size() == 3) {
+          accepted = AcceptsType(InferType(invocation.arguments[2].get()),
+                                 {StaticType::kMap});
+        }
         break;
       default:
         break;

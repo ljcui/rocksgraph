@@ -176,9 +176,16 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
     case ast::BuiltinFunctionKind::kLocalDateTime:
       return ConstructLocalDateTime(arguments.empty() ? nullptr : &arguments[0],
                                     now);
+    case ast::BuiltinFunctionKind::kLocalDateTimeTruncate:
+      return TruncateLocalDateTime(
+          arguments[0], arguments[1],
+          arguments.size() == 3 ? &arguments[2] : nullptr);
     case ast::BuiltinFunctionKind::kLocalTime:
       return ConstructLocalTime(arguments.empty() ? nullptr : &arguments[0],
                                 now);
+    case ast::BuiltinFunctionKind::kLocalTimeTruncate:
+      return TruncateLocalTime(arguments[0], arguments[1],
+                               arguments.size() == 3 ? &arguments[2] : nullptr);
     case ast::BuiltinFunctionKind::kCoalesce:
       for (const Value &argument : arguments) {
         if (!argument.IsNull()) {
@@ -188,9 +195,15 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
       return Value::Null();
     case ast::BuiltinFunctionKind::kDate:
       return ConstructDate(arguments.empty() ? nullptr : &arguments[0], now);
+    case ast::BuiltinFunctionKind::kDateTruncate:
+      return TruncateDate(arguments[0], arguments[1],
+                          arguments.size() == 3 ? &arguments[2] : nullptr);
     case ast::BuiltinFunctionKind::kDateTime:
       return ConstructDateTime(arguments.empty() ? nullptr : &arguments[0],
                                now);
+    case ast::BuiltinFunctionKind::kDateTimeTruncate:
+      return TruncateDateTime(arguments[0], arguments[1],
+                              arguments.size() == 3 ? &arguments[2] : nullptr);
     case ast::BuiltinFunctionKind::kDuration:
       return ConstructDuration(&arguments[0]);
     case ast::BuiltinFunctionKind::kDurationBetween:
@@ -342,6 +355,9 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
                                arguments[0].AsList().end()));
     case ast::BuiltinFunctionKind::kTime:
       return ConstructTime(arguments.empty() ? nullptr : &arguments[0], now);
+    case ast::BuiltinFunctionKind::kTimeTruncate:
+      return TruncateTime(arguments[0], arguments[1],
+                          arguments.size() == 3 ? &arguments[2] : nullptr);
     case ast::BuiltinFunctionKind::kNodes:
     case ast::BuiltinFunctionKind::kRelationships: {
       if (!arguments[0].IsPath()) {
