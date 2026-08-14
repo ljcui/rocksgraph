@@ -101,6 +101,9 @@ TEST(SemanticValidatorTest, RejectsUnionMismatchAfterReturnStarRewrite) {
 TEST(SemanticValidatorTest, AllowsTopLevelAggregationProjectionItems) {
   EXPECT_NO_THROW(ast::ParseCypher("MATCH (n) RETURN n, count(*) AS c"));
   EXPECT_NO_THROW(ast::ParseCypher("MATCH (n) RETURN count(n) AS c"));
+  EXPECT_NO_THROW(ast::ParseCypher(
+      "MATCH (n) RETURN percentileDisc(n.value, 0.5) AS discrete, "
+      "percentileCont(n.value, 0.5) AS continuous"));
 }
 
 TEST(SemanticValidatorTest, RejectsAmbiguousAggregationProjectionExpression) {
@@ -236,17 +239,16 @@ TEST(SemanticValidatorTest, AcceptsRegisteredFunctionContracts) {
   EXPECT_NO_THROW(ast::ParseCypher(
       "RETURN COALESCE(null, 1) AS value, range(1, 3) AS short_range, "
       "range(1, 3, 2) AS stepped_range, abs(-1) AS absolute, rand() AS random, "
-      "tail([1, 2]) AS rest, last([1, 2]) AS final, "
+      "head([1, 2]) AS first, tail([1, 2]) AS rest, last([1, 2]) AS final, "
+      "startNode(null) AS start, endNode(null) AS finish, "
       "reverse('abc') AS reversed, substring('abc', 1, 1) AS middle"));
   EXPECT_NO_THROW(
       ast::ParseCypher("UNWIND [1, 1] AS x RETURN count(DISTINCT x) AS c"));
 }
 
-TEST(SemanticValidatorTest, RejectsUnknownAndUnimplementedFunctions) {
+TEST(SemanticValidatorTest, RejectsUnknownFunctions) {
   ExpectSemanticError("RETURN unknownFunction(1) AS value",
                       "unknown function: unknownFunction");
-  ExpectSemanticError("RETURN startNode(null) AS value",
-                      "unknown function: startNode");
 }
 
 TEST(SemanticValidatorTest, RejectsFunctionArgumentCountMismatch) {
@@ -261,6 +263,8 @@ TEST(SemanticValidatorTest, RejectsFunctionArgumentCountMismatch) {
   ExpectSemanticError("RETURN rand(1) AS value", "rand() expects 0 arguments");
   ExpectSemanticError("RETURN substring('abc') AS value",
                       "substring() expects 2 to 3 arguments");
+  ExpectSemanticError("RETURN percentileDisc(1) AS value",
+                      "percentileDisc() expects 2 arguments");
 }
 
 TEST(SemanticValidatorTest, RejectsNonDeterministicFunctionInAggregation) {
@@ -353,6 +357,12 @@ TEST(SemanticValidatorTest, RejectsKnownInvalidFunctionArguments) {
   ExpectSemanticError(
       "RETURN substring('abc', '1')",
       "invalid argument type: substring() argument has invalid type");
+  ExpectSemanticError(
+      "RETURN percentileDisc('x', 0.5)",
+      "invalid argument type: percentileDisc() argument has invalid type");
+  ExpectSemanticError(
+      "RETURN percentileCont(1, 'x')",
+      "invalid argument type: percentileCont() argument has invalid type");
 }
 
 TEST(SemanticValidatorTest, AllowsWithWhereToUseIncomingVariables) {

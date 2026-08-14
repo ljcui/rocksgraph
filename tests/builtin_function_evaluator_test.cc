@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <vector>
 
 #include "common/exception.h"
@@ -48,6 +49,8 @@ TEST(BuiltinFunctionEvaluatorTest, EvaluatesNumericFunctions) {
 
 TEST(BuiltinFunctionEvaluatorTest, EvaluatesListAndStringFunctions) {
   const Value list(Value::List{Value(1), Value(2), Value(3)});
+  EXPECT_EQ(EvaluateBuiltinFunction(BuiltinFunctionKind::kHead, {list}),
+            Value(1));
   EXPECT_EQ(EvaluateBuiltinFunction(BuiltinFunctionKind::kTail, {list}),
             Value(Value::List{Value(2), Value(3)}));
   EXPECT_EQ(EvaluateBuiltinFunction(BuiltinFunctionKind::kLast, {list}),
@@ -57,6 +60,9 @@ TEST(BuiltinFunctionEvaluatorTest, EvaluatesListAndStringFunctions) {
   EXPECT_EQ(EvaluateBuiltinFunction(BuiltinFunctionKind::kLast,
                                     {Value(Value::List{})}),
             Value::Null());
+  EXPECT_EQ(EvaluateBuiltinFunction(BuiltinFunctionKind::kHead,
+                                    {Value(Value::List{})}),
+            Value::Null());
   EXPECT_EQ(EvaluateBuiltinFunction(BuiltinFunctionKind::kReverse,
                                     {Value("A\xC3\xA9")}),
             Value("\xC3\xA9"
@@ -64,6 +70,25 @@ TEST(BuiltinFunctionEvaluatorTest, EvaluatesListAndStringFunctions) {
   EXPECT_EQ(EvaluateBuiltinFunction(BuiltinFunctionKind::kSubstring,
                                     {Value("A\xC3\xA9Z"), Value(1), Value(1)}),
             Value("\xC3\xA9"));
+}
+
+TEST(BuiltinFunctionEvaluatorTest, EvaluatesRelationshipEndpointFunctions) {
+  auto relationship = std::make_shared<rg::Relationship>();
+  relationship->start_node_id = 7;
+  relationship->end_node_id = 11;
+  const Value value(relationship);
+
+  const Value start =
+      EvaluateBuiltinFunction(BuiltinFunctionKind::kStartNode, {value});
+  const Value end =
+      EvaluateBuiltinFunction(BuiltinFunctionKind::kEndNode, {value});
+  ASSERT_TRUE(start.IsNode());
+  ASSERT_TRUE(end.IsNode());
+  EXPECT_EQ(start.AsNode().id, 7);
+  EXPECT_EQ(end.AsNode().id, 11);
+  EXPECT_EQ(
+      EvaluateBuiltinFunction(BuiltinFunctionKind::kStartNode, {Value::Null()}),
+      Value::Null());
 }
 
 TEST(BuiltinFunctionEvaluatorTest, RandReturnsUnitIntervalValues) {

@@ -8,8 +8,11 @@
 
 namespace rg {
 
+class AccessPath;
+
 [[nodiscard]] Value EvaluateBuiltinFunction(
     ast::BuiltinFunctionKind kind, const std::vector<Value> &arguments,
-    ExecutionClock clock = ExecutionClock::Start());
+    ExecutionClock clock = ExecutionClock::Start(),
+    const AccessPath *access_path = nullptr);
 
 }  // namespace rg

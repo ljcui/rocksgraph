@@ -7,6 +7,8 @@
 
 namespace rg {
 
+class AccessPath;
+
 using QueryParameters = Value::Map;
 
 struct ExecutionClock {
@@ -30,6 +32,7 @@ struct ExecutionClock {
 };
 
 struct ExecutionContext {
+  const AccessPath *access_path = nullptr;
   const QueryParameters *parameters = nullptr;
   ExecutionClock clock = ExecutionClock::Start();
 

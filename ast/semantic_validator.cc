@@ -1220,6 +1220,7 @@ class SemanticValidator : public ASTWalker {
         return {StaticType::kInteger};
       case BuiltinFunctionKind::kAverage:
       case BuiltinFunctionKind::kCeil:
+      case BuiltinFunctionKind::kPercentileContinuous:
       case BuiltinFunctionKind::kRand:
       case BuiltinFunctionKind::kSqrt:
       case BuiltinFunctionKind::kToFloat:
@@ -1236,6 +1237,9 @@ class SemanticValidator : public ASTWalker {
         return {StaticType::kList, StaticType::kNode};
       case BuiltinFunctionKind::kRelationships:
         return {StaticType::kList, StaticType::kRelationship};
+      case BuiltinFunctionKind::kEndNode:
+      case BuiltinFunctionKind::kStartNode:
+        return {StaticType::kNode};
       case BuiltinFunctionKind::kRange:
         return {StaticType::kList, StaticType::kInteger};
       case BuiltinFunctionKind::kTail: {
@@ -1301,15 +1305,18 @@ class SemanticValidator : public ASTWalker {
       case BuiltinFunctionKind::kTimeTruncate:
         return {};
       case BuiltinFunctionKind::kAbs:
+      case BuiltinFunctionKind::kHead:
       case BuiltinFunctionKind::kLast:
       case BuiltinFunctionKind::kReverse:
         return function.arguments.empty()
                    ? StaticValue{}
-                   : (builtin->kind == BuiltinFunctionKind::kLast
+                   : (builtin->kind == BuiltinFunctionKind::kHead ||
+                      builtin->kind == BuiltinFunctionKind::kLast
                           ? ListElementType(function.arguments[0].get())
                           : InferType(function.arguments[0].get()));
       case BuiltinFunctionKind::kMaximum:
       case BuiltinFunctionKind::kMinimum:
+      case BuiltinFunctionKind::kPercentileDiscrete:
       case BuiltinFunctionKind::kSum:
         return function.arguments.empty()
                    ? StaticValue{}
@@ -1424,6 +1431,14 @@ class SemanticValidator : public ASTWalker {
       case BuiltinFunctionKind::kSqrt:
         accepted = IsNumericCompatible(argument);
         break;
+      case BuiltinFunctionKind::kPercentileContinuous:
+      case BuiltinFunctionKind::kPercentileDiscrete:
+        accepted = IsNumericCompatible(argument);
+        if (accepted && invocation.arguments.size() > 1) {
+          accepted =
+              IsNumericCompatible(InferType(invocation.arguments[1].get()));
+        }
+        break;
       case BuiltinFunctionKind::kId:
         accepted = AcceptsType(argument,
                                {StaticType::kNode, StaticType::kRelationship});
@@ -1453,9 +1468,14 @@ class SemanticValidator : public ASTWalker {
         accepted =
             AcceptsType(argument, {StaticType::kList, StaticType::kString});
         break;
+      case BuiltinFunctionKind::kHead:
       case BuiltinFunctionKind::kLast:
       case BuiltinFunctionKind::kTail:
         accepted = AcceptsType(argument, {StaticType::kList});
+        break;
+      case BuiltinFunctionKind::kEndNode:
+      case BuiltinFunctionKind::kStartNode:
+        accepted = AcceptsType(argument, {StaticType::kRelationship});
         break;
       case BuiltinFunctionKind::kReverse:
         accepted =

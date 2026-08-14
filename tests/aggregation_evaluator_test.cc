@@ -32,6 +32,16 @@ ast::FunctionInvocation Function(std::string name, std::string argument,
   return function;
 }
 
+ast::FunctionInvocation PercentileFunction(std::string name, double percentile,
+                                           bool distinct = false) {
+  ast::FunctionInvocation function =
+      Function(std::move(name), "value", distinct);
+  auto argument = std::make_unique<ast::DoubleLiteral>();
+  argument->value = percentile;
+  function.arguments.push_back(std::move(argument));
+  return function;
+}
+
 const rg::Value &Column(const rg::QueryRow &row, const std::string &name) {
   return row.at(name);
 }
@@ -132,6 +142,27 @@ TEST(AggregationEvaluatorTest, AppliesDistinctAfterIgnoringNullValues) {
                                 rg::Value(rg::Value::List{rg::Value(2)})}));
 }
 
+TEST(AggregationEvaluatorTest, EvaluatesDiscreteAndContinuousPercentiles) {
+  ast::FunctionInvocation discrete = PercentileFunction("percentileDisc", 0.5);
+  ast::FunctionInvocation continuous =
+      PercentileFunction("percentileCont", 0.25);
+  const std::vector<rg::QueryRow> rows = {{{"value", rg::Value(40)}},
+                                          {{"value", rg::Value(10)}},
+                                          {{"value", rg::Value::Null()}},
+                                          {{"value", rg::Value(30)}},
+                                          {{"value", rg::Value(20)}}};
+
+  const std::vector<rg::QueryRow> result =
+      rg::AggregateRows({},
+                        {{.expression = &discrete, .alias = "discrete"},
+                         {.expression = &continuous, .alias = "continuous"}},
+                        rows);
+
+  ASSERT_EQ(result.size(), 1U);
+  EXPECT_EQ(Column(result[0], "discrete"), rg::Value(20));
+  EXPECT_EQ(Column(result[0], "continuous"), rg::Value(17.5));
+}
+
 TEST(AggregationEvaluatorTest, ProducesGlobalAggregateRowForEmptyInput) {
   ast::CountStarExpression count_star;
   ast::FunctionInvocation count = Function("count", "value");
@@ -140,6 +171,10 @@ TEST(AggregationEvaluatorTest, ProducesGlobalAggregateRowForEmptyInput) {
   ast::FunctionInvocation average = Function("avg", "value");
   ast::FunctionInvocation minimum = Function("min", "value");
   ast::FunctionInvocation maximum = Function("max", "value");
+  ast::FunctionInvocation percentile_discrete =
+      PercentileFunction("percentileDisc", 0.5);
+  ast::FunctionInvocation percentile_continuous =
+      PercentileFunction("percentileCont", 0.5);
   const std::vector<ir::LogicalProjectionItem> aggregation_items = {
       {.expression = &count_star, .alias = "rows"},
       {.expression = &count, .alias = "count"},
@@ -147,7 +182,9 @@ TEST(AggregationEvaluatorTest, ProducesGlobalAggregateRowForEmptyInput) {
       {.expression = &sum, .alias = "sum"},
       {.expression = &average, .alias = "average"},
       {.expression = &minimum, .alias = "minimum"},
-      {.expression = &maximum, .alias = "maximum"}};
+      {.expression = &maximum, .alias = "maximum"},
+      {.expression = &percentile_discrete, .alias = "percentile_discrete"},
+      {.expression = &percentile_continuous, .alias = "percentile_continuous"}};
 
   const std::vector<rg::QueryRow> result =
       rg::AggregateRows({}, aggregation_items, {});
@@ -160,6 +197,8 @@ TEST(AggregationEvaluatorTest, ProducesGlobalAggregateRowForEmptyInput) {
   EXPECT_TRUE(Column(result[0], "average").IsNull());
   EXPECT_TRUE(Column(result[0], "minimum").IsNull());
   EXPECT_TRUE(Column(result[0], "maximum").IsNull());
+  EXPECT_TRUE(Column(result[0], "percentile_discrete").IsNull());
+  EXPECT_TRUE(Column(result[0], "percentile_continuous").IsNull());
 }
 
 TEST(AggregationEvaluatorTest, RejectsInvalidValuesAndIntegerOverflow) {
@@ -176,6 +215,24 @@ TEST(AggregationEvaluatorTest, RejectsInvalidValuesAndIntegerOverflow) {
   EXPECT_THROW((void)rg::AggregateRows({}, aggregation_items,
                                        {{{"value", rg::Value("not numeric")}}}),
                common::InvalidArgumentError);
+}
+
+TEST(AggregationEvaluatorTest, RejectsInvalidPercentileArguments) {
+  ast::FunctionInvocation out_of_range =
+      PercentileFunction("percentileCont", 1.1);
+  ast::FunctionInvocation varying = Function("percentileDisc", "value");
+  varying.arguments.push_back(Variable("percentile"));
+
+  EXPECT_THROW((void)rg::AggregateRows(
+                   {}, {{.expression = &out_of_range, .alias = "value"}},
+                   {{{"value", rg::Value(1)}}}),
+               common::InvalidArgumentError);
+  EXPECT_THROW(
+      (void)rg::AggregateRows(
+          {}, {{.expression = &varying, .alias = "value"}},
+          {{{"value", rg::Value(1)}, {"percentile", rg::Value(0.25)}},
+           {{"value", rg::Value(2)}, {"percentile", rg::Value(0.75)}}}),
+      common::InvalidArgumentError);
 }
 
 TEST(AggregationEvaluatorTest, ValidatesRegisteredFunctionContract) {

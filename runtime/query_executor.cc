@@ -98,7 +98,8 @@ class QueryExecutorImpl {
   QueryExecutorImpl(const AccessPath *access_path, Storage *storage,
                     const QueryParameters &parameters)
       : access_path_(access_path),
-        context_{.parameters = &parameters,
+        context_{.access_path = access_path,
+                 .parameters = &parameters,
                  .clock = ExecutionClock::Start()},
         graph_access_(RequireAccessPath(access_path), context_),
         join_executor_(context_),

@@ -92,6 +92,25 @@ TEST(QueryExecutorTest, ExecutesNodeLabelAndPropertyQuery) {
             (std::vector<std::vector<std::string>>{{"\"Ada\""}}));
 }
 
+TEST(QueryExecutorTest, ExecutesGraphEndpointAndListFunctions) {
+  rg::InMemoryGraph graph;
+  auto ada = graph.CreateNode({}, {{"name", rg::Value("Ada")}});
+  auto grace = graph.CreateNode({}, {{"name", rg::Value("Grace")}});
+  graph.CreateRelationship(ada, grace, "KNOWS");
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "MATCH (a)-[r:KNOWS]->(b) "
+      "RETURN head([1, 2, 3]) AS first, startNode(r).name AS start_name, "
+      "endNode(r).name AS end_name");
+
+  ASSERT_EQ(result.columns,
+            (std::vector<std::string>{"first", "start_name", "end_name"}));
+  EXPECT_EQ(
+      StringRows(result),
+      (std::vector<std::vector<std::string>>{{"1", "\"Ada\"", "\"Grace\""}}));
+}
+
 TEST(QueryExecutorTest, ExecutesQueriesWithParameters) {
   rg::InMemoryGraph graph;
   graph.AddNodeIndex({"Person"}, "name");
@@ -439,6 +458,27 @@ TEST(QueryExecutorTest, ExecutesNumericAggregations) {
   EXPECT_EQ(
       StringRows(result),
       (std::vector<std::vector<std::string>>{{"121", "60.5", "36", "85"}}));
+}
+
+TEST(QueryExecutorTest, ExecutesPercentileAggregations) {
+  rg::InMemoryGraph graph;
+  graph.CreateNode({}, {{"value", rg::Value(40)}});
+  graph.CreateNode({}, {{"value", rg::Value(10)}});
+  graph.CreateNode({}, {{"value", rg::Value(30)}});
+  graph.CreateNode({}, {{"value", rg::Value(20)}});
+  rg::QueryOptions options = QueryOptionsFor(graph);
+  options.parameters = {{"percentile", rg::Value(0.25)}};
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "MATCH (n) RETURN percentileDisc(n.value, 0.5) AS discrete, "
+      "percentileCont(n.value, $percentile) AS continuous",
+      options);
+
+  ASSERT_EQ(result.columns,
+            (std::vector<std::string>{"discrete", "continuous"}));
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{{"20", "17.5"}}));
 }
 
 TEST(QueryExecutorTest, ExecutesAggregateSubexpressions) {

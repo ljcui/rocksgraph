@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <random>
 #include <string>
@@ -15,6 +16,7 @@
 
 #include "ast/builtin_function.h"
 #include "common/exception.h"
+#include "storage/access_path.h"
 #include "value/temporal.h"
 
 namespace rg {
@@ -106,7 +108,8 @@ double RandomUnitDouble() {
 
 Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
                               const std::vector<Value> &arguments,
-                              ExecutionClock clock) {
+                              ExecutionClock clock,
+                              const AccessPath *access_path) {
   const ast::BuiltinFunction *builtin = ast::FindBuiltinFunction(kind);
   CHECK(builtin != nullptr, common::InternalError,
         "unknown built-in function kind");
@@ -255,6 +258,28 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
       return DurationInMonths(arguments[0], arguments[1]);
     case ast::BuiltinFunctionKind::kDurationInSeconds:
       return DurationInSeconds(arguments[0], arguments[1]);
+    case ast::BuiltinFunctionKind::kEndNode:
+    case ast::BuiltinFunctionKind::kStartNode: {
+      if (!arguments[0].IsRelationship()) {
+        return Value::Null();
+      }
+      const Relationship &relationship = arguments[0].AsRelationship();
+      const std::int64_t node_id =
+          builtin->kind == ast::BuiltinFunctionKind::kStartNode
+              ? relationship.start_node_id
+              : relationship.end_node_id;
+      if (access_path != nullptr) {
+        return Value(access_path->NodeById(node_id));
+      }
+      auto node = std::make_shared<Node>();
+      node->id = node_id;
+      return Value(std::move(node));
+    }
+    case ast::BuiltinFunctionKind::kHead:
+      if (!arguments[0].IsList() || arguments[0].AsList().empty()) {
+        return Value::Null();
+      }
+      return arguments[0].AsList().front();
     case ast::BuiltinFunctionKind::kIsEmpty:
       if (arguments[0].IsString()) {
         return Value(arguments[0].AsString().empty());
@@ -538,6 +563,8 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
     case ast::BuiltinFunctionKind::kCount:
     case ast::BuiltinFunctionKind::kMaximum:
     case ast::BuiltinFunctionKind::kMinimum:
+    case ast::BuiltinFunctionKind::kPercentileContinuous:
+    case ast::BuiltinFunctionKind::kPercentileDiscrete:
     case ast::BuiltinFunctionKind::kSum:
       THROW(common::InternalError,
             "aggregate function requires aggregation execution: " +

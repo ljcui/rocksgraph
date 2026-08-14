@@ -1,10 +1,12 @@
 #include "runtime/aggregation_evaluator.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <utility>
@@ -142,6 +144,81 @@ Value EvaluateMinMax(const std::vector<Value> &values, bool min) {
   return best;
 }
 
+std::optional<double> EvaluatePercentileArgument(
+    const ast::FunctionInvocation &function, const std::vector<QueryRow> &rows,
+    const std::vector<ir::LogicalPrecomputedExpression> &precomputed,
+    ExecutionContext context) {
+  CHECK(function.arguments[1] != nullptr, common::InvalidArgumentError,
+        function.function_name + "() percentile argument is null");
+
+  bool initialized = false;
+  bool is_null = false;
+  double percentile = 0.0;
+  for (const auto &row : rows) {
+    const Value current =
+        EvaluateExpression(*function.arguments[1], row, precomputed, context);
+    if (current.IsNull()) {
+      CHECK(!initialized || is_null, common::InvalidArgumentError,
+            function.function_name +
+                "() percentile must be constant within a group");
+      initialized = true;
+      is_null = true;
+      continue;
+    }
+    CHECK(IsNumeric(current), common::InvalidArgumentError,
+          function.function_name + "() expects a numeric percentile");
+    const double current_percentile = AsDoubleValue(current);
+    CHECK(std::isfinite(current_percentile) && current_percentile >= 0.0 &&
+              current_percentile <= 1.0,
+          common::InvalidArgumentError,
+          function.function_name + "() percentile must be between 0.0 and 1.0");
+    CHECK(!initialized || (!is_null && percentile == current_percentile),
+          common::InvalidArgumentError,
+          function.function_name +
+              "() percentile must be constant within a group");
+    initialized = true;
+    percentile = current_percentile;
+  }
+  return is_null ? std::nullopt : std::optional<double>(percentile);
+}
+
+Value EvaluatePercentile(
+    const ast::FunctionInvocation &function, std::vector<Value> values,
+    const std::vector<QueryRow> &rows,
+    const std::vector<ir::LogicalPrecomputedExpression> &precomputed,
+    ExecutionContext context, bool continuous) {
+  if (values.empty()) {
+    return Value::Null();
+  }
+  for (const Value &value : values) {
+    CHECK(IsNumeric(value), common::InvalidArgumentError,
+          function.function_name + "() expects numeric values");
+  }
+  const std::optional<double> percentile =
+      EvaluatePercentileArgument(function, rows, precomputed, context);
+  if (!percentile.has_value()) {
+    return Value::Null();
+  }
+
+  std::sort(values.begin(), values.end(),
+            [](const Value &left, const Value &right) {
+              return ValueLess(left, right);
+            });
+  if (!continuous) {
+    const double rank =
+        std::ceil(*percentile * static_cast<double>(values.size()));
+    const std::size_t index =
+        rank <= 1.0 ? 0 : static_cast<std::size_t>(rank) - 1;
+    return values[std::min(index, values.size() - 1)];
+  }
+
+  const double position = *percentile * static_cast<double>(values.size() - 1);
+  const auto lower = static_cast<std::size_t>(std::floor(position));
+  const auto upper = static_cast<std::size_t>(std::ceil(position));
+  return Value(std::lerp(AsDoubleValue(values[lower]),
+                         AsDoubleValue(values[upper]), position - lower));
+}
+
 Value EvaluateAggregationExpression(
     const ast::Expression &expression, const std::vector<QueryRow> &rows,
     const std::vector<ir::LogicalPrecomputedExpression> &precomputed,
@@ -185,6 +262,12 @@ Value EvaluateAggregationExpression(
       return EvaluateMinMax(values, true);
     case ast::BuiltinFunctionKind::kMaximum:
       return EvaluateMinMax(values, false);
+    case ast::BuiltinFunctionKind::kPercentileContinuous:
+      return EvaluatePercentile(function, std::move(values), rows, precomputed,
+                                context, true);
+    case ast::BuiltinFunctionKind::kPercentileDiscrete:
+      return EvaluatePercentile(function, std::move(values), rows, precomputed,
+                                context, false);
     default:
       THROW(common::InternalError,
             "built-in function has no aggregate implementation: " +

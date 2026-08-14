@@ -239,7 +239,8 @@ Value EvaluateFunction(
         EvaluateExpression(*argument, row, precomputed, context));
   }
 
-  return EvaluateBuiltinFunction(builtin->kind, arguments, context.clock);
+  return EvaluateBuiltinFunction(builtin->kind, arguments, context.clock,
+                                 context.access_path);
 }
 
 Value EvaluateListIndex(
