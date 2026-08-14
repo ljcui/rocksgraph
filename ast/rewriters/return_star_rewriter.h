@@ -14,6 +14,7 @@ class ReturnStarRewriter : public ASTRewriter {
  protected:
   void Visit(SinglePartQuery &node) override;
   void Visit(MultiPartQuery &node) override;
+  void Visit(With &node) override;
   void Visit(ProjectionBody &node) override;
 
  private:

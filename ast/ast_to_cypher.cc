@@ -667,7 +667,7 @@ class CypherPrinter : public ASTVisitor {
     if (node.distinct) {
       out += "DISTINCT ";
     }
-    if (node.star) {
+    if (node.star || node.empty_star_expansion) {
       out += "*";
     } else {
       out += Join(RenderList(node.items), ", ");

@@ -248,6 +248,23 @@ void CollectFromPattern(Pattern &pattern,
   }
 }
 
+void CollectFromRelationshipsPattern(
+    RelationshipsPattern &pattern,
+    std::vector<std::unique_ptr<Expression>> &preds,
+    PropertyVariableGenerator *property_variables) {
+  if (pattern.node_pattern) {
+    CollectFromNodePattern(*pattern.node_pattern, preds);
+  }
+  for (auto &link : pattern.chain) {
+    if (link.first) {
+      CollectFromRelationshipPattern(*link.first, preds, property_variables);
+    }
+    if (link.second) {
+      CollectFromNodePattern(*link.second, preds);
+    }
+  }
+}
+
 std::unique_ptr<Expression> CombinePredicates(
     std::vector<std::unique_ptr<Expression>> &preds) {
   std::unique_ptr<Expression> combined;
@@ -272,6 +289,22 @@ void PatternPredicateNormalizationRewriter::Visit(Match &node) {
   }
   auto combined = CombinePredicates(predicates);
   node.where = CombineAnd(std::move(combined), std::move(node.where));
+}
+
+void PatternPredicateNormalizationRewriter::Visit(PatternComprehension &node) {
+  ASTRewriter::Visit(node);
+  if (!node.relationships_pattern) {
+    return;
+  }
+  std::vector<std::unique_ptr<Expression>> predicates;
+  PropertyVariableGenerator property_variables(node);
+  CollectFromRelationshipsPattern(*node.relationships_pattern, predicates,
+                                  &property_variables);
+  if (predicates.empty()) {
+    return;
+  }
+  auto combined = CombinePredicates(predicates);
+  node.where_expr = CombineAnd(std::move(combined), std::move(node.where_expr));
 }
 
 }  // namespace ast

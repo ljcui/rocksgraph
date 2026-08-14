@@ -551,6 +551,7 @@ std::unique_ptr<ProjectionBody> CloneProjectionBody(
   auto cloned = std::make_unique<ProjectionBody>();
   cloned->distinct = body.distinct;
   cloned->star = body.star;
+  cloned->empty_star_expansion = body.empty_star_expansion;
   cloned->items = CloneList(body.items, CloneProjectionItem);
   cloned->order_by = CloneList(body.order_by, CloneSortItem);
   cloned->skip = CloneExpressionPtr(body.skip);

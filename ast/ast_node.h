@@ -991,11 +991,14 @@ class ProjectionBody : public ASTNode {
   ProjectionBody() { node_type = ASTNodeType::kProjectionBody; }
   bool distinct = false;
   bool star = false;
+  bool empty_star_expansion = false;
   std::vector<std::unique_ptr<ProjectionItem>> items;
   std::vector<std::unique_ptr<SortItem>> order_by;
   std::unique_ptr<Expression> skip;
   std::unique_ptr<Expression> limit;
-  void Validate() const { assert(star || !items.empty()); }
+  void Validate() const {
+    assert(star || empty_star_expansion || !items.empty());
+  }
   void Accept(ASTVisitor& visitor) override;
 };
 

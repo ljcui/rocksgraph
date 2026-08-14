@@ -138,6 +138,13 @@ TEST(SemanticValidatorTest, RejectsAggregationInWithWhere) {
                       "WHERE cannot contain aggregation");
 }
 
+TEST(SemanticValidatorTest, AllowsAggregationAliasInWithWhere) {
+  EXPECT_NO_THROW(
+      ast::ParseCypher("MATCH (n) WHERE exists { MATCH (n)-->(m) "
+                       "WITH n, count(*) AS numConnections "
+                       "WHERE numConnections = 3 RETURN true } RETURN n"));
+}
+
 TEST(SemanticValidatorTest, RejectsAggregationInOrderBy) {
   ExpectSemanticError("MATCH (n) RETURN n ORDER BY count(n)",
                       "ORDER BY cannot contain aggregation");

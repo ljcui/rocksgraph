@@ -69,6 +69,14 @@ void ReturnStarRewriter::Visit(MultiPartQuery &node) {
   scope_stack_.pop_back();
 }
 
+void ReturnStarRewriter::Visit(With &node) {
+  if (node.body && node.body->star && CurrentScope().order.empty()) {
+    node.body->star = false;
+    node.body->empty_star_expansion = true;
+  }
+  ASTRewriter::Visit(node);
+}
+
 void ReturnStarRewriter::Visit(ProjectionBody &node) {
   ExpandStar(node);
   ASTRewriter::Visit(node);

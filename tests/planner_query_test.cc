@@ -2100,6 +2100,19 @@ TEST(PlannerQueryTest, BuildsUpdatingOnlyCreateWithPassthroughHorizon) {
   EXPECT_NE(printed.find("clause: CREATE (n)"), std::string::npos);
 }
 
+TEST(PlannerQueryTest, BuildsUpdatingWithStarAfterCreate) {
+  auto statement = ParseOrFail("MATCH () CREATE () WITH * CREATE ()");
+  ASSERT_TRUE(statement);
+  EXPECT_NO_THROW((void)ir::CreatePlannerQuery(*statement));
+}
+
+TEST(PlannerQueryTest, BuildsPatternComprehensionWithInlineNodeLabel) {
+  auto statement =
+      ParseOrFail("MATCH (n:A) RETURN [p = (n)-->(:B) | p] AS list");
+  ASSERT_TRUE(statement);
+  EXPECT_NO_THROW((void)ir::CreatePlannerQuery(*statement));
+}
+
 TEST(PlannerQueryTest, BuildsSetDeleteAndRemoveMutatingPatterns) {
   auto statement = ParseOrFail(
       "MATCH (n) SET n.name = 'Ada', n = {age: 42}, n += {score: 7}, "

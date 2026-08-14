@@ -64,6 +64,22 @@ TEST(ReturnStarRewriterTest, WithStarThenReturnStar) {
                                                    "RETURN n AS n");
 }
 
+TEST(RewriterPipelineTest, ExpandsWithStarAfterAnonymousPatterns) {
+  auto statement = ParseOrFail("MATCH () CREATE () WITH * CREATE ()");
+  ASSERT_TRUE(statement);
+  ast::ApplyDefaultRewriters(*statement);
+
+  const auto &regular = ast::CastAst<ast::RegularQuery>(*statement);
+  const auto &multi = ast::CastAst<ast::MultiPartQuery>(*regular.single_query);
+  ASSERT_EQ(multi.parts.size(), 1U);
+  ASSERT_TRUE(multi.parts[0].with_clause);
+  ASSERT_TRUE(multi.parts[0].with_clause->body);
+  const auto &body = *multi.parts[0].with_clause->body;
+  EXPECT_FALSE(body.star);
+  EXPECT_TRUE(body.empty_star_expansion);
+  EXPECT_TRUE(body.items.empty());
+}
+
 TEST(ReturnStarRewriterTest, WithAliasReturnStar) {
   ExpectRewriteEqualsWith<ast::ReturnStarRewriter>(
       "MATCH (n) WITH n AS m RETURN *", "MATCH (n) WITH n AS m RETURN m AS m");
@@ -116,6 +132,13 @@ TEST(PatternPredicateNormalizationRewriterTest,
       "MATCH (a)-[r:WORKED_WITH* {year: 1988}]->(b) RETURN *",
       "MATCH (a)-[r:WORKED_WITH*]->(b) WHERE ALL(__rel_prop_0 IN r "
       "WHERE __rel_prop_0.year = 1988) RETURN *");
+}
+
+TEST(PatternPredicateNormalizationRewriterTest,
+     PullsPatternComprehensionNodePredicates) {
+  ExpectRewriteEqualsWith<ast::PatternPredicateNormalizationRewriter>(
+      "RETURN [p = (n)-->(m:B) | p] AS list",
+      "RETURN [p = (n)-->(m) WHERE m:B | p] AS list");
 }
 
 TEST(PatternPredicateNormalizationRewriterTest,

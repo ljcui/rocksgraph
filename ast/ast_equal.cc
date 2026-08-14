@@ -674,6 +674,7 @@ bool ASTEqual::EqualProjectionClause(const ProjectionClause &left,
 bool ASTEqual::EqualProjectionBody(const ProjectionBody &left,
                                    const ProjectionBody &right) {
   return left.distinct == right.distinct && left.star == right.star &&
+         left.empty_star_expansion == right.empty_star_expansion &&
          EqualList(left.items, right.items) &&
          EqualList(left.order_by, right.order_by) &&
          EqualPtr(left.skip, right.skip) && EqualPtr(left.limit, right.limit);

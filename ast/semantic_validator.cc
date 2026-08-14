@@ -46,6 +46,8 @@ class AggregationScanner final : public ASTWalker {
   }
 
  protected:
+  void Visit(ExistentialSubquery &node) override { (void)node; }
+
   void Visit(FunctionInvocation &node) override {
     if (IsAggregateFunction(node.function_name)) {
       contains_ = true;
@@ -505,7 +507,9 @@ class SemanticValidator : public ASTWalker {
 
     const Scope projected = ScopeFromProjection(*node.body, pre);
     ReplaceCurrentScope(MergeScopes(pre, projected));
-    ValidateNoAggregation(node.where.get(), "WHERE");
+    if (!ProjectionContainsAggregation(*node.body)) {
+      ValidateNoAggregation(node.where.get(), "WHERE");
+    }
     ValidateBooleanExpression(node.where.get(), "WHERE");
     WalkMaybe(node.where);
     ReplaceCurrentScope(projected);
