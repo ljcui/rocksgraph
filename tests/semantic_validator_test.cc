@@ -348,6 +348,13 @@ TEST(SemanticValidatorTest, RejectsKnownInvalidFunctionArguments) {
       "invalid argument type: substring() argument has invalid type");
 }
 
+TEST(SemanticValidatorTest, AllowsWithWhereToUseIncomingVariables) {
+  auto statement = ast::ParseCypherAndRewrite(
+      "MATCH (a)-[r]->(b) OPTIONAL MATCH (a)-[r2]->(c) "
+      "WITH c WHERE r IS NULL RETURN c");
+  ASSERT_TRUE(statement);
+}
+
 TEST(SemanticValidatorTest, RejectsQuantifierPredicateTypeMismatch) {
   ExpectSemanticError(
       "RETURN all(x IN ['one'] WHERE x % 2 = 0)",

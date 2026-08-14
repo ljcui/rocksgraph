@@ -361,6 +361,22 @@ void AppendPassthroughProjectionItems(
   }
 }
 
+std::vector<std::string> ProjectionSelectionPassthroughVariables(
+    const LogicalPlan &input, const QueryProjection &projection,
+    const std::vector<std::string> &aliases) {
+  std::vector<std::string> variables;
+  for (const auto &predicate : projection.selections.predicates) {
+    for (const auto &dependency : predicate.dependencies) {
+      if (dependency.empty() || StringVectorContains(aliases, dependency) ||
+          !StringVectorContains(input.OutputColumns(), dependency)) {
+        continue;
+      }
+      (void)AddUniqueString(&variables, dependency);
+    }
+  }
+  return variables;
+}
+
 bool ContainsExpression(const ast::Expression &haystack,
                         const ast::Expression &needle) {
   class Finder final : public ast::ASTConstWalker {
@@ -947,7 +963,8 @@ class LogicalPlanBuilder {
 
   std::unique_ptr<LogicalPlan> Build(const SinglePlannerQuery &planner_query) {
     std::unique_ptr<LogicalPlan> plan =
-        BuildQueryGraph(planner_query.query_graph);
+        BuildQueryGraph(planner_query.query_graph, true,
+                        /*seed_external_arguments=*/true);
     plan = ApplyHorizon(std::move(plan), planner_query.horizon);
     for (const SinglePlannerQuery *tail = planner_query.tail.get();
          tail != nullptr; tail = tail->tail.get()) {
@@ -1011,7 +1028,8 @@ class LogicalPlanBuilder {
   }
 
   std::unique_ptr<LogicalPlan> BuildQueryGraph(
-      const QueryGraph &query_graph, bool validate_all_predicates = true) {
+      const QueryGraph &query_graph, bool validate_all_predicates = true,
+      bool seed_external_arguments = false) {
     planned_predicates_.clear();
     ValidateSupportedQueryGraph(query_graph);
     QueryGraphPlanningContext context(&planned_predicates_, &options_);
@@ -1023,6 +1041,37 @@ class LogicalPlanBuilder {
       plan = std::make_unique<ArgumentPlan>(Sorted(query_graph.argument_ids));
       context.ApplyAvailableFilters(query_graph.selections, &plan);
     } else {
+      if (seed_external_arguments) {
+        std::unordered_set<std::string> component_symbols;
+        for (const auto &component : components) {
+          component_symbols.insert(component.pattern_nodes.begin(),
+                                   component.pattern_nodes.end());
+        }
+        std::unordered_set<std::string> external_arguments;
+        for (const auto &predicate : query_graph.selections.predicates) {
+          AddSymbols(&external_arguments, predicate.dependencies);
+        }
+        for (const auto &optional_match : query_graph.optional_matches) {
+          const std::unordered_set<std::string> dependencies =
+              optional_match.Dependencies();
+          const std::unordered_set<std::string> covered =
+              optional_match.AllCoveredIds();
+          for (const auto &dependency : dependencies) {
+            if (!covered.contains(dependency)) {
+              external_arguments.insert(dependency);
+            }
+          }
+        }
+        external_arguments =
+            IntersectSymbols(external_arguments, query_graph.argument_ids);
+        for (const auto &symbol : component_symbols) {
+          external_arguments.erase(symbol);
+        }
+        if (!external_arguments.empty()) {
+          plan = std::make_unique<ArgumentPlan>(Sorted(external_arguments));
+          context.ApplyAvailableFilters(query_graph.selections, &plan);
+        }
+      }
       for (const auto &component : components) {
         std::unique_ptr<LogicalPlan> component_plan =
             component_planner_->Plan(query_graph, component, &context);
@@ -1208,7 +1257,7 @@ class LogicalPlanBuilder {
     const std::unordered_set<const Predicate *> outer_predicates =
         planned_predicates_;
     std::unique_ptr<LogicalPlan> match_plan =
-        BuildQueryGraph(QueryGraphFromMergeMatchGraph(match_graph));
+        BuildQueryGraph(QueryGraphFromMergeMatchGraph(match_graph), true, true);
     planned_predicates_ = outer_predicates;
     return match_plan;
   }
@@ -1336,7 +1385,8 @@ class LogicalPlanBuilder {
       std::unordered_set<const Predicate *> outer_predicates =
           planned_predicates_;
       std::unique_ptr<LogicalPlan> optional_plan =
-          BuildQueryGraph(optional_match);
+          BuildQueryGraph(optional_match, true,
+                          /*seed_external_arguments=*/true);
       planned_predicates_ = std::move(outer_predicates);
       plan = std::make_unique<OptionalApplyPlan>(std::move(plan),
                                                  std::move(optional_plan));
@@ -1348,12 +1398,17 @@ class LogicalPlanBuilder {
   std::unique_ptr<LogicalPlan> ApplyRegularProjection(
       std::unique_ptr<LogicalPlan> plan,
       const RegularQueryProjection &projection) {
+    ApplyProjectionSelectionsBeforeProjection(&plan, projection.selections);
     plan =
         ApplyNestedExpressions(std::move(plan), projection.nested_expressions);
     std::vector<std::string> aliases = ProjectionAliases(projection.items);
     std::vector<LogicalProjectionItem> items =
         LogicalProjectionItems(projection.items, projection.nested_expressions);
     AppendPassthroughProjectionItems(*plan, projection, aliases, &items);
+    for (const auto &variable :
+         ProjectionSelectionPassthroughVariables(*plan, projection, aliases)) {
+      AppendPassthroughProjectionItem(variable, &items);
+    }
     plan = std::make_unique<ProjectionPlan>(std::move(plan), std::move(items));
     return ApplyProjectionTail(std::move(plan), projection, std::move(aliases));
   }
@@ -1361,6 +1416,7 @@ class LogicalPlanBuilder {
   std::unique_ptr<LogicalPlan> ApplyDistinctProjection(
       std::unique_ptr<LogicalPlan> plan,
       const DistinctQueryProjection &projection) {
+    ApplyProjectionSelectionsBeforeProjection(&plan, projection.selections);
     plan =
         ApplyNestedExpressions(std::move(plan), projection.nested_expressions);
     std::vector<std::string> aliases =
@@ -1375,6 +1431,7 @@ class LogicalPlanBuilder {
   std::unique_ptr<LogicalPlan> ApplyAggregatingProjection(
       std::unique_ptr<LogicalPlan> plan,
       const AggregatingQueryProjection &projection) {
+    ApplyProjectionSelectionsBeforeProjection(&plan, projection.selections);
     plan =
         ApplyNestedExpressions(std::move(plan), projection.nested_expressions);
     std::vector<std::string> aliases = ProjectionAliases(projection.items);
@@ -1525,11 +1582,20 @@ class LogicalPlanBuilder {
   std::unique_ptr<LogicalPlan> ApplyProjectionSelections(
       std::unique_ptr<LogicalPlan> plan, const Selections &selections) {
     CHECK(plan != nullptr, common::InternalError, "logical plan is null");
-    std::unordered_set<const Predicate *> planned_predicates;
+    std::unordered_set<const Predicate *> planned_predicates =
+        planned_predicates_;
     QueryGraphPlanningContext context(&planned_predicates, &options_);
     context.ApplyAvailableFilters(selections, &plan);
     context.ValidateAllPredicatesPlanned(selections);
     return plan;
+  }
+
+  void ApplyProjectionSelectionsBeforeProjection(
+      std::unique_ptr<LogicalPlan> *plan, const Selections &selections) {
+    CHECK(plan != nullptr && *plan != nullptr, common::InternalError,
+          "logical plan is null");
+    QueryGraphPlanningContext context(&planned_predicates_, &options_);
+    context.ApplyAvailableFilters(selections, plan);
   }
 
   std::unique_ptr<LogicalPlan> ApplyProjectionTail(

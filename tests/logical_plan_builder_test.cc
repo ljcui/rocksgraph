@@ -962,6 +962,20 @@ TEST(LogicalPlanBuilderTest, BuildsProjectionSelectionForWithWhere) {
 )");
 }
 
+TEST(LogicalPlanBuilderTest,
+     PreservesIncomingVariablesForMixedWithWhereDependencies) {
+  ExpectLogicalPlanText(
+      "MATCH (a) WITH a.name AS name "
+      "WHERE name = 'B' OR a.name = 'C' RETURN *",
+      R"(ProduceResults [name]
+  Projection [name]
+    Projection [name]
+      Filter [name = 'B' OR a.name = 'C']
+        Projection [name, a]
+          AllNodeScan [a]
+)");
+}
+
 TEST(LogicalPlanBuilderTest, BuildsUnwindPlan) {
   ExpectLogicalPlanText("UNWIND [1, 2] AS x RETURN x",
                         R"(ProduceResults [x]

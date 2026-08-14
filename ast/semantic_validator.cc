@@ -504,10 +504,11 @@ class SemanticValidator : public ASTWalker {
     node.body->Accept(*this);
 
     const Scope projected = ScopeFromProjection(*node.body, pre);
-    ReplaceCurrentScope(projected);
+    ReplaceCurrentScope(MergeScopes(pre, projected));
     ValidateNoAggregation(node.where.get(), "WHERE");
     ValidateBooleanExpression(node.where.get(), "WHERE");
     WalkMaybe(node.where);
+    ReplaceCurrentScope(projected);
   }
 
   void Visit(ListComprehension &node) override {

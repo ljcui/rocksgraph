@@ -345,6 +345,36 @@ TEST(QueryExecutorTest, ExecutesRelationshipExpandQuery) {
                                     {"\"Ada\"", "\"Grace\"", "2020"}}));
 }
 
+TEST(QueryExecutorTest, FiltersOptionalMatchUsingIncomingRelationshipVariable) {
+  rg::InMemoryGraph graph;
+  auto a = graph.CreateNode({"A"}, {{"name", rg::Value("a")}});
+  auto b1 = graph.CreateNode({}, {{"name", rg::Value("b1")}});
+  auto b2 = graph.CreateNode({}, {{"name", rg::Value("b2")}});
+  auto c1 = graph.CreateNode({}, {{"name", rg::Value("c1")}});
+  auto c2 = graph.CreateNode({}, {{"name", rg::Value("c2")}});
+  graph.CreateRelationship(a, b1, "KNOWS", {});
+  graph.CreateRelationship(b1, c1, "KNOWS", {});
+  graph.CreateRelationship(a, b2, "KNOWS", {});
+  graph.CreateRelationship(b2, c2, "KNOWS", {});
+  graph.CreateRelationship(a, c1, "KNOWS", {});
+
+  rg::QueryResult missing =
+      rg::ExecuteReadQuery(graph,
+                           "MATCH (a:A)-[:KNOWS]->(b)-->(c) "
+                           "OPTIONAL MATCH (a)-[r:KNOWS]->(c) "
+                           "WITH c WHERE r IS NULL RETURN c.name");
+  EXPECT_EQ(StringRows(missing),
+            (std::vector<std::vector<std::string>>{{"\"c2\""}}));
+
+  rg::QueryResult present =
+      rg::ExecuteReadQuery(graph,
+                           "MATCH (a:A)-[:KNOWS]->(b)-->(c) "
+                           "OPTIONAL MATCH (a)-[r:KNOWS]->(c) "
+                           "WITH c WHERE r IS NOT NULL RETURN c.name");
+  EXPECT_EQ(StringRows(present),
+            (std::vector<std::vector<std::string>>{{"\"c1\""}}));
+}
+
 TEST(QueryExecutorTest, ExecutesSortSkipLimit) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
