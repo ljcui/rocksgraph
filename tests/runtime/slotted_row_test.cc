@@ -7,7 +7,7 @@
 
 #include "storage/in_memory_graph.h"
 
-TEST(SlottedRowTest, StoresEntitiesAsIdsAndMaterializesAtTheBoundary) {
+TEST(SlottedRowTest, StoresEntitiesAsIdsAndReferences) {
   rg::InMemoryGraph graph;
   auto node = graph.CreateNode({"Person"}, {{"name", rg::Value("Ada")}});
   auto other = graph.CreateNode({});
@@ -32,9 +32,8 @@ TEST(SlottedRowTest, StoresEntitiesAsIdsAndMaterializesAtTheBoundary) {
   EXPECT_EQ(row.EntityIdAt(slots->At("n")), node->id);
   EXPECT_EQ(row.EntityIdAt(slots->At("r")), relationship->id);
   EXPECT_EQ(row.ReferenceAt(slots->At("value")).AsInteger(), 42);
-  rg::QueryRow materialized = row.Materialize(graph);
-  EXPECT_EQ(materialized.at("n").AsNode().id, node->id);
-  EXPECT_EQ(materialized.at("r").AsRelationship().id, relationship->id);
+  EXPECT_EQ(row.Get("n", graph).AsNode().id, node->id);
+  EXPECT_EQ(row.Get("r", graph).AsRelationship().id, relationship->id);
 }
 
 TEST(SlottedRowTest, CopiesBetweenLayoutsAndConvertsEntityRepresentations) {

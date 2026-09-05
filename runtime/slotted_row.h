@@ -10,7 +10,6 @@
 #include <vector>
 
 #include "ast/semantic_table.h"
-#include "runtime/query_row.h"
 #include "storage/graph_reader.h"
 #include "value/value.h"
 
@@ -90,13 +89,9 @@ class SlottedRow final {
                           const GraphReader &graph_reader) const;
   [[nodiscard]] Value Get(const Slot &slot,
                           const GraphReader &graph_reader) const;
-  [[nodiscard]] QueryRow Materialize(const GraphReader &graph_reader) const;
   [[nodiscard]] std::size_t EstimatedHeapUsage() const;
   [[nodiscard]] SlottedRow CopyTo(SlotConfigurationPtr target,
                                   const GraphReader &graph_reader) const;
-
-  [[nodiscard]] static SlottedRow FromQueryRow(SlotConfigurationPtr slots,
-                                               const QueryRow &row);
 
  private:
   SlotConfigurationPtr slots_;

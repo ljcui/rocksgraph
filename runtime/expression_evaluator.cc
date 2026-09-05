@@ -15,10 +15,14 @@
 #include "ast/ast_node.h"
 #include "common/exception.h"
 #include "runtime/builtin_function_evaluator.h"
-#include "runtime/query_row_util.h"
 #include "value/temporal.h"
 
 namespace rg {
+
+Value ExpressionBindings::Lookup(std::string_view name) const {
+  THROW(common::InvalidArgumentError,
+        "variable is not bound: " + std::string(name));
+}
 
 Value ExpressionBindings::LookupVariable(const ast::Variable &variable) const {
   return Lookup(variable.name);
@@ -47,18 +51,6 @@ bool ExpressionBindings::ReadParameter(const ast::Parameter &parameter,
 }
 
 namespace {
-
-class QueryRowBindings final : public ExpressionBindings {
- public:
-  explicit QueryRowBindings(const QueryRow &row) : row_(&row) {}
-
-  [[nodiscard]] Value Lookup(std::string_view name) const override {
-    return LookupQueryVariable(*row_, std::string(name));
-  }
-
- private:
-  const QueryRow *row_ = nullptr;
-};
 
 class ScopedExpressionBindings final : public ExpressionBindings {
  public:
@@ -998,25 +990,10 @@ Value EvaluateExpression(
   }
 }
 
-Value EvaluateExpression(
-    const ast::Expression &expression, const QueryRow &row,
-    const std::vector<ir::LogicalPrecomputedExpression> &precomputed,
-    ExecutionContext context) {
-  QueryRowBindings bindings(row);
-  return EvaluateExpression(expression, bindings, precomputed, context);
-}
-
-Value EvaluateLogicalProjectionItem(const ir::LogicalProjectionItem &item,
-                                    const QueryRow &row,
-                                    ExecutionContext context) {
-  QueryRowBindings bindings(row);
-  return EvaluateLogicalProjectionItem(item, bindings, context);
-}
-
-Value EvaluateLogicalSortItem(const ir::LogicalSortItem &item,
-                              const QueryRow &row, ExecutionContext context) {
-  QueryRowBindings bindings(row);
-  return EvaluateLogicalSortItem(item, bindings, context);
+Value EvaluateExpression(const ast::Expression &expression,
+                         ExecutionContext context) {
+  ExpressionBindings bindings;
+  return EvaluateExpression(expression, bindings, {}, context);
 }
 
 }  // namespace rg

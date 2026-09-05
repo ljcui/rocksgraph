@@ -191,16 +191,6 @@ Value SlottedRow::Get(const Slot &slot, const GraphReader &graph_reader) const {
              : Value(graph_reader.RelationshipById(id));
 }
 
-QueryRow SlottedRow::Materialize(const GraphReader &graph_reader) const {
-  QueryRow row;
-  for (const auto &column : slots_->Columns()) {
-    if (IsInitialized(column)) {
-      row.emplace(column, Get(column, graph_reader));
-    }
-  }
-  return row;
-}
-
 std::size_t SlottedRow::EstimatedHeapUsage() const {
   std::size_t bytes = sizeof(SlottedRow) +
                       entity_ids_.capacity() * sizeof(std::int64_t) +
@@ -220,17 +210,6 @@ SlottedRow SlottedRow::CopyTo(SlotConfigurationPtr target,
   SlottedRow out(std::move(target));
   CopySlots(*this, &out, ComputeSlotMappings(*slots_, *out.Slots()),
             graph_reader);
-  return out;
-}
-
-SlottedRow SlottedRow::FromQueryRow(SlotConfigurationPtr slots,
-                                    const QueryRow &row) {
-  SlottedRow out(std::move(slots));
-  for (const auto &[name, value] : row) {
-    if (out.Slots()->Contains(name)) {
-      out.Set(name, value);
-    }
-  }
   return out;
 }
 

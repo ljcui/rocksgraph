@@ -1586,12 +1586,10 @@ class StreamingUnaryOperator final : public PullOperator {
       has_expression_row = true;
       first_pending_ = true;
     }
-    const QueryRow empty_row;
     const Value value =
         has_expression_row
             ? Evaluate(*expression, *first_row, precomputed, *state_)
-            : EvaluateExpression(*expression, empty_row, precomputed,
-                                 state_->context);
+            : EvaluateExpression(*expression, state_->context);
     CHECK(value.IsInteger() && value.AsInteger() >= 0,
           common::InvalidArgumentError,
           std::string(name) + " requires a non-negative integer");
@@ -2601,9 +2599,7 @@ class BlockingUnaryOperator final : public PullOperator {
           break;
         }
         Value count = rows_.empty()
-                          ? EvaluateExpression(*plan.Limit(), QueryRow{},
-                                               plan.PrecomputedExpressions(),
-                                               state_->context)
+                          ? EvaluateExpression(*plan.Limit(), state_->context)
                           : Evaluate(*plan.Limit(), rows_.front(),
                                      plan.PrecomputedExpressions(), *state_);
         CHECK(count.IsInteger() && count.AsInteger() >= 0,
@@ -2755,9 +2751,7 @@ class TopNOperator final : public PullOperator {
     const auto &limit = static_cast<const ir::LimitPlan &>(*node_->logical);
     CHECK(limit.Limit() != nullptr, common::InvalidArgumentError,
           "LIMIT expression is null");
-    const Value count =
-        EvaluateExpression(*limit.Limit(), QueryRow{},
-                           limit.PrecomputedExpressions(), state_->context);
+    const Value count = EvaluateExpression(*limit.Limit(), state_->context);
     CHECK(count.IsInteger() && count.AsInteger() >= 0,
           common::InvalidArgumentError,
           "LIMIT requires a non-negative integer");

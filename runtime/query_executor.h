@@ -8,7 +8,6 @@
 
 #include "ir/logical_plan.h"
 #include "runtime/execution_context.h"
-#include "runtime/query_row.h"
 #include "storage/storage.h"
 #include "value/value.h"
 
