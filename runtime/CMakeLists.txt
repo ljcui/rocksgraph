@@ -7,6 +7,7 @@ add_library(
   graph_access_executor.cc
   join_executor.cc
   physical_plan.cc
+  physical_plan_printer.cc
   procedure_executor.cc
   query_executor.cc
   query_row_util.cc

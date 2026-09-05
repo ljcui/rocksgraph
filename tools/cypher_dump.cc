@@ -10,9 +10,12 @@
 #include "ir/query_ir.h"
 #include "ir/query_ir_printer.h"
 #include "planner/logical_plan_builder.h"
+#include "runtime/physical_plan.h"
+#include "runtime/physical_plan_printer.h"
 #include "spdlog/spdlog.h"
 
-DEFINE_string(mode, "ast", "Dump mode: ast, query_ir, or logical_plan.");
+DEFINE_string(mode, "ast",
+              "Dump mode: ast, query_ir, logical_plan, or physical_plan.");
 DEFINE_bool(rewrite, false, "Rewrite the cypher statement before printing.");
 
 std::string JoinArgs(const std::vector<std::string> &parts) {
@@ -40,7 +43,8 @@ void PrintMinimalUsage() {
 int main(int argc, char **argv) {
   using common::Exception;
   gflags::SetUsageMessage(
-      "Usage:\n  cypher_dump [--mode=ast|query_ir|logical_plan] "
+      "Usage:\n  cypher_dump "
+      "[--mode=ast|query_ir|logical_plan|physical_plan] "
       "[--rewrite] [--] <cypher...>");
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
@@ -71,7 +75,7 @@ int main(int argc, char **argv) {
       ir::PrintQueryIR(*query_ir, std::cout);
       return 0;
     }
-    if (FLAGS_mode == "logical_plan") {
+    if (FLAGS_mode == "logical_plan" || FLAGS_mode == "physical_plan") {
       auto statement = ast::ParseCypherAndRewrite(input);
       std::unique_ptr<ir::QueryIR> query_ir;
       try {
@@ -87,9 +91,14 @@ int main(int argc, char **argv) {
         spdlog::error("Logical plan error: {}", e.Message());
         return 1;
       }
-      ir::PrintLogicalPlan(
-          *logical_plan, std::cout,
-          ir::LogicalPlanPrinterOptions{.include_metadata = true});
+      if (FLAGS_mode == "logical_plan") {
+        ir::PrintLogicalPlan(
+            *logical_plan, std::cout,
+            ir::LogicalPlanPrinterOptions{.include_metadata = true});
+      } else {
+        rg::PhysicalPlan physical_plan = rg::CreatePhysicalPlan(*logical_plan);
+        rg::PrintPhysicalPlan(physical_plan, std::cout);
+      }
       return 0;
     }
     spdlog::error("Unsupported dump mode: {}", FLAGS_mode);

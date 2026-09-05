@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -14,8 +15,16 @@ using OperatorId = std::size_t;
 
 enum class PhysicalOperatorType {
   kLogical,
+  kFullSort,
+  kPartialSort,
+  kHashDistinct,
+  kOrderedDistinct,
+  kHashAggregation,
+  kOrderedAggregation,
   kTopN,
 };
+
+[[nodiscard]] std::string_view ToString(PhysicalOperatorType type);
 
 struct PhysicalPlanNode {
   OperatorId id = 0;
@@ -24,8 +33,10 @@ struct PhysicalPlanNode {
   const ir::SortPlan *top_n_sort = nullptr;
   SlotConfigurationPtr argument_slots;
   SlotConfigurationPtr output_slots;
+  std::vector<ir::LogicalSortItem> provided_order;
   std::vector<std::vector<SlotMapping>> child_mappings;
   std::vector<std::unique_ptr<PhysicalPlanNode>> children;
+  std::size_t partial_sort_prefix = 0;
   std::size_t value_hash_join_build_child = 1;
 };
 

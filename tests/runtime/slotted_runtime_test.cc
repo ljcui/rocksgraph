@@ -148,8 +148,7 @@ TEST(SlottedRuntimeTest, KeepsOnlyTopNRowsInMemory) {
   options.execution.memory_limit_bytes = 4096;
 
   const rg::QueryResult result = rg::ExecuteReadQuery(
-      graph,
-      "MATCH (n:N) RETURN n.value AS value ORDER BY value DESC LIMIT 3",
+      graph, "MATCH (n:N) RETURN n.value AS value ORDER BY value DESC LIMIT 3",
       options);
 
   ASSERT_EQ(result.rows.size(), 3U);
@@ -158,6 +157,54 @@ TEST(SlottedRuntimeTest, KeepsOnlyTopNRowsInMemory) {
   EXPECT_EQ(result.rows[2][0], rg::Value(254));
   EXPECT_GT(result.peak_memory_bytes, 0U);
   EXPECT_LE(result.peak_memory_bytes, options.execution.memory_limit_bytes);
+}
+
+TEST(SlottedRuntimeTest, ExecutesOrderedGroupingAndPartialSort) {
+  rg::InMemoryGraph graph;
+
+  const rg::QueryResult distinct =
+      rg::ExecuteReadQuery(graph,
+                           "UNWIND [3, 1, 2, 1] AS x "
+                           "WITH x ORDER BY x RETURN DISTINCT x");
+  ASSERT_EQ(distinct.rows.size(), 3U);
+  EXPECT_EQ(distinct.rows[0][0], rg::Value(1));
+  EXPECT_EQ(distinct.rows[1][0], rg::Value(2));
+  EXPECT_EQ(distinct.rows[2][0], rg::Value(3));
+
+  const rg::QueryResult typed_distinct =
+      rg::ExecuteReadQuery(graph,
+                           "UNWIND [1, 1.0, 2] AS x "
+                           "WITH x ORDER BY x RETURN DISTINCT x");
+  ASSERT_EQ(typed_distinct.rows.size(), 2U);
+  EXPECT_TRUE(rg::ValuesEqual(typed_distinct.rows[0][0], rg::Value(1)));
+  EXPECT_TRUE(rg::ValuesEqual(typed_distinct.rows[1][0], rg::Value(2)));
+
+  const rg::QueryResult aggregation =
+      rg::ExecuteReadQuery(graph,
+                           "UNWIND [3, 1, 2, 1] AS x "
+                           "WITH x ORDER BY x RETURN x, count(*) AS count");
+  ASSERT_EQ(aggregation.rows.size(), 3U);
+  EXPECT_EQ(aggregation.rows[0][0], rg::Value(1));
+  EXPECT_EQ(aggregation.rows[0][1], rg::Value(2));
+  EXPECT_EQ(aggregation.rows[1][0], rg::Value(2));
+  EXPECT_EQ(aggregation.rows[1][1], rg::Value(1));
+  EXPECT_EQ(aggregation.rows[2][0], rg::Value(3));
+  EXPECT_EQ(aggregation.rows[2][1], rg::Value(1));
+
+  const rg::QueryResult partial = rg::ExecuteReadQuery(
+      graph,
+      "UNWIND [{a:1,b:2},{a:1,b:1},{a:2,b:1},{a:1,b:3}] AS x "
+      "WITH x ORDER BY x.a "
+      "RETURN x.a AS a, x.b AS b ORDER BY a, b");
+  ASSERT_EQ(partial.rows.size(), 4U);
+  EXPECT_EQ(partial.rows[0],
+            (std::vector<rg::Value>{rg::Value(1), rg::Value(1)}));
+  EXPECT_EQ(partial.rows[1],
+            (std::vector<rg::Value>{rg::Value(1), rg::Value(2)}));
+  EXPECT_EQ(partial.rows[2],
+            (std::vector<rg::Value>{rg::Value(1), rg::Value(3)}));
+  EXPECT_EQ(partial.rows[3],
+            (std::vector<rg::Value>{rg::Value(2), rg::Value(1)}));
 }
 
 TEST(SlottedRuntimeTest, KeepsBasicAggregationMemoryBounded) {

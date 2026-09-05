@@ -8,11 +8,13 @@
 #include <unordered_set>
 #include <utility>
 
+#include "ast/ast_equal.h"
 #include "ast/ast_node.h"
 #include "ast/builtin_function.h"
 #include "ast/builtin_procedure.h"
 #include "ast/expression_dependency.h"
 #include "common/exception.h"
+#include "planner/order_property.h"
 
 namespace rg {
 namespace {
@@ -26,6 +28,66 @@ struct TypeInfo {
 };
 
 using TypeOverrides = std::unordered_map<std::string, TypeInfo>;
+
+std::size_t CommonOrderingPrefix(
+    const std::vector<ir::LogicalSortItem> &provided,
+    const std::vector<ir::LogicalSortItem> &required) {
+  const std::size_t limit = std::min(provided.size(), required.size());
+  std::size_t prefix = 0;
+  while (prefix < limit && provided[prefix].expression != nullptr &&
+         required[prefix].expression != nullptr &&
+         provided[prefix].direction == required[prefix].direction &&
+         ast::ASTEqual::Equal(provided[prefix].expression,
+                              required[prefix].expression)) {
+    ++prefix;
+  }
+  return prefix;
+}
+
+ir::LogicalSortItem AliasSortItem(std::string alias,
+                                  ir::LogicalOrderDirection direction) {
+  auto variable = std::make_shared<ast::Variable>();
+  variable->name = std::move(alias);
+  const ast::Expression *expression = variable.get();
+  return {.expression = expression,
+          .owned_expression = std::move(variable),
+          .direction = direction};
+}
+
+std::optional<std::vector<ir::LogicalSortItem>> OrderedGroupingOutput(
+    const std::vector<ir::LogicalSortItem> &input_order,
+    const std::vector<ir::LogicalProjectionItem> &grouping_items) {
+  if (grouping_items.empty() || input_order.size() < grouping_items.size()) {
+    return std::nullopt;
+  }
+
+  std::vector<bool> matched(grouping_items.size(), false);
+  std::vector<ir::LogicalSortItem> output_order;
+  output_order.reserve(grouping_items.size());
+  for (std::size_t order_index = 0; order_index < grouping_items.size();
+       ++order_index) {
+    const ir::LogicalSortItem &order = input_order[order_index];
+    if (order.expression == nullptr) {
+      return std::nullopt;
+    }
+    std::optional<std::size_t> grouping_index;
+    for (std::size_t index = 0; index < grouping_items.size(); ++index) {
+      const ir::LogicalProjectionItem &grouping = grouping_items[index];
+      if (!matched[index] && grouping.expression != nullptr &&
+          ast::ASTEqual::Equal(order.expression, grouping.expression)) {
+        grouping_index = index;
+        break;
+      }
+    }
+    if (!grouping_index.has_value()) {
+      return std::nullopt;
+    }
+    matched[*grouping_index] = true;
+    output_order.push_back(
+        AliasSortItem(grouping_items[*grouping_index].alias, order.direction));
+  }
+  return output_order;
+}
 
 std::vector<std::string> AppendUnique(std::vector<std::string> columns,
                                       const std::vector<std::string> &added) {
@@ -487,7 +549,91 @@ class PhysicalPlanBuilder final {
         node->value_hash_join_build_child = 0;
       }
     }
+    SelectOperator(plan, node.get());
     return node;
+  }
+
+  void SelectOperator(const ir::LogicalPlan &plan, PhysicalPlanNode *node) {
+    CHECK(node != nullptr, common::InternalError, "physical plan node is null");
+    if (node->type == PhysicalOperatorType::kTopN) {
+      CHECK(node->top_n_sort != nullptr, common::InternalError,
+            "Top-N sort is null");
+      node->provided_order = node->top_n_sort->Items();
+      return;
+    }
+
+    node->provided_order = plan.OrderingTrait();
+    if (!node->children.empty()) {
+      switch (plan.Type()) {
+        case ir::LogicalPlanNodeType::kFilter:
+        case ir::LogicalPlanNodeType::kPathBuild:
+        case ir::LogicalPlanNodeType::kSkip:
+        case ir::LogicalPlanNodeType::kLimit:
+        case ir::LogicalPlanNodeType::kProduceResults:
+        case ir::LogicalPlanNodeType::kAssertIsNode:
+        case ir::LogicalPlanNodeType::kWriteBarrier:
+        case ir::LogicalPlanNodeType::kExpand:
+        case ir::LogicalPlanNodeType::kExpandInto:
+        case ir::LogicalPlanNodeType::kVarExpand:
+        case ir::LogicalPlanNodeType::kSetProperty:
+        case ir::LogicalPlanNodeType::kSetProperties:
+        case ir::LogicalPlanNodeType::kSetLabels:
+        case ir::LogicalPlanNodeType::kRemoveProperty:
+        case ir::LogicalPlanNodeType::kRemoveLabels:
+        case ir::LogicalPlanNodeType::kDelete:
+        case ir::LogicalPlanNodeType::kDetachDelete:
+        case ir::LogicalPlanNodeType::kApply:
+        case ir::LogicalPlanNodeType::kOptionalApply:
+          node->provided_order = node->children[0]->provided_order;
+          break;
+        case ir::LogicalPlanNodeType::kProjection:
+          node->provided_order = ir::ProjectOrdering(
+              node->children[0]->provided_order,
+              static_cast<const ir::ProjectionPlan &>(plan));
+          break;
+        default:
+          break;
+      }
+    }
+    if (plan.Type() == ir::LogicalPlanNodeType::kSort) {
+      CHECK(node->children.size() == 1, common::InternalError,
+            "Sort physical node must have one child");
+      const auto &sort = static_cast<const ir::SortPlan &>(plan);
+      node->partial_sort_prefix =
+          CommonOrderingPrefix(node->children[0]->provided_order, sort.Items());
+      node->type = node->partial_sort_prefix == 0
+                       ? PhysicalOperatorType::kFullSort
+                       : PhysicalOperatorType::kPartialSort;
+      node->provided_order = sort.Items();
+      return;
+    }
+
+    if (plan.Type() == ir::LogicalPlanNodeType::kDistinct) {
+      CHECK(node->children.size() == 1, common::InternalError,
+            "Distinct physical node must have one child");
+      const auto &distinct = static_cast<const ir::DistinctPlan &>(plan);
+      const auto output_order = OrderedGroupingOutput(
+          node->children[0]->provided_order, distinct.GroupingItems());
+      node->type = output_order.has_value()
+                       ? PhysicalOperatorType::kOrderedDistinct
+                       : PhysicalOperatorType::kHashDistinct;
+      node->provided_order =
+          output_order.value_or(std::vector<ir::LogicalSortItem>{});
+      return;
+    }
+
+    if (plan.Type() == ir::LogicalPlanNodeType::kAggregation) {
+      CHECK(node->children.size() == 1, common::InternalError,
+            "Aggregation physical node must have one child");
+      const auto &aggregation = static_cast<const ir::AggregationPlan &>(plan);
+      const auto output_order = OrderedGroupingOutput(
+          node->children[0]->provided_order, aggregation.GroupingItems());
+      node->type = output_order.has_value()
+                       ? PhysicalOperatorType::kOrderedAggregation
+                       : PhysicalOperatorType::kHashAggregation;
+      node->provided_order =
+          output_order.value_or(std::vector<ir::LogicalSortItem>{});
+    }
   }
 
   void BuildUnionLayout(const ir::UnionPlan &plan, PhysicalPlanNode *node) {
@@ -518,6 +664,28 @@ class PhysicalPlanBuilder final {
 };
 
 }  // namespace
+
+std::string_view ToString(PhysicalOperatorType type) {
+  switch (type) {
+    case PhysicalOperatorType::kLogical:
+      return "Logical";
+    case PhysicalOperatorType::kFullSort:
+      return "FullSort";
+    case PhysicalOperatorType::kPartialSort:
+      return "PartialSort";
+    case PhysicalOperatorType::kHashDistinct:
+      return "HashDistinct";
+    case PhysicalOperatorType::kOrderedDistinct:
+      return "OrderedDistinct";
+    case PhysicalOperatorType::kHashAggregation:
+      return "HashAggregation";
+    case PhysicalOperatorType::kOrderedAggregation:
+      return "OrderedAggregation";
+    case PhysicalOperatorType::kTopN:
+      return "TopN";
+  }
+  THROW(common::InternalError, "unknown physical operator type");
+}
 
 PhysicalPlan::PhysicalPlan(std::unique_ptr<PhysicalPlanNode> root)
     : root_(std::move(root)) {

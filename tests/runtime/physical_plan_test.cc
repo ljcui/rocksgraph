@@ -8,6 +8,7 @@
 #include "ast/ast_builder.h"
 #include "ir/query_ir.h"
 #include "planner/logical_plan_builder.h"
+#include "runtime/physical_plan_printer.h"
 
 namespace {
 
@@ -145,4 +146,94 @@ TEST(PhysicalPlanTest, DoesNotFuseTopNAcrossSkipOrWrites) {
   rg::PhysicalPlan write_physical = rg::CreatePhysicalPlan(*write.logical_plan);
   EXPECT_EQ(write_physical.NodeFor(*write_limit).type,
             rg::PhysicalOperatorType::kLogical);
+}
+
+TEST(PhysicalPlanTest, SelectsOrderedGroupingAlgorithms) {
+  PlannedQuery distinct_query = Plan(
+      "UNWIND [3, 1, 2, 1] AS x "
+      "WITH x ORDER BY x RETURN DISTINCT x");
+  const ir::LogicalPlan *distinct = FindPlan(
+      *distinct_query.logical_plan, ir::LogicalPlanNodeType::kDistinct);
+  ASSERT_NE(distinct, nullptr);
+  rg::PhysicalPlan distinct_physical =
+      rg::CreatePhysicalPlan(*distinct_query.logical_plan);
+  const rg::PhysicalPlanNode &distinct_node =
+      distinct_physical.NodeFor(*distinct);
+  EXPECT_EQ(distinct_node.type, rg::PhysicalOperatorType::kOrderedDistinct);
+  ASSERT_EQ(distinct_node.provided_order.size(), 1U);
+
+  PlannedQuery aggregation_query = Plan(
+      "UNWIND [3, 1, 2, 1] AS x "
+      "WITH x ORDER BY x RETURN x, count(*) AS count");
+  const ir::LogicalPlan *aggregation = FindPlan(
+      *aggregation_query.logical_plan, ir::LogicalPlanNodeType::kAggregation);
+  ASSERT_NE(aggregation, nullptr);
+  rg::PhysicalPlan aggregation_physical =
+      rg::CreatePhysicalPlan(*aggregation_query.logical_plan);
+  const rg::PhysicalPlanNode &aggregation_node =
+      aggregation_physical.NodeFor(*aggregation);
+  EXPECT_EQ(aggregation_node.type,
+            rg::PhysicalOperatorType::kOrderedAggregation);
+  ASSERT_EQ(aggregation_node.provided_order.size(), 1U);
+  EXPECT_EQ(aggregation_physical.Root().provided_order.size(), 1U);
+}
+
+TEST(PhysicalPlanTest, SelectsPartialSortAndHashFallbacks) {
+  PlannedQuery partial_query = Plan(
+      "UNWIND [{a:1,b:2},{a:1,b:1},{a:2,b:1}] AS x "
+      "WITH x ORDER BY x.a "
+      "RETURN x.a AS a, x.b AS b ORDER BY a, b");
+  const ir::LogicalPlan *outer_sort =
+      FindPlan(*partial_query.logical_plan, ir::LogicalPlanNodeType::kSort);
+  ASSERT_NE(outer_sort, nullptr);
+  rg::PhysicalPlan partial_physical =
+      rg::CreatePhysicalPlan(*partial_query.logical_plan);
+  const rg::PhysicalPlanNode &partial_node =
+      partial_physical.NodeFor(*outer_sort);
+  EXPECT_EQ(partial_node.type, rg::PhysicalOperatorType::kPartialSort);
+  EXPECT_EQ(partial_node.partial_sort_prefix, 1U);
+
+  PlannedQuery fallback_query = Plan("UNWIND [3, 1, 2] AS x RETURN DISTINCT x");
+  const ir::LogicalPlan *distinct = FindPlan(
+      *fallback_query.logical_plan, ir::LogicalPlanNodeType::kDistinct);
+  ASSERT_NE(distinct, nullptr);
+  rg::PhysicalPlan fallback_physical =
+      rg::CreatePhysicalPlan(*fallback_query.logical_plan);
+  EXPECT_EQ(fallback_physical.NodeFor(*distinct).type,
+            rg::PhysicalOperatorType::kHashDistinct);
+
+  PlannedQuery aggregation_query =
+      Plan("UNWIND [3, 1, 2] AS x RETURN x, count(*) AS count");
+  const ir::LogicalPlan *aggregation = FindPlan(
+      *aggregation_query.logical_plan, ir::LogicalPlanNodeType::kAggregation);
+  ASSERT_NE(aggregation, nullptr);
+  rg::PhysicalPlan aggregation_physical =
+      rg::CreatePhysicalPlan(*aggregation_query.logical_plan);
+  EXPECT_EQ(aggregation_physical.NodeFor(*aggregation).type,
+            rg::PhysicalOperatorType::kHashAggregation);
+
+  PlannedQuery sort_query = Plan("UNWIND [3, 1, 2] AS x RETURN x ORDER BY x");
+  const ir::LogicalPlan *sort =
+      FindPlan(*sort_query.logical_plan, ir::LogicalPlanNodeType::kSort);
+  ASSERT_NE(sort, nullptr);
+  rg::PhysicalPlan sort_physical =
+      rg::CreatePhysicalPlan(*sort_query.logical_plan);
+  EXPECT_EQ(sort_physical.NodeFor(*sort).type,
+            rg::PhysicalOperatorType::kFullSort);
+}
+
+TEST(PhysicalPlanTest, PrintsAlgorithmsPropertiesAndSlots) {
+  PlannedQuery query = Plan(
+      "UNWIND [{a:1,b:2},{a:1,b:1}] AS x "
+      "WITH x ORDER BY x.a "
+      "RETURN x.a AS a, x.b AS b ORDER BY a, b");
+  rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+
+  const std::string printed = rg::PhysicalPlanToString(physical);
+
+  EXPECT_NE(printed.find("PartialSort"), std::string::npos);
+  EXPECT_NE(printed.find("logical=Sort"), std::string::npos);
+  EXPECT_NE(printed.find("order=[a ASC, b ASC]"), std::string::npos);
+  EXPECT_NE(printed.find("prefix=1"), std::string::npos);
+  EXPECT_NE(printed.find("slots=[a:reference@0?"), std::string::npos);
 }

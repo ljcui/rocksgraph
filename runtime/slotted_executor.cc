@@ -2018,6 +2018,360 @@ class StreamingUnaryOperator final : public PullOperator {
   bool closed_ = false;
 };
 
+class OrderedDistinctOperator final : public PullOperator {
+ public:
+  OrderedDistinctOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                          std::unique_ptr<PullOperator> source)
+      : node_(&node), state_(&state), source_(std::move(source)) {}
+
+  ~OrderedDistinctOperator() override { Close(); }
+
+  [[nodiscard]] bool Next(SlottedRow *row) override {
+    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    state_->CheckCancelled();
+    if (closed_) {
+      return false;
+    }
+
+    const auto &plan = static_cast<const ir::DistinctPlan &>(*node_->logical);
+    SlottedRow input(node_->children[0]->output_slots);
+    while (source_->Next(&input)) {
+      state_->CheckCancelled();
+      std::vector<Value> values =
+          EvaluateGroupingValues(plan.GroupingItems(), input, state_);
+      CompositeValueKey key{.values = values};
+      if (last_key_.has_value() && ValueEqual{}(*last_key_, key)) {
+        continue;
+      }
+      ReplaceLastKey(std::move(key));
+
+      SlottedRow output(node_->output_slots);
+      for (std::size_t index = 0; index < values.size(); ++index) {
+        output.Set(plan.GroupingItems()[index].alias, std::move(values[index]));
+      }
+      *row = std::move(output);
+      return true;
+    }
+    Close();
+    return false;
+  }
+
+  void Close() noexcept override {
+    if (closed_) {
+      return;
+    }
+    if (source_ != nullptr) {
+      source_->Close();
+    }
+    last_key_.reset();
+    state_->memory_tracker.Release(reserved_bytes_);
+    reserved_bytes_ = 0;
+    closed_ = true;
+  }
+
+ private:
+  void ReplaceLastKey(CompositeValueKey key) {
+    const std::size_t bytes = EstimatedKeyHeapUsage(key);
+    if (bytes > reserved_bytes_) {
+      state_->memory_tracker.Reserve(bytes - reserved_bytes_);
+    }
+    last_key_ = std::move(key);
+    if (reserved_bytes_ > bytes) {
+      state_->memory_tracker.Release(reserved_bytes_ - bytes);
+    }
+    reserved_bytes_ = bytes;
+  }
+
+  const PhysicalPlanNode *node_ = nullptr;
+  RuntimeState *state_ = nullptr;
+  std::unique_ptr<PullOperator> source_;
+  std::optional<CompositeValueKey> last_key_;
+  std::size_t reserved_bytes_ = 0;
+  bool closed_ = false;
+};
+
+class OrderedAggregationOperator final : public PullOperator {
+ public:
+  OrderedAggregationOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                             std::unique_ptr<PullOperator> source)
+      : node_(&node), state_(&state), source_(std::move(source)) {}
+
+  ~OrderedAggregationOperator() override { Close(); }
+
+  [[nodiscard]] bool Next(SlottedRow *row) override {
+    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    state_->CheckCancelled();
+    if (closed_ || finished_) {
+      return false;
+    }
+
+    const auto &plan =
+        static_cast<const ir::AggregationPlan &>(*node_->logical);
+    SlottedRow input(node_->children[0]->output_slots);
+    CompositeValueKey key;
+    if (!TakeFirstInput(plan, &input, &key)) {
+      finished_ = true;
+      Close();
+      return false;
+    }
+    const std::size_t key_bytes = EstimatedKeyHeapUsage(key);
+    state_->memory_tracker.Reserve(key_bytes);
+    reserved_bytes_ += key_bytes;
+
+    std::vector<AggregateAccumulator> accumulators;
+    accumulators.reserve(plan.AggregationItems().size());
+    for (const auto &item : plan.AggregationItems()) {
+      accumulators.push_back(CreateAggregateAccumulator(item));
+    }
+
+    SlottedRow output(node_->output_slots);
+    for (std::size_t index = 0; index < key.values.size(); ++index) {
+      output.Set(plan.GroupingItems()[index].alias, key.values[index]);
+    }
+
+    while (true) {
+      state_->CheckCancelled();
+      for (auto &accumulator : accumulators) {
+        UpdateAggregateAccumulator(&accumulator, input, state_,
+                                   &reserved_bytes_);
+      }
+
+      SlottedRow next(node_->children[0]->output_slots);
+      if (!source_->Next(&next)) {
+        source_exhausted_ = true;
+        break;
+      }
+      CompositeValueKey next_key{
+          .values = EvaluateGroupingValues(plan.GroupingItems(), next, state_)};
+      if (!ValueEqual{}(key, next_key)) {
+        BufferPending(std::move(next), std::move(next_key));
+        break;
+      }
+      input = std::move(next);
+    }
+
+    for (auto &accumulator : accumulators) {
+      output.Set(
+          accumulator.item->alias,
+          FinalizeAggregateAccumulator(&accumulator, state_, &reserved_bytes_));
+    }
+    state_->memory_tracker.Release(key_bytes);
+    reserved_bytes_ -= key_bytes;
+    *row = std::move(output);
+    return true;
+  }
+
+  void Close() noexcept override {
+    if (closed_) {
+      return;
+    }
+    if (source_ != nullptr) {
+      source_->Close();
+    }
+    pending_.reset();
+    state_->memory_tracker.Release(reserved_bytes_);
+    reserved_bytes_ = 0;
+    closed_ = true;
+  }
+
+ private:
+  struct PendingInput {
+    SlottedRow row;
+    CompositeValueKey key;
+    std::size_t reserved_bytes = 0;
+  };
+
+  bool TakeFirstInput(const ir::AggregationPlan &plan, SlottedRow *row,
+                      CompositeValueKey *key) {
+    CHECK(row != nullptr && key != nullptr, common::InternalError,
+          "ordered aggregation input is null");
+    if (pending_.has_value()) {
+      *row = std::move(pending_->row);
+      *key = std::move(pending_->key);
+      state_->memory_tracker.Release(pending_->reserved_bytes);
+      reserved_bytes_ -= pending_->reserved_bytes;
+      pending_.reset();
+      return true;
+    }
+    if (source_exhausted_ || !source_->Next(row)) {
+      source_exhausted_ = true;
+      return false;
+    }
+    key->values = EvaluateGroupingValues(plan.GroupingItems(), *row, state_);
+    return true;
+  }
+
+  void BufferPending(SlottedRow row, CompositeValueKey key) {
+    const std::size_t bytes =
+        row.EstimatedHeapUsage() + EstimatedKeyHeapUsage(key);
+    state_->memory_tracker.Reserve(bytes);
+    reserved_bytes_ += bytes;
+    pending_.emplace(PendingInput{
+        .row = std::move(row), .key = std::move(key), .reserved_bytes = bytes});
+  }
+
+  const PhysicalPlanNode *node_ = nullptr;
+  RuntimeState *state_ = nullptr;
+  std::unique_ptr<PullOperator> source_;
+  std::optional<PendingInput> pending_;
+  std::size_t reserved_bytes_ = 0;
+  bool source_exhausted_ = false;
+  bool finished_ = false;
+  bool closed_ = false;
+};
+
+class PartialSortOperator final : public PullOperator {
+ public:
+  PartialSortOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                      std::unique_ptr<PullOperator> source)
+      : node_(&node), state_(&state), source_(std::move(source)) {}
+
+  ~PartialSortOperator() override { Close(); }
+
+  [[nodiscard]] bool Next(SlottedRow *row) override {
+    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    state_->CheckCancelled();
+    if (closed_) {
+      return false;
+    }
+    if (next_ >= entries_.size() && !LoadRun()) {
+      Close();
+      return false;
+    }
+
+    Entry &entry = entries_[next_++];
+    *row = std::move(entry.row);
+    entry.keys = {};
+    state_->memory_tracker.Release(entry.reserved_bytes);
+    reserved_bytes_ -= entry.reserved_bytes;
+    entry.reserved_bytes = 0;
+    return true;
+  }
+
+  void Close() noexcept override {
+    if (closed_) {
+      return;
+    }
+    if (source_ != nullptr) {
+      source_->Close();
+    }
+    entries_.clear();
+    pending_.reset();
+    state_->memory_tracker.Release(reserved_bytes_);
+    reserved_bytes_ = 0;
+    closed_ = true;
+  }
+
+ private:
+  struct Entry {
+    SlottedRow row;
+    std::vector<Value> keys;
+    std::uint64_t sequence = 0;
+    std::size_t reserved_bytes = 0;
+  };
+
+  [[nodiscard]] Entry ReadEntry(const SlottedRow &input) {
+    const auto &sort = static_cast<const ir::SortPlan &>(*node_->logical);
+    std::vector<Value> keys;
+    keys.reserve(sort.Items().size());
+    for (const auto &item : sort.Items()) {
+      CHECK(item.expression != nullptr, common::InvalidArgumentError,
+            "sort expression is null");
+      keys.push_back(Evaluate(*item.expression, input,
+                              item.precomputed_expressions, *state_));
+    }
+    return {.row = input.CopyTo(node_->output_slots, *state_->graph_reader),
+            .keys = std::move(keys),
+            .sequence = sequence_++};
+  }
+
+  void Retain(Entry *entry) {
+    CHECK(entry != nullptr, common::InternalError,
+          "partial sort entry is null");
+    entry->reserved_bytes = entry->row.EstimatedHeapUsage() +
+                            entry->keys.capacity() * sizeof(Value);
+    for (const Value &key : entry->keys) {
+      entry->reserved_bytes += EstimatedStoredValueHeapUsage(key);
+    }
+    state_->memory_tracker.Reserve(entry->reserved_bytes);
+    reserved_bytes_ += entry->reserved_bytes;
+  }
+
+  [[nodiscard]] bool SamePrefix(const Entry &left, const Entry &right) const {
+    CHECK(node_->partial_sort_prefix > 0 &&
+              node_->partial_sort_prefix <= left.keys.size() &&
+              node_->partial_sort_prefix <= right.keys.size(),
+          common::InternalError, "partial sort prefix is invalid");
+    for (std::size_t index = 0; index < node_->partial_sort_prefix; ++index) {
+      if (CompareValues(left.keys[index], right.keys[index]) != 0) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  [[nodiscard]] bool ComesBefore(const Entry &left, const Entry &right) const {
+    const auto &items =
+        static_cast<const ir::SortPlan &>(*node_->logical).Items();
+    CHECK(left.keys.size() == items.size() && right.keys.size() == items.size(),
+          common::InternalError, "partial sort keys are incomplete");
+    for (std::size_t index = 0; index < items.size(); ++index) {
+      int order = CompareValues(left.keys[index], right.keys[index]);
+      if (items[index].direction == ir::LogicalOrderDirection::kDescending) {
+        order = -order;
+      }
+      if (order != 0) {
+        return order < 0;
+      }
+    }
+    return left.sequence < right.sequence;
+  }
+
+  [[nodiscard]] bool LoadRun() {
+    entries_.clear();
+    next_ = 0;
+    if (pending_.has_value()) {
+      entries_.push_back(std::move(*pending_));
+      pending_.reset();
+    } else {
+      SlottedRow input(node_->children[0]->output_slots);
+      if (!source_->Next(&input)) {
+        return false;
+      }
+      Entry first = ReadEntry(input);
+      Retain(&first);
+      entries_.push_back(std::move(first));
+    }
+
+    SlottedRow input(node_->children[0]->output_slots);
+    while (source_->Next(&input)) {
+      state_->CheckCancelled();
+      Entry entry = ReadEntry(input);
+      Retain(&entry);
+      if (!SamePrefix(entries_.front(), entry)) {
+        pending_.emplace(std::move(entry));
+        break;
+      }
+      entries_.push_back(std::move(entry));
+    }
+    std::stable_sort(entries_.begin(), entries_.end(),
+                     [this](const Entry &left, const Entry &right) {
+                       return ComesBefore(left, right);
+                     });
+    return true;
+  }
+
+  const PhysicalPlanNode *node_ = nullptr;
+  RuntimeState *state_ = nullptr;
+  std::unique_ptr<PullOperator> source_;
+  std::vector<Entry> entries_;
+  std::optional<Entry> pending_;
+  std::uint64_t sequence_ = 0;
+  std::size_t reserved_bytes_ = 0;
+  std::size_t next_ = 0;
+  bool closed_ = false;
+};
+
 class BlockingUnaryOperator final : public PullOperator {
  public:
   BlockingUnaryOperator(const PhysicalPlanNode &node, RuntimeState &state,
@@ -2955,9 +3309,21 @@ class OperatorFactory final {
     }
 
     auto source = Build(*node.children[0], std::move(argument));
-    if (type == ir::LogicalPlanNodeType::kDistinct ||
-        type == ir::LogicalPlanNodeType::kAggregation ||
-        type == ir::LogicalPlanNodeType::kSort ||
+    if (node.type == PhysicalOperatorType::kOrderedDistinct) {
+      return std::make_unique<OrderedDistinctOperator>(node, *state_,
+                                                       std::move(source));
+    }
+    if (node.type == PhysicalOperatorType::kOrderedAggregation) {
+      return std::make_unique<OrderedAggregationOperator>(node, *state_,
+                                                          std::move(source));
+    }
+    if (node.type == PhysicalOperatorType::kPartialSort) {
+      return std::make_unique<PartialSortOperator>(node, *state_,
+                                                   std::move(source));
+    }
+    if (node.type == PhysicalOperatorType::kFullSort ||
+        node.type == PhysicalOperatorType::kHashDistinct ||
+        node.type == PhysicalOperatorType::kHashAggregation ||
         (type == ir::LogicalPlanNodeType::kLimit &&
          PlanContainsWrites(node.logical->Child(0))) ||
         type == ir::LogicalPlanNodeType::kWriteBarrier ||
