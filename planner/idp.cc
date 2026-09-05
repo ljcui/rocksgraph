@@ -44,26 +44,32 @@ CostEstimate CandidateEstimate(const PlanCandidate &candidate) {
 
 bool operator==(const PlanKey &lhs, const PlanKey &rhs) {
   return lhs.relationship_indices == rhs.relationship_indices &&
-         lhs.covered_symbols == rhs.covered_symbols;
+         lhs.covered_symbols == rhs.covered_symbols &&
+         lhs.ordering == rhs.ordering;
 }
 
 bool operator<(const PlanKey &lhs, const PlanKey &rhs) {
   if (lhs.relationship_indices != rhs.relationship_indices) {
     return lhs.relationship_indices < rhs.relationship_indices;
   }
-  return lhs.covered_symbols < rhs.covered_symbols;
+  if (lhs.covered_symbols != rhs.covered_symbols) {
+    return lhs.covered_symbols < rhs.covered_symbols;
+  }
+  return lhs.ordering < rhs.ordering;
 }
 
 PlanKey CandidateKey(const PlanCandidate &candidate) {
   return {.relationship_indices =
               NormalizedRelationshipKey(candidate.relationship_indices),
-          .covered_symbols = NormalizedSymbolKey(candidate.covered_symbols)};
+          .covered_symbols = NormalizedSymbolKey(candidate.covered_symbols),
+          .ordering = OrderingKey(candidate.provided_order)};
 }
 
 PlanCandidate MakePlanCandidate(
     std::unique_ptr<LogicalPlan> plan,
     std::vector<std::size_t> relationship_indices, CostEstimate estimate,
-    std::unordered_set<const Predicate *> planned_predicates) {
+    std::unordered_set<const Predicate *> planned_predicates,
+    std::vector<LogicalSortItem> provided_order) {
   CHECK(plan != nullptr, common::InternalError, "candidate plan is null");
 
   PlanCandidate candidate;
@@ -72,8 +78,11 @@ PlanCandidate MakePlanCandidate(
   candidate.relationship_indices =
       NormalizedRelationshipKey(std::move(relationship_indices));
   candidate.planned_predicates = std::move(planned_predicates);
+  candidate.provided_order = std::move(provided_order);
   candidate.estimated_rows = estimate.estimated_rows;
   candidate.cost = estimate.cost;
+  candidate.plan->SetCostEstimate(candidate.estimated_rows, candidate.cost);
+  candidate.plan->SetOrderingTrait(candidate.provided_order);
   return candidate;
 }
 
@@ -105,15 +114,39 @@ void PlanTable::PruneRelationshipCount(std::size_t relationship_count,
                                        std::size_t max_candidates) {
   CHECK(max_candidates > 0, common::InvalidArgumentError,
         "max candidates must be positive");
-  std::vector<PlanKey> keys = KeysWithRelationshipCount(relationship_count);
+  std::vector<PlanKey> keys;
+  for (const auto &candidate : entries_) {
+    if (candidate.relationship_indices.size() != relationship_count) {
+      continue;
+    }
+    PlanKey key = CandidateKey(candidate);
+    key.ordering.clear();
+    keys.push_back(std::move(key));
+  }
+  std::sort(keys.begin(), keys.end());
+  keys.erase(std::unique(keys.begin(), keys.end()), keys.end());
   if (keys.size() <= max_candidates) {
     return;
   }
 
   std::sort(
       keys.begin(), keys.end(), [&](const PlanKey &lhs, const PlanKey &rhs) {
-        const PlanCandidate *lhs_candidate = Best(lhs);
-        const PlanCandidate *rhs_candidate = Best(rhs);
+        const auto cheapest_for_state = [&](const PlanKey &state) {
+          const PlanCandidate *best =
+              static_cast<const PlanCandidate *>(nullptr);
+          for (const auto &candidate : entries_) {
+            PlanKey candidate_state = CandidateKey(candidate);
+            candidate_state.ordering.clear();
+            if (!(candidate_state == state) ||
+                (best != nullptr && !CandidateCostLess(candidate, *best))) {
+              continue;
+            }
+            best = &candidate;
+          }
+          return best;
+        };
+        const PlanCandidate *lhs_candidate = cheapest_for_state(lhs);
+        const PlanCandidate *rhs_candidate = cheapest_for_state(rhs);
         CHECK(lhs_candidate != nullptr && rhs_candidate != nullptr,
               common::InternalError, "missing plan candidate during pruning");
         return CandidateCostLess(*lhs_candidate, *rhs_candidate);
@@ -128,8 +161,10 @@ void PlanTable::PruneRelationshipCount(std::size_t relationship_count,
                                     return false;
                                   }
                                   const PlanKey key = CandidateKey(candidate);
+                                  PlanKey state = key;
+                                  state.ordering.clear();
                                   return !std::binary_search(keys.begin(),
-                                                             keys.end(), key);
+                                                             keys.end(), state);
                                 }),
                  entries_.end());
 }

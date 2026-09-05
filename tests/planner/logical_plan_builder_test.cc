@@ -24,15 +24,25 @@ namespace {
 class FakePlannerCatalog final : public ir::PlannerCatalog {
  public:
   void AddNodeIndex(std::vector<std::string> labels,
-                    std::string_view property_key, bool unique = false) {
-    node_indexes_[IndexKey(std::move(labels), property_key)] = unique;
+                    std::string_view property_key, bool unique = false,
+                    bool supports_equality = true, bool supports_range = true) {
+    node_indexes_[IndexKey(std::move(labels), property_key)] = {
+        .property_key = std::string(property_key),
+        .unique = unique,
+        .supports_equality = supports_equality,
+        .supports_range = supports_range};
   }
 
   void AddRelationshipIndex(std::vector<std::string> relationship_types,
-                            std::string_view property_key,
-                            bool unique = false) {
+                            std::string_view property_key, bool unique = false,
+                            bool supports_equality = true,
+                            bool supports_range = true) {
     relationship_indexes_[IndexKey(std::move(relationship_types),
-                                   property_key)] = unique;
+                                   property_key)] = {
+        .property_key = std::string(property_key),
+        .unique = unique,
+        .supports_equality = supports_equality,
+        .supports_range = supports_range};
   }
 
   [[nodiscard]] std::optional<ir::NodeIndexDescriptor> FindNodeIndex(
@@ -42,8 +52,7 @@ class FakePlannerCatalog final : public ir::PlannerCatalog {
     if (found == node_indexes_.end()) {
       return std::nullopt;
     }
-    return ir::NodeIndexDescriptor{.property_key = std::string(property_key),
-                                   .unique = found->second};
+    return found->second;
   }
 
   [[nodiscard]] std::optional<ir::RelationshipIndexDescriptor>
@@ -54,8 +63,7 @@ class FakePlannerCatalog final : public ir::PlannerCatalog {
     if (found == relationship_indexes_.end()) {
       return std::nullopt;
     }
-    return ir::RelationshipIndexDescriptor{
-        .property_key = std::string(property_key), .unique = found->second};
+    return found->second;
   }
 
  private:
@@ -71,8 +79,9 @@ class FakePlannerCatalog final : public ir::PlannerCatalog {
     return key;
   }
 
-  std::unordered_map<std::string, bool> node_indexes_;
-  std::unordered_map<std::string, bool> relationship_indexes_;
+  std::unordered_map<std::string, ir::NodeIndexDescriptor> node_indexes_;
+  std::unordered_map<std::string, ir::RelationshipIndexDescriptor>
+      relationship_indexes_;
 };
 
 std::unique_ptr<ast::Statement> ParseOrFail(const std::string &query) {
@@ -312,6 +321,33 @@ TEST(LogicalPlanBuilderTest, KeepsNodeRangeFiltersWhenIndexUnavailable) {
     Filter [n.age < 20]
       Filter [n.age >= 10]
         AllNodeScan [n]
+)",
+      ir::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
+}
+
+TEST(LogicalPlanBuilderTest, RespectsNodeIndexCapabilities) {
+  FakePlannerCatalog catalog;
+  catalog.AddNodeIndex({"Person"}, "name", false,
+                       /*supports_equality=*/false,
+                       /*supports_range=*/true);
+  catalog.AddNodeIndex({"Person"}, "age", false,
+                       /*supports_equality=*/true,
+                       /*supports_range=*/false);
+
+  ExpectLogicalPlanText(
+      "MATCH (n:Person) WHERE n.name = 'Ada' RETURN n",
+      R"(ProduceResults [n]
+  Projection [n]
+    Filter [n.name = 'Ada']
+      NodeByLabelScan [n:Person]
+)",
+      ir::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
+  ExpectLogicalPlanText(
+      "MATCH (n:Person) WHERE n.age >= 18 RETURN n",
+      R"(ProduceResults [n]
+  Projection [n]
+    Filter [n.age >= 18]
+      NodeByLabelScan [n:Person]
 )",
       ir::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
 }
@@ -687,6 +723,35 @@ TEST(LogicalPlanBuilderTest, BuildsCartesianProductForDisconnectedComponents) {
 )");
 }
 
+TEST(LogicalPlanBuilderTest, JoinsCheapestDisconnectedComponentsFirst) {
+  test_support::FakePlannerStatistics statistics;
+  statistics.node_count_by_label = {
+      {"Common", 1000.0}, {"Rare", 1.0}, {"Medium", 100.0}};
+  ExpectLogicalPlanText(
+      "MATCH (a:Common), (b:Rare), (c:Medium) RETURN a, b, c",
+      R"(ProduceResults [a, b, c]
+  Projection [a, b, c]
+    CartesianProduct
+      NodeByLabelScan [a:Common]
+      CartesianProduct
+        NodeByLabelScan [b:Rare]
+        NodeByLabelScan [c:Medium]
+)",
+      ir::LogicalPlanBuilderOptions{.planner_statistics = &statistics});
+}
+
+TEST(LogicalPlanBuilderTest, JoinsDisconnectedEqualityComponentsFirst) {
+  ExpectLogicalPlanText("MATCH (a), (b), (c) WHERE b.id = c.id RETURN a, b, c",
+                        R"(ProduceResults [a, b, c]
+  Projection [a, b, c]
+    CartesianProduct
+      AllNodeScan [a]
+      ValueHashJoin [b.id = c.id]
+        AllNodeScan [b]
+        AllNodeScan [c]
+)");
+}
+
 TEST(LogicalPlanBuilderTest, UsesValueHashJoinForDisconnectedEquality) {
   ExpectLogicalPlanText("MATCH (a), (b) WHERE a.id = b.id RETURN a, b",
                         R"(ProduceResults [a, b]
@@ -710,9 +775,19 @@ TEST(LogicalPlanBuilderTest, UsesPredicateJoinForDisconnectedPredicate) {
 TEST(LogicalPlanBuilderTest, BuildsOrderByPlan) {
   ExpectLogicalPlanText("MATCH (n) RETURN n ORDER BY n.name",
                         R"(ProduceResults [n]
-  Sort [n.name ASC]
-    Projection [n]
+  Projection [n]
+    Sort [n.name ASC]
       AllNodeScan [n]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, SortsBeforeCardinalityIncreasingExpand) {
+  ExpectLogicalPlanText("MATCH (a)-[r]->(b) RETURN a, b ORDER BY a.name",
+                        R"(ProduceResults [a, b]
+  Projection [a, b]
+    Expand [(a)-[r]->(b)]
+      Sort [a.name ASC]
+        AllNodeScan [a]
 )");
 }
 
@@ -741,9 +816,30 @@ TEST(LogicalPlanBuilderTest, BuildsOrderBySkipAndLimitPlans) {
 TEST(LogicalPlanBuilderTest, RewritesOrderByProjectionExpressionToAlias) {
   ExpectLogicalPlanText("MATCH (n) RETURN n.age AS age ORDER BY n.age",
                         R"(ProduceResults [age]
-  Sort [age ASC]
-    Projection [age]
+  Projection [age]
+    Sort [n.age ASC]
       AllNodeScan [n]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, DoesNotMoveNondeterministicOrderBeforeProjection) {
+  ExpectLogicalPlanText("MATCH (n) RETURN rand() AS value ORDER BY value",
+                        R"(ProduceResults [value]
+  Sort [value ASC]
+    Projection [value]
+      AllNodeScan [n]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, SortsAfterProjectionSelection) {
+  ExpectLogicalPlanText(
+      "MATCH (n) WITH n ORDER BY n.name WHERE n.age > 10 RETURN n",
+      R"(ProduceResults [n]
+  Projection [n]
+    Sort [n.name ASC]
+      Projection [n]
+        Filter [n.age > 10]
+          AllNodeScan [n]
 )");
 }
 

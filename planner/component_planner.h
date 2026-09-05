@@ -50,6 +50,8 @@ class QueryGraphPlanningContext {
   struct IndexDescriptor {
     std::string property_key;
     bool unique = false;
+    bool supports_equality = true;
+    bool supports_range = true;
   };
 
   struct IndexedPredicate {
@@ -91,7 +93,8 @@ class ComponentPlanner {
 
   [[nodiscard]] virtual std::unique_ptr<LogicalPlan> Plan(
       const QueryGraph &query_graph, const QueryGraphComponent &component,
-      QueryGraphPlanningContext *context) const = 0;
+      QueryGraphPlanningContext *context,
+      const std::vector<LogicalSortItem> &interesting_order) const = 0;
 };
 
 [[nodiscard]] std::unique_ptr<ComponentPlanner> MakeComponentPlanner(

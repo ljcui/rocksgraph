@@ -17,6 +17,7 @@
 #include "ir/query_ir_internal.h"
 #include "planner/cost_model.h"
 #include "planner/idp.h"
+#include "planner/order_property.h"
 #include "planner/plan_clone.h"
 
 namespace ir {
@@ -283,7 +284,8 @@ class IdpComponentPlanner final : public ComponentPlanner {
 
   std::unique_ptr<LogicalPlan> Plan(
       const QueryGraph &query_graph, const QueryGraphComponent &component,
-      QueryGraphPlanningContext *context) const override {
+      QueryGraphPlanningContext *context,
+      const std::vector<LogicalSortItem> &interesting_order) const override {
     CHECK(context != nullptr, common::InternalError,
           "query graph planning context is null");
 
@@ -296,11 +298,9 @@ class IdpComponentPlanner final : public ComponentPlanner {
                                "multi-node disconnected component"));
       PlanTable plan_table;
       PutInitialNodeCandidate(query_graph, nodes.front(), base_predicates,
-                              context, &plan_table);
-      const std::vector<PlanKey> keys = plan_table.KeysWithRelationshipCount(0);
-      CHECK(keys.size() == 1, common::InternalError,
-            "expected one leaf plan candidate");
-      PlanCandidate final_candidate = plan_table.TakeBest(keys.front());
+                              context, interesting_order, &plan_table);
+      PlanCandidate final_candidate = plan_table.TakeBest(
+          BestKeyWithRelationshipCount(plan_table, 0, interesting_order));
       context->Restore(std::move(final_candidate.planned_predicates));
       return std::move(final_candidate.plan);
     }
@@ -310,39 +310,45 @@ class IdpComponentPlanner final : public ComponentPlanner {
         SortedComponentArgumentNodes(component, query_graph.argument_ids);
     if (!argument_nodes.empty()) {
       PutInitialArgumentCandidate(query_graph, argument_nodes, base_predicates,
-                                  context, &plan_table);
+                                  context, interesting_order, &plan_table);
     } else {
       for (const auto &node : SortedComponentNodes(component)) {
         PutInitialNodeCandidate(query_graph, node, base_predicates, context,
-                                &plan_table);
+                                interesting_order, &plan_table);
       }
     }
     PruneCandidates(0, &plan_table);
     PutInitialRelationshipCandidates(query_graph, component, base_predicates,
-                                     context, &plan_table);
+                                     context, interesting_order, &plan_table);
 
     const std::size_t relationship_count =
         component.pattern_relationship_indices.size();
     for (std::size_t target_count = 1; target_count <= relationship_count;
          ++target_count) {
       PutExpandCandidates(query_graph, component, target_count - 1, context,
-                          &plan_table);
-      PutJoinCandidates(query_graph, target_count, context, &plan_table);
+                          interesting_order, &plan_table);
+      PutJoinCandidates(query_graph, target_count, context, interesting_order,
+                        &plan_table);
       PruneCandidates(target_count, &plan_table);
     }
 
-    PlanCandidate final_candidate = plan_table.TakeBest(
-        BestKeyWithRelationshipCount(plan_table, relationship_count));
+    PlanCandidate final_candidate =
+        plan_table.TakeBest(BestKeyWithRelationshipCount(
+            plan_table, relationship_count, interesting_order));
     context->Restore(std::move(final_candidate.planned_predicates));
     return std::move(final_candidate.plan);
   }
 
  private:
   [[nodiscard]] PlanKey BestKeyWithRelationshipCount(
-      const PlanTable &plan_table, std::size_t relationship_count) const {
+      const PlanTable &plan_table, std::size_t relationship_count,
+      const std::vector<LogicalSortItem> &interesting_order) const {
     bool found = false;
     PlanKey best_key;
     double best_cost = 0.0;
+    bool found_ordered = false;
+    PlanKey best_ordered_key;
+    double best_ordered_cost = 0.0;
     for (const PlanKey &key :
          plan_table.KeysWithRelationshipCount(relationship_count)) {
       const PlanCandidate *candidate = plan_table.Best(key);
@@ -355,9 +361,52 @@ class IdpComponentPlanner final : public ComponentPlanner {
         best_key = key;
         best_cost = candidate->cost;
       }
+      if (OrderingSatisfies(candidate->provided_order, interesting_order) &&
+          (!found_ordered || candidate->cost < best_ordered_cost ||
+           (candidate->cost == best_ordered_cost && key < best_ordered_key))) {
+        found_ordered = true;
+        best_ordered_key = key;
+        best_ordered_cost = candidate->cost;
+      }
     }
     CHECK(found, common::InternalError, "missing final plan candidate");
+    if (found_ordered && !interesting_order.empty()) {
+      const PlanCandidate *best = plan_table.Best(best_key);
+      CHECK(best != nullptr, common::InternalError,
+            "missing cheapest final plan candidate");
+      const double cost_with_final_sort =
+          cost_model_
+              .EstimateSort(CandidateEstimate(*best), interesting_order.size())
+              .cost;
+      if (best_ordered_cost <= cost_with_final_sort) {
+        return best_ordered_key;
+      }
+    }
     return best_key;
+  }
+
+  void PutCandidate(PlanCandidate candidate,
+                    const std::vector<LogicalSortItem> &interesting_order,
+                    PlanTable *plan_table) const {
+    CHECK(plan_table != nullptr, common::InternalError, "plan table is null");
+    std::optional<PlanCandidate> ordered_candidate;
+    if (!interesting_order.empty() &&
+        !OrderingSatisfies(candidate.provided_order, interesting_order) &&
+        OrderingDependenciesAvailable(interesting_order,
+                                      candidate.covered_symbols)) {
+      PlanCandidate ordered = CloneCandidate(candidate);
+      const CostEstimate estimate = cost_model_.EstimateSort(
+          CandidateEstimate(ordered), interesting_order.size());
+      ordered.plan = std::make_unique<SortPlan>(std::move(ordered.plan),
+                                                interesting_order);
+      ordered_candidate = MakePlanCandidate(
+          std::move(ordered.plan), std::move(ordered.relationship_indices),
+          estimate, std::move(ordered.planned_predicates), interesting_order);
+    }
+    plan_table->PutBest(std::move(candidate));
+    if (ordered_candidate.has_value()) {
+      plan_table->PutBest(std::move(*ordered_candidate));
+    }
   }
 
   void PruneCandidates(std::size_t relationship_count,
@@ -367,11 +416,11 @@ class IdpComponentPlanner final : public ComponentPlanner {
                                        max_candidates_per_relationship_count_);
   }
 
-  void PutExpandCandidates(const QueryGraph &query_graph,
-                           const QueryGraphComponent &component,
-                           std::size_t input_relationship_count,
-                           QueryGraphPlanningContext *context,
-                           PlanTable *plan_table) const {
+  void PutExpandCandidates(
+      const QueryGraph &query_graph, const QueryGraphComponent &component,
+      std::size_t input_relationship_count, QueryGraphPlanningContext *context,
+      const std::vector<LogicalSortItem> &interesting_order,
+      PlanTable *plan_table) const {
     CHECK(context != nullptr, common::InternalError,
           "query graph planning context is null");
     CHECK(plan_table != nullptr, common::InternalError, "plan table is null");
@@ -394,8 +443,9 @@ class IdpComponentPlanner final : public ComponentPlanner {
                        candidate)) {
           continue;
         }
-        plan_table->PutBest(ExpandCandidate(query_graph, candidate,
-                                            relationship_index, context));
+        PutCandidate(ExpandCandidate(query_graph, candidate, relationship_index,
+                                     context),
+                     interesting_order, plan_table);
       }
     }
   }
@@ -403,6 +453,7 @@ class IdpComponentPlanner final : public ComponentPlanner {
   void PutJoinCandidates(const QueryGraph &query_graph,
                          std::size_t target_relationship_count,
                          QueryGraphPlanningContext *context,
+                         const std::vector<LogicalSortItem> &interesting_order,
                          PlanTable *plan_table) const {
     CHECK(context != nullptr, common::InternalError,
           "query graph planning context is null");
@@ -434,8 +485,9 @@ class IdpComponentPlanner final : public ComponentPlanner {
           if (join_keys.empty()) {
             continue;
           }
-          plan_table->PutBest(
-              JoinCandidates(query_graph, *left, *right, join_keys, context));
+          PutCandidate(
+              JoinCandidates(query_graph, *left, *right, join_keys, context),
+              interesting_order, plan_table);
         }
       }
     }
@@ -445,7 +497,9 @@ class IdpComponentPlanner final : public ComponentPlanner {
       const QueryGraph &query_graph,
       const std::vector<std::string> &argument_nodes,
       const std::unordered_set<const Predicate *> &base_predicates,
-      QueryGraphPlanningContext *context, PlanTable *plan_table) const {
+      QueryGraphPlanningContext *context,
+      const std::vector<LogicalSortItem> &interesting_order,
+      PlanTable *plan_table) const {
     CHECK(context != nullptr, common::InternalError,
           "query graph planning context is null");
     CHECK(plan_table != nullptr, common::InternalError, "plan table is null");
@@ -456,16 +510,19 @@ class IdpComponentPlanner final : public ComponentPlanner {
     CostEstimate estimate = cost_model_.EstimateArgument(argument_nodes.size());
     const std::size_t filter_count =
         context->ApplyAvailableFilters(query_graph.selections, &plan);
-    plan_table->PutBest(MakePlanCandidate(
-        std::move(plan), {},
-        ApplyFilterEstimates(estimate, filter_count, cost_model_),
-        context->Snapshot()));
+    PutCandidate(MakePlanCandidate(
+                     std::move(plan), {},
+                     ApplyFilterEstimates(estimate, filter_count, cost_model_),
+                     context->Snapshot()),
+                 interesting_order, plan_table);
   }
 
   void PutInitialNodeCandidate(
       const QueryGraph &query_graph, const std::string &node,
       const std::unordered_set<const Predicate *> &base_predicates,
-      QueryGraphPlanningContext *context, PlanTable *plan_table) const {
+      QueryGraphPlanningContext *context,
+      const std::vector<LogicalSortItem> &interesting_order,
+      PlanTable *plan_table) const {
     CHECK(context != nullptr, common::InternalError,
           "query graph planning context is null");
     CHECK(plan_table != nullptr, common::InternalError, "plan table is null");
@@ -483,17 +540,20 @@ class IdpComponentPlanner final : public ComponentPlanner {
           EstimateLeafPlan(*leaf_candidate.plan, cost_model_);
       const std::size_t filter_count = context->ApplyAvailableFilters(
           query_graph.selections, &leaf_candidate.plan);
-      plan_table->PutBest(MakePlanCandidate(
-          std::move(leaf_candidate.plan), {},
-          ApplyFilterEstimates(estimate, filter_count, cost_model_),
-          context->Snapshot()));
+      PutCandidate(MakePlanCandidate(std::move(leaf_candidate.plan), {},
+                                     ApplyFilterEstimates(
+                                         estimate, filter_count, cost_model_),
+                                     context->Snapshot()),
+                   interesting_order, plan_table);
     }
   }
 
   void PutInitialRelationshipCandidates(
       const QueryGraph &query_graph, const QueryGraphComponent &component,
       const std::unordered_set<const Predicate *> &base_predicates,
-      QueryGraphPlanningContext *context, PlanTable *plan_table) const {
+      QueryGraphPlanningContext *context,
+      const std::vector<LogicalSortItem> &interesting_order,
+      PlanTable *plan_table) const {
     CHECK(context != nullptr, common::InternalError,
           "query graph planning context is null");
     CHECK(plan_table != nullptr, common::InternalError, "plan table is null");
@@ -512,10 +572,12 @@ class IdpComponentPlanner final : public ComponentPlanner {
             EstimateLeafPlan(*leaf_candidate.plan, cost_model_);
         const std::size_t filter_count = context->ApplyAvailableFilters(
             query_graph.selections, &leaf_candidate.plan);
-        plan_table->PutBest(MakePlanCandidate(
-            std::move(leaf_candidate.plan), {relationship_index},
-            ApplyFilterEstimates(estimate, filter_count, cost_model_),
-            context->Snapshot()));
+        PutCandidate(
+            MakePlanCandidate(
+                std::move(leaf_candidate.plan), {relationship_index},
+                ApplyFilterEstimates(estimate, filter_count, cost_model_),
+                context->Snapshot()),
+            interesting_order, plan_table);
       }
     }
   }
@@ -591,7 +653,7 @@ class IdpComponentPlanner final : public ComponentPlanner {
         WithRelationshipIndex(candidate.relationship_indices,
                               relationship_index),
         ApplyFilterEstimates(estimate, filter_count, cost_model_),
-        context->Snapshot());
+        context->Snapshot(), candidate.provided_order);
   }
 
   PlanCandidate JoinCandidates(const QueryGraph &query_graph,
@@ -924,7 +986,9 @@ QueryGraphPlanningContext::FindIndex(IndexEntityKind entity_kind,
         return std::nullopt;
       }
       return IndexDescriptor{.property_key = descriptor->property_key,
-                             .unique = descriptor->unique};
+                             .unique = descriptor->unique,
+                             .supports_equality = descriptor->supports_equality,
+                             .supports_range = descriptor->supports_range};
     }
     case IndexEntityKind::kRelationship: {
       std::optional<RelationshipIndexDescriptor> descriptor =
@@ -933,7 +997,9 @@ QueryGraphPlanningContext::FindIndex(IndexEntityKind entity_kind,
         return std::nullopt;
       }
       return IndexDescriptor{.property_key = descriptor->property_key,
-                             .unique = descriptor->unique};
+                             .unique = descriptor->unique,
+                             .supports_equality = descriptor->supports_equality,
+                             .supports_range = descriptor->supports_range};
     }
   }
   THROW(common::InternalError, "unknown index entity kind");
@@ -957,7 +1023,7 @@ QueryGraphPlanningContext::IndexSeekPredicates(
     }
     std::optional<IndexDescriptor> index =
         FindIndex(entity_kind, qualifiers, predicate.property_key);
-    if (!index.has_value()) {
+    if (!index.has_value() || !index->supports_equality) {
       continue;
     }
     out.push_back({.predicate = &predicate, .index = std::move(*index)});
@@ -982,7 +1048,9 @@ QueryGraphPlanningContext::IndexRangePredicateGroups(
     if (!StringEquals(group.variable, variable) || group.property_key.empty()) {
       continue;
     }
-    if (!FindIndex(entity_kind, qualifiers, group.property_key).has_value()) {
+    const std::optional<IndexDescriptor> index =
+        FindIndex(entity_kind, qualifiers, group.property_key);
+    if (!index.has_value() || !index->supports_range) {
       continue;
     }
     std::vector<const Predicate *> predicates;
@@ -1009,9 +1077,12 @@ QueryGraphPlanningContext::IndexRangePredicateGroups(
         predicate.property_key.empty() || predicate.property_value == nullptr ||
         predicate.expression == nullptr ||
         !StringEquals(predicate.comparison_op, "STARTS WITH") ||
-        !PredicateDependsOnlyOn(predicate, variable) ||
-        !FindIndex(entity_kind, qualifiers, predicate.property_key)
-             .has_value()) {
+        !PredicateDependsOnlyOn(predicate, variable)) {
+      continue;
+    }
+    const std::optional<IndexDescriptor> index =
+        FindIndex(entity_kind, qualifiers, predicate.property_key);
+    if (!index.has_value() || !index->supports_range) {
       continue;
     }
     AddRangePredicateGroup(&groups, {&predicate});

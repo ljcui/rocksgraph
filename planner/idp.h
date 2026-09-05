@@ -9,12 +9,14 @@
 #include "ir/logical_plan.h"
 #include "ir/query_ir.h"
 #include "planner/cost_model.h"
+#include "planner/order_property.h"
 
 namespace ir {
 
 struct PlanKey {
   std::vector<std::size_t> relationship_indices;
   std::vector<std::string> covered_symbols;
+  std::vector<OrderingKeyItem> ordering;
 };
 
 [[nodiscard]] bool operator==(const PlanKey &lhs, const PlanKey &rhs);
@@ -25,6 +27,7 @@ struct PlanCandidate {
   std::vector<std::size_t> relationship_indices;
   std::unordered_set<std::string> covered_symbols;
   std::unordered_set<const Predicate *> planned_predicates;
+  std::vector<LogicalSortItem> provided_order;
   double estimated_rows = 1.0;
   double cost = 1.0;
 };
@@ -42,7 +45,8 @@ struct PlanCandidate {
 [[nodiscard]] PlanCandidate MakePlanCandidate(
     std::unique_ptr<LogicalPlan> plan,
     std::vector<std::size_t> relationship_indices, CostEstimate estimate = {},
-    std::unordered_set<const Predicate *> planned_predicates = {});
+    std::unordered_set<const Predicate *> planned_predicates = {},
+    std::vector<LogicalSortItem> provided_order = {});
 
 class PlanTable {
  public:

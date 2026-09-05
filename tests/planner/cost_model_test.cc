@@ -202,6 +202,23 @@ TEST(CostModelTest, UsesInjectedPlannerStatistics) {
   EXPECT_DOUBLE_EQ(predicate_join.cost, 2180.0);
 }
 
+TEST(CostModelTest, UsesHistogramDistinctValuesForEqualitySelectivity) {
+  test_support::FakePlannerStatistics statistics;
+  statistics.all_node_count = 1000.0;
+  statistics.relationship_count_by_type = {{"KNOWS", 5000.0}};
+  statistics.node_property_histogram =
+      ir::PropertyHistogram{.total_rows = 1000.0, .distinct_values = 20.0};
+  statistics.relationship_property_histogram =
+      ir::PropertyHistogram{.total_rows = 5000.0, .distinct_values = 100.0};
+  ir::CostModel model(&statistics);
+
+  EXPECT_DOUBLE_EQ(model.EstimateNodeIndexSeek({}, "name").estimated_rows,
+                   50.0);
+  EXPECT_DOUBLE_EQ(
+      model.EstimateRelationshipIndexSeek({"KNOWS"}, "since").estimated_rows,
+      50.0);
+}
+
 TEST(CostModelTest, AppliesFilterEstimatesRepeatedly) {
   test_support::FakePlannerStatistics statistics;
   statistics.filter_selectivity = 0.25;

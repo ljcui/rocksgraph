@@ -274,6 +274,7 @@ PlanCandidate CloneCandidate(const PlanCandidate &candidate) {
   clone.relationship_indices = candidate.relationship_indices;
   clone.covered_symbols = candidate.covered_symbols;
   clone.planned_predicates = candidate.planned_predicates;
+  clone.provided_order = candidate.provided_order;
   clone.estimated_rows = candidate.estimated_rows;
   clone.cost = candidate.cost;
   return clone;

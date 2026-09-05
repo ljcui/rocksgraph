@@ -10,11 +10,15 @@ namespace ir {
 struct NodeIndexDescriptor {
   std::string property_key;
   bool unique = false;
+  bool supports_equality = true;
+  bool supports_range = true;
 };
 
 struct RelationshipIndexDescriptor {
   std::string property_key;
   bool unique = false;
+  bool supports_equality = true;
+  bool supports_range = true;
 };
 
 class PlannerCatalog {

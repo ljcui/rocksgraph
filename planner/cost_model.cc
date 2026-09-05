@@ -29,8 +29,11 @@ double PlannerStatistics::EstimateCombinedFilterSelectivity(
 double PlannerStatistics::EstimateNodeIndexSeekSelectivity(
     const std::unordered_set<std::string> &labels,
     std::string_view property_key) const {
-  (void)labels;
-  (void)property_key;
+  const std::optional<PropertyHistogram> histogram =
+      NodePropertyHistogram(labels, property_key);
+  if (histogram.has_value() && histogram->distinct_values > 0.0) {
+    return std::min(1.0, 1.0 / histogram->distinct_values);
+  }
   return 0.01;
 }
 
@@ -50,8 +53,11 @@ double PlannerStatistics::EstimateRelationshipCount(
 double PlannerStatistics::EstimateRelationshipIndexSeekSelectivity(
     const std::vector<std::string> &relationship_types,
     std::string_view property_key) const {
-  (void)relationship_types;
-  (void)property_key;
+  const std::optional<PropertyHistogram> histogram =
+      RelationshipPropertyHistogram(relationship_types, property_key);
+  if (histogram.has_value() && histogram->distinct_values > 0.0) {
+    return std::min(1.0, 1.0 / histogram->distinct_values);
+  }
   return 0.01;
 }
 

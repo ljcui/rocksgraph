@@ -21,6 +21,7 @@
 #include "ir/query_ir_internal.h"
 #include "planner/component_planner.h"
 #include "planner/cost_model.h"
+#include "planner/order_property.h"
 
 namespace ir {
 namespace {
@@ -488,6 +489,24 @@ std::vector<LogicalSortItem> SortItems(
   return items;
 }
 
+std::vector<LogicalSortItem> PlanningOrderForHorizon(
+    const QueryHorizon &horizon) {
+  if (horizon.kind != QueryHorizonKind::kRegularProjection) {
+    return {};
+  }
+  const RegularQueryProjection &projection = horizon.RequireRegularProjection();
+  if (projection.pagination.limit != nullptr ||
+      !projection.selections.empty() ||
+      !projection.nested_expressions.empty()) {
+    return {};
+  }
+  std::vector<LogicalSortItem> ordering =
+      PlanningOrder(projection.interesting_order);
+  return OrderingExpressionsDeterministic(ordering)
+             ? std::move(ordering)
+             : std::vector<LogicalSortItem>{};
+}
+
 std::vector<LogicalUnionMapping> LogicalUnionMappings(
     const std::vector<UnionQueryIR::UnionMapping> &mappings) {
   std::vector<LogicalUnionMapping> logical_mappings;
@@ -846,6 +865,7 @@ void ApplyLogicalPlanTraits(LogicalPlan *plan) {
   CHECK(plan != nullptr, common::InternalError, "logical plan is null");
   switch (plan->Type()) {
     case LogicalPlanNodeType::kFilter:
+    case LogicalPlanNodeType::kPathBuild:
     case LogicalPlanNodeType::kSkip:
     case LogicalPlanNodeType::kLimit:
     case LogicalPlanNodeType::kProduceResults:
@@ -859,6 +879,24 @@ void ApplyLogicalPlanTraits(LogicalPlan *plan) {
     case LogicalPlanNodeType::kDelete:
     case LogicalPlanNodeType::kDetachDelete:
       InheritTraits(plan->Child(0), plan);
+      return;
+    case LogicalPlanNodeType::kExpand:
+    case LogicalPlanNodeType::kExpandInto:
+    case LogicalPlanNodeType::kVarExpand:
+      plan->SetOrderingTrait(plan->Child(0).OrderingTrait());
+      plan->SetDistinctTrait(false);
+      return;
+    case LogicalPlanNodeType::kProjection: {
+      const auto &projection = static_cast<const ProjectionPlan &>(*plan);
+      plan->SetOrderingTrait(
+          ProjectOrdering(plan->Child(0).OrderingTrait(), projection));
+      plan->SetDistinctTrait(false);
+      return;
+    }
+    case LogicalPlanNodeType::kApply:
+    case LogicalPlanNodeType::kOptionalApply:
+      plan->SetOrderingTrait(plan->Child(0).OrderingTrait());
+      plan->SetDistinctTrait(false);
       return;
     case LogicalPlanNodeType::kSort: {
       const auto &sort = static_cast<const SortPlan &>(*plan);
@@ -949,7 +987,9 @@ QueryGraph QueryGraphFromMergeMatchGraph(const MergeMatchGraph &match_graph) {
 class LogicalPlanBuilder {
  public:
   explicit LogicalPlanBuilder(const LogicalPlanBuilderOptions &options)
-      : options_(options), component_planner_(MakeComponentPlanner(options)) {}
+      : options_(options),
+        component_planner_(MakeComponentPlanner(options)),
+        cost_model_(options.planner_statistics) {}
 
   std::unique_ptr<LogicalPlan> Build(const QueryIR &query_ir) {
     switch (query_ir.Kind()) {
@@ -965,7 +1005,8 @@ class LogicalPlanBuilder {
   std::unique_ptr<LogicalPlan> Build(const SingleQueryIR &query_ir) {
     std::unique_ptr<LogicalPlan> plan =
         BuildQueryGraph(query_ir.query_graph, true,
-                        /*seed_external_arguments=*/true);
+                        /*seed_external_arguments=*/true,
+                        PlanningOrderForHorizon(query_ir.horizon));
     plan = ApplyHorizon(std::move(plan), query_ir.horizon);
     for (const SingleQueryIR *tail = query_ir.tail.get(); tail != nullptr;
          tail = tail->tail.get()) {
@@ -1029,13 +1070,18 @@ class LogicalPlanBuilder {
 
   std::unique_ptr<LogicalPlan> BuildQueryGraph(
       const QueryGraph &query_graph, bool validate_all_predicates = true,
-      bool seed_external_arguments = false) {
+      bool seed_external_arguments = false,
+      std::vector<LogicalSortItem> interesting_order = {}) {
     planned_predicates_.clear();
     ValidateSupportedQueryGraph(query_graph);
     QueryGraphPlanningContext context(&planned_predicates_, &options_);
 
     std::vector<QueryGraphComponent> components =
         query_graph.ConnectedComponents();
+    if (components.size() != 1 || !query_graph.optional_matches.empty() ||
+        !query_graph.mutating_patterns.empty()) {
+      interesting_order.clear();
+    }
     std::unique_ptr<LogicalPlan> plan;
     if (components.empty()) {
       plan = std::make_unique<ArgumentPlan>(Sorted(query_graph.argument_ids));
@@ -1072,18 +1118,21 @@ class LogicalPlanBuilder {
           context.ApplyAvailableFilters(query_graph.selections, &plan);
         }
       }
-      for (const auto &component : components) {
-        std::unique_ptr<LogicalPlan> component_plan =
-            component_planner_->Plan(query_graph, component, &context);
-        context.ApplyAvailableFilters(query_graph.selections, &component_plan);
-        if (plan == nullptr) {
-          plan = std::move(component_plan);
-        } else {
-          plan = JoinComponents(std::move(plan), std::move(component_plan),
-                                query_graph.selections);
-          context.ApplyAvailableFilters(query_graph.selections, &plan);
-        }
+      std::vector<std::unique_ptr<LogicalPlan>> component_plans;
+      component_plans.reserve(components.size() + (plan != nullptr ? 1 : 0));
+      if (plan != nullptr) {
+        AnnotateLogicalPlanMetadata(plan.get(), cost_model_);
+        component_plans.push_back(std::move(plan));
       }
+      for (const auto &component : components) {
+        std::unique_ptr<LogicalPlan> component_plan = component_planner_->Plan(
+            query_graph, component, &context, interesting_order);
+        context.ApplyAvailableFilters(query_graph.selections, &component_plan);
+        AnnotateLogicalPlanMetadata(component_plan.get(), cost_model_);
+        component_plans.push_back(std::move(component_plan));
+      }
+      plan = JoinComponentsByCost(std::move(component_plans),
+                                  query_graph.selections, &context);
     }
 
     CHECK(plan != nullptr, common::InternalError, "logical plan is null");
@@ -1153,6 +1202,69 @@ class LogicalPlanBuilder {
 
     return std::make_unique<CartesianProductPlan>(std::move(left),
                                                   std::move(right));
+  }
+
+  CostEstimate EstimateComponentJoin(const LogicalPlan &left,
+                                     const LogicalPlan &right,
+                                     const Selections &selections) const {
+    CHECK(left.EstimatedRows().has_value() && left.Cost().has_value() &&
+              right.EstimatedRows().has_value() && right.Cost().has_value(),
+          common::InternalError, "component plan estimate is missing");
+    const CostEstimate left_estimate{.estimated_rows = *left.EstimatedRows(),
+                                     .cost = *left.Cost()};
+    const CostEstimate right_estimate{.estimated_rows = *right.EstimatedRows(),
+                                      .cost = *right.Cost()};
+    const std::unordered_set<std::string> left_symbols = left.SolvedSymbols();
+    const std::unordered_set<std::string> right_symbols = right.SolvedSymbols();
+    const std::vector<const Predicate *> value_predicates = JoinPredicates(
+        selections, left_symbols, right_symbols, /*value_hash_join=*/true);
+    if (!value_predicates.empty()) {
+      return cost_model_.EstimateValueHashJoin(left_estimate, right_estimate,
+                                               value_predicates.size());
+    }
+    const std::vector<const Predicate *> predicate_join_predicates =
+        JoinPredicates(selections, left_symbols, right_symbols,
+                       /*value_hash_join=*/false);
+    if (!predicate_join_predicates.empty()) {
+      return cost_model_.EstimatePredicateJoin(
+          left_estimate, right_estimate, predicate_join_predicates.size());
+    }
+    return cost_model_.EstimateCartesianProduct(left_estimate, right_estimate);
+  }
+
+  std::unique_ptr<LogicalPlan> JoinComponentsByCost(
+      std::vector<std::unique_ptr<LogicalPlan>> plans,
+      const Selections &selections, QueryGraphPlanningContext *context) {
+    CHECK(context != nullptr, common::InternalError,
+          "query graph planning context is null");
+    CHECK(!plans.empty(), common::InternalError,
+          "component plan list is empty");
+    while (plans.size() > 1) {
+      std::size_t best_left = 0;
+      std::size_t best_right = 1;
+      CostEstimate best_estimate =
+          EstimateComponentJoin(*plans[0], *plans[1], selections);
+      for (std::size_t left = 0; left + 1 < plans.size(); ++left) {
+        for (std::size_t right = left + 1; right < plans.size(); ++right) {
+          const CostEstimate estimate =
+              EstimateComponentJoin(*plans[left], *plans[right], selections);
+          if (estimate.cost < best_estimate.cost) {
+            best_left = left;
+            best_right = right;
+            best_estimate = estimate;
+          }
+        }
+      }
+
+      std::unique_ptr<LogicalPlan> joined =
+          JoinComponents(std::move(plans[best_left]),
+                         std::move(plans[best_right]), selections);
+      context->ApplyAvailableFilters(selections, &joined);
+      AnnotateLogicalPlanMetadata(joined.get(), cost_model_);
+      plans[best_left] = std::move(joined);
+      plans.erase(plans.begin() + static_cast<std::ptrdiff_t>(best_right));
+    }
+    return std::move(plans.front());
   }
 
   std::vector<const Predicate *> JoinPredicates(
@@ -1611,8 +1723,11 @@ class LogicalPlanBuilder {
           sort_items != std::nullopt ? std::move(*sort_items)
                                      : SortItems(projection.required_order,
                                                  projection.nested_expressions);
-      plan = std::make_unique<SortPlan>(std::move(plan),
-                                        std::move(logical_sort_items));
+      AnnotateLogicalPlanMetadata(plan.get(), cost_model_);
+      if (!OrderingSatisfies(plan->OrderingTrait(), logical_sort_items)) {
+        plan = std::make_unique<SortPlan>(std::move(plan),
+                                          std::move(logical_sort_items));
+      }
     }
     if (projection.pagination.skip != nullptr) {
       plan = std::make_unique<SkipPlan>(
@@ -1636,6 +1751,7 @@ class LogicalPlanBuilder {
 
   LogicalPlanBuilderOptions options_;
   std::unique_ptr<ComponentPlanner> component_planner_;
+  CostModel cost_model_;
   std::unordered_set<const Predicate *> planned_predicates_;
 };
 
