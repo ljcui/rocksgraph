@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "common/exception.h"
@@ -128,6 +129,113 @@ TEST(SlottedRuntimeTest, KeepsBasicAggregationMemoryBounded) {
   EXPECT_EQ(result.rows[0][4], rg::Value(1));
   EXPECT_EQ(result.rows[0][5], rg::Value(256));
   EXPECT_LE(result.peak_memory_bytes, options.execution.memory_limit_bytes);
+}
+
+TEST(SlottedRuntimeTest, TracksOnlyRetainedAggregationValues) {
+  rg::InMemoryGraph graph;
+  const std::string large(1024, 'x');
+  for (std::int64_t value = 1; value <= 64; ++value) {
+    graph.CreateNode(
+        {"N"}, {{"value", rg::Value(value)}, {"large", rg::Value(large)}});
+  }
+  rg::QueryOptions options;
+  options.execution.memory_limit_bytes = 16384;
+
+  const rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "MATCH (n:N) WITH n.value AS value, n.large AS unused "
+      "RETURN collect(value) AS values",
+      options);
+
+  ASSERT_EQ(result.rows.size(), 1U);
+  ASSERT_EQ(result.rows[0].size(), 1U);
+  const auto &values = result.rows[0][0].AsList();
+  ASSERT_EQ(values.size(), 64U);
+  EXPECT_EQ(values.front(), rg::Value(1));
+  EXPECT_EQ(values.back(), rg::Value(64));
+
+  std::unique_ptr<rg::QueryResultCursor> cursor = rg::ExecuteReadQueryCursor(
+      graph, "MATCH (n:N) RETURN collect(n.large) AS values", options);
+  std::vector<rg::Value> row;
+  EXPECT_THROW((void)cursor->Next(&row), common::MemoryLimitExceededError);
+}
+
+TEST(SlottedRuntimeTest, UsesTypedDistinctAggregationState) {
+  rg::InMemoryGraph graph;
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  const rg::Value list(rg::Value::List{rg::Value(1), rg::Value::Null()});
+  const rg::Value map(rg::Value::Map{{"number", rg::Value(1)},
+                                     {"optional", rg::Value::Null()}});
+  graph.CreateNode({"N"}, {{"key", rg::Value(1)}});
+  graph.CreateNode({"N"}, {{"key", rg::Value(1.0)}});
+  graph.CreateNode({"N"}, {{"key", list}});
+  graph.CreateNode(
+      {"N"},
+      {{"key", rg::Value(rg::Value::List{rg::Value(1.0), rg::Value::Null()})}});
+  graph.CreateNode({"N"}, {{"key", map}});
+  graph.CreateNode(
+      {"N"},
+      {{"key", rg::Value(rg::Value::Map{{"number", rg::Value(1.0)},
+                                        {"optional", rg::Value::Null()}})}});
+  graph.CreateNode({"N"}, {{"key", rg::Value(nan)}});
+  graph.CreateNode({"N"}, {{"key", rg::Value(-nan)}});
+  graph.CreateNode({"N"});
+
+  const rg::QueryResult result =
+      rg::ExecuteReadQuery(graph,
+                           "MATCH (n:N) RETURN count(DISTINCT n.key) AS count, "
+                           "collect(DISTINCT n.key) AS values");
+
+  ASSERT_EQ(result.rows.size(), 1U);
+  EXPECT_EQ(result.rows[0][0], rg::Value(4));
+  const auto &values = result.rows[0][1].AsList();
+  ASSERT_EQ(values.size(), 4U);
+  EXPECT_TRUE(rg::ValueEqual{}(values[0], rg::Value(1)));
+  EXPECT_TRUE(rg::ValueEqual{}(values[1], list));
+  EXPECT_TRUE(rg::ValueEqual{}(values[2], map));
+  EXPECT_TRUE(rg::ValueEqual{}(values[3], rg::Value(nan)));
+}
+
+TEST(SlottedRuntimeTest, MaintainsPercentileParameterState) {
+  rg::InMemoryGraph valid;
+  valid.CreateNode({"N"}, {{"value", rg::Value(10)}, {"p", rg::Value(0.5)}});
+  valid.CreateNode({"N"}, {{"value", rg::Value(10.0)}, {"p", rg::Value(0.5)}});
+  valid.CreateNode({"N"}, {{"value", rg::Value(20)}, {"p", rg::Value(0.5)}});
+  valid.CreateNode({"N"}, {{"value", rg::Value(30)}, {"p", rg::Value(0.5)}});
+  const rg::QueryResult valid_result = rg::ExecuteReadQuery(
+      valid,
+      "MATCH (n:N) "
+      "RETURN percentileDisc(DISTINCT n.value, n.p) AS percentile");
+  ASSERT_EQ(valid_result.rows.size(), 1U);
+  EXPECT_EQ(valid_result.rows[0][0], rg::Value(20));
+
+  rg::InMemoryGraph varying;
+  varying.CreateNode({"N"}, {{"value", rg::Value(1)}, {"p", rg::Value(0.25)}});
+  varying.CreateNode({"N"}, {{"value", rg::Value(2)}, {"p", rg::Value(0.75)}});
+  EXPECT_THROW(
+      (void)rg::ExecuteReadQuery(
+          varying,
+          "MATCH (n:N) RETURN percentileDisc(n.value, n.p) AS percentile"),
+      common::InvalidArgumentError);
+
+  rg::InMemoryGraph null_parameter;
+  null_parameter.CreateNode(
+      {"N"}, {{"value", rg::Value(1)}, {"p", rg::Value::Null()}});
+  null_parameter.CreateNode({"N"},
+                            {{"value", rg::Value(2)}, {"p", rg::Value(0.5)}});
+  const rg::QueryResult null_result = rg::ExecuteReadQuery(
+      null_parameter,
+      "MATCH (n:N) RETURN percentileCont(n.value, n.p) AS percentile");
+  ASSERT_EQ(null_result.rows.size(), 1U);
+  EXPECT_TRUE(null_result.rows[0][0].IsNull());
+
+  rg::InMemoryGraph all_null;
+  all_null.CreateNode({"N"}, {{"p", rg::Value(2.0)}});
+  const rg::QueryResult all_null_result = rg::ExecuteReadQuery(
+      all_null,
+      "MATCH (n:N) RETURN percentileCont(n.value, n.p) AS percentile");
+  ASSERT_EQ(all_null_result.rows.size(), 1U);
+  EXPECT_TRUE(all_null_result.rows[0][0].IsNull());
 }
 
 TEST(SlottedRuntimeTest, UsesTypedKeysAcrossSetOperators) {

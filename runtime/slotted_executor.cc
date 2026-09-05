@@ -751,24 +751,36 @@ std::int64_t CheckedCount(std::size_t size) {
 }
 
 enum class AggregateAccumulatorKind {
-  kBuffered,
   kCountStar,
   kCount,
+  kCollect,
   kSum,
   kAverage,
   kMinimum,
   kMaximum,
+  kPercentileContinuous,
+  kPercentileDiscrete,
 };
 
 struct AggregateAccumulator {
   const ir::LogicalProjectionItem *item = nullptr;
+  const ast::FunctionInvocation *function = nullptr;
   const ast::Expression *argument = nullptr;
-  AggregateAccumulatorKind kind = AggregateAccumulatorKind::kBuffered;
+  const ast::Expression *percentile_argument = nullptr;
+  AggregateAccumulatorKind kind = AggregateAccumulatorKind::kCountStar;
+  bool distinct = false;
   std::size_t count = 0;
   std::int64_t integer_sum = 0;
   double floating_sum = 0.0;
   bool integral_sum = true;
   std::optional<Value> best;
+  std::vector<Value> values;
+  std::unordered_set<Value, ValueHash, ValueEqual> distinct_values;
+  std::optional<double> percentile;
+  std::optional<std::string> percentile_error;
+  bool percentile_null = false;
+  std::size_t values_reserved_bytes = 0;
+  std::size_t distinct_reserved_bytes = 0;
 };
 
 AggregateAccumulator CreateAggregateAccumulator(
@@ -792,12 +804,14 @@ AggregateAccumulator CreateAggregateAccumulator(
   CHECK(!function.arguments.empty() && function.arguments[0] != nullptr,
         common::InvalidArgumentError,
         function.function_name + "() argument is null");
+  accumulator.function = &function;
   accumulator.argument = function.arguments[0].get();
-  if (function.distinct) {
-    return accumulator;
-  }
+  accumulator.distinct = function.distinct;
 
   switch (builtin->kind) {
+    case ast::BuiltinFunctionKind::kCollect:
+      accumulator.kind = AggregateAccumulatorKind::kCollect;
+      break;
     case ast::BuiltinFunctionKind::kCount:
       accumulator.kind = AggregateAccumulatorKind::kCount;
       break;
@@ -813,8 +827,22 @@ AggregateAccumulator CreateAggregateAccumulator(
     case ast::BuiltinFunctionKind::kMaximum:
       accumulator.kind = AggregateAccumulatorKind::kMaximum;
       break;
-    default:
+    case ast::BuiltinFunctionKind::kPercentileContinuous:
+      accumulator.kind = AggregateAccumulatorKind::kPercentileContinuous;
       break;
+    case ast::BuiltinFunctionKind::kPercentileDiscrete:
+      accumulator.kind = AggregateAccumulatorKind::kPercentileDiscrete;
+      break;
+    default:
+      THROW(common::InternalError,
+            "unsupported aggregate function: " + function.function_name);
+  }
+  if (accumulator.kind == AggregateAccumulatorKind::kPercentileContinuous ||
+      accumulator.kind == AggregateAccumulatorKind::kPercentileDiscrete) {
+    CHECK(function.arguments.size() == 2 && function.arguments[1] != nullptr,
+          common::InvalidArgumentError,
+          function.function_name + "() percentile argument is null");
+    accumulator.percentile_argument = function.arguments[1].get();
   }
   return accumulator;
 }
@@ -822,6 +850,17 @@ AggregateAccumulator CreateAggregateAccumulator(
 std::size_t EstimatedStoredValueHeapUsage(const Value &value) {
   const std::size_t bytes = EstimatedValueHeapUsage(value);
   return bytes > sizeof(Value) ? bytes - sizeof(Value) : 0U;
+}
+
+void ReleaseAccumulatorMemory(std::size_t *accumulator_bytes,
+                              RuntimeState *state,
+                              std::size_t *reserved_bytes) {
+  CHECK(accumulator_bytes != nullptr && state != nullptr &&
+            reserved_bytes != nullptr && *accumulator_bytes <= *reserved_bytes,
+        common::InternalError, "aggregate memory accounting is invalid");
+  state->memory_tracker.Release(*accumulator_bytes);
+  *reserved_bytes -= *accumulator_bytes;
+  *accumulator_bytes = 0;
 }
 
 void ReplaceAccumulatorValue(AggregateAccumulator *accumulator, Value value,
@@ -844,15 +883,97 @@ void ReplaceAccumulatorValue(AggregateAccumulator *accumulator, Value value,
   }
 }
 
+const Value *DistinctAggregateValue(AggregateAccumulator *accumulator,
+                                    Value *value, RuntimeState *state,
+                                    std::size_t *reserved_bytes) {
+  CHECK(accumulator != nullptr && value != nullptr && state != nullptr &&
+            reserved_bytes != nullptr,
+        common::InternalError, "aggregate distinct state is null");
+  if (!accumulator->distinct) {
+    return value;
+  }
+  auto [position, inserted] =
+      accumulator->distinct_values.insert(std::move(*value));
+  if (!inserted) {
+    return nullptr;
+  }
+  const std::size_t bytes = EstimatedValueHeapUsage(*position);
+  state->memory_tracker.Reserve(bytes);
+  accumulator->distinct_reserved_bytes += bytes;
+  *reserved_bytes += bytes;
+  return &*position;
+}
+
+void AppendAccumulatorValue(AggregateAccumulator *accumulator,
+                            const Value &value, RuntimeState *state,
+                            std::size_t *reserved_bytes) {
+  CHECK(accumulator != nullptr && state != nullptr && reserved_bytes != nullptr,
+        common::InternalError, "aggregate value buffer state is null");
+  const std::size_t old_capacity = accumulator->values.capacity();
+  accumulator->values.push_back(value);
+  const std::size_t new_capacity = accumulator->values.capacity();
+  const std::size_t bytes =
+      (new_capacity - old_capacity) * sizeof(Value) +
+      EstimatedStoredValueHeapUsage(accumulator->values.back());
+  state->memory_tracker.Reserve(bytes);
+  accumulator->values_reserved_bytes += bytes;
+  *reserved_bytes += bytes;
+}
+
+bool IsPercentile(const AggregateAccumulator &accumulator) {
+  return accumulator.kind == AggregateAccumulatorKind::kPercentileContinuous ||
+         accumulator.kind == AggregateAccumulatorKind::kPercentileDiscrete;
+}
+
+void UpdatePercentileParameter(AggregateAccumulator *accumulator,
+                               const SlottedRow &row, RuntimeState *state) {
+  CHECK(accumulator != nullptr && accumulator->function != nullptr &&
+            accumulator->percentile_argument != nullptr && state != nullptr,
+        common::InternalError, "percentile accumulator is incomplete");
+  if (accumulator->percentile_null ||
+      accumulator->percentile_error.has_value()) {
+    return;
+  }
+
+  Value current;
+  try {
+    current = Evaluate(*accumulator->percentile_argument, row,
+                       accumulator->item->precomputed_expressions, *state);
+  } catch (const common::InvalidArgumentError &error) {
+    accumulator->percentile_error = error.Message();
+    return;
+  }
+  if (current.IsNull()) {
+    accumulator->percentile_null = true;
+    return;
+  }
+  if (!IsNumeric(current)) {
+    accumulator->percentile_error = accumulator->function->function_name +
+                                    "() expects a numeric percentile";
+    return;
+  }
+  const double number = AsDoubleValue(current);
+  if (!std::isfinite(number) || number < 0.0 || number > 1.0) {
+    accumulator->percentile_error = accumulator->function->function_name +
+                                    "() percentile must be between 0.0 and 1.0";
+    return;
+  }
+  if (accumulator->percentile.has_value() &&
+      *accumulator->percentile != number) {
+    accumulator->percentile_error =
+        accumulator->function->function_name +
+        "() percentile must be constant within a group";
+    return;
+  }
+  accumulator->percentile = number;
+}
+
 void UpdateAggregateAccumulator(AggregateAccumulator *accumulator,
                                 const SlottedRow &row, RuntimeState *state,
                                 std::size_t *reserved_bytes) {
   CHECK(accumulator != nullptr && accumulator->item != nullptr &&
             state != nullptr,
         common::InternalError, "aggregate accumulator is incomplete");
-  if (accumulator->kind == AggregateAccumulatorKind::kBuffered) {
-    return;
-  }
   if (accumulator->kind == AggregateAccumulatorKind::kCountStar) {
     ++accumulator->count;
     return;
@@ -862,7 +983,15 @@ void UpdateAggregateAccumulator(AggregateAccumulator *accumulator,
         "aggregate accumulator argument is null");
   Value value = Evaluate(*accumulator->argument, row,
                          accumulator->item->precomputed_expressions, *state);
+  if (IsPercentile(*accumulator)) {
+    UpdatePercentileParameter(accumulator, row, state);
+  }
   if (value.IsNull()) {
+    return;
+  }
+  const Value *aggregate_value =
+      DistinctAggregateValue(accumulator, &value, state, reserved_bytes);
+  if (aggregate_value == nullptr) {
     return;
   }
 
@@ -870,11 +999,15 @@ void UpdateAggregateAccumulator(AggregateAccumulator *accumulator,
     case AggregateAccumulatorKind::kCount:
       ++accumulator->count;
       return;
+    case AggregateAccumulatorKind::kCollect:
+      AppendAccumulatorValue(accumulator, *aggregate_value, state,
+                             reserved_bytes);
+      return;
     case AggregateAccumulatorKind::kSum: {
-      CHECK(IsNumeric(value), common::InvalidArgumentError,
-            "sum() expects numeric values");
-      if (value.IsInteger() && accumulator->integral_sum) {
-        const std::int64_t addend = value.AsInteger();
+      CHECK(IsNumeric(*aggregate_value), common::InvalidArgumentError,
+            accumulator->function->function_name + "() expects numeric values");
+      if (aggregate_value->IsInteger() && accumulator->integral_sum) {
+        const std::int64_t addend = aggregate_value->AsInteger();
         CHECK((addend >= 0 &&
                accumulator->integer_sum <=
                    std::numeric_limits<std::int64_t>::max() - addend) ||
@@ -890,13 +1023,13 @@ void UpdateAggregateAccumulator(AggregateAccumulator *accumulator,
             static_cast<double>(accumulator->integer_sum);
         accumulator->integral_sum = false;
       }
-      accumulator->floating_sum += AsDoubleValue(value);
+      accumulator->floating_sum += AsDoubleValue(*aggregate_value);
       return;
     }
     case AggregateAccumulatorKind::kAverage:
-      CHECK(IsNumeric(value), common::InvalidArgumentError,
-            "avg() expects numeric values");
-      accumulator->floating_sum += AsDoubleValue(value);
+      CHECK(IsNumeric(*aggregate_value), common::InvalidArgumentError,
+            accumulator->function->function_name + "() expects numeric values");
+      accumulator->floating_sum += AsDoubleValue(*aggregate_value);
       ++accumulator->count;
       return;
     case AggregateAccumulatorKind::kMinimum:
@@ -904,197 +1037,139 @@ void UpdateAggregateAccumulator(AggregateAccumulator *accumulator,
       const bool minimum =
           accumulator->kind == AggregateAccumulatorKind::kMinimum;
       if (!accumulator->best.has_value() ||
-          (minimum && ValueLess(value, *accumulator->best)) ||
-          (!minimum && ValueLess(*accumulator->best, value))) {
-        ReplaceAccumulatorValue(accumulator, std::move(value), state,
+          (minimum && ValueLess(*aggregate_value, *accumulator->best)) ||
+          (!minimum && ValueLess(*accumulator->best, *aggregate_value))) {
+        ReplaceAccumulatorValue(accumulator, *aggregate_value, state,
                                 reserved_bytes);
       }
       return;
     }
-    case AggregateAccumulatorKind::kBuffered:
+    case AggregateAccumulatorKind::kPercentileContinuous:
+    case AggregateAccumulatorKind::kPercentileDiscrete:
+      CHECK(IsNumeric(*aggregate_value), common::InvalidArgumentError,
+            accumulator->function->function_name + "() expects numeric values");
+      AppendAccumulatorValue(accumulator, *aggregate_value, state,
+                             reserved_bytes);
+      return;
     case AggregateAccumulatorKind::kCountStar:
       break;
   }
   THROW(common::InternalError, "unexpected aggregate accumulator kind");
 }
 
-Value EvaluateAggregate(const ir::LogicalProjectionItem &item,
-                        const std::vector<SlottedRow> &rows,
-                        RuntimeState *state) {
-  CHECK(item.expression != nullptr, common::InvalidArgumentError,
-        "aggregation expression is null");
-  if (item.expression->Is(ast::ASTNodeType::kCountStarExpression)) {
-    return Value(CheckedCount(rows.size()));
-  }
-  CHECK(item.expression->Is(ast::ASTNodeType::kFunctionInvocation),
-        common::InvalidArgumentError, "unsupported aggregation expression");
-  const auto &function =
-      ast::CastAst<ast::FunctionInvocation>(*item.expression);
-  const ast::BuiltinFunction *builtin =
-      ast::FindBuiltinFunction(function.function_name);
-  CHECK(builtin != nullptr && builtin->aggregate, common::InvalidArgumentError,
-        "function is not an aggregate: " + function.function_name);
-  CHECK(!function.arguments.empty() && function.arguments[0] != nullptr,
-        common::InvalidArgumentError,
-        function.function_name + "() argument is null");
+void ReleaseDistinctValues(AggregateAccumulator *accumulator,
+                           RuntimeState *state, std::size_t *reserved_bytes) {
+  std::unordered_set<Value, ValueHash, ValueEqual> empty;
+  accumulator->distinct_values.swap(empty);
+  ReleaseAccumulatorMemory(&accumulator->distinct_reserved_bytes, state,
+                           reserved_bytes);
+}
 
-  std::vector<Value> values;
-  std::unordered_set<Value, ValueHash, ValueEqual> seen;
-  for (const auto &row : rows) {
-    Value value = Evaluate(*function.arguments[0], row,
-                           item.precomputed_expressions, *state);
-    if (value.IsNull()) {
-      continue;
-    }
-    if (function.distinct && !seen.insert(value).second) {
-      continue;
-    }
-    values.push_back(std::move(value));
-  }
+void ReleaseAccumulatorValues(AggregateAccumulator *accumulator,
+                              RuntimeState *state,
+                              std::size_t *reserved_bytes) {
+  accumulator->values = {};
+  ReleaseAccumulatorMemory(&accumulator->values_reserved_bytes, state,
+                           reserved_bytes);
+}
 
-  switch (builtin->kind) {
-    case ast::BuiltinFunctionKind::kCount:
-      return Value(CheckedCount(values.size()));
-    case ast::BuiltinFunctionKind::kCollect:
-      return Value(Value::List(std::move(values)));
-    case ast::BuiltinFunctionKind::kSum: {
-      bool integral = true;
-      std::int64_t integer_sum = 0;
-      double floating_sum = 0.0;
-      for (const auto &value : values) {
-        CHECK(IsNumeric(value), common::InvalidArgumentError,
-              function.function_name + "() expects numeric values");
-        if (value.IsInteger() && integral) {
-          const std::int64_t addend = value.AsInteger();
-          CHECK((addend >= 0 &&
-                 integer_sum <=
-                     std::numeric_limits<std::int64_t>::max() - addend) ||
-                    (addend < 0 &&
-                     integer_sum >=
-                         std::numeric_limits<std::int64_t>::min() - addend),
-                common::InvalidArgumentError, "integer sum overflow");
-          integer_sum += addend;
-        } else {
-          if (integral) {
-            floating_sum = static_cast<double>(integer_sum);
-            integral = false;
-          }
-          floating_sum += AsDoubleValue(value);
-        }
-      }
-      return integral ? Value(integer_sum) : Value(floating_sum);
-    }
-    case ast::BuiltinFunctionKind::kAverage: {
-      if (values.empty()) {
-        return Value::Null();
-      }
-      double sum = 0.0;
-      for (const auto &value : values) {
-        CHECK(IsNumeric(value), common::InvalidArgumentError,
-              function.function_name + "() expects numeric values");
-        sum += AsDoubleValue(value);
-      }
-      return Value(sum / static_cast<double>(values.size()));
-    }
-    case ast::BuiltinFunctionKind::kMinimum:
-    case ast::BuiltinFunctionKind::kMaximum: {
-      if (values.empty()) {
-        return Value::Null();
-      }
-      Value best = values.front();
-      const bool minimum = builtin->kind == ast::BuiltinFunctionKind::kMinimum;
-      for (std::size_t index = 1; index < values.size(); ++index) {
-        if ((minimum && ValueLess(values[index], best)) ||
-            (!minimum && ValueLess(best, values[index]))) {
-          best = values[index];
-        }
-      }
-      return best;
-    }
-    case ast::BuiltinFunctionKind::kPercentileContinuous:
-    case ast::BuiltinFunctionKind::kPercentileDiscrete: {
-      if (values.empty()) {
-        return Value::Null();
-      }
-      CHECK(function.arguments.size() == 2 && function.arguments[1] != nullptr,
-            common::InvalidArgumentError,
-            function.function_name + "() percentile argument is null");
-      std::optional<double> percentile;
-      for (const auto &row : rows) {
-        const Value current = Evaluate(*function.arguments[1], row,
-                                       item.precomputed_expressions, *state);
-        if (current.IsNull()) {
-          return Value::Null();
-        }
-        CHECK(IsNumeric(current), common::InvalidArgumentError,
-              function.function_name + "() expects a numeric percentile");
-        const double number = AsDoubleValue(current);
-        CHECK(std::isfinite(number) && number >= 0.0 && number <= 1.0,
-              common::InvalidArgumentError,
-              function.function_name +
-                  "() percentile must be between 0.0 and 1.0");
-        CHECK(!percentile.has_value() || *percentile == number,
-              common::InvalidArgumentError,
-              function.function_name +
-                  "() percentile must be constant within a group");
-        percentile = number;
-      }
-      std::sort(values.begin(), values.end(), ValueLess);
-      if (builtin->kind == ast::BuiltinFunctionKind::kPercentileDiscrete) {
-        const double rank =
-            std::ceil(*percentile * static_cast<double>(values.size()));
-        const std::size_t index =
-            rank <= 1.0 ? 0 : static_cast<std::size_t>(rank) - 1;
-        return values[std::min(index, values.size() - 1)];
-      }
-      const double position =
-          *percentile * static_cast<double>(values.size() - 1);
-      const auto lower = static_cast<std::size_t>(std::floor(position));
-      const auto upper = static_cast<std::size_t>(std::ceil(position));
-      return Value(std::lerp(AsDoubleValue(values[lower]),
-                             AsDoubleValue(values[upper]), position - lower));
-    }
-    default:
-      THROW(common::InvalidArgumentError,
-            "unsupported aggregate function: " + function.function_name);
+Value TakeAccumulatorBest(AggregateAccumulator *accumulator,
+                          RuntimeState *state, std::size_t *reserved_bytes) {
+  if (!accumulator->best.has_value()) {
+    return Value::Null();
   }
+  const std::size_t bytes = EstimatedStoredValueHeapUsage(*accumulator->best);
+  Value result = std::move(*accumulator->best);
+  accumulator->best.reset();
+  state->memory_tracker.Release(bytes);
+  *reserved_bytes -= bytes;
+  return result;
+}
+
+Value TakeCollectedValues(AggregateAccumulator *accumulator,
+                          RuntimeState *state, std::size_t *reserved_bytes) {
+  Value::List values = std::move(accumulator->values);
+  accumulator->values = {};
+  ReleaseAccumulatorMemory(&accumulator->values_reserved_bytes, state,
+                           reserved_bytes);
+  return Value(std::move(values));
+}
+
+Value FinalizePercentile(AggregateAccumulator *accumulator, RuntimeState *state,
+                         std::size_t *reserved_bytes) {
+  if (accumulator->values.empty()) {
+    ReleaseAccumulatorValues(accumulator, state, reserved_bytes);
+    return Value::Null();
+  }
+  if (accumulator->percentile_error.has_value()) {
+    THROW(common::InvalidArgumentError, *accumulator->percentile_error);
+  }
+  if (accumulator->percentile_null) {
+    ReleaseAccumulatorValues(accumulator, state, reserved_bytes);
+    return Value::Null();
+  }
+  CHECK(accumulator->percentile.has_value(), common::InternalError,
+        "percentile accumulator parameter is missing");
+
+  std::sort(accumulator->values.begin(), accumulator->values.end(), ValueLess);
+  Value result;
+  if (accumulator->kind == AggregateAccumulatorKind::kPercentileDiscrete) {
+    const double rank =
+        std::ceil(*accumulator->percentile *
+                  static_cast<double>(accumulator->values.size()));
+    const std::size_t index =
+        rank <= 1.0 ? 0 : static_cast<std::size_t>(rank) - 1;
+    result =
+        accumulator->values[std::min(index, accumulator->values.size() - 1)];
+  } else {
+    const double position = *accumulator->percentile *
+                            static_cast<double>(accumulator->values.size() - 1);
+    const auto lower = static_cast<std::size_t>(std::floor(position));
+    const auto upper = static_cast<std::size_t>(std::ceil(position));
+    result = Value(std::lerp(AsDoubleValue(accumulator->values[lower]),
+                             AsDoubleValue(accumulator->values[upper]),
+                             position - lower));
+  }
+  ReleaseAccumulatorValues(accumulator, state, reserved_bytes);
+  return result;
 }
 
 Value FinalizeAggregateAccumulator(AggregateAccumulator *accumulator,
-                                   const std::vector<SlottedRow> &rows,
                                    RuntimeState *state,
                                    std::size_t *reserved_bytes) {
-  CHECK(accumulator != nullptr && accumulator->item != nullptr,
+  CHECK(accumulator != nullptr && accumulator->item != nullptr &&
+            state != nullptr && reserved_bytes != nullptr,
         common::InternalError, "aggregate accumulator is incomplete");
+  Value result;
   switch (accumulator->kind) {
-    case AggregateAccumulatorKind::kBuffered:
-      return EvaluateAggregate(*accumulator->item, rows, state);
     case AggregateAccumulatorKind::kCountStar:
     case AggregateAccumulatorKind::kCount:
-      return Value(CheckedCount(accumulator->count));
+      result = Value(CheckedCount(accumulator->count));
+      break;
+    case AggregateAccumulatorKind::kCollect:
+      result = TakeCollectedValues(accumulator, state, reserved_bytes);
+      break;
     case AggregateAccumulatorKind::kSum:
-      return accumulator->integral_sum ? Value(accumulator->integer_sum)
-                                       : Value(accumulator->floating_sum);
+      result = accumulator->integral_sum ? Value(accumulator->integer_sum)
+                                         : Value(accumulator->floating_sum);
+      break;
     case AggregateAccumulatorKind::kAverage:
-      return accumulator->count == 0
-                 ? Value::Null()
-                 : Value(accumulator->floating_sum /
-                         static_cast<double>(accumulator->count));
+      result = accumulator->count == 0
+                   ? Value::Null()
+                   : Value(accumulator->floating_sum /
+                           static_cast<double>(accumulator->count));
+      break;
     case AggregateAccumulatorKind::kMinimum:
-    case AggregateAccumulatorKind::kMaximum: {
-      if (!accumulator->best.has_value()) {
-        return Value::Null();
-      }
-      const std::size_t bytes =
-          EstimatedStoredValueHeapUsage(*accumulator->best);
-      Value result = std::move(*accumulator->best);
-      accumulator->best.reset();
-      state->memory_tracker.Release(bytes);
-      *reserved_bytes -= bytes;
-      return result;
-    }
+    case AggregateAccumulatorKind::kMaximum:
+      result = TakeAccumulatorBest(accumulator, state, reserved_bytes);
+      break;
+    case AggregateAccumulatorKind::kPercentileContinuous:
+    case AggregateAccumulatorKind::kPercentileDiscrete:
+      result = FinalizePercentile(accumulator, state, reserved_bytes);
+      break;
   }
-  THROW(common::InternalError, "unexpected aggregate accumulator kind");
+  ReleaseDistinctValues(accumulator, state, reserved_bytes);
+  return result;
 }
 
 int CompareValues(const Value &left, const Value &right) {
@@ -2079,12 +2154,8 @@ class BlockingUnaryOperator final : public PullOperator {
             static_cast<const ir::AggregationPlan &>(*node_->logical);
         std::vector<AggregateAccumulator> accumulator_templates;
         accumulator_templates.reserve(plan.AggregationItems().size());
-        bool buffers_inputs = false;
         for (const auto &item : plan.AggregationItems()) {
           accumulator_templates.push_back(CreateAggregateAccumulator(item));
-          buffers_inputs =
-              buffers_inputs || accumulator_templates.back().kind ==
-                                    AggregateAccumulatorKind::kBuffered;
         }
         struct Group {
           Group(SlottedRow projected,
@@ -2092,7 +2163,6 @@ class BlockingUnaryOperator final : public PullOperator {
               : output(std::move(projected)), accumulators(templates) {}
           SlottedRow output;
           std::vector<AggregateAccumulator> accumulators;
-          std::vector<SlottedRow> inputs;
         };
         std::vector<std::unique_ptr<Group>> groups;
         std::unordered_map<CompositeValueKey, std::size_t, ValueHash,
@@ -2121,12 +2191,6 @@ class BlockingUnaryOperator final : public PullOperator {
             UpdateAggregateAccumulator(&accumulator, input, state_,
                                        &reserved_bytes_);
           }
-          if (buffers_inputs) {
-            const std::size_t bytes = input.EstimatedHeapUsage();
-            state_->memory_tracker.Reserve(bytes);
-            reserved_bytes_ += bytes;
-            state->inputs.push_back(input);
-          }
         }
         if (plan.GroupingItems().empty() && groups.empty()) {
           group_indexes.emplace(CompositeValueKey{}, 0U);
@@ -2135,10 +2199,9 @@ class BlockingUnaryOperator final : public PullOperator {
         }
         for (auto &group : groups) {
           for (auto &accumulator : group->accumulators) {
-            group->output.Set(
-                accumulator.item->alias,
-                FinalizeAggregateAccumulator(&accumulator, group->inputs,
-                                             state_, &reserved_bytes_));
+            group->output.Set(accumulator.item->alias,
+                              FinalizeAggregateAccumulator(&accumulator, state_,
+                                                           &reserved_bytes_));
           }
           BufferRow(std::move(group->output));
         }
