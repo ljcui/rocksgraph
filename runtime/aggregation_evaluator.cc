@@ -5,10 +5,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <map>
 #include <optional>
-#include <set>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -24,7 +24,7 @@ namespace {
 
 struct GroupingProjection {
   QueryRow row;
-  std::string key;
+  CompositeValueKey key;
 };
 
 struct GroupState {
@@ -45,21 +45,14 @@ std::int64_t CountValue(std::size_t size) {
   return static_cast<std::int64_t>(size);
 }
 
-void AppendKeyPart(const Value &value, std::string *key) {
-  CHECK(key != nullptr, common::InternalError, "grouping key is null");
-  const std::string value_key = ValueKey(value);
-  key->append(std::to_string(value_key.size()));
-  key->push_back(':');
-  key->append(value_key);
-}
-
 GroupingProjection EvaluateGrouping(
     const std::vector<ir::LogicalProjectionItem> &grouping_items,
     const QueryRow &input, ExecutionContext context) {
   GroupingProjection projection;
+  projection.key.values.reserve(grouping_items.size());
   for (const auto &item : grouping_items) {
     Value value = EvaluateLogicalProjectionItem(item, input, context);
-    AppendKeyPart(value, &projection.key);
+    projection.key.values.push_back(value);
     projection.row[item.alias] = std::move(value);
   }
   return projection;
@@ -74,14 +67,14 @@ std::vector<Value> EvaluateAggregationValues(
 
   std::vector<Value> values;
   values.reserve(rows.size());
-  std::set<std::string> seen;
+  std::unordered_set<Value, ValueHash, ValueEqual> seen;
   for (const auto &row : rows) {
     Value value =
         EvaluateExpression(*function.arguments[0], row, precomputed, context);
     if (value.IsNull()) {
       continue;
     }
-    if (function.distinct && !seen.insert(ValueKey(value)).second) {
+    if (function.distinct && !seen.insert(value).second) {
       continue;
     }
     values.push_back(std::move(value));
@@ -281,7 +274,7 @@ std::vector<QueryRow> ProjectDistinctRows(
     const std::vector<ir::LogicalProjectionItem> &grouping_items,
     const std::vector<QueryRow> &rows, ExecutionContext context) {
   std::vector<QueryRow> result;
-  std::set<std::string> seen;
+  std::unordered_set<CompositeValueKey, ValueHash, ValueEqual> seen;
   for (const auto &row : rows) {
     GroupingProjection projection =
         EvaluateGrouping(grouping_items, row, context);
@@ -296,24 +289,28 @@ std::vector<QueryRow> AggregateRows(
     const std::vector<ir::LogicalProjectionItem> &grouping_items,
     const std::vector<ir::LogicalProjectionItem> &aggregation_items,
     const std::vector<QueryRow> &rows, ExecutionContext context) {
-  std::map<std::string, GroupState> groups;
+  std::vector<GroupState> groups;
+  std::unordered_map<CompositeValueKey, std::size_t, ValueHash, ValueEqual>
+      group_indexes;
   if (grouping_items.empty()) {
-    groups.emplace("", GroupState{});
+    group_indexes.emplace(CompositeValueKey{}, 0U);
+    groups.emplace_back();
   }
 
   for (const auto &row : rows) {
     GroupingProjection projection =
         EvaluateGrouping(grouping_items, row, context);
-    auto [group, inserted] = groups.emplace(
-        std::move(projection.key), GroupState{std::move(projection.row), {}});
-    (void)inserted;
-    group->second.rows.push_back(row);
+    auto [group, inserted] =
+        group_indexes.emplace(std::move(projection.key), groups.size());
+    if (inserted) {
+      groups.push_back(GroupState{std::move(projection.row), {}});
+    }
+    groups[group->second].rows.push_back(row);
   }
 
   std::vector<QueryRow> result;
   result.reserve(groups.size());
-  for (auto &[key, state] : groups) {
-    (void)key;
+  for (auto &state : groups) {
     QueryRow row = std::move(state.row);
     for (const auto &item : aggregation_items) {
       CHECK(item.expression != nullptr, common::InvalidArgumentError,

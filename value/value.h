@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -182,6 +183,27 @@ struct Path {
   std::vector<Value::RelationshipPtr> relationships;
 };
 
+struct CompositeValueKey {
+  std::vector<Value> values;
+
+  bool operator==(const CompositeValueKey &other) const noexcept;
+};
+
+struct ValueHash {
+  [[nodiscard]] std::size_t operator()(const Value &value) const noexcept;
+  [[nodiscard]] std::size_t operator()(
+      const CompositeValueKey &key) const noexcept;
+};
+
+// Hash-key equality is reflexive, so all NaN values form one key equivalence
+// class even though query equality reports NaN as unequal.
+struct ValueEqual {
+  [[nodiscard]] bool operator()(const Value &left,
+                                const Value &right) const noexcept;
+  [[nodiscard]] bool operator()(const CompositeValueKey &left,
+                                const CompositeValueKey &right) const noexcept;
+};
+
 bool operator==(const Node &left, const Node &right);
 bool operator==(const Relationship &left, const Relationship &right);
 bool operator==(const Path &left, const Path &right);
@@ -195,6 +217,5 @@ bool operator==(const Duration &left, const Duration &right);
 bool operator==(const Point &left, const Point &right);
 
 [[nodiscard]] bool ValuesEqual(const Value &left, const Value &right);
-[[nodiscard]] std::string ValueKey(const Value &value);
 
 }  // namespace rg

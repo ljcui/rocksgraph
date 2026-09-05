@@ -5,7 +5,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <map>
 #include <memory>
 #include <optional>
 #include <set>
@@ -724,15 +723,13 @@ Value EvaluateProjectionItem(const ir::LogicalProjectionItem &item,
   return Evaluate(*item.expression, row, item.precomputed_expressions, *state);
 }
 
-std::string AppendKey(const std::vector<Value> &values) {
-  std::string key;
-  for (const auto &value : values) {
-    const std::string part = ValueKey(value);
-    key.append(std::to_string(part.size()));
-    key.push_back(':');
-    key.append(part);
+std::size_t EstimatedKeyHeapUsage(const CompositeValueKey &key) {
+  std::size_t bytes = key.values.capacity() * sizeof(Value);
+  for (const Value &value : key.values) {
+    const std::size_t value_bytes = EstimatedValueHeapUsage(value);
+    bytes += value_bytes > sizeof(Value) ? value_bytes - sizeof(Value) : 0U;
   }
-  return key;
+  return bytes;
 }
 
 std::vector<Value> EvaluateGroupingValues(
@@ -774,14 +771,14 @@ Value EvaluateAggregate(const ir::LogicalProjectionItem &item,
         function.function_name + "() argument is null");
 
   std::vector<Value> values;
-  std::set<std::string> seen;
+  std::unordered_set<Value, ValueHash, ValueEqual> seen;
   for (const auto &row : rows) {
     Value value = Evaluate(*function.arguments[0], row,
                            item.precomputed_expressions, *state);
     if (value.IsNull()) {
       continue;
     }
-    if (function.distinct && !seen.insert(ValueKey(value)).second) {
+    if (function.distinct && !seen.insert(value).second) {
       continue;
     }
     values.push_back(std::move(value));
@@ -899,14 +896,19 @@ int CompareValues(const Value &left, const Value &right) {
   if (ValuesEqual(left, right)) {
     return 0;
   }
+  if (IsNumeric(left) && IsNumeric(right)) {
+    const bool left_nan = left.IsDouble() && std::isnan(left.AsDouble());
+    const bool right_nan = right.IsDouble() && std::isnan(right.AsDouble());
+    if (left_nan || right_nan) {
+      return left_nan == right_nan ? 0 : (left_nan ? 1 : -1);
+    }
+  }
   const bool left_less = ValueLess(left, right);
   const bool right_less = ValueLess(right, left);
   if (left_less != right_less) {
     return left_less ? -1 : 1;
   }
-  const std::string left_key = ValueKey(left);
-  const std::string right_key = ValueKey(right);
-  return left_key < right_key ? -1 : (right_key < left_key ? 1 : 0);
+  return 0;
 }
 
 std::unique_ptr<EntityIdCursor> ExpandCursor(const GraphReader &graph_reader,
@@ -1845,17 +1847,19 @@ class BlockingUnaryOperator final : public PullOperator {
       case ir::LogicalPlanNodeType::kDistinct: {
         const auto &plan =
             static_cast<const ir::DistinctPlan &>(*node_->logical);
-        std::set<std::string> seen;
+        std::unordered_set<CompositeValueKey, ValueHash, ValueEqual> seen;
         SlottedRow input(node_->children[0]->output_slots);
         while (source_->Next(&input)) {
           std::vector<Value> values =
               EvaluateGroupingValues(plan.GroupingItems(), input, state_);
-          const std::string key = AppendKey(values);
-          if (!seen.insert(key).second) {
+          auto [key, inserted] =
+              seen.insert(CompositeValueKey{.values = values});
+          if (!inserted) {
             continue;
           }
-          state_->memory_tracker.Reserve(key.capacity());
-          reserved_bytes_ += key.capacity();
+          const std::size_t key_bytes = EstimatedKeyHeapUsage(*key);
+          state_->memory_tracker.Reserve(key_bytes);
+          reserved_bytes_ += key_bytes;
           SlottedRow output(node_->output_slots);
           for (std::size_t index = 0; index < values.size(); ++index) {
             output.Set(plan.GroupingItems()[index].alias,
@@ -1873,35 +1877,38 @@ class BlockingUnaryOperator final : public PullOperator {
           SlottedRow output;
           std::vector<SlottedRow> inputs;
         };
-        std::map<std::string, std::unique_ptr<Group>> groups;
+        std::vector<std::unique_ptr<Group>> groups;
+        std::unordered_map<CompositeValueKey, std::size_t, ValueHash,
+                           ValueEqual>
+            group_indexes;
         SlottedRow input(node_->children[0]->output_slots);
         while (source_->Next(&input)) {
           std::vector<Value> values =
               EvaluateGroupingValues(plan.GroupingItems(), input, state_);
-          std::string key = AppendKey(values);
-          auto found = groups.find(key);
-          if (found == groups.end()) {
+          auto [group, inserted] = group_indexes.emplace(
+              CompositeValueKey{.values = values}, groups.size());
+          if (inserted) {
             SlottedRow projected(node_->output_slots);
             for (std::size_t index = 0; index < values.size(); ++index) {
               projected.Set(plan.GroupingItems()[index].alias,
                             std::move(values[index]));
             }
-            found = groups
-                        .emplace(std::move(key),
-                                 std::make_unique<Group>(std::move(projected)))
-                        .first;
+            groups.push_back(std::make_unique<Group>(std::move(projected)));
+            const std::size_t key_bytes = EstimatedKeyHeapUsage(group->first);
+            state_->memory_tracker.Reserve(key_bytes);
+            reserved_bytes_ += key_bytes;
           }
           const std::size_t bytes = input.EstimatedHeapUsage();
           state_->memory_tracker.Reserve(bytes);
           reserved_bytes_ += bytes;
-          found->second->inputs.push_back(input);
+          groups[group->second]->inputs.push_back(input);
         }
         if (plan.GroupingItems().empty() && groups.empty()) {
-          groups.emplace(
-              "", std::make_unique<Group>(SlottedRow(node_->output_slots)));
+          group_indexes.emplace(CompositeValueKey{}, 0U);
+          groups.push_back(
+              std::make_unique<Group>(SlottedRow(node_->output_slots)));
         }
-        for (auto &[key, group] : groups) {
-          (void)key;
+        for (auto &group : groups) {
           for (const auto &item : plan.AggregationItems()) {
             group->output.Set(item.alias,
                               EvaluateAggregate(item, group->inputs, state_));
@@ -2036,18 +2043,18 @@ class BlockingBinaryOperator final : public PullOperator {
     rows_.push_back(std::move(row));
   }
 
-  std::optional<std::string> NodeJoinKey(
+  std::optional<CompositeValueKey> NodeJoinKey(
       const SlottedRow &row, const std::vector<std::string> &keys) const {
-    std::vector<Value> values;
-    values.reserve(keys.size());
+    CompositeValueKey result;
+    result.values.reserve(keys.size());
     for (const auto &key : keys) {
       Value value = row.Get(key, *state_->graph_reader);
       if (value.IsNull()) {
         return std::nullopt;
       }
-      values.push_back(std::move(value));
+      result.values.push_back(std::move(value));
     }
-    return AppendKey(values);
+    return result;
   }
 
   bool EmitJoined(const SlottedRow &lhs, const SlottedRow &rhs,
@@ -2088,10 +2095,11 @@ class BlockingBinaryOperator final : public PullOperator {
       case ir::LogicalPlanNodeType::kNodeHashJoin: {
         const auto &plan =
             static_cast<const ir::NodeHashJoinPlan &>(*node_->logical);
-        std::unordered_map<std::string, std::vector<const SlottedRow *>>
+        std::unordered_map<CompositeValueKey, std::vector<const SlottedRow *>,
+                           ValueHash, ValueEqual>
             buckets;
         for (const auto &rhs : rhs_rows) {
-          if (std::optional<std::string> key =
+          if (std::optional<CompositeValueKey> key =
                   NodeJoinKey(rhs, plan.JoinKeys());
               key.has_value()) {
             buckets[*key].push_back(&rhs);
@@ -2099,7 +2107,7 @@ class BlockingBinaryOperator final : public PullOperator {
         }
         for (const auto &lhs : lhs_rows) {
           state_->CheckCancelled();
-          const std::optional<std::string> key =
+          const std::optional<CompositeValueKey> key =
               NodeJoinKey(lhs, plan.JoinKeys());
           if (!key.has_value()) {
             continue;
@@ -2180,20 +2188,18 @@ class UnionOperator final : public PullOperator {
       SlottedRow output(node_->output_slots);
       CopyMappings(input, &output, node_->child_mappings[side_], *state_);
       if (!plan.All()) {
-        std::string key;
+        CompositeValueKey key;
+        key.values.reserve(node_->output_slots->Columns().size());
         for (const auto &column : node_->output_slots->Columns()) {
-          const std::string part =
-              ValueKey(output.Get(column, *state_->graph_reader));
-          key.append(std::to_string(part.size()));
-          key.push_back(':');
-          key.append(part);
+          key.values.push_back(output.Get(column, *state_->graph_reader));
         }
         auto [seen, inserted] = seen_.insert(std::move(key));
         if (!inserted) {
           continue;
         }
-        state_->memory_tracker.Reserve(seen->capacity());
-        reserved_bytes_ += seen->capacity();
+        const std::size_t key_bytes = EstimatedKeyHeapUsage(*seen);
+        state_->memory_tracker.Reserve(key_bytes);
+        reserved_bytes_ += key_bytes;
       }
       *row = std::move(output);
       return true;
@@ -2218,7 +2224,7 @@ class UnionOperator final : public PullOperator {
   RuntimeState *state_ = nullptr;
   std::unique_ptr<PullOperator> lhs_;
   std::unique_ptr<PullOperator> rhs_;
-  std::set<std::string> seen_;
+  std::unordered_set<CompositeValueKey, ValueHash, ValueEqual> seen_;
   std::size_t side_ = 0;
   std::size_t reserved_bytes_ = 0;
 };

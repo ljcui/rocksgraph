@@ -2,7 +2,19 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <limits>
+#include <unordered_set>
+
+namespace {
+
+void ExpectEquivalentKeys(const rg::Value &left, const rg::Value &right) {
+  EXPECT_TRUE(rg::ValueEqual{}(left, right));
+  EXPECT_TRUE(rg::ValueEqual{}(right, left));
+  EXPECT_EQ(rg::ValueHash{}(left), rg::ValueHash{}(right));
+}
+
+}  // namespace
 
 TEST(ValueTest, ScalarTypes) {
   rg::Value null_value;
@@ -44,22 +56,55 @@ TEST(ValueTest, ListAndMapTypes) {
   EXPECT_EQ(map_value.AsMap().at("b"), list_value);
 }
 
-TEST(ValueTest, QueryEqualityAndKeysNormalizeNumericValues) {
+TEST(ValueTest, QueryEqualityAndHashingNormalizeNumericValues) {
   EXPECT_TRUE(rg::ValuesEqual(rg::Value(1), rg::Value(1.0)));
   EXPECT_TRUE(rg::ValuesEqual(rg::Value(1.5), rg::Value(1.5)));
   EXPECT_FALSE(rg::ValuesEqual(rg::Value(1.5), rg::Value(2.5)));
-  EXPECT_EQ(rg::ValueKey(rg::Value(1)), rg::ValueKey(rg::Value(1.0)));
+  ExpectEquivalentKeys(rg::Value(1), rg::Value(1.0));
+  ExpectEquivalentKeys(rg::Value(0), rg::Value(-0.0));
+  ExpectEquivalentKeys(
+      rg::Value(std::numeric_limits<std::int64_t>::min()),
+      rg::Value(static_cast<double>(std::numeric_limits<std::int64_t>::min())));
 
   const rg::Value integer_list(rg::Value::List{rg::Value(1)});
   const rg::Value double_list(rg::Value::List{rg::Value(1.0)});
   EXPECT_TRUE(rg::ValuesEqual(integer_list, double_list));
-  EXPECT_EQ(rg::ValueKey(integer_list), rg::ValueKey(double_list));
+  ExpectEquivalentKeys(integer_list, double_list);
 
-  EXPECT_NE(rg::ValueKey(rg::Value(1.0000001)),
-            rg::ValueKey(rg::Value(1.0000002)));
+  EXPECT_FALSE(rg::ValueEqual{}(rg::Value(1.0000001), rg::Value(1.0000002)));
   EXPECT_FALSE(
       rg::ValuesEqual(rg::Value(std::numeric_limits<std::int64_t>::max()),
                       rg::Value(9.223372036854776e18)));
+}
+
+TEST(ValueTest, HashKeyEqualityCanonicalizesNaN) {
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  const rg::Value first(nan);
+  const rg::Value second(-nan);
+
+  EXPECT_FALSE(rg::ValuesEqual(first, second));
+  ExpectEquivalentKeys(first, second);
+
+  std::unordered_set<rg::Value, rg::ValueHash, rg::ValueEqual> values;
+  values.insert(first);
+  values.insert(second);
+  EXPECT_EQ(values.size(), 1U);
+}
+
+TEST(ValueTest, HashesListsAndMapsRecursively) {
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  const rg::Value left(rg::Value::Map{
+      {"items", rg::Value(rg::Value::List{rg::Value(1), rg::Value(nan)})},
+      {"name", rg::Value("Ada")}});
+  const rg::Value right(rg::Value::Map{
+      {"items", rg::Value(rg::Value::List{rg::Value(1.0), rg::Value(-nan)})},
+      {"name", rg::Value("Ada")}});
+  const rg::Value different(rg::Value::Map{
+      {"items", rg::Value(rg::Value::List{rg::Value(1.0), rg::Value(-nan)})},
+      {"name", rg::Value("Grace")}});
+
+  ExpectEquivalentKeys(left, right);
+  EXPECT_FALSE(rg::ValueEqual{}(left, different));
 }
 
 TEST(ValueTest, QueryEqualityUsesGraphEntityIdentity) {
@@ -78,12 +123,48 @@ TEST(ValueTest, QueryEqualityUsesGraphEntityIdentity) {
   second_relationship->type = "AFTER";
 
   EXPECT_TRUE(rg::ValuesEqual(rg::Value(first_node), rg::Value(second_node)));
-  EXPECT_EQ(rg::ValueKey(rg::Value(first_node)),
-            rg::ValueKey(rg::Value(second_node)));
+  ExpectEquivalentKeys(rg::Value(first_node), rg::Value(second_node));
   EXPECT_TRUE(rg::ValuesEqual(rg::Value(first_relationship),
                               rg::Value(second_relationship)));
-  EXPECT_EQ(rg::ValueKey(rg::Value(first_relationship)),
-            rg::ValueKey(rg::Value(second_relationship)));
+  ExpectEquivalentKeys(rg::Value(first_relationship),
+                       rg::Value(second_relationship));
+
+  auto left_path = std::make_shared<rg::Path>();
+  left_path->nodes = {first_node};
+  left_path->relationships = {first_relationship};
+  auto right_path = std::make_shared<rg::Path>();
+  right_path->nodes = {second_node};
+  right_path->relationships = {second_relationship};
+  ExpectEquivalentKeys(rg::Value(left_path), rg::Value(right_path));
+}
+
+TEST(ValueTest, HashesTemporalDurationAndPointValues) {
+  ExpectEquivalentKeys(rg::Value(rg::Date{2026, 9, 5}),
+                       rg::Value(rg::Date{2026, 9, 5}));
+  ExpectEquivalentKeys(rg::Value(rg::LocalTime{12, 30, 45, 123, true}),
+                       rg::Value(rg::LocalTime{12, 30, 45, 123, false}));
+  ExpectEquivalentKeys(
+      rg::Value(rg::DateTime{
+          {{2026, 9, 5}, {12, 30, 45, 123, true}}, 28'800, "Asia/Shanghai"}),
+      rg::Value(rg::DateTime{
+          {{2026, 9, 5}, {12, 30, 45, 123, false}}, 28'800, "Asia/Shanghai"}));
+  ExpectEquivalentKeys(rg::Value(rg::Duration{1, 2, 3, 4}),
+                       rg::Value(rg::Duration{1, 2, 3, 4}));
+
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  ExpectEquivalentKeys(rg::Value(rg::Point{4326, {0.0, nan}}),
+                       rg::Value(rg::Point{4326, {-0.0, -nan}}));
+  EXPECT_FALSE(rg::ValueEqual{}(rg::Value(rg::Point{4326, {1.0, 2.0}}),
+                                rg::Value(rg::Point{7203, {1.0, 2.0}})));
+}
+
+TEST(ValueTest, HashesCompositeKeysInColumnOrder) {
+  std::unordered_set<rg::CompositeValueKey, rg::ValueHash, rg::ValueEqual> keys;
+  keys.insert({.values = {rg::Value(1), rg::Value("x")}});
+  keys.insert({.values = {rg::Value(1.0), rg::Value("x")}});
+  keys.insert({.values = {rg::Value("x"), rg::Value(1)}});
+
+  EXPECT_EQ(keys.size(), 2U);
 }
 
 TEST(ValueTest, GraphTypes) {

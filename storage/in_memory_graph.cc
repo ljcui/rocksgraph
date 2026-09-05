@@ -288,7 +288,7 @@ std::unique_ptr<EntityIdCursor> InMemoryGraph::FindNodeIdsByIndex(
   if (indexes == node_indexes_.end() || buckets == node_index_buckets_.end()) {
     return MakePointerCursor<NodePtr>({});
   }
-  const auto bucket = buckets->second.find(ValueIndexKey(value));
+  const auto bucket = buckets->second.find(value);
   if (bucket == buckets->second.end()) {
     return MakePointerCursor<NodePtr>({});
   }
@@ -341,7 +341,7 @@ std::unique_ptr<EntityIdCursor> InMemoryGraph::FindRelationshipIdsByIndex(
       buckets == relationship_index_buckets_.end()) {
     return MakePointerCursor<RelationshipPtr>({});
   }
-  const auto bucket = buckets->second.find(ValueIndexKey(value));
+  const auto bucket = buckets->second.find(value);
   if (bucket == buckets->second.end()) {
     return MakePointerCursor<RelationshipPtr>({});
   }
@@ -704,7 +704,7 @@ std::vector<InMemoryGraph::NodePtr> InMemoryGraph::FindNodesByIndex(
   if (buckets_found == node_index_buckets_.end()) {
     return result;
   }
-  const auto bucket_found = buckets_found->second.find(ValueIndexKey(value));
+  const auto bucket_found = buckets_found->second.find(value);
   if (bucket_found == buckets_found->second.end()) {
     return result;
   }
@@ -768,7 +768,7 @@ InMemoryGraph::FindRelationshipsByIndex(
   if (buckets_found == relationship_index_buckets_.end()) {
     return result;
   }
-  const auto bucket_found = buckets_found->second.find(ValueIndexKey(value));
+  const auto bucket_found = buckets_found->second.find(value);
   if (bucket_found == buckets_found->second.end()) {
     return result;
   }
@@ -998,10 +998,6 @@ std::string InMemoryGraph::IndexKey(std::vector<std::string> qualifiers,
   return key;
 }
 
-std::string InMemoryGraph::ValueIndexKey(const Value &value) {
-  return ValueKey(value);
-}
-
 void InMemoryGraph::AddNodeToIndexes(const NodePtr &node) {
   for (const auto &[index_key, descriptor] : node_indexes_) {
     AddNodeToIndex(index_key, descriptor, node);
@@ -1039,8 +1035,7 @@ void InMemoryGraph::AddNodeToIndex(const std::string &index_key,
   if (property == node->properties.end()) {
     return;
   }
-  node_index_buckets_[index_key][ValueIndexKey(property->second)].push_back(
-      node);
+  node_index_buckets_[index_key][property->second].push_back(node);
 }
 
 void InMemoryGraph::RemoveNodeFromIndex(const std::string &index_key,
@@ -1058,7 +1053,7 @@ void InMemoryGraph::RemoveNodeFromIndex(const std::string &index_key,
   if (buckets == node_index_buckets_.end()) {
     return;
   }
-  auto bucket = buckets->second.find(ValueIndexKey(property->second));
+  auto bucket = buckets->second.find(property->second);
   if (bucket == buckets->second.end()) {
     return;
   }
@@ -1080,8 +1075,8 @@ void InMemoryGraph::AddRelationshipToIndex(
   if (property == relationship->properties.end()) {
     return;
   }
-  relationship_index_buckets_[index_key][ValueIndexKey(property->second)]
-      .push_back(relationship);
+  relationship_index_buckets_[index_key][property->second].push_back(
+      relationship);
 }
 
 void InMemoryGraph::RemoveRelationshipFromIndex(
@@ -1100,7 +1095,7 @@ void InMemoryGraph::RemoveRelationshipFromIndex(
   if (buckets == relationship_index_buckets_.end()) {
     return;
   }
-  auto bucket = buckets->second.find(ValueIndexKey(property->second));
+  auto bucket = buckets->second.find(property->second);
   if (bucket == buckets->second.end()) {
     return;
   }
@@ -1143,7 +1138,7 @@ InMemoryGraph::PropertyDistribution InMemoryGraph::NodePropertyDistribution(
     const std::unordered_set<std::string> &labels,
     std::string_view property_key) const {
   PropertyDistribution distribution;
-  std::unordered_set<std::string> distinct_values;
+  std::unordered_set<Value, ValueHash, ValueEqual> distinct_values;
   const std::string key(property_key);
   for (const auto &node : nodes_) {
     if (node == nullptr || !NodeHasLabelSet(*node, labels)) {
@@ -1155,7 +1150,7 @@ InMemoryGraph::PropertyDistribution InMemoryGraph::NodePropertyDistribution(
       continue;
     }
     distribution.entities_with_property += 1.0;
-    distinct_values.insert(ValueIndexKey(property->second));
+    distinct_values.insert(property->second);
   }
   distribution.distinct_values = static_cast<double>(distinct_values.size());
   return distribution;
@@ -1166,7 +1161,7 @@ InMemoryGraph::RelationshipPropertyDistribution(
     const std::vector<std::string> &relationship_types,
     std::string_view property_key) const {
   PropertyDistribution distribution;
-  std::unordered_set<std::string> distinct_values;
+  std::unordered_set<Value, ValueHash, ValueEqual> distinct_values;
   const std::string key(property_key);
   for (const auto &relationship : relationships_) {
     if (relationship == nullptr ||
@@ -1179,7 +1174,7 @@ InMemoryGraph::RelationshipPropertyDistribution(
       continue;
     }
     distribution.entities_with_property += 1.0;
-    distinct_values.insert(ValueIndexKey(property->second));
+    distinct_values.insert(property->second);
   }
   distribution.distinct_values = static_cast<double>(distinct_values.size());
   return distribution;

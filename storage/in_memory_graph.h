@@ -199,13 +199,13 @@ class InMemoryGraph final : public Storage,
   };
 
   using NodeIndexBuckets =
-      std::unordered_map<std::string, std::vector<NodePtr>>;
+      std::unordered_map<Value, std::vector<NodePtr>, ValueHash, ValueEqual>;
   using RelationshipIndexBuckets =
-      std::unordered_map<std::string, std::vector<RelationshipPtr>>;
+      std::unordered_map<Value, std::vector<RelationshipPtr>, ValueHash,
+                         ValueEqual>;
 
   [[nodiscard]] static std::string IndexKey(std::vector<std::string> qualifiers,
                                             std::string_view property_key);
-  [[nodiscard]] static std::string ValueIndexKey(const Value &value);
 
   void AddNodeToIndexes(const NodePtr &node);
   void RemoveNodeFromIndexes(const NodePtr &node);

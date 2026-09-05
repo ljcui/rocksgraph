@@ -2,7 +2,7 @@
 
 #include <cassert>
 #include <cmath>
-#include <iomanip>
+#include <functional>
 #include <limits>
 #include <sstream>
 
@@ -25,6 +25,95 @@ bool PtrEqual(const Value::RelationshipPtr &left,
     return left == right;
   }
   return *left == *right;
+}
+
+bool DoubleAsInteger(double value, std::int64_t *integer) noexcept {
+  if (!std::isfinite(value) || std::trunc(value) != value ||
+      value < static_cast<double>(std::numeric_limits<std::int64_t>::min()) ||
+      value >= static_cast<double>(std::numeric_limits<std::int64_t>::max())) {
+    return false;
+  }
+  *integer = static_cast<std::int64_t>(value);
+  return true;
+}
+
+bool NumericEqual(const Value &left, const Value &right,
+                  bool nan_equal) noexcept {
+  if (left.IsInteger() && right.IsInteger()) {
+    return left.AsInteger() == right.AsInteger();
+  }
+  if (left.IsDouble() && right.IsDouble()) {
+    const double lhs = left.AsDouble();
+    const double rhs = right.AsDouble();
+    return lhs == rhs || (nan_equal && std::isnan(lhs) && std::isnan(rhs));
+  }
+  const Value &integer = left.IsInteger() ? left : right;
+  const Value &floating = left.IsDouble() ? left : right;
+  std::int64_t converted = 0;
+  return DoubleAsInteger(floating.AsDouble(), &converted) &&
+         integer.AsInteger() == converted;
+}
+
+std::size_t HashCombine(std::size_t seed, std::size_t value) noexcept {
+  constexpr std::size_t kMagic =
+      static_cast<std::size_t>(0x9e3779b97f4a7c15ULL);
+  return seed ^ (value + kMagic + (seed << 6U) + (seed >> 2U));
+}
+
+std::size_t HashTag(ValueType type) noexcept {
+  return std::hash<int>{}(static_cast<int>(type));
+}
+
+std::size_t HashInteger(std::int64_t value) noexcept {
+  return std::hash<std::int64_t>{}(value);
+}
+
+std::size_t HashDouble(double value) noexcept {
+  if (std::isnan(value)) {
+    return static_cast<std::size_t>(0x7ff8000000000000ULL);
+  }
+  if (value == 0.0) {
+    value = 0.0;
+  }
+  return std::hash<double>{}(value);
+}
+
+std::size_t HashNumber(const Value &value) noexcept {
+  std::int64_t integer = 0;
+  if (value.IsInteger()) {
+    integer = value.AsInteger();
+  } else if (!DoubleAsInteger(value.AsDouble(), &integer)) {
+    return HashCombine(HashTag(ValueType::kInteger),
+                       HashDouble(value.AsDouble()));
+  }
+  return HashCombine(HashTag(ValueType::kInteger), HashInteger(integer));
+}
+
+template <typename Integer>
+void AddIntegerHash(std::size_t *seed, Integer value) noexcept {
+  *seed = HashCombine(*seed, std::hash<Integer>{}(value));
+}
+
+void AddLocalTimeHash(std::size_t *seed, const LocalTime &time) noexcept {
+  AddIntegerHash(seed, time.hour);
+  AddIntegerHash(seed, time.minute);
+  AddIntegerHash(seed, time.second);
+  AddIntegerHash(seed, time.nanosecond);
+}
+
+template <typename Entity>
+bool EntityIdentityEqual(const std::shared_ptr<Entity> &left,
+                         const std::shared_ptr<Entity> &right) noexcept {
+  if (!left || !right) {
+    return left == right;
+  }
+  return left->id == right->id;
+}
+
+template <typename Entity>
+void AddEntityIdentityHash(std::size_t *seed,
+                           const std::shared_ptr<Entity> &entity) noexcept {
+  *seed = HashCombine(*seed, entity ? HashInteger(entity->id) : 0U);
 }
 
 void AppendValue(std::ostringstream &oss, const Value &value);
@@ -515,23 +604,7 @@ bool ValuesEqual(const Value &left, const Value &right) {
   const bool left_numeric = left.IsInteger() || left.IsDouble();
   const bool right_numeric = right.IsInteger() || right.IsDouble();
   if (left_numeric && right_numeric) {
-    if (left.IsInteger() && right.IsInteger()) {
-      return left.AsInteger() == right.AsInteger();
-    }
-    if (left.IsDouble() && right.IsDouble()) {
-      return left.AsDouble() == right.AsDouble();
-    }
-    const Value &integer = left.IsInteger() ? left : right;
-    const Value &floating = left.IsDouble() ? left : right;
-    const double number = floating.AsDouble();
-    if (!std::isfinite(number) || std::trunc(number) != number ||
-        number <
-            static_cast<double>(std::numeric_limits<std::int64_t>::min()) ||
-        number >=
-            static_cast<double>(std::numeric_limits<std::int64_t>::max())) {
-      return false;
-    }
-    return integer.AsInteger() == static_cast<std::int64_t>(number);
+    return NumericEqual(left, right, false);
   }
   if (left.Type() != right.Type()) {
     return false;
@@ -568,50 +641,237 @@ bool ValuesEqual(const Value &left, const Value &right) {
   return left == right;
 }
 
-std::string ValueKey(const Value &value) {
-  if (value.IsNode()) {
-    return "node:" + std::to_string(value.AsNode().id);
+bool CompositeValueKey::operator==(
+    const CompositeValueKey &other) const noexcept {
+  return ValueEqual{}(*this, other);
+}
+
+bool ValueEqual::operator()(const Value &left,
+                            const Value &right) const noexcept {
+  const bool left_numeric = left.IsInteger() || left.IsDouble();
+  const bool right_numeric = right.IsInteger() || right.IsDouble();
+  if (left_numeric && right_numeric) {
+    return NumericEqual(left, right, true);
   }
-  if (value.IsRelationship()) {
-    return "relationship:" + std::to_string(value.AsRelationship().id);
+  if (left.Type() != right.Type()) {
+    return false;
   }
-  if (value.IsInteger()) {
-    return "number:" + std::to_string(value.AsInteger());
-  }
-  if (value.IsDouble()) {
-    const double number = value.AsDouble();
-    if (std::isfinite(number) && std::trunc(number) == number &&
-        number >=
-            static_cast<double>(std::numeric_limits<std::int64_t>::min()) &&
-        number <
-            static_cast<double>(std::numeric_limits<std::int64_t>::max())) {
-      return "number:" + std::to_string(static_cast<std::int64_t>(number));
+  switch (left.Type()) {
+    case ValueType::kNull:
+      return true;
+    case ValueType::kBool:
+      return left.AsBool() == right.AsBool();
+    case ValueType::kInteger:
+    case ValueType::kDouble:
+      return NumericEqual(left, right, true);
+    case ValueType::kString:
+      return left.AsString() == right.AsString();
+    case ValueType::kList: {
+      const auto &lhs = left.AsList();
+      const auto &rhs = right.AsList();
+      if (lhs.size() != rhs.size()) {
+        return false;
+      }
+      for (std::size_t index = 0; index < lhs.size(); ++index) {
+        if (!(*this)(lhs[index], rhs[index])) {
+          return false;
+        }
+      }
+      return true;
     }
-    std::ostringstream key;
-    key << "number:"
-        << std::setprecision(std::numeric_limits<double>::max_digits10)
-        << number;
-    return key.str();
-  }
-  if (value.IsList()) {
-    std::string key = "list:[";
-    for (const Value &item : value.AsList()) {
-      const std::string item_key = ValueKey(item);
-      key += std::to_string(item_key.size()) + ":" + item_key;
+    case ValueType::kMap: {
+      const auto &lhs = left.AsMap();
+      const auto &rhs = right.AsMap();
+      if (lhs.size() != rhs.size()) {
+        return false;
+      }
+      auto left_item = lhs.begin();
+      auto right_item = rhs.begin();
+      while (left_item != lhs.end()) {
+        if (left_item->first != right_item->first ||
+            !(*this)(left_item->second, right_item->second)) {
+          return false;
+        }
+        ++left_item;
+        ++right_item;
+      }
+      return true;
     }
-    return key + "]";
-  }
-  if (value.IsMap()) {
-    std::string key = "map:{";
-    for (const auto &[name, item] : value.AsMap()) {
-      const std::string item_key = ValueKey(item);
-      key += std::to_string(name.size()) + ":" + name +
-             std::to_string(item_key.size()) + ":" + item_key;
+    case ValueType::kNode:
+      return left.AsNode().id == right.AsNode().id;
+    case ValueType::kRelationship:
+      return left.AsRelationship().id == right.AsRelationship().id;
+    case ValueType::kPath: {
+      const Path &lhs = left.AsPath();
+      const Path &rhs = right.AsPath();
+      if (lhs.nodes.size() != rhs.nodes.size() ||
+          lhs.relationships.size() != rhs.relationships.size()) {
+        return false;
+      }
+      for (std::size_t index = 0; index < lhs.nodes.size(); ++index) {
+        if (!EntityIdentityEqual(lhs.nodes[index], rhs.nodes[index])) {
+          return false;
+        }
+      }
+      for (std::size_t index = 0; index < lhs.relationships.size(); ++index) {
+        if (!EntityIdentityEqual(lhs.relationships[index],
+                                 rhs.relationships[index])) {
+          return false;
+        }
+      }
+      return true;
     }
-    return key + "}";
+    case ValueType::kDate:
+      return left.AsDate() == right.AsDate();
+    case ValueType::kLocalTime:
+      return left.AsLocalTime() == right.AsLocalTime();
+    case ValueType::kTime:
+      return left.AsTime() == right.AsTime();
+    case ValueType::kLocalDateTime:
+      return left.AsLocalDateTime() == right.AsLocalDateTime();
+    case ValueType::kDateTime:
+      return left.AsDateTime() == right.AsDateTime();
+    case ValueType::kDuration:
+      return left.AsDuration() == right.AsDuration();
+    case ValueType::kPoint: {
+      const Point &lhs = left.AsPoint();
+      const Point &rhs = right.AsPoint();
+      if (lhs.srid != rhs.srid ||
+          lhs.coordinates.size() != rhs.coordinates.size()) {
+        return false;
+      }
+      for (std::size_t index = 0; index < lhs.coordinates.size(); ++index) {
+        const double left_coordinate = lhs.coordinates[index];
+        const double right_coordinate = rhs.coordinates[index];
+        if (left_coordinate != right_coordinate &&
+            !(std::isnan(left_coordinate) && std::isnan(right_coordinate))) {
+          return false;
+        }
+      }
+      return true;
+    }
   }
-  return std::to_string(static_cast<int>(value.Type())) + ":" +
-         value.ToString();
+  return false;
+}
+
+bool ValueEqual::operator()(const CompositeValueKey &left,
+                            const CompositeValueKey &right) const noexcept {
+  if (left.values.size() != right.values.size()) {
+    return false;
+  }
+  for (std::size_t index = 0; index < left.values.size(); ++index) {
+    if (!(*this)(left.values[index], right.values[index])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+std::size_t ValueHash::operator()(const Value &value) const noexcept {
+  if (value.IsInteger() || value.IsDouble()) {
+    return HashNumber(value);
+  }
+
+  std::size_t seed = HashTag(value.Type());
+  switch (value.Type()) {
+    case ValueType::kNull:
+      return seed;
+    case ValueType::kBool:
+      return HashCombine(seed, std::hash<bool>{}(value.AsBool()));
+    case ValueType::kInteger:
+    case ValueType::kDouble:
+      return HashNumber(value);
+    case ValueType::kString:
+      return HashCombine(seed, std::hash<std::string>{}(value.AsString()));
+    case ValueType::kList:
+      AddIntegerHash(&seed, value.AsList().size());
+      for (const Value &item : value.AsList()) {
+        seed = HashCombine(seed, (*this)(item));
+      }
+      return seed;
+    case ValueType::kMap:
+      AddIntegerHash(&seed, value.AsMap().size());
+      for (const auto &[name, item] : value.AsMap()) {
+        seed = HashCombine(seed, std::hash<std::string>{}(name));
+        seed = HashCombine(seed, (*this)(item));
+      }
+      return seed;
+    case ValueType::kNode:
+      return HashCombine(seed, HashInteger(value.AsNode().id));
+    case ValueType::kRelationship:
+      return HashCombine(seed, HashInteger(value.AsRelationship().id));
+    case ValueType::kPath: {
+      const Path &path = value.AsPath();
+      AddIntegerHash(&seed, path.nodes.size());
+      for (const auto &node : path.nodes) {
+        AddEntityIdentityHash(&seed, node);
+      }
+      AddIntegerHash(&seed, path.relationships.size());
+      for (const auto &relationship : path.relationships) {
+        AddEntityIdentityHash(&seed, relationship);
+      }
+      return seed;
+    }
+    case ValueType::kDate: {
+      const Date &date = value.AsDate();
+      AddIntegerHash(&seed, date.year);
+      AddIntegerHash(&seed, date.month);
+      AddIntegerHash(&seed, date.day);
+      return seed;
+    }
+    case ValueType::kLocalTime:
+      AddLocalTimeHash(&seed, value.AsLocalTime());
+      return seed;
+    case ValueType::kTime: {
+      const Time &time = value.AsTime();
+      AddLocalTimeHash(&seed, time.local_time);
+      AddIntegerHash(&seed, time.utc_offset_seconds);
+      return HashCombine(seed, std::hash<std::string>{}(time.timezone));
+    }
+    case ValueType::kLocalDateTime: {
+      const LocalDateTime &date_time = value.AsLocalDateTime();
+      AddIntegerHash(&seed, date_time.date.year);
+      AddIntegerHash(&seed, date_time.date.month);
+      AddIntegerHash(&seed, date_time.date.day);
+      AddLocalTimeHash(&seed, date_time.time);
+      return seed;
+    }
+    case ValueType::kDateTime: {
+      const DateTime &date_time = value.AsDateTime();
+      AddIntegerHash(&seed, date_time.local_date_time.date.year);
+      AddIntegerHash(&seed, date_time.local_date_time.date.month);
+      AddIntegerHash(&seed, date_time.local_date_time.date.day);
+      AddLocalTimeHash(&seed, date_time.local_date_time.time);
+      AddIntegerHash(&seed, date_time.utc_offset_seconds);
+      return HashCombine(seed, std::hash<std::string>{}(date_time.timezone));
+    }
+    case ValueType::kDuration: {
+      const Duration &duration = value.AsDuration();
+      AddIntegerHash(&seed, duration.months);
+      AddIntegerHash(&seed, duration.days);
+      AddIntegerHash(&seed, duration.seconds);
+      AddIntegerHash(&seed, duration.nanoseconds);
+      return seed;
+    }
+    case ValueType::kPoint: {
+      const Point &point = value.AsPoint();
+      AddIntegerHash(&seed, point.srid);
+      AddIntegerHash(&seed, point.coordinates.size());
+      for (double coordinate : point.coordinates) {
+        seed = HashCombine(seed, HashDouble(coordinate));
+      }
+      return seed;
+    }
+  }
+  return seed;
+}
+
+std::size_t ValueHash::operator()(const CompositeValueKey &key) const noexcept {
+  std::size_t seed = std::hash<std::size_t>{}(key.values.size());
+  for (const Value &value : key.values) {
+    seed = HashCombine(seed, (*this)(value));
+  }
+  return seed;
 }
 
 bool operator==(const Node &left, const Node &right) {

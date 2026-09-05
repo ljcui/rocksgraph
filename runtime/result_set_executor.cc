@@ -1,6 +1,7 @@
 #include "runtime/result_set_executor.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -73,20 +74,22 @@ ValueOrder CompareValues(const Value &left, const Value &right) {
     return ValueOrder::kEquivalent;
   }
 
+  if (IsNumeric(left) && IsNumeric(right)) {
+    const bool left_nan = left.IsDouble() && std::isnan(left.AsDouble());
+    const bool right_nan = right.IsDouble() && std::isnan(right.AsDouble());
+    if (left_nan || right_nan) {
+      return left_nan == right_nan
+                 ? ValueOrder::kEquivalent
+                 : (left_nan ? ValueOrder::kGreater : ValueOrder::kLess);
+    }
+  }
+
   const bool left_less = ValueLess(left, right);
   const bool right_less = ValueLess(right, left);
   if (left_less != right_less) {
     return left_less ? ValueOrder::kLess : ValueOrder::kGreater;
   }
 
-  const std::string left_key = ValueKey(left);
-  const std::string right_key = ValueKey(right);
-  if (left_key < right_key) {
-    return ValueOrder::kLess;
-  }
-  if (right_key < left_key) {
-    return ValueOrder::kGreater;
-  }
   return ValueOrder::kEquivalent;
 }
 

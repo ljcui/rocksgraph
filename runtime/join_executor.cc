@@ -15,18 +15,16 @@
 namespace rg {
 namespace {
 
-std::optional<std::string> CompositeJoinKey(
+std::optional<CompositeValueKey> CompositeJoinKey(
     const QueryRow &row, const std::vector<std::string> &join_keys) {
-  std::string key;
+  CompositeValueKey key;
+  key.values.reserve(join_keys.size());
   for (const auto &name : join_keys) {
     const Value &value = LookupQueryVariable(row, name);
     if (value.IsNull()) {
       return std::nullopt;
     }
-    const std::string value_key = ValueKey(value);
-    key.append(std::to_string(value_key.size()));
-    key.push_back(':');
-    key.append(value_key);
+    key.values.push_back(value);
   }
   return key;
 }
@@ -74,9 +72,12 @@ QueryRows JoinExecutor::Execute(const ir::CartesianProductPlan &plan,
 QueryRows JoinExecutor::Execute(const ir::NodeHashJoinPlan &plan,
                                 const QueryRows &left,
                                 const QueryRows &right) const {
-  std::unordered_map<std::string, std::vector<const QueryRow *>> buckets;
+  std::unordered_map<CompositeValueKey, std::vector<const QueryRow *>,
+                     ValueHash, ValueEqual>
+      buckets;
   for (const auto &row : right) {
-    std::optional<std::string> key = CompositeJoinKey(row, plan.JoinKeys());
+    std::optional<CompositeValueKey> key =
+        CompositeJoinKey(row, plan.JoinKeys());
     if (key.has_value()) {
       buckets[*key].push_back(&row);
     }
@@ -84,7 +85,7 @@ QueryRows JoinExecutor::Execute(const ir::NodeHashJoinPlan &plan,
 
   QueryRows out;
   for (const auto &left_row : left) {
-    std::optional<std::string> key =
+    std::optional<CompositeValueKey> key =
         CompositeJoinKey(left_row, plan.JoinKeys());
     if (!key.has_value()) {
       continue;

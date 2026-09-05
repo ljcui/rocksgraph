@@ -13,6 +13,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -49,7 +50,8 @@ struct Scenario {
 struct GraphSnapshot {
   std::set<std::string> nodes;
   std::set<std::string> relationships;
-  std::set<std::string> properties;
+  std::unordered_set<rg::CompositeValueKey, rg::ValueHash, rg::ValueEqual>
+      properties;
   std::set<std::string> labels;
 };
 
@@ -503,8 +505,8 @@ GraphSnapshot Snapshot(const rg::InMemoryGraph &graph) {
       snapshot.labels.insert(label);
     }
     for (const auto &[key, value] : node->properties) {
-      snapshot.properties.insert(entity + ":" + key + ":" +
-                                 rg::ValueKey(value));
+      snapshot.properties.insert(rg::CompositeValueKey{
+          .values = {rg::Value(entity), rg::Value(key), value}});
     }
   }
   for (const auto &relationship : graph.Relationships()) {
@@ -512,8 +514,8 @@ GraphSnapshot Snapshot(const rg::InMemoryGraph &graph) {
         "relationship:" + std::to_string(relationship->id);
     snapshot.relationships.insert(entity);
     for (const auto &[key, value] : relationship->properties) {
-      snapshot.properties.insert(entity + ":" + key + ":" +
-                                 rg::ValueKey(value));
+      snapshot.properties.insert(rg::CompositeValueKey{
+          .values = {rg::Value(entity), rg::Value(key), value}});
     }
   }
   return snapshot;
@@ -524,21 +526,18 @@ std::map<std::string, std::int64_t> SideEffects(const GraphSnapshot &before,
   const auto add_effect = [](std::map<std::string, std::int64_t> *effects,
                              std::string_view name, const auto &old_values,
                              const auto &new_values) {
-    std::vector<std::string> added;
-    std::vector<std::string> removed;
-    std::set_difference(new_values.begin(), new_values.end(),
-                        old_values.begin(), old_values.end(),
-                        std::back_inserter(added));
-    std::set_difference(old_values.begin(), old_values.end(),
-                        new_values.begin(), new_values.end(),
-                        std::back_inserter(removed));
-    if (!added.empty()) {
-      (*effects)["+" + std::string(name)] =
-          static_cast<std::int64_t>(added.size());
+    const auto difference_size = [](const auto &left, const auto &right) {
+      return std::count_if(
+          left.begin(), left.end(),
+          [&right](const auto &value) { return !right.contains(value); });
+    };
+    const std::int64_t added = difference_size(new_values, old_values);
+    const std::int64_t removed = difference_size(old_values, new_values);
+    if (added != 0) {
+      (*effects)["+" + std::string(name)] = added;
     }
-    if (!removed.empty()) {
-      (*effects)["-" + std::string(name)] =
-          static_cast<std::int64_t>(removed.size());
+    if (removed != 0) {
+      (*effects)["-" + std::string(name)] = removed;
     }
   };
   std::map<std::string, std::int64_t> effects;

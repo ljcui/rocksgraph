@@ -1,7 +1,7 @@
 #include "runtime/row_operator_executor.h"
 
-#include <set>
 #include <string>
+#include <unordered_set>
 #include <utility>
 
 #include "common/exception.h"
@@ -98,12 +98,15 @@ QueryRows RowOperatorExecutor::Execute(const ir::UnionPlan &plan,
                                        const QueryRows &left_rows,
                                        const QueryRows &right_rows) const {
   QueryRows out;
-  std::set<std::string> seen;
+  std::unordered_set<CompositeValueKey, ValueHash, ValueEqual> seen;
 
   auto append_rows = [&](const QueryRows &rows, bool left_side) {
     for (const auto &row : rows) {
       QueryRow mapped;
-      std::string key;
+      CompositeValueKey key;
+      if (!plan.All()) {
+        key.values.reserve(plan.Mappings().size());
+      }
       for (const auto &mapping : plan.Mappings()) {
         const std::string &source =
             left_side ? mapping.lhs_variable : mapping.rhs_variable;
@@ -112,10 +115,7 @@ QueryRows RowOperatorExecutor::Execute(const ir::UnionPlan &plan,
               "UNION source variable is not bound: " + source);
         mapped[mapping.output_variable] = found->second;
         if (!plan.All()) {
-          key += mapping.output_variable;
-          key += '=';
-          key += ValueKey(found->second);
-          key += '\n';
+          key.values.push_back(found->second);
         }
       }
       if (plan.All() || seen.insert(std::move(key)).second) {

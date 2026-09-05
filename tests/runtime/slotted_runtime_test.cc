@@ -100,3 +100,30 @@ TEST(SlottedRuntimeTest, ReportsPeakMemoryForBlockingOperators) {
 
   EXPECT_GT(result.peak_memory_bytes, 0U);
 }
+
+TEST(SlottedRuntimeTest, UsesTypedKeysAcrossSetOperators) {
+  rg::InMemoryGraph graph;
+
+  const rg::QueryResult distinct =
+      rg::ExecuteReadQuery(graph, "UNWIND [1, 1.0, 2] AS x RETURN DISTINCT x");
+  ASSERT_EQ(distinct.rows.size(), 2U);
+  EXPECT_TRUE(rg::ValuesEqual(distinct.rows[0][0], rg::Value(1)));
+  EXPECT_TRUE(rg::ValuesEqual(distinct.rows[1][0], rg::Value(2)));
+
+  const rg::QueryResult grouped = rg::ExecuteReadQuery(
+      graph, "UNWIND [1, 1.0, 2] AS x RETURN x, count(*) AS count");
+  ASSERT_EQ(grouped.rows.size(), 2U);
+  EXPECT_TRUE(rg::ValuesEqual(grouped.rows[0][0], rg::Value(1)));
+  EXPECT_EQ(grouped.rows[0][1], rg::Value(2));
+  EXPECT_TRUE(rg::ValuesEqual(grouped.rows[1][0], rg::Value(2)));
+  EXPECT_EQ(grouped.rows[1][1], rg::Value(1));
+
+  const rg::QueryResult aggregate_distinct = rg::ExecuteReadQuery(
+      graph, "UNWIND [1, 1.0, 2] AS x RETURN count(DISTINCT x) AS count");
+  ASSERT_EQ(aggregate_distinct.rows.size(), 1U);
+  EXPECT_EQ(aggregate_distinct.rows[0][0], rg::Value(2));
+
+  const rg::QueryResult union_distinct = rg::ExecuteReadQuery(
+      graph, "RETURN [1] AS value UNION RETURN [1.0] AS value");
+  EXPECT_EQ(union_distinct.rows.size(), 1U);
+}
