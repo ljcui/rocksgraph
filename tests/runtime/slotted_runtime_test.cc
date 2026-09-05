@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <cstdint>
 #include <limits>
 #include <memory>
 #include <vector>
@@ -100,6 +101,33 @@ TEST(SlottedRuntimeTest, ReportsPeakMemoryForBlockingOperators) {
       rg::ExecuteReadQuery(graph, "UNWIND [3, 1, 2] AS x RETURN x ORDER BY x");
 
   EXPECT_GT(result.peak_memory_bytes, 0U);
+}
+
+TEST(SlottedRuntimeTest, KeepsBasicAggregationMemoryBounded) {
+  rg::InMemoryGraph graph;
+  for (std::int64_t value = 1; value <= 256; ++value) {
+    graph.CreateNode({"N"}, {{"value", rg::Value(value)}});
+  }
+  rg::QueryOptions options;
+  options.execution.memory_limit_bytes = 4096;
+
+  const rg::QueryResult result =
+      rg::ExecuteReadQuery(graph,
+                           "MATCH (n:N) "
+                           "RETURN count(*) AS rows, count(n.value) AS values, "
+                           "sum(n.value) AS total, avg(n.value) AS average, "
+                           "min(n.value) AS minimum, max(n.value) AS maximum",
+                           options);
+
+  ASSERT_EQ(result.rows.size(), 1U);
+  ASSERT_EQ(result.rows[0].size(), 6U);
+  EXPECT_EQ(result.rows[0][0], rg::Value(256));
+  EXPECT_EQ(result.rows[0][1], rg::Value(256));
+  EXPECT_EQ(result.rows[0][2], rg::Value(32896));
+  EXPECT_EQ(result.rows[0][3], rg::Value(128.5));
+  EXPECT_EQ(result.rows[0][4], rg::Value(1));
+  EXPECT_EQ(result.rows[0][5], rg::Value(256));
+  EXPECT_LE(result.peak_memory_bytes, options.execution.memory_limit_bytes);
 }
 
 TEST(SlottedRuntimeTest, UsesTypedKeysAcrossSetOperators) {

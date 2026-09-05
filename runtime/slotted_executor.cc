@@ -750,6 +750,174 @@ std::int64_t CheckedCount(std::size_t size) {
   return static_cast<std::int64_t>(size);
 }
 
+enum class AggregateAccumulatorKind {
+  kBuffered,
+  kCountStar,
+  kCount,
+  kSum,
+  kAverage,
+  kMinimum,
+  kMaximum,
+};
+
+struct AggregateAccumulator {
+  const ir::LogicalProjectionItem *item = nullptr;
+  const ast::Expression *argument = nullptr;
+  AggregateAccumulatorKind kind = AggregateAccumulatorKind::kBuffered;
+  std::size_t count = 0;
+  std::int64_t integer_sum = 0;
+  double floating_sum = 0.0;
+  bool integral_sum = true;
+  std::optional<Value> best;
+};
+
+AggregateAccumulator CreateAggregateAccumulator(
+    const ir::LogicalProjectionItem &item) {
+  CHECK(item.expression != nullptr, common::InvalidArgumentError,
+        "aggregation expression is null");
+  AggregateAccumulator accumulator{.item = &item};
+  if (item.expression->Is(ast::ASTNodeType::kCountStarExpression)) {
+    accumulator.kind = AggregateAccumulatorKind::kCountStar;
+    return accumulator;
+  }
+
+  CHECK(item.expression->Is(ast::ASTNodeType::kFunctionInvocation),
+        common::InvalidArgumentError, "unsupported aggregation expression");
+  const auto &function =
+      ast::CastAst<ast::FunctionInvocation>(*item.expression);
+  const ast::BuiltinFunction *builtin =
+      ast::FindBuiltinFunction(function.function_name);
+  CHECK(builtin != nullptr && builtin->aggregate, common::InvalidArgumentError,
+        "function is not an aggregate: " + function.function_name);
+  CHECK(!function.arguments.empty() && function.arguments[0] != nullptr,
+        common::InvalidArgumentError,
+        function.function_name + "() argument is null");
+  accumulator.argument = function.arguments[0].get();
+  if (function.distinct) {
+    return accumulator;
+  }
+
+  switch (builtin->kind) {
+    case ast::BuiltinFunctionKind::kCount:
+      accumulator.kind = AggregateAccumulatorKind::kCount;
+      break;
+    case ast::BuiltinFunctionKind::kSum:
+      accumulator.kind = AggregateAccumulatorKind::kSum;
+      break;
+    case ast::BuiltinFunctionKind::kAverage:
+      accumulator.kind = AggregateAccumulatorKind::kAverage;
+      break;
+    case ast::BuiltinFunctionKind::kMinimum:
+      accumulator.kind = AggregateAccumulatorKind::kMinimum;
+      break;
+    case ast::BuiltinFunctionKind::kMaximum:
+      accumulator.kind = AggregateAccumulatorKind::kMaximum;
+      break;
+    default:
+      break;
+  }
+  return accumulator;
+}
+
+std::size_t EstimatedStoredValueHeapUsage(const Value &value) {
+  const std::size_t bytes = EstimatedValueHeapUsage(value);
+  return bytes > sizeof(Value) ? bytes - sizeof(Value) : 0U;
+}
+
+void ReplaceAccumulatorValue(AggregateAccumulator *accumulator, Value value,
+                             RuntimeState *state, std::size_t *reserved_bytes) {
+  CHECK(accumulator != nullptr && state != nullptr && reserved_bytes != nullptr,
+        common::InternalError, "aggregate accumulator state is null");
+  const std::size_t old_bytes =
+      accumulator->best.has_value()
+          ? EstimatedStoredValueHeapUsage(*accumulator->best)
+          : 0U;
+  const std::size_t new_bytes = EstimatedStoredValueHeapUsage(value);
+  if (new_bytes > old_bytes) {
+    state->memory_tracker.Reserve(new_bytes - old_bytes);
+    *reserved_bytes += new_bytes - old_bytes;
+  }
+  accumulator->best.emplace(std::move(value));
+  if (old_bytes > new_bytes) {
+    state->memory_tracker.Release(old_bytes - new_bytes);
+    *reserved_bytes -= old_bytes - new_bytes;
+  }
+}
+
+void UpdateAggregateAccumulator(AggregateAccumulator *accumulator,
+                                const SlottedRow &row, RuntimeState *state,
+                                std::size_t *reserved_bytes) {
+  CHECK(accumulator != nullptr && accumulator->item != nullptr &&
+            state != nullptr,
+        common::InternalError, "aggregate accumulator is incomplete");
+  if (accumulator->kind == AggregateAccumulatorKind::kBuffered) {
+    return;
+  }
+  if (accumulator->kind == AggregateAccumulatorKind::kCountStar) {
+    ++accumulator->count;
+    return;
+  }
+
+  CHECK(accumulator->argument != nullptr, common::InternalError,
+        "aggregate accumulator argument is null");
+  Value value = Evaluate(*accumulator->argument, row,
+                         accumulator->item->precomputed_expressions, *state);
+  if (value.IsNull()) {
+    return;
+  }
+
+  switch (accumulator->kind) {
+    case AggregateAccumulatorKind::kCount:
+      ++accumulator->count;
+      return;
+    case AggregateAccumulatorKind::kSum: {
+      CHECK(IsNumeric(value), common::InvalidArgumentError,
+            "sum() expects numeric values");
+      if (value.IsInteger() && accumulator->integral_sum) {
+        const std::int64_t addend = value.AsInteger();
+        CHECK((addend >= 0 &&
+               accumulator->integer_sum <=
+                   std::numeric_limits<std::int64_t>::max() - addend) ||
+                  (addend < 0 &&
+                   accumulator->integer_sum >=
+                       std::numeric_limits<std::int64_t>::min() - addend),
+              common::InvalidArgumentError, "integer sum overflow");
+        accumulator->integer_sum += addend;
+        return;
+      }
+      if (accumulator->integral_sum) {
+        accumulator->floating_sum =
+            static_cast<double>(accumulator->integer_sum);
+        accumulator->integral_sum = false;
+      }
+      accumulator->floating_sum += AsDoubleValue(value);
+      return;
+    }
+    case AggregateAccumulatorKind::kAverage:
+      CHECK(IsNumeric(value), common::InvalidArgumentError,
+            "avg() expects numeric values");
+      accumulator->floating_sum += AsDoubleValue(value);
+      ++accumulator->count;
+      return;
+    case AggregateAccumulatorKind::kMinimum:
+    case AggregateAccumulatorKind::kMaximum: {
+      const bool minimum =
+          accumulator->kind == AggregateAccumulatorKind::kMinimum;
+      if (!accumulator->best.has_value() ||
+          (minimum && ValueLess(value, *accumulator->best)) ||
+          (!minimum && ValueLess(*accumulator->best, value))) {
+        ReplaceAccumulatorValue(accumulator, std::move(value), state,
+                                reserved_bytes);
+      }
+      return;
+    }
+    case AggregateAccumulatorKind::kBuffered:
+    case AggregateAccumulatorKind::kCountStar:
+      break;
+  }
+  THROW(common::InternalError, "unexpected aggregate accumulator kind");
+}
+
 Value EvaluateAggregate(const ir::LogicalProjectionItem &item,
                         const std::vector<SlottedRow> &rows,
                         RuntimeState *state) {
@@ -890,6 +1058,43 @@ Value EvaluateAggregate(const ir::LogicalProjectionItem &item,
       THROW(common::InvalidArgumentError,
             "unsupported aggregate function: " + function.function_name);
   }
+}
+
+Value FinalizeAggregateAccumulator(AggregateAccumulator *accumulator,
+                                   const std::vector<SlottedRow> &rows,
+                                   RuntimeState *state,
+                                   std::size_t *reserved_bytes) {
+  CHECK(accumulator != nullptr && accumulator->item != nullptr,
+        common::InternalError, "aggregate accumulator is incomplete");
+  switch (accumulator->kind) {
+    case AggregateAccumulatorKind::kBuffered:
+      return EvaluateAggregate(*accumulator->item, rows, state);
+    case AggregateAccumulatorKind::kCountStar:
+    case AggregateAccumulatorKind::kCount:
+      return Value(CheckedCount(accumulator->count));
+    case AggregateAccumulatorKind::kSum:
+      return accumulator->integral_sum ? Value(accumulator->integer_sum)
+                                       : Value(accumulator->floating_sum);
+    case AggregateAccumulatorKind::kAverage:
+      return accumulator->count == 0
+                 ? Value::Null()
+                 : Value(accumulator->floating_sum /
+                         static_cast<double>(accumulator->count));
+    case AggregateAccumulatorKind::kMinimum:
+    case AggregateAccumulatorKind::kMaximum: {
+      if (!accumulator->best.has_value()) {
+        return Value::Null();
+      }
+      const std::size_t bytes =
+          EstimatedStoredValueHeapUsage(*accumulator->best);
+      Value result = std::move(*accumulator->best);
+      accumulator->best.reset();
+      state->memory_tracker.Release(bytes);
+      *reserved_bytes -= bytes;
+      return result;
+    }
+  }
+  THROW(common::InternalError, "unexpected aggregate accumulator kind");
 }
 
 int CompareValues(const Value &left, const Value &right) {
@@ -1872,9 +2077,21 @@ class BlockingUnaryOperator final : public PullOperator {
       case ir::LogicalPlanNodeType::kAggregation: {
         const auto &plan =
             static_cast<const ir::AggregationPlan &>(*node_->logical);
+        std::vector<AggregateAccumulator> accumulator_templates;
+        accumulator_templates.reserve(plan.AggregationItems().size());
+        bool buffers_inputs = false;
+        for (const auto &item : plan.AggregationItems()) {
+          accumulator_templates.push_back(CreateAggregateAccumulator(item));
+          buffers_inputs =
+              buffers_inputs || accumulator_templates.back().kind ==
+                                    AggregateAccumulatorKind::kBuffered;
+        }
         struct Group {
-          explicit Group(SlottedRow projected) : output(std::move(projected)) {}
+          Group(SlottedRow projected,
+                const std::vector<AggregateAccumulator> &templates)
+              : output(std::move(projected)), accumulators(templates) {}
           SlottedRow output;
+          std::vector<AggregateAccumulator> accumulators;
           std::vector<SlottedRow> inputs;
         };
         std::vector<std::unique_ptr<Group>> groups;
@@ -1893,25 +2110,35 @@ class BlockingUnaryOperator final : public PullOperator {
               projected.Set(plan.GroupingItems()[index].alias,
                             std::move(values[index]));
             }
-            groups.push_back(std::make_unique<Group>(std::move(projected)));
+            groups.push_back(std::make_unique<Group>(std::move(projected),
+                                                     accumulator_templates));
             const std::size_t key_bytes = EstimatedKeyHeapUsage(group->first);
             state_->memory_tracker.Reserve(key_bytes);
             reserved_bytes_ += key_bytes;
           }
-          const std::size_t bytes = input.EstimatedHeapUsage();
-          state_->memory_tracker.Reserve(bytes);
-          reserved_bytes_ += bytes;
-          groups[group->second]->inputs.push_back(input);
+          Group *state = groups[group->second].get();
+          for (auto &accumulator : state->accumulators) {
+            UpdateAggregateAccumulator(&accumulator, input, state_,
+                                       &reserved_bytes_);
+          }
+          if (buffers_inputs) {
+            const std::size_t bytes = input.EstimatedHeapUsage();
+            state_->memory_tracker.Reserve(bytes);
+            reserved_bytes_ += bytes;
+            state->inputs.push_back(input);
+          }
         }
         if (plan.GroupingItems().empty() && groups.empty()) {
           group_indexes.emplace(CompositeValueKey{}, 0U);
-          groups.push_back(
-              std::make_unique<Group>(SlottedRow(node_->output_slots)));
+          groups.push_back(std::make_unique<Group>(
+              SlottedRow(node_->output_slots), accumulator_templates));
         }
         for (auto &group : groups) {
-          for (const auto &item : plan.AggregationItems()) {
-            group->output.Set(item.alias,
-                              EvaluateAggregate(item, group->inputs, state_));
+          for (auto &accumulator : group->accumulators) {
+            group->output.Set(
+                accumulator.item->alias,
+                FinalizeAggregateAccumulator(&accumulator, group->inputs,
+                                             state_, &reserved_bytes_));
           }
           BufferRow(std::move(group->output));
         }
