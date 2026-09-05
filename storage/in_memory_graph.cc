@@ -98,6 +98,20 @@ bool NodeHasLabelSet(const Node &node,
   return true;
 }
 
+bool NodeHasLabels(const Node &node, const std::vector<std::string> &labels) {
+  for (const auto &label : labels) {
+    if (!ContainsString(node.labels, label)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool RelationshipHasAnyType(const Relationship &relationship,
+                            const std::vector<std::string> &types) {
+  return types.empty() || ContainsString(types, relationship.type);
+}
+
 std::string LowerAscii(std::string value) {
   std::transform(
       value.begin(), value.end(), value.begin(),
@@ -1043,20 +1057,6 @@ double InMemoryGraph::RangeSelectivity(const PropertyDistribution &distribution,
     return ClampSelectivity(property_coverage);
   }
   return ClampSelectivity(property_coverage * (bound_count > 1 ? 0.25 : 0.5));
-}
-
-bool NodeHasLabels(const Node &node, const std::vector<std::string> &labels) {
-  for (const auto &label : labels) {
-    if (!ContainsString(node.labels, label)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-bool RelationshipHasAnyType(const Relationship &relationship,
-                            const std::vector<std::string> &types) {
-  return types.empty() || ContainsString(types, relationship.type);
 }
 
 }  // namespace rg

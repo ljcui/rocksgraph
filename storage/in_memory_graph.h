@@ -61,22 +61,6 @@ class InMemoryGraph final : public Storage,
                                      const NodePtr &end_node, std::string type,
                                      Value::Map properties = {});
 
-  void SetNodeProperty(const NodePtr &node, std::string property_key,
-                       Value value);
-  void SetRelationshipProperty(const RelationshipPtr &relationship,
-                               std::string property_key, Value value);
-  void SetNodeProperties(const NodePtr &node, Value::Map properties,
-                         bool include_existing);
-  void SetRelationshipProperties(const RelationshipPtr &relationship,
-                                 Value::Map properties, bool include_existing);
-  void SetLabels(const NodePtr &node, std::vector<std::string> labels);
-  void RemoveNodeProperty(const NodePtr &node, std::string_view property_key);
-  void RemoveRelationshipProperty(const RelationshipPtr &relationship,
-                                  std::string_view property_key);
-  void RemoveLabels(const NodePtr &node,
-                    const std::vector<std::string> &labels);
-  void DeleteNode(const NodePtr &node);
-  void DeleteRelationship(const RelationshipPtr &relationship);
   void SetNodeProperty(int64_t node_id, std::string property_key,
                        Value value) override;
   void SetRelationshipProperty(int64_t relationship_id,
@@ -95,7 +79,6 @@ class InMemoryGraph final : public Storage,
   void DeleteNode(int64_t node_id) override;
   void DeleteRelationship(int64_t relationship_id) override;
 
-  [[nodiscard]] bool HasRelationship(int64_t id) const noexcept;
   [[nodiscard]] const RelationshipPtr &RelationshipById(
       int64_t id) const override;
 
@@ -119,8 +102,6 @@ class InMemoryGraph final : public Storage,
       int64_t node_id, std::string_view property_key) const override;
   [[nodiscard]] Value RelationshipProperty(
       int64_t relationship_id, std::string_view property_key) const override;
-  [[nodiscard]] bool HasNode(int64_t id) const noexcept;
-
   [[nodiscard]] std::optional<ir::NodeIndexDescriptor> FindNodeIndex(
       const std::vector<std::string> &labels,
       std::string_view property_key) const override;
@@ -155,6 +136,25 @@ class InMemoryGraph final : public Storage,
 
  private:
   class Transaction;
+
+  void SetNodeProperty(const NodePtr &node, std::string property_key,
+                       Value value);
+  void SetRelationshipProperty(const RelationshipPtr &relationship,
+                               std::string property_key, Value value);
+  void SetNodeProperties(const NodePtr &node, Value::Map properties,
+                         bool include_existing);
+  void SetRelationshipProperties(const RelationshipPtr &relationship,
+                                 Value::Map properties, bool include_existing);
+  void SetLabels(const NodePtr &node, std::vector<std::string> labels);
+  void RemoveNodeProperty(const NodePtr &node, std::string_view property_key);
+  void RemoveRelationshipProperty(const RelationshipPtr &relationship,
+                                  std::string_view property_key);
+  void RemoveLabels(const NodePtr &node,
+                    const std::vector<std::string> &labels);
+  void DeleteNode(const NodePtr &node);
+  void DeleteRelationship(const RelationshipPtr &relationship);
+  [[nodiscard]] bool HasRelationship(int64_t id) const noexcept;
+  [[nodiscard]] bool HasNode(int64_t id) const noexcept;
 
   struct IndexDescriptor {
     std::vector<std::string> qualifiers;
@@ -221,10 +221,5 @@ class InMemoryGraph final : public Storage,
   std::unordered_map<int64_t, std::vector<RelationshipPtr>>
       incoming_relationships_;
 };
-
-[[nodiscard]] bool NodeHasLabels(const Node &node,
-                                 const std::vector<std::string> &labels);
-[[nodiscard]] bool RelationshipHasAnyType(
-    const Relationship &relationship, const std::vector<std::string> &types);
 
 }  // namespace rg

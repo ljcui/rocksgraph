@@ -632,11 +632,6 @@ void LogicalPlan::SetCostEstimate(double estimated_rows, double cost) {
   metadata_.cost = cost;
 }
 
-void LogicalPlan::ClearCostEstimate() {
-  metadata_.estimated_rows.reset();
-  metadata_.cost.reset();
-}
-
 void LogicalPlan::SetOrderingTrait(std::vector<LogicalSortItem> ordering) {
   metadata_.ordering = std::move(ordering);
 }

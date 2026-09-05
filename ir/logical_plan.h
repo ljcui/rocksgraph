@@ -167,7 +167,6 @@ class LogicalPlan {
   [[nodiscard]] LogicalPlan &Child(std::size_t index);
 
   void SetCostEstimate(double estimated_rows, double cost);
-  void ClearCostEstimate();
   void SetOrderingTrait(std::vector<LogicalSortItem> ordering);
   void ClearOrderingTrait();
   void SetDistinctTrait(bool distinct);

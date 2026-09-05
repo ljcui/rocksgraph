@@ -80,9 +80,6 @@ class QueryMemoryTracker final {
     current_bytes_ = bytes >= current_bytes_ ? 0 : current_bytes_ - bytes;
   }
 
-  [[nodiscard]] std::size_t CurrentBytes() const noexcept {
-    return current_bytes_;
-  }
   [[nodiscard]] std::size_t PeakBytes() const noexcept { return peak_bytes_; }
 
  private:
