@@ -1,28 +1,27 @@
 #include "runtime/slotted_executor.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
+#include <map>
 #include <memory>
 #include <optional>
 #include <set>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
+#include "ast/ast_const_walker.h"
 #include "ast/ast_node.h"
+#include "ast/builtin_function.h"
+#include "ast/builtin_procedure.h"
 #include "ast/expression_dependency.h"
 #include "common/exception.h"
-#include "runtime/aggregation_evaluator.h"
 #include "runtime/expression_evaluator.h"
-#include "runtime/graph_access_executor.h"
-#include "runtime/join_executor.h"
-#include "runtime/procedure_executor.h"
-#include "runtime/query_row_util.h"
-#include "runtime/result_set_executor.h"
-#include "runtime/row_operator_executor.h"
-#include "runtime/write_executor.h"
 
 namespace rg {
 namespace {
@@ -38,17 +37,219 @@ class PullOperator {
   virtual void Close() noexcept = 0;
 };
 
+class CursorRegistry final {
+ public:
+  [[nodiscard]] EntityIdCursor *Track(std::unique_ptr<EntityIdCursor> cursor) {
+    CHECK(cursor != nullptr, common::InternalError, "entity cursor is null");
+    EntityIdCursor *result = cursor.get();
+    cursors_.push_back(std::move(cursor));
+    return result;
+  }
+
+  void Release(EntityIdCursor *cursor) noexcept {
+    if (cursor == nullptr) {
+      return;
+    }
+    cursor->Close();
+    const auto found = std::find_if(
+        cursors_.begin(), cursors_.end(),
+        [cursor](const auto &owned) { return owned.get() == cursor; });
+    if (found != cursors_.end()) {
+      cursors_.erase(found);
+    }
+  }
+
+  void Close() noexcept {
+    for (const auto &cursor : cursors_) {
+      cursor->Close();
+    }
+    cursors_.clear();
+  }
+
+  ~CursorRegistry() { Close(); }
+
+ private:
+  std::vector<std::unique_ptr<EntityIdCursor>> cursors_;
+};
+
+struct RuntimeExpressionProgram {
+  std::unordered_map<const ast::Variable *, Slot> variables;
+  std::unordered_map<const ast::Parameter *, std::size_t> parameters;
+};
+
+class RuntimeExpressionCompiler final : public ast::ASTConstWalker {
+ public:
+  RuntimeExpressionCompiler(const SlotConfiguration &slots,
+                            const BoundQueryParameters &parameters)
+      : slots_(&slots), parameters_(&parameters) {}
+
+  RuntimeExpressionProgram Compile(const ast::Expression &expression) {
+    Walk(expression);
+    return std::move(program_);
+  }
+
+ protected:
+  void Visit(const ast::Variable &variable) override {
+    if (const Slot *slot = slots_->Find(variable.name); slot != nullptr) {
+      program_.variables.emplace(&variable, *slot);
+    }
+  }
+
+  void Visit(const ast::Parameter &parameter) override {
+    if (std::optional<std::size_t> offset = parameters_->Offset(parameter.name);
+        offset.has_value()) {
+      program_.parameters.emplace(&parameter, *offset);
+    }
+  }
+
+ private:
+  const SlotConfiguration *slots_ = nullptr;
+  const BoundQueryParameters *parameters_ = nullptr;
+  RuntimeExpressionProgram program_;
+};
+
 struct RuntimeState {
-  const GraphReader *graph_reader = nullptr;
-  Storage *storage = nullptr;
+  RuntimeState(const GraphReader &reader, Storage *writable_storage,
+               const QueryParameters &parameters, QueryExecutionOptions options)
+      : graph_reader(&reader),
+        storage(writable_storage),
+        bound_parameters(parameters),
+        cancellation(options.cancellation != nullptr
+                         ? std::move(options.cancellation)
+                         : std::make_shared<QueryCancellationToken>()),
+        memory_tracker(options.memory_limit_bytes),
+        context{.graph_reader = &reader,
+                .parameters = nullptr,
+                .bound_parameters = &bound_parameters,
+                .cancellation = cancellation.get(),
+                .memory_tracker = &memory_tracker,
+                .clock = ExecutionClock::Start()} {}
+
+  void CheckCancelled() const { context.CheckCancelled(); }
+  [[nodiscard]] EntityIdCursor *TrackCursor(
+      std::unique_ptr<EntityIdCursor> cursor) {
+    return resources.Track(std::move(cursor));
+  }
+  void ReleaseCursor(EntityIdCursor *cursor) noexcept {
+    resources.Release(cursor);
+  }
+  [[nodiscard]] const RuntimeExpressionProgram &ExpressionProgram(
+      const ast::Expression &expression, const SlotConfiguration &slots) {
+    for (const auto &cached : expressions) {
+      if (cached.expression == &expression && cached.slots == &slots) {
+        return cached.program;
+      }
+    }
+    expressions.push_back(
+        {.expression = &expression,
+         .slots = &slots,
+         .program = RuntimeExpressionCompiler(slots, bound_parameters)
+                        .Compile(expression)});
+    return expressions.back().program;
+  }
+
+  const GraphReader *graph_reader;
+  Storage *storage;
+  BoundQueryParameters bound_parameters;
+  std::shared_ptr<QueryCancellationToken> cancellation;
+  QueryMemoryTracker memory_tracker;
+  CursorRegistry resources;
   ExecutionContext context;
+  struct CachedExpression {
+    const ast::Expression *expression = nullptr;
+    const SlotConfiguration *slots = nullptr;
+    RuntimeExpressionProgram program;
+  };
+  std::vector<CachedExpression> expressions;
+};
+
+class SlottedExpressionBindings final : public ExpressionBindings {
+ public:
+  SlottedExpressionBindings(const SlottedRow &row,
+                            const GraphReader &graph_reader,
+                            const BoundQueryParameters &parameters,
+                            const RuntimeExpressionProgram &program)
+      : row_(&row),
+        graph_reader_(&graph_reader),
+        parameters_(&parameters),
+        program_(&program) {}
+
+  [[nodiscard]] Value Lookup(std::string_view name) const override {
+    return row_->Get(name, *graph_reader_);
+  }
+
+  [[nodiscard]] Value LookupVariable(
+      const ast::Variable &variable) const override {
+    const auto found = program_->variables.find(&variable);
+    return found == program_->variables.end()
+               ? Lookup(variable.name)
+               : row_->Get(found->second, *graph_reader_);
+  }
+
+  [[nodiscard]] bool ReadProperty(std::string_view variable,
+                                  std::string_view property_key,
+                                  Value *value) const override {
+    CHECK(value != nullptr, common::InternalError, "property output is null");
+    const Slot *slot = row_->Slots()->Find(variable);
+    if (slot == nullptr || slot->kind == SlotKind::kReference) {
+      return false;
+    }
+    const std::int64_t id = row_->EntityIdAt(*slot);
+    if (id < 0) {
+      *value = Value::Null();
+    } else if (slot->kind == SlotKind::kNode) {
+      *value = graph_reader_->NodeProperty(id, property_key);
+    } else {
+      *value = graph_reader_->RelationshipProperty(id, property_key);
+    }
+    return true;
+  }
+
+  [[nodiscard]] bool ReadVariableProperty(const ast::Variable &variable,
+                                          std::string_view property_key,
+                                          Value *value) const override {
+    const auto found = program_->variables.find(&variable);
+    if (found == program_->variables.end()) {
+      return ReadProperty(variable.name, property_key, value);
+    }
+    const Slot &slot = found->second;
+    if (slot.kind == SlotKind::kReference) {
+      return false;
+    }
+    const std::int64_t id = row_->EntityIdAt(slot);
+    *value =
+        id < 0 ? Value::Null()
+               : (slot.kind == SlotKind::kNode
+                      ? graph_reader_->NodeProperty(id, property_key)
+                      : graph_reader_->RelationshipProperty(id, property_key));
+    return true;
+  }
+
+  [[nodiscard]] bool ReadParameter(const ast::Parameter &parameter,
+                                   Value *value) const override {
+    const auto found = program_->parameters.find(&parameter);
+    if (found == program_->parameters.end()) {
+      return false;
+    }
+    *value = parameters_->At(found->second);
+    return true;
+  }
+
+ private:
+  const SlottedRow *row_ = nullptr;
+  const GraphReader *graph_reader_ = nullptr;
+  const BoundQueryParameters *parameters_ = nullptr;
+  const RuntimeExpressionProgram *program_ = nullptr;
 };
 
 Value Evaluate(const ast::Expression &expression, const SlottedRow &row,
                const std::vector<ir::LogicalPrecomputedExpression> &precomputed,
-               const RuntimeState &state) {
-  return EvaluateExpression(expression, row.Materialize(*state.graph_reader),
-                            precomputed, state.context);
+               RuntimeState &state) {
+  const RuntimeExpressionProgram &program =
+      state.ExpressionProgram(expression, *row.Slots());
+  SlottedExpressionBindings bindings(row, *state.graph_reader,
+                                     state.bound_parameters, program);
+  return EvaluateExpression(expression, bindings, precomputed, state.context);
 }
 
 SlottedRow EmptyArgument(SlotConfigurationPtr slots) {
@@ -68,9 +269,28 @@ bool MergeMappings(const SlottedRow &source, SlottedRow *target,
     if (!source.IsInitialized(mapping.source)) {
       continue;
     }
-    Value value = source.Get(mapping.source_name, *state.graph_reader);
-    if (!TryBindSlot(target, mapping.target_name, std::move(value),
-                     *state.graph_reader)) {
+    if (!target->IsInitialized(mapping.target)) {
+      if (mapping.source.kind == mapping.target.kind &&
+          mapping.source.kind != SlotKind::kReference) {
+        target->SetEntityId(mapping.target, source.EntityIdAt(mapping.source));
+      } else if (mapping.source.kind == SlotKind::kReference &&
+                 mapping.target.kind == SlotKind::kReference) {
+        target->SetReference(mapping.target,
+                             source.ReferenceAt(mapping.source));
+      } else {
+        target->Set(mapping.target_name,
+                    source.Get(mapping.source, *state.graph_reader));
+      }
+      continue;
+    }
+    if (mapping.source.kind == mapping.target.kind &&
+        mapping.source.kind != SlotKind::kReference) {
+      if (source.EntityIdAt(mapping.source) !=
+          target->EntityIdAt(mapping.target)) {
+        return false;
+      }
+    } else if (!ValuesEqual(source.Get(mapping.source, *state.graph_reader),
+                            target->Get(mapping.target, *state.graph_reader))) {
       return false;
     }
   }
@@ -129,6 +349,568 @@ bool RelationshipHasType(const Relationship &relationship,
 
 std::unique_ptr<EntityIdCursor> ExpandCursor(const GraphReader &graph_reader,
                                              std::int64_t node_id,
+                                             ir::ExpandDirection direction);
+
+std::optional<std::int64_t> NextVarExpandNode(const Relationship &relationship,
+                                              std::int64_t current_node_id,
+                                              ir::ExpandDirection direction) {
+  if (direction == ir::ExpandDirection::kOutgoing) {
+    return relationship.start_node_id == current_node_id
+               ? std::optional<std::int64_t>(relationship.end_node_id)
+               : std::nullopt;
+  }
+  if (direction == ir::ExpandDirection::kIncoming) {
+    return relationship.end_node_id == current_node_id
+               ? std::optional<std::int64_t>(relationship.start_node_id)
+               : std::nullopt;
+  }
+  if (relationship.start_node_id == current_node_id) {
+    return relationship.end_node_id;
+  }
+  if (relationship.end_node_id == current_node_id) {
+    return relationship.start_node_id;
+  }
+  return std::nullopt;
+}
+
+void CollectVarExpandRows(const ir::VarExpandPlan &plan,
+                          const SlottedRow &input, std::int64_t current_node_id,
+                          std::optional<std::int64_t> bound_to_id,
+                          std::size_t min_length, std::size_t max_length,
+                          std::vector<std::int64_t> *path,
+                          std::unordered_set<std::int64_t> *used_relationships,
+                          SlotConfigurationPtr output_slots,
+                          RuntimeState *state, std::vector<SlottedRow> *output,
+                          std::size_t *reserved_bytes) {
+  CHECK(path != nullptr && used_relationships != nullptr && state != nullptr &&
+            output != nullptr && reserved_bytes != nullptr,
+        common::InternalError, "variable expand state is incomplete");
+  state->CheckCancelled();
+  if (path->size() >= min_length &&
+      (!bound_to_id.has_value() || *bound_to_id == current_node_id)) {
+    Value::List relationships;
+    relationships.reserve(path->size());
+    for (std::int64_t relationship_id : *path) {
+      relationships.emplace_back(
+          state->graph_reader->RelationshipById(relationship_id));
+    }
+    SlottedRow row = input.CopyTo(output_slots, *state->graph_reader);
+    if (TryBindSlot(&row, plan.Relationship(), Value(std::move(relationships)),
+                    *state->graph_reader) &&
+        TryBindEntityId(&row, plan.ToNode(), SlotKind::kNode, current_node_id,
+                        *state->graph_reader)) {
+      const std::size_t bytes = row.EstimatedHeapUsage();
+      state->memory_tracker.Reserve(bytes);
+      *reserved_bytes += bytes;
+      output->push_back(std::move(row));
+    }
+  }
+  if (path->size() == max_length) {
+    return;
+  }
+
+  EntityIdCursor *cursor = state->TrackCursor(
+      ExpandCursor(*state->graph_reader, current_node_id, plan.Direction()));
+  while (cursor->Next()) {
+    state->CheckCancelled();
+    const std::int64_t relationship_id = cursor->Id();
+    if (used_relationships->contains(relationship_id)) {
+      continue;
+    }
+    const Relationship &relationship =
+        *state->graph_reader->RelationshipById(relationship_id);
+    if (!RelationshipHasType(relationship, plan.Types())) {
+      continue;
+    }
+    const std::optional<std::int64_t> next =
+        NextVarExpandNode(relationship, current_node_id, plan.Direction());
+    if (!next.has_value()) {
+      continue;
+    }
+    used_relationships->insert(relationship_id);
+    path->push_back(relationship_id);
+    CollectVarExpandRows(plan, input, *next, bound_to_id, min_length,
+                         max_length, path, used_relationships, output_slots,
+                         state, output, reserved_bytes);
+    path->pop_back();
+    used_relationships->erase(relationship_id);
+  }
+  state->ReleaseCursor(cursor);
+}
+
+bool CanTraverse(const std::vector<GraphReader::RelationshipPtr> &relationships,
+                 std::int64_t from, std::int64_t target) {
+  for (const auto &relationship : relationships) {
+    if (relationship->start_node_id == from) {
+      from = relationship->end_node_id;
+    } else if (relationship->end_node_id == from) {
+      from = relationship->start_node_id;
+    } else {
+      return false;
+    }
+  }
+  return from == target;
+}
+
+Value BuildPathValue(const ir::PathPattern &pattern, const SlottedRow &row,
+                     RuntimeState *state) {
+  CHECK(state != nullptr && !pattern.nodes.empty(),
+        common::InvalidArgumentError, "path has no nodes: " + pattern.variable);
+  CHECK(pattern.nodes.size() == pattern.relationships.size() + 1,
+        common::InvalidArgumentError,
+        "path node and relationship counts do not match: " + pattern.variable);
+  auto path = std::make_shared<Path>();
+  std::int64_t current = NodeId(row, pattern.nodes.front(), *state);
+  CHECK(current >= 0, common::InvalidArgumentError,
+        "path starts with a null node");
+  path->nodes.push_back(state->graph_reader->NodeById(current));
+  for (std::size_t index = 0; index < pattern.relationships.size(); ++index) {
+    state->CheckCancelled();
+    const Value value =
+        row.Get(pattern.relationships[index], *state->graph_reader);
+    std::vector<GraphReader::RelationshipPtr> relationships;
+    if (value.IsList()) {
+      for (const auto &item : value.AsList()) {
+        CHECK(item.IsRelationship(), common::InvalidArgumentError,
+              "path relationship list contains a non-relationship");
+        relationships.push_back(
+            state->graph_reader->RelationshipById(item.AsRelationship().id));
+      }
+    } else {
+      CHECK(value.IsRelationship(), common::InvalidArgumentError,
+            "path value is not a relationship");
+      relationships.push_back(
+          state->graph_reader->RelationshipById(value.AsRelationship().id));
+    }
+    const std::int64_t target = NodeId(row, pattern.nodes[index + 1], *state);
+    if (!CanTraverse(relationships, current, target)) {
+      std::reverse(relationships.begin(), relationships.end());
+      CHECK(CanTraverse(relationships, current, target),
+            common::InvalidArgumentError,
+            "path relationship sequence does not connect nodes");
+    }
+    for (const auto &relationship : relationships) {
+      path->relationships.push_back(relationship);
+      current = relationship->start_node_id == current
+                    ? relationship->end_node_id
+                    : relationship->start_node_id;
+      path->nodes.push_back(state->graph_reader->NodeById(current));
+    }
+  }
+  return Value(std::move(path));
+}
+
+using ProcedureRecord = Value::Map;
+
+std::vector<ProcedureRecord> ExecuteProcedure(const ir::ProcedureCallPlan &plan,
+                                              RuntimeState *state) {
+  CHECK(state != nullptr, common::InternalError, "runtime state is null");
+  const ast::BuiltinProcedure *procedure =
+      ast::FindBuiltinProcedure(plan.ProcedureName());
+  CHECK(procedure != nullptr, common::InvalidArgumentError,
+        "unknown procedure: " + plan.ProcedureName());
+  CHECK(plan.Arguments().size() == procedure->argument_count,
+        common::InvalidArgumentError,
+        procedure->name + "() received an invalid argument count");
+  CHECK(procedure->read_only && plan.ReadOnly(), common::InvalidArgumentError,
+        "write procedure calls are not supported");
+  for (const auto &item : plan.YieldItems()) {
+    const std::string &field =
+        item.result_field.has_value() ? *item.result_field : item.variable;
+    CHECK(ast::FindBuiltinProcedureYield(*procedure, field) != nullptr,
+          common::InvalidArgumentError,
+          "unknown yield field for " + procedure->name + ": " + field);
+  }
+  std::set<std::string> values;
+  if (procedure->kind == ast::BuiltinProcedureKind::kLabels ||
+      procedure->kind == ast::BuiltinProcedureKind::kPropertyKeys) {
+    EntityIdCursor *nodes =
+        state->TrackCursor(state->graph_reader->ScanNodeIds());
+    while (nodes->Next()) {
+      state->CheckCancelled();
+      const Node &node = *state->graph_reader->NodeById(nodes->Id());
+      if (procedure->kind == ast::BuiltinProcedureKind::kLabels) {
+        values.insert(node.labels.begin(), node.labels.end());
+      } else {
+        for (const auto &[key, value] : node.properties) {
+          (void)value;
+          values.insert(key);
+        }
+      }
+    }
+    state->ReleaseCursor(nodes);
+  }
+  if (procedure->kind == ast::BuiltinProcedureKind::kRelationshipTypes ||
+      procedure->kind == ast::BuiltinProcedureKind::kPropertyKeys) {
+    EntityIdCursor *relationships =
+        state->TrackCursor(state->graph_reader->ScanRelationshipIds());
+    while (relationships->Next()) {
+      state->CheckCancelled();
+      const Relationship &relationship =
+          *state->graph_reader->RelationshipById(relationships->Id());
+      if (procedure->kind == ast::BuiltinProcedureKind::kRelationshipTypes) {
+        if (!relationship.type.empty()) {
+          values.insert(relationship.type);
+        }
+      } else {
+        for (const auto &[key, value] : relationship.properties) {
+          (void)value;
+          values.insert(key);
+        }
+      }
+    }
+    state->ReleaseCursor(relationships);
+  }
+
+  std::vector<ProcedureRecord> records;
+  if (procedure->kind == ast::BuiltinProcedureKind::kProcedures) {
+    for (const auto &metadata : ast::BuiltinProcedures()) {
+      records.push_back({{"name", Value(metadata.name)},
+                         {"signature", Value(metadata.signature)},
+                         {"description", Value(metadata.description)},
+                         {"mode", Value(metadata.read_only ? "READ" : "WRITE")},
+                         {"worksOnSystem", Value(metadata.works_on_system)}});
+    }
+    return records;
+  }
+  const char *field =
+      procedure->kind == ast::BuiltinProcedureKind::kLabels
+          ? "label"
+          : (procedure->kind == ast::BuiltinProcedureKind::kPropertyKeys
+                 ? "propertyKey"
+                 : "relationshipType");
+  for (const auto &value : values) {
+    records.push_back({{field, Value(value)}});
+  }
+  return records;
+}
+
+Storage &RequireStorage(RuntimeState *state) {
+  CHECK(state != nullptr && state->storage != nullptr,
+        common::InvalidArgumentError, "write execution requires storage");
+  return *state->storage;
+}
+
+Value::Map EvaluatePropertyMap(const ir::PatternPropertyMap &property_map,
+                               const SlottedRow &row,
+                               std::string_view operation,
+                               RuntimeState *state) {
+  if (property_map.parameter != nullptr) {
+    Value value = Evaluate(*property_map.parameter, row, {}, *state);
+    CHECK(value.IsMap(), common::InvalidArgumentError,
+          std::string(operation) + " properties parameter must be a map");
+    return value.AsMap();
+  }
+  Value::Map properties;
+  for (const auto &entry : property_map.entries) {
+    CHECK(entry.value != nullptr, common::InvalidArgumentError,
+          std::string(operation) + " property value is null");
+    properties[entry.key] = Evaluate(*entry.value, row, {}, *state);
+  }
+  return properties;
+}
+
+void ApplySetPattern(const ir::SetMutatingPattern &pattern, SlottedRow *row,
+                     RuntimeState *state) {
+  CHECK(row != nullptr, common::InternalError, "write row is null");
+  Storage &storage = RequireStorage(state);
+  CHECK(pattern.entity != nullptr, common::InvalidArgumentError,
+        "SET entity expression is null");
+  const Value entity = Evaluate(*pattern.entity, *row, {}, *state);
+  if (entity.IsNull()) {
+    return;
+  }
+  if (pattern.kind == ir::SetMutatingPatternKind::kSetLabels) {
+    CHECK(entity.IsNode(), common::InvalidArgumentError,
+          "SET labels target is not a node");
+    storage.SetLabels(entity.AsNode().id, pattern.labels);
+    return;
+  }
+  CHECK(pattern.value != nullptr, common::InvalidArgumentError,
+        "SET value expression is null");
+  Value value = Evaluate(*pattern.value, *row, {}, *state);
+  if (pattern.kind == ir::SetMutatingPatternKind::kSetProperty) {
+    if (entity.IsNode()) {
+      storage.SetNodeProperty(entity.AsNode().id, pattern.property_key,
+                              std::move(value));
+    } else if (entity.IsRelationship()) {
+      storage.SetRelationshipProperty(entity.AsRelationship().id,
+                                      pattern.property_key, std::move(value));
+    } else {
+      THROW(common::InvalidArgumentError,
+            "SET property target is not an entity");
+    }
+    return;
+  }
+  CHECK(value.IsMap(), common::InvalidArgumentError,
+        "SET properties requires a map value");
+  const bool include_existing =
+      pattern.kind ==
+      ir::SetMutatingPatternKind::kSetIncludingPropertiesFromMap;
+  if (entity.IsNode()) {
+    storage.SetNodeProperties(entity.AsNode().id, std::move(value.AsMap()),
+                              include_existing);
+  } else if (entity.IsRelationship()) {
+    storage.SetRelationshipProperties(
+        entity.AsRelationship().id, std::move(value.AsMap()), include_existing);
+  } else {
+    THROW(common::InvalidArgumentError,
+          "SET properties target is not an entity");
+  }
+}
+
+void ApplySetPatterns(const std::vector<ir::SetMutatingPattern> &patterns,
+                      SlottedRow *row, RuntimeState *state) {
+  for (const auto &pattern : patterns) {
+    ApplySetPattern(pattern, row, state);
+  }
+}
+
+void ExecuteCreatePattern(const ir::CreatePattern &pattern, SlottedRow *row,
+                          RuntimeState *state, bool reject_null_properties) {
+  CHECK(row != nullptr, common::InternalError, "create row is null");
+  Storage &storage = RequireStorage(state);
+  for (const auto &command : pattern.commands) {
+    state->CheckCancelled();
+    if (command.kind == ir::CreateEntityKind::kNode) {
+      const auto &node_pattern = pattern.nodes.at(command.index);
+      Value::Map properties = EvaluatePropertyMap(
+          node_pattern.properties, *row,
+          reject_null_properties ? "MERGE node" : "CREATE node", state);
+      if (reject_null_properties) {
+        for (const auto &[key, value] : properties) {
+          (void)key;
+          CHECK(!value.IsNull(), common::InvalidArgumentError,
+                "MERGE node property value is null");
+        }
+      }
+      row->Set(node_pattern.variable,
+               Value(storage.CreateNode(node_pattern.labels,
+                                        std::move(properties))));
+      continue;
+    }
+    const auto &relationship = pattern.relationships.at(command.index);
+    const std::int64_t left = NodeId(*row, relationship.left_node, *state);
+    const std::int64_t right = NodeId(*row, relationship.right_node, *state);
+    CHECK(left >= 0 && right >= 0, common::InvalidArgumentError,
+          "CREATE relationship endpoints must be nodes");
+    Value::Map properties = EvaluatePropertyMap(
+        relationship.properties, *row,
+        reject_null_properties ? "MERGE relationship" : "CREATE relationship",
+        state);
+    if (reject_null_properties) {
+      for (const auto &[key, value] : properties) {
+        (void)key;
+        CHECK(!value.IsNull(), common::InvalidArgumentError,
+              "MERGE relationship property value is null");
+      }
+    }
+    row->Set(
+        relationship.variable,
+        Value(storage.CreateRelationship(
+            left, right,
+            relationship.types.empty() ? std::string() : relationship.types[0],
+            std::move(properties))));
+  }
+}
+
+Value EvaluateProjectionItem(const ir::LogicalProjectionItem &item,
+                             const SlottedRow &row, RuntimeState *state) {
+  if (item.passthrough) {
+    return row.Get(item.alias, *state->graph_reader);
+  }
+  CHECK(item.expression != nullptr, common::InvalidArgumentError,
+        "projection expression is null");
+  return Evaluate(*item.expression, row, item.precomputed_expressions, *state);
+}
+
+std::string AppendKey(const std::vector<Value> &values) {
+  std::string key;
+  for (const auto &value : values) {
+    const std::string part = ValueKey(value);
+    key.append(std::to_string(part.size()));
+    key.push_back(':');
+    key.append(part);
+  }
+  return key;
+}
+
+std::vector<Value> EvaluateGroupingValues(
+    const std::vector<ir::LogicalProjectionItem> &items, const SlottedRow &row,
+    RuntimeState *state) {
+  std::vector<Value> values;
+  values.reserve(items.size());
+  for (const auto &item : items) {
+    values.push_back(EvaluateProjectionItem(item, row, state));
+  }
+  return values;
+}
+
+std::int64_t CheckedCount(std::size_t size) {
+  CHECK(size <=
+            static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max()),
+        common::InvalidArgumentError, "aggregation count overflow");
+  return static_cast<std::int64_t>(size);
+}
+
+Value EvaluateAggregate(const ir::LogicalProjectionItem &item,
+                        const std::vector<SlottedRow> &rows,
+                        RuntimeState *state) {
+  CHECK(item.expression != nullptr, common::InvalidArgumentError,
+        "aggregation expression is null");
+  if (item.expression->Is(ast::ASTNodeType::kCountStarExpression)) {
+    return Value(CheckedCount(rows.size()));
+  }
+  CHECK(item.expression->Is(ast::ASTNodeType::kFunctionInvocation),
+        common::InvalidArgumentError, "unsupported aggregation expression");
+  const auto &function =
+      ast::CastAst<ast::FunctionInvocation>(*item.expression);
+  const ast::BuiltinFunction *builtin =
+      ast::FindBuiltinFunction(function.function_name);
+  CHECK(builtin != nullptr && builtin->aggregate, common::InvalidArgumentError,
+        "function is not an aggregate: " + function.function_name);
+  CHECK(!function.arguments.empty() && function.arguments[0] != nullptr,
+        common::InvalidArgumentError,
+        function.function_name + "() argument is null");
+
+  std::vector<Value> values;
+  std::set<std::string> seen;
+  for (const auto &row : rows) {
+    Value value = Evaluate(*function.arguments[0], row,
+                           item.precomputed_expressions, *state);
+    if (value.IsNull()) {
+      continue;
+    }
+    if (function.distinct && !seen.insert(ValueKey(value)).second) {
+      continue;
+    }
+    values.push_back(std::move(value));
+  }
+
+  switch (builtin->kind) {
+    case ast::BuiltinFunctionKind::kCount:
+      return Value(CheckedCount(values.size()));
+    case ast::BuiltinFunctionKind::kCollect:
+      return Value(Value::List(std::move(values)));
+    case ast::BuiltinFunctionKind::kSum: {
+      bool integral = true;
+      std::int64_t integer_sum = 0;
+      double floating_sum = 0.0;
+      for (const auto &value : values) {
+        CHECK(IsNumeric(value), common::InvalidArgumentError,
+              function.function_name + "() expects numeric values");
+        if (value.IsInteger() && integral) {
+          const std::int64_t addend = value.AsInteger();
+          CHECK((addend >= 0 &&
+                 integer_sum <=
+                     std::numeric_limits<std::int64_t>::max() - addend) ||
+                    (addend < 0 &&
+                     integer_sum >=
+                         std::numeric_limits<std::int64_t>::min() - addend),
+                common::InvalidArgumentError, "integer sum overflow");
+          integer_sum += addend;
+        } else {
+          if (integral) {
+            floating_sum = static_cast<double>(integer_sum);
+            integral = false;
+          }
+          floating_sum += AsDoubleValue(value);
+        }
+      }
+      return integral ? Value(integer_sum) : Value(floating_sum);
+    }
+    case ast::BuiltinFunctionKind::kAverage: {
+      if (values.empty()) {
+        return Value::Null();
+      }
+      double sum = 0.0;
+      for (const auto &value : values) {
+        CHECK(IsNumeric(value), common::InvalidArgumentError,
+              function.function_name + "() expects numeric values");
+        sum += AsDoubleValue(value);
+      }
+      return Value(sum / static_cast<double>(values.size()));
+    }
+    case ast::BuiltinFunctionKind::kMinimum:
+    case ast::BuiltinFunctionKind::kMaximum: {
+      if (values.empty()) {
+        return Value::Null();
+      }
+      Value best = values.front();
+      const bool minimum = builtin->kind == ast::BuiltinFunctionKind::kMinimum;
+      for (std::size_t index = 1; index < values.size(); ++index) {
+        if ((minimum && ValueLess(values[index], best)) ||
+            (!minimum && ValueLess(best, values[index]))) {
+          best = values[index];
+        }
+      }
+      return best;
+    }
+    case ast::BuiltinFunctionKind::kPercentileContinuous:
+    case ast::BuiltinFunctionKind::kPercentileDiscrete: {
+      if (values.empty()) {
+        return Value::Null();
+      }
+      CHECK(function.arguments.size() == 2 && function.arguments[1] != nullptr,
+            common::InvalidArgumentError,
+            function.function_name + "() percentile argument is null");
+      std::optional<double> percentile;
+      for (const auto &row : rows) {
+        const Value current = Evaluate(*function.arguments[1], row,
+                                       item.precomputed_expressions, *state);
+        if (current.IsNull()) {
+          return Value::Null();
+        }
+        CHECK(IsNumeric(current), common::InvalidArgumentError,
+              function.function_name + "() expects a numeric percentile");
+        const double number = AsDoubleValue(current);
+        CHECK(std::isfinite(number) && number >= 0.0 && number <= 1.0,
+              common::InvalidArgumentError,
+              function.function_name +
+                  "() percentile must be between 0.0 and 1.0");
+        CHECK(!percentile.has_value() || *percentile == number,
+              common::InvalidArgumentError,
+              function.function_name +
+                  "() percentile must be constant within a group");
+        percentile = number;
+      }
+      std::sort(values.begin(), values.end(), ValueLess);
+      if (builtin->kind == ast::BuiltinFunctionKind::kPercentileDiscrete) {
+        const double rank =
+            std::ceil(*percentile * static_cast<double>(values.size()));
+        const std::size_t index =
+            rank <= 1.0 ? 0 : static_cast<std::size_t>(rank) - 1;
+        return values[std::min(index, values.size() - 1)];
+      }
+      const double position =
+          *percentile * static_cast<double>(values.size() - 1);
+      const auto lower = static_cast<std::size_t>(std::floor(position));
+      const auto upper = static_cast<std::size_t>(std::ceil(position));
+      return Value(std::lerp(AsDoubleValue(values[lower]),
+                             AsDoubleValue(values[upper]), position - lower));
+    }
+    default:
+      THROW(common::InvalidArgumentError,
+            "unsupported aggregate function: " + function.function_name);
+  }
+}
+
+int CompareValues(const Value &left, const Value &right) {
+  if (ValuesEqual(left, right)) {
+    return 0;
+  }
+  const bool left_less = ValueLess(left, right);
+  const bool right_less = ValueLess(right, left);
+  if (left_less != right_less) {
+    return left_less ? -1 : 1;
+  }
+  const std::string left_key = ValueKey(left);
+  const std::string right_key = ValueKey(right);
+  return left_key < right_key ? -1 : (right_key < left_key ? 1 : 0);
+}
+
+std::unique_ptr<EntityIdCursor> ExpandCursor(const GraphReader &graph_reader,
+                                             std::int64_t node_id,
                                              ir::ExpandDirection direction) {
   if (direction == ir::ExpandDirection::kOutgoing) {
     return graph_reader.OutgoingRelationshipIds(node_id);
@@ -155,6 +937,7 @@ class LeafOperator final : public PullOperator {
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
     CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    state_->CheckCancelled();
     if (closed_) {
       return false;
     }
@@ -200,8 +983,8 @@ class LeafOperator final : public PullOperator {
 
   void Close() noexcept override {
     if (cursor_ != nullptr) {
-      cursor_->Close();
-      cursor_.reset();
+      state_->ReleaseCursor(cursor_);
+      cursor_ = nullptr;
     }
     closed_ = true;
   }
@@ -223,40 +1006,43 @@ class LeafOperator final : public PullOperator {
     switch (plan.Type()) {
       case ir::LogicalPlanNodeType::kAllNodeScan:
       case ir::LogicalPlanNodeType::kNodeByLabelScan:
-        cursor_ = state_->graph_reader->ScanNodeIds();
+        cursor_ = state_->TrackCursor(state_->graph_reader->ScanNodeIds());
         break;
       case ir::LogicalPlanNodeType::kNodeIndexSeek: {
         const auto &seek = static_cast<const ir::NodeIndexSeekPlan &>(plan);
         Value expected =
             Evaluate(*seek.ValueExpression(), *argument_, {}, *state_);
-        cursor_ = state_->graph_reader->FindNodeIdsByIndex(
-            seek.Labels(), seek.PropertyKey(), expected);
+        cursor_ = state_->TrackCursor(state_->graph_reader->FindNodeIdsByIndex(
+            seek.Labels(), seek.PropertyKey(), expected));
         break;
       }
       case ir::LogicalPlanNodeType::kNodeIndexRangeSeek: {
         const auto &seek =
             static_cast<const ir::NodeIndexRangeSeekPlan &>(plan);
-        cursor_ = state_->graph_reader->NodeIdsInIndex(seek.Labels(),
-                                                       seek.PropertyKey());
+        cursor_ = state_->TrackCursor(state_->graph_reader->NodeIdsInIndex(
+            seek.Labels(), seek.PropertyKey()));
         break;
       }
       case ir::LogicalPlanNodeType::kRelationshipTypeScan:
-        cursor_ = state_->graph_reader->ScanRelationshipIds();
+        cursor_ =
+            state_->TrackCursor(state_->graph_reader->ScanRelationshipIds());
         break;
       case ir::LogicalPlanNodeType::kRelationshipIndexSeek: {
         const auto &seek =
             static_cast<const ir::RelationshipIndexSeekPlan &>(plan);
         Value expected =
             Evaluate(*seek.ValueExpression(), *argument_, {}, *state_);
-        cursor_ = state_->graph_reader->FindRelationshipIdsByIndex(
-            seek.Types(), seek.PropertyKey(), expected);
+        cursor_ = state_->TrackCursor(
+            state_->graph_reader->FindRelationshipIdsByIndex(
+                seek.Types(), seek.PropertyKey(), expected));
         break;
       }
       case ir::LogicalPlanNodeType::kRelationshipIndexRangeSeek: {
         const auto &seek =
             static_cast<const ir::RelationshipIndexRangeSeekPlan &>(plan);
-        cursor_ = state_->graph_reader->RelationshipIdsInIndex(
-            seek.Types(), seek.PropertyKey());
+        cursor_ =
+            state_->TrackCursor(state_->graph_reader->RelationshipIdsInIndex(
+                seek.Types(), seek.PropertyKey()));
         break;
       }
       default:
@@ -267,13 +1053,13 @@ class LeafOperator final : public PullOperator {
 
   bool EmitNode(std::int64_t id, SlottedRow *row) {
     const ir::LogicalPlan &plan = *node_->logical;
-    const Node &node = *state_->graph_reader->NodeById(id);
     std::string variable;
     if (plan.Type() == ir::LogicalPlanNodeType::kAllNodeScan) {
       variable = static_cast<const ir::AllNodeScanPlan &>(plan).Variable();
     } else if (plan.Type() == ir::LogicalPlanNodeType::kNodeByLabelScan) {
       const auto &scan = static_cast<const ir::NodeByLabelScanPlan &>(plan);
-      if (!NodeHasAllLabels(node, scan.Labels())) {
+      if (!NodeHasAllLabels(*state_->graph_reader->NodeById(id),
+                            scan.Labels())) {
         return false;
       }
       variable = scan.Variable();
@@ -286,8 +1072,8 @@ class LeafOperator final : public PullOperator {
 
     SlottedRow next =
         argument_->CopyTo(node_->output_slots, *state_->graph_reader);
-    if (!TryBindSlot(&next, variable, Value(state_->graph_reader->NodeById(id)),
-                     *state_->graph_reader)) {
+    if (!TryBindEntityId(&next, variable, SlotKind::kNode, id,
+                         *state_->graph_reader)) {
       return false;
     }
     if (plan.Type() == ir::LogicalPlanNodeType::kNodeIndexRangeSeek) {
@@ -357,15 +1143,12 @@ class LeafOperator final : public PullOperator {
             : (reverse ? relationship.start_node_id : relationship.end_node_id);
     SlottedRow next =
         argument_->CopyTo(node_->output_slots, *state_->graph_reader);
-    if (!TryBindSlot(&next, from,
-                     Value(state_->graph_reader->NodeById(from_id)),
-                     *state_->graph_reader) ||
-        !TryBindSlot(
-            &next, rel,
-            Value(state_->graph_reader->RelationshipById(relationship.id)),
-            *state_->graph_reader) ||
-        !TryBindSlot(&next, to, Value(state_->graph_reader->NodeById(to_id)),
-                     *state_->graph_reader)) {
+    if (!TryBindEntityId(&next, from, SlotKind::kNode, from_id,
+                         *state_->graph_reader) ||
+        !TryBindEntityId(&next, rel, SlotKind::kRelationship, relationship.id,
+                         *state_->graph_reader) ||
+        !TryBindEntityId(&next, to, SlotKind::kNode, to_id,
+                         *state_->graph_reader)) {
       return false;
     }
     if (predicates != nullptr) {
@@ -382,7 +1165,7 @@ class LeafOperator final : public PullOperator {
   const PhysicalPlanNode *node_ = nullptr;
   RuntimeState *state_ = nullptr;
   std::optional<SlottedRow> argument_;
-  std::unique_ptr<EntityIdCursor> cursor_;
+  EntityIdCursor *cursor_ = nullptr;
   std::int64_t pending_relationship_id_ = -1;
   bool emitted_argument_ = false;
   bool initialized_ = false;
@@ -400,6 +1183,7 @@ class StreamingUnaryOperator final : public PullOperator {
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
     CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    state_->CheckCancelled();
     if (closed_) {
       return false;
     }
@@ -441,12 +1225,16 @@ class StreamingUnaryOperator final : public PullOperator {
 
   void Close() noexcept override {
     if (relationship_cursor_ != nullptr) {
-      relationship_cursor_->Close();
-      relationship_cursor_.reset();
+      state_->ReleaseCursor(relationship_cursor_);
+      relationship_cursor_ = nullptr;
     }
     if (source_ != nullptr) {
       source_->Close();
     }
+    state_->memory_tracker.Release(buffer_reserved_bytes_);
+    state_->memory_tracker.Release(unwind_reserved_bytes_);
+    buffer_reserved_bytes_ = 0;
+    unwind_reserved_bytes_ = 0;
     closed_ = true;
   }
 
@@ -488,13 +1276,11 @@ class StreamingUnaryOperator final : public PullOperator {
     if (!PullInput(&input)) {
       return false;
     }
-    const QueryRow expression_row = input.Materialize(*state_->graph_reader);
     SlottedRow output(node_->output_slots);
     for (const auto &item : projection.Items()) {
       Value value = item.passthrough
-                        ? LookupQueryVariable(expression_row, item.alias)
-                        : EvaluateLogicalProjectionItem(item, expression_row,
-                                                        state_->context);
+                        ? input.Get(item.alias, *state_->graph_reader)
+                        : EvaluateProjectionItem(item, input, state_);
       output.Set(item.alias, std::move(value));
     }
     *row = std::move(output);
@@ -510,16 +1296,20 @@ class StreamingUnaryOperator final : public PullOperator {
     const bool requires_row =
         !ast::CollectExpressionDependencies(*expression).empty() ||
         !precomputed.empty();
-    QueryRow expression_row;
+    bool has_expression_row = false;
     if (requires_row) {
       if (!source_->Next(first_row)) {
         return std::nullopt;
       }
-      expression_row = first_row->Materialize(*state_->graph_reader);
+      has_expression_row = true;
       first_pending_ = true;
     }
-    const Value value = EvaluateExpression(*expression, expression_row,
-                                           precomputed, state_->context);
+    const QueryRow empty_row;
+    const Value value =
+        has_expression_row
+            ? Evaluate(*expression, *first_row, precomputed, *state_)
+            : EvaluateExpression(*expression, empty_row, precomputed,
+                                 state_->context);
     CHECK(value.IsInteger() && value.AsInteger() >= 0,
           common::InvalidArgumentError,
           std::string(name) + " requires a non-negative integer");
@@ -635,21 +1425,17 @@ class StreamingUnaryOperator final : public PullOperator {
           }
           SlottedRow output = current_input_->CopyTo(node_->output_slots,
                                                      *state_->graph_reader);
-          if (!TryBindSlot(&output, rel_name,
-                           Value(state_->graph_reader->RelationshipById(
-                               relationship.id)),
-                           *state_->graph_reader) ||
-              (!into &&
-               !TryBindSlot(&output, to_name,
-                            Value(state_->graph_reader->NodeById(other)),
-                            *state_->graph_reader))) {
+          if (!TryBindEntityId(&output, rel_name, SlotKind::kRelationship,
+                               relationship.id, *state_->graph_reader) ||
+              (!into && !TryBindEntityId(&output, to_name, SlotKind::kNode,
+                                         other, *state_->graph_reader))) {
             continue;
           }
           *row = std::move(output);
           return true;
         }
-        relationship_cursor_->Close();
-        relationship_cursor_.reset();
+        state_->ReleaseCursor(relationship_cursor_);
+        relationship_cursor_ = nullptr;
         current_input_.reset();
       }
 
@@ -679,42 +1465,93 @@ class StreamingUnaryOperator final : public PullOperator {
         continue;
       }
       current_input_.emplace(std::move(input));
-      relationship_cursor_ =
-          ExpandCursor(*state_->graph_reader, current_from_id_, direction);
+      relationship_cursor_ = state_->TrackCursor(
+          ExpandCursor(*state_->graph_reader, current_from_id_, direction));
     }
   }
 
   bool NextBufferedPerInput(SlottedRow *row) {
     while (buffer_index_ >= buffer_.size()) {
+      state_->memory_tracker.Release(buffer_reserved_bytes_);
+      buffer_reserved_bytes_ = 0;
       buffer_.clear();
       buffer_index_ = 0;
       SlottedRow input(node_->children[0]->output_slots);
       if (!PullInput(&input)) {
         return false;
       }
-      QueryRows rows;
-      const QueryRows input_rows{input.Materialize(*state_->graph_reader)};
       if (node_->logical->Type() == ir::LogicalPlanNodeType::kVarExpand) {
-        rows = GraphAccessExecutor(*state_->graph_reader, state_->context)
-                   .ExecuteVarExpand(
-                       static_cast<const ir::VarExpandPlan &>(*node_->logical),
-                       input_rows);
+        const auto &plan =
+            static_cast<const ir::VarExpandPlan &>(*node_->logical);
+        const std::int64_t from = NodeId(input, plan.FromNode(), *state_);
+        if (from < 0) {
+          continue;
+        }
+        std::optional<std::int64_t> bound_to;
+        if (input.Slots()->Contains(plan.ToNode()) &&
+            input.IsInitialized(plan.ToNode())) {
+          const std::int64_t to = NodeId(input, plan.ToNode(), *state_);
+          if (to < 0) {
+            continue;
+          }
+          bound_to = to;
+        }
+        const std::size_t min_length =
+            plan.Length().min.has_value()
+                ? static_cast<std::size_t>(*plan.Length().min)
+                : 1;
+        const std::size_t max_length =
+            plan.Length().max.has_value()
+                ? static_cast<std::size_t>(*plan.Length().max)
+                : state_->graph_reader->RelationshipCount();
+        CHECK(!plan.Length().min.has_value() || *plan.Length().min >= 0,
+              common::InvalidArgumentError,
+              "variable expand minimum length is negative");
+        CHECK(!plan.Length().max.has_value() || *plan.Length().max >= 0,
+              common::InvalidArgumentError,
+              "variable expand maximum length is negative");
+        if (max_length >= min_length) {
+          std::vector<std::int64_t> path;
+          std::unordered_set<std::int64_t> used;
+          CollectVarExpandRows(plan, input, from, bound_to, min_length,
+                               max_length, &path, &used, node_->output_slots,
+                               state_, &buffer_, &buffer_reserved_bytes_);
+        }
       } else if (node_->logical->Type() ==
                  ir::LogicalPlanNodeType::kPathBuild) {
-        rows = GraphAccessExecutor(*state_->graph_reader, state_->context)
-                   .ExecutePathBuild(
-                       static_cast<const ir::PathBuildPlan &>(*node_->logical),
-                       input_rows);
+        const auto &plan =
+            static_cast<const ir::PathBuildPlan &>(*node_->logical);
+        SlottedRow output =
+            input.CopyTo(node_->output_slots, *state_->graph_reader);
+        if (TryBindSlot(&output, plan.PathVariable(),
+                        BuildPathValue(plan.Path(), input, state_),
+                        *state_->graph_reader)) {
+          const std::size_t bytes = output.EstimatedHeapUsage();
+          state_->memory_tracker.Reserve(bytes);
+          buffer_reserved_bytes_ += bytes;
+          buffer_.push_back(std::move(output));
+        }
       } else {
-        rows =
-            ProcedureExecutor(*state_->graph_reader)
-                .Execute(
-                    static_cast<const ir::ProcedureCallPlan &>(*node_->logical),
-                    input_rows);
-      }
-      for (const auto &result : rows) {
-        buffer_.push_back(
-            SlottedRow::FromQueryRow(node_->output_slots, result));
+        const auto &plan =
+            static_cast<const ir::ProcedureCallPlan &>(*node_->logical);
+        for (const auto &record : ExecuteProcedure(plan, state_)) {
+          SlottedRow output =
+              input.CopyTo(node_->output_slots, *state_->graph_reader);
+          for (const auto &item : plan.YieldItems()) {
+            const std::string &field = item.result_field.has_value()
+                                           ? *item.result_field
+                                           : item.variable;
+            const auto found = record.find(field);
+            CHECK(found != record.end(), common::InvalidArgumentError,
+                  "unknown yield field for " + plan.ProcedureName() + ": " +
+                      field);
+            output.Set(item.variable, found->second);
+          }
+          const std::size_t bytes = output.EstimatedHeapUsage();
+          state_->memory_tracker.Reserve(bytes);
+          buffer_reserved_bytes_ += bytes;
+          buffer_.push_back(std::move(output));
+        }
       }
     }
     *row = std::move(buffer_[buffer_index_++]);
@@ -732,6 +1569,8 @@ class StreamingUnaryOperator final : public PullOperator {
         return true;
       }
       unwind_values_.clear();
+      state_->memory_tracker.Release(unwind_reserved_bytes_);
+      unwind_reserved_bytes_ = 0;
       unwind_index_ = 0;
       SlottedRow input(node_->children[0]->output_slots);
       if (!PullInput(&input)) {
@@ -746,6 +1585,10 @@ class StreamingUnaryOperator final : public PullOperator {
       } else {
         unwind_values_.push_back(std::move(value));
       }
+      for (const auto &item : unwind_values_) {
+        unwind_reserved_bytes_ += EstimatedValueHeapUsage(item);
+      }
+      state_->memory_tracker.Reserve(unwind_reserved_bytes_);
       unwind_input_.emplace(std::move(input));
     }
   }
@@ -771,60 +1614,110 @@ class StreamingUnaryOperator final : public PullOperator {
     if (!PullInput(&input)) {
       return false;
     }
-    const QueryRows input_rows{input.Materialize(*state_->graph_reader)};
-    const WritePlanExecutor passthrough =
-        [](const ir::LogicalPlan &, const QueryRows &rows) { return rows; };
-    WriteExecutor executor(state_->storage, state_->context);
-    QueryRows result;
+    Storage &storage = RequireStorage(state_);
+    SlottedRow output =
+        input.CopyTo(node_->output_slots, *state_->graph_reader);
     switch (node_->logical->Type()) {
-      case ir::LogicalPlanNodeType::kCreateNode:
-        result = executor.Execute(
-            static_cast<const ir::CreateNodePlan &>(*node_->logical),
-            input_rows, passthrough);
+      case ir::LogicalPlanNodeType::kCreateNode: {
+        const auto &plan =
+            static_cast<const ir::CreateNodePlan &>(*node_->logical);
+        output.Set(plan.Node().variable,
+                   Value(storage.CreateNode(
+                       plan.Node().labels,
+                       EvaluatePropertyMap(plan.Node().properties, input,
+                                           "CREATE node", state_))));
         break;
-      case ir::LogicalPlanNodeType::kCreateRelationship:
-        result = executor.Execute(
-            static_cast<const ir::CreateRelationshipPlan &>(*node_->logical),
-            input_rows, passthrough);
+      }
+      case ir::LogicalPlanNodeType::kCreateRelationship: {
+        const auto &plan =
+            static_cast<const ir::CreateRelationshipPlan &>(*node_->logical);
+        const auto &pattern = plan.Relationship();
+        const std::int64_t left = NodeId(input, pattern.left_node, *state_);
+        const std::int64_t right = NodeId(input, pattern.right_node, *state_);
+        CHECK(left >= 0 && right >= 0, common::InvalidArgumentError,
+              "CREATE relationship endpoints must be nodes");
+        output.Set(pattern.variable,
+                   Value(storage.CreateRelationship(
+                       left, right,
+                       pattern.types.empty() ? std::string() : pattern.types[0],
+                       EvaluatePropertyMap(pattern.properties, input,
+                                           "CREATE relationship", state_))));
         break;
-      case ir::LogicalPlanNodeType::kSetProperty:
-        result = executor.Execute(
-            static_cast<const ir::SetPropertyPlan &>(*node_->logical),
-            input_rows, passthrough);
+      }
+      case ir::LogicalPlanNodeType::kSetProperty: {
+        const auto &plan =
+            static_cast<const ir::SetPropertyPlan &>(*node_->logical);
+        ApplySetPattern({.kind = ir::SetMutatingPatternKind::kSetProperty,
+                         .entity = plan.Entity(),
+                         .property_key = plan.PropertyKey(),
+                         .value = plan.Value()},
+                        &output, state_);
         break;
-      case ir::LogicalPlanNodeType::kSetProperties:
-        result = executor.Execute(
-            static_cast<const ir::SetPropertiesPlan &>(*node_->logical),
-            input_rows, passthrough);
+      }
+      case ir::LogicalPlanNodeType::kSetProperties: {
+        const auto &plan =
+            static_cast<const ir::SetPropertiesPlan &>(*node_->logical);
+        ApplySetPattern(
+            {.kind =
+                 plan.IncludeExisting()
+                     ? ir::SetMutatingPatternKind::
+                           kSetIncludingPropertiesFromMap
+                     : ir::SetMutatingPatternKind::kSetExactPropertiesFromMap,
+             .entity = plan.Entity(),
+             .value = plan.Value()},
+            &output, state_);
         break;
-      case ir::LogicalPlanNodeType::kSetLabels:
-        result = executor.Execute(
-            static_cast<const ir::SetLabelsPlan &>(*node_->logical), input_rows,
-            passthrough);
+      }
+      case ir::LogicalPlanNodeType::kSetLabels: {
+        const auto &plan =
+            static_cast<const ir::SetLabelsPlan &>(*node_->logical);
+        ApplySetPattern({.kind = ir::SetMutatingPatternKind::kSetLabels,
+                         .entity = plan.Entity(),
+                         .labels = plan.Labels()},
+                        &output, state_);
         break;
-      case ir::LogicalPlanNodeType::kRemoveProperty:
-        result = executor.Execute(
-            static_cast<const ir::RemovePropertyPlan &>(*node_->logical),
-            input_rows, passthrough);
+      }
+      case ir::LogicalPlanNodeType::kRemoveProperty: {
+        const auto &plan =
+            static_cast<const ir::RemovePropertyPlan &>(*node_->logical);
+        CHECK(plan.Entity() != nullptr, common::InvalidArgumentError,
+              "REMOVE property expression is null");
+        const Value entity = Evaluate(*plan.Entity(), output, {}, *state_);
+        if (entity.IsNode()) {
+          storage.RemoveNodeProperty(entity.AsNode().id, plan.PropertyKey());
+        } else if (entity.IsRelationship()) {
+          storage.RemoveRelationshipProperty(entity.AsRelationship().id,
+                                             plan.PropertyKey());
+        } else {
+          CHECK(entity.IsNull(), common::InvalidArgumentError,
+                "REMOVE property target is not an entity");
+        }
         break;
-      case ir::LogicalPlanNodeType::kRemoveLabels:
-        result = executor.Execute(
-            static_cast<const ir::RemoveLabelsPlan &>(*node_->logical),
-            input_rows, passthrough);
+      }
+      case ir::LogicalPlanNodeType::kRemoveLabels: {
+        const auto &plan =
+            static_cast<const ir::RemoveLabelsPlan &>(*node_->logical);
+        CHECK(plan.Entity() != nullptr, common::InvalidArgumentError,
+              "REMOVE labels expression is null");
+        const Value entity = Evaluate(*plan.Entity(), output, {}, *state_);
+        if (!entity.IsNull()) {
+          CHECK(entity.IsNode(), common::InvalidArgumentError,
+                "REMOVE labels target is not a node");
+          storage.RemoveLabels(entity.AsNode().id, plan.Labels());
+        }
         break;
+      }
       default:
         THROW(common::InternalError, "unexpected streaming write operator");
     }
-    CHECK(result.size() == 1, common::InternalError,
-          "streaming write changed row cardinality");
-    *row = SlottedRow::FromQueryRow(node_->output_slots, result.front());
+    *row = std::move(output);
     return true;
   }
 
   const PhysicalPlanNode *node_ = nullptr;
   RuntimeState *state_ = nullptr;
   std::unique_ptr<PullOperator> source_;
-  std::unique_ptr<EntityIdCursor> relationship_cursor_;
+  EntityIdCursor *relationship_cursor_ = nullptr;
   std::optional<SlottedRow> current_input_;
   std::optional<SlottedRow> unwind_input_;
   std::optional<SlottedRow> pending_first_;
@@ -832,6 +1725,8 @@ class StreamingUnaryOperator final : public PullOperator {
   std::vector<SlottedRow> buffer_;
   std::size_t unwind_index_ = 0;
   std::size_t buffer_index_ = 0;
+  std::size_t buffer_reserved_bytes_ = 0;
+  std::size_t unwind_reserved_bytes_ = 0;
   std::int64_t current_from_id_ = -1;
   std::int64_t current_to_id_ = -1;
   std::optional<std::int64_t> pagination_count_;
@@ -851,6 +1746,7 @@ class BlockingUnaryOperator final : public PullOperator {
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
     CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    state_->CheckCancelled();
     if (!initialized_) {
       Initialize();
     }
@@ -866,66 +1762,204 @@ class BlockingUnaryOperator final : public PullOperator {
     if (source_ != nullptr) {
       source_->Close();
     }
+    state_->memory_tracker.Release(reserved_bytes_);
+    reserved_bytes_ = 0;
     closed_ = true;
   }
 
  private:
+  void BufferRow(SlottedRow row) {
+    const std::size_t bytes = row.EstimatedHeapUsage();
+    state_->memory_tracker.Reserve(bytes);
+    reserved_bytes_ += bytes;
+    rows_.push_back(std::move(row));
+  }
+
   void Initialize() {
     initialized_ = true;
     if (node_->logical->Type() == ir::LogicalPlanNodeType::kWriteBarrier) {
       SlottedRow input(node_->children[0]->output_slots);
       while (source_->Next(&input)) {
-        rows_.push_back(
-            input.CopyTo(node_->output_slots, *state_->graph_reader));
+        BufferRow(input.CopyTo(node_->output_slots, *state_->graph_reader));
       }
       return;
     }
 
-    QueryRows input_rows;
-    SlottedRow input(node_->children[0]->output_slots);
-    while (source_->Next(&input)) {
-      input_rows.push_back(input.Materialize(*state_->graph_reader));
+    if (node_->logical->Type() == ir::LogicalPlanNodeType::kDelete ||
+        node_->logical->Type() == ir::LogicalPlanNodeType::kDetachDelete) {
+      Storage &storage = RequireStorage(state_);
+      const bool detach =
+          node_->logical->Type() == ir::LogicalPlanNodeType::kDetachDelete;
+      const auto &expressions =
+          detach ? static_cast<const ir::DetachDeletePlan &>(*node_->logical)
+                       .Expressions()
+                 : static_cast<const ir::DeletePlan &>(*node_->logical)
+                       .Expressions();
+      std::set<std::int64_t> node_ids;
+      std::set<std::int64_t> relationship_ids;
+      SlottedRow input(node_->children[0]->output_slots);
+      while (source_->Next(&input)) {
+        state_->CheckCancelled();
+        BufferRow(input.CopyTo(node_->output_slots, *state_->graph_reader));
+        for (const ast::Expression *expression : expressions) {
+          CHECK(expression != nullptr, common::InvalidArgumentError,
+                "DELETE expression is null");
+          const Value entity = Evaluate(*expression, input, {}, *state_);
+          if (entity.IsNull()) {
+            continue;
+          }
+          CHECK(entity.IsNode() || entity.IsRelationship(),
+                common::InvalidArgumentError,
+                "DELETE expression is not a graph entity");
+          if (entity.IsNode()) {
+            node_ids.insert(entity.AsNode().id);
+          } else {
+            relationship_ids.insert(entity.AsRelationship().id);
+          }
+        }
+      }
+      for (std::int64_t node_id : node_ids) {
+        EntityIdCursor *relationships =
+            state_->TrackCursor(storage.RelationshipIdsConnectedTo(node_id));
+        while (relationships->Next()) {
+          if (detach) {
+            relationship_ids.insert(relationships->Id());
+          } else {
+            CHECK(relationship_ids.contains(relationships->Id()),
+                  common::InvalidArgumentError,
+                  "DELETE node still has relationships");
+          }
+        }
+        state_->ReleaseCursor(relationships);
+      }
+      for (std::int64_t relationship_id : relationship_ids) {
+        storage.DeleteRelationship(relationship_id);
+      }
+      for (std::int64_t node_id : node_ids) {
+        storage.DeleteNode(node_id);
+      }
+      return;
     }
-    QueryRows output_rows;
+
     switch (node_->logical->Type()) {
-      case ir::LogicalPlanNodeType::kDistinct:
-        output_rows =
-            RowOperatorExecutor(state_->context)
-                .Execute(static_cast<const ir::DistinctPlan &>(*node_->logical),
-                         input_rows);
+      case ir::LogicalPlanNodeType::kDistinct: {
+        const auto &plan =
+            static_cast<const ir::DistinctPlan &>(*node_->logical);
+        std::set<std::string> seen;
+        SlottedRow input(node_->children[0]->output_slots);
+        while (source_->Next(&input)) {
+          std::vector<Value> values =
+              EvaluateGroupingValues(plan.GroupingItems(), input, state_);
+          const std::string key = AppendKey(values);
+          if (!seen.insert(key).second) {
+            continue;
+          }
+          state_->memory_tracker.Reserve(key.capacity());
+          reserved_bytes_ += key.capacity();
+          SlottedRow output(node_->output_slots);
+          for (std::size_t index = 0; index < values.size(); ++index) {
+            output.Set(plan.GroupingItems()[index].alias,
+                       std::move(values[index]));
+          }
+          BufferRow(std::move(output));
+        }
         break;
-      case ir::LogicalPlanNodeType::kAggregation:
-        output_rows =
-            RowOperatorExecutor(state_->context)
-                .Execute(
-                    static_cast<const ir::AggregationPlan &>(*node_->logical),
-                    input_rows);
+      }
+      case ir::LogicalPlanNodeType::kAggregation: {
+        const auto &plan =
+            static_cast<const ir::AggregationPlan &>(*node_->logical);
+        struct Group {
+          explicit Group(SlottedRow projected) : output(std::move(projected)) {}
+          SlottedRow output;
+          std::vector<SlottedRow> inputs;
+        };
+        std::map<std::string, std::unique_ptr<Group>> groups;
+        SlottedRow input(node_->children[0]->output_slots);
+        while (source_->Next(&input)) {
+          std::vector<Value> values =
+              EvaluateGroupingValues(plan.GroupingItems(), input, state_);
+          std::string key = AppendKey(values);
+          auto found = groups.find(key);
+          if (found == groups.end()) {
+            SlottedRow projected(node_->output_slots);
+            for (std::size_t index = 0; index < values.size(); ++index) {
+              projected.Set(plan.GroupingItems()[index].alias,
+                            std::move(values[index]));
+            }
+            found = groups
+                        .emplace(std::move(key),
+                                 std::make_unique<Group>(std::move(projected)))
+                        .first;
+          }
+          const std::size_t bytes = input.EstimatedHeapUsage();
+          state_->memory_tracker.Reserve(bytes);
+          reserved_bytes_ += bytes;
+          found->second->inputs.push_back(input);
+        }
+        if (plan.GroupingItems().empty() && groups.empty()) {
+          groups.emplace(
+              "", std::make_unique<Group>(SlottedRow(node_->output_slots)));
+        }
+        for (auto &[key, group] : groups) {
+          (void)key;
+          for (const auto &item : plan.AggregationItems()) {
+            group->output.Set(item.alias,
+                              EvaluateAggregate(item, group->inputs, state_));
+          }
+          BufferRow(std::move(group->output));
+        }
         break;
-      case ir::LogicalPlanNodeType::kSort:
-        output_rows =
-            ResultSetExecutor(state_->context)
-                .Execute(static_cast<const ir::SortPlan &>(*node_->logical),
-                         std::move(input_rows));
+      }
+      case ir::LogicalPlanNodeType::kSort: {
+        const auto &plan = static_cast<const ir::SortPlan &>(*node_->logical);
+        SlottedRow input(node_->children[0]->output_slots);
+        while (source_->Next(&input)) {
+          BufferRow(input.CopyTo(node_->output_slots, *state_->graph_reader));
+        }
+        std::stable_sort(
+            rows_.begin(), rows_.end(),
+            [this, &plan](const SlottedRow &left, const SlottedRow &right) {
+              for (const auto &item : plan.Items()) {
+                CHECK(item.expression != nullptr, common::InvalidArgumentError,
+                      "sort expression is null");
+                int order = CompareValues(
+                    Evaluate(*item.expression, left,
+                             item.precomputed_expressions, *state_),
+                    Evaluate(*item.expression, right,
+                             item.precomputed_expressions, *state_));
+                if (item.direction == ir::LogicalOrderDirection::kDescending) {
+                  order = -order;
+                }
+                if (order != 0) {
+                  return order < 0;
+                }
+              }
+              return false;
+            });
         break;
-      case ir::LogicalPlanNodeType::kLimit:
-        output_rows =
-            ResultSetExecutor(state_->context)
-                .Execute(static_cast<const ir::LimitPlan &>(*node_->logical),
-                         std::move(input_rows));
-        break;
-      case ir::LogicalPlanNodeType::kDelete:
-      case ir::LogicalPlanNodeType::kDetachDelete: {
-        const WritePlanExecutor passthrough =
-            [](const ir::LogicalPlan &, const QueryRows &rows) { return rows; };
-        WriteExecutor executor(state_->storage, state_->context);
-        if (node_->logical->Type() == ir::LogicalPlanNodeType::kDelete) {
-          output_rows = executor.Execute(
-              static_cast<const ir::DeletePlan &>(*node_->logical), input_rows,
-              passthrough);
-        } else {
-          output_rows = executor.Execute(
-              static_cast<const ir::DetachDeletePlan &>(*node_->logical),
-              input_rows, passthrough);
+      }
+      case ir::LogicalPlanNodeType::kLimit: {
+        const auto &plan = static_cast<const ir::LimitPlan &>(*node_->logical);
+        SlottedRow input(node_->children[0]->output_slots);
+        while (source_->Next(&input)) {
+          BufferRow(input.CopyTo(node_->output_slots, *state_->graph_reader));
+        }
+        if (rows_.empty() &&
+            (!ast::CollectExpressionDependencies(*plan.Limit()).empty() ||
+             !plan.PrecomputedExpressions().empty())) {
+          break;
+        }
+        Value count = rows_.empty()
+                          ? EvaluateExpression(*plan.Limit(), QueryRow{},
+                                               plan.PrecomputedExpressions(),
+                                               state_->context)
+                          : Evaluate(*plan.Limit(), rows_.front(),
+                                     plan.PrecomputedExpressions(), *state_);
+        CHECK(count.IsInteger() && count.AsInteger() >= 0,
+              common::InvalidArgumentError,
+              "LIMIT requires a non-negative integer");
+        if (static_cast<std::uint64_t>(count.AsInteger()) < rows_.size()) {
+          rows_.erase(rows_.begin() + count.AsInteger(), rows_.end());
         }
         break;
       }
@@ -933,16 +1967,13 @@ class BlockingUnaryOperator final : public PullOperator {
         THROW(common::InternalError, "unsupported blocking unary operator: " +
                                          std::string(node_->logical->Name()));
     }
-    rows_.reserve(output_rows.size());
-    for (const auto &output : output_rows) {
-      rows_.push_back(SlottedRow::FromQueryRow(node_->output_slots, output));
-    }
   }
 
   const PhysicalPlanNode *node_ = nullptr;
   RuntimeState *state_ = nullptr;
   std::unique_ptr<PullOperator> source_;
   std::vector<SlottedRow> rows_;
+  std::size_t reserved_bytes_ = 0;
   std::size_t next_ = 0;
   bool initialized_ = false;
   bool closed_ = false;
@@ -961,6 +1992,7 @@ class BlockingBinaryOperator final : public PullOperator {
   ~BlockingBinaryOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
+    state_->CheckCancelled();
     if (!initialized_) {
       Initialize();
     }
@@ -979,55 +2011,135 @@ class BlockingBinaryOperator final : public PullOperator {
     if (rhs_ != nullptr) {
       rhs_->Close();
     }
+    state_->memory_tracker.Release(reserved_bytes_);
+    reserved_bytes_ = 0;
   }
 
  private:
-  static QueryRows Collect(PullOperator *source,
-                           SlotConfigurationPtr source_slots,
-                           const RuntimeState &state) {
-    QueryRows rows;
+  std::vector<SlottedRow> Collect(PullOperator *source,
+                                  SlotConfigurationPtr source_slots) {
+    std::vector<SlottedRow> rows;
     SlottedRow row(std::move(source_slots));
     while (source->Next(&row)) {
-      rows.push_back(row.Materialize(*state.graph_reader));
+      const std::size_t bytes = row.EstimatedHeapUsage();
+      state_->memory_tracker.Reserve(bytes);
+      reserved_bytes_ += bytes;
+      rows.push_back(row);
     }
     return rows;
   }
 
+  void BufferRow(SlottedRow row) {
+    const std::size_t bytes = row.EstimatedHeapUsage();
+    state_->memory_tracker.Reserve(bytes);
+    reserved_bytes_ += bytes;
+    rows_.push_back(std::move(row));
+  }
+
+  std::optional<std::string> NodeJoinKey(
+      const SlottedRow &row, const std::vector<std::string> &keys) const {
+    std::vector<Value> values;
+    values.reserve(keys.size());
+    for (const auto &key : keys) {
+      Value value = row.Get(key, *state_->graph_reader);
+      if (value.IsNull()) {
+        return std::nullopt;
+      }
+      values.push_back(std::move(value));
+    }
+    return AppendKey(values);
+  }
+
+  bool EmitJoined(const SlottedRow &lhs, const SlottedRow &rhs,
+                  const std::vector<const ast::Expression *> *predicates) {
+    SlottedRow output(node_->output_slots);
+    if (!MergeMappings(lhs, &output, node_->child_mappings[0], *state_) ||
+        !MergeMappings(rhs, &output, node_->child_mappings[1], *state_)) {
+      return false;
+    }
+    if (predicates != nullptr) {
+      for (const ast::Expression *predicate : *predicates) {
+        CHECK(predicate != nullptr, common::InvalidArgumentError,
+              "join predicate is null");
+        if (!PredicateIsTrue(Evaluate(*predicate, output, {}, *state_))) {
+          return false;
+        }
+      }
+    }
+    BufferRow(std::move(output));
+    return true;
+  }
+
   void Initialize() {
     initialized_ = true;
-    QueryRows lhs_rows =
-        Collect(lhs_.get(), node_->children[0]->output_slots, *state_);
-    QueryRows rhs_rows =
-        Collect(rhs_.get(), node_->children[1]->output_slots, *state_);
-    JoinExecutor executor(state_->context);
-    QueryRows output;
+    std::vector<SlottedRow> lhs_rows =
+        Collect(lhs_.get(), node_->children[0]->output_slots);
+    std::vector<SlottedRow> rhs_rows =
+        Collect(rhs_.get(), node_->children[1]->output_slots);
     switch (node_->logical->Type()) {
       case ir::LogicalPlanNodeType::kCartesianProduct:
-        output = executor.Execute(
-            static_cast<const ir::CartesianProductPlan &>(*node_->logical),
-            lhs_rows, rhs_rows);
+        for (const auto &lhs : lhs_rows) {
+          state_->CheckCancelled();
+          for (const auto &rhs : rhs_rows) {
+            (void)EmitJoined(lhs, rhs, nullptr);
+          }
+        }
         break;
-      case ir::LogicalPlanNodeType::kNodeHashJoin:
-        output = executor.Execute(
-            static_cast<const ir::NodeHashJoinPlan &>(*node_->logical),
-            lhs_rows, rhs_rows);
+      case ir::LogicalPlanNodeType::kNodeHashJoin: {
+        const auto &plan =
+            static_cast<const ir::NodeHashJoinPlan &>(*node_->logical);
+        std::unordered_map<std::string, std::vector<const SlottedRow *>>
+            buckets;
+        for (const auto &rhs : rhs_rows) {
+          if (std::optional<std::string> key =
+                  NodeJoinKey(rhs, plan.JoinKeys());
+              key.has_value()) {
+            buckets[*key].push_back(&rhs);
+          }
+        }
+        for (const auto &lhs : lhs_rows) {
+          state_->CheckCancelled();
+          const std::optional<std::string> key =
+              NodeJoinKey(lhs, plan.JoinKeys());
+          if (!key.has_value()) {
+            continue;
+          }
+          const auto found = buckets.find(*key);
+          if (found == buckets.end()) {
+            continue;
+          }
+          for (const SlottedRow *rhs : found->second) {
+            (void)EmitJoined(lhs, *rhs, nullptr);
+          }
+        }
         break;
-      case ir::LogicalPlanNodeType::kValueHashJoin:
-        output = executor.Execute(
-            static_cast<const ir::ValueHashJoinPlan &>(*node_->logical),
-            lhs_rows, rhs_rows);
+      }
+      case ir::LogicalPlanNodeType::kValueHashJoin: {
+        const auto &predicates =
+            static_cast<const ir::ValueHashJoinPlan &>(*node_->logical)
+                .Predicates();
+        for (const auto &lhs : lhs_rows) {
+          state_->CheckCancelled();
+          for (const auto &rhs : rhs_rows) {
+            (void)EmitJoined(lhs, rhs, &predicates);
+          }
+        }
         break;
-      case ir::LogicalPlanNodeType::kPredicateJoin:
-        output = executor.Execute(
-            static_cast<const ir::PredicateJoinPlan &>(*node_->logical),
-            lhs_rows, rhs_rows);
+      }
+      case ir::LogicalPlanNodeType::kPredicateJoin: {
+        const auto &predicates =
+            static_cast<const ir::PredicateJoinPlan &>(*node_->logical)
+                .Predicates();
+        for (const auto &lhs : lhs_rows) {
+          state_->CheckCancelled();
+          for (const auto &rhs : rhs_rows) {
+            (void)EmitJoined(lhs, rhs, &predicates);
+          }
+        }
         break;
+      }
       default:
         THROW(common::InternalError, "unexpected blocking binary operator");
-    }
-    rows_.reserve(output.size());
-    for (const auto &result : output) {
-      rows_.push_back(SlottedRow::FromQueryRow(node_->output_slots, result));
     }
   }
 
@@ -1036,6 +2148,7 @@ class BlockingBinaryOperator final : public PullOperator {
   std::unique_ptr<PullOperator> lhs_;
   std::unique_ptr<PullOperator> rhs_;
   std::vector<SlottedRow> rows_;
+  std::size_t reserved_bytes_ = 0;
   std::size_t next_ = 0;
   bool initialized_ = false;
 };
@@ -1053,6 +2166,7 @@ class UnionOperator final : public PullOperator {
   ~UnionOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
+    state_->CheckCancelled();
     const auto &plan = static_cast<const ir::UnionPlan &>(*node_->logical);
     while (side_ < 2) {
       PullOperator *source = side_ == 0 ? lhs_.get() : rhs_.get();
@@ -1074,9 +2188,12 @@ class UnionOperator final : public PullOperator {
           key.push_back(':');
           key.append(part);
         }
-        if (!seen_.insert(std::move(key)).second) {
+        auto [seen, inserted] = seen_.insert(std::move(key));
+        if (!inserted) {
           continue;
         }
+        state_->memory_tracker.Reserve(seen->capacity());
+        reserved_bytes_ += seen->capacity();
       }
       *row = std::move(output);
       return true;
@@ -1092,6 +2209,8 @@ class UnionOperator final : public PullOperator {
     if (rhs_ != nullptr) {
       rhs_->Close();
     }
+    state_->memory_tracker.Release(reserved_bytes_);
+    reserved_bytes_ = 0;
   }
 
  private:
@@ -1101,6 +2220,7 @@ class UnionOperator final : public PullOperator {
   std::unique_ptr<PullOperator> rhs_;
   std::set<std::string> seen_;
   std::size_t side_ = 0;
+  std::size_t reserved_bytes_ = 0;
 };
 
 class ApplyOperator final : public PullOperator {
@@ -1146,6 +2266,12 @@ class MergeOperator final : public PullOperator {
 
  private:
   void Initialize();
+  void BufferRow(SlottedRow row) {
+    const std::size_t bytes = row.EstimatedHeapUsage();
+    state_->memory_tracker.Reserve(bytes);
+    reserved_bytes_ += bytes;
+    rows_.push_back(std::move(row));
+  }
 
   const PhysicalPlanNode *node_ = nullptr;
   RuntimeState *state_ = nullptr;
@@ -1153,6 +2279,7 @@ class MergeOperator final : public PullOperator {
   std::unique_ptr<PullOperator> source_;
   std::vector<SlottedRow> rows_;
   std::size_t next_ = 0;
+  std::size_t reserved_bytes_ = 0;
   bool initialized_ = false;
 };
 
@@ -1236,6 +2363,7 @@ bool ApplyOperator::Combine(const SlottedRow &rhs, SlottedRow *row) {
 
 bool ApplyOperator::Next(SlottedRow *row) {
   CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+  state_->CheckCancelled();
   const ir::LogicalPlanNodeType type = node_->logical->Type();
   while (true) {
     if (!current_left_.has_value() && !NextLeft()) {
@@ -1274,14 +2402,20 @@ bool ApplyOperator::Next(SlottedRow *row) {
       const auto &rollup =
           static_cast<const ir::RollUpApplyPlan &>(*node_->logical);
       Value::List values;
+      std::size_t reserved_bytes = 0;
       SlottedRow rhs_row(node_->children[1]->output_slots);
       while (rhs_->Next(&rhs_row)) {
-        values.push_back(
-            rhs_row.Get(rollup.ValueVariable(), *state_->graph_reader));
+        Value value =
+            rhs_row.Get(rollup.ValueVariable(), *state_->graph_reader);
+        const std::size_t bytes = EstimatedValueHeapUsage(value);
+        state_->memory_tracker.Reserve(bytes);
+        reserved_bytes += bytes;
+        values.push_back(std::move(value));
       }
       SlottedRow output =
           current_left_->CopyTo(node_->output_slots, *state_->graph_reader);
       output.Set(rollup.CollectionVariable(), Value(std::move(values)));
+      state_->memory_tracker.Release(reserved_bytes);
       rhs_->Close();
       rhs_.reset();
       current_left_.reset();
@@ -1324,43 +2458,50 @@ void ApplyOperator::Close() noexcept {
 
 void MergeOperator::Initialize() {
   initialized_ = true;
-  QueryRows input_rows;
   SlottedRow input(node_->children[0]->output_slots);
   while (source_->Next(&input)) {
-    input_rows.push_back(input.Materialize(*state_->graph_reader));
-  }
-  WritePlanExecutor execute = [this](const ir::LogicalPlan &child,
-                                     const QueryRows &inputs) {
-    if (&child == &node_->logical->Child(0)) {
-      return inputs;
-    }
-    CHECK(&child == &node_->logical->Child(1), common::InternalError,
-          "merge invoked an unexpected child plan");
-    QueryRows output;
-    for (const auto &input_row : inputs) {
-      SlottedRow argument = SlottedRow::FromQueryRow(
-          node_->children[1]->argument_slots, input_row);
-      std::unique_ptr<PullOperator> rhs =
-          factory_->Build(*node_->children[1], std::move(argument));
-      SlottedRow rhs_row(node_->children[1]->output_slots);
-      while (rhs->Next(&rhs_row)) {
-        output.push_back(rhs_row.Materialize(*state_->graph_reader));
+    state_->CheckCancelled();
+    std::unique_ptr<PullOperator> rhs =
+        factory_->Build(*node_->children[1], input);
+    bool matched = false;
+    SlottedRow rhs_row(node_->children[1]->output_slots);
+    while (rhs->Next(&rhs_row)) {
+      SlottedRow output(node_->output_slots);
+      if (!MergeMappings(input, &output, node_->child_mappings[0], *state_) ||
+          !MergeMappings(rhs_row, &output, node_->child_mappings[1], *state_)) {
+        continue;
       }
-      rhs->Close();
+      matched = true;
+      for (const auto &action :
+           static_cast<const ir::MergePlan &>(*node_->logical)
+               .Merge()
+               .actions) {
+        if (action.on_match) {
+          ApplySetPatterns(action.set_patterns, &output, state_);
+        }
+      }
+      BufferRow(std::move(output));
     }
-    return output;
-  };
-  QueryRows output =
-      WriteExecutor(state_->storage, state_->context)
-          .Execute(static_cast<const ir::MergePlan &>(*node_->logical),
-                   input_rows, execute);
-  rows_.reserve(output.size());
-  for (const auto &result : output) {
-    rows_.push_back(SlottedRow::FromQueryRow(node_->output_slots, result));
+    rhs->Close();
+    if (matched) {
+      continue;
+    }
+    const auto &merge =
+        static_cast<const ir::MergePlan &>(*node_->logical).Merge();
+    SlottedRow output =
+        input.CopyTo(node_->output_slots, *state_->graph_reader);
+    ExecuteCreatePattern(merge.create_pattern, &output, state_, true);
+    for (const auto &action : merge.actions) {
+      if (!action.on_match) {
+        ApplySetPatterns(action.set_patterns, &output, state_);
+      }
+    }
+    BufferRow(std::move(output));
   }
 }
 
 bool MergeOperator::Next(SlottedRow *row) {
+  state_->CheckCancelled();
   if (!initialized_) {
     Initialize();
   }
@@ -1376,37 +2517,93 @@ void MergeOperator::Close() noexcept {
   if (source_ != nullptr) {
     source_->Close();
   }
+  state_->memory_tracker.Release(reserved_bytes_);
+  reserved_bytes_ = 0;
 }
 
 }  // namespace
 
-PhysicalExecutionResult ExecutePhysicalPlan(
+namespace {
+
+class PhysicalResultCursorImpl final : public PhysicalResultCursor {
+ public:
+  PhysicalResultCursorImpl(const PhysicalPlan &plan,
+                           const GraphReader &graph_reader, Storage *storage,
+                           const QueryParameters &parameters,
+                           std::vector<std::string> result_columns,
+                           QueryExecutionOptions options)
+      : state_(graph_reader, storage, parameters, std::move(options)),
+        factory_(state_),
+        root_(factory_.Build(plan.Root())),
+        output_slots_(plan.Root().output_slots),
+        result_columns_(std::move(result_columns)) {}
+
+  ~PhysicalResultCursorImpl() override { Close(); }
+
+  [[nodiscard]] bool Next(std::vector<Value> *row) override {
+    CHECK(row != nullptr, common::InvalidArgumentError, "result row is null");
+    if (closed_) {
+      return false;
+    }
+    try {
+      state_.CheckCancelled();
+      SlottedRow slotted(output_slots_);
+      if (!root_->Next(&slotted)) {
+        Close();
+        return false;
+      }
+      row->clear();
+      row->reserve(result_columns_.size());
+      for (const auto &column : result_columns_) {
+        row->push_back(slotted.IsInitialized(column)
+                           ? slotted.Get(column, *state_.graph_reader)
+                           : Value::Null());
+      }
+      return true;
+    } catch (...) {
+      Close();
+      throw;
+    }
+  }
+
+  void Cancel() noexcept override { state_.cancellation->Cancel(); }
+
+  void Close() noexcept override {
+    if (closed_) {
+      return;
+    }
+    if (root_ != nullptr) {
+      root_->Close();
+    }
+    state_.resources.Close();
+    peak_memory_bytes_ = state_.memory_tracker.PeakBytes();
+    closed_ = true;
+  }
+
+  [[nodiscard]] std::size_t PeakMemoryBytes() const noexcept override {
+    return closed_ ? peak_memory_bytes_ : state_.memory_tracker.PeakBytes();
+  }
+
+ private:
+  RuntimeState state_;
+  OperatorFactory factory_;
+  std::unique_ptr<PullOperator> root_;
+  SlotConfigurationPtr output_slots_;
+  std::vector<std::string> result_columns_;
+  std::size_t peak_memory_bytes_ = 0;
+  bool closed_ = false;
+};
+
+}  // namespace
+
+std::unique_ptr<PhysicalResultCursor> StartPhysicalPlan(
     const PhysicalPlan &plan, const GraphReader &graph_reader, Storage *storage,
     const QueryParameters &parameters,
-    const std::vector<std::string> &result_columns, bool collect_results) {
-  RuntimeState state{.graph_reader = &graph_reader,
-                     .storage = storage,
-                     .context = {.graph_reader = &graph_reader,
-                                 .parameters = &parameters,
-                                 .clock = ExecutionClock::Start()}};
-  OperatorFactory factory(state);
-  std::unique_ptr<PullOperator> root = factory.Build(plan.Root());
-  PhysicalExecutionResult result;
-  SlottedRow row(plan.Root().output_slots);
-  while (root->Next(&row)) {
-    if (!collect_results || result_columns.empty()) {
-      continue;
-    }
-    std::vector<Value> values;
-    values.reserve(result_columns.size());
-    for (const auto &column : result_columns) {
-      values.push_back(row.IsInitialized(column) ? row.Get(column, graph_reader)
-                                                 : Value::Null());
-    }
-    result.rows.push_back(std::move(values));
-  }
-  root->Close();
-  return result;
+    const std::vector<std::string> &result_columns,
+    QueryExecutionOptions options) {
+  return std::make_unique<PhysicalResultCursorImpl>(plan, graph_reader, storage,
+                                                    parameters, result_columns,
+                                                    std::move(options));
 }
 
 }  // namespace rg

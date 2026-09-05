@@ -563,12 +563,13 @@ void RunScenario(const Scenario &scenario) {
   const GraphSnapshot before = Snapshot(graph);
 
   if (scenario.error_phase.has_value()) {
+    std::unique_ptr<ast::Statement> statement;
+    std::unique_ptr<ir::QueryIR> query_ir;
     std::unique_ptr<ir::LogicalPlan> plan;
     bool compile_failed = false;
     try {
-      std::unique_ptr<ast::Statement> statement =
-          ast::ParseCypherAndRewrite(scenario.query);
-      std::unique_ptr<ir::QueryIR> query_ir = ir::CreateQueryIR(*statement);
+      statement = ast::ParseCypherAndRewrite(scenario.query);
+      query_ir = ir::CreateQueryIR(*statement);
       plan = ir::CreateLogicalPlan(
           *query_ir, {.planner_statistics = &graph, .planner_catalog = &graph});
     } catch (const common::Exception &) {

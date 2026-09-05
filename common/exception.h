@@ -67,6 +67,8 @@ class Exception : public std::runtime_error {
 DEFINE_EXCEPTION(InvalidArgumentError, Exception);
 DEFINE_EXCEPTION(NotFoundError, Exception);
 DEFINE_EXCEPTION(InternalError, Exception);
+DEFINE_EXCEPTION(QueryCancelledError, Exception);
+DEFINE_EXCEPTION(MemoryLimitExceededError, Exception);
 
 }  // namespace common
 

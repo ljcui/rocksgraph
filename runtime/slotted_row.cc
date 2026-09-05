@@ -5,6 +5,28 @@
 #include "common/exception.h"
 
 namespace rg {
+std::size_t EstimatedValueHeapUsage(const Value &value) {
+  if (value.IsString()) {
+    return sizeof(Value) + value.AsString().capacity();
+  }
+  if (value.IsList()) {
+    std::size_t bytes =
+        sizeof(Value) + value.AsList().capacity() * sizeof(Value);
+    for (const auto &item : value.AsList()) {
+      bytes += EstimatedValueHeapUsage(item);
+    }
+    return bytes;
+  }
+  if (value.IsMap()) {
+    std::size_t bytes = sizeof(Value);
+    for (const auto &[key, item] : value.AsMap()) {
+      bytes += key.capacity() + EstimatedValueHeapUsage(item);
+    }
+    return bytes;
+  }
+  return sizeof(Value);
+}
+
 namespace {
 
 SlotKind KindFor(ast::SemanticVariableType type) {
@@ -151,8 +173,12 @@ void SlottedRow::SetNull(std::string_view name) {
 Value SlottedRow::Get(std::string_view name,
                       const GraphReader &graph_reader) const {
   const Slot &slot = slots_->At(name);
+  return Get(slot, graph_reader);
+}
+
+Value SlottedRow::Get(const Slot &slot, const GraphReader &graph_reader) const {
   CHECK(IsInitialized(slot), common::InvalidArgumentError,
-        "slot is not initialized: " + std::string(name));
+        "slot is not initialized");
   if (slot.kind == SlotKind::kReference) {
     return references_[slot.offset];
   }
@@ -173,6 +199,20 @@ QueryRow SlottedRow::Materialize(const GraphReader &graph_reader) const {
     }
   }
   return row;
+}
+
+std::size_t SlottedRow::EstimatedHeapUsage() const {
+  std::size_t bytes = sizeof(SlottedRow) +
+                      entity_ids_.capacity() * sizeof(std::int64_t) +
+                      references_.capacity() * sizeof(Value) +
+                      entity_initialized_.capacity() / 8 +
+                      reference_initialized_.capacity() / 8;
+  for (std::size_t index = 0; index < references_.size(); ++index) {
+    if (reference_initialized_[index]) {
+      bytes += EstimatedValueHeapUsage(references_[index]);
+    }
+  }
+  return bytes;
 }
 
 SlottedRow SlottedRow::CopyTo(SlotConfigurationPtr target,
@@ -243,6 +283,28 @@ bool TryBindSlot(SlottedRow *row, std::string_view name, Value value,
     return true;
   }
   return ValuesEqual(row->Get(name, graph_reader), value);
+}
+
+bool TryBindEntityId(SlottedRow *row, std::string_view name, SlotKind kind,
+                     std::int64_t id, const GraphReader &graph_reader) {
+  CHECK(row != nullptr, common::InternalError, "query row is null");
+  CHECK(kind == SlotKind::kNode || kind == SlotKind::kRelationship,
+        common::InvalidArgumentError, "entity binding kind is invalid");
+  if (name.empty()) {
+    return true;
+  }
+  const Slot &slot = row->Slots()->At(name);
+  if (slot.kind == kind) {
+    if (!row->IsInitialized(slot)) {
+      row->SetEntityId(slot, id);
+      return true;
+    }
+    return row->EntityIdAt(slot) == id;
+  }
+  Value value = kind == SlotKind::kNode
+                    ? Value(graph_reader.NodeById(id))
+                    : Value(graph_reader.RelationshipById(id));
+  return TryBindSlot(row, name, std::move(value), graph_reader);
 }
 
 }  // namespace rg

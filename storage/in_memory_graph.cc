@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <unordered_set>
 #include <utility>
@@ -13,21 +14,40 @@
 namespace rg {
 namespace {
 
-class VectorEntityIdCursor final : public EntityIdCursor {
+template <typename EntityPtr>
+class PointerVectorEntityIdCursor final : public EntityIdCursor {
  public:
-  explicit VectorEntityIdCursor(std::vector<std::int64_t> ids)
-      : ids_(std::move(ids)) {}
+  using EntityVector = std::vector<EntityPtr>;
+  using Predicate = std::function<bool(const EntityPtr &)>;
 
-  ~VectorEntityIdCursor() override { Close(); }
+  explicit PointerVectorEntityIdCursor(
+      std::vector<const EntityVector *> sources, Predicate predicate = {},
+      bool deduplicate = false)
+      : sources_(std::move(sources)),
+        predicate_(std::move(predicate)),
+        deduplicate_(deduplicate) {}
+
+  ~PointerVectorEntityIdCursor() override { Close(); }
 
   [[nodiscard]] bool Next() override {
-    if (closed_ || next_ >= ids_.size()) {
-      Close();
-      return false;
+    while (!closed_ && source_index_ < sources_.size()) {
+      const EntityVector *source = sources_[source_index_];
+      if (source == nullptr || item_index_ >= source->size()) {
+        ++source_index_;
+        item_index_ = 0;
+        continue;
+      }
+      const EntityPtr &entity = (*source)[item_index_++];
+      if (entity == nullptr || (predicate_ && !predicate_(entity)) ||
+          (deduplicate_ && !seen_.insert(entity->id).second)) {
+        continue;
+      }
+      current_ = entity->id;
+      positioned_ = true;
+      return true;
     }
-    current_ = ids_[next_++];
-    positioned_ = true;
-    return true;
+    Close();
+    return false;
   }
 
   [[nodiscard]] std::int64_t Id() const override {
@@ -38,28 +58,29 @@ class VectorEntityIdCursor final : public EntityIdCursor {
 
   void Close() noexcept override {
     closed_ = true;
-    ids_.clear();
+    sources_.clear();
+    seen_.clear();
   }
 
  private:
-  std::vector<std::int64_t> ids_;
-  std::size_t next_ = 0;
+  std::vector<const EntityVector *> sources_;
+  Predicate predicate_;
+  std::unordered_set<std::int64_t> seen_;
+  std::size_t source_index_ = 0;
+  std::size_t item_index_ = 0;
   std::int64_t current_ = -1;
+  bool deduplicate_ = false;
   bool positioned_ = false;
   bool closed_ = false;
 };
 
 template <typename EntityPtr>
-std::unique_ptr<EntityIdCursor> MakeIdCursor(
-    const std::vector<EntityPtr> &entities) {
-  std::vector<std::int64_t> ids;
-  ids.reserve(entities.size());
-  for (const auto &entity : entities) {
-    if (entity != nullptr) {
-      ids.push_back(entity->id);
-    }
-  }
-  return std::make_unique<VectorEntityIdCursor>(std::move(ids));
+std::unique_ptr<EntityIdCursor> MakePointerCursor(
+    std::vector<const std::vector<EntityPtr> *> sources,
+    std::function<bool(const EntityPtr &)> predicate = {},
+    bool deduplicate = false) {
+  return std::make_unique<PointerVectorEntityIdCursor<EntityPtr>>(
+      std::move(sources), std::move(predicate), deduplicate);
 }
 
 bool ContainsString(const std::vector<std::string> &items,
@@ -219,51 +240,151 @@ class InMemoryGraph::Transaction final : public StorageTransaction {
 InMemoryGraph::~InMemoryGraph() = default;
 
 std::unique_ptr<EntityIdCursor> InMemoryGraph::ScanNodeIds() const {
-  return MakeIdCursor(nodes_);
+  return MakePointerCursor<NodePtr>({&nodes_});
 }
 
 std::unique_ptr<EntityIdCursor> InMemoryGraph::ScanRelationshipIds() const {
-  return MakeIdCursor(relationships_);
+  return MakePointerCursor<RelationshipPtr>({&relationships_});
 }
 
 std::unique_ptr<EntityIdCursor> InMemoryGraph::RelationshipIdsConnectedTo(
     int64_t node_id) const {
-  return MakeIdCursor(RelationshipsConnectedTo(node_id));
+  std::vector<const std::vector<RelationshipPtr> *> sources;
+  const auto outgoing = outgoing_relationships_.find(node_id);
+  if (outgoing != outgoing_relationships_.end()) {
+    sources.push_back(&outgoing->second);
+  }
+  const auto incoming = incoming_relationships_.find(node_id);
+  if (incoming != incoming_relationships_.end()) {
+    sources.push_back(&incoming->second);
+  }
+  return MakePointerCursor<RelationshipPtr>(std::move(sources), {}, true);
 }
 
 std::unique_ptr<EntityIdCursor> InMemoryGraph::OutgoingRelationshipIds(
     int64_t node_id) const {
-  return MakeIdCursor(OutgoingRelationships(node_id));
+  const auto found = outgoing_relationships_.find(node_id);
+  return MakePointerCursor<RelationshipPtr>(
+      found == outgoing_relationships_.end()
+          ? std::vector<const std::vector<RelationshipPtr> *>{}
+          : std::vector<const std::vector<RelationshipPtr> *>{&found->second});
 }
 
 std::unique_ptr<EntityIdCursor> InMemoryGraph::IncomingRelationshipIds(
     int64_t node_id) const {
-  return MakeIdCursor(IncomingRelationships(node_id));
+  const auto found = incoming_relationships_.find(node_id);
+  return MakePointerCursor<RelationshipPtr>(
+      found == incoming_relationships_.end()
+          ? std::vector<const std::vector<RelationshipPtr> *>{}
+          : std::vector<const std::vector<RelationshipPtr> *>{&found->second});
 }
 
 std::unique_ptr<EntityIdCursor> InMemoryGraph::FindNodeIdsByIndex(
     const std::vector<std::string> &labels, std::string_view property_key,
     const Value &value) const {
-  return MakeIdCursor(FindNodesByIndex(labels, property_key, value));
+  const std::string index_key = IndexKey(labels, property_key);
+  const auto indexes = node_indexes_.find(index_key);
+  const auto buckets = node_index_buckets_.find(index_key);
+  if (indexes == node_indexes_.end() || buckets == node_index_buckets_.end()) {
+    return MakePointerCursor<NodePtr>({});
+  }
+  const auto bucket = buckets->second.find(ValueIndexKey(value));
+  if (bucket == buckets->second.end()) {
+    return MakePointerCursor<NodePtr>({});
+  }
+  const IndexDescriptor descriptor = indexes->second;
+  return MakePointerCursor<NodePtr>(
+      {&bucket->second}, [this, descriptor, value](const NodePtr &node) {
+        if (!HasNode(node->id) ||
+            !NodeHasLabels(*node, descriptor.qualifiers)) {
+          return false;
+        }
+        const auto property = node->properties.find(descriptor.property_key);
+        return property != node->properties.end() &&
+               ValuesEqual(property->second, value);
+      });
 }
 
 std::unique_ptr<EntityIdCursor> InMemoryGraph::NodeIdsInIndex(
     const std::vector<std::string> &labels,
     std::string_view property_key) const {
-  return MakeIdCursor(NodesInIndex(labels, property_key));
+  const std::string index_key = IndexKey(labels, property_key);
+  const auto indexes = node_indexes_.find(index_key);
+  const auto buckets = node_index_buckets_.find(index_key);
+  if (indexes == node_indexes_.end() || buckets == node_index_buckets_.end()) {
+    return MakePointerCursor<NodePtr>({});
+  }
+  std::vector<const std::vector<NodePtr> *> sources;
+  sources.reserve(buckets->second.size());
+  for (const auto &[value_key, nodes] : buckets->second) {
+    (void)value_key;
+    sources.push_back(&nodes);
+  }
+  const IndexDescriptor descriptor = indexes->second;
+  return MakePointerCursor<NodePtr>(
+      std::move(sources),
+      [this, descriptor](const NodePtr &node) {
+        return HasNode(node->id) &&
+               NodeHasLabels(*node, descriptor.qualifiers) &&
+               node->properties.contains(descriptor.property_key);
+      },
+      true);
 }
 
 std::unique_ptr<EntityIdCursor> InMemoryGraph::FindRelationshipIdsByIndex(
     const std::vector<std::string> &relationship_types,
     std::string_view property_key, const Value &value) const {
-  return MakeIdCursor(
-      FindRelationshipsByIndex(relationship_types, property_key, value));
+  const std::string index_key = IndexKey(relationship_types, property_key);
+  const auto indexes = relationship_indexes_.find(index_key);
+  const auto buckets = relationship_index_buckets_.find(index_key);
+  if (indexes == relationship_indexes_.end() ||
+      buckets == relationship_index_buckets_.end()) {
+    return MakePointerCursor<RelationshipPtr>({});
+  }
+  const auto bucket = buckets->second.find(ValueIndexKey(value));
+  if (bucket == buckets->second.end()) {
+    return MakePointerCursor<RelationshipPtr>({});
+  }
+  const IndexDescriptor descriptor = indexes->second;
+  return MakePointerCursor<RelationshipPtr>(
+      {&bucket->second},
+      [this, descriptor, value](const RelationshipPtr &relationship) {
+        if (!HasRelationship(relationship->id) ||
+            !RelationshipHasAnyType(*relationship, descriptor.qualifiers)) {
+          return false;
+        }
+        const auto property =
+            relationship->properties.find(descriptor.property_key);
+        return property != relationship->properties.end() &&
+               ValuesEqual(property->second, value);
+      });
 }
 
 std::unique_ptr<EntityIdCursor> InMemoryGraph::RelationshipIdsInIndex(
     const std::vector<std::string> &relationship_types,
     std::string_view property_key) const {
-  return MakeIdCursor(RelationshipsInIndex(relationship_types, property_key));
+  const std::string index_key = IndexKey(relationship_types, property_key);
+  const auto indexes = relationship_indexes_.find(index_key);
+  const auto buckets = relationship_index_buckets_.find(index_key);
+  if (indexes == relationship_indexes_.end() ||
+      buckets == relationship_index_buckets_.end()) {
+    return MakePointerCursor<RelationshipPtr>({});
+  }
+  std::vector<const std::vector<RelationshipPtr> *> sources;
+  sources.reserve(buckets->second.size());
+  for (const auto &[value_key, relationships] : buckets->second) {
+    (void)value_key;
+    sources.push_back(&relationships);
+  }
+  const IndexDescriptor descriptor = indexes->second;
+  return MakePointerCursor<RelationshipPtr>(
+      std::move(sources),
+      [this, descriptor](const RelationshipPtr &relationship) {
+        return HasRelationship(relationship->id) &&
+               RelationshipHasAnyType(*relationship, descriptor.qualifiers) &&
+               relationship->properties.contains(descriptor.property_key);
+      },
+      true);
 }
 
 std::unique_ptr<StorageTransaction> InMemoryGraph::BeginTransaction() {
@@ -485,6 +606,20 @@ const InMemoryGraph::RelationshipPtr &InMemoryGraph::RelationshipById(
   CHECK(found != relationships_by_id_.end(), common::NotFoundError,
         "relationship does not exist");
   return found->second;
+}
+
+Value InMemoryGraph::NodeProperty(int64_t node_id,
+                                  std::string_view property_key) const {
+  const auto &properties = NodeById(node_id)->properties;
+  const auto found = properties.find(std::string(property_key));
+  return found == properties.end() ? Value::Null() : found->second;
+}
+
+Value InMemoryGraph::RelationshipProperty(int64_t relationship_id,
+                                          std::string_view property_key) const {
+  const auto &properties = RelationshipById(relationship_id)->properties;
+  const auto found = properties.find(std::string(property_key));
+  return found == properties.end() ? Value::Null() : found->second;
 }
 
 std::vector<InMemoryGraph::RelationshipPtr>

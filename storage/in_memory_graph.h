@@ -145,6 +145,10 @@ class InMemoryGraph final : public Storage,
   }
 
   [[nodiscard]] const NodePtr &NodeById(int64_t id) const override;
+  [[nodiscard]] Value NodeProperty(
+      int64_t node_id, std::string_view property_key) const override;
+  [[nodiscard]] Value RelationshipProperty(
+      int64_t relationship_id, std::string_view property_key) const override;
   [[nodiscard]] bool HasNode(int64_t id) const noexcept;
 
   [[nodiscard]] std::optional<ir::NodeIndexDescriptor> FindNodeIndex(

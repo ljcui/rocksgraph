@@ -52,91 +52,210 @@ ir::LogicalPlanBuilderOptions PlannerOptionsFor(const QueryOptions &options) {
                              : &DefaultRuntimePlannerCatalog()};
 }
 
-QueryResult ExecuteWithTransaction(const ir::LogicalPlan &plan,
-                                   const GraphReader &graph_reader,
-                                   Storage *storage,
-                                   const QueryParameters &parameters,
-                                   bool discard_results) {
-  const bool write = PlanContainsWrites(plan);
-  if (write) {
-    CHECK(storage != nullptr, common::InvalidArgumentError,
-          "write execution requires storage");
+struct ParsedQueryOwner {
+  std::unique_ptr<ast::Statement> statement;
+  std::unique_ptr<ir::QueryIR> query_ir;
+  std::unique_ptr<ir::LogicalPlan> logical_plan;
+};
+
+class QueryResultCursorImpl final : public QueryResultCursor {
+ public:
+  QueryResultCursorImpl(const ir::LogicalPlan &logical_plan,
+                        const GraphReader &graph_reader, Storage *storage,
+                        const QueryParameters &parameters,
+                        QueryExecutionOptions options,
+                        std::shared_ptr<void> owner = {})
+      : owner_(std::move(owner)),
+        write_(PlanContainsWrites(logical_plan)),
+        physical_plan_(CreatePhysicalPlan(logical_plan)) {
+    if (write_) {
+      CHECK(storage != nullptr, common::InvalidArgumentError,
+            "write execution requires storage");
+      transaction_ = storage->BeginTransaction();
+    }
+    if (logical_plan.Type() == ir::LogicalPlanNodeType::kProduceResults ||
+        !write_) {
+      columns_ = logical_plan.OutputColumns();
+    }
+    try {
+      physical_cursor_ =
+          StartPhysicalPlan(physical_plan_, graph_reader, storage, parameters,
+                            columns_, std::move(options));
+    } catch (...) {
+      Rollback();
+      throw;
+    }
   }
 
-  std::unique_ptr<StorageTransaction> transaction;
-  if (write) {
-    transaction = storage->BeginTransaction();
+  ~QueryResultCursorImpl() override { Close(); }
+
+  [[nodiscard]] const std::vector<std::string> &Columns()
+      const noexcept override {
+    return columns_;
   }
-  try {
-    PhysicalPlan physical_plan = CreatePhysicalPlan(plan);
-    const bool collect_results =
-        !discard_results &&
-        (plan.Type() == ir::LogicalPlanNodeType::kProduceResults || !write);
-    PhysicalExecutionResult execution =
-        ExecutePhysicalPlan(physical_plan, graph_reader, storage, parameters,
-                            plan.OutputColumns(), collect_results);
-    if (transaction != nullptr) {
-      transaction->Commit();
+
+  [[nodiscard]] bool Next(std::vector<Value> *row) override {
+    CHECK(row != nullptr, common::InvalidArgumentError, "result row is null");
+    if (closed_) {
+      return false;
     }
-    QueryResult result;
-    if (collect_results) {
-      result.columns = plan.OutputColumns();
-      result.rows = std::move(execution.rows);
+    try {
+      if (physical_cursor_->Next(row)) {
+        return true;
+      }
+      Finish();
+      return false;
+    } catch (...) {
+      Rollback();
+      ClosePhysicalCursor();
+      closed_ = true;
+      throw;
     }
-    return result;
-  } catch (...) {
-    if (transaction != nullptr) {
-      transaction->Rollback();
-    }
-    throw;
   }
+
+  void Cancel() noexcept override {
+    if (physical_cursor_ != nullptr) {
+      physical_cursor_->Cancel();
+    }
+    Close();
+  }
+
+  void Close() noexcept override {
+    if (closed_) {
+      return;
+    }
+    ClosePhysicalCursor();
+    if (!completed_) {
+      Rollback();
+    }
+    closed_ = true;
+  }
+
+  [[nodiscard]] std::size_t PeakMemoryBytes() const noexcept override {
+    return physical_cursor_ != nullptr ? physical_cursor_->PeakMemoryBytes()
+                                       : peak_memory_bytes_;
+  }
+
+ private:
+  void Finish() {
+    ClosePhysicalCursor();
+    if (transaction_ != nullptr) {
+      transaction_->Commit();
+    }
+    completed_ = true;
+    closed_ = true;
+  }
+
+  void Rollback() noexcept {
+    if (transaction_ == nullptr || completed_) {
+      return;
+    }
+    try {
+      transaction_->Rollback();
+    } catch (...) {
+    }
+    completed_ = true;
+  }
+
+  void ClosePhysicalCursor() noexcept {
+    if (physical_cursor_ != nullptr) {
+      physical_cursor_->Close();
+      peak_memory_bytes_ = physical_cursor_->PeakMemoryBytes();
+    }
+  }
+
+  std::shared_ptr<void> owner_;
+  bool write_ = false;
+  std::vector<std::string> columns_;
+  PhysicalPlan physical_plan_;
+  std::unique_ptr<PhysicalResultCursor> physical_cursor_;
+  std::unique_ptr<StorageTransaction> transaction_;
+  std::size_t peak_memory_bytes_ = 0;
+  bool completed_ = false;
+  bool closed_ = false;
+};
+
+std::shared_ptr<ParsedQueryOwner> BuildParsedQuery(
+    std::string_view cypher, const QueryOptions &options) {
+  auto owner = std::make_shared<ParsedQueryOwner>();
+  owner->statement = ast::ParseCypherAndRewrite(std::string(cypher));
+  owner->query_ir = ir::CreateQueryIR(*owner->statement);
+  owner->logical_plan =
+      ir::CreateLogicalPlan(*owner->query_ir, PlannerOptionsFor(options));
+  return owner;
+}
+
+QueryResult ConsumeCursor(std::unique_ptr<QueryResultCursor> cursor) {
+  QueryResult result;
+  result.columns = cursor->Columns();
+  std::vector<Value> row;
+  while (cursor->Next(&row)) {
+    if (!result.columns.empty()) {
+      result.rows.push_back(std::move(row));
+    }
+  }
+  result.peak_memory_bytes = cursor->PeakMemoryBytes();
+  cursor->Close();
+  return result;
 }
 
 }  // namespace
 
 QueryResult QueryExecutor::Execute(const ir::LogicalPlan &plan,
-                                   const QueryParameters &parameters) const {
+                                   const QueryParameters &parameters,
+                                   QueryExecutionOptions options) const {
+  return ConsumeCursor(ExecuteCursor(plan, parameters, std::move(options)));
+}
+
+std::unique_ptr<QueryResultCursor> QueryExecutor::ExecuteCursor(
+    const ir::LogicalPlan &plan, const QueryParameters &parameters,
+    QueryExecutionOptions options) const {
   CHECK(graph_reader_ != nullptr, common::InternalError,
         "graph reader is null");
-  return ExecuteWithTransaction(plan, *graph_reader_, storage_, parameters,
-                                false);
+  return std::make_unique<QueryResultCursorImpl>(
+      plan, *graph_reader_, storage_, parameters, std::move(options));
 }
 
 void QueryExecutor::ExecuteWrite(const ir::LogicalPlan &plan,
-                                 const QueryParameters &parameters) {
+                                 const QueryParameters &parameters,
+                                 QueryExecutionOptions options) {
   CHECK(storage_ != nullptr, common::InternalError,
         "write execution requires storage");
-  (void)ExecuteWithTransaction(plan, *storage_, storage_, parameters, true);
+  (void)ConsumeCursor(ExecuteCursor(plan, parameters, std::move(options)));
 }
 
 QueryResult ExecuteReadQuery(const GraphReader &graph_reader,
                              std::string_view cypher, QueryOptions options) {
-  std::unique_ptr<ast::Statement> statement =
-      ast::ParseCypherAndRewrite(std::string(cypher));
-  std::unique_ptr<ir::QueryIR> query_ir = ir::CreateQueryIR(*statement);
-  std::unique_ptr<ir::LogicalPlan> logical_plan =
-      ir::CreateLogicalPlan(*query_ir, PlannerOptionsFor(options));
-  return QueryExecutor(graph_reader).Execute(*logical_plan, options.parameters);
+  return ConsumeCursor(
+      ExecuteReadQueryCursor(graph_reader, cypher, std::move(options)));
 }
 
 QueryResult ExecuteQuery(Storage &storage, std::string_view cypher,
                          QueryOptions options) {
-  std::unique_ptr<ast::Statement> statement =
-      ast::ParseCypherAndRewrite(std::string(cypher));
-  std::unique_ptr<ir::QueryIR> query_ir = ir::CreateQueryIR(*statement);
-  std::unique_ptr<ir::LogicalPlan> logical_plan =
-      ir::CreateLogicalPlan(*query_ir, PlannerOptionsFor(options));
-  return QueryExecutor(storage).Execute(*logical_plan, options.parameters);
+  return ConsumeCursor(ExecuteQueryCursor(storage, cypher, std::move(options)));
 }
 
 void ExecuteWriteQuery(Storage &storage, std::string_view cypher,
                        QueryOptions options) {
-  std::unique_ptr<ast::Statement> statement =
-      ast::ParseCypherAndRewrite(std::string(cypher));
-  std::unique_ptr<ir::QueryIR> query_ir = ir::CreateQueryIR(*statement);
-  std::unique_ptr<ir::LogicalPlan> logical_plan =
-      ir::CreateLogicalPlan(*query_ir, PlannerOptionsFor(options));
-  QueryExecutor(storage).ExecuteWrite(*logical_plan, options.parameters);
+  (void)ConsumeCursor(ExecuteQueryCursor(storage, cypher, std::move(options)));
+}
+
+std::unique_ptr<QueryResultCursor> ExecuteReadQueryCursor(
+    const GraphReader &graph_reader, std::string_view cypher,
+    QueryOptions options) {
+  std::shared_ptr<ParsedQueryOwner> owner = BuildParsedQuery(cypher, options);
+  return std::make_unique<QueryResultCursorImpl>(
+      *owner->logical_plan, graph_reader, nullptr, options.parameters,
+      std::move(options.execution), owner);
+}
+
+std::unique_ptr<QueryResultCursor> ExecuteQueryCursor(Storage &storage,
+                                                      std::string_view cypher,
+                                                      QueryOptions options) {
+  std::shared_ptr<ParsedQueryOwner> owner = BuildParsedQuery(cypher, options);
+  return std::make_unique<QueryResultCursorImpl>(
+      *owner->logical_plan, storage, &storage, options.parameters,
+      std::move(options.execution), owner);
 }
 
 }  // namespace rg

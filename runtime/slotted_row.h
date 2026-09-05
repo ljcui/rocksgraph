@@ -88,7 +88,10 @@ class SlottedRow final {
 
   [[nodiscard]] Value Get(std::string_view name,
                           const GraphReader &graph_reader) const;
+  [[nodiscard]] Value Get(const Slot &slot,
+                          const GraphReader &graph_reader) const;
   [[nodiscard]] QueryRow Materialize(const GraphReader &graph_reader) const;
+  [[nodiscard]] std::size_t EstimatedHeapUsage() const;
   [[nodiscard]] SlottedRow CopyTo(SlotConfigurationPtr target,
                                   const GraphReader &graph_reader) const;
 
@@ -110,5 +113,9 @@ void CopySlots(const SlottedRow &source, SlottedRow *target,
                const GraphReader &graph_reader);
 [[nodiscard]] bool TryBindSlot(SlottedRow *row, std::string_view name,
                                Value value, const GraphReader &graph_reader);
+[[nodiscard]] bool TryBindEntityId(SlottedRow *row, std::string_view name,
+                                   SlotKind kind, std::int64_t id,
+                                   const GraphReader &graph_reader);
+[[nodiscard]] std::size_t EstimatedValueHeapUsage(const Value &value);
 
 }  // namespace rg

@@ -1,5 +1,9 @@
 #include <gtest/gtest.h>
 
+#include <memory>
+#include <vector>
+
+#include "common/exception.h"
 #include "runtime/query_executor.h"
 #include "storage/in_memory_graph.h"
 
@@ -34,4 +38,65 @@ TEST(SlottedRuntimeTest, KeepsDeletedEntitiesAvailableToResults) {
   EXPECT_EQ(result.rows.front()[0].AsNode().id, node->id);
   EXPECT_EQ(result.rows.front()[1].AsString(), "deleted node");
   EXPECT_TRUE(graph.Nodes().empty());
+}
+
+TEST(SlottedRuntimeTest, StreamsRowsAndCanCloseEarly) {
+  rg::InMemoryGraph graph;
+  graph.CreateNode({"N"}, {{"value", rg::Value(1)}});
+  graph.CreateNode({"N"}, {{"value", rg::Value(2)}});
+
+  std::unique_ptr<rg::QueryResultCursor> cursor = rg::ExecuteReadQueryCursor(
+      graph, "MATCH (n:N) RETURN n.value AS value ORDER BY value");
+  EXPECT_EQ(cursor->Columns(), std::vector<std::string>{"value"});
+  std::vector<rg::Value> row;
+  ASSERT_TRUE(cursor->Next(&row));
+  ASSERT_EQ(row.size(), 1U);
+  EXPECT_EQ(row[0].AsInteger(), 1);
+  cursor->Close();
+  EXPECT_FALSE(cursor->Next(&row));
+}
+
+TEST(SlottedRuntimeTest, ObservesExternalCancellation) {
+  rg::InMemoryGraph graph;
+  graph.CreateNode({"N"});
+  rg::QueryOptions options;
+  options.execution.cancellation =
+      std::make_shared<rg::QueryCancellationToken>();
+  std::unique_ptr<rg::QueryResultCursor> cursor =
+      rg::ExecuteReadQueryCursor(graph, "MATCH (n:N) RETURN n", options);
+  options.execution.cancellation->Cancel();
+
+  std::vector<rg::Value> row;
+  EXPECT_THROW((void)cursor->Next(&row), common::QueryCancelledError);
+}
+
+TEST(SlottedRuntimeTest, RollsBackWritesWhenCursorClosesEarly) {
+  rg::InMemoryGraph graph;
+  std::unique_ptr<rg::QueryResultCursor> cursor = rg::ExecuteQueryCursor(
+      graph, "UNWIND [1, 2, 3] AS x CREATE (:N {value: x}) RETURN x");
+  std::vector<rg::Value> row;
+  ASSERT_TRUE(cursor->Next(&row));
+  ASSERT_EQ(graph.Nodes().size(), 1U);
+
+  cursor->Close();
+  EXPECT_TRUE(graph.Nodes().empty());
+}
+
+TEST(SlottedRuntimeTest, EnforcesBlockingOperatorMemoryLimit) {
+  rg::InMemoryGraph graph;
+  rg::QueryOptions options;
+  options.execution.memory_limit_bytes = 1;
+  std::unique_ptr<rg::QueryResultCursor> cursor = rg::ExecuteReadQueryCursor(
+      graph, "UNWIND range(1, 100) AS x RETURN x ORDER BY x DESC", options);
+
+  std::vector<rg::Value> row;
+  EXPECT_THROW((void)cursor->Next(&row), common::MemoryLimitExceededError);
+}
+
+TEST(SlottedRuntimeTest, ReportsPeakMemoryForBlockingOperators) {
+  rg::InMemoryGraph graph;
+  const rg::QueryResult result =
+      rg::ExecuteReadQuery(graph, "UNWIND [3, 1, 2] AS x RETURN x ORDER BY x");
+
+  EXPECT_GT(result.peak_memory_bytes, 0U);
 }

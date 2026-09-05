@@ -19,7 +19,86 @@
 #include "value/temporal.h"
 
 namespace rg {
+
+Value ExpressionBindings::LookupVariable(const ast::Variable &variable) const {
+  return Lookup(variable.name);
+}
+
+bool ExpressionBindings::ReadProperty(std::string_view variable,
+                                      std::string_view property_key,
+                                      Value *value) const {
+  (void)variable;
+  (void)property_key;
+  (void)value;
+  return false;
+}
+
+bool ExpressionBindings::ReadVariableProperty(const ast::Variable &variable,
+                                              std::string_view property_key,
+                                              Value *value) const {
+  return ReadProperty(variable.name, property_key, value);
+}
+
+bool ExpressionBindings::ReadParameter(const ast::Parameter &parameter,
+                                       Value *value) const {
+  (void)parameter;
+  (void)value;
+  return false;
+}
+
 namespace {
+
+class QueryRowBindings final : public ExpressionBindings {
+ public:
+  explicit QueryRowBindings(const QueryRow &row) : row_(&row) {}
+
+  [[nodiscard]] Value Lookup(std::string_view name) const override {
+    return LookupQueryVariable(*row_, std::string(name));
+  }
+
+ private:
+  const QueryRow *row_ = nullptr;
+};
+
+class ScopedExpressionBindings final : public ExpressionBindings {
+ public:
+  ScopedExpressionBindings(const ExpressionBindings &parent, std::string name,
+                           Value value)
+      : parent_(&parent), name_(std::move(name)), value_(std::move(value)) {}
+
+  [[nodiscard]] Value Lookup(std::string_view name) const override {
+    return name == name_ ? value_ : parent_->Lookup(name);
+  }
+
+  [[nodiscard]] Value LookupVariable(
+      const ast::Variable &variable) const override {
+    return variable.name == name_ ? value_ : parent_->LookupVariable(variable);
+  }
+
+  [[nodiscard]] bool ReadProperty(std::string_view variable,
+                                  std::string_view property_key,
+                                  Value *value) const override {
+    return variable != name_ &&
+           parent_->ReadProperty(variable, property_key, value);
+  }
+
+  [[nodiscard]] bool ReadVariableProperty(const ast::Variable &variable,
+                                          std::string_view property_key,
+                                          Value *value) const override {
+    return variable.name != name_ &&
+           parent_->ReadVariableProperty(variable, property_key, value);
+  }
+
+  [[nodiscard]] bool ReadParameter(const ast::Parameter &parameter,
+                                   Value *value) const override {
+    return parent_->ReadParameter(parameter, value);
+  }
+
+ private:
+  const ExpressionBindings *parent_ = nullptr;
+  std::string name_;
+  Value value_;
+};
 
 enum class TruthValue { kFalse, kTrue, kNull };
 enum class QuantifierMode { kAll, kAny, kNone, kSingle };
@@ -112,20 +191,17 @@ TruthValue EqualityTruth(const Value &left, const Value &right) {
   return ValuesEqual(left, right) ? TruthValue::kTrue : TruthValue::kFalse;
 }
 
-const Value *LookupPrecomputedExpression(
-    const ast::Expression &expression, const QueryRow &row,
+std::optional<Value> LookupPrecomputedExpression(
+    const ast::Expression &expression, const ExpressionBindings &row,
     const std::vector<ir::LogicalPrecomputedExpression> &precomputed) {
   for (const auto &entry : precomputed) {
     if (entry.expression == nullptr ||
         !ast::ASTEqual::Equal(&expression, entry.expression)) {
       continue;
     }
-    const auto found = row.find(entry.variable);
-    CHECK(found != row.end(), common::InvalidArgumentError,
-          "precomputed expression variable is not bound: " + entry.variable);
-    return &found->second;
+    return row.Lookup(entry.variable);
   }
-  return nullptr;
+  return std::nullopt;
 }
 
 const Value *FindProperty(const Value &value, std::string_view property_key) {
@@ -214,7 +290,7 @@ bool MultiplyWouldOverflow(std::int64_t left, std::int64_t right) {
 }
 
 Value EvaluateFunction(
-    const ast::FunctionInvocation &function, const QueryRow &row,
+    const ast::FunctionInvocation &function, const ExpressionBindings &row,
     const std::vector<ir::LogicalPrecomputedExpression> &precomputed,
     ExecutionContext context) {
   const ast::BuiltinFunction *builtin =
@@ -244,7 +320,7 @@ Value EvaluateFunction(
 }
 
 Value EvaluateListIndex(
-    const ast::ListIndexExpression &expression, const QueryRow &row,
+    const ast::ListIndexExpression &expression, const ExpressionBindings &row,
     const std::vector<ir::LogicalPrecomputedExpression> &precomputed,
     ExecutionContext context) {
   CHECK(expression.list != nullptr && expression.index != nullptr,
@@ -265,7 +341,7 @@ Value EvaluateListIndex(
 }
 
 Value EvaluateListSlice(
-    const ast::ListSliceExpression &expression, const QueryRow &row,
+    const ast::ListSliceExpression &expression, const ExpressionBindings &row,
     const std::vector<ir::LogicalPrecomputedExpression> &precomputed,
     ExecutionContext context) {
   CHECK(expression.list != nullptr, common::InvalidArgumentError,
@@ -298,7 +374,7 @@ Value EvaluateListSlice(
 }
 
 Value EvaluateCaseExpression(
-    const ast::CaseExpression &expression, const QueryRow &row,
+    const ast::CaseExpression &expression, const ExpressionBindings &row,
     const std::vector<ir::LogicalPrecomputedExpression> &precomputed,
     ExecutionContext context) {
   std::optional<Value> test;
@@ -329,7 +405,7 @@ Value EvaluateCaseExpression(
 }
 
 Value EvaluateListComprehension(
-    const ast::ListComprehension &expression, const QueryRow &row,
+    const ast::ListComprehension &expression, const ExpressionBindings &row,
     const std::vector<ir::LogicalPrecomputedExpression> &precomputed,
     ExecutionContext context) {
   CHECK(!expression.variable.empty() && expression.list_expr != nullptr,
@@ -341,8 +417,7 @@ Value EvaluateListComprehension(
   }
   Value::List output;
   for (const auto &item : list.AsList()) {
-    QueryRow scoped = row;
-    scoped[expression.variable] = item;
+    ScopedExpressionBindings scoped(row, expression.variable, item);
     if (expression.where_expr != nullptr &&
         !PredicateIsTrue(EvaluateExpression(*expression.where_expr, scoped,
                                             precomputed, context))) {
@@ -357,7 +432,8 @@ Value EvaluateListComprehension(
 }
 
 Value EvaluateQuantifier(
-    const ast::Quantifier &quantifier, QuantifierMode mode, const QueryRow &row,
+    const ast::Quantifier &quantifier, QuantifierMode mode,
+    const ExpressionBindings &row,
     const std::vector<ir::LogicalPrecomputedExpression> &precomputed,
     ExecutionContext context) {
   CHECK(!quantifier.variable.empty() && quantifier.list_expr != nullptr &&
@@ -373,8 +449,7 @@ Value EvaluateQuantifier(
   std::size_t matches = 0;
   bool saw_null = false;
   for (const auto &item : list.AsList()) {
-    QueryRow scoped = row;
-    scoped[quantifier.variable] = item;
+    ScopedExpressionBindings scoped(row, quantifier.variable, item);
     const TruthValue truth = ToTruthValue(EvaluateExpression(
         *quantifier.predicate, scoped, precomputed, context));
     saw_null = saw_null || truth == TruthValue::kNull;
@@ -408,7 +483,7 @@ Value EvaluateQuantifier(
 }
 
 Value EvaluateArithmetic(
-    const ast::Expression &expression, const QueryRow &row,
+    const ast::Expression &expression, const ExpressionBindings &row,
     const std::vector<ir::LogicalPrecomputedExpression> &precomputed,
     ExecutionContext context) {
   const auto &binary = ast::CastAst<ast::BinaryExpression>(expression);
@@ -598,7 +673,7 @@ bool ValueLess(const Value &left, const Value &right) {
 }
 
 Value EvaluateLogicalProjectionItem(const ir::LogicalProjectionItem &item,
-                                    const QueryRow &row,
+                                    const ExpressionBindings &row,
                                     ExecutionContext context) {
   CHECK(item.expression != nullptr, common::InvalidArgumentError,
         "projection expression is null");
@@ -607,7 +682,8 @@ Value EvaluateLogicalProjectionItem(const ir::LogicalProjectionItem &item,
 }
 
 Value EvaluateLogicalSortItem(const ir::LogicalSortItem &item,
-                              const QueryRow &row, ExecutionContext context) {
+                              const ExpressionBindings &row,
+                              ExecutionContext context) {
   CHECK(item.expression != nullptr, common::InvalidArgumentError,
         "sort expression is null");
   return EvaluateExpression(*item.expression, row, item.precomputed_expressions,
@@ -615,12 +691,12 @@ Value EvaluateLogicalSortItem(const ir::LogicalSortItem &item,
 }
 
 Value EvaluateExpression(
-    const ast::Expression &expression, const QueryRow &row,
+    const ast::Expression &expression, const ExpressionBindings &row,
     const std::vector<ir::LogicalPrecomputedExpression> &precomputed,
     ExecutionContext context) {
-  if (const Value *value =
+  if (std::optional<Value> value =
           LookupPrecomputedExpression(expression, row, precomputed);
-      value != nullptr) {
+      value.has_value()) {
     return *value;
   }
   switch (expression.node_type) {
@@ -635,10 +711,13 @@ Value EvaluateExpression(
     case ast::ASTNodeType::kNullLiteral:
       return Value::Null();
     case ast::ASTNodeType::kVariable:
-      return LookupQueryVariable(row,
-                                 ast::CastAst<ast::Variable>(expression).name);
+      return row.LookupVariable(ast::CastAst<ast::Variable>(expression));
     case ast::ASTNodeType::kParameter: {
       const auto &parameter = ast::CastAst<ast::Parameter>(expression);
+      Value slotted_value;
+      if (row.ReadParameter(parameter, &slotted_value)) {
+        return slotted_value;
+      }
       const Value *value = context.FindParameter(parameter.name);
       CHECK(value != nullptr, common::InvalidArgumentError,
             "missing query parameter: " + parameter.name);
@@ -648,6 +727,13 @@ Value EvaluateExpression(
       const auto &property = ast::CastAst<ast::PropertyExpression>(expression);
       CHECK(property.object != nullptr, common::InvalidArgumentError,
             "property object is null");
+      if (property.object->Is(ast::ASTNodeType::kVariable)) {
+        Value value;
+        const auto &variable = ast::CastAst<ast::Variable>(*property.object);
+        if (row.ReadVariableProperty(variable, property.property_key, &value)) {
+          return value;
+        }
+      }
       Value object =
           EvaluateExpression(*property.object, row, precomputed, context);
       const Value *value = FindProperty(object, property.property_key);
@@ -910,6 +996,27 @@ Value EvaluateExpression(
             "unsupported expression in executor: " +
                 std::string(ast::ToString(expression.node_type)));
   }
+}
+
+Value EvaluateExpression(
+    const ast::Expression &expression, const QueryRow &row,
+    const std::vector<ir::LogicalPrecomputedExpression> &precomputed,
+    ExecutionContext context) {
+  QueryRowBindings bindings(row);
+  return EvaluateExpression(expression, bindings, precomputed, context);
+}
+
+Value EvaluateLogicalProjectionItem(const ir::LogicalProjectionItem &item,
+                                    const QueryRow &row,
+                                    ExecutionContext context) {
+  QueryRowBindings bindings(row);
+  return EvaluateLogicalProjectionItem(item, bindings, context);
+}
+
+Value EvaluateLogicalSortItem(const ir::LogicalSortItem &item,
+                              const QueryRow &row, ExecutionContext context) {
+  QueryRowBindings bindings(row);
+  return EvaluateLogicalSortItem(item, bindings, context);
 }
 
 }  // namespace rg

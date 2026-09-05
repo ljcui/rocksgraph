@@ -64,6 +64,10 @@ class GraphReader {
   [[nodiscard]] virtual const NodePtr &NodeById(std::int64_t id) const = 0;
   [[nodiscard]] virtual const RelationshipPtr &RelationshipById(
       std::int64_t id) const = 0;
+  [[nodiscard]] virtual Value NodeProperty(
+      std::int64_t node_id, std::string_view property_key) const = 0;
+  [[nodiscard]] virtual Value RelationshipProperty(
+      std::int64_t relationship_id, std::string_view property_key) const = 0;
 
   [[nodiscard]] virtual std::vector<RelationshipPtr> RelationshipsConnectedTo(
       std::int64_t node_id) const = 0;
