@@ -6,11 +6,14 @@ add_library(
   expression_evaluator.cc
   graph_access_executor.cc
   join_executor.cc
+  physical_plan.cc
   procedure_executor.cc
   query_executor.cc
   query_row_util.cc
   result_set_executor.cc
   row_operator_executor.cc
+  slotted_executor.cc
+  slotted_row.cc
   write_executor.cc)
 
 target_include_directories(rocksgraph_runtime PUBLIC ${PROJECT_SOURCE_DIR})

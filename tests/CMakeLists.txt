@@ -37,12 +37,18 @@ add_rocksgraph_test(join_executor_test runtime/join_executor_test.cc
                     rocksgraph_runtime)
 add_rocksgraph_test(procedure_executor_test runtime/procedure_executor_test.cc
                     rocksgraph_runtime)
+add_rocksgraph_test(physical_plan_test runtime/physical_plan_test.cc
+                    rocksgraph_runtime)
 add_rocksgraph_test(query_executor_test runtime/query_executor_test.cc
                     rocksgraph_runtime)
 add_rocksgraph_test(result_set_executor_test
                     runtime/result_set_executor_test.cc rocksgraph_runtime)
 add_rocksgraph_test(row_operator_executor_test
                     runtime/row_operator_executor_test.cc rocksgraph_runtime)
+add_rocksgraph_test(slotted_row_test runtime/slotted_row_test.cc
+                    rocksgraph_runtime)
+add_rocksgraph_test(slotted_runtime_test runtime/slotted_runtime_test.cc
+                    rocksgraph_runtime)
 add_rocksgraph_test(write_executor_test runtime/write_executor_test.cc
                     rocksgraph_runtime)
 

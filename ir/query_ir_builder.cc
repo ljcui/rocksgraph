@@ -814,6 +814,11 @@ class QueryIRBuilder {
       projection_item.alias = item->alias;
       CHECK(!projection_item.alias.empty(), common::InvalidArgumentError,
             "projection item alias is empty after rewrite");
+      const auto &output_types = SemanticTableRef().ProjectionOutputTypes(body);
+      const auto output_type = output_types.find(projection_item.alias);
+      if (output_type != output_types.end()) {
+        projection_item.semantic_type = output_type->second;
+      }
       AppendNestedIRExpressions(
           &parts.nested_expressions,
           CollectNestedIRExpressions(projection_item.expression));

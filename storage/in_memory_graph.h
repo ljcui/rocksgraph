@@ -30,6 +30,28 @@ class InMemoryGraph final : public Storage,
 
   [[nodiscard]] std::unique_ptr<StorageTransaction> BeginTransaction() override;
 
+  [[nodiscard]] std::unique_ptr<EntityIdCursor> ScanNodeIds() const override;
+  [[nodiscard]] std::unique_ptr<EntityIdCursor> ScanRelationshipIds()
+      const override;
+  [[nodiscard]] std::unique_ptr<EntityIdCursor> RelationshipIdsConnectedTo(
+      int64_t node_id) const override;
+  [[nodiscard]] std::unique_ptr<EntityIdCursor> OutgoingRelationshipIds(
+      int64_t node_id) const override;
+  [[nodiscard]] std::unique_ptr<EntityIdCursor> IncomingRelationshipIds(
+      int64_t node_id) const override;
+  [[nodiscard]] std::unique_ptr<EntityIdCursor> FindNodeIdsByIndex(
+      const std::vector<std::string> &labels, std::string_view property_key,
+      const Value &value) const override;
+  [[nodiscard]] std::unique_ptr<EntityIdCursor> NodeIdsInIndex(
+      const std::vector<std::string> &labels,
+      std::string_view property_key) const override;
+  [[nodiscard]] std::unique_ptr<EntityIdCursor> FindRelationshipIdsByIndex(
+      const std::vector<std::string> &relationship_types,
+      std::string_view property_key, const Value &value) const override;
+  [[nodiscard]] std::unique_ptr<EntityIdCursor> RelationshipIdsInIndex(
+      const std::vector<std::string> &relationship_types,
+      std::string_view property_key) const override;
+
   NodePtr CreateNode(std::vector<std::string> labels,
                      Value::Map properties) override;
   RelationshipPtr CreateRelationship(int64_t start_node_id, int64_t end_node_id,

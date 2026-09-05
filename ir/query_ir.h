@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "ast/ast_node.h"
+#include "ast/semantic_table.h"
 
 namespace ir {
 
@@ -334,6 +335,7 @@ struct QueryGraph {
 struct ProjectionItem {
   const ast::Expression *expression = nullptr;
   std::string alias;
+  ast::SemanticVariableType semantic_type = ast::SemanticVariableType::kUnknown;
 };
 
 enum class OrderDirection {

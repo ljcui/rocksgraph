@@ -92,6 +92,7 @@ struct LogicalProjectionItem {
   const ast::Expression *expression = nullptr;
   std::shared_ptr<ast::Expression> owned_expression;
   std::string alias;
+  ast::SemanticVariableType semantic_type = ast::SemanticVariableType::kUnknown;
   std::vector<LogicalPrecomputedExpression> precomputed_expressions;
   bool passthrough = false;
 };

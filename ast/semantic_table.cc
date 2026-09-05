@@ -610,6 +610,7 @@ class SemanticTableAnalyzer final : public ASTConstWalker {
       table_.RecordVariableType(name, type);
       outputs.push_back(name);
     }
+    table_.RecordProjectionOutputTypes(body, projected.types);
     table_.RecordProjectionOutputs(body, std::move(outputs));
 
     Scope order_scope = input_scope;
@@ -778,6 +779,12 @@ const std::vector<std::string> &SemanticTable::ProjectionOutputs(
   return it->second;
 }
 
+const std::unordered_map<std::string, SemanticVariableType> &
+SemanticTable::ProjectionOutputTypes(const ProjectionBody &body) const {
+  const auto it = projection_output_types_.find(&body);
+  return it == projection_output_types_.end() ? EmptyTypeMap() : it->second;
+}
+
 void SemanticTable::RecordVariableType(std::string_view name,
                                        SemanticVariableType type) {
   if (name.empty()) {
@@ -815,6 +822,12 @@ void SemanticTable::RecordAggregation(const Expression &expression,
 void SemanticTable::RecordProjectionOutputs(const ProjectionBody &body,
                                             std::vector<std::string> outputs) {
   projection_outputs_[&body] = std::move(outputs);
+}
+
+void SemanticTable::RecordProjectionOutputTypes(
+    const ProjectionBody &body,
+    std::unordered_map<std::string, SemanticVariableType> types) {
+  projection_output_types_[&body] = std::move(types);
 }
 
 SemanticTable AnalyzeSemanticTable(const ASTNode &node) {

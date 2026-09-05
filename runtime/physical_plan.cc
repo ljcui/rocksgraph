@@ -1,0 +1,549 @@
+#include "runtime/physical_plan.h"
+
+#include <algorithm>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
+
+#include "ast/ast_node.h"
+#include "ast/builtin_function.h"
+#include "ast/builtin_procedure.h"
+#include "common/exception.h"
+
+namespace rg {
+namespace {
+
+using SemanticType = ast::SemanticVariableType;
+
+struct TypeInfo {
+  SemanticType type = SemanticType::kUnknown;
+  bool nullable = true;
+  std::optional<SlotKind> storage_kind;
+};
+
+using TypeOverrides = std::unordered_map<std::string, TypeInfo>;
+
+std::vector<std::string> AppendUnique(std::vector<std::string> columns,
+                                      const std::vector<std::string> &added) {
+  std::unordered_set<std::string> seen(columns.begin(), columns.end());
+  for (const auto &column : added) {
+    if (!column.empty() && seen.insert(column).second) {
+      columns.push_back(column);
+    }
+  }
+  return columns;
+}
+
+TypeInfo InfoForSlot(const Slot &slot) {
+  return {
+      .type = slot.type, .nullable = slot.nullable, .storage_kind = slot.kind};
+}
+
+TypeInfo MergeInfo(TypeInfo left, TypeInfo right) {
+  const bool nullable = left.nullable || right.nullable;
+  if (left.type == right.type) {
+    return {
+        .type = left.type,
+        .nullable = nullable,
+        .storage_kind = left.storage_kind == right.storage_kind
+                            ? left.storage_kind
+                            : std::optional<SlotKind>(SlotKind::kReference)};
+  }
+  if (left.type == SemanticType::kUnknown ||
+      right.type == SemanticType::kUnknown) {
+    return {.type = SemanticType::kUnknown,
+            .nullable = nullable,
+            .storage_kind = SlotKind::kReference};
+  }
+  return {.type = SemanticType::kUnknown,
+          .nullable = nullable,
+          .storage_kind = SlotKind::kReference};
+}
+
+std::optional<TypeInfo> FindInfo(
+    std::string_view name, const std::vector<SlotConfigurationPtr> &sources) {
+  std::optional<TypeInfo> result;
+  for (const auto &source : sources) {
+    if (source == nullptr) {
+      continue;
+    }
+    const Slot *slot = source->Find(name);
+    if (slot == nullptr) {
+      continue;
+    }
+    result = result.has_value() ? MergeInfo(*result, InfoForSlot(*slot))
+                                : InfoForSlot(*slot);
+  }
+  return result;
+}
+
+TypeInfo InferExpression(const ast::Expression *expression,
+                         const std::vector<SlotConfigurationPtr> &sources) {
+  if (expression == nullptr) {
+    return {};
+  }
+  switch (expression->node_type) {
+    case ast::ASTNodeType::kVariable: {
+      const auto &variable = ast::CastAst<ast::Variable>(*expression);
+      return FindInfo(variable.name, sources).value_or(TypeInfo{});
+    }
+    case ast::ASTNodeType::kBooleanLiteral:
+    case ast::ASTNodeType::kIntegerLiteral:
+    case ast::ASTNodeType::kDoubleLiteral:
+    case ast::ASTNodeType::kStringLiteral:
+      return {.type = SemanticType::kScalar, .nullable = false};
+    case ast::ASTNodeType::kNullLiteral:
+      return {.type = SemanticType::kUnknown, .nullable = true};
+    case ast::ASTNodeType::kListLiteral:
+    case ast::ASTNodeType::kListComprehension:
+    case ast::ASTNodeType::kPatternComprehension:
+      return {.type = SemanticType::kList, .nullable = false};
+    case ast::ASTNodeType::kMapLiteral:
+      return {.type = SemanticType::kMap, .nullable = false};
+    case ast::ASTNodeType::kFunctionInvocation: {
+      const auto &function = ast::CastAst<ast::FunctionInvocation>(*expression);
+      const ast::BuiltinFunction *builtin =
+          ast::FindBuiltinFunction(function.function_name);
+      return builtin == nullptr
+                 ? TypeInfo{}
+                 : TypeInfo{.type = builtin->result_type, .nullable = true};
+    }
+    case ast::ASTNodeType::kParenthesizedExpression:
+      return InferExpression(
+          ast::CastAst<ast::ParenthesizedExpression>(*expression).expr.get(),
+          sources);
+    default:
+      return {.type = SemanticType::kScalar, .nullable = true};
+  }
+}
+
+TypeInfo ProjectionInfo(const ir::LogicalProjectionItem &item,
+                        const std::vector<SlotConfigurationPtr> &sources) {
+  if (item.passthrough) {
+    return FindInfo(item.alias, sources).value_or(TypeInfo{});
+  }
+  TypeInfo info = InferExpression(item.expression, sources);
+  if (item.semantic_type == SemanticType::kUnknown) {
+    return info;
+  }
+  info.type = item.semantic_type;
+  if (item.expression == nullptr ||
+      !item.expression->Is(ast::ASTNodeType::kVariable)) {
+    info.storage_kind.reset();
+  }
+  return info;
+}
+
+void SetOverride(TypeOverrides *overrides, std::string_view name,
+                 SemanticType type, bool nullable) {
+  if (!name.empty()) {
+    (*overrides)[std::string(name)] = {.type = type, .nullable = nullable};
+  }
+}
+
+TypeOverrides OutputOverrides(
+    const ir::LogicalPlan &plan,
+    const std::vector<SlotConfigurationPtr> &sources) {
+  TypeOverrides overrides;
+  switch (plan.Type()) {
+    case ir::LogicalPlanNodeType::kAllNodeScan:
+      SetOverride(&overrides,
+                  static_cast<const ir::AllNodeScanPlan &>(plan).Variable(),
+                  SemanticType::kNode, false);
+      break;
+    case ir::LogicalPlanNodeType::kNodeByLabelScan:
+      SetOverride(&overrides,
+                  static_cast<const ir::NodeByLabelScanPlan &>(plan).Variable(),
+                  SemanticType::kNode, false);
+      break;
+    case ir::LogicalPlanNodeType::kNodeIndexSeek:
+      SetOverride(&overrides,
+                  static_cast<const ir::NodeIndexSeekPlan &>(plan).Variable(),
+                  SemanticType::kNode, false);
+      break;
+    case ir::LogicalPlanNodeType::kNodeIndexRangeSeek:
+      SetOverride(
+          &overrides,
+          static_cast<const ir::NodeIndexRangeSeekPlan &>(plan).Variable(),
+          SemanticType::kNode, false);
+      break;
+    case ir::LogicalPlanNodeType::kRelationshipTypeScan: {
+      const auto &scan =
+          static_cast<const ir::RelationshipTypeScanPlan &>(plan);
+      SetOverride(&overrides, scan.FromNode(), SemanticType::kNode, false);
+      SetOverride(&overrides, scan.Relationship(), SemanticType::kRelationship,
+                  false);
+      SetOverride(&overrides, scan.ToNode(), SemanticType::kNode, false);
+      break;
+    }
+    case ir::LogicalPlanNodeType::kRelationshipIndexSeek: {
+      const auto &scan =
+          static_cast<const ir::RelationshipIndexSeekPlan &>(plan);
+      SetOverride(&overrides, scan.FromNode(), SemanticType::kNode, false);
+      SetOverride(&overrides, scan.Relationship(), SemanticType::kRelationship,
+                  false);
+      SetOverride(&overrides, scan.ToNode(), SemanticType::kNode, false);
+      break;
+    }
+    case ir::LogicalPlanNodeType::kRelationshipIndexRangeSeek: {
+      const auto &scan =
+          static_cast<const ir::RelationshipIndexRangeSeekPlan &>(plan);
+      SetOverride(&overrides, scan.FromNode(), SemanticType::kNode, false);
+      SetOverride(&overrides, scan.Relationship(), SemanticType::kRelationship,
+                  false);
+      SetOverride(&overrides, scan.ToNode(), SemanticType::kNode, false);
+      break;
+    }
+    case ir::LogicalPlanNodeType::kExpand: {
+      const auto &expand = static_cast<const ir::ExpandPlan &>(plan);
+      SetOverride(
+          &overrides, expand.FromNode(), SemanticType::kNode,
+          FindInfo(expand.FromNode(), sources).value_or(TypeInfo{}).nullable);
+      SetOverride(&overrides, expand.Relationship(),
+                  SemanticType::kRelationship, false);
+      SetOverride(&overrides, expand.ToNode(), SemanticType::kNode, false);
+      break;
+    }
+    case ir::LogicalPlanNodeType::kExpandInto: {
+      const auto &expand = static_cast<const ir::ExpandIntoPlan &>(plan);
+      SetOverride(
+          &overrides, expand.FromNode(), SemanticType::kNode,
+          FindInfo(expand.FromNode(), sources).value_or(TypeInfo{}).nullable);
+      SetOverride(&overrides, expand.Relationship(),
+                  SemanticType::kRelationship, false);
+      SetOverride(
+          &overrides, expand.ToNode(), SemanticType::kNode,
+          FindInfo(expand.ToNode(), sources).value_or(TypeInfo{}).nullable);
+      break;
+    }
+    case ir::LogicalPlanNodeType::kVarExpand: {
+      const auto &expand = static_cast<const ir::VarExpandPlan &>(plan);
+      SetOverride(
+          &overrides, expand.FromNode(), SemanticType::kNode,
+          FindInfo(expand.FromNode(), sources).value_or(TypeInfo{}).nullable);
+      SetOverride(&overrides, expand.Relationship(), SemanticType::kList,
+                  false);
+      SetOverride(&overrides, expand.ToNode(), SemanticType::kNode, false);
+      break;
+    }
+    case ir::LogicalPlanNodeType::kPathBuild:
+      SetOverride(&overrides,
+                  static_cast<const ir::PathBuildPlan &>(plan).PathVariable(),
+                  SemanticType::kPath, false);
+      break;
+    case ir::LogicalPlanNodeType::kProjection: {
+      const auto &projection = static_cast<const ir::ProjectionPlan &>(plan);
+      for (const auto &item : projection.Items()) {
+        overrides[item.alias] = ProjectionInfo(item, sources);
+      }
+      break;
+    }
+    case ir::LogicalPlanNodeType::kDistinct: {
+      const auto &distinct = static_cast<const ir::DistinctPlan &>(plan);
+      for (const auto &item : distinct.GroupingItems()) {
+        overrides[item.alias] = ProjectionInfo(item, sources);
+      }
+      break;
+    }
+    case ir::LogicalPlanNodeType::kAggregation: {
+      const auto &aggregation = static_cast<const ir::AggregationPlan &>(plan);
+      for (const auto &item : aggregation.GroupingItems()) {
+        overrides[item.alias] = ProjectionInfo(item, sources);
+      }
+      for (const auto &item : aggregation.AggregationItems()) {
+        overrides[item.alias] = ProjectionInfo(item, sources);
+      }
+      break;
+    }
+    case ir::LogicalPlanNodeType::kLetSemiApply:
+      SetOverride(
+          &overrides,
+          static_cast<const ir::LetSemiApplyPlan &>(plan).ValueVariable(),
+          SemanticType::kScalar, false);
+      break;
+    case ir::LogicalPlanNodeType::kRollUpApply:
+      SetOverride(
+          &overrides,
+          static_cast<const ir::RollUpApplyPlan &>(plan).CollectionVariable(),
+          SemanticType::kList, false);
+      break;
+    case ir::LogicalPlanNodeType::kAssertIsNode:
+      for (const auto &variable :
+           static_cast<const ir::AssertIsNodePlan &>(plan).Variables()) {
+        SetOverride(&overrides, variable, SemanticType::kNode,
+                    FindInfo(variable, sources).value_or(TypeInfo{}).nullable);
+      }
+      break;
+    case ir::LogicalPlanNodeType::kCreateNode:
+      SetOverride(&overrides,
+                  static_cast<const ir::CreateNodePlan &>(plan).Node().variable,
+                  SemanticType::kNode, false);
+      break;
+    case ir::LogicalPlanNodeType::kCreateRelationship: {
+      const auto &relationship =
+          static_cast<const ir::CreateRelationshipPlan &>(plan).Relationship();
+      SetOverride(&overrides, relationship.left_node, SemanticType::kNode,
+                  false);
+      SetOverride(&overrides, relationship.variable,
+                  SemanticType::kRelationship, false);
+      SetOverride(&overrides, relationship.right_node, SemanticType::kNode,
+                  false);
+      break;
+    }
+    case ir::LogicalPlanNodeType::kMerge: {
+      const auto &pattern =
+          static_cast<const ir::MergePlan &>(plan).Merge().create_pattern;
+      for (const auto &node : pattern.nodes) {
+        SetOverride(&overrides, node.variable, SemanticType::kNode, false);
+      }
+      for (const auto &relationship : pattern.relationships) {
+        SetOverride(&overrides, relationship.left_node, SemanticType::kNode,
+                    false);
+        SetOverride(&overrides, relationship.variable,
+                    SemanticType::kRelationship, false);
+        SetOverride(&overrides, relationship.right_node, SemanticType::kNode,
+                    false);
+      }
+      break;
+    }
+    case ir::LogicalPlanNodeType::kDelete:
+    case ir::LogicalPlanNodeType::kDetachDelete:
+      if (!sources.empty()) {
+        for (const auto &column : sources.front()->Columns()) {
+          const Slot &slot = sources.front()->At(column);
+          if (slot.kind != SlotKind::kReference) {
+            overrides[column] = {.type = slot.type,
+                                 .nullable = slot.nullable,
+                                 .storage_kind = SlotKind::kReference};
+          }
+        }
+      }
+      break;
+    case ir::LogicalPlanNodeType::kUnwind:
+      SetOverride(&overrides, static_cast<const ir::UnwindPlan &>(plan).Alias(),
+                  SemanticType::kUnknown, true);
+      break;
+    case ir::LogicalPlanNodeType::kProcedureCall: {
+      const auto &call = static_cast<const ir::ProcedureCallPlan &>(plan);
+      const ast::BuiltinProcedure *procedure =
+          ast::FindBuiltinProcedure(call.ProcedureName());
+      for (const auto &item : call.YieldItems()) {
+        const std::string &field =
+            item.result_field.has_value() ? *item.result_field : item.variable;
+        const ast::BuiltinProcedureYield *yield =
+            procedure == nullptr
+                ? nullptr
+                : ast::FindBuiltinProcedureYield(*procedure, field);
+        SetOverride(&overrides, item.variable,
+                    yield == nullptr ? SemanticType::kUnknown : yield->type,
+                    true);
+      }
+      break;
+    }
+    default:
+      break;
+  }
+  return overrides;
+}
+
+SlotConfigurationPtr MakeLayout(
+    const std::vector<std::string> &columns,
+    const std::vector<SlotConfigurationPtr> &sources,
+    const TypeOverrides &overrides = {},
+    const std::unordered_set<std::string> &force_nullable = {}) {
+  std::vector<SlotDefinition> definitions;
+  definitions.reserve(columns.size());
+  for (const auto &column : columns) {
+    TypeInfo info = FindInfo(column, sources).value_or(TypeInfo{});
+    const auto override = overrides.find(column);
+    if (override != overrides.end()) {
+      info = override->second;
+    }
+    if (force_nullable.contains(column)) {
+      info.nullable = true;
+    }
+    definitions.push_back({.name = column,
+                           .type = info.type,
+                           .nullable = info.nullable,
+                           .storage_kind = info.storage_kind});
+  }
+  return std::make_shared<const SlotConfiguration>(std::move(definitions));
+}
+
+std::vector<SlotMapping> NamedMappings(
+    const SlotConfiguration &source, const SlotConfiguration &target,
+    const std::vector<std::pair<std::string, std::string>> &names) {
+  std::vector<SlotMapping> mappings;
+  mappings.reserve(names.size());
+  for (const auto &[source_name, target_name] : names) {
+    const Slot *source_slot = source.Find(source_name);
+    const Slot *target_slot = target.Find(target_name);
+    if (source_slot != nullptr && target_slot != nullptr) {
+      mappings.push_back({.source_name = source_name,
+                          .target_name = target_name,
+                          .source = *source_slot,
+                          .target = *target_slot});
+    }
+  }
+  return mappings;
+}
+
+class PhysicalPlanBuilder final {
+ public:
+  PhysicalPlan Build(const ir::LogicalPlan &plan) {
+    empty_slots_ = MakeLayout({}, {});
+    return PhysicalPlan(BuildNode(plan, empty_slots_));
+  }
+
+ private:
+  std::unique_ptr<PhysicalPlanNode> BuildNode(
+      const ir::LogicalPlan &plan, SlotConfigurationPtr argument_slots) {
+    auto node = std::make_unique<PhysicalPlanNode>();
+    node->id = next_id_++;
+    node->logical = &plan;
+    node->argument_slots = std::move(argument_slots);
+
+    if (plan.ChildCount() == 1) {
+      node->children.push_back(BuildNode(plan.Child(0), node->argument_slots));
+    } else if (plan.ChildCount() == 2) {
+      node->children.push_back(BuildNode(plan.Child(0), node->argument_slots));
+      const bool correlated =
+          plan.Type() == ir::LogicalPlanNodeType::kApply ||
+          plan.Type() == ir::LogicalPlanNodeType::kSemiApply ||
+          plan.Type() == ir::LogicalPlanNodeType::kAntiSemiApply ||
+          plan.Type() == ir::LogicalPlanNodeType::kLetSemiApply ||
+          plan.Type() == ir::LogicalPlanNodeType::kRollUpApply ||
+          plan.Type() == ir::LogicalPlanNodeType::kOptionalApply ||
+          plan.Type() == ir::LogicalPlanNodeType::kMerge;
+      node->children.push_back(
+          BuildNode(plan.Child(1), correlated ? node->children[0]->output_slots
+                                              : node->argument_slots));
+    }
+
+    std::vector<SlotConfigurationPtr> sources;
+    for (const auto &child : node->children) {
+      sources.push_back(child->output_slots);
+    }
+    if (plan.ChildCount() == 0) {
+      sources.push_back(node->argument_slots);
+    }
+
+    if (plan.Type() == ir::LogicalPlanNodeType::kUnion) {
+      BuildUnionLayout(static_cast<const ir::UnionPlan &>(plan), node.get());
+    } else {
+      std::vector<std::string> columns = plan.OutputColumns();
+      if (plan.ChildCount() == 0 &&
+          plan.Type() != ir::LogicalPlanNodeType::kArgument) {
+        columns = AppendUnique(node->argument_slots->Columns(), columns);
+      }
+      std::unordered_set<std::string> force_nullable;
+      if (plan.Type() == ir::LogicalPlanNodeType::kOptionalApply) {
+        const auto &lhs_columns = node->children[0]->output_slots->Columns();
+        const std::unordered_set<std::string> lhs(lhs_columns.begin(),
+                                                  lhs_columns.end());
+        for (const auto &column : node->children[1]->output_slots->Columns()) {
+          if (!lhs.contains(column)) {
+            force_nullable.insert(column);
+          }
+        }
+      }
+      node->output_slots = MakeLayout(
+          columns, sources, OutputOverrides(plan, sources), force_nullable);
+      for (const auto &child : node->children) {
+        node->child_mappings.push_back(
+            ComputeSlotMappings(*child->output_slots, *node->output_slots));
+      }
+    }
+    return node;
+  }
+
+  void BuildUnionLayout(const ir::UnionPlan &plan, PhysicalPlanNode *node) {
+    CHECK(node != nullptr && node->children.size() == 2, common::InternalError,
+          "union physical node is incomplete");
+    TypeOverrides overrides;
+    std::vector<std::pair<std::string, std::string>> left_names;
+    std::vector<std::pair<std::string, std::string>> right_names;
+    for (const auto &mapping : plan.Mappings()) {
+      const Slot &left =
+          node->children[0]->output_slots->At(mapping.lhs_variable);
+      const Slot &right =
+          node->children[1]->output_slots->At(mapping.rhs_variable);
+      overrides[mapping.output_variable] =
+          MergeInfo(InfoForSlot(left), InfoForSlot(right));
+      left_names.emplace_back(mapping.lhs_variable, mapping.output_variable);
+      right_names.emplace_back(mapping.rhs_variable, mapping.output_variable);
+    }
+    node->output_slots = MakeLayout(plan.OutputColumns(), {}, overrides);
+    node->child_mappings.push_back(NamedMappings(
+        *node->children[0]->output_slots, *node->output_slots, left_names));
+    node->child_mappings.push_back(NamedMappings(
+        *node->children[1]->output_slots, *node->output_slots, right_names));
+  }
+
+  OperatorId next_id_ = 0;
+  SlotConfigurationPtr empty_slots_;
+};
+
+}  // namespace
+
+PhysicalPlan::PhysicalPlan(std::unique_ptr<PhysicalPlanNode> root)
+    : root_(std::move(root)) {
+  CHECK(root_ != nullptr, common::InvalidArgumentError,
+        "physical plan root is null");
+  Index(*root_);
+}
+
+const PhysicalPlanNode &PhysicalPlan::Root() const { return *root_; }
+
+const PhysicalPlanNode &PhysicalPlan::NodeFor(
+    const ir::LogicalPlan &logical) const {
+  const auto found = nodes_.find(&logical);
+  CHECK(found != nodes_.end(), common::InvalidArgumentError,
+        "logical plan is not part of the physical plan");
+  return *found->second;
+}
+
+void PhysicalPlan::Index(const PhysicalPlanNode &node) {
+  nodes_.emplace(node.logical, &node);
+  for (const auto &child : node.children) {
+    Index(*child);
+  }
+}
+
+PhysicalPlan CreatePhysicalPlan(const ir::LogicalPlan &plan) {
+  return PhysicalPlanBuilder().Build(plan);
+}
+
+bool PlanContainsWrites(const ir::LogicalPlan &plan) {
+  switch (plan.Type()) {
+    case ir::LogicalPlanNodeType::kCreateNode:
+    case ir::LogicalPlanNodeType::kCreateRelationship:
+    case ir::LogicalPlanNodeType::kMerge:
+    case ir::LogicalPlanNodeType::kSetProperty:
+    case ir::LogicalPlanNodeType::kSetProperties:
+    case ir::LogicalPlanNodeType::kSetLabels:
+    case ir::LogicalPlanNodeType::kRemoveProperty:
+    case ir::LogicalPlanNodeType::kRemoveLabels:
+    case ir::LogicalPlanNodeType::kDelete:
+    case ir::LogicalPlanNodeType::kDetachDelete:
+      return true;
+    case ir::LogicalPlanNodeType::kProcedureCall:
+      if (!static_cast<const ir::ProcedureCallPlan &>(plan).ReadOnly()) {
+        return true;
+      }
+      break;
+    default:
+      break;
+  }
+  for (const auto &child : plan.Children()) {
+    if (child != nullptr && PlanContainsWrites(*child)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+}  // namespace rg

@@ -85,6 +85,7 @@ std::vector<LogicalProjectionItem> LogicalProjectionItems(
     logical_items.push_back({
         .expression = item.expression,
         .alias = item.alias,
+        .semantic_type = item.semantic_type,
         .precomputed_expressions = precomputed_expressions,
     });
   }

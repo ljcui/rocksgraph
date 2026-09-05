@@ -13,6 +13,55 @@
 namespace rg {
 namespace {
 
+class VectorEntityIdCursor final : public EntityIdCursor {
+ public:
+  explicit VectorEntityIdCursor(std::vector<std::int64_t> ids)
+      : ids_(std::move(ids)) {}
+
+  ~VectorEntityIdCursor() override { Close(); }
+
+  [[nodiscard]] bool Next() override {
+    if (closed_ || next_ >= ids_.size()) {
+      Close();
+      return false;
+    }
+    current_ = ids_[next_++];
+    positioned_ = true;
+    return true;
+  }
+
+  [[nodiscard]] std::int64_t Id() const override {
+    CHECK(positioned_ && !closed_, common::InvalidArgumentError,
+          "entity cursor is not positioned");
+    return current_;
+  }
+
+  void Close() noexcept override {
+    closed_ = true;
+    ids_.clear();
+  }
+
+ private:
+  std::vector<std::int64_t> ids_;
+  std::size_t next_ = 0;
+  std::int64_t current_ = -1;
+  bool positioned_ = false;
+  bool closed_ = false;
+};
+
+template <typename EntityPtr>
+std::unique_ptr<EntityIdCursor> MakeIdCursor(
+    const std::vector<EntityPtr> &entities) {
+  std::vector<std::int64_t> ids;
+  ids.reserve(entities.size());
+  for (const auto &entity : entities) {
+    if (entity != nullptr) {
+      ids.push_back(entity->id);
+    }
+  }
+  return std::make_unique<VectorEntityIdCursor>(std::move(ids));
+}
+
 bool ContainsString(const std::vector<std::string> &items,
                     std::string_view value) {
   return std::find(items.begin(), items.end(), value) != items.end();
@@ -168,6 +217,54 @@ class InMemoryGraph::Transaction final : public StorageTransaction {
 };
 
 InMemoryGraph::~InMemoryGraph() = default;
+
+std::unique_ptr<EntityIdCursor> InMemoryGraph::ScanNodeIds() const {
+  return MakeIdCursor(nodes_);
+}
+
+std::unique_ptr<EntityIdCursor> InMemoryGraph::ScanRelationshipIds() const {
+  return MakeIdCursor(relationships_);
+}
+
+std::unique_ptr<EntityIdCursor> InMemoryGraph::RelationshipIdsConnectedTo(
+    int64_t node_id) const {
+  return MakeIdCursor(RelationshipsConnectedTo(node_id));
+}
+
+std::unique_ptr<EntityIdCursor> InMemoryGraph::OutgoingRelationshipIds(
+    int64_t node_id) const {
+  return MakeIdCursor(OutgoingRelationships(node_id));
+}
+
+std::unique_ptr<EntityIdCursor> InMemoryGraph::IncomingRelationshipIds(
+    int64_t node_id) const {
+  return MakeIdCursor(IncomingRelationships(node_id));
+}
+
+std::unique_ptr<EntityIdCursor> InMemoryGraph::FindNodeIdsByIndex(
+    const std::vector<std::string> &labels, std::string_view property_key,
+    const Value &value) const {
+  return MakeIdCursor(FindNodesByIndex(labels, property_key, value));
+}
+
+std::unique_ptr<EntityIdCursor> InMemoryGraph::NodeIdsInIndex(
+    const std::vector<std::string> &labels,
+    std::string_view property_key) const {
+  return MakeIdCursor(NodesInIndex(labels, property_key));
+}
+
+std::unique_ptr<EntityIdCursor> InMemoryGraph::FindRelationshipIdsByIndex(
+    const std::vector<std::string> &relationship_types,
+    std::string_view property_key, const Value &value) const {
+  return MakeIdCursor(
+      FindRelationshipsByIndex(relationship_types, property_key, value));
+}
+
+std::unique_ptr<EntityIdCursor> InMemoryGraph::RelationshipIdsInIndex(
+    const std::vector<std::string> &relationship_types,
+    std::string_view property_key) const {
+  return MakeIdCursor(RelationshipsInIndex(relationship_types, property_key));
+}
 
 std::unique_ptr<StorageTransaction> InMemoryGraph::BeginTransaction() {
   return std::make_unique<Transaction>(this);

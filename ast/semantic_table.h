@@ -53,6 +53,8 @@ class SemanticTable {
   [[nodiscard]] bool ContainsAggregation(const Expression &expression) const;
   [[nodiscard]] const std::vector<std::string> &ProjectionOutputs(
       const ProjectionBody &body) const;
+  [[nodiscard]] const std::unordered_map<std::string, SemanticVariableType> &
+  ProjectionOutputTypes(const ProjectionBody &body) const;
 
  private:
   friend class SemanticTableAnalyzer;
@@ -67,6 +69,9 @@ class SemanticTable {
   void RecordAggregation(const Expression &expression, bool contains);
   void RecordProjectionOutputs(const ProjectionBody &body,
                                std::vector<std::string> outputs);
+  void RecordProjectionOutputTypes(
+      const ProjectionBody &body,
+      std::unordered_map<std::string, SemanticVariableType> types);
 
   std::unordered_map<std::string, SemanticVariableType> variable_types_;
   std::unordered_map<const ASTNode *,
@@ -77,6 +82,9 @@ class SemanticTable {
   std::unordered_set<const Expression *> aggregation_expressions_;
   std::unordered_map<const ProjectionBody *, std::vector<std::string>>
       projection_outputs_;
+  std::unordered_map<const ProjectionBody *,
+                     std::unordered_map<std::string, SemanticVariableType>>
+      projection_output_types_;
 };
 
 [[nodiscard]] SemanticTable AnalyzeSemanticTable(const ASTNode &node);
