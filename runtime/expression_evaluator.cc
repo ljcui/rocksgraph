@@ -664,24 +664,6 @@ bool ValueLess(const Value &left, const Value &right) {
   return left.ToString() < right.ToString();
 }
 
-Value EvaluateLogicalProjectionItem(const ir::LogicalProjectionItem &item,
-                                    const ExpressionBindings &row,
-                                    ExecutionContext context) {
-  CHECK(item.expression != nullptr, common::InvalidArgumentError,
-        "projection expression is null");
-  return EvaluateExpression(*item.expression, row, item.precomputed_expressions,
-                            context);
-}
-
-Value EvaluateLogicalSortItem(const ir::LogicalSortItem &item,
-                              const ExpressionBindings &row,
-                              ExecutionContext context) {
-  CHECK(item.expression != nullptr, common::InvalidArgumentError,
-        "sort expression is null");
-  return EvaluateExpression(*item.expression, row, item.precomputed_expressions,
-                            context);
-}
-
 Value EvaluateExpression(
     const ast::Expression &expression, const ExpressionBindings &row,
     const std::vector<ir::LogicalPrecomputedExpression> &precomputed,

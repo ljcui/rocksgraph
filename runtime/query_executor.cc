@@ -216,14 +216,6 @@ std::unique_ptr<QueryResultCursor> QueryExecutor::ExecuteCursor(
       plan, *graph_reader_, storage_, parameters, std::move(options));
 }
 
-void QueryExecutor::ExecuteWrite(const ir::LogicalPlan &plan,
-                                 const QueryParameters &parameters,
-                                 QueryExecutionOptions options) {
-  CHECK(storage_ != nullptr, common::InternalError,
-        "write execution requires storage");
-  (void)ConsumeCursor(ExecuteCursor(plan, parameters, std::move(options)));
-}
-
 QueryResult ExecuteReadQuery(const GraphReader &graph_reader,
                              std::string_view cypher, QueryOptions options) {
   return ConsumeCursor(

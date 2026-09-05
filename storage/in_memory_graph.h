@@ -98,37 +98,12 @@ class InMemoryGraph final : public Storage,
   [[nodiscard]] bool HasRelationship(int64_t id) const noexcept;
   [[nodiscard]] const RelationshipPtr &RelationshipById(
       int64_t id) const override;
-  [[nodiscard]] std::vector<RelationshipPtr> RelationshipsConnectedTo(
-      int64_t node_id) const override;
-  [[nodiscard]] std::vector<RelationshipPtr> OutgoingRelationships(
-      int64_t node_id) const override;
-  [[nodiscard]] std::vector<RelationshipPtr> IncomingRelationships(
-      int64_t node_id) const override;
 
   void AddNodeIndex(std::vector<std::string> labels,
                     std::string_view property_key, bool unique = false);
   void AddRelationshipIndex(std::vector<std::string> relationship_types,
                             std::string_view property_key, bool unique = false);
-  [[nodiscard]] std::vector<NodePtr> FindNodesByIndex(
-      const std::vector<std::string> &labels, std::string_view property_key,
-      const Value &value) const override;
-  [[nodiscard]] std::vector<NodePtr> NodesInIndex(
-      const std::vector<std::string> &labels,
-      std::string_view property_key) const override;
-  [[nodiscard]] std::vector<RelationshipPtr> FindRelationshipsByIndex(
-      const std::vector<std::string> &relationship_types,
-      std::string_view property_key, const Value &value) const override;
-  [[nodiscard]] std::vector<RelationshipPtr> RelationshipsInIndex(
-      const std::vector<std::string> &relationship_types,
-      std::string_view property_key) const override;
 
-  [[nodiscard]] std::vector<NodePtr> ScanNodes() const override {
-    return nodes_;
-  }
-  [[nodiscard]] std::vector<RelationshipPtr> ScanRelationships()
-      const override {
-    return relationships_;
-  }
   [[nodiscard]] std::size_t RelationshipCount() const override {
     return relationships_.size();
   }
@@ -139,11 +114,6 @@ class InMemoryGraph final : public Storage,
       const noexcept {
     return relationships_;
   }
-  [[nodiscard]] const std::unordered_map<int64_t, RelationshipPtr> &
-  RelationshipsById() const noexcept {
-    return relationships_by_id_;
-  }
-
   [[nodiscard]] const NodePtr &NodeById(int64_t id) const override;
   [[nodiscard]] Value NodeProperty(
       int64_t node_id, std::string_view property_key) const override;
@@ -256,8 +226,5 @@ class InMemoryGraph final : public Storage,
                                  const std::vector<std::string> &labels);
 [[nodiscard]] bool RelationshipHasAnyType(
     const Relationship &relationship, const std::vector<std::string> &types);
-[[nodiscard]] const Value *FindProperty(const Value &value,
-                                        std::string_view property_key);
-[[nodiscard]] Value::Map CopyProperties(const Value::Map &properties);
 
 }  // namespace rg

@@ -45,12 +45,6 @@ class ExpressionBindings {
 
 [[nodiscard]] Value EvaluateExpression(const ast::Expression &expression,
                                        ExecutionContext context = {});
-[[nodiscard]] Value EvaluateLogicalProjectionItem(
-    const ir::LogicalProjectionItem &item, const ExpressionBindings &bindings,
-    ExecutionContext context = {});
-[[nodiscard]] Value EvaluateLogicalSortItem(const ir::LogicalSortItem &item,
-                                            const ExpressionBindings &bindings,
-                                            ExecutionContext context = {});
 
 [[nodiscard]] bool PredicateIsTrue(const Value &value);
 [[nodiscard]] bool IsNumeric(const Value &value);

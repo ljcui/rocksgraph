@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <unordered_set>
@@ -46,6 +47,16 @@ std::vector<std::vector<std::string>> StringRows(
     rows.push_back(std::move(values));
   }
   return rows;
+}
+
+std::vector<std::int64_t> CursorIds(
+    std::unique_ptr<rg::EntityIdCursor> cursor) {
+  std::vector<std::int64_t> ids;
+  while (cursor->Next()) {
+    ids.push_back(cursor->Id());
+  }
+  cursor->Close();
+  return ids;
 }
 
 std::unique_ptr<ir::LogicalPlan> LogicalPlanFor(const rg::InMemoryGraph &graph,
@@ -1347,10 +1358,13 @@ TEST(QueryExecutorTest, RollsBackExistingEntityMutationsAndIndexes) {
   ASSERT_EQ(graph.Nodes().front(), node);
   EXPECT_EQ(node->properties.at("name"), rg::Value("Ada"));
   EXPECT_EQ(node->properties.find("value"), node->properties.end());
-  EXPECT_EQ(graph.FindNodesByIndex({"Person"}, "name", rg::Value("Ada")).size(),
-            1U);
+  EXPECT_EQ(
+      CursorIds(graph.FindNodeIdsByIndex({"Person"}, "name", rg::Value("Ada")))
+          .size(),
+      1U);
   EXPECT_TRUE(
-      graph.FindNodesByIndex({"Person"}, "name", rg::Value("Bob")).empty());
+      CursorIds(graph.FindNodeIdsByIndex({"Person"}, "name", rg::Value("Bob")))
+          .empty());
 }
 
 TEST(QueryExecutorTest, ExecuteReadQueryRejectsWritesWithGraphReaderOnly) {
@@ -1448,11 +1462,13 @@ TEST(QueryExecutorTest, RemovesNullPropertiesAndUpdatesRelationshipMaps) {
   EXPECT_EQ(graph.Relationships()[0]->properties,
             (rg::Value::Map{{"since", rg::Value(2026)}}));
   EXPECT_TRUE(
-      graph.FindNodesByIndex({"Person"}, "name", rg::Value("Ada")).empty());
-  EXPECT_TRUE(
-      graph.FindRelationshipsByIndex({"KNOWS"}, "since", rg::Value(2020))
+      CursorIds(graph.FindNodeIdsByIndex({"Person"}, "name", rg::Value("Ada")))
           .empty());
-  EXPECT_EQ(graph.FindRelationshipsByIndex({"KNOWS"}, "since", rg::Value(2026))
+  EXPECT_TRUE(CursorIds(graph.FindRelationshipIdsByIndex({"KNOWS"}, "since",
+                                                         rg::Value(2020)))
+                  .empty());
+  EXPECT_EQ(CursorIds(graph.FindRelationshipIdsByIndex({"KNOWS"}, "since",
+                                                       rg::Value(2026)))
                 .size(),
             1U);
 }

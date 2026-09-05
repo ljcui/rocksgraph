@@ -63,9 +63,6 @@ class QueryExecutor final {
   [[nodiscard]] std::unique_ptr<QueryResultCursor> ExecuteCursor(
       const ir::LogicalPlan &plan, const QueryParameters &parameters = {},
       QueryExecutionOptions options = {}) const;
-  void ExecuteWrite(const ir::LogicalPlan &plan,
-                    const QueryParameters &parameters = {},
-                    QueryExecutionOptions options = {});
 
  private:
   const GraphReader *graph_reader_ = nullptr;
