@@ -29,6 +29,32 @@ std::optional<CompositeValueKey> CompositeJoinKey(
   return key;
 }
 
+std::optional<CompositeValueKey> ValueJoinKey(
+    const QueryRow &row, const std::vector<ir::ValueHashJoinKey> &join_keys,
+    std::size_t child, ExecutionContext context) {
+  CompositeValueKey key;
+  key.values.reserve(join_keys.size());
+  for (const auto &join_key : join_keys) {
+    const ast::Expression *expression =
+        child == 0 ? join_key.left : join_key.right;
+    CHECK(expression != nullptr, common::InternalError,
+          "value hash join key expression is null");
+    Value value = EvaluateExpression(*expression, row, {}, context);
+    if (value.IsNull()) {
+      return std::nullopt;
+    }
+    key.values.push_back(std::move(value));
+  }
+  return key;
+}
+
+bool BuildLeft(const ir::ValueHashJoinPlan &plan) {
+  const auto &left_rows = plan.Child(0).EstimatedRows();
+  const auto &right_rows = plan.Child(1).EstimatedRows();
+  return left_rows.has_value() && right_rows.has_value() &&
+         *left_rows < *right_rows;
+}
+
 bool PredicatesMatch(const std::vector<const ast::Expression *> &predicates,
                      const QueryRow &row, ExecutionContext context) {
   for (const ast::Expression *predicate : predicates) {
@@ -109,9 +135,49 @@ QueryRows JoinExecutor::Execute(const ir::NodeHashJoinPlan &plan,
 QueryRows JoinExecutor::Execute(const ir::ValueHashJoinPlan &plan,
                                 const QueryRows &left,
                                 const QueryRows &right) const {
-  return ExecuteNestedLoopJoin(left, right, [this, &plan](const QueryRow &row) {
-    return PredicatesMatch(plan.Predicates(), row, context_);
-  });
+  const bool build_left = BuildLeft(plan);
+  const std::size_t build_child = build_left ? 0U : 1U;
+  const std::size_t probe_child = 1U - build_child;
+  const QueryRows &build_rows = build_left ? left : right;
+  const QueryRows &probe_rows = build_left ? right : left;
+  std::unordered_map<CompositeValueKey, std::vector<const QueryRow *>,
+                     ValueHash, ValueEqual>
+      buckets;
+  for (const QueryRow &build_row : build_rows) {
+    context_.CheckCancelled();
+    std::optional<CompositeValueKey> key =
+        ValueJoinKey(build_row, plan.JoinKeys(), build_child, context_);
+    if (key.has_value()) {
+      buckets[std::move(*key)].push_back(&build_row);
+    }
+  }
+
+  QueryRows out;
+  for (const QueryRow &probe_row : probe_rows) {
+    context_.CheckCancelled();
+    const std::optional<CompositeValueKey> key =
+        ValueJoinKey(probe_row, plan.JoinKeys(), probe_child, context_);
+    if (!key.has_value()) {
+      continue;
+    }
+    const auto bucket = buckets.find(*key);
+    if (bucket == buckets.end()) {
+      continue;
+    }
+    for (const QueryRow *build_row : bucket->second) {
+      context_.CheckCancelled();
+      CHECK(build_row != nullptr, common::InternalError,
+            "value hash join row is null");
+      QueryRow merged;
+      const bool merged_rows =
+          build_left ? MergeQueryRows(*build_row, probe_row, &merged)
+                     : MergeQueryRows(probe_row, *build_row, &merged);
+      if (merged_rows && PredicatesMatch(plan.Predicates(), merged, context_)) {
+        out.push_back(std::move(merged));
+      }
+    }
+  }
+  return out;
 }
 
 QueryRows JoinExecutor::Execute(const ir::PredicateJoinPlan &plan,

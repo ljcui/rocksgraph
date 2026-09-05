@@ -19,6 +19,7 @@ struct PhysicalPlanNode {
   SlotConfigurationPtr output_slots;
   std::vector<std::vector<SlotMapping>> child_mappings;
   std::vector<std::unique_ptr<PhysicalPlanNode>> children;
+  std::size_t value_hash_join_build_child = 1;
 };
 
 class PhysicalPlan final {

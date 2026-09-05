@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -126,4 +127,85 @@ TEST(SlottedRuntimeTest, UsesTypedKeysAcrossSetOperators) {
   const rg::QueryResult union_distinct = rg::ExecuteReadQuery(
       graph, "RETURN [1] AS value UNION RETURN [1.0] AS value");
   EXPECT_EQ(union_distinct.rows.size(), 1U);
+}
+
+TEST(SlottedRuntimeTest, ValueHashJoinUsesTypedCompositeKeys) {
+  rg::InMemoryGraph graph;
+  graph.CreateNode({"Small"}, {{"first", rg::Value(1)},
+                               {"second", rg::Value("x")},
+                               {"name", rg::Value("match")}});
+  graph.CreateNode({"Small"}, {{"second", rg::Value("x")}});
+  graph.CreateNode({"Large"}, {{"first", rg::Value(1.0)},
+                               {"second", rg::Value("x")},
+                               {"name", rg::Value("first")}});
+  graph.CreateNode({"Large"}, {{"first", rg::Value(1)},
+                               {"second", rg::Value("x")},
+                               {"name", rg::Value("second")}});
+  graph.CreateNode({"Large"}, {{"first", rg::Value(1)},
+                               {"second", rg::Value("y")},
+                               {"name", rg::Value("wrong key")}});
+  graph.CreateNode({"Large"}, {{"second", rg::Value("x")}});
+
+  rg::QueryOptions options;
+  options.planner_statistics = &graph;
+  options.planner_catalog = &graph;
+  const rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "MATCH (a:Small), (b:Large) "
+      "WHERE b.first = a.first AND a.second = b.second "
+      "RETURN a.name AS left, b.name AS right ORDER BY right",
+      options);
+
+  ASSERT_EQ(result.rows.size(), 2U);
+  EXPECT_EQ(result.rows[0][0], rg::Value("match"));
+  EXPECT_EQ(result.rows[0][1], rg::Value("first"));
+  EXPECT_EQ(result.rows[1][0], rg::Value("match"));
+  EXPECT_EQ(result.rows[1][1], rg::Value("second"));
+}
+
+TEST(SlottedRuntimeTest, ValueHashJoinRechecksCandidatePredicates) {
+  rg::InMemoryGraph graph;
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  const rg::Value nested_null(rg::Value::List{rg::Value(1), rg::Value::Null()});
+  graph.CreateNode({"Small"},
+                   {{"key", rg::Value(nan)}, {"name", rg::Value("nan")}});
+  graph.CreateNode({"Small"},
+                   {{"key", nested_null}, {"name", rg::Value("null")}});
+  graph.CreateNode({"Small"},
+                   {{"key", rg::Value(7)}, {"name", rg::Value("valid")}});
+  graph.CreateNode({"Large"}, {{"key", rg::Value(-nan)}});
+  graph.CreateNode({"Large"}, {{"key", nested_null}});
+  graph.CreateNode({"Large"}, {{"key", rg::Value(7.0)}});
+  graph.CreateNode({"Large"}, {{"key", rg::Value(8)}});
+  graph.CreateNode({"Large"}, {{"key", rg::Value(9)}});
+
+  rg::QueryOptions options;
+  options.planner_statistics = &graph;
+  options.planner_catalog = &graph;
+  const rg::QueryResult result =
+      rg::ExecuteReadQuery(graph,
+                           "MATCH (a:Small), (b:Large) WHERE a.key = b.key "
+                           "RETURN a.name AS name",
+                           options);
+
+  ASSERT_EQ(result.rows.size(), 1U);
+  EXPECT_EQ(result.rows[0][0], rg::Value("valid"));
+}
+
+TEST(SlottedRuntimeTest, EnforcesValueHashJoinMemoryLimit) {
+  rg::InMemoryGraph graph;
+  graph.CreateNode({"Small"}, {{"key", rg::Value(1)}});
+  graph.CreateNode({"Large"}, {{"key", rg::Value(1)}});
+  graph.CreateNode({"Large"}, {{"key", rg::Value(2)}});
+
+  rg::QueryOptions options;
+  options.planner_statistics = &graph;
+  options.planner_catalog = &graph;
+  options.execution.memory_limit_bytes = 1;
+  std::unique_ptr<rg::QueryResultCursor> cursor = rg::ExecuteReadQueryCursor(
+      graph, "MATCH (a:Small), (b:Large) WHERE a.key = b.key RETURN a, b",
+      options);
+
+  std::vector<rg::Value> row;
+  EXPECT_THROW((void)cursor->Next(&row), common::MemoryLimitExceededError);
 }

@@ -651,6 +651,11 @@ class NodeHashJoinPlan final : public LogicalPlan {
   std::vector<std::string> join_keys_;
 };
 
+struct ValueHashJoinKey {
+  const ast::Expression *left = nullptr;
+  const ast::Expression *right = nullptr;
+};
+
 class ValueHashJoinPlan final : public LogicalPlan {
  public:
   ValueHashJoinPlan(LogicalPlanPtr left, LogicalPlanPtr right,
@@ -660,10 +665,14 @@ class ValueHashJoinPlan final : public LogicalPlan {
       const noexcept {
     return predicates_;
   }
+  [[nodiscard]] const std::vector<ValueHashJoinKey> &JoinKeys() const noexcept {
+    return join_keys_;
+  }
   [[nodiscard]] std::string Details() const override;
 
  private:
   std::vector<const ast::Expression *> predicates_;
+  std::vector<ValueHashJoinKey> join_keys_;
 };
 
 class PredicateJoinPlan final : public LogicalPlan {

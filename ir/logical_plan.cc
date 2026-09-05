@@ -6,6 +6,8 @@
 #include <utility>
 #include <vector>
 
+#include "ast/ast_node.h"
+#include "ast/expression_dependency.h"
 #include "ast/expression_to_string.h"
 #include "common/exception.h"
 
@@ -515,6 +517,62 @@ std::string VarRelationshipDetails(std::string_view from_node,
   out << VariableLengthDetails(length) << "]" << ExpandArrow(direction, false)
       << "(" << to_node << ")";
   return out.str();
+}
+
+const ast::Expression *UnwrapParenthesized(const ast::Expression *expression) {
+  while (expression != nullptr &&
+         expression->Is(ast::ASTNodeType::kParenthesizedExpression)) {
+    expression =
+        ast::CastAst<ast::ParenthesizedExpression>(*expression).expr.get();
+  }
+  return expression;
+}
+
+bool DependenciesWithin(const std::unordered_set<std::string> &dependencies,
+                        const std::unordered_set<std::string> &symbols) {
+  for (const auto &dependency : dependencies) {
+    if (!symbols.contains(dependency)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+std::vector<ValueHashJoinKey> BuildValueHashJoinKeys(
+    const std::vector<const ast::Expression *> &predicates,
+    const LogicalPlan &left, const LogicalPlan &right) {
+  std::vector<ValueHashJoinKey> keys;
+  keys.reserve(predicates.size());
+  for (const ast::Expression *predicate : predicates) {
+    const ast::Expression *unwrapped = UnwrapParenthesized(predicate);
+    CHECK(unwrapped != nullptr &&
+              unwrapped->Is(ast::ASTNodeType::kComparisonExpression),
+          common::InvalidArgumentError,
+          "value hash join predicate is not a comparison");
+    const auto &comparison =
+        ast::CastAst<ast::ComparisonExpression>(*unwrapped);
+    CHECK(comparison.op == "=" && comparison.left != nullptr &&
+              comparison.right != nullptr,
+          common::InvalidArgumentError,
+          "value hash join predicate is not an equality");
+    const auto left_dependencies =
+        ast::CollectExpressionDependencies(*comparison.left);
+    const auto right_dependencies =
+        ast::CollectExpressionDependencies(*comparison.right);
+    const bool forward =
+        DependenciesWithin(left_dependencies, left.SolvedSymbols()) &&
+        DependenciesWithin(right_dependencies, right.SolvedSymbols());
+    const bool reverse =
+        DependenciesWithin(left_dependencies, right.SolvedSymbols()) &&
+        DependenciesWithin(right_dependencies, left.SolvedSymbols());
+    CHECK(forward != reverse, common::InvalidArgumentError,
+          "value hash join predicate does not have one expression per input");
+    keys.push_back(forward ? ValueHashJoinKey{.left = comparison.left.get(),
+                                              .right = comparison.right.get()}
+                           : ValueHashJoinKey{.left = comparison.right.get(),
+                                              .right = comparison.left.get()});
+  }
+  return keys;
 }
 
 }  // namespace
@@ -1079,6 +1137,7 @@ ValueHashJoinPlan::ValueHashJoinPlan(
       predicates_(std::move(predicates)) {
   CHECK(!predicates_.empty(), common::InvalidArgumentError,
         "value hash join predicates are empty");
+  join_keys_ = BuildValueHashJoinKeys(predicates_, Child(0), Child(1));
   SetSolvedSymbols(UnionSolvedSymbols(Child(0), Child(1)));
   SetOutputColumns(UnionOutputColumns(Child(0), Child(1)));
 }

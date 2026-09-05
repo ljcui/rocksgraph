@@ -457,6 +457,14 @@ class PhysicalPlanBuilder final {
             ComputeSlotMappings(*child->output_slots, *node->output_slots));
       }
     }
+    if (plan.Type() == ir::LogicalPlanNodeType::kValueHashJoin) {
+      const auto &left_rows = plan.Child(0).EstimatedRows();
+      const auto &right_rows = plan.Child(1).EstimatedRows();
+      if (left_rows.has_value() && right_rows.has_value() &&
+          *left_rows < *right_rows) {
+        node->value_hash_join_build_child = 0;
+      }
+    }
     return node;
   }
 

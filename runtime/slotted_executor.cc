@@ -2122,18 +2122,6 @@ class BlockingBinaryOperator final : public PullOperator {
         }
         break;
       }
-      case ir::LogicalPlanNodeType::kValueHashJoin: {
-        const auto &predicates =
-            static_cast<const ir::ValueHashJoinPlan &>(*node_->logical)
-                .Predicates();
-        for (const auto &lhs : lhs_rows) {
-          state_->CheckCancelled();
-          for (const auto &rhs : rhs_rows) {
-            (void)EmitJoined(lhs, rhs, &predicates);
-          }
-        }
-        break;
-      }
       case ir::LogicalPlanNodeType::kPredicateJoin: {
         const auto &predicates =
             static_cast<const ir::PredicateJoinPlan &>(*node_->logical)
@@ -2159,6 +2147,188 @@ class BlockingBinaryOperator final : public PullOperator {
   std::size_t reserved_bytes_ = 0;
   std::size_t next_ = 0;
   bool initialized_ = false;
+};
+
+class ValueHashJoinOperator final : public PullOperator {
+ public:
+  ValueHashJoinOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                        std::unique_ptr<PullOperator> lhs,
+                        std::unique_ptr<PullOperator> rhs)
+      : node_(&node),
+        state_(&state),
+        lhs_(std::move(lhs)),
+        rhs_(std::move(rhs)) {}
+
+  ~ValueHashJoinOperator() override { Close(); }
+
+  [[nodiscard]] bool Next(SlottedRow *row) override {
+    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    state_->CheckCancelled();
+    if (closed_) {
+      return false;
+    }
+    if (!initialized_) {
+      Initialize();
+    }
+
+    while (true) {
+      while (bucket_ != nullptr && bucket_offset_ < bucket_->size()) {
+        state_->CheckCancelled();
+        const SlottedRow &build_row = build_rows_[(*bucket_)[bucket_offset_++]];
+        const SlottedRow &lhs = BuildChild() == 0 ? build_row : *probe_row_;
+        const SlottedRow &rhs = BuildChild() == 0 ? *probe_row_ : build_row;
+        SlottedRow output(node_->output_slots);
+        if (!MergeMappings(lhs, &output, node_->child_mappings[0], *state_) ||
+            !MergeMappings(rhs, &output, node_->child_mappings[1], *state_)) {
+          continue;
+        }
+        if (!PredicatesMatch(output)) {
+          continue;
+        }
+        *row = std::move(output);
+        return true;
+      }
+
+      bucket_ = nullptr;
+      bucket_offset_ = 0;
+      probe_row_.reset();
+      SlottedRow probe(node_->children[ProbeChild()]->output_slots);
+      if (!Source(ProbeChild())->Next(&probe)) {
+        Close();
+        return false;
+      }
+      state_->CheckCancelled();
+      std::optional<CompositeValueKey> key = JoinKey(probe, ProbeChild());
+      if (!key.has_value()) {
+        continue;
+      }
+      const auto found = buckets_.find(*key);
+      if (found == buckets_.end()) {
+        continue;
+      }
+      probe_row_.emplace(std::move(probe));
+      bucket_ = &found->second;
+    }
+  }
+
+  void Close() noexcept override {
+    if (closed_) {
+      return;
+    }
+    if (lhs_ != nullptr) {
+      lhs_->Close();
+    }
+    if (rhs_ != nullptr) {
+      rhs_->Close();
+    }
+    probe_row_.reset();
+    bucket_ = nullptr;
+    buckets_.clear();
+    build_rows_.clear();
+    state_->memory_tracker.Release(reserved_bytes_);
+    reserved_bytes_ = 0;
+    closed_ = true;
+  }
+
+ private:
+  using Bucket = std::vector<std::size_t>;
+
+  [[nodiscard]] std::size_t BuildChild() const {
+    return node_->value_hash_join_build_child;
+  }
+
+  [[nodiscard]] std::size_t ProbeChild() const { return 1U - BuildChild(); }
+
+  PullOperator *Source(std::size_t child) const {
+    return child == 0 ? lhs_.get() : rhs_.get();
+  }
+
+  std::optional<CompositeValueKey> JoinKey(const SlottedRow &row,
+                                           std::size_t child) const {
+    const auto &plan =
+        static_cast<const ir::ValueHashJoinPlan &>(*node_->logical);
+    CompositeValueKey result;
+    result.values.reserve(plan.JoinKeys().size());
+    for (const ir::ValueHashJoinKey &key : plan.JoinKeys()) {
+      const ast::Expression *expression = child == 0 ? key.left : key.right;
+      CHECK(expression != nullptr, common::InvalidArgumentError,
+            "value hash join key expression is null");
+      Value value = Evaluate(*expression, row, {}, *state_);
+      if (value.IsNull()) {
+        return std::nullopt;
+      }
+      result.values.push_back(std::move(value));
+    }
+    return result;
+  }
+
+  bool PredicatesMatch(const SlottedRow &row) const {
+    const auto &predicates =
+        static_cast<const ir::ValueHashJoinPlan &>(*node_->logical)
+            .Predicates();
+    for (const ast::Expression *predicate : predicates) {
+      CHECK(predicate != nullptr, common::InvalidArgumentError,
+            "join predicate is null");
+      if (!PredicateIsTrue(Evaluate(*predicate, row, {}, *state_))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  void Initialize() {
+    initialized_ = true;
+    CHECK(BuildChild() < 2, common::InternalError,
+          "invalid value hash join build child");
+    PullOperator *source = Source(BuildChild());
+    while (true) {
+      SlottedRow input(node_->children[BuildChild()]->output_slots);
+      if (!source->Next(&input)) {
+        source->Close();
+        return;
+      }
+      state_->CheckCancelled();
+      std::optional<CompositeValueKey> key = JoinKey(input, BuildChild());
+      if (!key.has_value()) {
+        continue;
+      }
+
+      const std::size_t row_bytes = input.EstimatedHeapUsage();
+      state_->memory_tracker.Reserve(row_bytes);
+      reserved_bytes_ += row_bytes;
+      const std::size_t row_index = build_rows_.size();
+      build_rows_.push_back(std::move(input));
+
+      auto [found, inserted] = buckets_.try_emplace(std::move(*key));
+      if (inserted) {
+        const std::size_t key_bytes = EstimatedKeyHeapUsage(found->first);
+        state_->memory_tracker.Reserve(key_bytes);
+        reserved_bytes_ += key_bytes;
+      }
+      const std::size_t old_capacity = found->second.capacity();
+      found->second.push_back(row_index);
+      const std::size_t new_capacity = found->second.capacity();
+      if (new_capacity > old_capacity) {
+        const std::size_t bucket_bytes =
+            (new_capacity - old_capacity) * sizeof(std::size_t);
+        state_->memory_tracker.Reserve(bucket_bytes);
+        reserved_bytes_ += bucket_bytes;
+      }
+    }
+  }
+
+  const PhysicalPlanNode *node_ = nullptr;
+  RuntimeState *state_ = nullptr;
+  std::unique_ptr<PullOperator> lhs_;
+  std::unique_ptr<PullOperator> rhs_;
+  std::unordered_map<CompositeValueKey, Bucket, ValueHash, ValueEqual> buckets_;
+  std::vector<SlottedRow> build_rows_;
+  std::optional<SlottedRow> probe_row_;
+  const Bucket *bucket_ = nullptr;
+  std::size_t bucket_offset_ = 0;
+  std::size_t reserved_bytes_ = 0;
+  bool initialized_ = false;
+  bool closed_ = false;
 };
 
 class UnionOperator final : public PullOperator {
@@ -2319,6 +2489,10 @@ class OperatorFactory final {
       if (type == ir::LogicalPlanNodeType::kUnion) {
         return std::make_unique<UnionOperator>(node, *state_, std::move(lhs),
                                                std::move(rhs));
+      }
+      if (type == ir::LogicalPlanNodeType::kValueHashJoin) {
+        return std::make_unique<ValueHashJoinOperator>(
+            node, *state_, std::move(lhs), std::move(rhs));
       }
       return std::make_unique<BlockingBinaryOperator>(
           node, *state_, std::move(lhs), std::move(rhs));

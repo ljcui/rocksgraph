@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <string>
 #include <utility>
@@ -142,6 +143,51 @@ TEST(JoinExecutorTest, ValueHashJoinRejectsFalseAndNullPredicates) {
   ASSERT_EQ(rows.size(), 1U);
   EXPECT_EQ(Column(rows[0], "left"), rg::Value(1));
   EXPECT_EQ(Column(rows[0], "right"), rg::Value(1.0));
+}
+
+TEST(JoinExecutorTest, ValueHashJoinUsesAllOrientedKeysAndDuplicates) {
+  auto first = Comparison("right_first", "=", "left_first");
+  auto second = Comparison("left_second", "=", "right_second");
+  ir::ValueHashJoinPlan plan(
+      Arguments({"left_first", "left_second", "left"}),
+      Arguments({"right_first", "right_second", "right"}),
+      {first.get(), second.get()});
+  plan.Child(0).SetCostEstimate(1.0, 1.0);
+  plan.Child(1).SetCostEstimate(10.0, 10.0);
+
+  const rg::QueryRows rows =
+      rg::JoinExecutor().Execute(plan,
+                                 {{{"left_first", rg::Value(1)},
+                                   {"left_second", rg::Value("x")},
+                                   {"left", rg::Value("match")}}},
+                                 {{{"right_first", rg::Value(1.0)},
+                                   {"right_second", rg::Value("x")},
+                                   {"right", rg::Value("first")}},
+                                  {{"right_first", rg::Value(1)},
+                                   {"right_second", rg::Value("x")},
+                                   {"right", rg::Value("second")}},
+                                  {{"right_first", rg::Value(1)},
+                                   {"right_second", rg::Value("y")},
+                                   {"right", rg::Value("wrong key")}}});
+
+  ASSERT_EQ(rows.size(), 2U);
+  EXPECT_EQ(Column(rows[0], "left"), rg::Value("match"));
+  EXPECT_EQ(Column(rows[0], "right"), rg::Value("first"));
+  EXPECT_EQ(Column(rows[1], "right"), rg::Value("second"));
+}
+
+TEST(JoinExecutorTest, ValueHashJoinRechecksNaNAndNestedNullPredicates) {
+  auto predicate = Comparison("left", "=", "right");
+  ir::ValueHashJoinPlan plan(Arguments({"left"}), Arguments({"right"}),
+                             {predicate.get()});
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  const rg::Value nested_null(rg::Value::List{rg::Value(1), rg::Value::Null()});
+
+  const rg::QueryRows rows = rg::JoinExecutor().Execute(
+      plan, {{{"left", rg::Value(nan)}}, {{"left", nested_null}}},
+      {{{"right", rg::Value(-nan)}}, {{"right", nested_null}}});
+
+  EXPECT_TRUE(rows.empty());
 }
 
 TEST(JoinExecutorTest, PredicateJoinEvaluatesAllPredicates) {

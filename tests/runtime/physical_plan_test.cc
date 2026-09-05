@@ -88,3 +88,19 @@ TEST(PhysicalPlanTest, PreservesScopedSemanticTypesForExpressions) {
   EXPECT_EQ(x.type, ast::SemanticVariableType::kNode);
   EXPECT_EQ(x.kind, rg::SlotKind::kNode);
 }
+
+TEST(PhysicalPlanTest, ChoosesSmallerValueHashJoinBuildSide) {
+  PlannedQuery query =
+      Plan("MATCH (a:Person), (b) WHERE a.id = b.id RETURN a, b");
+  const ir::LogicalPlan *logical_join =
+      FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kValueHashJoin);
+  ASSERT_NE(logical_join, nullptr);
+  ASSERT_TRUE(logical_join->Child(0).EstimatedRows().has_value());
+  ASSERT_TRUE(logical_join->Child(1).EstimatedRows().has_value());
+  ASSERT_LT(*logical_join->Child(0).EstimatedRows(),
+            *logical_join->Child(1).EstimatedRows());
+
+  rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+
+  EXPECT_EQ(physical.NodeFor(*logical_join).value_hash_join_build_child, 0U);
+}

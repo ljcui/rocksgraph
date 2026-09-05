@@ -8,6 +8,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "ast/ast_node.h"
 #include "common/exception.h"
 
 namespace {
@@ -15,6 +16,19 @@ namespace {
 bool Contains(const std::unordered_set<std::string> &values,
               const std::string &value) {
   return values.find(value) != values.end();
+}
+
+std::unique_ptr<ast::ComparisonExpression> Equality(std::string left,
+                                                    std::string right) {
+  auto comparison = std::make_unique<ast::ComparisonExpression>();
+  auto lhs = std::make_unique<ast::Variable>();
+  lhs->name = std::move(left);
+  auto rhs = std::make_unique<ast::Variable>();
+  rhs->name = std::move(right);
+  comparison->left = std::move(lhs);
+  comparison->op = "=";
+  comparison->right = std::move(rhs);
+  return comparison;
 }
 
 }  // namespace
@@ -261,14 +275,18 @@ TEST(LogicalPlanTest, BinaryPlansMergeSolvedSymbolsAndOutputs) {
   EXPECT_TRUE(Contains(join.SolvedSymbols(), "b"));
   EXPECT_TRUE(Contains(join.SolvedSymbols(), "c"));
 
+  auto equality = Equality("a", "b");
   ir::ValueHashJoinPlan value_join(
       std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({"a"})),
       std::make_unique<ir::ArgumentPlan>(std::vector<std::string>({"b"})),
-      {nullptr});
+      {equality.get()});
   EXPECT_EQ(value_join.Name(), "ValueHashJoin");
-  EXPECT_EQ(value_join.Details(), "null");
+  EXPECT_EQ(value_join.Details(), "a = b");
   EXPECT_EQ(value_join.Predicates(),
-            std::vector<const ast::Expression *>({nullptr}));
+            std::vector<const ast::Expression *>({equality.get()}));
+  ASSERT_EQ(value_join.JoinKeys().size(), 1U);
+  EXPECT_EQ(value_join.JoinKeys()[0].left, equality->left.get());
+  EXPECT_EQ(value_join.JoinKeys()[0].right, equality->right.get());
   EXPECT_EQ(value_join.OutputColumns(), std::vector<std::string>({"a", "b"}));
 
   ir::PredicateJoinPlan predicate_join(
