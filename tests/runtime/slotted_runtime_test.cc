@@ -104,6 +104,62 @@ TEST(SlottedRuntimeTest, ReportsPeakMemoryForBlockingOperators) {
   EXPECT_GT(result.peak_memory_bytes, 0U);
 }
 
+TEST(SlottedRuntimeTest, ExecutesStableMultiKeyTopN) {
+  rg::InMemoryGraph graph;
+  const rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "UNWIND [{score: 1, bucket: 'a', name: 'first'}, "
+      "{score: 2, bucket: 'z', name: 'highest'}, "
+      "{score: 1, bucket: 'a', name: 'second'}, "
+      "{score: 1, bucket: 'b', name: 'other'}, "
+      "{score: 0, bucket: 'a', name: 'lowest'}] AS item "
+      "RETURN item.name AS name, item.score AS score, item.bucket AS bucket "
+      "ORDER BY score DESC, bucket ASC LIMIT 4");
+
+  ASSERT_EQ(result.rows.size(), 4U);
+  EXPECT_EQ(result.rows[0][0], rg::Value("highest"));
+  EXPECT_EQ(result.rows[1][0], rg::Value("first"));
+  EXPECT_EQ(result.rows[2][0], rg::Value("second"));
+  EXPECT_EQ(result.rows[3][0], rg::Value("other"));
+}
+
+TEST(SlottedRuntimeTest, SupportsParameterizedAndZeroTopNLimits) {
+  rg::InMemoryGraph graph;
+  rg::QueryOptions options;
+  options.parameters = {{"l", rg::Value(2)}};
+
+  const rg::QueryResult parameterized = rg::ExecuteReadQuery(
+      graph, "UNWIND [3, 1, 2] AS x RETURN x ORDER BY x LIMIT $l", options);
+  ASSERT_EQ(parameterized.rows.size(), 2U);
+  EXPECT_EQ(parameterized.rows[0][0], rg::Value(1));
+  EXPECT_EQ(parameterized.rows[1][0], rg::Value(2));
+
+  const rg::QueryResult empty = rg::ExecuteReadQuery(
+      graph, "UNWIND [3, 1, 2] AS x RETURN x ORDER BY x LIMIT 0");
+  EXPECT_TRUE(empty.rows.empty());
+}
+
+TEST(SlottedRuntimeTest, KeepsOnlyTopNRowsInMemory) {
+  rg::InMemoryGraph graph;
+  for (std::int64_t value = 1; value <= 256; ++value) {
+    graph.CreateNode({"N"}, {{"value", rg::Value(value)}});
+  }
+  rg::QueryOptions options;
+  options.execution.memory_limit_bytes = 4096;
+
+  const rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "MATCH (n:N) RETURN n.value AS value ORDER BY value DESC LIMIT 3",
+      options);
+
+  ASSERT_EQ(result.rows.size(), 3U);
+  EXPECT_EQ(result.rows[0][0], rg::Value(256));
+  EXPECT_EQ(result.rows[1][0], rg::Value(255));
+  EXPECT_EQ(result.rows[2][0], rg::Value(254));
+  EXPECT_GT(result.peak_memory_bytes, 0U);
+  EXPECT_LE(result.peak_memory_bytes, options.execution.memory_limit_bytes);
+}
+
 TEST(SlottedRuntimeTest, KeepsBasicAggregationMemoryBounded) {
   rg::InMemoryGraph graph;
   for (std::int64_t value = 1; value <= 256; ++value) {

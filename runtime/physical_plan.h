@@ -12,9 +12,16 @@ namespace rg {
 
 using OperatorId = std::size_t;
 
+enum class PhysicalOperatorType {
+  kLogical,
+  kTopN,
+};
+
 struct PhysicalPlanNode {
   OperatorId id = 0;
+  PhysicalOperatorType type = PhysicalOperatorType::kLogical;
   const ir::LogicalPlan *logical = nullptr;
+  const ir::SortPlan *top_n_sort = nullptr;
   SlotConfigurationPtr argument_slots;
   SlotConfigurationPtr output_slots;
   std::vector<std::vector<SlotMapping>> child_mappings;

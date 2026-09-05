@@ -104,3 +104,45 @@ TEST(PhysicalPlanTest, ChoosesSmallerValueHashJoinBuildSide) {
 
   EXPECT_EQ(physical.NodeFor(*logical_join).value_hash_join_build_child, 0U);
 }
+
+TEST(PhysicalPlanTest, FusesDirectReadOnlySortAndLimitIntoTopN) {
+  PlannedQuery query =
+      Plan("UNWIND [3, 1, 2] AS x RETURN x ORDER BY x LIMIT $l");
+  const ir::LogicalPlan *limit =
+      FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kLimit);
+  const ir::LogicalPlan *sort =
+      FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kSort);
+  ASSERT_NE(limit, nullptr);
+  ASSERT_NE(sort, nullptr);
+
+  rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+  const rg::PhysicalPlanNode &limit_node = physical.NodeFor(*limit);
+  const rg::PhysicalPlanNode &sort_node = physical.NodeFor(*sort);
+
+  EXPECT_EQ(limit_node.type, rg::PhysicalOperatorType::kTopN);
+  EXPECT_EQ(&limit_node, &sort_node);
+  EXPECT_EQ(limit_node.top_n_sort, sort);
+  ASSERT_EQ(limit_node.children.size(), 1U);
+  EXPECT_EQ(limit_node.children[0]->logical, &sort->Child(0));
+}
+
+TEST(PhysicalPlanTest, DoesNotFuseTopNAcrossSkipOrWrites) {
+  PlannedQuery skipped =
+      Plan("UNWIND [3, 1, 2] AS x RETURN x ORDER BY x SKIP 1 LIMIT 1");
+  const ir::LogicalPlan *skipped_limit =
+      FindPlan(*skipped.logical_plan, ir::LogicalPlanNodeType::kLimit);
+  ASSERT_NE(skipped_limit, nullptr);
+  rg::PhysicalPlan skipped_physical =
+      rg::CreatePhysicalPlan(*skipped.logical_plan);
+  EXPECT_EQ(skipped_physical.NodeFor(*skipped_limit).type,
+            rg::PhysicalOperatorType::kLogical);
+
+  PlannedQuery write =
+      Plan("MATCH (n) SET n.x = 1 RETURN n ORDER BY n LIMIT 2");
+  const ir::LogicalPlan *write_limit =
+      FindPlan(*write.logical_plan, ir::LogicalPlanNodeType::kLimit);
+  ASSERT_NE(write_limit, nullptr);
+  rg::PhysicalPlan write_physical = rg::CreatePhysicalPlan(*write.logical_plan);
+  EXPECT_EQ(write_physical.NodeFor(*write_limit).type,
+            rg::PhysicalOperatorType::kLogical);
+}

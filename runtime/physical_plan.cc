@@ -11,6 +11,7 @@
 #include "ast/ast_node.h"
 #include "ast/builtin_function.h"
 #include "ast/builtin_procedure.h"
+#include "ast/expression_dependency.h"
 #include "common/exception.h"
 
 namespace rg {
@@ -391,6 +392,23 @@ std::vector<SlotMapping> NamedMappings(
   return mappings;
 }
 
+const ir::SortPlan *TopNSortFor(const ir::LogicalPlan &plan) {
+  if (plan.Type() != ir::LogicalPlanNodeType::kLimit ||
+      plan.ChildCount() != 1 ||
+      plan.Child(0).Type() != ir::LogicalPlanNodeType::kSort) {
+    return nullptr;
+  }
+  const auto &limit = static_cast<const ir::LimitPlan &>(plan);
+  if (limit.Limit() == nullptr ||
+      !ast::CollectExpressionDependencies(*limit.Limit()).empty() ||
+      !limit.PrecomputedExpressions().empty()) {
+    return nullptr;
+  }
+  const auto &sort = static_cast<const ir::SortPlan &>(plan.Child(0));
+  return sort.ChildCount() == 1 && !PlanContainsWrites(sort.Child(0)) ? &sort
+                                                                      : nullptr;
+}
+
 class PhysicalPlanBuilder final {
  public:
   PhysicalPlan Build(const ir::LogicalPlan &plan) {
@@ -406,7 +424,11 @@ class PhysicalPlanBuilder final {
     node->logical = &plan;
     node->argument_slots = std::move(argument_slots);
 
-    if (plan.ChildCount() == 1) {
+    if (const ir::SortPlan *sort = TopNSortFor(plan); sort != nullptr) {
+      node->type = PhysicalOperatorType::kTopN;
+      node->top_n_sort = sort;
+      node->children.push_back(BuildNode(sort->Child(0), node->argument_slots));
+    } else if (plan.ChildCount() == 1) {
       node->children.push_back(BuildNode(plan.Child(0), node->argument_slots));
     } else if (plan.ChildCount() == 2) {
       node->children.push_back(BuildNode(plan.Child(0), node->argument_slots));
@@ -516,6 +538,9 @@ const PhysicalPlanNode &PhysicalPlan::NodeFor(
 
 void PhysicalPlan::Index(const PhysicalPlanNode &node) {
   nodes_.emplace(node.logical, &node);
+  if (node.top_n_sort != nullptr) {
+    nodes_.emplace(node.top_n_sort, &node);
+  }
   for (const auto &child : node.children) {
     Index(*child);
   }

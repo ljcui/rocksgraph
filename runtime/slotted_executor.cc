@@ -2276,6 +2276,166 @@ class BlockingUnaryOperator final : public PullOperator {
   bool closed_ = false;
 };
 
+class TopNOperator final : public PullOperator {
+ public:
+  TopNOperator(const PhysicalPlanNode &node, RuntimeState &state,
+               std::unique_ptr<PullOperator> source)
+      : node_(&node), state_(&state), source_(std::move(source)) {}
+
+  ~TopNOperator() override { Close(); }
+
+  [[nodiscard]] bool Next(SlottedRow *row) override {
+    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    state_->CheckCancelled();
+    if (closed_) {
+      return false;
+    }
+    if (!initialized_) {
+      Initialize();
+    }
+    if (next_ >= entries_.size()) {
+      Close();
+      return false;
+    }
+    *row = std::move(entries_[next_++].row);
+    return true;
+  }
+
+  void Close() noexcept override {
+    if (closed_) {
+      return;
+    }
+    if (source_ != nullptr) {
+      source_->Close();
+    }
+    entries_.clear();
+    state_->memory_tracker.Release(reserved_bytes_);
+    reserved_bytes_ = 0;
+    closed_ = true;
+  }
+
+ private:
+  struct Entry {
+    SlottedRow row;
+    std::vector<Value> keys;
+    std::uint64_t sequence = 0;
+    std::size_t reserved_bytes = 0;
+  };
+
+  [[nodiscard]] bool ComesBefore(const Entry &left, const Entry &right) const {
+    const auto &items = node_->top_n_sort->Items();
+    CHECK(left.keys.size() == items.size() && right.keys.size() == items.size(),
+          common::InternalError, "Top-N sort keys are incomplete");
+    for (std::size_t index = 0; index < items.size(); ++index) {
+      int order = CompareValues(left.keys[index], right.keys[index]);
+      if (items[index].direction == ir::LogicalOrderDirection::kDescending) {
+        order = -order;
+      }
+      if (order != 0) {
+        return order < 0;
+      }
+    }
+    return left.sequence < right.sequence;
+  }
+
+  [[nodiscard]] std::size_t EstimatedEntryHeapUsage(const Entry &entry) const {
+    std::size_t bytes =
+        entry.row.EstimatedHeapUsage() + entry.keys.capacity() * sizeof(Value);
+    for (const Value &key : entry.keys) {
+      bytes += EstimatedStoredValueHeapUsage(key);
+    }
+    return bytes;
+  }
+
+  [[nodiscard]] Entry CreateEntry(const SlottedRow &input) {
+    std::vector<Value> keys;
+    keys.reserve(node_->top_n_sort->Items().size());
+    for (const auto &item : node_->top_n_sort->Items()) {
+      CHECK(item.expression != nullptr, common::InvalidArgumentError,
+            "sort expression is null");
+      keys.push_back(Evaluate(*item.expression, input,
+                              item.precomputed_expressions, *state_));
+    }
+    Entry entry{.row = input.CopyTo(node_->output_slots, *state_->graph_reader),
+                .keys = std::move(keys),
+                .sequence = sequence_++};
+    entry.reserved_bytes = EstimatedEntryHeapUsage(entry);
+    return entry;
+  }
+
+  void Retain(Entry entry) {
+    const auto comparator = [this](const Entry &left, const Entry &right) {
+      return ComesBefore(left, right);
+    };
+    if (entries_.size() < limit_) {
+      state_->memory_tracker.Reserve(entry.reserved_bytes);
+      reserved_bytes_ += entry.reserved_bytes;
+      entries_.push_back(std::move(entry));
+      std::push_heap(entries_.begin(), entries_.end(), comparator);
+      return;
+    }
+    if (!ComesBefore(entry, entries_.front())) {
+      return;
+    }
+
+    std::pop_heap(entries_.begin(), entries_.end(), comparator);
+    Entry &replaced = entries_.back();
+    const std::size_t old_bytes = replaced.reserved_bytes;
+    if (entry.reserved_bytes > old_bytes) {
+      state_->memory_tracker.Reserve(entry.reserved_bytes - old_bytes);
+      reserved_bytes_ += entry.reserved_bytes - old_bytes;
+    }
+    replaced = std::move(entry);
+    if (old_bytes > replaced.reserved_bytes) {
+      state_->memory_tracker.Release(old_bytes - replaced.reserved_bytes);
+      reserved_bytes_ -= old_bytes - replaced.reserved_bytes;
+    }
+    std::push_heap(entries_.begin(), entries_.end(), comparator);
+  }
+
+  void Initialize() {
+    initialized_ = true;
+    CHECK(node_->type == PhysicalOperatorType::kTopN &&
+              node_->top_n_sort != nullptr && node_->children.size() == 1,
+          common::InternalError, "Top-N physical node is incomplete");
+    const auto &limit = static_cast<const ir::LimitPlan &>(*node_->logical);
+    CHECK(limit.Limit() != nullptr, common::InvalidArgumentError,
+          "LIMIT expression is null");
+    const Value count =
+        EvaluateExpression(*limit.Limit(), QueryRow{},
+                           limit.PrecomputedExpressions(), state_->context);
+    CHECK(count.IsInteger() && count.AsInteger() >= 0,
+          common::InvalidArgumentError,
+          "LIMIT requires a non-negative integer");
+    limit_ = static_cast<std::uint64_t>(count.AsInteger());
+    if (limit_ == 0) {
+      source_->Close();
+      return;
+    }
+
+    SlottedRow input(node_->children[0]->output_slots);
+    while (source_->Next(&input)) {
+      state_->CheckCancelled();
+      Retain(CreateEntry(input));
+    }
+    std::sort(entries_.begin(), entries_.end(),
+              [this](const Entry &left, const Entry &right) {
+                return ComesBefore(left, right);
+              });
+  }
+
+  const PhysicalPlanNode *node_ = nullptr;
+  RuntimeState *state_ = nullptr;
+  std::unique_ptr<PullOperator> source_;
+  std::vector<Entry> entries_;
+  std::uint64_t limit_ = 0;
+  std::uint64_t sequence_ = 0;
+  std::size_t reserved_bytes_ = 0;
+  std::size_t next_ = 0;
+  bool initialized_ = false;
+  bool closed_ = false;
+};
+
 class BlockingBinaryOperator final : public PullOperator {
  public:
   BlockingBinaryOperator(const PhysicalPlanNode &node, RuntimeState &state,
@@ -2756,6 +2916,12 @@ class OperatorFactory final {
   std::unique_ptr<PullOperator> Build(
       const PhysicalPlanNode &node,
       std::optional<SlottedRow> argument = std::nullopt) {
+    if (node.type == PhysicalOperatorType::kTopN) {
+      CHECK(node.children.size() == 1, common::InternalError,
+            "Top-N physical node must have one child");
+      return std::make_unique<TopNOperator>(
+          node, *state_, Build(*node.children[0], std::move(argument)));
+    }
     const ir::LogicalPlanNodeType type = node.logical->Type();
     if (node.logical->ChildCount() == 0) {
       return std::make_unique<LeafOperator>(node, *state_, std::move(argument));
