@@ -372,71 +372,6 @@ std::optional<std::int64_t> NextVarExpandNode(const Relationship &relationship,
   return std::nullopt;
 }
 
-void CollectVarExpandRows(const ir::VarExpandPlan &plan,
-                          const SlottedRow &input, std::int64_t current_node_id,
-                          std::optional<std::int64_t> bound_to_id,
-                          std::size_t min_length, std::size_t max_length,
-                          std::vector<std::int64_t> *path,
-                          std::unordered_set<std::int64_t> *used_relationships,
-                          SlotConfigurationPtr output_slots,
-                          RuntimeState *state, std::vector<SlottedRow> *output,
-                          std::size_t *reserved_bytes) {
-  CHECK(path != nullptr && used_relationships != nullptr && state != nullptr &&
-            output != nullptr && reserved_bytes != nullptr,
-        common::InternalError, "variable expand state is incomplete");
-  state->CheckCancelled();
-  if (path->size() >= min_length &&
-      (!bound_to_id.has_value() || *bound_to_id == current_node_id)) {
-    Value::List relationships;
-    relationships.reserve(path->size());
-    for (std::int64_t relationship_id : *path) {
-      relationships.emplace_back(
-          state->graph_reader->RelationshipById(relationship_id));
-    }
-    SlottedRow row = input.CopyTo(output_slots, *state->graph_reader);
-    if (TryBindSlot(&row, plan.Relationship(), Value(std::move(relationships)),
-                    *state->graph_reader) &&
-        TryBindEntityId(&row, plan.ToNode(), SlotKind::kNode, current_node_id,
-                        *state->graph_reader)) {
-      const std::size_t bytes = row.EstimatedHeapUsage();
-      state->memory_tracker.Reserve(bytes);
-      *reserved_bytes += bytes;
-      output->push_back(std::move(row));
-    }
-  }
-  if (path->size() == max_length) {
-    return;
-  }
-
-  EntityIdCursor *cursor = state->TrackCursor(
-      ExpandCursor(*state->graph_reader, current_node_id, plan.Direction()));
-  while (cursor->Next()) {
-    state->CheckCancelled();
-    const std::int64_t relationship_id = cursor->Id();
-    if (used_relationships->contains(relationship_id)) {
-      continue;
-    }
-    const Relationship &relationship =
-        *state->graph_reader->RelationshipById(relationship_id);
-    if (!RelationshipHasType(relationship, plan.Types())) {
-      continue;
-    }
-    const std::optional<std::int64_t> next =
-        NextVarExpandNode(relationship, current_node_id, plan.Direction());
-    if (!next.has_value()) {
-      continue;
-    }
-    used_relationships->insert(relationship_id);
-    path->push_back(relationship_id);
-    CollectVarExpandRows(plan, input, *next, bound_to_id, min_length,
-                         max_length, path, used_relationships, output_slots,
-                         state, output, reserved_bytes);
-    path->pop_back();
-    used_relationships->erase(relationship_id);
-  }
-  state->ReleaseCursor(cursor);
-}
-
 bool CanTraverse(const std::vector<GraphReader::RelationshipPtr> &relationships,
                  std::int64_t from, std::int64_t target) {
   for (const auto &relationship : relationships) {
@@ -1205,6 +1140,23 @@ std::unique_ptr<EntityIdCursor> ExpandCursor(const GraphReader &graph_reader,
 
 class OperatorFactory;
 
+std::optional<std::int64_t> SeekId(const Value &value) {
+  if (value.IsInteger()) {
+    return value.AsInteger();
+  }
+  if (value.IsDouble()) {
+    const double number = value.AsDouble();
+    if (std::isfinite(number) && std::trunc(number) == number &&
+        static_cast<long double>(number) >=
+            std::numeric_limits<std::int64_t>::min() &&
+        static_cast<long double>(number) <=
+            std::numeric_limits<std::int64_t>::max()) {
+      return static_cast<std::int64_t>(number);
+    }
+  }
+  return std::nullopt;
+}
+
 class LeafOperator final : public PullOperator {
  public:
   LeafOperator(const PhysicalPlanNode &node, RuntimeState &state,
@@ -1232,6 +1184,11 @@ class LeafOperator final : public PullOperator {
       emitted_argument_ = true;
       *row = argument_->CopyTo(node_->output_slots, *state_->graph_reader);
       return true;
+    }
+
+    if (plan.Type() == ir::LogicalPlanNodeType::kNodeByIdSeek ||
+        plan.Type() == ir::LogicalPlanNodeType::kRelationshipByIdSeek) {
+      return NextId(row);
     }
 
     EnsureCursor();
@@ -1268,10 +1225,83 @@ class LeafOperator final : public PullOperator {
       state_->ReleaseCursor(cursor_);
       cursor_ = nullptr;
     }
+    id_values_.clear();
+    seen_ids_.clear();
+    state_->memory_tracker.Release(id_reserved_bytes_);
+    id_reserved_bytes_ = 0;
     closed_ = true;
   }
 
  private:
+  bool NextId(SlottedRow *row) {
+    const bool node =
+        node_->logical->Type() == ir::LogicalPlanNodeType::kNodeByIdSeek;
+    if (!initialized_) {
+      initialized_ = true;
+      const ast::Expression *expression = nullptr;
+      bool many = false;
+      if (node) {
+        const auto &plan =
+            static_cast<const ir::NodeByIdSeekPlan &>(*node_->logical);
+        expression = plan.Ids();
+        many = plan.Many();
+      } else {
+        const auto &plan =
+            static_cast<const ir::RelationshipByIdSeekPlan &>(*node_->logical);
+        expression = plan.Ids();
+        many = plan.Many();
+      }
+      Value value = Evaluate(*expression, *argument_, {}, *state_);
+      const auto bytes = EstimatedValueHeapUsage(value);
+      state_->memory_tracker.Reserve(bytes);
+      id_reserved_bytes_ += bytes;
+      if (many && !value.IsNull()) {
+        CHECK(value.IsList(), common::InvalidArgumentError,
+              "IN requires a list");
+        id_values_ = value.AsList();
+      } else if (!many) {
+        id_values_.push_back(std::move(value));
+      }
+    }
+    if (pending_reverse_) {
+      pending_reverse_ = false;
+      if (EmitRelationship(pending_relationship_id_, true, row)) {
+        return true;
+      }
+    }
+    while (id_index_ < id_values_.size()) {
+      state_->CheckCancelled();
+      const auto id = SeekId(id_values_[id_index_++]);
+      if (!id.has_value() || *id < 0 || seen_ids_.contains(*id)) {
+        continue;
+      }
+      constexpr std::size_t bytes = 4 * sizeof(std::int64_t);
+      state_->memory_tracker.Reserve(bytes);
+      id_reserved_bytes_ += bytes;
+      seen_ids_.insert(*id);
+      try {
+        if (node) {
+          (void)state_->graph_reader->NodeById(*id);
+        } else {
+          (void)state_->graph_reader->RelationshipById(*id);
+        }
+      } catch (const common::NotFoundError &) {
+        continue;
+      }
+      if (node ? EmitNode(*id, row) : EmitRelationship(*id, false, row)) {
+        return true;
+      }
+      if (pending_reverse_) {
+        pending_reverse_ = false;
+        if (EmitRelationship(*id, true, row)) {
+          return true;
+        }
+      }
+    }
+    Close();
+    return false;
+  }
+
   static bool IsNodeLeaf(ir::LogicalPlanNodeType type) {
     return type == ir::LogicalPlanNodeType::kAllNodeScan ||
            type == ir::LogicalPlanNodeType::kNodeByLabelScan ||
@@ -1336,7 +1366,9 @@ class LeafOperator final : public PullOperator {
   bool EmitNode(std::int64_t id, SlottedRow *row) {
     const ir::LogicalPlan &plan = *node_->logical;
     std::string variable;
-    if (plan.Type() == ir::LogicalPlanNodeType::kAllNodeScan) {
+    if (plan.Type() == ir::LogicalPlanNodeType::kNodeByIdSeek) {
+      variable = static_cast<const ir::NodeByIdSeekPlan &>(plan).Variable();
+    } else if (plan.Type() == ir::LogicalPlanNodeType::kAllNodeScan) {
       variable = static_cast<const ir::AllNodeScanPlan &>(plan).Variable();
     } else if (plan.Type() == ir::LogicalPlanNodeType::kNodeByLabelScan) {
       const auto &scan = static_cast<const ir::NodeByLabelScanPlan &>(plan);
@@ -1380,7 +1412,19 @@ class LeafOperator final : public PullOperator {
     ir::ExpandDirection direction = ir::ExpandDirection::kBoth;
     std::vector<std::string> types;
     const std::vector<const ast::Expression *> *predicates = nullptr;
-    if (plan.Type() == ir::LogicalPlanNodeType::kRelationshipTypeScan) {
+    if (plan.Type() == ir::LogicalPlanNodeType::kRelationshipByIdSeek) {
+      const auto &pattern =
+          static_cast<const ir::RelationshipByIdSeekPlan &>(plan).Pattern();
+      from = pattern.left_node;
+      rel = pattern.variable;
+      to = pattern.right_node;
+      types = pattern.types;
+      direction = pattern.direction == ir::Direction::kIncoming
+                      ? ir::ExpandDirection::kIncoming
+                  : pattern.direction == ir::Direction::kOutgoing
+                      ? ir::ExpandDirection::kOutgoing
+                      : ir::ExpandDirection::kBoth;
+    } else if (plan.Type() == ir::LogicalPlanNodeType::kRelationshipTypeScan) {
       const auto &scan =
           static_cast<const ir::RelationshipTypeScanPlan &>(plan);
       from = scan.FromNode();
@@ -1449,9 +1493,523 @@ class LeafOperator final : public PullOperator {
   std::optional<SlottedRow> argument_;
   EntityIdCursor *cursor_ = nullptr;
   std::int64_t pending_relationship_id_ = -1;
+  Value::List id_values_;
+  std::unordered_set<std::int64_t> seen_ids_;
+  std::size_t id_index_ = 0;
+  std::size_t id_reserved_bytes_ = 0;
   bool emitted_argument_ = false;
   bool initialized_ = false;
   bool pending_reverse_ = false;
+  bool closed_ = false;
+};
+
+class VarExpandOperator final : public PullOperator {
+ public:
+  VarExpandOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                    std::unique_ptr<PullOperator> source)
+      : node_(&node),
+        state_(&state),
+        source_(std::move(source)),
+        plan_(static_cast<const ir::VarExpandPlan &>(*node.logical)) {
+    CHECK(plan_.Length().min.value_or(1) >= 0 &&
+              plan_.Length().max.value_or(0) >= 0,
+          common::InvalidArgumentError, "negative variable path length");
+  }
+  ~VarExpandOperator() override { Close(); }
+
+  bool Next(SlottedRow *row) override {
+    while (!closed_) {
+      state_->CheckCancelled();
+      if (frames_.empty()) {
+        input_.reset();
+        SlottedRow input(node_->children[0]->output_slots);
+        if (!source_->Next(&input)) {
+          Close();
+          return false;
+        }
+        const auto from = NodeId(input, plan_.FromNode(), *state_);
+        if (from < 0) {
+          continue;
+        }
+        bound_to_.reset();
+        if (input.Slots()->Contains(plan_.ToNode()) &&
+            input.IsInitialized(plan_.ToNode())) {
+          const auto to = NodeId(input, plan_.ToNode(), *state_);
+          if (to < 0) {
+            continue;
+          }
+          bound_to_ = to;
+        }
+        min_ = static_cast<std::size_t>(plan_.Length().min.value_or(1));
+        max_ = plan_.Length().max.has_value()
+                   ? static_cast<std::size_t>(*plan_.Length().max)
+                   : state_->graph_reader->RelationshipCount();
+        if (min_ > max_) {
+          continue;
+        }
+        input_.emplace(std::move(input));
+        Push(from);
+      }
+      auto &frame = frames_.back();
+      if (!frame.emitted) {
+        frame.emitted = true;
+        if (path_.size() >= min_ &&
+            (!bound_to_.has_value() || frame.node == *bound_to_)) {
+          Value::List relationships;
+          for (const auto id : path_) {
+            relationships.emplace_back(
+                state_->graph_reader->RelationshipById(id));
+          }
+          auto output =
+              input_->CopyTo(node_->output_slots, *state_->graph_reader);
+          if (TryBindSlot(&output, plan_.Relationship(),
+                          Value(std::move(relationships)),
+                          *state_->graph_reader) &&
+              TryBindEntityId(&output, plan_.ToNode(), SlotKind::kNode,
+                              frame.node, *state_->graph_reader)) {
+            *row = std::move(output);
+            return true;
+          }
+        }
+      }
+      if (path_.size() == max_) {
+        Pop();
+        continue;
+      }
+      if (frame.cursor == nullptr) {
+        frame.cursor = state_->TrackCursor(
+            ExpandCursor(*state_->graph_reader, frame.node, plan_.Direction()));
+      }
+      bool advanced = false;
+      while (frame.cursor->Next()) {
+        state_->CheckCancelled();
+        const auto id = frame.cursor->Id();
+        if (used_.contains(id)) {
+          continue;
+        }
+        const auto &relationship = *state_->graph_reader->RelationshipById(id);
+        if (!RelationshipHasType(relationship, plan_.Types())) {
+          continue;
+        }
+        const auto next =
+            NextVarExpandNode(relationship, frame.node, plan_.Direction());
+        if (next.has_value()) {
+          Push(*next);
+          used_.insert(id);
+          path_.push_back(id);
+          advanced = true;
+          break;
+        }
+      }
+      if (!advanced) {
+        Pop();
+      }
+    }
+    return false;
+  }
+
+  void Close() noexcept override {
+    for (const auto &frame : frames_) {
+      if (frame.cursor != nullptr) {
+        state_->ReleaseCursor(frame.cursor);
+      }
+    }
+    frames_.clear();
+    path_.clear();
+    used_.clear();
+    input_.reset();
+    state_->memory_tracker.Release(reserved_bytes_);
+    reserved_bytes_ = 0;
+    source_->Close();
+    closed_ = true;
+  }
+
+ private:
+  struct Frame {
+    std::int64_t node;
+    EntityIdCursor *cursor = nullptr;
+    bool emitted = false;
+  };
+  static constexpr std::size_t kFrameBytes =
+      sizeof(Frame) + 4 * sizeof(std::int64_t);
+
+  void Push(std::int64_t node) {
+    state_->memory_tracker.Reserve(kFrameBytes);
+    reserved_bytes_ += kFrameBytes;
+    frames_.push_back({node});
+  }
+  void Pop() {
+    if (frames_.back().cursor != nullptr) {
+      state_->ReleaseCursor(frames_.back().cursor);
+    }
+    frames_.pop_back();
+    if (!path_.empty()) {
+      used_.erase(path_.back());
+      path_.pop_back();
+    }
+    state_->memory_tracker.Release(kFrameBytes);
+    reserved_bytes_ -= kFrameBytes;
+  }
+  const PhysicalPlanNode *node_;
+  RuntimeState *state_;
+  std::unique_ptr<PullOperator> source_;
+  const ir::VarExpandPlan &plan_;
+  std::optional<SlottedRow> input_;
+  std::optional<std::int64_t> bound_to_;
+  std::vector<Frame> frames_;
+  std::vector<std::int64_t> path_;
+  std::unordered_set<std::int64_t> used_;
+  std::size_t min_ = 1;
+  std::size_t max_ = 0;
+  std::size_t reserved_bytes_ = 0;
+  bool closed_ = false;
+};
+
+class PruningExpandOperator final : public PullOperator {
+ public:
+  PruningExpandOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                        std::unique_ptr<PullOperator> source)
+      : node_(&node),
+        state_(&state),
+        source_(std::move(source)),
+        pattern_(static_cast<const ir::PruningVarExpandPlan &>(*node.logical)
+                     .Pattern()) {}
+  ~PruningExpandOperator() override { Close(); }
+
+  bool Next(SlottedRow *row) override {
+    while (!closed_) {
+      state_->CheckCancelled();
+      if (!input_.has_value()) {
+        SlottedRow input(node_->children[0]->output_slots);
+        if (!source_->Next(&input)) {
+          Close();
+          return false;
+        }
+        start_ = NodeId(input, pattern_.left_node, *state_);
+        if (start_ < 0) {
+          continue;
+        }
+        input_.emplace(std::move(input));
+        max_ = pattern_.length.max.has_value()
+                   ? static_cast<std::size_t>(*pattern_.length.max)
+                   : state_->graph_reader->RelationshipCount();
+        Add(start_, 0);
+        start_emitted_ = pattern_.length.min.value_or(1) == 0;
+        if (start_emitted_ && Emit(start_, row)) {
+          return true;
+        }
+      }
+      while (head_ < queue_.size()) {
+        const auto [from, depth] = queue_[head_];
+        if (depth == max_) {
+          ++head_;
+          continue;
+        }
+        if (cursor_ == nullptr) {
+          cursor_ = state_->TrackCursor(
+              ExpandCursor(*state_->graph_reader, from,
+                           pattern_.direction == ir::Direction::kOutgoing
+                               ? ir::ExpandDirection::kOutgoing
+                               : ir::ExpandDirection::kIncoming));
+        }
+        while (cursor_->Next()) {
+          state_->CheckCancelled();
+          const auto &relationship =
+              *state_->graph_reader->RelationshipById(cursor_->Id());
+          if (!RelationshipHasType(relationship, pattern_.types)) {
+            continue;
+          }
+          const auto to = pattern_.direction == ir::Direction::kOutgoing
+                              ? relationship.end_node_id
+                              : relationship.start_node_id;
+          if (to == start_ && !start_emitted_) {
+            start_emitted_ = true;
+            if (Emit(to, row)) {
+              return true;
+            }
+          }
+          if (!visited_.contains(to)) {
+            Add(to, depth + 1);
+            if (Emit(to, row)) {
+              return true;
+            }
+          }
+        }
+        state_->ReleaseCursor(cursor_);
+        cursor_ = nullptr;
+        ++head_;
+      }
+      ClearInput();
+    }
+    return false;
+  }
+
+  void Close() noexcept override {
+    if (cursor_ != nullptr) {
+      state_->ReleaseCursor(cursor_);
+      cursor_ = nullptr;
+    }
+    ClearInput();
+    source_->Close();
+    closed_ = true;
+  }
+
+ private:
+  void Add(std::int64_t node, std::size_t depth) {
+    constexpr std::size_t bytes = 6 * sizeof(std::int64_t);
+    state_->memory_tracker.Reserve(bytes);
+    reserved_bytes_ += bytes;
+    visited_.insert(node);
+    queue_.emplace_back(node, depth);
+  }
+  bool Emit(std::int64_t node, SlottedRow *row) {
+    auto output = input_->CopyTo(node_->output_slots, *state_->graph_reader);
+    if (!TryBindEntityId(&output, pattern_.right_node, SlotKind::kNode, node,
+                         *state_->graph_reader)) {
+      return false;
+    }
+    *row = std::move(output);
+    return true;
+  }
+  void ClearInput() {
+    input_.reset();
+    visited_.clear();
+    queue_.clear();
+    head_ = 0;
+    state_->memory_tracker.Release(reserved_bytes_);
+    reserved_bytes_ = 0;
+  }
+  const PhysicalPlanNode *node_;
+  RuntimeState *state_;
+  std::unique_ptr<PullOperator> source_;
+  const ir::PatternRelationship &pattern_;
+  std::optional<SlottedRow> input_;
+  std::vector<std::pair<std::int64_t, std::size_t>> queue_;
+  std::unordered_set<std::int64_t> visited_;
+  EntityIdCursor *cursor_ = nullptr;
+  std::int64_t start_ = -1;
+  std::size_t head_ = 0;
+  std::size_t max_ = 0;
+  std::size_t reserved_bytes_ = 0;
+  bool start_emitted_ = false;
+  bool closed_ = false;
+};
+
+class PatternOperator final : public PullOperator {
+ public:
+  PatternOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                  std::unique_ptr<PullOperator> source)
+      : node_(&node), state_(&state), source_(std::move(source)) {}
+  ~PatternOperator() override { Close(); }
+
+  bool Next(SlottedRow *row) override {
+    while (!closed_) {
+      state_->CheckCancelled();
+      if (!input_.has_value()) {
+        SlottedRow input(node_->children[0]->output_slots);
+        if (!source_->Next(&input)) {
+          Close();
+          return false;
+        }
+        input_.emplace(std::move(input));
+        matched_ = false;
+        if (node_->logical->Type() ==
+            ir::LogicalPlanNodeType::kProjectEndpoints) {
+          ProjectEndpoints();
+        } else {
+          const auto &pattern = Optional().Pattern();
+          const auto from = NodeId(*input_, pattern.left_node, *state_);
+          if (from >= 0) {
+            cursor_ = state_->TrackCursor(ExpandCursor(
+                *state_->graph_reader, from, Direction(pattern.direction)));
+          }
+        }
+      }
+      if (node_->logical->Type() ==
+          ir::LogicalPlanNodeType::kProjectEndpoints) {
+        const auto &pattern =
+            static_cast<const ir::ProjectEndpointsPlan &>(*node_->logical)
+                .Pattern();
+        while (endpoint_index_ < endpoints_.size()) {
+          const auto [from, to] = endpoints_[endpoint_index_++];
+          auto output =
+              input_->CopyTo(node_->output_slots, *state_->graph_reader);
+          if (TryBindEntityId(&output, pattern.left_node, SlotKind::kNode, from,
+                              *state_->graph_reader) &&
+              TryBindEntityId(&output, pattern.right_node, SlotKind::kNode, to,
+                              *state_->graph_reader)) {
+            *row = std::move(output);
+            return true;
+          }
+        }
+      } else {
+        const auto &pattern = Optional().Pattern();
+        while (cursor_ != nullptr && cursor_->Next()) {
+          state_->CheckCancelled();
+          const auto &relationship =
+              *state_->graph_reader->RelationshipById(cursor_->Id());
+          const auto from = NodeId(*input_, pattern.left_node, *state_);
+          const auto to = NextVarExpandNode(relationship, from,
+                                            Direction(pattern.direction));
+          if (!to.has_value() ||
+              !RelationshipHasType(relationship, pattern.types)) {
+            continue;
+          }
+          auto output =
+              input_->CopyTo(node_->output_slots, *state_->graph_reader);
+          if (!TryBindEntityId(&output, pattern.variable,
+                               SlotKind::kRelationship, relationship.id,
+                               *state_->graph_reader) ||
+              !TryBindEntityId(&output, pattern.right_node, SlotKind::kNode,
+                               *to, *state_->graph_reader)) {
+            continue;
+          }
+          bool accepted = true;
+          for (const auto *predicate : Optional().Predicates()) {
+            if (!PredicateIsTrue(Evaluate(*predicate, output, {}, *state_))) {
+              accepted = false;
+              break;
+            }
+          }
+          if (accepted) {
+            matched_ = true;
+            *row = std::move(output);
+            return true;
+          }
+        }
+        if (cursor_ != nullptr) {
+          state_->ReleaseCursor(cursor_);
+          cursor_ = nullptr;
+        }
+        if (!matched_) {
+          auto output =
+              input_->CopyTo(node_->output_slots, *state_->graph_reader);
+          for (const auto &column : node_->output_slots->Columns()) {
+            if (!output.IsInitialized(column)) {
+              output.SetNull(column);
+            }
+          }
+          input_.reset();
+          *row = std::move(output);
+          return true;
+        }
+      }
+      input_.reset();
+    }
+    return false;
+  }
+
+  void Close() noexcept override {
+    if (cursor_ != nullptr) {
+      state_->ReleaseCursor(cursor_);
+      cursor_ = nullptr;
+    }
+    source_->Close();
+    input_.reset();
+    closed_ = true;
+  }
+
+ private:
+  static ir::ExpandDirection Direction(ir::Direction direction) {
+    return direction == ir::Direction::kIncoming
+               ? ir::ExpandDirection::kIncoming
+           : direction == ir::Direction::kOutgoing
+               ? ir::ExpandDirection::kOutgoing
+               : ir::ExpandDirection::kBoth;
+  }
+
+  const ir::OptionalExpandPlan &Optional() const {
+    return static_cast<const ir::OptionalExpandPlan &>(*node_->logical);
+  }
+
+  void ProjectEndpoints() {
+    endpoints_.clear();
+    endpoint_index_ = 0;
+    const auto &pattern =
+        static_cast<const ir::ProjectEndpointsPlan &>(*node_->logical)
+            .Pattern();
+    const Value value = input_->Get(pattern.variable, *state_->graph_reader);
+    if (value.IsNull()) {
+      return;
+    }
+    std::vector<const Relationship *> relationships;
+    if (pattern.length.variable) {
+      CHECK(value.IsList(), common::InvalidArgumentError,
+            "expected a relationship list");
+      for (const auto &item : value.AsList()) {
+        if (!item.IsRelationship()) {
+          return;
+        }
+        relationships.push_back(&item.AsRelationship());
+      }
+      const auto length = relationships.size();
+      if (length < static_cast<std::size_t>(pattern.length.min.value_or(1)) ||
+          (pattern.length.max.has_value() &&
+           length > static_cast<std::size_t>(*pattern.length.max))) {
+        return;
+      }
+    } else {
+      CHECK(value.IsRelationship(), common::InvalidArgumentError,
+            "expected a relationship");
+      relationships.push_back(&value.AsRelationship());
+    }
+    std::unordered_set<std::int64_t> used;
+    for (const auto &relationship : relationships) {
+      state_->CheckCancelled();
+      try {
+        (void)state_->graph_reader->RelationshipById(relationship->id);
+      } catch (const common::NotFoundError &) {
+        return;
+      }
+      if (!RelationshipHasType(*relationship, pattern.types) ||
+          !used.insert(relationship->id).second) {
+        return;
+      }
+    }
+    if (relationships.empty()) {
+      for (const auto &name : {pattern.left_node, pattern.right_node}) {
+        if (input_->Slots()->Contains(name) && input_->IsInitialized(name)) {
+          const auto id = NodeId(*input_, name, *state_);
+          if (id >= 0) {
+            endpoints_.emplace_back(id, id);
+          }
+          return;
+        }
+      }
+      return;
+    }
+    const auto &first = *relationships.front();
+    std::vector<std::int64_t> starts;
+    if (pattern.direction != ir::Direction::kIncoming) {
+      starts.push_back(first.start_node_id);
+    }
+    if (pattern.direction != ir::Direction::kOutgoing &&
+        (starts.empty() || starts.front() != first.end_node_id)) {
+      starts.push_back(first.end_node_id);
+    }
+    for (const auto start : starts) {
+      auto current = std::optional<std::int64_t>(start);
+      for (const auto &relationship : relationships) {
+        current = NextVarExpandNode(*relationship, *current,
+                                    Direction(pattern.direction));
+        if (!current.has_value()) {
+          break;
+        }
+      }
+      if (current.has_value()) {
+        endpoints_.emplace_back(start, *current);
+      }
+    }
+  }
+
+  const PhysicalPlanNode *node_;
+  RuntimeState *state_;
+  std::unique_ptr<PullOperator> source_;
+  std::optional<SlottedRow> input_;
+  EntityIdCursor *cursor_ = nullptr;
+  std::vector<std::pair<std::int64_t, std::int64_t>> endpoints_;
+  std::size_t endpoint_index_ = 0;
+  bool matched_ = false;
   bool closed_ = false;
 };
 
@@ -1483,7 +2041,6 @@ class StreamingUnaryOperator final : public PullOperator {
       case ir::LogicalPlanNodeType::kExpand:
       case ir::LogicalPlanNodeType::kExpandInto:
         return NextExpand(row);
-      case ir::LogicalPlanNodeType::kVarExpand:
       case ir::LogicalPlanNodeType::kPathBuild:
       case ir::LogicalPlanNodeType::kProcedureCall:
         return NextBufferedPerInput(row);
@@ -1760,45 +2317,7 @@ class StreamingUnaryOperator final : public PullOperator {
       if (!PullInput(&input)) {
         return false;
       }
-      if (node_->logical->Type() == ir::LogicalPlanNodeType::kVarExpand) {
-        const auto &plan =
-            static_cast<const ir::VarExpandPlan &>(*node_->logical);
-        const std::int64_t from = NodeId(input, plan.FromNode(), *state_);
-        if (from < 0) {
-          continue;
-        }
-        std::optional<std::int64_t> bound_to;
-        if (input.Slots()->Contains(plan.ToNode()) &&
-            input.IsInitialized(plan.ToNode())) {
-          const std::int64_t to = NodeId(input, plan.ToNode(), *state_);
-          if (to < 0) {
-            continue;
-          }
-          bound_to = to;
-        }
-        const std::size_t min_length =
-            plan.Length().min.has_value()
-                ? static_cast<std::size_t>(*plan.Length().min)
-                : 1;
-        const std::size_t max_length =
-            plan.Length().max.has_value()
-                ? static_cast<std::size_t>(*plan.Length().max)
-                : state_->graph_reader->RelationshipCount();
-        CHECK(!plan.Length().min.has_value() || *plan.Length().min >= 0,
-              common::InvalidArgumentError,
-              "variable expand minimum length is negative");
-        CHECK(!plan.Length().max.has_value() || *plan.Length().max >= 0,
-              common::InvalidArgumentError,
-              "variable expand maximum length is negative");
-        if (max_length >= min_length) {
-          std::vector<std::int64_t> path;
-          std::unordered_set<std::int64_t> used;
-          CollectVarExpandRows(plan, input, from, bound_to, min_length,
-                               max_length, &path, &used, node_->output_slots,
-                               state_, &buffer_, &buffer_reserved_bytes_);
-        }
-      } else if (node_->logical->Type() ==
-                 ir::LogicalPlanNodeType::kPathBuild) {
+      if (node_->logical->Type() == ir::LogicalPlanNodeType::kPathBuild) {
         const auto &plan =
             static_cast<const ir::PathBuildPlan &>(*node_->logical);
         SlottedRow output =
@@ -2784,6 +3303,124 @@ class TopNOperator final : public PullOperator {
   bool closed_ = false;
 };
 
+class LeftOuterHashJoinOperator final : public PullOperator {
+ public:
+  LeftOuterHashJoinOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                            std::unique_ptr<PullOperator> lhs,
+                            std::unique_ptr<PullOperator> rhs)
+      : node_(&node),
+        state_(&state),
+        lhs_(std::move(lhs)),
+        rhs_(std::move(rhs)) {}
+  ~LeftOuterHashJoinOperator() override { Close(); }
+
+  bool Next(SlottedRow *row) override {
+    if (closed_) {
+      return false;
+    }
+    if (!initialized_) {
+      initialized_ = true;
+      SlottedRow right(node_->children[1]->output_slots);
+      while (rhs_->Next(&right)) {
+        state_->CheckCancelled();
+        auto key = Key(right);
+        if (key.has_value()) {
+          const auto bytes = right.EstimatedHeapUsage() + sizeof(SlottedRow) +
+                             key->values.size() * sizeof(Value) +
+                             sizeof(CompositeValueKey);
+          state_->memory_tracker.Reserve(bytes);
+          reserved_bytes_ += bytes;
+          buckets_[std::move(*key)].push_back(right);
+        }
+      }
+      rhs_->Close();
+    }
+    while (true) {
+      state_->CheckCancelled();
+      if (!left_.has_value()) {
+        SlottedRow left(node_->children[0]->output_slots);
+        if (!lhs_->Next(&left)) {
+          Close();
+          return false;
+        }
+        left_.emplace(std::move(left));
+        matches_ = nullptr;
+        index_ = 0;
+        matched_ = false;
+        if (auto key = Key(*left_); key.has_value()) {
+          const auto found = buckets_.find(*key);
+          if (found != buckets_.end()) {
+            matches_ = &found->second;
+          }
+        }
+      }
+      while (matches_ != nullptr && index_ < matches_->size()) {
+        SlottedRow output(node_->output_slots);
+        CopyMappings(*left_, &output, node_->child_mappings[0], *state_);
+        if (MergeMappings((*matches_)[index_++], &output,
+                          node_->child_mappings[1], *state_)) {
+          matched_ = true;
+          *row = std::move(output);
+          return true;
+        }
+      }
+      if (!matched_) {
+        SlottedRow output(node_->output_slots);
+        CopyMappings(*left_, &output, node_->child_mappings[0], *state_);
+        for (const auto &column : node_->output_slots->Columns()) {
+          if (!output.IsInitialized(column)) {
+            output.SetNull(column);
+          }
+        }
+        left_.reset();
+        *row = std::move(output);
+        return true;
+      }
+      left_.reset();
+    }
+  }
+
+  void Close() noexcept override {
+    lhs_->Close();
+    rhs_->Close();
+    buckets_.clear();
+    left_.reset();
+    matches_ = nullptr;
+    state_->memory_tracker.Release(reserved_bytes_);
+    reserved_bytes_ = 0;
+    closed_ = true;
+  }
+
+ private:
+  std::optional<CompositeValueKey> Key(const SlottedRow &row) const {
+    CompositeValueKey key;
+    for (const auto &column :
+         static_cast<const ir::LeftOuterHashJoinPlan &>(*node_->logical)
+             .JoinKeys()) {
+      auto value = row.Get(column, *state_->graph_reader);
+      if (value.IsNull()) {
+        return std::nullopt;
+      }
+      key.values.push_back(std::move(value));
+    }
+    return key;
+  }
+  const PhysicalPlanNode *node_;
+  RuntimeState *state_;
+  std::unique_ptr<PullOperator> lhs_;
+  std::unique_ptr<PullOperator> rhs_;
+  std::unordered_map<CompositeValueKey, std::vector<SlottedRow>, ValueHash,
+                     ValueEqual>
+      buckets_;
+  std::optional<SlottedRow> left_;
+  const std::vector<SlottedRow> *matches_ = nullptr;
+  std::size_t index_ = 0;
+  std::size_t reserved_bytes_ = 0;
+  bool matched_ = false;
+  bool initialized_ = false;
+  bool closed_ = false;
+};
+
 class BlockingBinaryOperator final : public PullOperator {
  public:
   BlockingBinaryOperator(const PhysicalPlanNode &node, RuntimeState &state,
@@ -3278,6 +3915,7 @@ class OperatorFactory final {
         type == ir::LogicalPlanNodeType::kSemiApply ||
         type == ir::LogicalPlanNodeType::kAntiSemiApply ||
         type == ir::LogicalPlanNodeType::kLetSemiApply ||
+        type == ir::LogicalPlanNodeType::kSelectOrSemiApply ||
         type == ir::LogicalPlanNodeType::kRollUpApply ||
         type == ir::LogicalPlanNodeType::kOptionalApply) {
       return std::make_unique<ApplyOperator>(
@@ -3298,11 +3936,28 @@ class OperatorFactory final {
         return std::make_unique<ValueHashJoinOperator>(
             node, *state_, std::move(lhs), std::move(rhs));
       }
+      if (type == ir::LogicalPlanNodeType::kLeftOuterHashJoin) {
+        return std::make_unique<LeftOuterHashJoinOperator>(
+            node, *state_, std::move(lhs), std::move(rhs));
+      }
       return std::make_unique<BlockingBinaryOperator>(
           node, *state_, std::move(lhs), std::move(rhs));
     }
 
     auto source = Build(*node.children[0], std::move(argument));
+    if (type == ir::LogicalPlanNodeType::kVarExpand) {
+      return std::make_unique<VarExpandOperator>(node, *state_,
+                                                 std::move(source));
+    }
+    if (type == ir::LogicalPlanNodeType::kPruningVarExpand) {
+      return std::make_unique<PruningExpandOperator>(node, *state_,
+                                                     std::move(source));
+    }
+    if (type == ir::LogicalPlanNodeType::kProjectEndpoints ||
+        type == ir::LogicalPlanNodeType::kOptionalExpand) {
+      return std::make_unique<PatternOperator>(node, *state_,
+                                               std::move(source));
+    }
     if (node.type == PhysicalOperatorType::kOrderedDistinct) {
       return std::make_unique<OrderedDistinctOperator>(node, *state_,
                                                        std::move(source));
@@ -3341,7 +3996,15 @@ bool ApplyOperator::NextLeft() {
     return false;
   }
   current_left_.emplace(std::move(lhs_row));
-  rhs_ = factory_->Build(*node_->children[1], *current_left_);
+  const bool skip =
+      node_->logical->Type() == ir::LogicalPlanNodeType::kSelectOrSemiApply &&
+      PredicateIsTrue(Evaluate(
+          *static_cast<const ir::SelectOrSemiApplyPlan &>(*node_->logical)
+               .Predicate(),
+          *current_left_, {}, *state_));
+  if (!skip) {
+    rhs_ = factory_->Build(*node_->children[1], *current_left_);
+  }
   rhs_produced_ = false;
   return true;
 }
@@ -3364,6 +4027,13 @@ bool ApplyOperator::Next(SlottedRow *row) {
   while (true) {
     if (!current_left_.has_value() && !NextLeft()) {
       return false;
+    }
+
+    if (type == ir::LogicalPlanNodeType::kSelectOrSemiApply &&
+        rhs_ == nullptr) {
+      *row = current_left_->CopyTo(node_->output_slots, *state_->graph_reader);
+      current_left_.reset();
+      return true;
     }
 
     if (type == ir::LogicalPlanNodeType::kApply ||
@@ -3424,7 +4094,11 @@ bool ApplyOperator::Next(SlottedRow *row) {
     rhs_->Close();
     rhs_.reset();
     const bool emit =
-        type == ir::LogicalPlanNodeType::kSemiApply
+        type == ir::LogicalPlanNodeType::kSelectOrSemiApply
+            ? exists != static_cast<const ir::SelectOrSemiApplyPlan &>(
+                            *node_->logical)
+                            .Anti()
+        : type == ir::LogicalPlanNodeType::kSemiApply
             ? exists
             : (type == ir::LogicalPlanNodeType::kAntiSemiApply ? !exists
                                                                : true);

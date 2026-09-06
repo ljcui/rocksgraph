@@ -11,6 +11,40 @@ namespace {
 std::unique_ptr<LogicalPlan> CloneComponentPlanWithoutMetadata(
     const LogicalPlan &plan) {
   switch (plan.Type()) {
+    case LogicalPlanNodeType::kNodeByIdSeek: {
+      const auto &seek = static_cast<const NodeByIdSeekPlan &>(plan);
+      return std::make_unique<NodeByIdSeekPlan>(seek.Variable(), seek.Ids(),
+                                                seek.Many());
+    }
+    case LogicalPlanNodeType::kRelationshipByIdSeek: {
+      const auto &seek = static_cast<const RelationshipByIdSeekPlan &>(plan);
+      return std::make_unique<RelationshipByIdSeekPlan>(
+          seek.Pattern(), seek.Ids(), seek.Many());
+    }
+    case LogicalPlanNodeType::kProjectEndpoints:
+      return std::make_unique<ProjectEndpointsPlan>(
+          CloneComponentPlan(plan.Child(0)),
+          static_cast<const ProjectEndpointsPlan &>(plan).Pattern());
+    case LogicalPlanNodeType::kOptionalExpand: {
+      const auto &expand = static_cast<const OptionalExpandPlan &>(plan);
+      return std::make_unique<OptionalExpandPlan>(
+          CloneComponentPlan(plan.Child(0)), expand.Pattern(),
+          expand.Predicates());
+    }
+    case LogicalPlanNodeType::kPruningVarExpand:
+      return std::make_unique<PruningVarExpandPlan>(
+          CloneComponentPlan(plan.Child(0)),
+          static_cast<const PruningVarExpandPlan &>(plan).Pattern());
+    case LogicalPlanNodeType::kLeftOuterHashJoin:
+      return std::make_unique<LeftOuterHashJoinPlan>(
+          CloneComponentPlan(plan.Child(0)), CloneComponentPlan(plan.Child(1)),
+          static_cast<const LeftOuterHashJoinPlan &>(plan).JoinKeys());
+    case LogicalPlanNodeType::kSelectOrSemiApply: {
+      const auto &apply = static_cast<const SelectOrSemiApplyPlan &>(plan);
+      return std::make_unique<SelectOrSemiApplyPlan>(
+          CloneComponentPlan(plan.Child(0)), CloneComponentPlan(plan.Child(1)),
+          apply.Predicate(), apply.Anti());
+    }
     case LogicalPlanNodeType::kArgument:
       return std::make_unique<ArgumentPlan>(plan.OutputColumns());
     case LogicalPlanNodeType::kAllNodeScan: {

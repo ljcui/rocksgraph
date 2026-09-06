@@ -212,6 +212,43 @@ TypeOverrides OutputOverrides(
     const std::vector<SlotConfigurationPtr> &sources) {
   TypeOverrides overrides;
   switch (plan.Type()) {
+    case ir::LogicalPlanNodeType::kNodeByIdSeek:
+      SetOverride(&overrides,
+                  static_cast<const ir::NodeByIdSeekPlan &>(plan).Variable(),
+                  SemanticType::kNode, false);
+      break;
+    case ir::LogicalPlanNodeType::kRelationshipByIdSeek:
+    case ir::LogicalPlanNodeType::kProjectEndpoints:
+    case ir::LogicalPlanNodeType::kOptionalExpand:
+    case ir::LogicalPlanNodeType::kPruningVarExpand: {
+      const ir::PatternRelationship *pattern = nullptr;
+      if (plan.Type() == ir::LogicalPlanNodeType::kRelationshipByIdSeek) {
+        pattern =
+            &static_cast<const ir::RelationshipByIdSeekPlan &>(plan).Pattern();
+      } else if (plan.Type() == ir::LogicalPlanNodeType::kProjectEndpoints) {
+        pattern =
+            &static_cast<const ir::ProjectEndpointsPlan &>(plan).Pattern();
+      } else if (plan.Type() == ir::LogicalPlanNodeType::kOptionalExpand) {
+        pattern = &static_cast<const ir::OptionalExpandPlan &>(plan).Pattern();
+      } else {
+        pattern =
+            &static_cast<const ir::PruningVarExpandPlan &>(plan).Pattern();
+      }
+      const bool optional =
+          plan.Type() == ir::LogicalPlanNodeType::kOptionalExpand;
+      for (const auto &name : {pattern->left_node, pattern->right_node}) {
+        const auto existing = FindInfo(name, sources);
+        SetOverride(&overrides, name, SemanticType::kNode,
+                    existing.has_value() ? existing->nullable : optional);
+      }
+      if (plan.Type() != ir::LogicalPlanNodeType::kPruningVarExpand) {
+        SetOverride(&overrides, pattern->variable,
+                    pattern->length.variable ? SemanticType::kList
+                                             : SemanticType::kRelationship,
+                    optional);
+      }
+      break;
+    }
     case ir::LogicalPlanNodeType::kAllNodeScan:
       SetOverride(&overrides,
                   static_cast<const ir::AllNodeScanPlan &>(plan).Variable(),
@@ -499,6 +536,7 @@ class PhysicalPlanBuilder final {
           plan.Type() == ir::LogicalPlanNodeType::kSemiApply ||
           plan.Type() == ir::LogicalPlanNodeType::kAntiSemiApply ||
           plan.Type() == ir::LogicalPlanNodeType::kLetSemiApply ||
+          plan.Type() == ir::LogicalPlanNodeType::kSelectOrSemiApply ||
           plan.Type() == ir::LogicalPlanNodeType::kRollUpApply ||
           plan.Type() == ir::LogicalPlanNodeType::kOptionalApply ||
           plan.Type() == ir::LogicalPlanNodeType::kMerge;
@@ -524,7 +562,8 @@ class PhysicalPlanBuilder final {
         columns = AppendUnique(node->argument_slots->Columns(), columns);
       }
       std::unordered_set<std::string> force_nullable;
-      if (plan.Type() == ir::LogicalPlanNodeType::kOptionalApply) {
+      if (plan.Type() == ir::LogicalPlanNodeType::kOptionalApply ||
+          plan.Type() == ir::LogicalPlanNodeType::kLeftOuterHashJoin) {
         const auto &lhs_columns = node->children[0]->output_slots->Columns();
         const std::unordered_set<std::string> lhs(lhs_columns.begin(),
                                                   lhs_columns.end());
@@ -584,6 +623,10 @@ class PhysicalPlanBuilder final {
         case ir::LogicalPlanNodeType::kDetachDelete:
         case ir::LogicalPlanNodeType::kApply:
         case ir::LogicalPlanNodeType::kOptionalApply:
+        case ir::LogicalPlanNodeType::kOptionalExpand:
+        case ir::LogicalPlanNodeType::kProjectEndpoints:
+        case ir::LogicalPlanNodeType::kPruningVarExpand:
+        case ir::LogicalPlanNodeType::kSelectOrSemiApply:
           node->provided_order = node->children[0]->provided_order;
           break;
         case ir::LogicalPlanNodeType::kProjection:

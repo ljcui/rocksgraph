@@ -59,6 +59,13 @@ inline constexpr auto kLogicalPlanNodeTypeNames = std::array{
     std::string_view{"DetachDelete"},
     std::string_view{"Unwind"},
     std::string_view{"ProcedureCall"},
+    std::string_view{"NodeByIdSeek"},
+    std::string_view{"RelationshipByIdSeek"},
+    std::string_view{"ProjectEndpoints"},
+    std::string_view{"OptionalExpand"},
+    std::string_view{"LeftOuterHashJoin"},
+    std::string_view{"SelectOrSemiApply"},
+    std::string_view{"PruningVarExpand"},
     std::string_view{"Union"},
 };
 
@@ -625,6 +632,18 @@ LogicalPlan &LogicalPlan::Child(std::size_t index) {
   CHECK(index < children_.size(), common::InvalidArgumentError,
         "logical plan child index out of range");
   return *children_[index];
+}
+
+LogicalPlanPtr LogicalPlan::TakeChild(std::size_t index) {
+  CHECK(index < children_.size() && children_[index] != nullptr,
+        common::InvalidArgumentError, "logical plan child is unavailable");
+  return std::move(children_[index]);
+}
+
+void LogicalPlan::ReplaceChild(std::size_t index, LogicalPlanPtr child) {
+  CHECK(index < children_.size() && child != nullptr,
+        common::InvalidArgumentError, "invalid replacement child");
+  children_[index] = std::move(child);
 }
 
 void LogicalPlan::SetCostEstimate(double estimated_rows, double cost) {
@@ -1494,6 +1513,162 @@ std::string ProcedureCallPlan::Details() const {
     details.append(Join(ProcedureYieldItemDetails(yield_items_), ", "));
   }
   return details;
+}
+
+namespace {
+
+std::string PatternDetails(const PatternRelationship &pattern) {
+  const auto direction =
+      pattern.direction == Direction::kIncoming   ? ExpandDirection::kIncoming
+      : pattern.direction == Direction::kOutgoing ? ExpandDirection::kOutgoing
+                                                  : ExpandDirection::kBoth;
+  if (pattern.length.variable) {
+    return VarRelationshipDetails(pattern.left_node, pattern.variable,
+                                  pattern.right_node, direction, pattern.types,
+                                  {pattern.length.min, pattern.length.max});
+  }
+  return RelationshipDetails(pattern.left_node, pattern.variable,
+                             pattern.right_node, direction, pattern.types);
+}
+
+}  // namespace
+
+NodeByIdSeekPlan::NodeByIdSeekPlan(std::string variable,
+                                   const ast::Expression *ids, bool many)
+    : LogicalPlan(LogicalPlanNodeType::kNodeByIdSeek),
+      variable_(std::move(variable)),
+      ids_(ids),
+      many_(many) {
+  CHECK(ids_ != nullptr, common::InvalidArgumentError, "ID expression is null");
+  SetOutputColumns({variable_});
+  SetSolvedSymbols({variable_});
+}
+
+std::string NodeByIdSeekPlan::Details() const {
+  return "id(" + variable_ + (many_ ? ") IN " : ") = ") +
+         ast::ExpressionToString(*ids_);
+}
+
+RelationshipByIdSeekPlan::RelationshipByIdSeekPlan(PatternRelationship pattern,
+                                                   const ast::Expression *ids,
+                                                   bool many)
+    : LogicalPlan(LogicalPlanNodeType::kRelationshipByIdSeek),
+      pattern_(std::move(pattern)),
+      ids_(ids),
+      many_(many) {
+  CHECK(ids_ != nullptr && !pattern_.length.variable,
+        common::InvalidArgumentError, "invalid relationship ID seek");
+  AddOutputColumn(pattern_.left_node);
+  AddOutputColumn(pattern_.variable);
+  AddOutputColumn(pattern_.right_node);
+  SetSolvedSymbols(SymbolsFromColumns(OutputColumns()));
+}
+
+std::string RelationshipByIdSeekPlan::Details() const {
+  return PatternDetails(pattern_) + " WHERE id(" + pattern_.variable +
+         (many_ ? ") IN " : ") = ") + ast::ExpressionToString(*ids_);
+}
+
+ProjectEndpointsPlan::ProjectEndpointsPlan(LogicalPlanPtr source,
+                                           PatternRelationship pattern)
+    : LogicalPlan(LogicalPlanNodeType::kProjectEndpoints,
+                  UnaryChildren(std::move(source), "ProjectEndpoints")),
+      pattern_(std::move(pattern)) {
+  CHECK(Child(0).SolvedSymbols().contains(pattern_.variable),
+        common::InvalidArgumentError, "projected relationship is not bound");
+  SetOutputColumns(Child(0).OutputColumns());
+  AddOutputColumn(pattern_.left_node);
+  AddOutputColumn(pattern_.right_node);
+  SetSolvedSymbols(SymbolsFromColumns(OutputColumns()));
+}
+
+std::string ProjectEndpointsPlan::Details() const {
+  return PatternDetails(pattern_);
+}
+
+OptionalExpandPlan::OptionalExpandPlan(
+    LogicalPlanPtr source, PatternRelationship pattern,
+    std::vector<const ast::Expression *> predicates)
+    : LogicalPlan(LogicalPlanNodeType::kOptionalExpand,
+                  UnaryChildren(std::move(source), "OptionalExpand")),
+      pattern_(std::move(pattern)),
+      predicates_(std::move(predicates)) {
+  CHECK(!pattern_.length.variable &&
+            Child(0).SolvedSymbols().contains(pattern_.left_node),
+        common::InvalidArgumentError, "optional expand start is not bound");
+  SetOutputColumns(Child(0).OutputColumns());
+  AddOutputColumn(pattern_.variable);
+  AddOutputColumn(pattern_.right_node);
+  SetSolvedSymbols(SymbolsFromColumns(OutputColumns()));
+}
+
+std::string OptionalExpandPlan::Details() const {
+  std::string result = PatternDetails(pattern_);
+  for (const auto *predicate : predicates_) {
+    result += " WHERE " + ast::ExpressionToString(*predicate);
+  }
+  return result;
+}
+
+LeftOuterHashJoinPlan::LeftOuterHashJoinPlan(LogicalPlanPtr left,
+                                             LogicalPlanPtr right,
+                                             std::vector<std::string> join_keys)
+    : LogicalPlan(LogicalPlanNodeType::kLeftOuterHashJoin,
+                  BinaryChildren(std::move(left), std::move(right),
+                                 "LeftOuterHashJoin")),
+      join_keys_(std::move(join_keys)) {
+  CHECK(!join_keys_.empty(), common::InvalidArgumentError,
+        "join keys are empty");
+  for (const auto &key : join_keys_) {
+    CHECK(Child(0).SolvedSymbols().contains(key) &&
+              Child(1).SolvedSymbols().contains(key),
+          common::InvalidArgumentError, "outer join key is not bound");
+  }
+  SetOutputColumns(UnionOutputColumns(Child(0), Child(1)));
+  SetSolvedSymbols(UnionSolvedSymbols(Child(0), Child(1)));
+}
+
+std::string LeftOuterHashJoinPlan::Details() const {
+  return Join(join_keys_, ", ");
+}
+
+SelectOrSemiApplyPlan::SelectOrSemiApplyPlan(LogicalPlanPtr left,
+                                             LogicalPlanPtr right,
+                                             const ast::Expression *predicate,
+                                             bool anti)
+    : LogicalPlan(LogicalPlanNodeType::kSelectOrSemiApply,
+                  BinaryChildren(std::move(left), std::move(right),
+                                 "SelectOrSemiApply")),
+      predicate_(predicate),
+      anti_(anti) {
+  CHECK(predicate_ != nullptr, common::InvalidArgumentError,
+        "short-circuit predicate is null");
+  SetOutputColumns(Child(0).OutputColumns());
+  SetSolvedSymbols(Child(0).SolvedSymbols());
+}
+
+std::string SelectOrSemiApplyPlan::Details() const {
+  return ast::ExpressionToString(*predicate_) +
+         (anti_ ? " OR NOT EXISTS" : " OR EXISTS");
+}
+
+PruningVarExpandPlan::PruningVarExpandPlan(LogicalPlanPtr source,
+                                           PatternRelationship pattern)
+    : LogicalPlan(LogicalPlanNodeType::kPruningVarExpand,
+                  UnaryChildren(std::move(source), "PruningVarExpand")),
+      pattern_(std::move(pattern)) {
+  CHECK(pattern_.length.variable && pattern_.length.min.value_or(1) <= 1 &&
+            pattern_.length.min.value_or(1) >= 0 &&
+            pattern_.length.max.value_or(0) >= 0 &&
+            pattern_.direction != Direction::kBoth,
+        common::InvalidArgumentError, "unsupported pruning expansion");
+  SetOutputColumns(Child(0).OutputColumns());
+  AddOutputColumn(pattern_.right_node);
+  SetSolvedSymbols(SymbolsFromColumns(OutputColumns()));
+}
+
+std::string PruningVarExpandPlan::Details() const {
+  return PatternDetails(pattern_);
 }
 
 }  // namespace ir

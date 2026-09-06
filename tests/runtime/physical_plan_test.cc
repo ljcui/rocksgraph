@@ -41,7 +41,7 @@ const ir::LogicalPlan *FindPlan(const ir::LogicalPlan &plan,
 
 }  // namespace
 
-TEST(PhysicalPlanTest, AllocatesTypedNullableSlotsAndApplyArguments) {
+TEST(PhysicalPlanTest, AllocatesTypedNullableSlotsForOptionalExpand) {
   PlannedQuery query =
       Plan("MATCH (n) OPTIONAL MATCH (n)-[r]->(m) RETURN n, r, m");
   rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
@@ -56,12 +56,13 @@ TEST(PhysicalPlanTest, AllocatesTypedNullableSlotsAndApplyArguments) {
   EXPECT_EQ(m.kind, rg::SlotKind::kNode);
   EXPECT_TRUE(m.nullable);
 
-  const ir::LogicalPlan *argument =
-      FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kArgument);
-  ASSERT_NE(argument, nullptr);
-  const rg::PhysicalPlanNode &argument_node = physical.NodeFor(*argument);
-  EXPECT_TRUE(argument_node.argument_slots->Contains("n"));
-  EXPECT_EQ(argument_node.output_slots->At("n").kind, rg::SlotKind::kNode);
+  const ir::LogicalPlan *expand =
+      FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kOptionalExpand);
+  ASSERT_NE(expand, nullptr);
+  const auto &expand_node = physical.NodeFor(*expand);
+  ASSERT_EQ(expand_node.children.size(), 1U);
+  EXPECT_EQ(expand_node.children[0]->output_slots->At("n").kind,
+            rg::SlotKind::kNode);
 }
 
 TEST(PhysicalPlanTest, UnifiesIncompatibleUnionSlotsAsReferences) {

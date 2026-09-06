@@ -64,6 +64,13 @@ enum class LogicalPlanNodeType {
   kDetachDelete,
   kUnwind,
   kProcedureCall,
+  kNodeByIdSeek,
+  kRelationshipByIdSeek,
+  kProjectEndpoints,
+  kOptionalExpand,
+  kLeftOuterHashJoin,
+  kSelectOrSemiApply,
+  kPruningVarExpand,
   kUnion,
 };
 
@@ -165,6 +172,8 @@ class LogicalPlan {
   }
   [[nodiscard]] const LogicalPlan &Child(std::size_t index) const;
   [[nodiscard]] LogicalPlan &Child(std::size_t index);
+  [[nodiscard]] LogicalPlanPtr TakeChild(std::size_t index);
+  void ReplaceChild(std::size_t index, LogicalPlanPtr child);
 
   void SetCostEstimate(double estimated_rows, double cost);
   void SetOrderingTrait(std::vector<LogicalSortItem> ordering);
@@ -194,6 +203,96 @@ class ArgumentPlan final : public LogicalPlan {
   explicit ArgumentPlan(std::vector<std::string> symbols);
 
   [[nodiscard]] std::string Details() const override;
+};
+
+class NodeByIdSeekPlan final : public LogicalPlan {
+ public:
+  NodeByIdSeekPlan(std::string variable, const ast::Expression *ids, bool many);
+  [[nodiscard]] const std::string &Variable() const { return variable_; }
+  [[nodiscard]] const ast::Expression *Ids() const { return ids_; }
+  [[nodiscard]] bool Many() const { return many_; }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  std::string variable_;
+  const ast::Expression *ids_;
+  bool many_;
+};
+
+class RelationshipByIdSeekPlan final : public LogicalPlan {
+ public:
+  RelationshipByIdSeekPlan(PatternRelationship pattern,
+                           const ast::Expression *ids, bool many);
+  [[nodiscard]] const PatternRelationship &Pattern() const { return pattern_; }
+  [[nodiscard]] const ast::Expression *Ids() const { return ids_; }
+  [[nodiscard]] bool Many() const { return many_; }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  PatternRelationship pattern_;
+  const ast::Expression *ids_;
+  bool many_;
+};
+
+class ProjectEndpointsPlan final : public LogicalPlan {
+ public:
+  ProjectEndpointsPlan(LogicalPlanPtr source, PatternRelationship pattern);
+  [[nodiscard]] const PatternRelationship &Pattern() const { return pattern_; }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  PatternRelationship pattern_;
+};
+
+class OptionalExpandPlan final : public LogicalPlan {
+ public:
+  OptionalExpandPlan(LogicalPlanPtr source, PatternRelationship pattern,
+                     std::vector<const ast::Expression *> predicates);
+  [[nodiscard]] const PatternRelationship &Pattern() const { return pattern_; }
+  [[nodiscard]] const std::vector<const ast::Expression *> &Predicates() const {
+    return predicates_;
+  }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  PatternRelationship pattern_;
+  std::vector<const ast::Expression *> predicates_;
+};
+
+class LeftOuterHashJoinPlan final : public LogicalPlan {
+ public:
+  LeftOuterHashJoinPlan(LogicalPlanPtr left, LogicalPlanPtr right,
+                        std::vector<std::string> join_keys);
+  [[nodiscard]] const std::vector<std::string> &JoinKeys() const {
+    return join_keys_;
+  }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  std::vector<std::string> join_keys_;
+};
+
+class SelectOrSemiApplyPlan final : public LogicalPlan {
+ public:
+  SelectOrSemiApplyPlan(LogicalPlanPtr left, LogicalPlanPtr right,
+                        const ast::Expression *predicate, bool anti);
+  [[nodiscard]] const ast::Expression *Predicate() const { return predicate_; }
+  [[nodiscard]] bool Anti() const { return anti_; }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  const ast::Expression *predicate_;
+  bool anti_;
+};
+
+class PruningVarExpandPlan final : public LogicalPlan {
+ public:
+  PruningVarExpandPlan(LogicalPlanPtr source, PatternRelationship pattern);
+  [[nodiscard]] const PatternRelationship &Pattern() const { return pattern_; }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  PatternRelationship pattern_;
 };
 
 class AllNodeScanPlan final : public LogicalPlan {

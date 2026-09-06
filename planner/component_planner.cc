@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "ast/ast_node.h"
+#include "ast/builtin_function.h"
 #include "ast/expression_dependency.h"
 #include "common/exception.h"
 #include "ir/query_ir_internal.h"
@@ -70,6 +71,67 @@ std::unordered_set<std::string> SingleSymbolSet(std::string_view symbol) {
 bool PredicateDependsOnlyOn(const Predicate &predicate,
                             std::string_view variable) {
   return DependenciesMet(predicate.dependencies, SingleSymbolSet(variable));
+}
+
+bool IsEntityId(const ast::Expression *expression, std::string_view variable) {
+  expression = UnwrapParenthesized(expression);
+  if (expression == nullptr ||
+      !expression->Is(ast::ASTNodeType::kFunctionInvocation)) {
+    return false;
+  }
+  const auto &call = *ast::CastAst<ast::FunctionInvocation>(expression);
+  const auto *function = ast::FindBuiltinFunction(call.function_name);
+  if (function == nullptr || function->kind != ast::BuiltinFunctionKind::kId ||
+      call.arguments.size() != 1) {
+    return false;
+  }
+  const auto *argument = UnwrapParenthesized(call.arguments.front().get());
+  return argument != nullptr && argument->Is(ast::ASTNodeType::kVariable) &&
+         ast::CastAst<ast::Variable>(argument)->name == variable;
+}
+
+struct IdPredicate {
+  const Predicate *predicate;
+  const ast::Expression *ids;
+  bool many;
+};
+
+std::vector<IdPredicate> IdPredicates(const QueryGraph &query_graph,
+                                      std::string_view variable) {
+  std::vector<IdPredicate> result;
+  for (const auto &predicate : query_graph.selections.predicates) {
+    if (!predicate.nested_expressions.empty()) {
+      continue;
+    }
+    const auto *expression = UnwrapParenthesized(predicate.expression);
+    const ast::Expression *ids = nullptr;
+    bool many = false;
+    if (expression != nullptr &&
+        expression->Is(ast::ASTNodeType::kComparisonExpression)) {
+      const auto &comparison =
+          *ast::CastAst<ast::ComparisonExpression>(expression);
+      if (comparison.op == "=") {
+        if (IsEntityId(comparison.left.get(), variable)) {
+          ids = comparison.right.get();
+        } else if (IsEntityId(comparison.right.get(), variable)) {
+          ids = comparison.left.get();
+        }
+      }
+    } else if (expression != nullptr &&
+               expression->Is(ast::ASTNodeType::kListPredicateExpression)) {
+      const auto &in = *ast::CastAst<ast::ListPredicateExpression>(expression);
+      if (IsEntityId(in.element.get(), variable)) {
+        ids = in.list.get();
+        many = true;
+      }
+    }
+    if (ids != nullptr && ExpressionIsDeterministic(*ids) &&
+        DependenciesMet(ast::CollectExpressionDependencies(*ids),
+                        query_graph.argument_ids)) {
+      result.push_back({&predicate, ids, many});
+    }
+  }
+  return result;
 }
 
 std::vector<const ast::Expression *> PredicateExpressions(
@@ -225,6 +287,21 @@ std::vector<std::string> SharedNodeSymbols(const QueryGraph &query_graph,
 CostEstimate EstimateLeafPlan(const LogicalPlan &plan,
                               const CostModel &cost_model) {
   switch (plan.Type()) {
+    case LogicalPlanNodeType::kNodeByIdSeek: {
+      const double count =
+          static_cast<const NodeByIdSeekPlan &>(plan).Many() ? 10 : 1;
+      return {count, count};
+    }
+    case LogicalPlanNodeType::kRelationshipByIdSeek: {
+      const auto &seek = static_cast<const RelationshipByIdSeekPlan &>(plan);
+      const double count = seek.Many() ? 10 : 1;
+      return {count * (seek.Pattern().direction == Direction::kBoth ? 2 : 1),
+              count};
+    }
+    case LogicalPlanNodeType::kProjectEndpoints:
+      return cost_model.EstimatePassThrough(
+          cost_model.EstimateArgument(plan.Child(0).OutputColumns().size()),
+          0.1);
     case LogicalPlanNodeType::kArgument:
       return cost_model.EstimateArgument(plan.OutputColumns().size());
     case LogicalPlanNodeType::kAllNodeScan:
@@ -720,6 +797,14 @@ QueryGraphPlanningContext::BuildNodeLeafCandidates(
   const std::vector<std::string> labels =
       LabelsFromPredicates(label_predicates);
 
+  for (const auto &seek : IdPredicates(query_graph, variable)) {
+    Restore(base_predicates);
+    planned_predicates_->insert(seek.predicate);
+    candidates.push_back({.plan = std::make_unique<NodeByIdSeekPlan>(
+                              std::string(variable), seek.ids, seek.many),
+                          .planned_predicates = Snapshot()});
+  }
+
   for (const IndexedPredicate &seek : IndexSeekPredicates(
            query_graph.selections, variable, IndexEntityKind::kNode, labels)) {
     CHECK(seek.predicate != nullptr, common::InternalError,
@@ -771,6 +856,23 @@ QueryGraphPlanningContext::BuildRelationshipLeafCandidates(
   std::vector<LeafPlanCandidate> candidates;
   const PatternRelationship &relationship =
       query_graph.pattern_relationships[relationship_index];
+  if (query_graph.argument_ids.contains(relationship.variable) &&
+      (!relationship.length.variable ||
+       relationship.length.min.value_or(1) > 0 ||
+       query_graph.argument_ids.contains(relationship.left_node) ||
+       query_graph.argument_ids.contains(relationship.right_node))) {
+    auto pattern = relationship;
+    pattern.types =
+        ConsumeRelationshipTypes(query_graph.selections, relationship);
+    std::vector<std::string> arguments(query_graph.argument_ids.begin(),
+                                       query_graph.argument_ids.end());
+    std::sort(arguments.begin(), arguments.end());
+    candidates.push_back(
+        {.plan = std::make_unique<ProjectEndpointsPlan>(
+             std::make_unique<ArgumentPlan>(arguments), pattern),
+         .planned_predicates = Snapshot()});
+    return candidates;
+  }
   if (relationship.length.variable) {
     return candidates;
   }
@@ -779,6 +881,16 @@ QueryGraphPlanningContext::BuildRelationshipLeafCandidates(
   std::vector<std::string> types =
       ConsumeRelationshipTypes(query_graph.selections, relationship);
   const std::unordered_set<const Predicate *> type_predicates = Snapshot();
+
+  for (const auto &seek : IdPredicates(query_graph, relationship.variable)) {
+    Restore(type_predicates);
+    planned_predicates_->insert(seek.predicate);
+    auto pattern = relationship;
+    pattern.types = types;
+    candidates.push_back({.plan = std::make_unique<RelationshipByIdSeekPlan>(
+                              pattern, seek.ids, seek.many),
+                          .planned_predicates = Snapshot()});
+  }
 
   for (const IndexedPredicate &seek :
        IndexSeekPredicates(query_graph.selections, relationship.variable,
@@ -879,10 +991,46 @@ std::size_t QueryGraphPlanningContext::ApplyAvailableFilters(
         *plan = std::make_unique<AntiSemiApplyPlan>(
             std::move(*plan), BuildNestedPlan(*predicate.subquery));
       } else {
-        ApplyNestedExpressions(predicate.nested_expressions, plan);
-        *plan = std::make_unique<FilterPlan>(
-            std::move(*plan), predicate.expression,
-            PrecomputedExpressions(predicate.nested_expressions));
+        const auto *expression = UnwrapParenthesized(predicate.expression);
+        const ast::Expression *guard = nullptr;
+        bool anti = false;
+        if (expression->Is(ast::ASTNodeType::kOrExpression) &&
+            predicate.nested_expressions.size() == 1 &&
+            predicate.nested_expressions.front().kind ==
+                NestedIRExpressionKind::kExists) {
+          const auto &disjunction =
+              *ast::CastAst<ast::OrExpression>(expression);
+          const auto &nested = predicate.nested_expressions.front();
+          for (const bool swap : {false, true}) {
+            const auto *candidate = UnwrapParenthesized(
+                swap ? disjunction.left.get() : disjunction.right.get());
+            const bool negated =
+                candidate->Is(ast::ASTNodeType::kNotExpression);
+            if (negated) {
+              candidate = UnwrapParenthesized(
+                  ast::CastAst<ast::NotExpression>(candidate)->operand.get());
+            }
+            const auto *other =
+                swap ? disjunction.right.get() : disjunction.left.get();
+            if (candidate == UnwrapParenthesized(nested.expression) &&
+                ExpressionIsDeterministic(*other)) {
+              guard = other;
+              anti = negated;
+              break;
+            }
+          }
+        }
+        if (guard != nullptr) {
+          *plan = std::make_unique<SelectOrSemiApplyPlan>(
+              std::move(*plan),
+              BuildNestedPlan(*predicate.nested_expressions.front().query),
+              guard, anti);
+        } else {
+          ApplyNestedExpressions(predicate.nested_expressions, plan);
+          *plan = std::make_unique<FilterPlan>(
+              std::move(*plan), predicate.expression,
+              PrecomputedExpressions(predicate.nested_expressions));
+        }
       }
       planned_predicates_->insert(&predicate);
       ++applied_count;

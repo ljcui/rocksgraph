@@ -22,6 +22,7 @@
 #include "planner/component_planner.h"
 #include "planner/cost_model.h"
 #include "planner/order_property.h"
+#include "planner/plan_clone.h"
 
 namespace ir {
 namespace {
@@ -618,6 +619,17 @@ std::optional<double> LiteralListSize(const ast::Expression *expression) {
 CostEstimate EstimateLogicalPlanLeaf(const LogicalPlan &plan,
                                      const CostModel &cost_model) {
   switch (plan.Type()) {
+    case LogicalPlanNodeType::kNodeByIdSeek: {
+      const double count =
+          static_cast<const NodeByIdSeekPlan &>(plan).Many() ? 10 : 1;
+      return {count, count};
+    }
+    case LogicalPlanNodeType::kRelationshipByIdSeek: {
+      const auto &seek = static_cast<const RelationshipByIdSeekPlan &>(plan);
+      const double count = seek.Many() ? 10 : 1;
+      return {count * (seek.Pattern().direction == Direction::kBoth ? 2 : 1),
+              count};
+    }
     case LogicalPlanNodeType::kArgument:
       return cost_model.EstimateArgument(plan.OutputColumns().size());
     case LogicalPlanNodeType::kAllNodeScan:
@@ -690,6 +702,37 @@ CostEstimate EstimateLogicalPlanNode(
     const LogicalPlan &plan, const std::vector<CostEstimate> &child_estimates,
     const CostModel &cost_model) {
   switch (plan.Type()) {
+    case LogicalPlanNodeType::kNodeByIdSeek:
+    case LogicalPlanNodeType::kRelationshipByIdSeek:
+      return EstimateLogicalPlanLeaf(plan, cost_model);
+    case LogicalPlanNodeType::kProjectEndpoints:
+      return cost_model.EstimatePassThrough(
+          OnlyChildEstimate(child_estimates, plan.Name()), 0.1);
+    case LogicalPlanNodeType::kOptionalExpand: {
+      const auto &expand = static_cast<const OptionalExpandPlan &>(plan);
+      const auto input = OnlyChildEstimate(child_estimates, plan.Name());
+      auto estimate = cost_model.ApplyFilters(
+          cost_model.EstimateExpand(input, expand.Pattern().types),
+          expand.Predicates().size());
+      estimate.estimated_rows =
+          std::max(input.estimated_rows, estimate.estimated_rows);
+      return estimate;
+    }
+    case LogicalPlanNodeType::kPruningVarExpand:
+      return cost_model.EstimateExpand(
+          OnlyChildEstimate(child_estimates, plan.Name()),
+          static_cast<const PruningVarExpandPlan &>(plan).Pattern().types);
+    case LogicalPlanNodeType::kLeftOuterHashJoin: {
+      auto estimate = cost_model.EstimateNodeHashJoin(
+          child_estimates.at(0), child_estimates.at(1),
+          static_cast<const LeftOuterHashJoinPlan &>(plan).JoinKeys().size());
+      estimate.estimated_rows = std::max(child_estimates.at(0).estimated_rows,
+                                         estimate.estimated_rows);
+      return estimate;
+    }
+    case LogicalPlanNodeType::kSelectOrSemiApply:
+      return cost_model.EstimateSemiApply(child_estimates.at(0),
+                                          child_estimates.at(1));
     case LogicalPlanNodeType::kArgument:
     case LogicalPlanNodeType::kAllNodeScan:
     case LogicalPlanNodeType::kNodeByLabelScan:
@@ -883,6 +926,10 @@ void ApplyLogicalPlanTraits(LogicalPlan *plan) {
     case LogicalPlanNodeType::kExpand:
     case LogicalPlanNodeType::kExpandInto:
     case LogicalPlanNodeType::kVarExpand:
+    case LogicalPlanNodeType::kProjectEndpoints:
+    case LogicalPlanNodeType::kOptionalExpand:
+    case LogicalPlanNodeType::kPruningVarExpand:
+    case LogicalPlanNodeType::kSelectOrSemiApply:
       plan->SetOrderingTrait(plan->Child(0).OrderingTrait());
       plan->SetDistinctTrait(false);
       return;
@@ -1487,6 +1534,103 @@ class LogicalPlanBuilder {
                                               Sorted(variables));
   }
 
+  LogicalPlanPtr TryOptionalExpand(LogicalPlanPtr &input,
+                                   const QueryGraph &optional) {
+    if (optional.pattern_relationships.size() != 1 ||
+        !optional.path_patterns.empty() || !optional.optional_matches.empty() ||
+        !optional.mutating_patterns.empty()) {
+      return nullptr;
+    }
+    auto pattern = optional.pattern_relationships.front();
+    if (pattern.length.variable ||
+        input->SolvedSymbols().contains(pattern.variable) ||
+        optional.pattern_nodes.size() >
+            (pattern.left_node == pattern.right_node ? 1U : 2U)) {
+      return nullptr;
+    }
+    if (!input->SolvedSymbols().contains(pattern.left_node)) {
+      if (!input->SolvedSymbols().contains(pattern.right_node)) {
+        return nullptr;
+      }
+      std::swap(pattern.left_node, pattern.right_node);
+      if (pattern.direction != Direction::kBoth) {
+        pattern.direction = pattern.direction == Direction::kIncoming
+                                ? Direction::kOutgoing
+                                : Direction::kIncoming;
+      }
+    }
+    auto symbols = input->SolvedSymbols();
+    symbols.insert(pattern.variable);
+    symbols.insert(pattern.right_node);
+    std::vector<const ast::Expression *> predicates;
+    for (const auto &predicate : optional.selections.predicates) {
+      if (!predicate.nested_expressions.empty() ||
+          predicate.expression == nullptr ||
+          !ExpressionIsDeterministic(*predicate.expression) ||
+          !DependenciesMet(predicate.dependencies, symbols)) {
+        return nullptr;
+      }
+      predicates.push_back(predicate.expression);
+    }
+    return std::make_unique<OptionalExpandPlan>(
+        std::move(input), std::move(pattern), std::move(predicates));
+  }
+
+  LogicalPlanPtr UncorrelateNodeArguments(LogicalPlanPtr plan) {
+    if (plan->Type() == LogicalPlanNodeType::kArgument &&
+        !plan->OutputColumns().empty()) {
+      LogicalPlanPtr scans;
+      for (const auto &column : plan->OutputColumns()) {
+        auto scan = std::make_unique<AllNodeScanPlan>(column);
+        scans = scans == nullptr ? LogicalPlanPtr(std::move(scan))
+                                 : std::make_unique<CartesianProductPlan>(
+                                       std::move(scans), std::move(scan));
+      }
+      return scans;
+    }
+    for (std::size_t i = 0; i < plan->ChildCount(); ++i) {
+      plan->ReplaceChild(i, UncorrelateNodeArguments(plan->TakeChild(i)));
+    }
+    return plan;
+  }
+
+  bool HasCorrelatedIdSeek(const LogicalPlan &plan) const {
+    const ast::Expression *ids = nullptr;
+    if (plan.Type() == LogicalPlanNodeType::kNodeByIdSeek) {
+      ids = static_cast<const NodeByIdSeekPlan &>(plan).Ids();
+    } else if (plan.Type() == LogicalPlanNodeType::kRelationshipByIdSeek) {
+      ids = static_cast<const RelationshipByIdSeekPlan &>(plan).Ids();
+    }
+    if (ids != nullptr && !ast::CollectExpressionDependencies(*ids).empty()) {
+      return true;
+    }
+    return std::any_of(
+        plan.Children().begin(), plan.Children().end(),
+        [&](const auto &child) { return HasCorrelatedIdSeek(*child); });
+  }
+
+  bool CanOuterHashJoin(const QueryGraph &optional,
+                        const LogicalPlan &plan) const {
+    if (optional.argument_ids.empty() || !optional.optional_matches.empty() ||
+        !optional.mutating_patterns.empty() ||
+        !optional.assert_is_node_variables.empty() || HasCorrelatedIdSeek(plan)) {
+      return false;
+    }
+    for (const auto &argument : optional.argument_ids) {
+      if (!optional.pattern_nodes.contains(argument)) {
+        return false;
+      }
+    }
+    for (const auto &predicate : optional.selections.predicates) {
+      if (predicate.expression == nullptr ||
+          !predicate.nested_expressions.empty() ||
+          !ExpressionIsDeterministic(*predicate.expression)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   std::unique_ptr<LogicalPlan> ApplyOptionalMatches(
       std::unique_ptr<LogicalPlan> plan, const QueryGraph &query_graph,
       QueryGraphPlanningContext *context) {
@@ -1494,12 +1638,40 @@ class LogicalPlanBuilder {
     CHECK(context != nullptr, common::InternalError,
           "query graph planning context is null");
     for (const auto &optional_match : query_graph.optional_matches) {
+      if (auto expanded = TryOptionalExpand(plan, optional_match);
+          expanded != nullptr) {
+        plan = std::move(expanded);
+        context->ApplyAvailableFilters(query_graph.selections, &plan);
+        continue;
+      }
       std::unordered_set<const Predicate *> outer_predicates =
           planned_predicates_;
       std::unique_ptr<LogicalPlan> optional_plan =
           BuildQueryGraph(optional_match, true,
                           /*seed_external_arguments=*/true);
       planned_predicates_ = std::move(outer_predicates);
+      if (CanOuterHashJoin(optional_match, *optional_plan)) {
+        auto independent =
+            UncorrelateNodeArguments(CloneComponentPlan(*optional_plan));
+        AnnotateLogicalPlanMetadata(plan.get(), cost_model_);
+        AnnotateLogicalPlanMetadata(optional_plan.get(), cost_model_);
+        AnnotateLogicalPlanMetadata(independent.get(), cost_model_);
+        const CostEstimate left{*plan->EstimatedRows(), *plan->Cost()};
+        const CostEstimate right{*optional_plan->EstimatedRows(),
+                                 *optional_plan->Cost()};
+        const CostEstimate uncorrelated{*independent->EstimatedRows(),
+                                        *independent->Cost()};
+        if (cost_model_
+                .EstimateNodeHashJoin(left, uncorrelated,
+                                      optional_match.argument_ids.size())
+                .cost < cost_model_.EstimateOptionalApply(left, right).cost) {
+          plan = std::make_unique<LeftOuterHashJoinPlan>(
+              std::move(plan), std::move(independent),
+              Sorted(optional_match.argument_ids));
+          context->ApplyAvailableFilters(query_graph.selections, &plan);
+          continue;
+        }
+      }
       plan = std::make_unique<OptionalApplyPlan>(std::move(plan),
                                                  std::move(optional_plan));
       context->ApplyAvailableFilters(query_graph.selections, &plan);
@@ -1525,6 +1697,114 @@ class LogicalPlanBuilder {
     return ApplyProjectionTail(std::move(plan), projection, std::move(aliases));
   }
 
+  bool IsVariable(const ast::Expression *expression,
+                  std::string_view name) const {
+    expression = UnwrapParenthesized(expression);
+    return expression != nullptr &&
+           expression->Is(ast::ASTNodeType::kVariable) &&
+           ast::CastAst<ast::Variable>(expression)->name == name;
+  }
+
+  bool IsRelationshipUniqueness(const ast::Expression *expression,
+                                std::string_view relationship) const {
+    expression = UnwrapParenthesized(expression);
+    if (expression == nullptr ||
+        !expression->Is(ast::ASTNodeType::kAllQuantifier)) {
+      return false;
+    }
+    const auto &all = *ast::CastAst<ast::AllQuantifier>(expression);
+    const auto *predicate = UnwrapParenthesized(all.predicate.get());
+    if (!IsVariable(all.list_expr.get(), relationship) ||
+        predicate == nullptr ||
+        !predicate->Is(ast::ASTNodeType::kSingleQuantifier)) {
+      return false;
+    }
+    const auto &single = *ast::CastAst<ast::SingleQuantifier>(predicate);
+    predicate = UnwrapParenthesized(single.predicate.get());
+    if (all.variable == relationship || single.variable == relationship ||
+        !IsVariable(single.list_expr.get(), relationship) ||
+        predicate == nullptr ||
+        !predicate->Is(ast::ASTNodeType::kComparisonExpression) ||
+        all.variable == single.variable) {
+      return false;
+    }
+    const auto &comparison =
+        *ast::CastAst<ast::ComparisonExpression>(predicate);
+    return comparison.op == "=" &&
+           ((IsVariable(comparison.left.get(), all.variable) &&
+             IsVariable(comparison.right.get(), single.variable)) ||
+            (IsVariable(comparison.right.get(), all.variable) &&
+             IsVariable(comparison.left.get(), single.variable)));
+  }
+
+  LogicalPlanPtr PruneDistinctExpand(
+      LogicalPlanPtr plan, const std::vector<LogicalProjectionItem> &items) {
+    const LogicalPlan *candidate = plan.get();
+    std::vector<const FilterPlan *> filters;
+    while (candidate->Type() == LogicalPlanNodeType::kFilter) {
+      filters.push_back(&static_cast<const FilterPlan &>(*candidate));
+      candidate = &candidate->Child(0);
+    }
+    if (candidate->Type() != LogicalPlanNodeType::kVarExpand) {
+      return plan;
+    }
+    const auto &expand = static_cast<const VarExpandPlan &>(*candidate);
+    // Directed reachability with a lower bound of zero or one preserves
+    // endpoint sets. Higher lower bounds and undirected trails need more state.
+    if (expand.Direction() == ExpandDirection::kBoth ||
+        expand.Length().min.value_or(1) > 1 ||
+        expand.Child(0).SolvedSymbols().contains(expand.Relationship())) {
+      return plan;
+    }
+    for (const auto &item : items) {
+      if (item.passthrough
+              ? item.alias == expand.Relationship()
+              : item.expression == nullptr ||
+                    !item.precomputed_expressions.empty() ||
+                    !ExpressionIsDeterministic(*item.expression) ||
+                    ast::CollectExpressionDependencies(*item.expression)
+                        .contains(expand.Relationship())) {
+        return plan;
+      }
+    }
+    std::vector<const ast::Expression *> retained;
+    for (const auto *filter : filters) {
+      if (!filter->PrecomputedExpressions().empty()) {
+        return plan;
+      }
+      if (IsRelationshipUniqueness(filter->Predicate(),
+                                   expand.Relationship())) {
+        continue;
+      }
+      if (!ExpressionIsDeterministic(*filter->Predicate()) ||
+          ast::CollectExpressionDependencies(*filter->Predicate())
+              .contains(expand.Relationship())) {
+        return plan;
+      }
+      retained.push_back(filter->Predicate());
+    }
+    PatternRelationship pattern{
+        .variable = expand.Relationship(),
+        .left_node = expand.FromNode(),
+        .right_node = expand.ToNode(),
+        .direction = expand.Direction() == ExpandDirection::kOutgoing
+                         ? Direction::kOutgoing
+                         : Direction::kIncoming,
+        .types = expand.Types(),
+        .length = {.variable = true,
+                   .min = expand.Length().min,
+                   .max = expand.Length().max}};
+    for (std::size_t i = 0; i < filters.size(); ++i) {
+      plan = plan->TakeChild(0);
+    }
+    plan = std::make_unique<PruningVarExpandPlan>(plan->TakeChild(0),
+                                                  std::move(pattern));
+    for (auto it = retained.rbegin(); it != retained.rend(); ++it) {
+      plan = std::make_unique<FilterPlan>(std::move(plan), *it);
+    }
+    return plan;
+  }
+
   std::unique_ptr<LogicalPlan> ApplyDistinctProjection(
       std::unique_ptr<LogicalPlan> plan,
       const DistinctQueryProjection &projection) {
@@ -1535,6 +1815,7 @@ class LogicalPlanBuilder {
         ProjectionAliases(projection.grouping_items);
     std::vector<LogicalProjectionItem> grouping_items = LogicalProjectionItems(
         projection.grouping_items, projection.nested_expressions);
+    plan = PruneDistinctExpand(std::move(plan), grouping_items);
     plan = std::make_unique<DistinctPlan>(std::move(plan),
                                           std::move(grouping_items));
     return ApplyProjectionTail(std::move(plan), projection, std::move(aliases));

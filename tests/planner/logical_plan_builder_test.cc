@@ -1222,30 +1222,24 @@ TEST(LogicalPlanBuilderTest, BuildsPatternComprehensionRollUpApplyPlan) {
 )");
 }
 
-TEST(LogicalPlanBuilderTest, BuildsOptionalApplyPlan) {
+TEST(LogicalPlanBuilderTest, BuildsOptionalExpandPlan) {
   ExpectLogicalPlanText("MATCH (a) OPTIONAL MATCH (a)-[r]->(b) RETURN a, b",
                         R"(ProduceResults [a, b]
   Projection [a, b]
-    OptionalApply
+    OptionalExpand [(a)-[r]->(b)]
       AllNodeScan [a]
-      Expand [(a)-[r]->(b)]
-        Argument [a]
 )");
 }
 
-TEST(LogicalPlanBuilderTest, BuildsSequentialOptionalApplyPlans) {
+TEST(LogicalPlanBuilderTest, BuildsSequentialOptionalExpandPlans) {
   ExpectLogicalPlanText(
       "MATCH (a) OPTIONAL MATCH (a)-[r]->(b) "
       "OPTIONAL MATCH (b)-[s]->(c) RETURN c",
       R"(ProduceResults [c]
   Projection [c]
-    OptionalApply
-      OptionalApply
+    OptionalExpand [(b)-[s]->(c)]
+      OptionalExpand [(a)-[r]->(b)]
         AllNodeScan [a]
-        Expand [(a)-[r]->(b)]
-          Argument [a]
-      Expand [(b)-[s]->(c)]
-        Argument [b]
 )");
 }
 
@@ -1254,11 +1248,8 @@ TEST(LogicalPlanBuilderTest, BuildsOptionalMatchWithLocalWherePlan) {
       "MATCH (a) OPTIONAL MATCH (a)-[r]->(b) WHERE b.age > 1 RETURN b",
       R"(ProduceResults [b]
   Projection [b]
-    OptionalApply
+    OptionalExpand [(a)-[r]->(b) WHERE b.age > 1]
       AllNodeScan [a]
-      Filter [b.age > 1]
-        Expand [(a)-[r]->(b)]
-          Argument [a]
 )");
 }
 

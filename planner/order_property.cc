@@ -129,13 +129,17 @@ bool OrderingExpressionsDeterministic(
     if (item.expression == nullptr) {
       return false;
     }
-    DeterminismChecker checker;
-    item.expression->Accept(checker);
-    if (!checker.Deterministic()) {
+    if (!ExpressionIsDeterministic(*item.expression)) {
       return false;
     }
   }
   return true;
+}
+
+bool ExpressionIsDeterministic(const ast::Expression &expression) {
+  DeterminismChecker checker;
+  expression.Accept(checker);
+  return checker.Deterministic();
 }
 
 std::vector<LogicalSortItem> PlanningOrder(

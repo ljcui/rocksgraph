@@ -29,6 +29,7 @@ struct OrderingKeyItem {
     const std::unordered_set<std::string> &symbols);
 [[nodiscard]] bool OrderingExpressionsDeterministic(
     const std::vector<LogicalSortItem> &ordering);
+[[nodiscard]] bool ExpressionIsDeterministic(const ast::Expression &expression);
 [[nodiscard]] std::vector<LogicalSortItem> PlanningOrder(
     const InterestingOrder &interesting_order);
 [[nodiscard]] std::vector<LogicalSortItem> ProjectOrdering(
