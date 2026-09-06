@@ -73,6 +73,13 @@ bool PredicateDependsOnlyOn(const Predicate &predicate,
   return DependenciesMet(predicate.dependencies, SingleSymbolSet(variable));
 }
 
+bool HasStaticIndexBound(const Predicate &predicate) {
+  return predicate.property_value != nullptr &&
+         ast::CollectExpressionDependencies(*predicate.property_value)
+             .empty() &&
+         ExpressionIsDeterministic(*predicate.property_value);
+}
+
 bool IsEntityId(const ast::Expression *expression, std::string_view variable) {
   expression = UnwrapParenthesized(expression);
   if (expression == nullptr ||
@@ -1210,6 +1217,7 @@ QueryGraphPlanningContext::IndexRangePredicateGroups(
                                     [&](const Predicate *predicate) {
                                       return predicate == nullptr ||
                                              predicate->expression == nullptr ||
+                                             !HasStaticIndexBound(*predicate) ||
                                              !PredicateDependsOnlyOn(*predicate,
                                                                      variable);
                                     }),
@@ -1225,6 +1233,7 @@ QueryGraphPlanningContext::IndexRangePredicateGroups(
         predicate.property_key.empty() || predicate.property_value == nullptr ||
         predicate.expression == nullptr ||
         !StringEquals(predicate.comparison_op, "STARTS WITH") ||
+        !HasStaticIndexBound(predicate) ||
         !PredicateDependsOnlyOn(predicate, variable)) {
       continue;
     }

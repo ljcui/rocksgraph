@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -112,6 +113,141 @@ bool RelationshipHasAnyType(const Relationship &relationship,
   return types.empty() || ContainsString(types, relationship.type);
 }
 
+ValueType IndexValueGroup(const Value &value) {
+  return value.IsDouble() ? ValueType::kInteger : value.Type();
+}
+
+bool IsOrderedIndexValue(const Value &value) {
+  return value.IsInteger() || value.IsDouble() || value.IsString() ||
+         value.IsBool();
+}
+
+bool IsInvalidBound(const Value &value) {
+  return value.IsNull() || (value.IsDouble() && std::isnan(value.AsDouble()));
+}
+
+bool MatchesRange(const Value &value, const IndexRange &range) {
+  if (IsInvalidBound(value)) {
+    return false;
+  }
+  if (range.prefix.has_value() &&
+      (!value.IsString() || !range.prefix->IsString() ||
+       !value.AsString().starts_with(range.prefix->AsString()))) {
+    return false;
+  }
+  for (const auto &bound : range.lower_bounds) {
+    if (IsInvalidBound(bound.value) ||
+        IndexValueGroup(value) != IndexValueGroup(bound.value) ||
+        !(ValueLess(bound.value, value) ||
+          (bound.inclusive && ValuesEqual(value, bound.value)))) {
+      return false;
+    }
+  }
+  for (const auto &bound : range.upper_bounds) {
+    if (IsInvalidBound(bound.value) ||
+        IndexValueGroup(value) != IndexValueGroup(bound.value) ||
+        !(ValueLess(value, bound.value) ||
+          (bound.inclusive && ValuesEqual(value, bound.value)))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+template <typename EntityPtr, typename Groups>
+std::vector<const std::vector<EntityPtr> *> RangeSources(
+    const Groups &groups, const IndexRange &range) {
+  const Value *sample = range.prefix.has_value() ? &*range.prefix : nullptr;
+  if (sample == nullptr && !range.lower_bounds.empty()) {
+    sample = &range.lower_bounds.front().value;
+  }
+  if (sample == nullptr && !range.upper_bounds.empty()) {
+    sample = &range.upper_bounds.front().value;
+  }
+  CHECK(sample != nullptr, common::InvalidArgumentError,
+        "index range has no bounds");
+  if (IsInvalidBound(*sample) ||
+      (range.prefix.has_value() && !range.prefix->IsString())) {
+    return {};
+  }
+  const auto group = groups.find(IndexValueGroup(*sample));
+  if (group == groups.end()) {
+    return {};
+  }
+  const auto &buckets = group->second;
+  auto first = buckets.begin();
+  auto last = buckets.end();
+  const auto less = buckets.key_comp();
+  for (const auto &bound : range.lower_bounds) {
+    if (IsInvalidBound(bound.value) ||
+        IndexValueGroup(bound.value) != group->first) {
+      return {};
+    }
+    const auto next = bound.inclusive || !IsOrderedIndexValue(bound.value)
+                          ? buckets.lower_bound(bound.value)
+                          : buckets.upper_bound(bound.value);
+    if (next == buckets.end()) {
+      return {};
+    }
+    if (first != buckets.end() && less(first->first, next->first)) {
+      first = next;
+    }
+  }
+  for (const auto &bound : range.upper_bounds) {
+    if (IsInvalidBound(bound.value) ||
+        IndexValueGroup(bound.value) != group->first) {
+      return {};
+    }
+    const auto next = bound.inclusive || !IsOrderedIndexValue(bound.value)
+                          ? buckets.upper_bound(bound.value)
+                          : buckets.lower_bound(bound.value);
+    if (next != buckets.end() &&
+        (last == buckets.end() || less(next->first, last->first))) {
+      last = next;
+    }
+  }
+  if (range.prefix.has_value()) {
+    const auto next = buckets.lower_bound(*range.prefix);
+    if (next == buckets.end()) {
+      return {};
+    }
+    if (first != buckets.end() && less(first->first, next->first)) {
+      first = next;
+    }
+  }
+  if (first == buckets.end() ||
+      (last != buckets.end() && !less(first->first, last->first))) {
+    return {};
+  }
+  std::vector<const std::vector<EntityPtr> *> sources;
+  for (auto it = first; it != last; ++it) {
+    if (range.prefix.has_value() &&
+        !it->first.AsString().starts_with(range.prefix->AsString())) {
+      break;
+    }
+    if (!IsOrderedIndexValue(it->first) || MatchesRange(it->first, range)) {
+      sources.push_back(&it->second);
+    }
+  }
+  return sources;
+}
+
+template <typename Groups, typename EntityPtr>
+void RemoveRangeEntry(Groups *groups, const Value &value,
+                      const EntityPtr &entity) {
+  const auto group = groups->find(IndexValueGroup(value));
+  if (group == groups->end()) {
+    return;
+  }
+  auto bucket = group->second.find(value);
+  if (bucket != group->second.end()) {
+    std::erase(bucket->second, entity);
+    if (bucket->second.empty()) {
+      group->second.erase(bucket);
+    }
+  }
+}
+
 std::string LowerAscii(std::string value) {
   std::transform(
       value.begin(), value.end(), value.begin(),
@@ -211,12 +347,19 @@ class InMemoryGraph::Transaction final : public StorageTransaction {
 
     graph_->node_index_buckets_.clear();
     graph_->relationship_index_buckets_.clear();
+    graph_->node_range_index_buckets_.clear();
+    graph_->relationship_range_index_buckets_.clear();
+    graph_->nodes_by_label_.clear();
+    graph_->relationships_by_type_.clear();
     graph_->outgoing_relationships_.clear();
     graph_->incoming_relationships_.clear();
     for (const auto &relationship : graph_->relationships_) {
       graph_->AddRelationshipToAdjacency(relationship);
+      graph_->relationships_by_type_[relationship->type].push_back(
+          relationship);
     }
     for (const auto &node : graph_->nodes_) {
+      graph_->AddNodeToLabels(node);
       graph_->AddNodeToIndexes(node);
     }
     for (const auto &relationship : graph_->relationships_) {
@@ -253,12 +396,63 @@ class InMemoryGraph::Transaction final : public StorageTransaction {
 
 InMemoryGraph::~InMemoryGraph() = default;
 
+bool InMemoryGraph::IndexValueLess::operator()(const Value &left,
+                                               const Value &right) const {
+  // Composite values use a type bucket: their query equality need not agree
+  // with their ordering. The executor rechecks the original predicates.
+  if (!IsOrderedIndexValue(left)) {
+    return false;
+  }
+  const bool left_nan = left.IsDouble() && std::isnan(left.AsDouble());
+  const bool right_nan = right.IsDouble() && std::isnan(right.AsDouble());
+  if (left_nan || right_nan) {
+    return !left_nan && right_nan;
+  }
+  return ValueLess(left, right);
+}
+
 std::unique_ptr<EntityIdCursor> InMemoryGraph::ScanNodeIds() const {
   return MakePointerCursor<NodePtr>({&nodes_});
 }
 
 std::unique_ptr<EntityIdCursor> InMemoryGraph::ScanRelationshipIds() const {
   return MakePointerCursor<RelationshipPtr>({&relationships_});
+}
+
+std::unique_ptr<EntityIdCursor> InMemoryGraph::ScanNodeIdsByLabels(
+    const std::vector<std::string> &labels) const {
+  if (labels.empty()) {
+    return ScanNodeIds();
+  }
+  const std::vector<NodePtr> *smallest = nullptr;
+  for (const auto &label : labels) {
+    const auto found = nodes_by_label_.find(label);
+    if (found == nodes_by_label_.end()) {
+      return MakePointerCursor<NodePtr>({});
+    }
+    if (smallest == nullptr || found->second.size() < smallest->size()) {
+      smallest = &found->second;
+    }
+  }
+  return MakePointerCursor<NodePtr>({smallest}, [labels](const NodePtr &node) {
+    return NodeHasLabels(*node, labels);
+  });
+}
+
+std::unique_ptr<EntityIdCursor> InMemoryGraph::ScanRelationshipIdsByTypes(
+    const std::vector<std::string> &types) const {
+  if (types.empty()) {
+    return ScanRelationshipIds();
+  }
+  std::vector<const std::vector<RelationshipPtr> *> sources;
+  std::unordered_set<std::string> seen;
+  for (const auto &type : types) {
+    const auto found = relationships_by_type_.find(type);
+    if (found != relationships_by_type_.end() && seen.insert(type).second) {
+      sources.push_back(&found->second);
+    }
+  }
+  return MakePointerCursor<RelationshipPtr>(std::move(sources));
 }
 
 std::unique_ptr<EntityIdCursor> InMemoryGraph::RelationshipIdsConnectedTo(
@@ -319,28 +513,25 @@ std::unique_ptr<EntityIdCursor> InMemoryGraph::FindNodeIdsByIndex(
       });
 }
 
-std::unique_ptr<EntityIdCursor> InMemoryGraph::NodeIdsInIndex(
-    const std::vector<std::string> &labels,
-    std::string_view property_key) const {
+std::unique_ptr<EntityIdCursor> InMemoryGraph::FindNodeIdsByIndexRange(
+    const std::vector<std::string> &labels, std::string_view property_key,
+    const IndexRange &range) const {
   const std::string index_key = IndexKey(labels, property_key);
   const auto indexes = node_indexes_.find(index_key);
-  const auto buckets = node_index_buckets_.find(index_key);
-  if (indexes == node_indexes_.end() || buckets == node_index_buckets_.end()) {
+  const auto buckets = node_range_index_buckets_.find(index_key);
+  if (indexes == node_indexes_.end() ||
+      buckets == node_range_index_buckets_.end()) {
     return MakePointerCursor<NodePtr>({});
-  }
-  std::vector<const std::vector<NodePtr> *> sources;
-  sources.reserve(buckets->second.size());
-  for (const auto &[value_key, nodes] : buckets->second) {
-    (void)value_key;
-    sources.push_back(&nodes);
   }
   const IndexDescriptor descriptor = indexes->second;
   return MakePointerCursor<NodePtr>(
-      std::move(sources),
-      [this, descriptor](const NodePtr &node) {
+      RangeSources<NodePtr>(buckets->second, range),
+      [this, descriptor, range](const NodePtr &node) {
         return HasNode(node->id) &&
                NodeHasLabels(*node, descriptor.qualifiers) &&
-               node->properties.contains(descriptor.property_key);
+               node->properties.contains(descriptor.property_key) &&
+               MatchesRange(node->properties.at(descriptor.property_key),
+                            range);
       },
       true);
 }
@@ -374,29 +565,25 @@ std::unique_ptr<EntityIdCursor> InMemoryGraph::FindRelationshipIdsByIndex(
       });
 }
 
-std::unique_ptr<EntityIdCursor> InMemoryGraph::RelationshipIdsInIndex(
+std::unique_ptr<EntityIdCursor> InMemoryGraph::FindRelationshipIdsByIndexRange(
     const std::vector<std::string> &relationship_types,
-    std::string_view property_key) const {
+    std::string_view property_key, const IndexRange &range) const {
   const std::string index_key = IndexKey(relationship_types, property_key);
   const auto indexes = relationship_indexes_.find(index_key);
-  const auto buckets = relationship_index_buckets_.find(index_key);
+  const auto buckets = relationship_range_index_buckets_.find(index_key);
   if (indexes == relationship_indexes_.end() ||
-      buckets == relationship_index_buckets_.end()) {
+      buckets == relationship_range_index_buckets_.end()) {
     return MakePointerCursor<RelationshipPtr>({});
-  }
-  std::vector<const std::vector<RelationshipPtr> *> sources;
-  sources.reserve(buckets->second.size());
-  for (const auto &[value_key, relationships] : buckets->second) {
-    (void)value_key;
-    sources.push_back(&relationships);
   }
   const IndexDescriptor descriptor = indexes->second;
   return MakePointerCursor<RelationshipPtr>(
-      std::move(sources),
-      [this, descriptor](const RelationshipPtr &relationship) {
+      RangeSources<RelationshipPtr>(buckets->second, range),
+      [this, descriptor, range](const RelationshipPtr &relationship) {
         return HasRelationship(relationship->id) &&
                RelationshipHasAnyType(*relationship, descriptor.qualifiers) &&
-               relationship->properties.contains(descriptor.property_key);
+               relationship->properties.contains(descriptor.property_key) &&
+               MatchesRange(
+                   relationship->properties.at(descriptor.property_key), range);
       },
       true);
 }
@@ -413,6 +600,7 @@ InMemoryGraph::NodePtr InMemoryGraph::CreateNode(
   ApplyPropertyMap(std::move(properties), false, &node->properties);
   nodes_by_id_.emplace(node->id, node);
   nodes_.push_back(node);
+  AddNodeToLabels(node);
   AddNodeToIndexes(node);
   return node;
 }
@@ -433,6 +621,7 @@ InMemoryGraph::RelationshipPtr InMemoryGraph::CreateRelationship(
   ApplyPropertyMap(std::move(properties), false, &relationship->properties);
   relationships_by_id_.emplace(relationship->id, relationship);
   relationships_.push_back(relationship);
+  relationships_by_type_[relationship->type].push_back(relationship);
   AddRelationshipToAdjacency(relationship);
   AddRelationshipToIndexes(relationship);
   return relationship;
@@ -501,6 +690,7 @@ void InMemoryGraph::SetLabels(const NodePtr &node,
                               std::vector<std::string> labels) {
   CHECK(node != nullptr, common::InvalidArgumentError, "node is null");
   RemoveNodeFromIndexes(node);
+  RemoveNodeFromLabels(node);
   for (const auto &label : labels) {
     if (std::find(node->labels.begin(), node->labels.end(), label) ==
         node->labels.end()) {
@@ -508,6 +698,7 @@ void InMemoryGraph::SetLabels(const NodePtr &node,
     }
   }
   std::sort(node->labels.begin(), node->labels.end());
+  AddNodeToLabels(node);
   AddNodeToIndexes(node);
 }
 
@@ -532,17 +723,20 @@ void InMemoryGraph::RemoveLabels(const NodePtr &node,
                                  const std::vector<std::string> &labels) {
   CHECK(node != nullptr, common::InvalidArgumentError, "node is null");
   RemoveNodeFromIndexes(node);
+  RemoveNodeFromLabels(node);
   node->labels.erase(std::remove_if(node->labels.begin(), node->labels.end(),
                                     [&labels](const std::string &label) {
                                       return ContainsString(labels, label);
                                     }),
                      node->labels.end());
+  AddNodeToLabels(node);
   AddNodeToIndexes(node);
 }
 
 void InMemoryGraph::DeleteNode(const NodePtr &node) {
   CHECK(node != nullptr, common::InvalidArgumentError, "node is null");
   RemoveNodeFromIndexes(node);
+  RemoveNodeFromLabels(node);
   nodes_by_id_.erase(node->id);
   nodes_.erase(std::remove(nodes_.begin(), nodes_.end(), node), nodes_.end());
 }
@@ -551,6 +745,7 @@ void InMemoryGraph::DeleteRelationship(const RelationshipPtr &relationship) {
   CHECK(relationship != nullptr, common::InvalidArgumentError,
         "relationship is null");
   RemoveRelationshipFromIndexes(relationship);
+  RemovePointer(&relationships_by_type_.at(relationship->type), relationship);
   RemoveRelationshipFromAdjacency(relationship);
   relationships_by_id_.erase(relationship->id);
   relationships_.erase(
@@ -647,6 +842,7 @@ void InMemoryGraph::AddNodeIndex(std::vector<std::string> labels,
   const std::string key = IndexKey(descriptor.qualifiers, property_key);
   node_indexes_[key] = descriptor;
   node_index_buckets_[key].clear();
+  node_range_index_buckets_[key].clear();
   for (const auto &node : nodes_) {
     AddNodeToIndex(key, descriptor, node);
   }
@@ -664,6 +860,7 @@ void InMemoryGraph::AddRelationshipIndex(
   const std::string key = IndexKey(descriptor.qualifiers, property_key);
   relationship_indexes_[key] = descriptor;
   relationship_index_buckets_[key].clear();
+  relationship_range_index_buckets_[key].clear();
   for (const auto &relationship : relationships_) {
     AddRelationshipToIndex(key, descriptor, relationship);
   }
@@ -885,6 +1082,9 @@ void InMemoryGraph::AddNodeToIndex(const std::string &index_key,
     return;
   }
   node_index_buckets_[index_key][property->second].push_back(node);
+  node_range_index_buckets_[index_key][IndexValueGroup(property->second)]
+                           [property->second]
+                               .push_back(node);
 }
 
 void InMemoryGraph::RemoveNodeFromIndex(const std::string &index_key,
@@ -898,6 +1098,8 @@ void InMemoryGraph::RemoveNodeFromIndex(const std::string &index_key,
   if (property == node->properties.end()) {
     return;
   }
+  RemoveRangeEntry(&node_range_index_buckets_[index_key], property->second,
+                   node);
   const auto buckets = node_index_buckets_.find(index_key);
   if (buckets == node_index_buckets_.end()) {
     return;
@@ -926,6 +1128,9 @@ void InMemoryGraph::AddRelationshipToIndex(
   }
   relationship_index_buckets_[index_key][property->second].push_back(
       relationship);
+  relationship_range_index_buckets_[index_key][IndexValueGroup(
+      property->second)][property->second]
+      .push_back(relationship);
 }
 
 void InMemoryGraph::RemoveRelationshipFromIndex(
@@ -940,6 +1145,8 @@ void InMemoryGraph::RemoveRelationshipFromIndex(
   if (property == relationship->properties.end()) {
     return;
   }
+  RemoveRangeEntry(&relationship_range_index_buckets_[index_key],
+                   property->second, relationship);
   const auto buckets = relationship_index_buckets_.find(index_key);
   if (buckets == relationship_index_buckets_.end()) {
     return;
@@ -951,6 +1158,24 @@ void InMemoryGraph::RemoveRelationshipFromIndex(
   RemovePointer(&bucket->second, relationship);
   if (bucket->second.empty()) {
     buckets->second.erase(bucket);
+  }
+}
+
+void InMemoryGraph::AddNodeToLabels(const NodePtr &node) {
+  std::unordered_set<std::string> seen;
+  for (const auto &label : node->labels) {
+    if (seen.insert(label).second) {
+      nodes_by_label_[label].push_back(node);
+    }
+  }
+}
+
+void InMemoryGraph::RemoveNodeFromLabels(const NodePtr &node) {
+  for (const auto &label : node->labels) {
+    const auto found = nodes_by_label_.find(label);
+    if (found != nodes_by_label_.end()) {
+      RemovePointer(&found->second, node);
+    }
   }
 }
 

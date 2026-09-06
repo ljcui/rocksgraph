@@ -49,6 +49,5 @@ class ExpressionBindings {
 [[nodiscard]] bool PredicateIsTrue(const Value &value);
 [[nodiscard]] bool IsNumeric(const Value &value);
 [[nodiscard]] double AsDoubleValue(const Value &value);
-[[nodiscard]] bool ValueLess(const Value &left, const Value &right);
 
 }  // namespace rg

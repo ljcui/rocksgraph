@@ -217,5 +217,6 @@ bool operator==(const Duration &left, const Duration &right);
 bool operator==(const Point &left, const Point &right);
 
 [[nodiscard]] bool ValuesEqual(const Value &left, const Value &right);
+[[nodiscard]] bool ValueLess(const Value &left, const Value &right);
 
 }  // namespace rg

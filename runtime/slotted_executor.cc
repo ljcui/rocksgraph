@@ -20,6 +20,7 @@
 #include "ast/builtin_procedure.h"
 #include "ast/expression_dependency.h"
 #include "common/exception.h"
+#include "ir/query_ir_internal.h"
 #include "runtime/expression_evaluator.h"
 
 namespace rg {
@@ -1157,6 +1158,53 @@ std::optional<std::int64_t> SeekId(const Value &value) {
   return std::nullopt;
 }
 
+IndexRange EvaluateIndexRange(
+    const std::vector<const ast::Expression *> &predicates,
+    std::string_view variable, std::string_view property_key,
+    const SlottedRow &argument, RuntimeState &state) {
+  auto is_property = [&](const ast::Expression *expression) {
+    const auto *property = ir::AsPropertyExpression(expression);
+    const auto *owner = property == nullptr
+                            ? nullptr
+                            : ir::AsVariableExpression(property->object.get());
+    return owner != nullptr && owner->name == variable &&
+           property->property_key == property_key;
+  };
+  IndexRange range;
+  for (const auto *predicate : predicates) {
+    const auto *expression = ir::UnwrapParenthesized(predicate);
+    CHECK(expression != nullptr, common::InternalError,
+          "index range predicate is null");
+    if (expression->Is(ast::ASTNodeType::kStringPredicateExpression)) {
+      const auto &prefix =
+          *ast::CastAst<ast::StringPredicateExpression>(expression);
+      CHECK(prefix.op == "STARTS WITH" && is_property(prefix.left.get()) &&
+                prefix.right != nullptr,
+            common::InternalError, "invalid index prefix predicate");
+      range.prefix = Evaluate(*prefix.right, argument, {}, state);
+      continue;
+    }
+    CHECK(expression->Is(ast::ASTNodeType::kComparisonExpression),
+          common::InternalError, "invalid index range predicate");
+    const auto &comparison =
+        *ast::CastAst<ast::ComparisonExpression>(expression);
+    const bool reversed = !is_property(comparison.left.get());
+    CHECK((!reversed || is_property(comparison.right.get())) &&
+              (comparison.op == "<" || comparison.op == "<=" ||
+               comparison.op == ">" || comparison.op == ">="),
+          common::InternalError, "invalid index range comparison");
+    const auto *bound =
+        reversed ? comparison.left.get() : comparison.right.get();
+    CHECK(bound != nullptr, common::InternalError, "index bound is null");
+    auto &bounds = (comparison.op.front() == '>') != reversed
+                       ? range.lower_bounds
+                       : range.upper_bounds;
+    bounds.push_back({.value = Evaluate(*bound, argument, {}, state),
+                      .inclusive = comparison.op.size() == 2});
+  }
+  return range;
+}
+
 class LeafOperator final : public PullOperator {
  public:
   LeafOperator(const PhysicalPlanNode &node, RuntimeState &state,
@@ -1317,8 +1365,11 @@ class LeafOperator final : public PullOperator {
     const ir::LogicalPlan &plan = *node_->logical;
     switch (plan.Type()) {
       case ir::LogicalPlanNodeType::kAllNodeScan:
-      case ir::LogicalPlanNodeType::kNodeByLabelScan:
         cursor_ = state_->TrackCursor(state_->graph_reader->ScanNodeIds());
+        break;
+      case ir::LogicalPlanNodeType::kNodeByLabelScan:
+        cursor_ = state_->TrackCursor(state_->graph_reader->ScanNodeIdsByLabels(
+            static_cast<const ir::NodeByLabelScanPlan &>(plan).Labels()));
         break;
       case ir::LogicalPlanNodeType::kNodeIndexSeek: {
         const auto &seek = static_cast<const ir::NodeIndexSeekPlan &>(plan);
@@ -1331,13 +1382,19 @@ class LeafOperator final : public PullOperator {
       case ir::LogicalPlanNodeType::kNodeIndexRangeSeek: {
         const auto &seek =
             static_cast<const ir::NodeIndexRangeSeekPlan &>(plan);
-        cursor_ = state_->TrackCursor(state_->graph_reader->NodeIdsInIndex(
-            seek.Labels(), seek.PropertyKey()));
+        const auto range =
+            EvaluateIndexRange(seek.Predicates(), seek.Variable(),
+                               seek.PropertyKey(), *argument_, *state_);
+        cursor_ =
+            state_->TrackCursor(state_->graph_reader->FindNodeIdsByIndexRange(
+                seek.Labels(), seek.PropertyKey(), range));
         break;
       }
       case ir::LogicalPlanNodeType::kRelationshipTypeScan:
-        cursor_ =
-            state_->TrackCursor(state_->graph_reader->ScanRelationshipIds());
+        cursor_ = state_->TrackCursor(
+            state_->graph_reader->ScanRelationshipIdsByTypes(
+                static_cast<const ir::RelationshipTypeScanPlan &>(plan)
+                    .Types()));
         break;
       case ir::LogicalPlanNodeType::kRelationshipIndexSeek: {
         const auto &seek =
@@ -1352,9 +1409,12 @@ class LeafOperator final : public PullOperator {
       case ir::LogicalPlanNodeType::kRelationshipIndexRangeSeek: {
         const auto &seek =
             static_cast<const ir::RelationshipIndexRangeSeekPlan &>(plan);
-        cursor_ =
-            state_->TrackCursor(state_->graph_reader->RelationshipIdsInIndex(
-                seek.Types(), seek.PropertyKey()));
+        const auto range =
+            EvaluateIndexRange(seek.Predicates(), seek.Relationship(),
+                               seek.PropertyKey(), *argument_, *state_);
+        cursor_ = state_->TrackCursor(
+            state_->graph_reader->FindRelationshipIdsByIndexRange(
+                seek.Types(), seek.PropertyKey(), range));
         break;
       }
       default:

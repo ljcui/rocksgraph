@@ -62,6 +62,35 @@ class ObservedGraph final : public rg::GraphReader {
   rg::InMemoryGraph graph;
   mutable std::size_t scans = 0;
   mutable std::size_t expansions = 0;
+  mutable std::size_t label_scans = 0;
+  mutable std::size_t type_scans = 0;
+  mutable std::size_t range_seeks = 0;
+  mutable std::size_t candidates = 0;
+
+  class CountingCursor final : public rg::EntityIdCursor {
+   public:
+    CountingCursor(std::unique_ptr<rg::EntityIdCursor> source,
+                   std::size_t *count)
+        : source_(std::move(source)), count_(count) {}
+    bool Next() override {
+      if (!source_->Next()) {
+        return false;
+      }
+      ++*count_;
+      return true;
+    }
+    std::int64_t Id() const override { return source_->Id(); }
+    void Close() noexcept override { source_->Close(); }
+
+   private:
+    std::unique_ptr<rg::EntityIdCursor> source_;
+    std::size_t *count_;
+  };
+
+  std::unique_ptr<rg::EntityIdCursor> Count(
+      std::unique_ptr<rg::EntityIdCursor> source) const {
+    return std::make_unique<CountingCursor>(std::move(source), &candidates);
+  }
 
   std::unique_ptr<rg::EntityIdCursor> ScanNodeIds() const override {
     ++scans;
@@ -70,6 +99,16 @@ class ObservedGraph final : public rg::GraphReader {
   std::unique_ptr<rg::EntityIdCursor> ScanRelationshipIds() const override {
     ++scans;
     return graph.ScanRelationshipIds();
+  }
+  std::unique_ptr<rg::EntityIdCursor> ScanNodeIdsByLabels(
+      const std::vector<std::string> &labels) const override {
+    ++label_scans;
+    return Count(graph.ScanNodeIdsByLabels(labels));
+  }
+  std::unique_ptr<rg::EntityIdCursor> ScanRelationshipIdsByTypes(
+      const std::vector<std::string> &types) const override {
+    ++type_scans;
+    return Count(graph.ScanRelationshipIdsByTypes(types));
   }
   std::unique_ptr<rg::EntityIdCursor> RelationshipIdsConnectedTo(
       std::int64_t id) const override {
@@ -91,20 +130,22 @@ class ObservedGraph final : public rg::GraphReader {
       const rg::Value &value) const override {
     return graph.FindNodeIdsByIndex(labels, key, value);
   }
-  std::unique_ptr<rg::EntityIdCursor> NodeIdsInIndex(
-      const std::vector<std::string> &labels,
-      std::string_view key) const override {
-    return graph.NodeIdsInIndex(labels, key);
+  std::unique_ptr<rg::EntityIdCursor> FindNodeIdsByIndexRange(
+      const std::vector<std::string> &labels, std::string_view key,
+      const rg::IndexRange &range) const override {
+    ++range_seeks;
+    return Count(graph.FindNodeIdsByIndexRange(labels, key, range));
   }
   std::unique_ptr<rg::EntityIdCursor> FindRelationshipIdsByIndex(
       const std::vector<std::string> &types, std::string_view key,
       const rg::Value &value) const override {
     return graph.FindRelationshipIdsByIndex(types, key, value);
   }
-  std::unique_ptr<rg::EntityIdCursor> RelationshipIdsInIndex(
-      const std::vector<std::string> &types,
-      std::string_view key) const override {
-    return graph.RelationshipIdsInIndex(types, key);
+  std::unique_ptr<rg::EntityIdCursor> FindRelationshipIdsByIndexRange(
+      const std::vector<std::string> &types, std::string_view key,
+      const rg::IndexRange &range) const override {
+    ++range_seeks;
+    return Count(graph.FindRelationshipIdsByIndexRange(types, key, range));
   }
   std::size_t RelationshipCount() const override {
     return graph.RelationshipCount();
@@ -471,4 +512,121 @@ TEST(OpenCypherOptimizerTest, KeepsRuntimeNodeAssertionsInOptionalMatches) {
       {"values", rg::Value(rg::Value::List{rg::Value(1)})}};
   EXPECT_THROW((void)rg::QueryExecutor(graph).Execute(*query.plan, parameters),
                common::InvalidArgumentError);
+}
+
+TEST(OpenCypherOptimizerTest, UsesLabelAndTypeCursorsWithoutFullScans) {
+  ObservedGraph graph;
+  auto a = graph.graph.CreateNode({"A", "B", "A"});
+  auto b = graph.graph.CreateNode({"A"});
+  graph.graph.CreateRelationship(a, b, "R");
+  graph.graph.CreateRelationship(a, a, "R");
+  graph.graph.CreateRelationship(a, b, "S");
+  for (int i = 0; i < 100; ++i) {
+    graph.graph.CreateNode({"Other"});
+    graph.graph.CreateRelationship(a, b, "Other");
+  }
+  auto result = rg::ExecuteReadQuery(graph, "MATCH (n:A:B) RETURN id(n)");
+  EXPECT_EQ(Rows(result), (std::multiset<std::vector<std::string>>{{"0"}}));
+  EXPECT_EQ(graph.label_scans, 1U);
+  EXPECT_EQ(graph.candidates, 1U);
+  EXPECT_TRUE(
+      rg::ExecuteReadQuery(graph, "MATCH (n:Missing) RETURN n").rows.empty());
+
+  graph.candidates = 0;
+  ir::RelationshipTypeScanPlan scan("a", "r", "b", ir::ExpandDirection::kBoth,
+                                    {"R", "S", "R", "Missing"});
+  result = rg::QueryExecutor(graph).Execute(scan);
+  EXPECT_EQ(result.rows.size(), 5U);
+  EXPECT_EQ(graph.type_scans, 1U);
+  EXPECT_EQ(graph.candidates, 3U);
+  EXPECT_EQ(graph.scans, 0U);
+}
+
+TEST(OpenCypherOptimizerTest, RangeSeeksOnlyReturnBoundedCandidates) {
+  ObservedGraph graph;
+  auto endpoint = graph.graph.CreateNode({});
+  for (int i = 0; i < 256; ++i) {
+    auto node = graph.graph.CreateNode({"N"}, {{"score", rg::Value(i)}});
+    graph.graph.CreateRelationship(endpoint, node, "R",
+                                   {{"score", rg::Value(i)}});
+  }
+  graph.graph.AddNodeIndex({"N"}, "score");
+  graph.graph.AddRelationshipIndex({"R"}, "score");
+  rg::QueryOptions options{
+      .planner_catalog = &graph.graph,
+      .parameters = {{"lower", rg::Value(100.0)}, {"upper", rg::Value(103)}}};
+  for (const auto &query :
+       {"MATCH (n:N) WHERE $lower <= n.score AND n.score > 99 AND "
+        "$upper > n.score AND n.score < 200 RETURN n.score",
+        "MATCH ()-[r:R]->() WHERE r.score >= $lower AND r.score < $upper "
+        "RETURN r.score"}) {
+    SCOPED_TRACE(query);
+    graph.candidates = 0;
+    graph.range_seeks = 0;
+    const auto result = rg::ExecuteReadQuery(graph, query, options);
+    EXPECT_EQ(Rows(result), (std::multiset<std::vector<std::string>>{
+                                {"100"}, {"101"}, {"102"}}));
+    EXPECT_EQ(graph.range_seeks, 1U);
+    EXPECT_EQ(graph.candidates, 3U);
+  }
+  EXPECT_EQ(graph.scans, 0U);
+  EXPECT_EQ(graph.label_scans, 0U);
+  EXPECT_EQ(graph.type_scans, 0U);
+}
+
+TEST(OpenCypherOptimizerTest, PrefixSeeksUseStringIndexIntervals) {
+  ObservedGraph graph;
+  auto endpoint = graph.graph.CreateNode({});
+  for (const auto *name : {"", "a", "aa", "ab", "abc", "ac", "z"}) {
+    auto node = graph.graph.CreateNode({"N"}, {{"name", rg::Value(name)}});
+    graph.graph.CreateRelationship(endpoint, node, "R",
+                                   {{"name", rg::Value(name)}});
+  }
+  graph.graph.CreateNode({"N"}, {{"name", rg::Value(42)}});
+  graph.graph.AddNodeIndex({"N"}, "name");
+  graph.graph.AddRelationshipIndex({"R"}, "name");
+  rg::QueryOptions options{.planner_catalog = &graph.graph};
+  for (const auto &query :
+       {"MATCH (n:N) WHERE n.name STARTS WITH $prefix RETURN n.name",
+        "MATCH ()-[r:R]->() WHERE r.name STARTS WITH $prefix RETURN r.name"}) {
+    for (const auto &prefix :
+         {rg::Value("ab"), rg::Value(""), rg::Value("missing"),
+          rg::Value::Null(), rg::Value(42)}) {
+      SCOPED_TRACE(query);
+      SCOPED_TRACE(prefix.ToString());
+      options.parameters = {{"prefix", prefix}};
+      graph.candidates = 0;
+      graph.range_seeks = 0;
+      const auto result = rg::ExecuteReadQuery(graph, query, options);
+      const std::size_t expected = prefix.IsString()
+                                       ? (prefix.AsString() == "ab"   ? 2U
+                                          : prefix.AsString().empty() ? 7U
+                                                                      : 0U)
+                                       : 0U;
+      EXPECT_EQ(result.rows.size(), expected);
+      EXPECT_EQ(graph.range_seeks, 1U);
+      EXPECT_EQ(graph.candidates, expected);
+    }
+  }
+  EXPECT_EQ(graph.scans, 0U);
+}
+
+TEST(OpenCypherOptimizerTest,
+     KeepsRowDependentAndVolatileRangeBoundsAsFilters) {
+  for (const auto &query : {"MATCH (n:N) WHERE n.x > n.y RETURN n",
+                            "MATCH (n:N) WHERE n.x > rand() RETURN n",
+                            "MATCH (n:N) WHERE n.x STARTS WITH n.y RETURN n"}) {
+    SCOPED_TRACE(query);
+    Query plan(query);
+    EXPECT_EQ(Find(*plan.plan, Type::kNodeIndexRangeSeek), nullptr);
+    EXPECT_NE(Find(*plan.plan, Type::kFilter), nullptr);
+  }
+  rg::InMemoryGraph graph;
+  graph.CreateNode({"N"}, {{"x", rg::Value(3)}, {"y", rg::Value(2)}});
+  graph.CreateNode({"N"}, {{"x", rg::Value(1)}, {"y", rg::Value(2)}});
+  graph.AddNodeIndex({"N"}, "x");
+  rg::QueryOptions options{.planner_catalog = &graph};
+  const auto result = rg::ExecuteReadQuery(
+      graph, "MATCH (n:N) WHERE n.x >= 0 AND n.x > n.y RETURN n.x", options);
+  EXPECT_EQ(Rows(result), (std::multiset<std::vector<std::string>>{{"3"}}));
 }

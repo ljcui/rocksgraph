@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -10,6 +11,18 @@
 #include "value/value.h"
 
 namespace rg {
+
+struct IndexRangeBound {
+  Value value;
+  bool inclusive = false;
+};
+
+// Bounds are intersected. Null or incomparable bounds produce no matches.
+struct IndexRange {
+  std::vector<IndexRangeBound> lower_bounds;
+  std::vector<IndexRangeBound> upper_bounds;
+  std::optional<Value> prefix;
+};
 
 class EntityIdCursor {
  public:
@@ -36,6 +49,11 @@ class GraphReader {
   [[nodiscard]] virtual std::unique_ptr<EntityIdCursor> ScanNodeIds() const = 0;
   [[nodiscard]] virtual std::unique_ptr<EntityIdCursor> ScanRelationshipIds()
       const = 0;
+  // Labels are intersected; relationship types are unioned. Empty means all.
+  [[nodiscard]] virtual std::unique_ptr<EntityIdCursor> ScanNodeIdsByLabels(
+      const std::vector<std::string> &labels) const = 0;
+  [[nodiscard]] virtual std::unique_ptr<EntityIdCursor>
+  ScanRelationshipIdsByTypes(const std::vector<std::string> &types) const = 0;
   [[nodiscard]] virtual std::unique_ptr<EntityIdCursor>
   RelationshipIdsConnectedTo(std::int64_t node_id) const = 0;
   [[nodiscard]] virtual std::unique_ptr<EntityIdCursor> OutgoingRelationshipIds(
@@ -45,16 +63,17 @@ class GraphReader {
   [[nodiscard]] virtual std::unique_ptr<EntityIdCursor> FindNodeIdsByIndex(
       const std::vector<std::string> &labels, std::string_view property_key,
       const Value &value) const = 0;
-  [[nodiscard]] virtual std::unique_ptr<EntityIdCursor> NodeIdsInIndex(
-      const std::vector<std::string> &labels,
-      std::string_view property_key) const = 0;
+  [[nodiscard]] virtual std::unique_ptr<EntityIdCursor> FindNodeIdsByIndexRange(
+      const std::vector<std::string> &labels, std::string_view property_key,
+      const IndexRange &range) const = 0;
   [[nodiscard]] virtual std::unique_ptr<EntityIdCursor>
   FindRelationshipIdsByIndex(const std::vector<std::string> &relationship_types,
                              std::string_view property_key,
                              const Value &value) const = 0;
-  [[nodiscard]] virtual std::unique_ptr<EntityIdCursor> RelationshipIdsInIndex(
+  [[nodiscard]] virtual std::unique_ptr<EntityIdCursor>
+  FindRelationshipIdsByIndexRange(
       const std::vector<std::string> &relationship_types,
-      std::string_view property_key) const = 0;
+      std::string_view property_key, const IndexRange &range) const = 0;
 
   [[nodiscard]] virtual std::size_t RelationshipCount() const = 0;
 

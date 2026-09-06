@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -33,6 +34,10 @@ class InMemoryGraph final : public Storage,
   [[nodiscard]] std::unique_ptr<EntityIdCursor> ScanNodeIds() const override;
   [[nodiscard]] std::unique_ptr<EntityIdCursor> ScanRelationshipIds()
       const override;
+  [[nodiscard]] std::unique_ptr<EntityIdCursor> ScanNodeIdsByLabels(
+      const std::vector<std::string> &labels) const override;
+  [[nodiscard]] std::unique_ptr<EntityIdCursor> ScanRelationshipIdsByTypes(
+      const std::vector<std::string> &types) const override;
   [[nodiscard]] std::unique_ptr<EntityIdCursor> RelationshipIdsConnectedTo(
       int64_t node_id) const override;
   [[nodiscard]] std::unique_ptr<EntityIdCursor> OutgoingRelationshipIds(
@@ -42,15 +47,15 @@ class InMemoryGraph final : public Storage,
   [[nodiscard]] std::unique_ptr<EntityIdCursor> FindNodeIdsByIndex(
       const std::vector<std::string> &labels, std::string_view property_key,
       const Value &value) const override;
-  [[nodiscard]] std::unique_ptr<EntityIdCursor> NodeIdsInIndex(
-      const std::vector<std::string> &labels,
-      std::string_view property_key) const override;
+  [[nodiscard]] std::unique_ptr<EntityIdCursor> FindNodeIdsByIndexRange(
+      const std::vector<std::string> &labels, std::string_view property_key,
+      const IndexRange &range) const override;
   [[nodiscard]] std::unique_ptr<EntityIdCursor> FindRelationshipIdsByIndex(
       const std::vector<std::string> &relationship_types,
       std::string_view property_key, const Value &value) const override;
-  [[nodiscard]] std::unique_ptr<EntityIdCursor> RelationshipIdsInIndex(
+  [[nodiscard]] std::unique_ptr<EntityIdCursor> FindRelationshipIdsByIndexRange(
       const std::vector<std::string> &relationship_types,
-      std::string_view property_key) const override;
+      std::string_view property_key, const IndexRange &range) const override;
 
   NodePtr CreateNode(std::vector<std::string> labels,
                      Value::Map properties) override;
@@ -174,6 +179,13 @@ class InMemoryGraph final : public Storage,
       std::unordered_map<Value, std::vector<RelationshipPtr>, ValueHash,
                          ValueEqual>;
 
+  struct IndexValueLess {
+    bool operator()(const Value &left, const Value &right) const;
+  };
+  template <typename EntityPtr>
+  using RangeIndexBuckets = std::unordered_map<
+      ValueType, std::map<Value, std::vector<EntityPtr>, IndexValueLess>>;
+
   [[nodiscard]] static std::string IndexKey(std::vector<std::string> qualifiers,
                                             std::string_view property_key);
 
@@ -194,6 +206,8 @@ class InMemoryGraph final : public Storage,
                                    const RelationshipPtr &relationship);
   void AddRelationshipToAdjacency(const RelationshipPtr &relationship);
   void RemoveRelationshipFromAdjacency(const RelationshipPtr &relationship);
+  void AddNodeToLabels(const NodePtr &node);
+  void RemoveNodeFromLabels(const NodePtr &node);
   [[nodiscard]] PropertyDistribution NodePropertyDistribution(
       const std::unordered_set<std::string> &labels,
       std::string_view property_key) const;
@@ -216,6 +230,13 @@ class InMemoryGraph final : public Storage,
   std::unordered_map<std::string, NodeIndexBuckets> node_index_buckets_;
   std::unordered_map<std::string, RelationshipIndexBuckets>
       relationship_index_buckets_;
+  std::unordered_map<std::string, RangeIndexBuckets<NodePtr>>
+      node_range_index_buckets_;
+  std::unordered_map<std::string, RangeIndexBuckets<RelationshipPtr>>
+      relationship_range_index_buckets_;
+  std::unordered_map<std::string, std::vector<NodePtr>> nodes_by_label_;
+  std::unordered_map<std::string, std::vector<RelationshipPtr>>
+      relationships_by_type_;
   std::unordered_map<int64_t, std::vector<RelationshipPtr>>
       outgoing_relationships_;
   std::unordered_map<int64_t, std::vector<RelationshipPtr>>

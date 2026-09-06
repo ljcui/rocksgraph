@@ -10,6 +10,57 @@
 
 namespace rg {
 
+bool ValueLess(const Value &left, const Value &right) {
+  if (left.IsNull() || right.IsNull()) {
+    return !left.IsNull() && right.IsNull();
+  }
+  if ((left.IsInteger() || left.IsDouble()) &&
+      (right.IsInteger() || right.IsDouble())) {
+    if (left.IsInteger() && right.IsInteger()) {
+      return left.AsInteger() < right.AsInteger();
+    }
+    if (left.IsDouble() && right.IsDouble()) {
+      return left.AsDouble() < right.AsDouble();
+    }
+    const Value &integer = left.IsInteger() ? left : right;
+    const Value &floating = left.IsDouble() ? left : right;
+    const double number = floating.AsDouble();
+    bool integer_less = false;
+    if (!std::isnan(number)) {
+      if (number >=
+          static_cast<double>(std::numeric_limits<std::int64_t>::max())) {
+        integer_less = true;
+      } else if (number >= static_cast<double>(
+                               std::numeric_limits<std::int64_t>::min())) {
+        const auto truncated = static_cast<std::int64_t>(number);
+        integer_less = integer.AsInteger() < truncated ||
+                       (integer.AsInteger() == truncated &&
+                        static_cast<double>(truncated) < number);
+      }
+    }
+    if (left.IsInteger()) {
+      return integer_less;
+    }
+    return !std::isnan(number) && !ValuesEqual(left, right) && !integer_less;
+  }
+  if (left.Type() != right.Type()) {
+    return static_cast<int>(left.Type()) < static_cast<int>(right.Type());
+  }
+  if (left.IsString()) {
+    return left.AsString() < right.AsString();
+  }
+  if (left.IsBool()) {
+    return !left.AsBool() && right.AsBool();
+  }
+  if (left.IsNode()) {
+    return left.AsNode().id < right.AsNode().id;
+  }
+  if (left.IsRelationship()) {
+    return left.AsRelationship().id < right.AsRelationship().id;
+  }
+  return left.ToString() < right.ToString();
+}
+
 namespace {
 
 bool PtrEqual(const Value::NodePtr &left, const Value::NodePtr &right) {
