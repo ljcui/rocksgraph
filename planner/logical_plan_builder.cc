@@ -21,6 +21,7 @@
 #include "ir/query_ir_internal.h"
 #include "planner/component_planner.h"
 #include "planner/cost_model.h"
+#include "planner/logical_plan_rewriter.h"
 #include "planner/order_property.h"
 #include "planner/plan_clone.h"
 
@@ -1697,114 +1698,6 @@ class LogicalPlanBuilder {
     return ApplyProjectionTail(std::move(plan), projection, std::move(aliases));
   }
 
-  bool IsVariable(const ast::Expression *expression,
-                  std::string_view name) const {
-    expression = UnwrapParenthesized(expression);
-    return expression != nullptr &&
-           expression->Is(ast::ASTNodeType::kVariable) &&
-           ast::CastAst<ast::Variable>(expression)->name == name;
-  }
-
-  bool IsRelationshipUniqueness(const ast::Expression *expression,
-                                std::string_view relationship) const {
-    expression = UnwrapParenthesized(expression);
-    if (expression == nullptr ||
-        !expression->Is(ast::ASTNodeType::kAllQuantifier)) {
-      return false;
-    }
-    const auto &all = *ast::CastAst<ast::AllQuantifier>(expression);
-    const auto *predicate = UnwrapParenthesized(all.predicate.get());
-    if (!IsVariable(all.list_expr.get(), relationship) ||
-        predicate == nullptr ||
-        !predicate->Is(ast::ASTNodeType::kSingleQuantifier)) {
-      return false;
-    }
-    const auto &single = *ast::CastAst<ast::SingleQuantifier>(predicate);
-    predicate = UnwrapParenthesized(single.predicate.get());
-    if (all.variable == relationship || single.variable == relationship ||
-        !IsVariable(single.list_expr.get(), relationship) ||
-        predicate == nullptr ||
-        !predicate->Is(ast::ASTNodeType::kComparisonExpression) ||
-        all.variable == single.variable) {
-      return false;
-    }
-    const auto &comparison =
-        *ast::CastAst<ast::ComparisonExpression>(predicate);
-    return comparison.op == "=" &&
-           ((IsVariable(comparison.left.get(), all.variable) &&
-             IsVariable(comparison.right.get(), single.variable)) ||
-            (IsVariable(comparison.right.get(), all.variable) &&
-             IsVariable(comparison.left.get(), single.variable)));
-  }
-
-  LogicalPlanPtr PruneDistinctExpand(
-      LogicalPlanPtr plan, const std::vector<LogicalProjectionItem> &items) {
-    const LogicalPlan *candidate = plan.get();
-    std::vector<const FilterPlan *> filters;
-    while (candidate->Type() == LogicalPlanNodeType::kFilter) {
-      filters.push_back(&static_cast<const FilterPlan &>(*candidate));
-      candidate = &candidate->Child(0);
-    }
-    if (candidate->Type() != LogicalPlanNodeType::kVarExpand) {
-      return plan;
-    }
-    const auto &expand = static_cast<const VarExpandPlan &>(*candidate);
-    // Directed reachability with a lower bound of zero or one preserves
-    // endpoint sets. Higher lower bounds and undirected trails need more state.
-    if (expand.Direction() == ExpandDirection::kBoth ||
-        expand.Length().min.value_or(1) > 1 ||
-        expand.Child(0).SolvedSymbols().contains(expand.Relationship())) {
-      return plan;
-    }
-    for (const auto &item : items) {
-      if (item.passthrough
-              ? item.alias == expand.Relationship()
-              : item.expression == nullptr ||
-                    !item.precomputed_expressions.empty() ||
-                    !ExpressionIsDeterministic(*item.expression) ||
-                    ast::CollectExpressionDependencies(*item.expression)
-                        .contains(expand.Relationship())) {
-        return plan;
-      }
-    }
-    std::vector<const ast::Expression *> retained;
-    for (const auto *filter : filters) {
-      if (!filter->PrecomputedExpressions().empty()) {
-        return plan;
-      }
-      if (IsRelationshipUniqueness(filter->Predicate(),
-                                   expand.Relationship())) {
-        continue;
-      }
-      if (!ExpressionIsDeterministic(*filter->Predicate()) ||
-          ast::CollectExpressionDependencies(*filter->Predicate())
-              .contains(expand.Relationship())) {
-        return plan;
-      }
-      retained.push_back(filter->Predicate());
-    }
-    PatternRelationship pattern{
-        .variable = expand.Relationship(),
-        .left_node = expand.FromNode(),
-        .right_node = expand.ToNode(),
-        .direction = expand.Direction() == ExpandDirection::kOutgoing
-                         ? Direction::kOutgoing
-                         : Direction::kIncoming,
-        .types = expand.Types(),
-        .length = {.variable = true,
-                   .min = expand.Length().min,
-                   .max = expand.Length().max}};
-    for (std::size_t i = 0; i < filters.size(); ++i) {
-      plan = plan->TakeChild(0);
-    }
-    plan = std::make_unique<PruningVarExpandPlan>(plan->TakeChild(0),
-                                                  std::move(pattern));
-    for (auto it = retained.rbegin(); it != retained.rend(); ++it) {
-      plan = std::make_unique<FilterPlan>(std::move(plan), *it);
-    }
-    return plan;
-  }
-
   std::unique_ptr<LogicalPlan> ApplyDistinctProjection(
       std::unique_ptr<LogicalPlan> plan,
       const DistinctQueryProjection &projection) {
@@ -1815,7 +1708,6 @@ class LogicalPlanBuilder {
         ProjectionAliases(projection.grouping_items);
     std::vector<LogicalProjectionItem> grouping_items = LogicalProjectionItems(
         projection.grouping_items, projection.nested_expressions);
-    plan = PruneDistinctExpand(std::move(plan), grouping_items);
     plan = std::make_unique<DistinctPlan>(std::move(plan),
                                           std::move(grouping_items));
     return ApplyProjectionTail(std::move(plan), projection, std::move(aliases));
@@ -2050,6 +1942,7 @@ std::unique_ptr<LogicalPlan> CreateLogicalPlan(
     const QueryIR &query_ir, const LogicalPlanBuilderOptions &options) {
   LogicalPlanBuilder builder(options);
   std::unique_ptr<LogicalPlan> plan = builder.Build(query_ir);
+  plan = RewriteLogicalPlan(std::move(plan));
   AnnotateLogicalPlanMetadata(plan.get(),
                               CostModel(options.planner_statistics));
   return plan;
@@ -2059,6 +1952,7 @@ std::unique_ptr<LogicalPlan> CreateLogicalPlan(
     const SingleQueryIR &query_ir, const LogicalPlanBuilderOptions &options) {
   LogicalPlanBuilder builder(options);
   std::unique_ptr<LogicalPlan> plan = builder.Build(query_ir);
+  plan = RewriteLogicalPlan(std::move(plan));
   AnnotateLogicalPlanMetadata(plan.get(),
                               CostModel(options.planner_statistics));
   return plan;

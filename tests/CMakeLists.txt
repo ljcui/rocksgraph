@@ -21,6 +21,8 @@ add_rocksgraph_test(cost_model_test planner/cost_model_test.cc
 add_rocksgraph_test(idp_test planner/idp_test.cc rocksgraph_planner)
 add_rocksgraph_test(logical_plan_builder_test
                     planner/logical_plan_builder_test.cc rocksgraph_planner)
+add_rocksgraph_test(logical_plan_rewriter_test
+                    planner/logical_plan_rewriter_test.cc rocksgraph_planner)
 
 add_rocksgraph_test(
   builtin_function_evaluator_test runtime/builtin_function_evaluator_test.cc

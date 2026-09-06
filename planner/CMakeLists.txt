@@ -4,6 +4,7 @@ add_library(
   cost_model.cc
   idp.cc
   logical_plan_builder.cc
+  logical_plan_rewriter.cc
   order_property.cc
   plan_clone.cc)
 
