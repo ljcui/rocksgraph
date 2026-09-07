@@ -21,6 +21,7 @@ add_library(
   semantic_table.cc
   semantic_validator.cc
   rewriters/anonymous_pattern_name_rewriter.cc
+  rewriters/aggregation_expression_rewriter.cc
   rewriters/comparison_chain_rewriter.cc
   rewriters/count_star_rewriter.cc
   rewriters/existential_subquery_rewriter.cc

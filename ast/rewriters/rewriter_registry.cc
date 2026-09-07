@@ -1,5 +1,6 @@
 #include "rewriter_registry.h"
 
+#include "aggregation_expression_rewriter.h"
 #include "anonymous_pattern_name_rewriter.h"
 #include "comparison_chain_rewriter.h"
 #include "existential_subquery_rewriter.h"
@@ -24,6 +25,8 @@ std::vector<std::unique_ptr<ASTRewriter>> MakeDefaultRewriters() {
   rewriters.emplace_back(std::make_unique<OrderByAliasRewriter>());
   // Projection expansion should run after expression normalization.
   rewriters.emplace_back(std::make_unique<ReturnStarRewriter>());
+  // Aggregation isolation needs explicit grouping items from star expansion.
+  rewriters.emplace_back(std::make_unique<AggregationExpressionRewriter>());
   // Assign anonymous names after scope-expanding rewrites.
   rewriters.emplace_back(std::make_unique<AnonymousPatternNameRewriter>());
   // Pull inline pattern predicates into WHERE after names are assigned.

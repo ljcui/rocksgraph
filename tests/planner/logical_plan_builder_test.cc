@@ -912,7 +912,7 @@ TEST(LogicalPlanBuilderTest, BuildsPostAggregationProjectionPlan) {
       "MATCH (n) RETURN n.age AS age, n.age + count(*) AS total",
       R"(ProduceResults [age, total]
   Projection [age, total]
-    Aggregation [age, anon_aggregate_0]
+    Aggregation [age, __agg_0]
       AllNodeScan [n]
 )");
 }
@@ -945,9 +945,10 @@ TEST(LogicalPlanBuilderTest, BuildsAggregationOrderBySkipAndLimitPlan) {
 TEST(LogicalPlanBuilderTest, BuildsAggregateExpressionOrderByPlan) {
   ExpectLogicalPlanText("MATCH (n) RETURN count(*) AS c ORDER BY count(1) + c",
                         R"(ProduceResults [c]
-  Sort [anon_aggregate_0 + c ASC]
-    Aggregation [c, anon_aggregate_0]
-      AllNodeScan [n]
+  Sort [__agg_0 + c ASC]
+    Projection [c, __agg_0]
+      Aggregation [c, __agg_0]
+        AllNodeScan [n]
 )");
 }
 
@@ -955,9 +956,9 @@ TEST(LogicalPlanBuilderTest, PreservesOrderAggregateThroughPostProjection) {
   ExpectLogicalPlanText(
       "MATCH (n) RETURN count(*) + 1 AS c ORDER BY count(1) + c",
       R"(ProduceResults [c]
-  Sort [anon_aggregate_1 + c ASC]
-    Projection [c, anon_aggregate_1]
-      Aggregation [anon_aggregate_0, anon_aggregate_1]
+  Sort [__agg_1 + c ASC]
+    Projection [c, __agg_1]
+      Aggregation [__agg_0, __agg_1]
         AllNodeScan [n]
 )");
 }

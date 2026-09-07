@@ -5,6 +5,7 @@
 #include "ast/ast_builder.h"
 #include "ast/ast_equal.h"
 #include "ast/ast_exception.h"
+#include "ast/rewriters/aggregation_expression_rewriter.h"
 #include "ast/rewriters/anonymous_pattern_name_rewriter.h"
 #include "ast/rewriters/comparison_chain_rewriter.h"
 #include "ast/rewriters/count_star_rewriter.h"
@@ -38,6 +39,8 @@ void ExpectRewriteEqualsWith(const std::string &input,
                              const std::string &expected) {
   auto statement = ParseOrFail(input);
   auto expected_statement = ParseOrFail(expected);
+  ASSERT_TRUE(statement);
+  ASSERT_TRUE(expected_statement);
 
   Rewriter rewriter;
   rewriter.Rewrite(*statement);
@@ -176,6 +179,89 @@ TEST(OrderByAliasRewriterTest, RewritesVariableInsidePropertyToAlias) {
 TEST(CountStarRewriterTest, CountStarToFunction) {
   ExpectRewriteEqualsWith<ast::CountStarRewriter>("RETURN count(*)",
                                                   "RETURN count(1)");
+}
+
+TEST(AggregationExpressionRewriterTest, SplitsAggregateSubexpression) {
+  ExpectRewriteEqualsWith<ast::AggregationExpressionRewriter>(
+      "MATCH (n) RETURN count(*) + 1 AS total",
+      "MATCH (n) WITH count(*) AS __agg_0 RETURN __agg_0 + 1 AS total");
+}
+
+TEST(AggregationExpressionRewriterTest, PreservesGroupingProjection) {
+  ExpectRewriteEqualsWith<ast::AggregationExpressionRewriter>(
+      "MATCH (n) RETURN n.age AS age, n.age + count(*) AS total",
+      "MATCH (n) WITH n.age AS age, count(*) AS __agg_0 "
+      "RETURN age AS age, age + __agg_0 AS total");
+}
+
+TEST(AggregationExpressionRewriterTest, SplitsExistingWithClause) {
+  ExpectRewriteEqualsWith<ast::AggregationExpressionRewriter>(
+      "MATCH (n) WITH n.age AS age, n.age + count(*) AS total RETURN total",
+      "MATCH (n) WITH n.age AS age, count(*) AS __agg_0 "
+      "WITH age AS age, age + __agg_0 AS total RETURN total");
+}
+
+TEST(AggregationExpressionRewriterTest, RewritesOuterGroupingInQuantifier) {
+  ExpectRewriteEqualsWith<ast::AggregationExpressionRewriter>(
+      "MATCH (n) RETURN n.age AS age, "
+      "ALL(x IN collect(n.age) WHERE x > n.age) AS older",
+      "MATCH (n) WITH n.age AS age, collect(n.age) AS __agg_0 "
+      "RETURN age AS age, ALL(x IN __agg_0 WHERE x > age) AS older");
+}
+
+TEST(AggregationExpressionRewriterTest, RewritesEveryUnionBranch) {
+  ExpectRewriteEqualsWith<ast::AggregationExpressionRewriter>(
+      "RETURN count(*) + 1 AS total UNION RETURN sum(1) + 2 AS total",
+      "WITH count(*) AS __agg_0 RETURN __agg_0 + 1 AS total "
+      "UNION WITH sum(1) AS __agg_1 RETURN __agg_1 + 2 AS total");
+}
+
+TEST(AggregationExpressionRewriterTest, AvoidsGeneratedAliasCollision) {
+  ExpectRewriteEqualsWith<ast::AggregationExpressionRewriter>(
+      "WITH 1 AS __agg_0 RETURN count(*) + 1 AS total",
+      "WITH 1 AS __agg_0 WITH count(*) AS __agg_1 "
+      "RETURN __agg_1 + 1 AS total");
+}
+
+TEST(AggregationExpressionRewriterTest, LeavesTopLevelAggregationAlone) {
+  ExpectRewriteEqualsWith<ast::AggregationExpressionRewriter>(
+      "MATCH (n) RETURN n.age AS age, count(*) AS total",
+      "MATCH (n) RETURN n.age AS age, count(*) AS total");
+}
+
+TEST(AggregationExpressionRewriterTest, SplitsOrderByAggregation) {
+  ExpectRewriteEqualsWith<ast::AggregationExpressionRewriter>(
+      "RETURN count(*) AS total ORDER BY count(1) + total",
+      "WITH count(*) AS total, count(1) AS __agg_0 "
+      "RETURN total AS total ORDER BY __agg_0 + total");
+}
+
+TEST(AggregationExpressionRewriterTest, RemovesRedundantDistinctAfterSplit) {
+  ExpectRewriteEqualsWith<ast::AggregationExpressionRewriter>(
+      "RETURN DISTINCT count(*) AS total ORDER BY count(1) + total",
+      "WITH count(*) AS total, count(1) AS __agg_0 "
+      "RETURN total AS total ORDER BY __agg_0 + total");
+}
+
+TEST(AggregationExpressionRewriterTest, PreservesNondeterministicGrouping) {
+  ExpectRewriteEqualsWith<ast::AggregationExpressionRewriter>(
+      "MATCH (n) RETURN rand() AS random, count(*) + 1 AS total",
+      "MATCH (n) WITH rand() AS random, count(*) AS __agg_0 "
+      "RETURN random AS random, __agg_0 + 1 AS total");
+}
+
+TEST(RewriterPipelineTest, ExpandsStarBeforeSplittingAggregation) {
+  auto statement = ParseOrFail("MATCH (n) RETURN *, count(*) + 1 AS total");
+  auto expected_statement = ParseOrFail(
+      "MATCH (n) WITH n AS n, count(*) AS __agg_0 "
+      "RETURN n AS n, __agg_0 + 1 AS total");
+  ASSERT_TRUE(statement);
+  ASSERT_TRUE(expected_statement);
+
+  ast::ApplyDefaultRewriters(*statement);
+
+  EXPECT_TRUE(ast::ASTEqual::Equal(statement.get(), expected_statement.get()))
+      << "rewrite mismatch for aggregation after star expansion";
 }
 
 TEST(ProjectionAliasRewriterTest, FillsAliasFromProperty) {

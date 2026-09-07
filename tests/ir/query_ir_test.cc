@@ -872,16 +872,24 @@ TEST(QueryIRTest, PreservesMixedAggregationProjectionOrder) {
   ASSERT_TRUE(statement);
 
   std::unique_ptr<ir::QueryIR> query_ir = ir::CreateQueryIR(*statement);
-  const ir::AggregatingQueryProjection &projection =
-      query_ir->RequireSingle().horizon.RequireAggregatingProjection();
+  const ir::SingleQueryIR &aggregation_query = query_ir->RequireSingle();
+  const ir::AggregatingQueryProjection &aggregation =
+      aggregation_query.horizon.RequireAggregatingProjection();
 
+  ASSERT_EQ(aggregation.items.size(), 2U);
+  EXPECT_EQ(aggregation.items[0].alias, "age");
+  EXPECT_EQ(aggregation.items[1].alias, "__agg_0");
+  ASSERT_EQ(aggregation.grouping_items.size(), 1U);
+  EXPECT_EQ(aggregation.grouping_items[0].alias, "age");
+  ASSERT_EQ(aggregation.aggregation_items.size(), 1U);
+  EXPECT_EQ(aggregation.aggregation_items[0].alias, "__agg_0");
+
+  ASSERT_NE(aggregation_query.tail, nullptr);
+  const ir::RegularQueryProjection &projection =
+      aggregation_query.tail->horizon.RequireRegularProjection();
   ASSERT_EQ(projection.items.size(), 2U);
   EXPECT_EQ(projection.items[0].alias, "total");
   EXPECT_EQ(projection.items[1].alias, "age");
-  ASSERT_EQ(projection.grouping_items.size(), 1U);
-  EXPECT_EQ(projection.grouping_items[0].alias, "age");
-  ASSERT_EQ(projection.aggregation_items.size(), 1U);
-  EXPECT_EQ(projection.aggregation_items[0].alias, "total");
 }
 
 TEST(QueryIRTest, PreservesCountStarAggregationExpression) {
