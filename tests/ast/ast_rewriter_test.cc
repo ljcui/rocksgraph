@@ -10,10 +10,10 @@
 #include "ast/rewriters/comparison_chain_rewriter.h"
 #include "ast/rewriters/count_star_rewriter.h"
 #include "ast/rewriters/existential_subquery_rewriter.h"
-#include "ast/rewriters/order_by_alias_rewriter.h"
 #include "ast/rewriters/parenthesized_expression_rewriter.h"
 #include "ast/rewriters/pattern_predicate_normalization_rewriter.h"
 #include "ast/rewriters/pattern_predicate_rewriter.h"
+#include "ast/rewriters/projection_alias_reference_rewriter.h"
 #include "ast/rewriters/projection_alias_rewriter.h"
 #include "ast/rewriters/return_star_rewriter.h"
 #include "ast/rewriters/rewriter_pipeline.h"
@@ -158,38 +158,41 @@ TEST(ExistentialSubqueryRewriterTest, PatternToMatchQuery) {
       "MATCH (n) WHERE EXISTS { MATCH (n)-[:R]->() RETURN 1 } RETURN n");
 }
 
-TEST(OrderByAliasRewriterTest, RewritesExpressionToAlias) {
-  ExpectRewriteEqualsWith<ast::OrderByAliasRewriter>(
+TEST(ProjectionAliasReferenceRewriterTest, RewritesExpressionToAlias) {
+  ExpectRewriteEqualsWith<ast::ProjectionAliasReferenceRewriter>(
       "MATCH (n) RETURN n.age AS age ORDER BY n.age",
       "MATCH (n) RETURN n.age AS age ORDER BY age");
 }
 
-TEST(OrderByAliasRewriterTest, RewritesNestedExpressionToAlias) {
-  ExpectRewriteEqualsWith<ast::OrderByAliasRewriter>(
+TEST(ProjectionAliasReferenceRewriterTest, RewritesNestedExpressionToAlias) {
+  ExpectRewriteEqualsWith<ast::ProjectionAliasReferenceRewriter>(
       "MATCH (n) RETURN n.age AS age ORDER BY size(n.age)",
       "MATCH (n) RETURN n.age AS age ORDER BY size(age)");
 }
 
-TEST(OrderByAliasRewriterTest, RewritesVariableInsidePropertyToAlias) {
-  ExpectRewriteEqualsWith<ast::OrderByAliasRewriter>(
+TEST(ProjectionAliasReferenceRewriterTest,
+     RewritesVariableInsidePropertyToAlias) {
+  ExpectRewriteEqualsWith<ast::ProjectionAliasReferenceRewriter>(
       "MATCH (n) RETURN n AS person ORDER BY n.age",
       "MATCH (n) RETURN n AS person ORDER BY person.age");
 }
 
-TEST(OrderByAliasRewriterTest, RewritesWithWhereExpressionToAlias) {
-  ExpectRewriteEqualsWith<ast::OrderByAliasRewriter>(
+TEST(ProjectionAliasReferenceRewriterTest, RewritesWithWhereExpressionToAlias) {
+  ExpectRewriteEqualsWith<ast::ProjectionAliasReferenceRewriter>(
       "MATCH (n) WITH n.age AS age WHERE n.age > 30 RETURN age",
       "MATCH (n) WITH n.age AS age WHERE age > 30 RETURN age");
 }
 
-TEST(OrderByAliasRewriterTest, RewritesNestedWithWhereExpressionToAlias) {
-  ExpectRewriteEqualsWith<ast::OrderByAliasRewriter>(
+TEST(ProjectionAliasReferenceRewriterTest,
+     RewritesNestedWithWhereExpressionToAlias) {
+  ExpectRewriteEqualsWith<ast::ProjectionAliasReferenceRewriter>(
       "MATCH (n) WITH n.name AS name WHERE size(n.name) > 3 RETURN name",
       "MATCH (n) WITH n.name AS name WHERE size(name) > 3 RETURN name");
 }
 
-TEST(OrderByAliasRewriterTest, DoesNotRewriteInsideScopedWithWhereExpression) {
-  ExpectRewriteEqualsWith<ast::OrderByAliasRewriter>(
+TEST(ProjectionAliasReferenceRewriterTest,
+     DoesNotRewriteInsideScopedWithWhereExpression) {
+  ExpectRewriteEqualsWith<ast::ProjectionAliasReferenceRewriter>(
       "WITH true AS value WHERE ANY(value IN [true] WHERE true) RETURN value",
       "WITH true AS value WHERE ANY(value IN [true] WHERE true) RETURN value");
 }

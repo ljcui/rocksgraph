@@ -4,10 +4,10 @@
 #include "anonymous_pattern_name_rewriter.h"
 #include "comparison_chain_rewriter.h"
 #include "existential_subquery_rewriter.h"
-#include "order_by_alias_rewriter.h"
 #include "parenthesized_expression_rewriter.h"
 #include "pattern_predicate_normalization_rewriter.h"
 #include "pattern_predicate_rewriter.h"
+#include "projection_alias_reference_rewriter.h"
 #include "projection_alias_rewriter.h"
 #include "return_star_rewriter.h"
 #include "uniqueness_predicates_rewriter.h"
@@ -22,7 +22,7 @@ std::vector<std::unique_ptr<ASTRewriter>> MakeDefaultRewriters() {
   rewriters.emplace_back(std::make_unique<PatternPredicateRewriter>());
   rewriters.emplace_back(std::make_unique<ExistentialSubqueryRewriter>());
   rewriters.emplace_back(std::make_unique<ProjectionAliasRewriter>());
-  rewriters.emplace_back(std::make_unique<OrderByAliasRewriter>());
+  rewriters.emplace_back(std::make_unique<ProjectionAliasReferenceRewriter>());
   // Projection expansion should run after expression normalization.
   rewriters.emplace_back(std::make_unique<ReturnStarRewriter>());
   // Aggregation isolation needs explicit grouping items from star expansion.

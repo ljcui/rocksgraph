@@ -25,7 +25,7 @@ add_library(
   rewriters/comparison_chain_rewriter.cc
   rewriters/count_star_rewriter.cc
   rewriters/existential_subquery_rewriter.cc
-  rewriters/order_by_alias_rewriter.cc
+  rewriters/projection_alias_reference_rewriter.cc
   rewriters/parenthesized_expression_rewriter.cc
   rewriters/pattern_predicate_normalization_rewriter.cc
   rewriters/pattern_predicate_rewriter.cc

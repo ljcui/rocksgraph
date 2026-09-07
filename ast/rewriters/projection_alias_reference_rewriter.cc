@@ -1,4 +1,4 @@
-#include "order_by_alias_rewriter.h"
+#include "projection_alias_reference_rewriter.h"
 
 #include <string>
 #include <utility>
@@ -81,7 +81,7 @@ class AliasExpressionRewriter final : public ASTRewriter {
 
 }  // namespace
 
-void OrderByAliasRewriter::Visit(ProjectionBody &node) {
+void ProjectionAliasReferenceRewriter::Visit(ProjectionBody &node) {
   ASTRewriter::Visit(node);
   if (node.items.empty() || node.order_by.empty()) {
     return;
@@ -101,7 +101,7 @@ void OrderByAliasRewriter::Visit(ProjectionBody &node) {
   }
 }
 
-void OrderByAliasRewriter::Visit(With &node) {
+void ProjectionAliasReferenceRewriter::Visit(With &node) {
   ASTRewriter::Visit(node);
   if (!node.body || !node.where) {
     return;

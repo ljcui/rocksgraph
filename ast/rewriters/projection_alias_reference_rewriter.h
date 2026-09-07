@@ -4,7 +4,7 @@
 
 namespace ast {
 
-class OrderByAliasRewriter : public ASTRewriter {
+class ProjectionAliasReferenceRewriter : public ASTRewriter {
  protected:
   void Visit(ProjectionBody &node) override;
   void Visit(With &node) override;
