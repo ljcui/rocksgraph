@@ -14,12 +14,24 @@ struct AliasEntry {
   const Expression *expression = nullptr;
 };
 
+std::vector<AliasEntry> ProjectionAliases(const ProjectionBody &body) {
+  std::vector<AliasEntry> aliases;
+  aliases.reserve(body.items.size());
+  for (const auto &item : body.items) {
+    if (!item || item->alias.empty() || !item->expression) {
+      continue;
+    }
+    aliases.push_back(AliasEntry{&item->alias, item->expression.get()});
+  }
+  return aliases;
+}
+
 class AliasExpressionRewriter final : public ASTRewriter {
  public:
   explicit AliasExpressionRewriter(const std::vector<AliasEntry> &aliases)
       : aliases_(aliases) {}
 
-  void RewriteOrderExpression(std::unique_ptr<Expression> &expr) {
+  void RewriteAliasReferences(std::unique_ptr<Expression> &expr) {
     RewriteExpression(expr);
   }
 
@@ -39,6 +51,16 @@ class AliasExpressionRewriter final : public ASTRewriter {
     }
     ASTRewriter::RewriteExpression(expr);
   }
+
+  // Variables introduced by these expressions shadow variables outside the
+  // expression, so projection aliases must not be substituted inside them.
+  void Visit(ListComprehension &node) override { (void)node; }
+  void Visit(PatternComprehension &node) override { (void)node; }
+  void Visit(AllQuantifier &node) override { (void)node; }
+  void Visit(AnyQuantifier &node) override { (void)node; }
+  void Visit(NoneQuantifier &node) override { (void)node; }
+  void Visit(SingleQuantifier &node) override { (void)node; }
+  void Visit(ExistentialSubquery &node) override { (void)node; }
 
  private:
   [[nodiscard]] bool IsAliasVariable(const Expression &expression) const {
@@ -65,14 +87,7 @@ void OrderByAliasRewriter::Visit(ProjectionBody &node) {
     return;
   }
 
-  std::vector<AliasEntry> aliases;
-  aliases.reserve(node.items.size());
-  for (const auto &item : node.items) {
-    if (!item || item->alias.empty() || !item->expression) {
-      continue;
-    }
-    aliases.push_back(AliasEntry{&item->alias, item->expression.get()});
-  }
+  const std::vector<AliasEntry> aliases = ProjectionAliases(node);
   if (aliases.empty()) {
     return;
   }
@@ -82,8 +97,22 @@ void OrderByAliasRewriter::Visit(ProjectionBody &node) {
     if (!sort_item || !sort_item->expression) {
       continue;
     }
-    alias_rewriter.RewriteOrderExpression(sort_item->expression);
+    alias_rewriter.RewriteAliasReferences(sort_item->expression);
   }
+}
+
+void OrderByAliasRewriter::Visit(With &node) {
+  ASTRewriter::Visit(node);
+  if (!node.body || !node.where) {
+    return;
+  }
+
+  const std::vector<AliasEntry> aliases = ProjectionAliases(*node.body);
+  if (aliases.empty()) {
+    return;
+  }
+
+  AliasExpressionRewriter(aliases).RewriteAliasReferences(node.where);
 }
 
 }  // namespace ast

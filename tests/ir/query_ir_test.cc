@@ -1278,6 +1278,23 @@ TEST(QueryIRTest, BuildsProjectionSelectionsForWithWhere) {
   EXPECT_FALSE(Contains(predicate.dependencies, "n"));
 }
 
+TEST(QueryIRTest, RewritesWithWhereProjectionExpressionToAlias) {
+  auto statement =
+      ParseOrFail("MATCH (n) WITH n.age AS age WHERE n.age > 30 RETURN age");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::QueryIR> query_ir = ir::CreateQueryIR(*statement);
+  const ir::SingleQueryIR &first = query_ir->RequireSingle();
+  const ir::RegularQueryProjection &projection =
+      first.horizon.RequireRegularProjection();
+  ASSERT_EQ(projection.selections.size(), 1U);
+
+  const auto &predicate = projection.selections.predicates[0];
+  EXPECT_EQ(ast::ExpressionToString(*predicate.expression), "age > 30");
+  EXPECT_TRUE(Contains(predicate.dependencies, "age"));
+  EXPECT_FALSE(Contains(predicate.dependencies, "n"));
+}
+
 TEST(QueryIRTest, KeepsWithHorizonWhenProjectionDropsVariables) {
   auto statement =
       ParseOrFail("MATCH (a), (b) WITH a MATCH (a)-->(c) RETURN c");

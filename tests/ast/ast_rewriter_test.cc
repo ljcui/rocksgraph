@@ -176,6 +176,24 @@ TEST(OrderByAliasRewriterTest, RewritesVariableInsidePropertyToAlias) {
       "MATCH (n) RETURN n AS person ORDER BY person.age");
 }
 
+TEST(OrderByAliasRewriterTest, RewritesWithWhereExpressionToAlias) {
+  ExpectRewriteEqualsWith<ast::OrderByAliasRewriter>(
+      "MATCH (n) WITH n.age AS age WHERE n.age > 30 RETURN age",
+      "MATCH (n) WITH n.age AS age WHERE age > 30 RETURN age");
+}
+
+TEST(OrderByAliasRewriterTest, RewritesNestedWithWhereExpressionToAlias) {
+  ExpectRewriteEqualsWith<ast::OrderByAliasRewriter>(
+      "MATCH (n) WITH n.name AS name WHERE size(n.name) > 3 RETURN name",
+      "MATCH (n) WITH n.name AS name WHERE size(name) > 3 RETURN name");
+}
+
+TEST(OrderByAliasRewriterTest, DoesNotRewriteInsideScopedWithWhereExpression) {
+  ExpectRewriteEqualsWith<ast::OrderByAliasRewriter>(
+      "WITH true AS value WHERE ANY(value IN [true] WHERE true) RETURN value",
+      "WITH true AS value WHERE ANY(value IN [true] WHERE true) RETURN value");
+}
+
 TEST(CountStarRewriterTest, CountStarToFunction) {
   ExpectRewriteEqualsWith<ast::CountStarRewriter>("RETURN count(*)",
                                                   "RETURN count(1)");

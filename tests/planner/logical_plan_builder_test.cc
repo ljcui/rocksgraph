@@ -1057,17 +1057,15 @@ TEST(LogicalPlanBuilderTest, BuildsProjectionSelectionForWithWhere) {
 )");
 }
 
-TEST(LogicalPlanBuilderTest,
-     PreservesIncomingVariablesForMixedWithWhereDependencies) {
+TEST(LogicalPlanBuilderTest, RewritesMixedWithWhereReferencesToAlias) {
   ExpectLogicalPlanText(
       "MATCH (a) WITH a.name AS name "
       "WHERE name = 'B' OR a.name = 'C' RETURN *",
       R"(ProduceResults [name]
   Projection [name]
-    Projection [name]
-      Filter [name = 'B' OR a.name = 'C']
-        Projection [name, a]
-          AllNodeScan [a]
+    Filter [name = 'B' OR name = 'C']
+      Projection [name]
+        AllNodeScan [a]
 )");
 }
 
