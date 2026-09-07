@@ -8,14 +8,32 @@
 #include <unordered_set>
 #include <utility>
 
+#include "ast/ast_clone.h"
 #include "ast/ast_equal.h"
 #include "ast/ast_node.h"
 #include "ast/builtin_function.h"
 #include "ast/builtin_procedure.h"
+#include "ast/expression_dependency.h"
 #include "common/exception.h"
 #include "planner/order_property.h"
 
 namespace rg {
+
+PhysicalExpression::PhysicalExpression(
+    std::unique_ptr<ast::Expression> expression,
+    std::vector<PhysicalPrecomputedExpression> precomputed_expressions,
+    bool requires_input_row)
+    : expression_(std::move(expression)),
+      precomputed_expressions_(std::move(precomputed_expressions)),
+      requires_input_row_(requires_input_row) {
+  precomputed_expression_views_.reserve(precomputed_expressions_.size());
+  for (const auto &precomputed : precomputed_expressions_) {
+    precomputed_expression_views_.push_back(
+        {.expression = precomputed.expression.get(),
+         .variable = precomputed.variable});
+  }
+}
+
 namespace {
 
 using SemanticType = ast::SemanticVariableType;
@@ -490,6 +508,27 @@ std::vector<SlotMapping> NamedMappings(
   return mappings;
 }
 
+PhysicalExpression CopyPhysicalExpression(
+    const ast::Expression *expression,
+    const std::vector<ir::LogicalPrecomputedExpression> &precomputed) {
+  CHECK(expression != nullptr, common::InvalidArgumentError,
+        "physical expression is null");
+  std::vector<PhysicalPrecomputedExpression> copied_precomputed;
+  copied_precomputed.reserve(precomputed.size());
+  for (const auto &entry : precomputed) {
+    CHECK(entry.expression != nullptr, common::InvalidArgumentError,
+          "physical precomputed expression is null");
+    copied_precomputed.push_back(
+        {.expression = ast::CloneExpression(*entry.expression),
+         .variable = entry.variable});
+  }
+  const bool requires_input_row =
+      !ast::CollectExpressionDependencies(*expression).empty() ||
+      !precomputed.empty();
+  return PhysicalExpression(ast::CloneExpression(*expression),
+                            std::move(copied_precomputed), requires_input_row);
+}
+
 class PhysicalPlanBuilder final {
  public:
   PhysicalPlan Build(const ir::LogicalPlan &plan) {
@@ -498,100 +537,117 @@ class PhysicalPlanBuilder final {
   }
 
  private:
-  PhysicalExecutionType SelectExecutionKind(const ir::LogicalPlan &plan,
-                                            const PhysicalPlanNode &node) {
-    if (plan.ChildCount() == 0) {
-      switch (plan.Type()) {
-        case ir::LogicalPlanNodeType::kArgument:
-        case ir::LogicalPlanNodeType::kAllNodeScan:
-        case ir::LogicalPlanNodeType::kNodeByLabelScan:
-        case ir::LogicalPlanNodeType::kNodeIndexSeek:
-        case ir::LogicalPlanNodeType::kNodeIndexRangeSeek:
-        case ir::LogicalPlanNodeType::kRelationshipTypeScan:
-        case ir::LogicalPlanNodeType::kRelationshipIndexSeek:
-        case ir::LogicalPlanNodeType::kRelationshipIndexRangeSeek:
-        case ir::LogicalPlanNodeType::kNodeByIdSeek:
-        case ir::LogicalPlanNodeType::kRelationshipByIdSeek:
-          return PhysicalExecutionType::kLeaf;
-        default:
-          THROW(common::InternalError,
-                "unsupported physical leaf kind: " + std::string(plan.Name()));
-      }
-    }
+  PhysicalOperatorKind SelectOperatorKind(const ir::LogicalPlan &plan) {
     switch (plan.Type()) {
-      case ir::LogicalPlanNodeType::kFilter:
-      case ir::LogicalPlanNodeType::kProjection:
-      case ir::LogicalPlanNodeType::kSkip:
-      case ir::LogicalPlanNodeType::kProduceResults:
-      case ir::LogicalPlanNodeType::kAssertIsNode:
+      case ir::LogicalPlanNodeType::kArgument:
+        return PhysicalOperatorKind::kArgument;
+      case ir::LogicalPlanNodeType::kAllNodeScan:
+        return PhysicalOperatorKind::kAllNodeScan;
+      case ir::LogicalPlanNodeType::kNodeByLabelScan:
+        return PhysicalOperatorKind::kNodeByLabelScan;
+      case ir::LogicalPlanNodeType::kNodeIndexSeek:
+        return PhysicalOperatorKind::kNodeIndexSeek;
+      case ir::LogicalPlanNodeType::kNodeIndexRangeSeek:
+        return PhysicalOperatorKind::kNodeIndexRangeSeek;
+      case ir::LogicalPlanNodeType::kRelationshipTypeScan:
+        return PhysicalOperatorKind::kRelationshipTypeScan;
+      case ir::LogicalPlanNodeType::kRelationshipIndexSeek:
+        return PhysicalOperatorKind::kRelationshipIndexSeek;
+      case ir::LogicalPlanNodeType::kRelationshipIndexRangeSeek:
+        return PhysicalOperatorKind::kRelationshipIndexRangeSeek;
       case ir::LogicalPlanNodeType::kExpand:
+        return PhysicalOperatorKind::kExpand;
       case ir::LogicalPlanNodeType::kExpandInto:
-      case ir::LogicalPlanNodeType::kPathBuild:
-      case ir::LogicalPlanNodeType::kProcedureCall:
-      case ir::LogicalPlanNodeType::kUnwind:
-      case ir::LogicalPlanNodeType::kSetProperty:
-      case ir::LogicalPlanNodeType::kSetProperties:
-      case ir::LogicalPlanNodeType::kSetLabels:
-      case ir::LogicalPlanNodeType::kRemoveProperty:
-      case ir::LogicalPlanNodeType::kRemoveLabels:
-      case ir::LogicalPlanNodeType::kCreateNode:
-      case ir::LogicalPlanNodeType::kCreateRelationship:
-        return PhysicalExecutionType::kStreamingUnary;
-      case ir::LogicalPlanNodeType::kLimit:
-        return PlanContainsWrites(plan.Child(0))
-                   ? PhysicalExecutionType::kBlockingUnary
-                   : PhysicalExecutionType::kStreamingUnary;
-      case ir::LogicalPlanNodeType::kWriteBarrier:
-      case ir::LogicalPlanNodeType::kDelete:
-      case ir::LogicalPlanNodeType::kDetachDelete:
-        return PhysicalExecutionType::kBlockingUnary;
-      case ir::LogicalPlanNodeType::kSort:
-        return node.type == PhysicalOperatorType::kPartialSort
-                   ? PhysicalExecutionType::kPartialSort
-                   : PhysicalExecutionType::kBlockingUnary;
-      case ir::LogicalPlanNodeType::kTopN:
-        return node.type == PhysicalOperatorType::kPartialTopN
-                   ? PhysicalExecutionType::kPartialTopN
-                   : PhysicalExecutionType::kTopN;
-      case ir::LogicalPlanNodeType::kDistinct:
-        return node.type == PhysicalOperatorType::kOrderedDistinct
-                   ? PhysicalExecutionType::kOrderedDistinct
-                   : PhysicalExecutionType::kBlockingUnary;
-      case ir::LogicalPlanNodeType::kAggregation:
-        return node.type == PhysicalOperatorType::kOrderedAggregation
-                   ? PhysicalExecutionType::kOrderedAggregation
-                   : PhysicalExecutionType::kBlockingUnary;
+        return PhysicalOperatorKind::kExpandInto;
       case ir::LogicalPlanNodeType::kVarExpand:
-        return PhysicalExecutionType::kVarExpand;
-      case ir::LogicalPlanNodeType::kPruningVarExpand:
-        return PhysicalExecutionType::kPruningVarExpand;
-      case ir::LogicalPlanNodeType::kProjectEndpoints:
-      case ir::LogicalPlanNodeType::kOptionalExpand:
-        return PhysicalExecutionType::kPattern;
-      case ir::LogicalPlanNodeType::kApply:
-      case ir::LogicalPlanNodeType::kSemiApply:
-      case ir::LogicalPlanNodeType::kAntiSemiApply:
-      case ir::LogicalPlanNodeType::kLetSemiApply:
-      case ir::LogicalPlanNodeType::kSelectOrSemiApply:
-      case ir::LogicalPlanNodeType::kRollUpApply:
-      case ir::LogicalPlanNodeType::kOptionalApply:
-        return PhysicalExecutionType::kApply;
-      case ir::LogicalPlanNodeType::kMerge:
-        return PhysicalExecutionType::kMerge;
-      case ir::LogicalPlanNodeType::kUnion:
-        return PhysicalExecutionType::kUnion;
-      case ir::LogicalPlanNodeType::kValueHashJoin:
-        return PhysicalExecutionType::kValueHashJoin;
-      case ir::LogicalPlanNodeType::kLeftOuterHashJoin:
-        return PhysicalExecutionType::kLeftOuterHashJoin;
+        return PhysicalOperatorKind::kVarExpand;
+      case ir::LogicalPlanNodeType::kPathBuild:
+        return PhysicalOperatorKind::kPathBuild;
+      case ir::LogicalPlanNodeType::kFilter:
+        return PhysicalOperatorKind::kFilter;
+      case ir::LogicalPlanNodeType::kProjection:
+        return PhysicalOperatorKind::kProjection;
+      case ir::LogicalPlanNodeType::kDistinct:
+        return PhysicalOperatorKind::kHashDistinct;
+      case ir::LogicalPlanNodeType::kAggregation:
+        return PhysicalOperatorKind::kHashAggregation;
+      case ir::LogicalPlanNodeType::kSort:
+        return PhysicalOperatorKind::kFullSort;
+      case ir::LogicalPlanNodeType::kSkip:
+        return PhysicalOperatorKind::kSkip;
+      case ir::LogicalPlanNodeType::kLimit:
+        return PhysicalOperatorKind::kLimit;
+      case ir::LogicalPlanNodeType::kTopN:
+        return PhysicalOperatorKind::kTopN;
+      case ir::LogicalPlanNodeType::kProduceResults:
+        return PhysicalOperatorKind::kProduceResults;
       case ir::LogicalPlanNodeType::kCartesianProduct:
+        return PhysicalOperatorKind::kCartesianProduct;
       case ir::LogicalPlanNodeType::kNodeHashJoin:
+        return PhysicalOperatorKind::kNodeHashJoin;
+      case ir::LogicalPlanNodeType::kValueHashJoin:
+        return PhysicalOperatorKind::kValueHashJoin;
       case ir::LogicalPlanNodeType::kPredicateJoin:
-        return PhysicalExecutionType::kBlockingBinary;
-      default:
-        THROW(common::InternalError, "unsupported physical execution kind: " +
-                                         std::string(plan.Name()));
+        return PhysicalOperatorKind::kPredicateJoin;
+      case ir::LogicalPlanNodeType::kApply:
+        return PhysicalOperatorKind::kApply;
+      case ir::LogicalPlanNodeType::kSemiApply:
+        return PhysicalOperatorKind::kSemiApply;
+      case ir::LogicalPlanNodeType::kAntiSemiApply:
+        return PhysicalOperatorKind::kAntiSemiApply;
+      case ir::LogicalPlanNodeType::kLetSemiApply:
+        return PhysicalOperatorKind::kLetSemiApply;
+      case ir::LogicalPlanNodeType::kRollUpApply:
+        return PhysicalOperatorKind::kRollUpApply;
+      case ir::LogicalPlanNodeType::kOptionalApply:
+        return PhysicalOperatorKind::kOptionalApply;
+      case ir::LogicalPlanNodeType::kAssertIsNode:
+        return PhysicalOperatorKind::kAssertIsNode;
+      case ir::LogicalPlanNodeType::kWriteBarrier:
+        return PhysicalOperatorKind::kWriteBarrier;
+      case ir::LogicalPlanNodeType::kCreateNode:
+        return PhysicalOperatorKind::kCreateNode;
+      case ir::LogicalPlanNodeType::kCreateRelationship:
+        return PhysicalOperatorKind::kCreateRelationship;
+      case ir::LogicalPlanNodeType::kMerge:
+        return PhysicalOperatorKind::kMerge;
+      case ir::LogicalPlanNodeType::kSetProperty:
+        return PhysicalOperatorKind::kSetProperty;
+      case ir::LogicalPlanNodeType::kSetProperties:
+        return PhysicalOperatorKind::kSetProperties;
+      case ir::LogicalPlanNodeType::kSetLabels:
+        return PhysicalOperatorKind::kSetLabels;
+      case ir::LogicalPlanNodeType::kRemoveProperty:
+        return PhysicalOperatorKind::kRemoveProperty;
+      case ir::LogicalPlanNodeType::kRemoveLabels:
+        return PhysicalOperatorKind::kRemoveLabels;
+      case ir::LogicalPlanNodeType::kDelete:
+        return PhysicalOperatorKind::kDelete;
+      case ir::LogicalPlanNodeType::kDetachDelete:
+        return PhysicalOperatorKind::kDetachDelete;
+      case ir::LogicalPlanNodeType::kUnwind:
+        return PhysicalOperatorKind::kUnwind;
+      case ir::LogicalPlanNodeType::kProcedureCall:
+        return PhysicalOperatorKind::kProcedureCall;
+      case ir::LogicalPlanNodeType::kNodeByIdSeek:
+        return PhysicalOperatorKind::kNodeByIdSeek;
+      case ir::LogicalPlanNodeType::kRelationshipByIdSeek:
+        return PhysicalOperatorKind::kRelationshipByIdSeek;
+      case ir::LogicalPlanNodeType::kProjectEndpoints:
+        return PhysicalOperatorKind::kProjectEndpoints;
+      case ir::LogicalPlanNodeType::kOptionalExpand:
+        return PhysicalOperatorKind::kOptionalExpand;
+      case ir::LogicalPlanNodeType::kLeftOuterHashJoin:
+        return PhysicalOperatorKind::kLeftOuterHashJoin;
+      case ir::LogicalPlanNodeType::kSelectOrSemiApply:
+        return PhysicalOperatorKind::kSelectOrSemiApply;
+      case ir::LogicalPlanNodeType::kPruningVarExpand:
+        return PhysicalOperatorKind::kPruningVarExpand;
+      case ir::LogicalPlanNodeType::kUnion:
+        return PhysicalOperatorKind::kUnion;
     }
+    THROW(common::InternalError,
+          "unsupported physical operator: " + std::string(plan.Name()));
   }
 
   std::unique_ptr<PhysicalPlanNode> BuildNode(
@@ -599,6 +655,10 @@ class PhysicalPlanBuilder final {
     auto node = std::make_unique<PhysicalPlanNode>();
     node->id = next_id_++;
     node->logical = &plan;
+    node->logical_name = std::string(plan.Name());
+    node->details = plan.Details();
+    node->estimated_rows = plan.EstimatedRows();
+    node->cost = plan.Cost();
     node->argument_slots = std::move(argument_slots);
 
     if (plan.ChildCount() == 1) {
@@ -654,6 +714,8 @@ class PhysicalPlanBuilder final {
             ComputeSlotMappings(*child->output_slots, *node->output_slots));
       }
     }
+    node->argument_mapping =
+        ComputeSlotMappings(*node->argument_slots, *node->output_slots);
     if (plan.Type() == ir::LogicalPlanNodeType::kValueHashJoin) {
       const auto &left_rows = plan.Child(0).EstimatedRows();
       const auto &right_rows = plan.Child(1).EstimatedRows();
@@ -663,6 +725,7 @@ class PhysicalPlanBuilder final {
       }
     }
     SelectOperator(plan, node.get());
+    BuildOperatorData(plan, node.get());
     return node;
   }
 
@@ -711,12 +774,9 @@ class PhysicalPlanBuilder final {
       const auto &sort = static_cast<const ir::SortPlan &>(plan);
       node->partial_sort_prefix =
           CommonOrderingPrefix(node->children[0]->provided_order, sort.Items());
-      node->type = node->partial_sort_prefix == 0
-                       ? PhysicalOperatorType::kFullSort
-                       : PhysicalOperatorType::kPartialSort;
-      node->execution_kind = node->type == PhysicalOperatorType::kPartialSort
-                                 ? PhysicalExecutionType::kPartialSort
-                                 : PhysicalExecutionType::kBlockingUnary;
+      node->kind = node->partial_sort_prefix == 0
+                       ? PhysicalOperatorKind::kFullSort
+                       : PhysicalOperatorKind::kPartialSort;
       node->provided_order = sort.Items();
       return;
     }
@@ -728,12 +788,9 @@ class PhysicalPlanBuilder final {
       node->top_n = &top_n;
       node->partial_top_n_prefix = CommonOrderingPrefix(
           node->children[0]->provided_order, top_n.Items());
-      node->type = node->partial_top_n_prefix == 0
-                       ? PhysicalOperatorType::kTopN
-                       : PhysicalOperatorType::kPartialTopN;
-      node->execution_kind = node->type == PhysicalOperatorType::kPartialTopN
-                                 ? PhysicalExecutionType::kPartialTopN
-                                 : PhysicalExecutionType::kTopN;
+      node->kind = node->partial_top_n_prefix == 0
+                       ? PhysicalOperatorKind::kTopN
+                       : PhysicalOperatorKind::kPartialTopN;
       node->provided_order = top_n.Items();
       return;
     }
@@ -744,12 +801,9 @@ class PhysicalPlanBuilder final {
       const auto &distinct = static_cast<const ir::DistinctPlan &>(plan);
       const auto output_order = OrderedGroupingOutput(
           node->children[0]->provided_order, distinct.GroupingItems());
-      node->type = output_order.has_value()
-                       ? PhysicalOperatorType::kOrderedDistinct
-                       : PhysicalOperatorType::kHashDistinct;
-      node->execution_kind = output_order.has_value()
-                                 ? PhysicalExecutionType::kOrderedDistinct
-                                 : PhysicalExecutionType::kBlockingUnary;
+      node->kind = output_order.has_value()
+                       ? PhysicalOperatorKind::kOrderedDistinct
+                       : PhysicalOperatorKind::kHashDistinct;
       node->provided_order =
           output_order.value_or(std::vector<ir::LogicalSortItem>{});
       return;
@@ -761,17 +815,67 @@ class PhysicalPlanBuilder final {
       const auto &aggregation = static_cast<const ir::AggregationPlan &>(plan);
       const auto output_order = OrderedGroupingOutput(
           node->children[0]->provided_order, aggregation.GroupingItems());
-      node->type = output_order.has_value()
-                       ? PhysicalOperatorType::kOrderedAggregation
-                       : PhysicalOperatorType::kHashAggregation;
-      node->execution_kind = output_order.has_value()
-                                 ? PhysicalExecutionType::kOrderedAggregation
-                                 : PhysicalExecutionType::kBlockingUnary;
+      node->kind = output_order.has_value()
+                       ? PhysicalOperatorKind::kOrderedAggregation
+                       : PhysicalOperatorKind::kHashAggregation;
       node->provided_order =
           output_order.value_or(std::vector<ir::LogicalSortItem>{});
       return;
     }
-    node->execution_kind = SelectExecutionKind(plan, *node);
+    node->kind = SelectOperatorKind(plan);
+  }
+
+  void BuildOperatorData(const ir::LogicalPlan &plan, PhysicalPlanNode *node) {
+    CHECK(node != nullptr, common::InternalError, "physical plan node is null");
+    switch (node->kind) {
+      case PhysicalOperatorKind::kAllNodeScan: {
+        const auto &scan = static_cast<const ir::AllNodeScanPlan &>(plan);
+        node->data = AllNodeScanOp{.variable = scan.Variable()};
+        return;
+      }
+      case PhysicalOperatorKind::kFilter: {
+        const auto &filter = static_cast<const ir::FilterPlan &>(plan);
+        node->data =
+            FilterOp{.predicate = CopyPhysicalExpression(
+                         filter.Predicate(), filter.PrecomputedExpressions())};
+        return;
+      }
+      case PhysicalOperatorKind::kProjection: {
+        const auto &projection = static_cast<const ir::ProjectionPlan &>(plan);
+        ProjectionOp data;
+        data.items.reserve(projection.Items().size());
+        for (const auto &item : projection.Items()) {
+          PhysicalProjectionItem physical_item{.alias = item.alias,
+                                               .passthrough = item.passthrough};
+          if (!item.passthrough) {
+            physical_item.expression = CopyPhysicalExpression(
+                item.expression, item.precomputed_expressions);
+          }
+          data.items.push_back(std::move(physical_item));
+        }
+        node->data = std::move(data);
+        return;
+      }
+      case PhysicalOperatorKind::kSkip: {
+        const auto &skip = static_cast<const ir::SkipPlan &>(plan);
+        node->data = SkipOp{.count = CopyPhysicalExpression(
+                                skip.Skip(), skip.PrecomputedExpressions())};
+        return;
+      }
+      case PhysicalOperatorKind::kLimit: {
+        const auto &limit = static_cast<const ir::LimitPlan &>(plan);
+        node->data =
+            LimitOp{.count = CopyPhysicalExpression(
+                        limit.Limit(), limit.PrecomputedExpressions()),
+                    .exhaust_child = PlanContainsWrites(plan.Child(0))};
+        return;
+      }
+      case PhysicalOperatorKind::kProduceResults:
+        node->data = ProduceResultsOp{.columns = plan.OutputColumns()};
+        return;
+      default:
+        return;
+    }
   }
 
   void BuildUnionLayout(const ir::UnionPlan &plan, PhysicalPlanNode *node) {
@@ -803,70 +907,124 @@ class PhysicalPlanBuilder final {
 
 }  // namespace
 
-std::string_view ToString(PhysicalOperatorType type) {
-  switch (type) {
-    case PhysicalOperatorType::kLogical:
-      return "Logical";
-    case PhysicalOperatorType::kFullSort:
-      return "FullSort";
-    case PhysicalOperatorType::kPartialSort:
-      return "PartialSort";
-    case PhysicalOperatorType::kHashDistinct:
-      return "HashDistinct";
-    case PhysicalOperatorType::kOrderedDistinct:
-      return "OrderedDistinct";
-    case PhysicalOperatorType::kHashAggregation:
-      return "HashAggregation";
-    case PhysicalOperatorType::kOrderedAggregation:
-      return "OrderedAggregation";
-    case PhysicalOperatorType::kTopN:
-      return "TopN";
-    case PhysicalOperatorType::kPartialTopN:
-      return "PartialTopN";
-  }
-  THROW(common::InternalError, "unknown physical operator type");
-}
-
-std::string_view ToString(PhysicalExecutionType type) {
-  switch (type) {
-    case PhysicalExecutionType::kUnknown:
-      return "Unknown";
-    case PhysicalExecutionType::kLeaf:
-      return "Leaf";
-    case PhysicalExecutionType::kStreamingUnary:
-      return "StreamingUnary";
-    case PhysicalExecutionType::kBlockingUnary:
-      return "BlockingUnary";
-    case PhysicalExecutionType::kPattern:
-      return "Pattern";
-    case PhysicalExecutionType::kVarExpand:
+std::string_view ToString(PhysicalOperatorKind kind) {
+  switch (kind) {
+    case PhysicalOperatorKind::kArgument:
+      return "Argument";
+    case PhysicalOperatorKind::kAllNodeScan:
+      return "AllNodeScan";
+    case PhysicalOperatorKind::kNodeByLabelScan:
+      return "NodeByLabelScan";
+    case PhysicalOperatorKind::kNodeIndexSeek:
+      return "NodeIndexSeek";
+    case PhysicalOperatorKind::kNodeIndexRangeSeek:
+      return "NodeIndexRangeSeek";
+    case PhysicalOperatorKind::kRelationshipTypeScan:
+      return "RelationshipTypeScan";
+    case PhysicalOperatorKind::kRelationshipIndexSeek:
+      return "RelationshipIndexSeek";
+    case PhysicalOperatorKind::kRelationshipIndexRangeSeek:
+      return "RelationshipIndexRangeSeek";
+    case PhysicalOperatorKind::kExpand:
+      return "Expand";
+    case PhysicalOperatorKind::kExpandInto:
+      return "ExpandInto";
+    case PhysicalOperatorKind::kVarExpand:
       return "VarExpand";
-    case PhysicalExecutionType::kPruningVarExpand:
-      return "PruningVarExpand";
-    case PhysicalExecutionType::kOrderedDistinct:
+    case PhysicalOperatorKind::kPathBuild:
+      return "PathBuild";
+    case PhysicalOperatorKind::kFilter:
+      return "Filter";
+    case PhysicalOperatorKind::kProjection:
+      return "Projection";
+    case PhysicalOperatorKind::kHashDistinct:
+      return "HashDistinct";
+    case PhysicalOperatorKind::kOrderedDistinct:
       return "OrderedDistinct";
-    case PhysicalExecutionType::kOrderedAggregation:
+    case PhysicalOperatorKind::kHashAggregation:
+      return "HashAggregation";
+    case PhysicalOperatorKind::kOrderedAggregation:
       return "OrderedAggregation";
-    case PhysicalExecutionType::kPartialSort:
+    case PhysicalOperatorKind::kFullSort:
+      return "FullSort";
+    case PhysicalOperatorKind::kPartialSort:
       return "PartialSort";
-    case PhysicalExecutionType::kTopN:
+    case PhysicalOperatorKind::kSkip:
+      return "Skip";
+    case PhysicalOperatorKind::kLimit:
+      return "Limit";
+    case PhysicalOperatorKind::kTopN:
       return "TopN";
-    case PhysicalExecutionType::kPartialTopN:
+    case PhysicalOperatorKind::kPartialTopN:
       return "PartialTopN";
-    case PhysicalExecutionType::kLeftOuterHashJoin:
-      return "LeftOuterHashJoin";
-    case PhysicalExecutionType::kBlockingBinary:
-      return "BlockingBinary";
-    case PhysicalExecutionType::kValueHashJoin:
+    case PhysicalOperatorKind::kProduceResults:
+      return "ProduceResults";
+    case PhysicalOperatorKind::kCartesianProduct:
+      return "CartesianProduct";
+    case PhysicalOperatorKind::kNodeHashJoin:
+      return "NodeHashJoin";
+    case PhysicalOperatorKind::kValueHashJoin:
       return "ValueHashJoin";
-    case PhysicalExecutionType::kUnion:
-      return "Union";
-    case PhysicalExecutionType::kApply:
+    case PhysicalOperatorKind::kPredicateJoin:
+      return "PredicateJoin";
+    case PhysicalOperatorKind::kApply:
       return "Apply";
-    case PhysicalExecutionType::kMerge:
+    case PhysicalOperatorKind::kSemiApply:
+      return "SemiApply";
+    case PhysicalOperatorKind::kAntiSemiApply:
+      return "AntiSemiApply";
+    case PhysicalOperatorKind::kLetSemiApply:
+      return "LetSemiApply";
+    case PhysicalOperatorKind::kRollUpApply:
+      return "RollUpApply";
+    case PhysicalOperatorKind::kOptionalApply:
+      return "OptionalApply";
+    case PhysicalOperatorKind::kAssertIsNode:
+      return "AssertIsNode";
+    case PhysicalOperatorKind::kWriteBarrier:
+      return "WriteBarrier";
+    case PhysicalOperatorKind::kCreateNode:
+      return "CreateNode";
+    case PhysicalOperatorKind::kCreateRelationship:
+      return "CreateRelationship";
+    case PhysicalOperatorKind::kMerge:
       return "Merge";
+    case PhysicalOperatorKind::kSetProperty:
+      return "SetProperty";
+    case PhysicalOperatorKind::kSetProperties:
+      return "SetProperties";
+    case PhysicalOperatorKind::kSetLabels:
+      return "SetLabels";
+    case PhysicalOperatorKind::kRemoveProperty:
+      return "RemoveProperty";
+    case PhysicalOperatorKind::kRemoveLabels:
+      return "RemoveLabels";
+    case PhysicalOperatorKind::kDelete:
+      return "Delete";
+    case PhysicalOperatorKind::kDetachDelete:
+      return "DetachDelete";
+    case PhysicalOperatorKind::kUnwind:
+      return "Unwind";
+    case PhysicalOperatorKind::kProcedureCall:
+      return "ProcedureCall";
+    case PhysicalOperatorKind::kNodeByIdSeek:
+      return "NodeByIdSeek";
+    case PhysicalOperatorKind::kRelationshipByIdSeek:
+      return "RelationshipByIdSeek";
+    case PhysicalOperatorKind::kProjectEndpoints:
+      return "ProjectEndpoints";
+    case PhysicalOperatorKind::kOptionalExpand:
+      return "OptionalExpand";
+    case PhysicalOperatorKind::kLeftOuterHashJoin:
+      return "LeftOuterHashJoin";
+    case PhysicalOperatorKind::kSelectOrSemiApply:
+      return "SelectOrSemiApply";
+    case PhysicalOperatorKind::kPruningVarExpand:
+      return "PruningVarExpand";
+    case PhysicalOperatorKind::kUnion:
+      return "Union";
   }
-  THROW(common::InternalError, "unknown physical execution type");
+  THROW(common::InternalError, "unknown physical operator kind");
 }
 
 PhysicalPlan::PhysicalPlan(std::unique_ptr<PhysicalPlanNode> root)

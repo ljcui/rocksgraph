@@ -69,28 +69,24 @@ class PhysicalPlanPrinter final {
 
  private:
   void PrintNode(const PhysicalPlanNode &node) {
-    CHECK(node.logical != nullptr && node.output_slots != nullptr,
-          common::InternalError, "physical plan node is incomplete");
-    std::string line = node.type == PhysicalOperatorType::kLogical
-                           ? std::string(node.logical->Name())
-                           : std::string(ToString(node.type));
-    std::string details = node.logical->Details();
-    if (!details.empty()) {
-      line.append(" [").append(details).append("]");
+    CHECK(node.output_slots != nullptr, common::InternalError,
+          "physical plan node is incomplete");
+    const std::string kind(ToString(node.kind));
+    std::string line = kind;
+    if (!node.details.empty()) {
+      line.append(" [").append(node.details).append("]");
     }
 
     std::vector<std::string> metadata;
     metadata.push_back("id=" + std::to_string(node.id));
-    if (node.type != PhysicalOperatorType::kLogical) {
-      metadata.push_back("logical=" + std::string(node.logical->Name()));
+    if (!node.logical_name.empty() && node.logical_name != kind) {
+      metadata.push_back("logical=" + node.logical_name);
     }
-    metadata.push_back("exec=" + std::string(ToString(node.execution_kind)));
-    if (node.logical->EstimatedRows().has_value()) {
-      metadata.push_back("rows=" +
-                         FormatNumber(*node.logical->EstimatedRows()));
+    if (node.estimated_rows.has_value()) {
+      metadata.push_back("rows=" + FormatNumber(*node.estimated_rows));
     }
-    if (node.logical->Cost().has_value()) {
-      metadata.push_back("cost=" + FormatNumber(*node.logical->Cost()));
+    if (node.cost.has_value()) {
+      metadata.push_back("cost=" + FormatNumber(*node.cost));
     }
     if (!node.provided_order.empty()) {
       metadata.push_back("order=[" + FormatOrdering(node.provided_order) + "]");
@@ -101,7 +97,7 @@ class PhysicalPlanPrinter final {
     if (node.partial_top_n_prefix > 0) {
       metadata.push_back("prefix=" + std::to_string(node.partial_top_n_prefix));
     }
-    if (node.logical->Type() == ir::LogicalPlanNodeType::kValueHashJoin) {
+    if (node.kind == PhysicalOperatorKind::kValueHashJoin) {
       metadata.push_back(
           std::string("build=") +
           (node.value_hash_join_build_child == 0 ? "left" : "right"));

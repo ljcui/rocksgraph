@@ -252,6 +252,23 @@ Value Evaluate(const ast::Expression &expression, const SlottedRow &row,
   return EvaluateExpression(expression, bindings, precomputed, state.context);
 }
 
+Value Evaluate(const PhysicalExpression &expression, const SlottedRow &row,
+               RuntimeState &state) {
+  CHECK(expression.Expression() != nullptr, common::InternalError,
+        "physical expression is null");
+  return Evaluate(*expression.Expression(), row,
+                  expression.PrecomputedExpressions(), state);
+}
+
+template <typename T>
+const T &OperatorData(const PhysicalPlanNode &node) {
+  const T *data = std::get_if<T>(&node.data);
+  CHECK(data != nullptr, common::InternalError,
+        "physical operator payload does not match " +
+            std::string(ToString(node.kind)));
+  return *data;
+}
+
 SlottedRow EmptyArgument(SlotConfigurationPtr slots) {
   return SlottedRow(std::move(slots));
 }
@@ -1205,6 +1222,60 @@ IndexRange EvaluateIndexRange(
   return range;
 }
 
+class AllNodeScanOperator final : public PullOperator {
+ public:
+  AllNodeScanOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                      std::optional<SlottedRow> argument)
+      : node_(&node),
+        data_(&OperatorData<AllNodeScanOp>(node)),
+        state_(&state),
+        argument_(std::move(argument)) {
+    if (!argument_.has_value()) {
+      argument_.emplace(EmptyArgument(node.argument_slots));
+    }
+  }
+
+  ~AllNodeScanOperator() override { Close(); }
+
+  [[nodiscard]] bool Next(SlottedRow *row) override {
+    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    state_->CheckCancelled();
+    if (closed_) {
+      return false;
+    }
+    if (cursor_ == nullptr) {
+      cursor_ = state_->TrackCursor(state_->graph_reader->ScanNodeIds());
+    }
+    while (cursor_->Next()) {
+      SlottedRow output(node_->output_slots);
+      CopyMappings(*argument_, &output, node_->argument_mapping, *state_);
+      if (TryBindEntityId(&output, data_->variable, SlotKind::kNode,
+                          cursor_->Id(), *state_->graph_reader)) {
+        *row = std::move(output);
+        return true;
+      }
+    }
+    Close();
+    return false;
+  }
+
+  void Close() noexcept override {
+    if (cursor_ != nullptr) {
+      state_->ReleaseCursor(cursor_);
+      cursor_ = nullptr;
+    }
+    closed_ = true;
+  }
+
+ private:
+  const PhysicalPlanNode *node_ = nullptr;
+  const AllNodeScanOp *data_ = nullptr;
+  RuntimeState *state_ = nullptr;
+  std::optional<SlottedRow> argument_;
+  EntityIdCursor *cursor_ = nullptr;
+  bool closed_ = false;
+};
+
 class LeafOperator final : public PullOperator {
  public:
   LeafOperator(const PhysicalPlanNode &node, RuntimeState &state,
@@ -1351,8 +1422,7 @@ class LeafOperator final : public PullOperator {
   }
 
   static bool IsNodeLeaf(ir::LogicalPlanNodeType type) {
-    return type == ir::LogicalPlanNodeType::kAllNodeScan ||
-           type == ir::LogicalPlanNodeType::kNodeByLabelScan ||
+    return type == ir::LogicalPlanNodeType::kNodeByLabelScan ||
            type == ir::LogicalPlanNodeType::kNodeIndexSeek ||
            type == ir::LogicalPlanNodeType::kNodeIndexRangeSeek;
   }
@@ -1364,9 +1434,6 @@ class LeafOperator final : public PullOperator {
     initialized_ = true;
     const ir::LogicalPlan &plan = *node_->logical;
     switch (plan.Type()) {
-      case ir::LogicalPlanNodeType::kAllNodeScan:
-        cursor_ = state_->TrackCursor(state_->graph_reader->ScanNodeIds());
-        break;
       case ir::LogicalPlanNodeType::kNodeByLabelScan:
         cursor_ = state_->TrackCursor(state_->graph_reader->ScanNodeIdsByLabels(
             static_cast<const ir::NodeByLabelScanPlan &>(plan).Labels()));
@@ -1428,8 +1495,6 @@ class LeafOperator final : public PullOperator {
     std::string variable;
     if (plan.Type() == ir::LogicalPlanNodeType::kNodeByIdSeek) {
       variable = static_cast<const ir::NodeByIdSeekPlan &>(plan).Variable();
-    } else if (plan.Type() == ir::LogicalPlanNodeType::kAllNodeScan) {
-      variable = static_cast<const ir::AllNodeScanPlan &>(plan).Variable();
     } else if (plan.Type() == ir::LogicalPlanNodeType::kNodeByLabelScan) {
       const auto &scan = static_cast<const ir::NodeByLabelScanPlan &>(plan);
       if (!NodeHasAllLabels(*state_->graph_reader->NodeById(id),
@@ -2073,6 +2138,356 @@ class PatternOperator final : public PullOperator {
   bool closed_ = false;
 };
 
+SlottedRow CopyUnaryOutput(const PhysicalPlanNode &node,
+                           const SlottedRow &input, const RuntimeState &state) {
+  CHECK(node.child_mappings.size() == 1, common::InternalError,
+        "unary physical operator mapping is missing");
+  SlottedRow output(node.output_slots);
+  CopyMappings(input, &output, node.child_mappings.front(), state);
+  return output;
+}
+
+std::int64_t EvaluatePaginationCount(const PhysicalExpression &expression,
+                                     const SlottedRow *row, RuntimeState *state,
+                                     std::string_view name) {
+  CHECK(state != nullptr, common::InternalError, "runtime state is null");
+  Value value = row != nullptr ? Evaluate(expression, *row, *state)
+                               : EvaluateExpression(*expression.Expression(),
+                                                    state->context);
+  CHECK(value.IsInteger() && value.AsInteger() >= 0,
+        common::InvalidArgumentError,
+        std::string(name) + " requires a non-negative integer");
+  return value.AsInteger();
+}
+
+class FilterOperator final : public PullOperator {
+ public:
+  FilterOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                 std::unique_ptr<PullOperator> source)
+      : node_(&node),
+        data_(&OperatorData<FilterOp>(node)),
+        state_(&state),
+        source_(std::move(source)) {}
+
+  ~FilterOperator() override { Close(); }
+
+  [[nodiscard]] bool Next(SlottedRow *row) override {
+    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    state_->CheckCancelled();
+    if (closed_) {
+      return false;
+    }
+    SlottedRow input(node_->children[0]->output_slots);
+    while (source_->Next(&input)) {
+      if (PredicateIsTrue(Evaluate(data_->predicate, input, *state_))) {
+        *row = CopyUnaryOutput(*node_, input, *state_);
+        return true;
+      }
+      state_->CheckCancelled();
+    }
+    Close();
+    return false;
+  }
+
+  void Close() noexcept override {
+    if (closed_) {
+      return;
+    }
+    source_->Close();
+    closed_ = true;
+  }
+
+ private:
+  const PhysicalPlanNode *node_ = nullptr;
+  const FilterOp *data_ = nullptr;
+  RuntimeState *state_ = nullptr;
+  std::unique_ptr<PullOperator> source_;
+  bool closed_ = false;
+};
+
+class ProjectionOperator final : public PullOperator {
+ public:
+  ProjectionOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                     std::unique_ptr<PullOperator> source)
+      : node_(&node),
+        data_(&OperatorData<ProjectionOp>(node)),
+        state_(&state),
+        source_(std::move(source)) {}
+
+  ~ProjectionOperator() override { Close(); }
+
+  [[nodiscard]] bool Next(SlottedRow *row) override {
+    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    state_->CheckCancelled();
+    if (closed_) {
+      return false;
+    }
+    SlottedRow input(node_->children[0]->output_slots);
+    if (!source_->Next(&input)) {
+      Close();
+      return false;
+    }
+    SlottedRow output(node_->output_slots);
+    for (const auto &item : data_->items) {
+      Value value = item.passthrough
+                        ? input.Get(item.alias, *state_->graph_reader)
+                        : Evaluate(item.expression, input, *state_);
+      output.Set(item.alias, std::move(value));
+    }
+    *row = std::move(output);
+    return true;
+  }
+
+  void Close() noexcept override {
+    if (closed_) {
+      return;
+    }
+    source_->Close();
+    closed_ = true;
+  }
+
+ private:
+  const PhysicalPlanNode *node_ = nullptr;
+  const ProjectionOp *data_ = nullptr;
+  RuntimeState *state_ = nullptr;
+  std::unique_ptr<PullOperator> source_;
+  bool closed_ = false;
+};
+
+class SkipOperator final : public PullOperator {
+ public:
+  SkipOperator(const PhysicalPlanNode &node, RuntimeState &state,
+               std::unique_ptr<PullOperator> source)
+      : node_(&node),
+        data_(&OperatorData<SkipOp>(node)),
+        state_(&state),
+        source_(std::move(source)) {}
+
+  ~SkipOperator() override { Close(); }
+
+  [[nodiscard]] bool Next(SlottedRow *row) override {
+    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    state_->CheckCancelled();
+    if (closed_) {
+      return false;
+    }
+    if (!initialized_ && !Initialize()) {
+      Close();
+      return false;
+    }
+    while (seen_ < count_) {
+      SlottedRow ignored(node_->children[0]->output_slots);
+      if (pending_.has_value()) {
+        ignored = std::move(*pending_);
+        pending_.reset();
+      } else if (!source_->Next(&ignored)) {
+        Close();
+        return false;
+      }
+      ++seen_;
+    }
+    SlottedRow input(node_->children[0]->output_slots);
+    if (pending_.has_value()) {
+      input = std::move(*pending_);
+      pending_.reset();
+    } else if (!source_->Next(&input)) {
+      Close();
+      return false;
+    }
+    *row = CopyUnaryOutput(*node_, input, *state_);
+    return true;
+  }
+
+  void Close() noexcept override {
+    if (closed_) {
+      return;
+    }
+    source_->Close();
+    pending_.reset();
+    closed_ = true;
+  }
+
+ private:
+  bool Initialize() {
+    initialized_ = true;
+    const SlottedRow *expression_row = nullptr;
+    if (data_->count.RequiresInputRow()) {
+      SlottedRow first(node_->children[0]->output_slots);
+      if (!source_->Next(&first)) {
+        return false;
+      }
+      pending_.emplace(std::move(first));
+      expression_row = &*pending_;
+    }
+    count_ = static_cast<std::uint64_t>(
+        EvaluatePaginationCount(data_->count, expression_row, state_, "SKIP"));
+    return true;
+  }
+
+  const PhysicalPlanNode *node_ = nullptr;
+  const SkipOp *data_ = nullptr;
+  RuntimeState *state_ = nullptr;
+  std::unique_ptr<PullOperator> source_;
+  std::optional<SlottedRow> pending_;
+  std::uint64_t count_ = 0;
+  std::uint64_t seen_ = 0;
+  bool initialized_ = false;
+  bool closed_ = false;
+};
+
+class LimitOperator final : public PullOperator {
+ public:
+  LimitOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                std::unique_ptr<PullOperator> source)
+      : node_(&node),
+        data_(&OperatorData<LimitOp>(node)),
+        state_(&state),
+        source_(std::move(source)) {}
+
+  ~LimitOperator() override { Close(); }
+
+  [[nodiscard]] bool Next(SlottedRow *row) override {
+    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    state_->CheckCancelled();
+    if (closed_) {
+      return false;
+    }
+    if (!initialized_ && !Initialize()) {
+      Close();
+      return false;
+    }
+    if (emitted_ >= count_) {
+      Close();
+      return false;
+    }
+    if (data_->exhaust_child) {
+      if (emitted_ >= buffered_rows_.size()) {
+        Close();
+        return false;
+      }
+      *row = std::move(buffered_rows_[emitted_++]);
+      return true;
+    }
+
+    SlottedRow input(node_->children[0]->output_slots);
+    if (pending_.has_value()) {
+      input = std::move(*pending_);
+      pending_.reset();
+    } else if (!source_->Next(&input)) {
+      Close();
+      return false;
+    }
+    ++emitted_;
+    *row = CopyUnaryOutput(*node_, input, *state_);
+    return true;
+  }
+
+  void Close() noexcept override {
+    if (closed_) {
+      return;
+    }
+    source_->Close();
+    pending_.reset();
+    buffered_rows_.clear();
+    state_->memory_tracker.Release(reserved_bytes_);
+    reserved_bytes_ = 0;
+    closed_ = true;
+  }
+
+ private:
+  bool Initialize() {
+    initialized_ = true;
+    if (data_->exhaust_child) {
+      SlottedRow input(node_->children[0]->output_slots);
+      while (source_->Next(&input)) {
+        SlottedRow output = CopyUnaryOutput(*node_, input, *state_);
+        const std::size_t bytes = output.EstimatedHeapUsage();
+        state_->memory_tracker.Reserve(bytes);
+        reserved_bytes_ += bytes;
+        buffered_rows_.push_back(std::move(output));
+        state_->CheckCancelled();
+      }
+      source_->Close();
+      if (buffered_rows_.empty() && data_->count.RequiresInputRow()) {
+        return false;
+      }
+      const SlottedRow *expression_row =
+          data_->count.RequiresInputRow() ? &buffered_rows_.front() : nullptr;
+      count_ = static_cast<std::uint64_t>(EvaluatePaginationCount(
+          data_->count, expression_row, state_, "LIMIT"));
+      return true;
+    }
+
+    const SlottedRow *expression_row = nullptr;
+    if (data_->count.RequiresInputRow()) {
+      SlottedRow first(node_->children[0]->output_slots);
+      if (!source_->Next(&first)) {
+        return false;
+      }
+      pending_.emplace(std::move(first));
+      expression_row = &*pending_;
+    }
+    count_ = static_cast<std::uint64_t>(
+        EvaluatePaginationCount(data_->count, expression_row, state_, "LIMIT"));
+    return true;
+  }
+
+  const PhysicalPlanNode *node_ = nullptr;
+  const LimitOp *data_ = nullptr;
+  RuntimeState *state_ = nullptr;
+  std::unique_ptr<PullOperator> source_;
+  std::optional<SlottedRow> pending_;
+  std::vector<SlottedRow> buffered_rows_;
+  std::uint64_t count_ = 0;
+  std::uint64_t emitted_ = 0;
+  std::size_t reserved_bytes_ = 0;
+  bool initialized_ = false;
+  bool closed_ = false;
+};
+
+class ProduceResultsOperator final : public PullOperator {
+ public:
+  ProduceResultsOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                         std::unique_ptr<PullOperator> source)
+      : node_(&node),
+        data_(&OperatorData<ProduceResultsOp>(node)),
+        state_(&state),
+        source_(std::move(source)) {}
+
+  ~ProduceResultsOperator() override { Close(); }
+
+  [[nodiscard]] bool Next(SlottedRow *row) override {
+    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    state_->CheckCancelled();
+    if (closed_) {
+      return false;
+    }
+    SlottedRow input(node_->children[0]->output_slots);
+    if (!source_->Next(&input)) {
+      Close();
+      return false;
+    }
+    (void)data_;
+    *row = CopyUnaryOutput(*node_, input, *state_);
+    return true;
+  }
+
+  void Close() noexcept override {
+    if (closed_) {
+      return;
+    }
+    source_->Close();
+    closed_ = true;
+  }
+
+ private:
+  const PhysicalPlanNode *node_ = nullptr;
+  const ProduceResultsOp *data_ = nullptr;
+  RuntimeState *state_ = nullptr;
+  std::unique_ptr<PullOperator> source_;
+  bool closed_ = false;
+};
+
 class StreamingUnaryOperator final : public PullOperator {
  public:
   StreamingUnaryOperator(const PhysicalPlanNode &node, RuntimeState &state,
@@ -2088,16 +2503,6 @@ class StreamingUnaryOperator final : public PullOperator {
       return false;
     }
     switch (node_->logical->Type()) {
-      case ir::LogicalPlanNodeType::kFilter:
-        return NextFilter(row);
-      case ir::LogicalPlanNodeType::kProjection:
-        return NextProjection(row);
-      case ir::LogicalPlanNodeType::kSkip:
-        return NextSkip(row);
-      case ir::LogicalPlanNodeType::kLimit:
-        return NextLimit(row);
-      case ir::LogicalPlanNodeType::kProduceResults:
-        return NextPassthrough(row);
       case ir::LogicalPlanNodeType::kExpand:
       case ir::LogicalPlanNodeType::kExpandInto:
         return NextExpand(row);
@@ -2143,143 +2548,6 @@ class StreamingUnaryOperator final : public PullOperator {
       Close();
       return false;
     }
-    return true;
-  }
-
-  bool NextPassthrough(SlottedRow *row) {
-    SlottedRow input(node_->children[0]->output_slots);
-    if (!PullInput(&input)) {
-      return false;
-    }
-    *row = input.CopyTo(node_->output_slots, *state_->graph_reader);
-    return true;
-  }
-
-  bool NextFilter(SlottedRow *row) {
-    const auto &filter = static_cast<const ir::FilterPlan &>(*node_->logical);
-    SlottedRow input(node_->children[0]->output_slots);
-    while (PullInput(&input)) {
-      if (PredicateIsTrue(Evaluate(*filter.Predicate(), input,
-                                   filter.PrecomputedExpressions(), *state_))) {
-        *row = input.CopyTo(node_->output_slots, *state_->graph_reader);
-        return true;
-      }
-    }
-    return false;
-  }
-
-  bool NextProjection(SlottedRow *row) {
-    const auto &projection =
-        static_cast<const ir::ProjectionPlan &>(*node_->logical);
-    SlottedRow input(node_->children[0]->output_slots);
-    if (!PullInput(&input)) {
-      return false;
-    }
-    SlottedRow output(node_->output_slots);
-    for (const auto &item : projection.Items()) {
-      Value value = item.passthrough
-                        ? input.Get(item.alias, *state_->graph_reader)
-                        : EvaluateProjectionItem(item, input, state_);
-      output.Set(item.alias, std::move(value));
-    }
-    *row = std::move(output);
-    return true;
-  }
-
-  std::optional<std::int64_t> EvaluatePaginationCount(
-      const ast::Expression *expression,
-      const std::vector<ir::LogicalPrecomputedExpression> &precomputed,
-      SlottedRow *first_row, std::string_view name) {
-    CHECK(expression != nullptr, common::InvalidArgumentError,
-          std::string(name) + " expression is null");
-    const bool requires_row =
-        !ast::CollectExpressionDependencies(*expression).empty() ||
-        !precomputed.empty();
-    bool has_expression_row = false;
-    if (requires_row) {
-      if (!source_->Next(first_row)) {
-        return std::nullopt;
-      }
-      has_expression_row = true;
-      first_pending_ = true;
-    }
-    const Value value =
-        has_expression_row
-            ? Evaluate(*expression, *first_row, precomputed, *state_)
-            : EvaluateExpression(*expression, state_->context);
-    CHECK(value.IsInteger() && value.AsInteger() >= 0,
-          common::InvalidArgumentError,
-          std::string(name) + " requires a non-negative integer");
-    return value.AsInteger();
-  }
-
-  bool NextSkip(SlottedRow *row) {
-    const auto &skip = static_cast<const ir::SkipPlan &>(*node_->logical);
-    if (!pagination_initialized_) {
-      pagination_initialized_ = true;
-      SlottedRow first(node_->children[0]->output_slots);
-      pagination_count_ = EvaluatePaginationCount(
-          skip.Skip(), skip.PrecomputedExpressions(), &first, "SKIP");
-      if (!pagination_count_.has_value()) {
-        Close();
-        return false;
-      }
-      if (first_pending_) {
-        pending_first_.emplace(std::move(first));
-      }
-    }
-    while (pagination_seen_ < static_cast<std::uint64_t>(*pagination_count_)) {
-      SlottedRow ignored(node_->children[0]->output_slots);
-      if (pending_first_.has_value()) {
-        ignored = std::move(*pending_first_);
-        pending_first_.reset();
-      } else if (!source_->Next(&ignored)) {
-        Close();
-        return false;
-      }
-      ++pagination_seen_;
-    }
-    SlottedRow input(node_->children[0]->output_slots);
-    if (pending_first_.has_value()) {
-      input = std::move(*pending_first_);
-      pending_first_.reset();
-    } else if (!source_->Next(&input)) {
-      Close();
-      return false;
-    }
-    *row = input.CopyTo(node_->output_slots, *state_->graph_reader);
-    return true;
-  }
-
-  bool NextLimit(SlottedRow *row) {
-    const auto &limit = static_cast<const ir::LimitPlan &>(*node_->logical);
-    if (!pagination_initialized_) {
-      pagination_initialized_ = true;
-      SlottedRow first(node_->children[0]->output_slots);
-      pagination_count_ = EvaluatePaginationCount(
-          limit.Limit(), limit.PrecomputedExpressions(), &first, "LIMIT");
-      if (!pagination_count_.has_value() || *pagination_count_ == 0) {
-        Close();
-        return false;
-      }
-      if (first_pending_) {
-        pending_first_.emplace(std::move(first));
-      }
-    }
-    if (pagination_seen_ >= static_cast<std::uint64_t>(*pagination_count_)) {
-      Close();
-      return false;
-    }
-    SlottedRow input(node_->children[0]->output_slots);
-    if (pending_first_.has_value()) {
-      input = std::move(*pending_first_);
-      pending_first_.reset();
-    } else if (!source_->Next(&input)) {
-      Close();
-      return false;
-    }
-    ++pagination_seen_;
-    *row = input.CopyTo(node_->output_slots, *state_->graph_reader);
     return true;
   }
 
@@ -2579,7 +2847,6 @@ class StreamingUnaryOperator final : public PullOperator {
   EntityIdCursor *relationship_cursor_ = nullptr;
   std::optional<SlottedRow> current_input_;
   std::optional<SlottedRow> unwind_input_;
-  std::optional<SlottedRow> pending_first_;
   std::vector<Value> unwind_values_;
   std::vector<SlottedRow> buffer_;
   std::size_t unwind_index_ = 0;
@@ -2588,10 +2855,6 @@ class StreamingUnaryOperator final : public PullOperator {
   std::size_t unwind_reserved_bytes_ = 0;
   std::int64_t current_from_id_ = -1;
   std::int64_t current_to_id_ = -1;
-  std::optional<std::int64_t> pagination_count_;
-  std::uint64_t pagination_seen_ = 0;
-  bool pagination_initialized_ = false;
-  bool first_pending_ = false;
   bool closed_ = false;
 };
 
@@ -3144,7 +3407,7 @@ class PartialTopNOperator final : public PullOperator {
 
   void Initialize() {
     initialized_ = true;
-    CHECK(node_->type == PhysicalOperatorType::kPartialTopN &&
+    CHECK(node_->kind == PhysicalOperatorKind::kPartialTopN &&
               node_->top_n != nullptr && node_->children.size() == 1 &&
               node_->partial_top_n_prefix > 0,
           common::InternalError, "partial Top-N physical node is incomplete");
@@ -3398,29 +3661,6 @@ class BlockingUnaryOperator final : public PullOperator {
             });
         break;
       }
-      case ir::LogicalPlanNodeType::kLimit: {
-        const auto &plan = static_cast<const ir::LimitPlan &>(*node_->logical);
-        SlottedRow input(node_->children[0]->output_slots);
-        while (source_->Next(&input)) {
-          BufferRow(input.CopyTo(node_->output_slots, *state_->graph_reader));
-        }
-        if (rows_.empty() &&
-            (!ast::CollectExpressionDependencies(*plan.Limit()).empty() ||
-             !plan.PrecomputedExpressions().empty())) {
-          break;
-        }
-        Value count = rows_.empty()
-                          ? EvaluateExpression(*plan.Limit(), state_->context)
-                          : Evaluate(*plan.Limit(), rows_.front(),
-                                     plan.PrecomputedExpressions(), *state_);
-        CHECK(count.IsInteger() && count.AsInteger() >= 0,
-              common::InvalidArgumentError,
-              "LIMIT requires a non-negative integer");
-        if (static_cast<std::uint64_t>(count.AsInteger()) < rows_.size()) {
-          rows_.erase(rows_.begin() + count.AsInteger(), rows_.end());
-        }
-        break;
-      }
       default:
         THROW(common::InternalError, "unsupported blocking unary operator: " +
                                          std::string(node_->logical->Name()));
@@ -3579,7 +3819,7 @@ class TopNOperator final : public PullOperator {
 
   void Initialize() {
     initialized_ = true;
-    CHECK(node_->type == PhysicalOperatorType::kTopN &&
+    CHECK(node_->kind == PhysicalOperatorKind::kTopN &&
               node_->top_n != nullptr && node_->children.size() == 1,
           common::InternalError, "Top-N physical node is incomplete");
     const ir::TopNPlan &top_n = *node_->top_n;
@@ -4225,35 +4465,79 @@ class OperatorFactory final {
   std::unique_ptr<PullOperator> Build(
       const PhysicalPlanNode &node,
       std::optional<SlottedRow> argument = std::nullopt) {
-    switch (node.execution_kind) {
-      case PhysicalExecutionType::kTopN:
+    switch (node.kind) {
+      case PhysicalOperatorKind::kAllNodeScan:
+        CHECK(node.children.empty(), common::InternalError,
+              "all-node scan physical node must not have children");
+        return std::make_unique<AllNodeScanOperator>(node, *state_,
+                                                     std::move(argument));
+      case PhysicalOperatorKind::kFilter:
+        CHECK(node.children.size() == 1, common::InternalError,
+              "filter physical node must have one child");
+        return std::make_unique<FilterOperator>(
+            node, *state_, Build(*node.children[0], std::move(argument)));
+      case PhysicalOperatorKind::kProjection:
+        CHECK(node.children.size() == 1, common::InternalError,
+              "projection physical node must have one child");
+        return std::make_unique<ProjectionOperator>(
+            node, *state_, Build(*node.children[0], std::move(argument)));
+      case PhysicalOperatorKind::kSkip:
+        CHECK(node.children.size() == 1, common::InternalError,
+              "skip physical node must have one child");
+        return std::make_unique<SkipOperator>(
+            node, *state_, Build(*node.children[0], std::move(argument)));
+      case PhysicalOperatorKind::kLimit:
+        CHECK(node.children.size() == 1, common::InternalError,
+              "limit physical node must have one child");
+        return std::make_unique<LimitOperator>(
+            node, *state_, Build(*node.children[0], std::move(argument)));
+      case PhysicalOperatorKind::kProduceResults:
+        CHECK(node.children.size() == 1, common::InternalError,
+              "produce-results physical node must have one child");
+        return std::make_unique<ProduceResultsOperator>(
+            node, *state_, Build(*node.children[0], std::move(argument)));
+      case PhysicalOperatorKind::kTopN:
         CHECK(node.children.size() == 1, common::InternalError,
               "Top-N physical node must have one child");
         return std::make_unique<TopNOperator>(
             node, *state_, Build(*node.children[0], std::move(argument)));
-      case PhysicalExecutionType::kPartialTopN:
+      case PhysicalOperatorKind::kPartialTopN:
         CHECK(node.children.size() == 1, common::InternalError,
               "partial Top-N physical node must have one child");
         return std::make_unique<PartialTopNOperator>(
             node, *state_, Build(*node.children[0], std::move(argument)));
-      case PhysicalExecutionType::kLeaf:
+      case PhysicalOperatorKind::kArgument:
+      case PhysicalOperatorKind::kNodeByLabelScan:
+      case PhysicalOperatorKind::kNodeIndexSeek:
+      case PhysicalOperatorKind::kNodeIndexRangeSeek:
+      case PhysicalOperatorKind::kRelationshipTypeScan:
+      case PhysicalOperatorKind::kRelationshipIndexSeek:
+      case PhysicalOperatorKind::kRelationshipIndexRangeSeek:
+      case PhysicalOperatorKind::kNodeByIdSeek:
+      case PhysicalOperatorKind::kRelationshipByIdSeek:
         CHECK(node.logical->ChildCount() == 0, common::InternalError,
               "leaf physical node must not have children");
         return std::make_unique<LeafOperator>(node, *state_,
                                               std::move(argument));
-      case PhysicalExecutionType::kApply:
+      case PhysicalOperatorKind::kApply:
+      case PhysicalOperatorKind::kSemiApply:
+      case PhysicalOperatorKind::kAntiSemiApply:
+      case PhysicalOperatorKind::kLetSemiApply:
+      case PhysicalOperatorKind::kSelectOrSemiApply:
+      case PhysicalOperatorKind::kRollUpApply:
+      case PhysicalOperatorKind::kOptionalApply:
         CHECK(node.children.size() == 2, common::InternalError,
               "apply physical node must have two children");
         return std::make_unique<ApplyOperator>(
             node, *state_, *this,
             Build(*node.children[0], std::move(argument)));
-      case PhysicalExecutionType::kMerge:
+      case PhysicalOperatorKind::kMerge:
         CHECK(node.children.size() == 2, common::InternalError,
               "merge physical node must have two children");
         return std::make_unique<MergeOperator>(
             node, *state_, *this,
             Build(*node.children[0], std::move(argument)));
-      case PhysicalExecutionType::kUnion: {
+      case PhysicalOperatorKind::kUnion: {
         CHECK(node.children.size() == 2, common::InternalError,
               "union physical node must have two children");
         auto lhs = Build(*node.children[0], argument);
@@ -4261,7 +4545,7 @@ class OperatorFactory final {
         return std::make_unique<UnionOperator>(node, *state_, std::move(lhs),
                                                std::move(rhs));
       }
-      case PhysicalExecutionType::kValueHashJoin: {
+      case PhysicalOperatorKind::kValueHashJoin: {
         CHECK(node.children.size() == 2, common::InternalError,
               "value hash join physical node must have two children");
         auto lhs = Build(*node.children[0], argument);
@@ -4269,7 +4553,7 @@ class OperatorFactory final {
         return std::make_unique<ValueHashJoinOperator>(
             node, *state_, std::move(lhs), std::move(rhs));
       }
-      case PhysicalExecutionType::kLeftOuterHashJoin: {
+      case PhysicalOperatorKind::kLeftOuterHashJoin: {
         CHECK(node.children.size() == 2, common::InternalError,
               "left outer hash join physical node must have two children");
         auto lhs = Build(*node.children[0], argument);
@@ -4277,7 +4561,9 @@ class OperatorFactory final {
         return std::make_unique<LeftOuterHashJoinOperator>(
             node, *state_, std::move(lhs), std::move(rhs));
       }
-      case PhysicalExecutionType::kBlockingBinary: {
+      case PhysicalOperatorKind::kCartesianProduct:
+      case PhysicalOperatorKind::kNodeHashJoin:
+      case PhysicalOperatorKind::kPredicateJoin: {
         CHECK(node.children.size() == 2, common::InternalError,
               "blocking binary physical node must have two children");
         auto lhs = Build(*node.children[0], argument);
@@ -4285,52 +4571,67 @@ class OperatorFactory final {
         return std::make_unique<BlockingBinaryOperator>(
             node, *state_, std::move(lhs), std::move(rhs));
       }
-      case PhysicalExecutionType::kVarExpand:
-      case PhysicalExecutionType::kPruningVarExpand:
-      case PhysicalExecutionType::kPattern:
-      case PhysicalExecutionType::kOrderedDistinct:
-      case PhysicalExecutionType::kOrderedAggregation:
-      case PhysicalExecutionType::kPartialSort:
-      case PhysicalExecutionType::kBlockingUnary:
-      case PhysicalExecutionType::kStreamingUnary:
-        break;
-      case PhysicalExecutionType::kUnknown:
-        THROW(common::InternalError, "physical execution kind is unknown");
+      case PhysicalOperatorKind::kVarExpand:
+        CHECK(node.children.size() == 1, common::InternalError,
+              "variable expand physical node must have one child");
+        return std::make_unique<VarExpandOperator>(
+            node, *state_, Build(*node.children[0], std::move(argument)));
+      case PhysicalOperatorKind::kPruningVarExpand:
+        CHECK(node.children.size() == 1, common::InternalError,
+              "pruning expand physical node must have one child");
+        return std::make_unique<PruningExpandOperator>(
+            node, *state_, Build(*node.children[0], std::move(argument)));
+      case PhysicalOperatorKind::kProjectEndpoints:
+      case PhysicalOperatorKind::kOptionalExpand:
+        CHECK(node.children.size() == 1, common::InternalError,
+              "pattern physical node must have one child");
+        return std::make_unique<PatternOperator>(
+            node, *state_, Build(*node.children[0], std::move(argument)));
+      case PhysicalOperatorKind::kOrderedDistinct:
+        CHECK(node.children.size() == 1, common::InternalError,
+              "ordered distinct physical node must have one child");
+        return std::make_unique<OrderedDistinctOperator>(
+            node, *state_, Build(*node.children[0], std::move(argument)));
+      case PhysicalOperatorKind::kOrderedAggregation:
+        CHECK(node.children.size() == 1, common::InternalError,
+              "ordered aggregation physical node must have one child");
+        return std::make_unique<OrderedAggregationOperator>(
+            node, *state_, Build(*node.children[0], std::move(argument)));
+      case PhysicalOperatorKind::kPartialSort:
+        CHECK(node.children.size() == 1, common::InternalError,
+              "partial sort physical node must have one child");
+        return std::make_unique<PartialSortOperator>(
+            node, *state_, Build(*node.children[0], std::move(argument)));
+      case PhysicalOperatorKind::kFullSort:
+      case PhysicalOperatorKind::kHashDistinct:
+      case PhysicalOperatorKind::kHashAggregation:
+      case PhysicalOperatorKind::kWriteBarrier:
+      case PhysicalOperatorKind::kDelete:
+      case PhysicalOperatorKind::kDetachDelete:
+        CHECK(node.children.size() == 1, common::InternalError,
+              "blocking physical node must have one child");
+        return std::make_unique<BlockingUnaryOperator>(
+            node, *state_, Build(*node.children[0], std::move(argument)));
+      case PhysicalOperatorKind::kExpand:
+      case PhysicalOperatorKind::kExpandInto:
+      case PhysicalOperatorKind::kPathBuild:
+      case PhysicalOperatorKind::kProcedureCall:
+      case PhysicalOperatorKind::kUnwind:
+      case PhysicalOperatorKind::kAssertIsNode:
+      case PhysicalOperatorKind::kSetProperty:
+      case PhysicalOperatorKind::kSetProperties:
+      case PhysicalOperatorKind::kSetLabels:
+      case PhysicalOperatorKind::kRemoveProperty:
+      case PhysicalOperatorKind::kRemoveLabels:
+      case PhysicalOperatorKind::kCreateNode:
+      case PhysicalOperatorKind::kCreateRelationship:
+        CHECK(node.children.size() == 1, common::InternalError,
+              "streaming physical node must have one child");
+        return std::make_unique<StreamingUnaryOperator>(
+            node, *state_, Build(*node.children[0], std::move(argument)));
     }
-
-    CHECK(node.children.size() == 1, common::InternalError,
-          "unary physical node must have one child");
-    auto source = Build(*node.children[0], std::move(argument));
-    switch (node.execution_kind) {
-      case PhysicalExecutionType::kVarExpand:
-        return std::make_unique<VarExpandOperator>(node, *state_,
-                                                   std::move(source));
-      case PhysicalExecutionType::kPruningVarExpand:
-        return std::make_unique<PruningExpandOperator>(node, *state_,
-                                                       std::move(source));
-      case PhysicalExecutionType::kPattern:
-        return std::make_unique<PatternOperator>(node, *state_,
-                                                 std::move(source));
-      case PhysicalExecutionType::kOrderedDistinct:
-        return std::make_unique<OrderedDistinctOperator>(node, *state_,
-                                                         std::move(source));
-      case PhysicalExecutionType::kOrderedAggregation:
-        return std::make_unique<OrderedAggregationOperator>(node, *state_,
-                                                            std::move(source));
-      case PhysicalExecutionType::kPartialSort:
-        return std::make_unique<PartialSortOperator>(node, *state_,
-                                                     std::move(source));
-      case PhysicalExecutionType::kBlockingUnary:
-        return std::make_unique<BlockingUnaryOperator>(node, *state_,
-                                                       std::move(source));
-      case PhysicalExecutionType::kStreamingUnary:
-        return std::make_unique<StreamingUnaryOperator>(node, *state_,
-                                                        std::move(source));
-      default:
-        THROW(common::InternalError,
-              "unsupported physical execution kind: " +
-                  std::string(ToString(node.execution_kind)));
-    }
+    THROW(common::InternalError, "unsupported physical operator kind: " +
+                                     std::string(ToString(node.kind)));
   }
 
  private:

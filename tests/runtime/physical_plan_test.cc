@@ -9,6 +9,8 @@
 #include "ir/query_ir.h"
 #include "planner/logical_plan_builder.h"
 #include "runtime/physical_plan_printer.h"
+#include "runtime/slotted_executor.h"
+#include "storage/in_memory_graph.h"
 
 namespace {
 
@@ -91,6 +93,69 @@ TEST(PhysicalPlanTest, PreservesScopedSemanticTypesForExpressions) {
   EXPECT_EQ(x.kind, rg::SlotKind::kNode);
 }
 
+TEST(PhysicalPlanTest, BuildsOwnedPayloadsForMigratedOperators) {
+  PlannedQuery query =
+      Plan("MATCH (n) WHERE id(n) > 0 RETURN n AS node SKIP 1 LIMIT 2");
+  rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+
+  const ir::LogicalPlan *scan =
+      FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kAllNodeScan);
+  const ir::LogicalPlan *filter =
+      FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kFilter);
+  const ir::LogicalPlan *projection =
+      FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kProjection);
+  const ir::LogicalPlan *skip =
+      FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kSkip);
+  const ir::LogicalPlan *limit =
+      FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kLimit);
+  ASSERT_NE(scan, nullptr);
+  ASSERT_NE(filter, nullptr);
+  ASSERT_NE(projection, nullptr);
+  ASSERT_NE(skip, nullptr);
+  ASSERT_NE(limit, nullptr);
+
+  const auto &scan_node = physical.NodeFor(*scan);
+  EXPECT_EQ(scan_node.kind, rg::PhysicalOperatorKind::kAllNodeScan);
+  EXPECT_EQ(std::get<rg::AllNodeScanOp>(scan_node.data).variable, "n");
+
+  const auto &filter_node = physical.NodeFor(*filter);
+  const auto &filter_data = std::get<rg::FilterOp>(filter_node.data);
+  EXPECT_EQ(filter_node.kind, rg::PhysicalOperatorKind::kFilter);
+  EXPECT_NE(filter_data.predicate.Expression(),
+            static_cast<const ir::FilterPlan &>(*filter).Predicate());
+
+  const auto &projection_node = physical.NodeFor(*projection);
+  const auto &projection_data =
+      std::get<rg::ProjectionOp>(projection_node.data);
+  EXPECT_EQ(projection_node.kind, rg::PhysicalOperatorKind::kProjection);
+  ASSERT_EQ(projection_data.items.size(), 1U);
+  EXPECT_EQ(projection_data.items.front().alias, "node");
+
+  EXPECT_EQ(physical.NodeFor(*skip).kind, rg::PhysicalOperatorKind::kSkip);
+  EXPECT_EQ(physical.NodeFor(*limit).kind, rg::PhysicalOperatorKind::kLimit);
+  EXPECT_EQ(physical.Root().kind, rg::PhysicalOperatorKind::kProduceResults);
+}
+
+TEST(PhysicalPlanTest, ExecutesMigratedPlanAfterLogicalPlanIsDestroyed) {
+  rg::PhysicalPlan physical = [] {
+    PlannedQuery query =
+        Plan("MATCH (n) WHERE id(n) > 0 RETURN id(n) AS id SKIP 1 LIMIT 1");
+    return rg::CreatePhysicalPlan(*query.logical_plan);
+  }();
+  rg::InMemoryGraph graph;
+  graph.CreateNode({});
+  graph.CreateNode({});
+  graph.CreateNode({});
+
+  std::unique_ptr<rg::PhysicalResultCursor> cursor = rg::StartPhysicalPlan(
+      physical, graph, nullptr, {}, std::vector<std::string>{"id"});
+  std::vector<rg::Value> row;
+  ASSERT_TRUE(cursor->Next(&row));
+  ASSERT_EQ(row.size(), 1U);
+  EXPECT_EQ(row.front(), rg::Value(2));
+  EXPECT_FALSE(cursor->Next(&row));
+}
+
 TEST(PhysicalPlanTest, ChoosesSmallerValueHashJoinBuildSide) {
   PlannedQuery query =
       Plan("MATCH (a:Person), (b) WHERE a.id = b.id RETURN a, b");
@@ -121,8 +186,7 @@ TEST(PhysicalPlanTest, SelectsTopNForRewrittenLogicalPlan) {
   rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
   const rg::PhysicalPlanNode &top_n_node = physical.NodeFor(*top_n);
 
-  EXPECT_EQ(top_n_node.type, rg::PhysicalOperatorType::kTopN);
-  EXPECT_EQ(top_n_node.execution_kind, rg::PhysicalExecutionType::kTopN);
+  EXPECT_EQ(top_n_node.kind, rg::PhysicalOperatorKind::kTopN);
   EXPECT_EQ(top_n_node.top_n, top_n);
   ASSERT_EQ(top_n_node.children.size(), 1U);
   EXPECT_EQ(top_n_node.children[0]->logical, &top_n->Child(0));
@@ -136,10 +200,10 @@ TEST(PhysicalPlanTest, DoesNotRewriteTopNAcrossSkipOrWrites) {
   ASSERT_NE(skipped_limit, nullptr);
   rg::PhysicalPlan skipped_physical =
       rg::CreatePhysicalPlan(*skipped.logical_plan);
-  EXPECT_EQ(skipped_physical.NodeFor(*skipped_limit).type,
-            rg::PhysicalOperatorType::kLogical);
-  EXPECT_EQ(skipped_physical.NodeFor(*skipped_limit).execution_kind,
-            rg::PhysicalExecutionType::kStreamingUnary);
+  const rg::PhysicalPlanNode &skipped_limit_node =
+      skipped_physical.NodeFor(*skipped_limit);
+  EXPECT_EQ(skipped_limit_node.kind, rg::PhysicalOperatorKind::kLimit);
+  EXPECT_FALSE(std::get<rg::LimitOp>(skipped_limit_node.data).exhaust_child);
 
   PlannedQuery write =
       Plan("MATCH (n) SET n.x = 1 RETURN n ORDER BY n LIMIT 2");
@@ -147,10 +211,10 @@ TEST(PhysicalPlanTest, DoesNotRewriteTopNAcrossSkipOrWrites) {
       FindPlan(*write.logical_plan, ir::LogicalPlanNodeType::kLimit);
   ASSERT_NE(write_limit, nullptr);
   rg::PhysicalPlan write_physical = rg::CreatePhysicalPlan(*write.logical_plan);
-  EXPECT_EQ(write_physical.NodeFor(*write_limit).type,
-            rg::PhysicalOperatorType::kLogical);
-  EXPECT_EQ(write_physical.NodeFor(*write_limit).execution_kind,
-            rg::PhysicalExecutionType::kBlockingUnary);
+  const rg::PhysicalPlanNode &write_limit_node =
+      write_physical.NodeFor(*write_limit);
+  EXPECT_EQ(write_limit_node.kind, rg::PhysicalOperatorKind::kLimit);
+  EXPECT_TRUE(std::get<rg::LimitOp>(write_limit_node.data).exhaust_child);
 }
 
 TEST(PhysicalPlanTest, SelectsOrderedGroupingAlgorithms) {
@@ -164,9 +228,7 @@ TEST(PhysicalPlanTest, SelectsOrderedGroupingAlgorithms) {
       rg::CreatePhysicalPlan(*distinct_query.logical_plan);
   const rg::PhysicalPlanNode &distinct_node =
       distinct_physical.NodeFor(*distinct);
-  EXPECT_EQ(distinct_node.type, rg::PhysicalOperatorType::kOrderedDistinct);
-  EXPECT_EQ(distinct_node.execution_kind,
-            rg::PhysicalExecutionType::kOrderedDistinct);
+  EXPECT_EQ(distinct_node.kind, rg::PhysicalOperatorKind::kOrderedDistinct);
   ASSERT_EQ(distinct_node.provided_order.size(), 1U);
 
   PlannedQuery aggregation_query = Plan(
@@ -179,10 +241,8 @@ TEST(PhysicalPlanTest, SelectsOrderedGroupingAlgorithms) {
       rg::CreatePhysicalPlan(*aggregation_query.logical_plan);
   const rg::PhysicalPlanNode &aggregation_node =
       aggregation_physical.NodeFor(*aggregation);
-  EXPECT_EQ(aggregation_node.type,
-            rg::PhysicalOperatorType::kOrderedAggregation);
-  EXPECT_EQ(aggregation_node.execution_kind,
-            rg::PhysicalExecutionType::kOrderedAggregation);
+  EXPECT_EQ(aggregation_node.kind,
+            rg::PhysicalOperatorKind::kOrderedAggregation);
   ASSERT_EQ(aggregation_node.provided_order.size(), 1U);
   EXPECT_EQ(aggregation_physical.Root().provided_order.size(), 1U);
 }
@@ -199,9 +259,7 @@ TEST(PhysicalPlanTest, SelectsPartialSortAndHashFallbacks) {
       rg::CreatePhysicalPlan(*partial_query.logical_plan);
   const rg::PhysicalPlanNode &partial_node =
       partial_physical.NodeFor(*outer_sort);
-  EXPECT_EQ(partial_node.type, rg::PhysicalOperatorType::kPartialSort);
-  EXPECT_EQ(partial_node.execution_kind,
-            rg::PhysicalExecutionType::kPartialSort);
+  EXPECT_EQ(partial_node.kind, rg::PhysicalOperatorKind::kPartialSort);
   EXPECT_EQ(partial_node.partial_sort_prefix, 1U);
 
   PlannedQuery fallback_query = Plan("UNWIND [3, 1, 2] AS x RETURN DISTINCT x");
@@ -210,10 +268,8 @@ TEST(PhysicalPlanTest, SelectsPartialSortAndHashFallbacks) {
   ASSERT_NE(distinct, nullptr);
   rg::PhysicalPlan fallback_physical =
       rg::CreatePhysicalPlan(*fallback_query.logical_plan);
-  EXPECT_EQ(fallback_physical.NodeFor(*distinct).type,
-            rg::PhysicalOperatorType::kHashDistinct);
-  EXPECT_EQ(fallback_physical.NodeFor(*distinct).execution_kind,
-            rg::PhysicalExecutionType::kBlockingUnary);
+  EXPECT_EQ(fallback_physical.NodeFor(*distinct).kind,
+            rg::PhysicalOperatorKind::kHashDistinct);
 
   PlannedQuery aggregation_query =
       Plan("UNWIND [3, 1, 2] AS x RETURN x, count(*) AS count");
@@ -222,10 +278,8 @@ TEST(PhysicalPlanTest, SelectsPartialSortAndHashFallbacks) {
   ASSERT_NE(aggregation, nullptr);
   rg::PhysicalPlan aggregation_physical =
       rg::CreatePhysicalPlan(*aggregation_query.logical_plan);
-  EXPECT_EQ(aggregation_physical.NodeFor(*aggregation).type,
-            rg::PhysicalOperatorType::kHashAggregation);
-  EXPECT_EQ(aggregation_physical.NodeFor(*aggregation).execution_kind,
-            rg::PhysicalExecutionType::kBlockingUnary);
+  EXPECT_EQ(aggregation_physical.NodeFor(*aggregation).kind,
+            rg::PhysicalOperatorKind::kHashAggregation);
 
   PlannedQuery sort_query = Plan("UNWIND [3, 1, 2] AS x RETURN x ORDER BY x");
   const ir::LogicalPlan *sort =
@@ -233,10 +287,8 @@ TEST(PhysicalPlanTest, SelectsPartialSortAndHashFallbacks) {
   ASSERT_NE(sort, nullptr);
   rg::PhysicalPlan sort_physical =
       rg::CreatePhysicalPlan(*sort_query.logical_plan);
-  EXPECT_EQ(sort_physical.NodeFor(*sort).type,
-            rg::PhysicalOperatorType::kFullSort);
-  EXPECT_EQ(sort_physical.NodeFor(*sort).execution_kind,
-            rg::PhysicalExecutionType::kBlockingUnary);
+  EXPECT_EQ(sort_physical.NodeFor(*sort).kind,
+            rg::PhysicalOperatorKind::kFullSort);
 }
 
 TEST(PhysicalPlanTest, SelectsPartialTopNForProvidedOrderingPrefix) {
@@ -251,8 +303,7 @@ TEST(PhysicalPlanTest, SelectsPartialTopNForProvidedOrderingPrefix) {
   rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
   const rg::PhysicalPlanNode &node = physical.NodeFor(*top_n);
 
-  EXPECT_EQ(node.type, rg::PhysicalOperatorType::kPartialTopN);
-  EXPECT_EQ(node.execution_kind, rg::PhysicalExecutionType::kPartialTopN);
+  EXPECT_EQ(node.kind, rg::PhysicalOperatorKind::kPartialTopN);
   EXPECT_EQ(node.partial_top_n_prefix, 1U);
   EXPECT_EQ(node.top_n, top_n);
 }
@@ -268,7 +319,7 @@ TEST(PhysicalPlanTest, PrintsAlgorithmsPropertiesAndSlots) {
 
   EXPECT_NE(printed.find("PartialSort"), std::string::npos);
   EXPECT_NE(printed.find("logical=Sort"), std::string::npos);
-  EXPECT_NE(printed.find("exec=PartialSort"), std::string::npos);
+  EXPECT_EQ(printed.find("exec="), std::string::npos);
   EXPECT_NE(printed.find("order=[a ASC, b ASC]"), std::string::npos);
   EXPECT_NE(printed.find("prefix=1"), std::string::npos);
   EXPECT_NE(printed.find("slots=[a:reference@0?"), std::string::npos);
