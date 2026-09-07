@@ -4225,94 +4225,112 @@ class OperatorFactory final {
   std::unique_ptr<PullOperator> Build(
       const PhysicalPlanNode &node,
       std::optional<SlottedRow> argument = std::nullopt) {
-    if (node.type == PhysicalOperatorType::kTopN) {
-      CHECK(node.children.size() == 1, common::InternalError,
-            "Top-N physical node must have one child");
-      return std::make_unique<TopNOperator>(
-          node, *state_, Build(*node.children[0], std::move(argument)));
-    }
-    if (node.type == PhysicalOperatorType::kPartialTopN) {
-      CHECK(node.children.size() == 1, common::InternalError,
-            "partial Top-N physical node must have one child");
-      return std::make_unique<PartialTopNOperator>(
-          node, *state_, Build(*node.children[0], std::move(argument)));
-    }
-    const ir::LogicalPlanNodeType type = node.logical->Type();
-    if (node.logical->ChildCount() == 0) {
-      return std::make_unique<LeafOperator>(node, *state_, std::move(argument));
-    }
-    if (type == ir::LogicalPlanNodeType::kApply ||
-        type == ir::LogicalPlanNodeType::kSemiApply ||
-        type == ir::LogicalPlanNodeType::kAntiSemiApply ||
-        type == ir::LogicalPlanNodeType::kLetSemiApply ||
-        type == ir::LogicalPlanNodeType::kSelectOrSemiApply ||
-        type == ir::LogicalPlanNodeType::kRollUpApply ||
-        type == ir::LogicalPlanNodeType::kOptionalApply) {
-      return std::make_unique<ApplyOperator>(
-          node, *state_, *this, Build(*node.children[0], std::move(argument)));
-    }
-    if (type == ir::LogicalPlanNodeType::kMerge) {
-      return std::make_unique<MergeOperator>(
-          node, *state_, *this, Build(*node.children[0], std::move(argument)));
-    }
-    if (node.logical->ChildCount() == 2) {
-      auto lhs = Build(*node.children[0], argument);
-      auto rhs = Build(*node.children[1], std::move(argument));
-      if (type == ir::LogicalPlanNodeType::kUnion) {
+    switch (node.execution_kind) {
+      case PhysicalExecutionType::kTopN:
+        CHECK(node.children.size() == 1, common::InternalError,
+              "Top-N physical node must have one child");
+        return std::make_unique<TopNOperator>(
+            node, *state_, Build(*node.children[0], std::move(argument)));
+      case PhysicalExecutionType::kPartialTopN:
+        CHECK(node.children.size() == 1, common::InternalError,
+              "partial Top-N physical node must have one child");
+        return std::make_unique<PartialTopNOperator>(
+            node, *state_, Build(*node.children[0], std::move(argument)));
+      case PhysicalExecutionType::kLeaf:
+        CHECK(node.logical->ChildCount() == 0, common::InternalError,
+              "leaf physical node must not have children");
+        return std::make_unique<LeafOperator>(node, *state_,
+                                              std::move(argument));
+      case PhysicalExecutionType::kApply:
+        CHECK(node.children.size() == 2, common::InternalError,
+              "apply physical node must have two children");
+        return std::make_unique<ApplyOperator>(
+            node, *state_, *this,
+            Build(*node.children[0], std::move(argument)));
+      case PhysicalExecutionType::kMerge:
+        CHECK(node.children.size() == 2, common::InternalError,
+              "merge physical node must have two children");
+        return std::make_unique<MergeOperator>(
+            node, *state_, *this,
+            Build(*node.children[0], std::move(argument)));
+      case PhysicalExecutionType::kUnion: {
+        CHECK(node.children.size() == 2, common::InternalError,
+              "union physical node must have two children");
+        auto lhs = Build(*node.children[0], argument);
+        auto rhs = Build(*node.children[1], std::move(argument));
         return std::make_unique<UnionOperator>(node, *state_, std::move(lhs),
                                                std::move(rhs));
       }
-      if (type == ir::LogicalPlanNodeType::kValueHashJoin) {
+      case PhysicalExecutionType::kValueHashJoin: {
+        CHECK(node.children.size() == 2, common::InternalError,
+              "value hash join physical node must have two children");
+        auto lhs = Build(*node.children[0], argument);
+        auto rhs = Build(*node.children[1], std::move(argument));
         return std::make_unique<ValueHashJoinOperator>(
             node, *state_, std::move(lhs), std::move(rhs));
       }
-      if (type == ir::LogicalPlanNodeType::kLeftOuterHashJoin) {
+      case PhysicalExecutionType::kLeftOuterHashJoin: {
+        CHECK(node.children.size() == 2, common::InternalError,
+              "left outer hash join physical node must have two children");
+        auto lhs = Build(*node.children[0], argument);
+        auto rhs = Build(*node.children[1], std::move(argument));
         return std::make_unique<LeftOuterHashJoinOperator>(
             node, *state_, std::move(lhs), std::move(rhs));
       }
-      return std::make_unique<BlockingBinaryOperator>(
-          node, *state_, std::move(lhs), std::move(rhs));
+      case PhysicalExecutionType::kBlockingBinary: {
+        CHECK(node.children.size() == 2, common::InternalError,
+              "blocking binary physical node must have two children");
+        auto lhs = Build(*node.children[0], argument);
+        auto rhs = Build(*node.children[1], std::move(argument));
+        return std::make_unique<BlockingBinaryOperator>(
+            node, *state_, std::move(lhs), std::move(rhs));
+      }
+      case PhysicalExecutionType::kVarExpand:
+      case PhysicalExecutionType::kPruningVarExpand:
+      case PhysicalExecutionType::kPattern:
+      case PhysicalExecutionType::kOrderedDistinct:
+      case PhysicalExecutionType::kOrderedAggregation:
+      case PhysicalExecutionType::kPartialSort:
+      case PhysicalExecutionType::kBlockingUnary:
+      case PhysicalExecutionType::kStreamingUnary:
+        break;
+      case PhysicalExecutionType::kUnknown:
+        THROW(common::InternalError, "physical execution kind is unknown");
     }
 
+    CHECK(node.children.size() == 1, common::InternalError,
+          "unary physical node must have one child");
     auto source = Build(*node.children[0], std::move(argument));
-    if (type == ir::LogicalPlanNodeType::kVarExpand) {
-      return std::make_unique<VarExpandOperator>(node, *state_,
-                                                 std::move(source));
-    }
-    if (type == ir::LogicalPlanNodeType::kPruningVarExpand) {
-      return std::make_unique<PruningExpandOperator>(node, *state_,
-                                                     std::move(source));
-    }
-    if (type == ir::LogicalPlanNodeType::kProjectEndpoints ||
-        type == ir::LogicalPlanNodeType::kOptionalExpand) {
-      return std::make_unique<PatternOperator>(node, *state_,
-                                               std::move(source));
-    }
-    if (node.type == PhysicalOperatorType::kOrderedDistinct) {
-      return std::make_unique<OrderedDistinctOperator>(node, *state_,
-                                                       std::move(source));
-    }
-    if (node.type == PhysicalOperatorType::kOrderedAggregation) {
-      return std::make_unique<OrderedAggregationOperator>(node, *state_,
-                                                          std::move(source));
-    }
-    if (node.type == PhysicalOperatorType::kPartialSort) {
-      return std::make_unique<PartialSortOperator>(node, *state_,
+    switch (node.execution_kind) {
+      case PhysicalExecutionType::kVarExpand:
+        return std::make_unique<VarExpandOperator>(node, *state_,
                                                    std::move(source));
-    }
-    if (node.type == PhysicalOperatorType::kFullSort ||
-        node.type == PhysicalOperatorType::kHashDistinct ||
-        node.type == PhysicalOperatorType::kHashAggregation ||
-        (type == ir::LogicalPlanNodeType::kLimit &&
-         PlanContainsWrites(node.logical->Child(0))) ||
-        type == ir::LogicalPlanNodeType::kWriteBarrier ||
-        type == ir::LogicalPlanNodeType::kDelete ||
-        type == ir::LogicalPlanNodeType::kDetachDelete) {
-      return std::make_unique<BlockingUnaryOperator>(node, *state_,
+      case PhysicalExecutionType::kPruningVarExpand:
+        return std::make_unique<PruningExpandOperator>(node, *state_,
+                                                       std::move(source));
+      case PhysicalExecutionType::kPattern:
+        return std::make_unique<PatternOperator>(node, *state_,
+                                                 std::move(source));
+      case PhysicalExecutionType::kOrderedDistinct:
+        return std::make_unique<OrderedDistinctOperator>(node, *state_,
+                                                         std::move(source));
+      case PhysicalExecutionType::kOrderedAggregation:
+        return std::make_unique<OrderedAggregationOperator>(node, *state_,
+                                                            std::move(source));
+      case PhysicalExecutionType::kPartialSort:
+        return std::make_unique<PartialSortOperator>(node, *state_,
                                                      std::move(source));
+      case PhysicalExecutionType::kBlockingUnary:
+        return std::make_unique<BlockingUnaryOperator>(node, *state_,
+                                                       std::move(source));
+      case PhysicalExecutionType::kStreamingUnary:
+        return std::make_unique<StreamingUnaryOperator>(node, *state_,
+                                                        std::move(source));
+      default:
+        THROW(common::InternalError,
+              "unsupported physical execution kind: " +
+                  std::string(ToString(node.execution_kind)));
     }
-    return std::make_unique<StreamingUnaryOperator>(node, *state_,
-                                                    std::move(source));
   }
 
  private:

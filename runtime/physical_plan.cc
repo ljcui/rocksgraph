@@ -498,6 +498,102 @@ class PhysicalPlanBuilder final {
   }
 
  private:
+  PhysicalExecutionType SelectExecutionKind(const ir::LogicalPlan &plan,
+                                            const PhysicalPlanNode &node) {
+    if (plan.ChildCount() == 0) {
+      switch (plan.Type()) {
+        case ir::LogicalPlanNodeType::kArgument:
+        case ir::LogicalPlanNodeType::kAllNodeScan:
+        case ir::LogicalPlanNodeType::kNodeByLabelScan:
+        case ir::LogicalPlanNodeType::kNodeIndexSeek:
+        case ir::LogicalPlanNodeType::kNodeIndexRangeSeek:
+        case ir::LogicalPlanNodeType::kRelationshipTypeScan:
+        case ir::LogicalPlanNodeType::kRelationshipIndexSeek:
+        case ir::LogicalPlanNodeType::kRelationshipIndexRangeSeek:
+        case ir::LogicalPlanNodeType::kNodeByIdSeek:
+        case ir::LogicalPlanNodeType::kRelationshipByIdSeek:
+          return PhysicalExecutionType::kLeaf;
+        default:
+          THROW(common::InternalError,
+                "unsupported physical leaf kind: " + std::string(plan.Name()));
+      }
+    }
+    switch (plan.Type()) {
+      case ir::LogicalPlanNodeType::kFilter:
+      case ir::LogicalPlanNodeType::kProjection:
+      case ir::LogicalPlanNodeType::kSkip:
+      case ir::LogicalPlanNodeType::kProduceResults:
+      case ir::LogicalPlanNodeType::kAssertIsNode:
+      case ir::LogicalPlanNodeType::kExpand:
+      case ir::LogicalPlanNodeType::kExpandInto:
+      case ir::LogicalPlanNodeType::kPathBuild:
+      case ir::LogicalPlanNodeType::kProcedureCall:
+      case ir::LogicalPlanNodeType::kUnwind:
+      case ir::LogicalPlanNodeType::kSetProperty:
+      case ir::LogicalPlanNodeType::kSetProperties:
+      case ir::LogicalPlanNodeType::kSetLabels:
+      case ir::LogicalPlanNodeType::kRemoveProperty:
+      case ir::LogicalPlanNodeType::kRemoveLabels:
+      case ir::LogicalPlanNodeType::kCreateNode:
+      case ir::LogicalPlanNodeType::kCreateRelationship:
+        return PhysicalExecutionType::kStreamingUnary;
+      case ir::LogicalPlanNodeType::kLimit:
+        return PlanContainsWrites(plan.Child(0))
+                   ? PhysicalExecutionType::kBlockingUnary
+                   : PhysicalExecutionType::kStreamingUnary;
+      case ir::LogicalPlanNodeType::kWriteBarrier:
+      case ir::LogicalPlanNodeType::kDelete:
+      case ir::LogicalPlanNodeType::kDetachDelete:
+        return PhysicalExecutionType::kBlockingUnary;
+      case ir::LogicalPlanNodeType::kSort:
+        return node.type == PhysicalOperatorType::kPartialSort
+                   ? PhysicalExecutionType::kPartialSort
+                   : PhysicalExecutionType::kBlockingUnary;
+      case ir::LogicalPlanNodeType::kTopN:
+        return node.type == PhysicalOperatorType::kPartialTopN
+                   ? PhysicalExecutionType::kPartialTopN
+                   : PhysicalExecutionType::kTopN;
+      case ir::LogicalPlanNodeType::kDistinct:
+        return node.type == PhysicalOperatorType::kOrderedDistinct
+                   ? PhysicalExecutionType::kOrderedDistinct
+                   : PhysicalExecutionType::kBlockingUnary;
+      case ir::LogicalPlanNodeType::kAggregation:
+        return node.type == PhysicalOperatorType::kOrderedAggregation
+                   ? PhysicalExecutionType::kOrderedAggregation
+                   : PhysicalExecutionType::kBlockingUnary;
+      case ir::LogicalPlanNodeType::kVarExpand:
+        return PhysicalExecutionType::kVarExpand;
+      case ir::LogicalPlanNodeType::kPruningVarExpand:
+        return PhysicalExecutionType::kPruningVarExpand;
+      case ir::LogicalPlanNodeType::kProjectEndpoints:
+      case ir::LogicalPlanNodeType::kOptionalExpand:
+        return PhysicalExecutionType::kPattern;
+      case ir::LogicalPlanNodeType::kApply:
+      case ir::LogicalPlanNodeType::kSemiApply:
+      case ir::LogicalPlanNodeType::kAntiSemiApply:
+      case ir::LogicalPlanNodeType::kLetSemiApply:
+      case ir::LogicalPlanNodeType::kSelectOrSemiApply:
+      case ir::LogicalPlanNodeType::kRollUpApply:
+      case ir::LogicalPlanNodeType::kOptionalApply:
+        return PhysicalExecutionType::kApply;
+      case ir::LogicalPlanNodeType::kMerge:
+        return PhysicalExecutionType::kMerge;
+      case ir::LogicalPlanNodeType::kUnion:
+        return PhysicalExecutionType::kUnion;
+      case ir::LogicalPlanNodeType::kValueHashJoin:
+        return PhysicalExecutionType::kValueHashJoin;
+      case ir::LogicalPlanNodeType::kLeftOuterHashJoin:
+        return PhysicalExecutionType::kLeftOuterHashJoin;
+      case ir::LogicalPlanNodeType::kCartesianProduct:
+      case ir::LogicalPlanNodeType::kNodeHashJoin:
+      case ir::LogicalPlanNodeType::kPredicateJoin:
+        return PhysicalExecutionType::kBlockingBinary;
+      default:
+        THROW(common::InternalError, "unsupported physical execution kind: " +
+                                         std::string(plan.Name()));
+    }
+  }
+
   std::unique_ptr<PhysicalPlanNode> BuildNode(
       const ir::LogicalPlan &plan, SlotConfigurationPtr argument_slots) {
     auto node = std::make_unique<PhysicalPlanNode>();
@@ -618,6 +714,9 @@ class PhysicalPlanBuilder final {
       node->type = node->partial_sort_prefix == 0
                        ? PhysicalOperatorType::kFullSort
                        : PhysicalOperatorType::kPartialSort;
+      node->execution_kind = node->type == PhysicalOperatorType::kPartialSort
+                                 ? PhysicalExecutionType::kPartialSort
+                                 : PhysicalExecutionType::kBlockingUnary;
       node->provided_order = sort.Items();
       return;
     }
@@ -632,6 +731,9 @@ class PhysicalPlanBuilder final {
       node->type = node->partial_top_n_prefix == 0
                        ? PhysicalOperatorType::kTopN
                        : PhysicalOperatorType::kPartialTopN;
+      node->execution_kind = node->type == PhysicalOperatorType::kPartialTopN
+                                 ? PhysicalExecutionType::kPartialTopN
+                                 : PhysicalExecutionType::kTopN;
       node->provided_order = top_n.Items();
       return;
     }
@@ -645,6 +747,9 @@ class PhysicalPlanBuilder final {
       node->type = output_order.has_value()
                        ? PhysicalOperatorType::kOrderedDistinct
                        : PhysicalOperatorType::kHashDistinct;
+      node->execution_kind = output_order.has_value()
+                                 ? PhysicalExecutionType::kOrderedDistinct
+                                 : PhysicalExecutionType::kBlockingUnary;
       node->provided_order =
           output_order.value_or(std::vector<ir::LogicalSortItem>{});
       return;
@@ -659,9 +764,14 @@ class PhysicalPlanBuilder final {
       node->type = output_order.has_value()
                        ? PhysicalOperatorType::kOrderedAggregation
                        : PhysicalOperatorType::kHashAggregation;
+      node->execution_kind = output_order.has_value()
+                                 ? PhysicalExecutionType::kOrderedAggregation
+                                 : PhysicalExecutionType::kBlockingUnary;
       node->provided_order =
           output_order.value_or(std::vector<ir::LogicalSortItem>{});
+      return;
     }
+    node->execution_kind = SelectExecutionKind(plan, *node);
   }
 
   void BuildUnionLayout(const ir::UnionPlan &plan, PhysicalPlanNode *node) {
@@ -715,6 +825,48 @@ std::string_view ToString(PhysicalOperatorType type) {
       return "PartialTopN";
   }
   THROW(common::InternalError, "unknown physical operator type");
+}
+
+std::string_view ToString(PhysicalExecutionType type) {
+  switch (type) {
+    case PhysicalExecutionType::kUnknown:
+      return "Unknown";
+    case PhysicalExecutionType::kLeaf:
+      return "Leaf";
+    case PhysicalExecutionType::kStreamingUnary:
+      return "StreamingUnary";
+    case PhysicalExecutionType::kBlockingUnary:
+      return "BlockingUnary";
+    case PhysicalExecutionType::kPattern:
+      return "Pattern";
+    case PhysicalExecutionType::kVarExpand:
+      return "VarExpand";
+    case PhysicalExecutionType::kPruningVarExpand:
+      return "PruningVarExpand";
+    case PhysicalExecutionType::kOrderedDistinct:
+      return "OrderedDistinct";
+    case PhysicalExecutionType::kOrderedAggregation:
+      return "OrderedAggregation";
+    case PhysicalExecutionType::kPartialSort:
+      return "PartialSort";
+    case PhysicalExecutionType::kTopN:
+      return "TopN";
+    case PhysicalExecutionType::kPartialTopN:
+      return "PartialTopN";
+    case PhysicalExecutionType::kLeftOuterHashJoin:
+      return "LeftOuterHashJoin";
+    case PhysicalExecutionType::kBlockingBinary:
+      return "BlockingBinary";
+    case PhysicalExecutionType::kValueHashJoin:
+      return "ValueHashJoin";
+    case PhysicalExecutionType::kUnion:
+      return "Union";
+    case PhysicalExecutionType::kApply:
+      return "Apply";
+    case PhysicalExecutionType::kMerge:
+      return "Merge";
+  }
+  THROW(common::InternalError, "unknown physical execution type");
 }
 
 PhysicalPlan::PhysicalPlan(std::unique_ptr<PhysicalPlanNode> root)

@@ -84,6 +84,7 @@ class PhysicalPlanPrinter final {
     if (node.type != PhysicalOperatorType::kLogical) {
       metadata.push_back("logical=" + std::string(node.logical->Name()));
     }
+    metadata.push_back("exec=" + std::string(ToString(node.execution_kind)));
     if (node.logical->EstimatedRows().has_value()) {
       metadata.push_back("rows=" +
                          FormatNumber(*node.logical->EstimatedRows()));

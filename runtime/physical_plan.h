@@ -25,11 +25,34 @@ enum class PhysicalOperatorType {
   kPartialTopN,
 };
 
+enum class PhysicalExecutionType {
+  kUnknown,
+  kLeaf,
+  kStreamingUnary,
+  kBlockingUnary,
+  kPattern,
+  kVarExpand,
+  kPruningVarExpand,
+  kOrderedDistinct,
+  kOrderedAggregation,
+  kPartialSort,
+  kTopN,
+  kPartialTopN,
+  kLeftOuterHashJoin,
+  kBlockingBinary,
+  kValueHashJoin,
+  kUnion,
+  kApply,
+  kMerge,
+};
+
+[[nodiscard]] std::string_view ToString(PhysicalExecutionType type);
 [[nodiscard]] std::string_view ToString(PhysicalOperatorType type);
 
 struct PhysicalPlanNode {
   OperatorId id = 0;
   PhysicalOperatorType type = PhysicalOperatorType::kLogical;
+  PhysicalExecutionType execution_kind = PhysicalExecutionType::kUnknown;
   const ir::LogicalPlan *logical = nullptr;
   const ir::TopNPlan *top_n = nullptr;
   SlotConfigurationPtr argument_slots;
