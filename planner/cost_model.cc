@@ -357,6 +357,18 @@ CostEstimate CostModel::EstimateLimit(
   return {.estimated_rows = rows, .cost = input.cost + rows};
 }
 
+CostEstimate CostModel::EstimateTopN(
+    CostEstimate input, std::size_t item_count,
+    std::optional<double> literal_limit) const {
+  const double rows = NonNegative(
+      Statistics().EstimateLimitRows(input.estimated_rows, literal_limit));
+  const double comparison_factor =
+      static_cast<double>(std::max<std::size_t>(1, item_count));
+  const double top_work =
+      input.estimated_rows * std::log2(rows + 1.0) * comparison_factor;
+  return {.estimated_rows = rows, .cost = input.cost + top_work + rows};
+}
+
 CostEstimate CostModel::EstimateProduceResults(CostEstimate input,
                                                std::size_t column_count) const {
   return EstimatePassThrough(

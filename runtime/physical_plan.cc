@@ -12,7 +12,6 @@
 #include "ast/ast_node.h"
 #include "ast/builtin_function.h"
 #include "ast/builtin_procedure.h"
-#include "ast/expression_dependency.h"
 #include "common/exception.h"
 #include "planner/order_property.h"
 
@@ -491,23 +490,6 @@ std::vector<SlotMapping> NamedMappings(
   return mappings;
 }
 
-const ir::SortPlan *TopNSortFor(const ir::LogicalPlan &plan) {
-  if (plan.Type() != ir::LogicalPlanNodeType::kLimit ||
-      plan.ChildCount() != 1 ||
-      plan.Child(0).Type() != ir::LogicalPlanNodeType::kSort) {
-    return nullptr;
-  }
-  const auto &limit = static_cast<const ir::LimitPlan &>(plan);
-  if (limit.Limit() == nullptr ||
-      !ast::CollectExpressionDependencies(*limit.Limit()).empty() ||
-      !limit.PrecomputedExpressions().empty()) {
-    return nullptr;
-  }
-  const auto &sort = static_cast<const ir::SortPlan &>(plan.Child(0));
-  return sort.ChildCount() == 1 && !PlanContainsWrites(sort.Child(0)) ? &sort
-                                                                      : nullptr;
-}
-
 class PhysicalPlanBuilder final {
  public:
   PhysicalPlan Build(const ir::LogicalPlan &plan) {
@@ -523,11 +505,7 @@ class PhysicalPlanBuilder final {
     node->logical = &plan;
     node->argument_slots = std::move(argument_slots);
 
-    if (const ir::SortPlan *sort = TopNSortFor(plan); sort != nullptr) {
-      node->type = PhysicalOperatorType::kTopN;
-      node->top_n_sort = sort;
-      node->children.push_back(BuildNode(sort->Child(0), node->argument_slots));
-    } else if (plan.ChildCount() == 1) {
+    if (plan.ChildCount() == 1) {
       node->children.push_back(BuildNode(plan.Child(0), node->argument_slots));
     } else if (plan.ChildCount() == 2) {
       node->children.push_back(BuildNode(plan.Child(0), node->argument_slots));
@@ -594,13 +572,6 @@ class PhysicalPlanBuilder final {
 
   void SelectOperator(const ir::LogicalPlan &plan, PhysicalPlanNode *node) {
     CHECK(node != nullptr, common::InternalError, "physical plan node is null");
-    if (node->type == PhysicalOperatorType::kTopN) {
-      CHECK(node->top_n_sort != nullptr, common::InternalError,
-            "Top-N sort is null");
-      node->provided_order = node->top_n_sort->Items();
-      return;
-    }
-
     node->provided_order = plan.OrderingTrait();
     if (!node->children.empty()) {
       switch (plan.Type()) {
@@ -648,6 +619,20 @@ class PhysicalPlanBuilder final {
                        ? PhysicalOperatorType::kFullSort
                        : PhysicalOperatorType::kPartialSort;
       node->provided_order = sort.Items();
+      return;
+    }
+
+    if (plan.Type() == ir::LogicalPlanNodeType::kTopN) {
+      CHECK(node->children.size() == 1, common::InternalError,
+            "Top-N physical node must have one child");
+      const auto &top_n = static_cast<const ir::TopNPlan &>(plan);
+      node->top_n = &top_n;
+      node->partial_top_n_prefix = CommonOrderingPrefix(
+          node->children[0]->provided_order, top_n.Items());
+      node->type = node->partial_top_n_prefix == 0
+                       ? PhysicalOperatorType::kTopN
+                       : PhysicalOperatorType::kPartialTopN;
+      node->provided_order = top_n.Items();
       return;
     }
 
@@ -726,6 +711,8 @@ std::string_view ToString(PhysicalOperatorType type) {
       return "OrderedAggregation";
     case PhysicalOperatorType::kTopN:
       return "TopN";
+    case PhysicalOperatorType::kPartialTopN:
+      return "PartialTopN";
   }
   THROW(common::InternalError, "unknown physical operator type");
 }
@@ -749,9 +736,6 @@ const PhysicalPlanNode &PhysicalPlan::NodeFor(
 
 void PhysicalPlan::Index(const PhysicalPlanNode &node) {
   nodes_.emplace(node.logical, &node);
-  if (node.top_n_sort != nullptr) {
-    nodes_.emplace(node.top_n_sort, &node);
-  }
   for (const auto &child : node.children) {
     Index(*child);
   }

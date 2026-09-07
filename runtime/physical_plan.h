@@ -22,6 +22,7 @@ enum class PhysicalOperatorType {
   kHashAggregation,
   kOrderedAggregation,
   kTopN,
+  kPartialTopN,
 };
 
 [[nodiscard]] std::string_view ToString(PhysicalOperatorType type);
@@ -30,13 +31,14 @@ struct PhysicalPlanNode {
   OperatorId id = 0;
   PhysicalOperatorType type = PhysicalOperatorType::kLogical;
   const ir::LogicalPlan *logical = nullptr;
-  const ir::SortPlan *top_n_sort = nullptr;
+  const ir::TopNPlan *top_n = nullptr;
   SlotConfigurationPtr argument_slots;
   SlotConfigurationPtr output_slots;
   std::vector<ir::LogicalSortItem> provided_order;
   std::vector<std::vector<SlotMapping>> child_mappings;
   std::vector<std::unique_ptr<PhysicalPlanNode>> children;
   std::size_t partial_sort_prefix = 0;
+  std::size_t partial_top_n_prefix = 0;
   std::size_t value_hash_join_build_child = 1;
 };
 

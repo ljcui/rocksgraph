@@ -75,10 +75,6 @@ class PhysicalPlanPrinter final {
                            ? std::string(node.logical->Name())
                            : std::string(ToString(node.type));
     std::string details = node.logical->Details();
-    if (node.type == PhysicalOperatorType::kTopN &&
-        node.top_n_sort != nullptr) {
-      details = node.top_n_sort->Details() + "; limit=" + details;
-    }
     if (!details.empty()) {
       line.append(" [").append(details).append("]");
     }
@@ -100,6 +96,9 @@ class PhysicalPlanPrinter final {
     }
     if (node.partial_sort_prefix > 0) {
       metadata.push_back("prefix=" + std::to_string(node.partial_sort_prefix));
+    }
+    if (node.partial_top_n_prefix > 0) {
+      metadata.push_back("prefix=" + std::to_string(node.partial_top_n_prefix));
     }
     if (node.logical->Type() == ir::LogicalPlanNodeType::kValueHashJoin) {
       metadata.push_back(

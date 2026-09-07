@@ -34,6 +34,7 @@ inline constexpr auto kLogicalPlanNodeTypeNames = std::array{
     std::string_view{"Sort"},
     std::string_view{"Skip"},
     std::string_view{"Limit"},
+    std::string_view{"TopN"},
     std::string_view{"ProduceResults"},
     std::string_view{"CartesianProduct"},
     std::string_view{"NodeHashJoin"},
@@ -1099,6 +1100,46 @@ std::string LimitPlan::Details() const {
     return "null";
   }
   return ast::ExpressionToString(*limit_);
+}
+
+TopNPlan::TopNPlan(LogicalPlanPtr source, std::vector<LogicalSortItem> items,
+                   const ast::Expression *limit)
+    : LogicalPlan(LogicalPlanNodeType::kTopN,
+                  UnaryChildren(std::move(source), "TopN")),
+      items_(std::move(items)),
+      limit_(limit) {
+  SetSolvedSymbols(Child(0).SolvedSymbols());
+  SetOutputColumns(Child(0).OutputColumns());
+}
+
+TopNPlan::TopNPlan(
+    LogicalPlanPtr source, std::vector<LogicalSortItem> items,
+    const ast::Expression *limit,
+    std::vector<LogicalPrecomputedExpression> precomputed_expressions)
+    : LogicalPlan(LogicalPlanNodeType::kTopN,
+                  UnaryChildren(std::move(source), "TopN")),
+      items_(std::move(items)),
+      limit_(limit),
+      precomputed_expressions_(std::move(precomputed_expressions)) {
+  SetSolvedSymbols(Child(0).SolvedSymbols());
+  SetOutputColumns(Child(0).OutputColumns());
+}
+
+std::string TopNPlan::Details() const {
+  std::vector<std::string> items;
+  items.reserve(items_.size());
+  for (const auto &item : items_) {
+    std::string expression = item.expression != nullptr
+                                 ? ast::ExpressionToString(*item.expression)
+                                 : "null";
+    expression.push_back(' ');
+    expression.append(ToString(item.direction));
+    items.push_back(std::move(expression));
+  }
+  std::string details = Join(items, ", ");
+  details.append("; limit=");
+  details.append(limit_ != nullptr ? ast::ExpressionToString(*limit_) : "null");
+  return details;
 }
 
 ProduceResultsPlan::ProduceResultsPlan(LogicalPlanPtr source,

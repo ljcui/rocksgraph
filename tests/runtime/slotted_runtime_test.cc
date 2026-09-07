@@ -139,6 +139,37 @@ TEST(SlottedRuntimeTest, SupportsParameterizedAndZeroTopNLimits) {
   EXPECT_TRUE(empty.rows.empty());
 }
 
+TEST(SlottedRuntimeTest, ExecutesStableTopOne) {
+  rg::InMemoryGraph graph;
+  const rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "UNWIND [{score:1,name:'first'}, {score:2,name:'other'}, "
+      "{score:1,name:'second'}] AS item "
+      "RETURN item.name AS name ORDER BY item.score LIMIT 1");
+
+  ASSERT_EQ(result.rows.size(), 1U);
+  EXPECT_EQ(result.rows[0][0], rg::Value("first"));
+}
+
+TEST(SlottedRuntimeTest, ExecutesPartialTopNByOrderingPrefix) {
+  rg::InMemoryGraph graph;
+  const rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "UNWIND [{a:2,b:0},{a:1,b:3},{a:1,b:1},{a:2,b:2},{a:1,b:2}] AS x "
+      "WITH x ORDER BY x.a "
+      "RETURN x.a AS a, x.b AS b ORDER BY a, b LIMIT 4");
+
+  ASSERT_EQ(result.rows.size(), 4U);
+  EXPECT_EQ(result.rows[0],
+            (std::vector<rg::Value>{rg::Value(1), rg::Value(1)}));
+  EXPECT_EQ(result.rows[1],
+            (std::vector<rg::Value>{rg::Value(1), rg::Value(2)}));
+  EXPECT_EQ(result.rows[2],
+            (std::vector<rg::Value>{rg::Value(1), rg::Value(3)}));
+  EXPECT_EQ(result.rows[3],
+            (std::vector<rg::Value>{rg::Value(2), rg::Value(0)}));
+}
+
 TEST(SlottedRuntimeTest, KeepsOnlyTopNRowsInMemory) {
   rg::InMemoryGraph graph;
   for (std::int64_t value = 1; value <= 256; ++value) {

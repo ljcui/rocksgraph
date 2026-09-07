@@ -278,6 +278,10 @@ TEST(CostModelTest, EstimatesRelationalOperatorMetadata) {
   EXPECT_DOUBLE_EQ(limited.estimated_rows, 5.0);
   EXPECT_DOUBLE_EQ(limited.cost, 15.0);
 
+  ir::CostEstimate top_n = model.EstimateTopN(input, 1, 5.0);
+  EXPECT_DOUBLE_EQ(top_n.estimated_rows, 5.0);
+  EXPECT_LT(top_n.cost, model.EstimateSort(input, 1).cost + limited.cost);
+
   ir::CostEstimate unwind_unknown = model.EstimateUnwind(input, std::nullopt);
   EXPECT_DOUBLE_EQ(unwind_unknown.estimated_rows, 400.0);
   EXPECT_DOUBLE_EQ(unwind_unknown.cost, 410.0);

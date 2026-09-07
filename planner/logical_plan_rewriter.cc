@@ -152,6 +152,65 @@ LogicalPlanPtr PruneDistinctExpand(
   return plan;
 }
 
+bool PlanContainsWrites(const LogicalPlan &plan) {
+  switch (plan.Type()) {
+    case LogicalPlanNodeType::kCreateNode:
+    case LogicalPlanNodeType::kCreateRelationship:
+    case LogicalPlanNodeType::kMerge:
+    case LogicalPlanNodeType::kSetProperty:
+    case LogicalPlanNodeType::kSetProperties:
+    case LogicalPlanNodeType::kSetLabels:
+    case LogicalPlanNodeType::kRemoveProperty:
+    case LogicalPlanNodeType::kRemoveLabels:
+    case LogicalPlanNodeType::kDelete:
+    case LogicalPlanNodeType::kDetachDelete:
+      return true;
+    case LogicalPlanNodeType::kProcedureCall:
+      if (!static_cast<const ProcedureCallPlan &>(plan).ReadOnly()) {
+        return true;
+      }
+      break;
+    default:
+      break;
+  }
+  for (const auto &child : plan.Children()) {
+    if (child != nullptr && PlanContainsWrites(*child)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+class UseTopNRule final : public LogicalPlanRewriteRule {
+ public:
+  [[nodiscard]] bool Apply(LogicalPlanPtr *plan) const override {
+    CHECK(plan != nullptr && *plan != nullptr, common::InternalError,
+          "logical plan rewrite input is null");
+    if ((*plan)->Type() != LogicalPlanNodeType::kLimit ||
+        (*plan)->ChildCount() != 1 ||
+        (*plan)->Child(0).Type() != LogicalPlanNodeType::kSort) {
+      return false;
+    }
+
+    auto &limit = static_cast<LimitPlan &>(**plan);
+    const auto &sort = static_cast<const SortPlan &>(limit.Child(0));
+    if (limit.Limit() == nullptr ||
+        !ast::CollectExpressionDependencies(*limit.Limit()).empty() ||
+        !limit.PrecomputedExpressions().empty() || sort.ChildCount() != 1 ||
+        PlanContainsWrites(sort.Child(0))) {
+      return false;
+    }
+
+    const ast::Expression *limit_expression = limit.Limit();
+    std::vector<LogicalSortItem> items = sort.Items();
+    LogicalPlanPtr sort_plan = limit.TakeChild(0);
+    LogicalPlanPtr source = sort_plan->TakeChild(0);
+    *plan = std::make_unique<TopNPlan>(std::move(source), std::move(items),
+                                       limit_expression);
+    return true;
+  }
+};
+
 class PruneDistinctVarExpandRule final : public LogicalPlanRewriteRule {
  public:
   [[nodiscard]] bool Apply(LogicalPlanPtr *plan) const override {
@@ -204,6 +263,7 @@ LogicalPlanPtr LogicalPlanRewritePipeline::Run(LogicalPlanPtr plan) const {
 LogicalPlanRewritePipeline MakeDefaultLogicalPlanRewritePipeline() {
   LogicalPlanRewritePipeline pipeline;
   pipeline.Add(std::make_unique<PruneDistinctVarExpandRule>());
+  pipeline.Add(std::make_unique<UseTopNRule>());
   return pipeline;
 }
 

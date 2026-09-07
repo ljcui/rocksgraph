@@ -143,6 +143,9 @@ class CostModel {
       CostEstimate input, std::optional<double> literal_skip) const;
   [[nodiscard]] CostEstimate EstimateLimit(
       CostEstimate input, std::optional<double> literal_limit) const;
+  [[nodiscard]] CostEstimate EstimateTopN(
+      CostEstimate input, std::size_t item_count,
+      std::optional<double> literal_limit) const;
   [[nodiscard]] CostEstimate EstimateProduceResults(
       CostEstimate input, std::size_t column_count) const;
   [[nodiscard]] CostEstimate EstimateCartesianProduct(CostEstimate left,

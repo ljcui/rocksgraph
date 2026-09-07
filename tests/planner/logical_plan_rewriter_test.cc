@@ -102,3 +102,43 @@ TEST(LogicalPlanRewriterTest, DefaultPipelineLeavesPathSensitiveExpand) {
   EXPECT_NE(Find(*plan, ir::LogicalPlanNodeType::kVarExpand), nullptr);
   EXPECT_EQ(Find(*plan, ir::LogicalPlanNodeType::kPruningVarExpand), nullptr);
 }
+
+TEST(LogicalPlanRewriterTest, DefaultPipelineRewritesSortAndLimitToTopN) {
+  std::unique_ptr<ast::Statement> statement = ast::ParseCypherAndRewrite(
+      "UNWIND [3, 1, 2] AS x RETURN x ORDER BY x LIMIT 2");
+  std::unique_ptr<ir::QueryIR> query_ir = ir::CreateQueryIR(*statement);
+
+  ir::LogicalPlanPtr plan = ir::CreateLogicalPlan(*query_ir);
+
+  const ir::LogicalPlan *top_n = Find(*plan, ir::LogicalPlanNodeType::kTopN);
+  ASSERT_NE(top_n, nullptr);
+  EXPECT_EQ(Find(*plan, ir::LogicalPlanNodeType::kSort), nullptr);
+  EXPECT_EQ(Find(*plan, ir::LogicalPlanNodeType::kLimit), nullptr);
+  EXPECT_TRUE(top_n->EstimatedRows().has_value());
+  EXPECT_DOUBLE_EQ(*top_n->EstimatedRows(), 2.0);
+  ASSERT_EQ(top_n->OrderingTrait().size(), 1U);
+  EXPECT_EQ(top_n->OrderingTrait()[0].direction,
+            ir::LogicalOrderDirection::kAscending);
+}
+
+TEST(LogicalPlanRewriterTest, DefaultPipelineKeepsSkipAndWriteBoundaries) {
+  std::unique_ptr<ast::Statement> skipped_statement =
+      ast::ParseCypherAndRewrite(
+          "UNWIND [3, 1, 2] AS x RETURN x ORDER BY x SKIP 1 LIMIT 1");
+  std::unique_ptr<ir::QueryIR> skipped_ir =
+      ir::CreateQueryIR(*skipped_statement);
+  ir::LogicalPlanPtr skipped = ir::CreateLogicalPlan(*skipped_ir);
+
+  EXPECT_EQ(Find(*skipped, ir::LogicalPlanNodeType::kTopN), nullptr);
+  EXPECT_NE(Find(*skipped, ir::LogicalPlanNodeType::kSort), nullptr);
+  EXPECT_NE(Find(*skipped, ir::LogicalPlanNodeType::kLimit), nullptr);
+
+  std::unique_ptr<ast::Statement> write_statement = ast::ParseCypherAndRewrite(
+      "MATCH (n) SET n.x = 1 RETURN n ORDER BY n LIMIT 2");
+  std::unique_ptr<ir::QueryIR> write_ir = ir::CreateQueryIR(*write_statement);
+  ir::LogicalPlanPtr write = ir::CreateLogicalPlan(*write_ir);
+
+  EXPECT_EQ(Find(*write, ir::LogicalPlanNodeType::kTopN), nullptr);
+  EXPECT_NE(Find(*write, ir::LogicalPlanNodeType::kSort), nullptr);
+  EXPECT_NE(Find(*write, ir::LogicalPlanNodeType::kLimit), nullptr);
+}

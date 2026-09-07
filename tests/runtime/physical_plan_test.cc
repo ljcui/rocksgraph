@@ -107,28 +107,27 @@ TEST(PhysicalPlanTest, ChoosesSmallerValueHashJoinBuildSide) {
   EXPECT_EQ(physical.NodeFor(*logical_join).value_hash_join_build_child, 0U);
 }
 
-TEST(PhysicalPlanTest, FusesDirectReadOnlySortAndLimitIntoTopN) {
+TEST(PhysicalPlanTest, SelectsTopNForRewrittenLogicalPlan) {
   PlannedQuery query =
       Plan("UNWIND [3, 1, 2] AS x RETURN x ORDER BY x LIMIT $l");
-  const ir::LogicalPlan *limit =
-      FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kLimit);
-  const ir::LogicalPlan *sort =
-      FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kSort);
-  ASSERT_NE(limit, nullptr);
-  ASSERT_NE(sort, nullptr);
+  const ir::LogicalPlan *top_n =
+      FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kTopN);
+  ASSERT_NE(top_n, nullptr);
+  EXPECT_EQ(FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kLimit),
+            nullptr);
+  EXPECT_EQ(FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kSort),
+            nullptr);
 
   rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
-  const rg::PhysicalPlanNode &limit_node = physical.NodeFor(*limit);
-  const rg::PhysicalPlanNode &sort_node = physical.NodeFor(*sort);
+  const rg::PhysicalPlanNode &top_n_node = physical.NodeFor(*top_n);
 
-  EXPECT_EQ(limit_node.type, rg::PhysicalOperatorType::kTopN);
-  EXPECT_EQ(&limit_node, &sort_node);
-  EXPECT_EQ(limit_node.top_n_sort, sort);
-  ASSERT_EQ(limit_node.children.size(), 1U);
-  EXPECT_EQ(limit_node.children[0]->logical, &sort->Child(0));
+  EXPECT_EQ(top_n_node.type, rg::PhysicalOperatorType::kTopN);
+  EXPECT_EQ(top_n_node.top_n, top_n);
+  ASSERT_EQ(top_n_node.children.size(), 1U);
+  EXPECT_EQ(top_n_node.children[0]->logical, &top_n->Child(0));
 }
 
-TEST(PhysicalPlanTest, DoesNotFuseTopNAcrossSkipOrWrites) {
+TEST(PhysicalPlanTest, DoesNotRewriteTopNAcrossSkipOrWrites) {
   PlannedQuery skipped =
       Plan("UNWIND [3, 1, 2] AS x RETURN x ORDER BY x SKIP 1 LIMIT 1");
   const ir::LogicalPlan *skipped_limit =
@@ -221,6 +220,23 @@ TEST(PhysicalPlanTest, SelectsPartialSortAndHashFallbacks) {
       rg::CreatePhysicalPlan(*sort_query.logical_plan);
   EXPECT_EQ(sort_physical.NodeFor(*sort).type,
             rg::PhysicalOperatorType::kFullSort);
+}
+
+TEST(PhysicalPlanTest, SelectsPartialTopNForProvidedOrderingPrefix) {
+  PlannedQuery query = Plan(
+      "UNWIND [{a:1,b:2},{a:1,b:1},{a:2,b:1}] AS x "
+      "WITH x ORDER BY x.a "
+      "RETURN x.a AS a, x.b AS b ORDER BY a, b LIMIT 2");
+  const ir::LogicalPlan *top_n =
+      FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kTopN);
+  ASSERT_NE(top_n, nullptr);
+
+  rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+  const rg::PhysicalPlanNode &node = physical.NodeFor(*top_n);
+
+  EXPECT_EQ(node.type, rg::PhysicalOperatorType::kPartialTopN);
+  EXPECT_EQ(node.partial_top_n_prefix, 1U);
+  EXPECT_EQ(node.top_n, top_n);
 }
 
 TEST(PhysicalPlanTest, PrintsAlgorithmsPropertiesAndSlots) {

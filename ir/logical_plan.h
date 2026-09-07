@@ -39,6 +39,7 @@ enum class LogicalPlanNodeType {
   kSort,
   kSkip,
   kLimit,
+  kTopN,
   kProduceResults,
   kCartesianProduct,
   kNodeHashJoin,
@@ -719,6 +720,30 @@ class LimitPlan final : public LogicalPlan {
   [[nodiscard]] std::string Details() const override;
 
  private:
+  const ast::Expression *limit_ = nullptr;
+  std::vector<LogicalPrecomputedExpression> precomputed_expressions_;
+};
+
+class TopNPlan final : public LogicalPlan {
+ public:
+  TopNPlan(LogicalPlanPtr source, std::vector<LogicalSortItem> items,
+           const ast::Expression *limit);
+  TopNPlan(LogicalPlanPtr source, std::vector<LogicalSortItem> items,
+           const ast::Expression *limit,
+           std::vector<LogicalPrecomputedExpression> precomputed_expressions);
+
+  [[nodiscard]] const std::vector<LogicalSortItem> &Items() const noexcept {
+    return items_;
+  }
+  [[nodiscard]] const ast::Expression *Limit() const noexcept { return limit_; }
+  [[nodiscard]] const std::vector<LogicalPrecomputedExpression> &
+  PrecomputedExpressions() const noexcept {
+    return precomputed_expressions_;
+  }
+  [[nodiscard]] std::string Details() const override;
+
+ private:
+  std::vector<LogicalSortItem> items_;
   const ast::Expression *limit_ = nullptr;
   std::vector<LogicalPrecomputedExpression> precomputed_expressions_;
 };

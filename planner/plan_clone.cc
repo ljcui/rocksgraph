@@ -153,6 +153,12 @@ std::unique_ptr<LogicalPlan> CloneComponentPlanWithoutMetadata(
                                          limit.Limit(),
                                          limit.PrecomputedExpressions());
     }
+    case LogicalPlanNodeType::kTopN: {
+      const auto &top_n = static_cast<const TopNPlan &>(plan);
+      return std::make_unique<TopNPlan>(CloneComponentPlan(top_n.Child(0)),
+                                        top_n.Items(), top_n.Limit(),
+                                        top_n.PrecomputedExpressions());
+    }
     case LogicalPlanNodeType::kProduceResults:
       return std::make_unique<ProduceResultsPlan>(
           CloneComponentPlan(plan.Child(0)), plan.OutputColumns());

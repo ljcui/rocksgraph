@@ -809,6 +809,12 @@ CostEstimate EstimateLogicalPlanNode(
           OnlyChildEstimate(child_estimates, plan.Name()),
           NonNegativeIntegerLiteral(limit.Limit()));
     }
+    case LogicalPlanNodeType::kTopN: {
+      const auto &top_n = static_cast<const TopNPlan &>(plan);
+      return cost_model.EstimateTopN(
+          OnlyChildEstimate(child_estimates, plan.Name()), top_n.Items().size(),
+          NonNegativeIntegerLiteral(top_n.Limit()));
+    }
     case LogicalPlanNodeType::kProduceResults:
       return cost_model.EstimateProduceResults(
           OnlyChildEstimate(child_estimates, plan.Name()),
@@ -950,6 +956,13 @@ void ApplyLogicalPlanTraits(LogicalPlan *plan) {
       const auto &sort = static_cast<const SortPlan &>(*plan);
       const bool distinct = plan->Child(0).DistinctTrait();
       plan->SetOrderingTrait(sort.Items());
+      plan->SetDistinctTrait(distinct);
+      return;
+    }
+    case LogicalPlanNodeType::kTopN: {
+      const auto &top_n = static_cast<const TopNPlan &>(*plan);
+      const bool distinct = plan->Child(0).DistinctTrait();
+      plan->SetOrderingTrait(top_n.Items());
       plan->SetDistinctTrait(distinct);
       return;
     }
