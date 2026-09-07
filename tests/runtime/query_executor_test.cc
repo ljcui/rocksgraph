@@ -831,6 +831,71 @@ TEST(QueryExecutorTest, ExecutesListIndexAndSliceExpressions) {
                 {"20", "30", "null", "[10, 20]", "[20, 30]", "[10, 20]"}}));
 }
 
+TEST(QueryExecutorTest, ExecutesLiteralDynamicPropertyLookup) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph, "MATCH (n) WHERE n.name = 'Ada' RETURN n['name'] AS name");
+
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{{"\"Ada\""}}));
+}
+
+TEST(QueryExecutorTest, ExecutesSubqueryExpressionsInUpdates) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult created = rg::ExecuteQuery(
+      graph,
+      "CREATE (a {p: EXISTS { MATCH (b) WHERE b.name = 'Ada' RETURN b }}) "
+      "RETURN a.p AS p");
+  EXPECT_EQ(StringRows(created),
+            (std::vector<std::vector<std::string>>{{"true"}}));
+
+  rg::QueryResult set = rg::ExecuteQuery(
+      graph,
+      "MATCH (n) WHERE n.name = 'Grace' "
+      "SET n.p = EXISTS { MATCH (m) WHERE m.name = 'Ada' RETURN m } "
+      "RETURN n.p AS p");
+  EXPECT_EQ(StringRows(set), (std::vector<std::vector<std::string>>{{"true"}}));
+
+  rg::QueryResult ordered_set = rg::ExecuteQuery(
+      graph,
+      "MATCH (n) WHERE n.name = 'Grace' "
+      "SET n.ready = true, "
+      "n.observed = EXISTS { MATCH (m) WHERE n.ready = true RETURN m } "
+      "RETURN n.observed AS observed");
+  EXPECT_EQ(StringRows(ordered_set),
+            (std::vector<std::vector<std::string>>{{"true"}}));
+}
+
+TEST(QueryExecutorTest, PreservesSubqueryDependenciesAcrossWith) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "WITH 'Ada' AS name MATCH (n) WHERE EXISTS { "
+      "WITH 'Lovelace' AS lastName MATCH (m) "
+      "WHERE m.name = name OR m.name = lastName RETURN m } "
+      "RETURN n.name AS name");
+
+  EXPECT_EQ(result.rows.size(), 3U);
+}
+
+TEST(QueryExecutorTest, PreservesSubqueryDependenciesInReturnOrderBy) {
+  rg::InMemoryGraph graph;
+  SeedDemoGraph(&graph);
+
+  rg::QueryResult result = rg::ExecuteReadQuery(
+      graph,
+      "WITH 1 AS x MATCH (n) WHERE EXISTS { "
+      "MATCH (m) RETURN m ORDER BY x } RETURN n.name AS name");
+
+  EXPECT_EQ(result.rows.size(), 3U);
+}
+
 TEST(QueryExecutorTest, ExecutesScalarBuiltInFunctions) {
   rg::InMemoryGraph graph;
 

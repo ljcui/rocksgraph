@@ -72,7 +72,7 @@ void ReturnStarRewriter::Visit(MultiPartQuery &node) {
 void ReturnStarRewriter::Visit(With &node) {
   if (node.body && node.body->star && CurrentScope().order.empty()) {
     node.body->star = false;
-    node.body->empty_star_expansion = true;
+    node.body->empty_star_expansion = node.body->items.empty();
   }
   ASTRewriter::Visit(node);
 }

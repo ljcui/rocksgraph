@@ -25,6 +25,8 @@ add_library(
   rewriters/comparison_chain_rewriter.cc
   rewriters/count_star_rewriter.cc
   rewriters/existential_subquery_rewriter.cc
+  rewriters/literal_dynamic_property_rewriter.cc
+  rewriters/mutating_subquery_isolation_rewriter.cc
   rewriters/projection_alias_reference_rewriter.cc
   rewriters/parenthesized_expression_rewriter.cc
   rewriters/pattern_predicate_normalization_rewriter.cc
@@ -33,6 +35,7 @@ add_library(
   rewriters/return_star_rewriter.cc
   rewriters/rewriter_pipeline.cc
   rewriters/rewriter_registry.cc
+  rewriters/subquery_projection_dependency_rewriter.cc
   rewriters/uniqueness_predicates_rewriter.cc
   ${ROCKSGRAPH_AST_GENERATED_SOURCES})
 

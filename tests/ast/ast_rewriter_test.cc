@@ -10,6 +10,7 @@
 #include "ast/rewriters/comparison_chain_rewriter.h"
 #include "ast/rewriters/count_star_rewriter.h"
 #include "ast/rewriters/existential_subquery_rewriter.h"
+#include "ast/rewriters/literal_dynamic_property_rewriter.h"
 #include "ast/rewriters/parenthesized_expression_rewriter.h"
 #include "ast/rewriters/pattern_predicate_normalization_rewriter.h"
 #include "ast/rewriters/pattern_predicate_rewriter.h"
@@ -108,6 +109,19 @@ TEST(ParenthesizedExpressionRewriterTest, WhereExpression) {
   ExpectRewriteEqualsWith<ast::ParenthesizedExpressionRewriter>(
       "MATCH (n) WHERE ((n.age > 1)) RETURN n",
       "MATCH (n) WHERE n.age > 1 RETURN n");
+}
+
+TEST(LiteralDynamicPropertyRewriterTest, RewritesStringLiteralIndex) {
+  ExpectRewriteEqualsWith<ast::LiteralDynamicPropertyRewriter>(
+      "MATCH (n) RETURN n['name'] AS name", "MATCH (n) RETURN n.name AS name");
+}
+
+TEST(LiteralDynamicPropertyRewriterTest, PreservesNonLiteralIndex) {
+  ExpectRewriteEqualsWith<ast::LiteralDynamicPropertyRewriter>(
+      "WITH {name: 'Ada'} AS person, 'name' AS key "
+      "RETURN person[key] AS name",
+      "WITH {name: 'Ada'} AS person, 'name' AS key "
+      "RETURN person[key] AS name");
 }
 
 TEST(PatternPredicateRewriterTest, WherePattern) {
@@ -343,6 +357,99 @@ TEST(RewriterPipelineTest, DefaultPipelineUsesReturnStar) {
 
   EXPECT_TRUE(ast::ASTEqual::Equal(statement.get(), expected_statement.get()))
       << "rewrite mismatch for pipeline";
+}
+
+TEST(RewriterPipelineTest, PreservesOuterDependenciesAcrossSubqueryWith) {
+  auto statement = ParseOrFail(
+      "WITH 'Ada' AS name MATCH (n) WHERE EXISTS { "
+      "WITH 'Lovelace' AS lastName MATCH (m) "
+      "WHERE m.name = name AND m.name = lastName RETURN m } RETURN n");
+  auto expected_statement = ParseOrFail(
+      "WITH 'Ada' AS name MATCH (n) WHERE EXISTS { "
+      "WITH 'Lovelace' AS lastName, name AS name MATCH (m) "
+      "WHERE m.name = name AND m.name = lastName RETURN m AS m } "
+      "RETURN n AS n");
+  ASSERT_TRUE(statement);
+  ASSERT_TRUE(expected_statement);
+
+  ast::ApplyDefaultRewriters(*statement);
+
+  EXPECT_TRUE(ast::ASTEqual::Equal(statement.get(), expected_statement.get()));
+}
+
+TEST(RewriterPipelineTest, PreservesOuterDependenciesInSubqueryReturnOrderBy) {
+  auto statement = ParseOrFail(
+      "WITH 1 AS x MATCH (n) WHERE EXISTS { "
+      "MATCH (m) RETURN m ORDER BY x } RETURN n");
+  auto expected_statement = ParseOrFail(
+      "WITH 1 AS x MATCH (n) WHERE EXISTS { "
+      "MATCH (m) WITH m AS m, x AS x ORDER BY x ASC RETURN m AS m } "
+      "RETURN n AS n");
+  ASSERT_TRUE(statement);
+  ASSERT_TRUE(expected_statement);
+
+  ast::ApplyDefaultRewriters(*statement);
+
+  EXPECT_TRUE(ast::ASTEqual::Equal(statement.get(), expected_statement.get()));
+}
+
+TEST(RewriterPipelineTest, IsolatesCreateSubqueryExpression) {
+  auto statement =
+      ParseOrFail("CREATE (a {p: EXISTS { MATCH (b) RETURN b }}) RETURN a.p");
+  auto expected_statement = ParseOrFail(
+      "WITH EXISTS { MATCH (b) RETURN b AS b } AS __update_expr_0 "
+      "CREATE (a {p: __update_expr_0}) RETURN a.p AS `a.p`");
+  ASSERT_TRUE(statement);
+  ASSERT_TRUE(expected_statement);
+
+  ast::ApplyDefaultRewriters(*statement);
+
+  EXPECT_TRUE(ast::ASTEqual::Equal(statement.get(), expected_statement.get()));
+}
+
+TEST(RewriterPipelineTest, IsolatesSetSubqueryExpression) {
+  auto statement = ParseOrFail(
+      "MATCH (n) SET n.p = EXISTS { MATCH (m) RETURN m } RETURN n.p");
+  auto expected_statement = ParseOrFail(
+      "MATCH (n) WITH n AS n, "
+      "EXISTS { MATCH (m) RETURN m AS m } AS __update_expr_0 "
+      "SET n.p = __update_expr_0 RETURN n.p AS `n.p`");
+  ASSERT_TRUE(statement);
+  ASSERT_TRUE(expected_statement);
+
+  ast::ApplyDefaultRewriters(*statement);
+
+  EXPECT_TRUE(ast::ASTEqual::Equal(statement.get(), expected_statement.get()));
+}
+
+TEST(RewriterPipelineTest, IsolatesDeletePatternComprehension) {
+  auto statement =
+      ParseOrFail("MATCH (n) DELETE ([(n)-->(m) | m][0]) RETURN n");
+  auto expected_statement = ParseOrFail(
+      "MATCH (n) WITH n AS n, [(n)-[anon_0]->(m) | m][0] "
+      "AS __update_expr_0 "
+      "DELETE __update_expr_0 RETURN n AS n");
+  ASSERT_TRUE(statement);
+  ASSERT_TRUE(expected_statement);
+
+  ast::ApplyDefaultRewriters(*statement);
+
+  EXPECT_TRUE(ast::ASTEqual::Equal(statement.get(), expected_statement.get()));
+}
+
+TEST(RewriterPipelineTest, IsolatesRemovePatternComprehension) {
+  auto statement =
+      ParseOrFail("MATCH (n) REMOVE ([(n)-->(m) | m][0]).name RETURN n");
+  auto expected_statement = ParseOrFail(
+      "MATCH (n) WITH n AS n, [(n)-[anon_0]->(m) | m][0] "
+      "AS __update_expr_0 "
+      "REMOVE __update_expr_0.name RETURN n AS n");
+  ASSERT_TRUE(statement);
+  ASSERT_TRUE(expected_statement);
+
+  ast::ApplyDefaultRewriters(*statement);
+
+  EXPECT_TRUE(ast::ASTEqual::Equal(statement.get(), expected_statement.get()));
 }
 
 TEST(RewriterPipelineTest, ParseAndRewriteUsesDefaultPipeline) {
