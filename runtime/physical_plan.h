@@ -75,7 +75,8 @@ enum class PhysicalOperatorKind {
   kLeftOuterHashJoin,
   kSelectOrSemiApply,
   kPruningVarExpand,
-  kUnion,
+  kUnionAll,
+  kUnionDistinct,
 };
 
 [[nodiscard]] std::string_view ToString(PhysicalOperatorKind kind);
@@ -351,6 +352,12 @@ struct PredicateJoinOp {
   std::size_t cached_child = 1;
 };
 
+struct UnionAllOp {};
+
+struct UnionDistinctOp {
+  std::vector<Slot> key_slots;
+};
+
 using PhysicalOperatorData = std::variant<
     std::monostate, ArgumentOp, AllNodeScanOp, NodeByLabelScanOp,
     NodeIndexSeekOp, NodeIndexRangeSeekOp, RelationshipTypeScanOp,
@@ -360,7 +367,8 @@ using PhysicalOperatorData = std::variant<
     FilterOp, ProjectionOp, HashDistinctOp, OrderedDistinctOp,
     HashAggregationOp, OrderedAggregationOp, FullSortOp, PartialSortOp, TopNOp,
     PartialTopNOp, SkipOp, LimitOp, ProduceResultsOp, ValueHashJoinOp,
-    NodeHashJoinOp, LeftOuterHashJoinOp, CartesianProductOp, PredicateJoinOp>;
+    NodeHashJoinOp, LeftOuterHashJoinOp, CartesianProductOp, PredicateJoinOp,
+    UnionAllOp, UnionDistinctOp>;
 
 struct PhysicalPlanNode {
   OperatorId id = 0;

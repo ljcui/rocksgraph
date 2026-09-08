@@ -269,9 +269,115 @@ TEST(PhysicalPlanTest, UnifiesIncompatibleUnionSlotsAsReferences) {
       FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kUnion);
   ASSERT_NE(union_plan, nullptr);
   const rg::PhysicalPlanNode &union_node = physical.NodeFor(*union_plan);
+  EXPECT_EQ(union_node.kind, rg::PhysicalOperatorKind::kUnionAll);
+  EXPECT_TRUE(std::holds_alternative<rg::UnionAllOp>(union_node.data));
   ASSERT_EQ(union_node.child_mappings.size(), 2U);
   ASSERT_EQ(union_node.child_mappings[0].size(), 1U);
   ASSERT_EQ(union_node.child_mappings[1].size(), 1U);
+}
+
+TEST(PhysicalPlanTest, SelectsDedicatedUnionPhysicalAlgorithms) {
+  PlannedQuery query = Plan("RETURN 1 AS value UNION RETURN 2 AS value");
+  const ir::LogicalPlan *logical_union =
+      FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kUnion);
+  ASSERT_NE(logical_union, nullptr);
+
+  rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+  const rg::PhysicalPlanNode &union_node = physical.NodeFor(*logical_union);
+  EXPECT_EQ(union_node.kind, rg::PhysicalOperatorKind::kUnionDistinct);
+  const auto &data = std::get<rg::UnionDistinctOp>(union_node.data);
+  ASSERT_EQ(data.key_slots.size(), 1U);
+  const rg::Slot &output_slot = union_node.output_slots->At("value");
+  EXPECT_EQ(data.key_slots.front().offset, output_slot.offset);
+  EXPECT_EQ(data.key_slots.front().kind, output_slot.kind);
+  EXPECT_EQ(data.key_slots.front().type, output_slot.type);
+  EXPECT_EQ(data.key_slots.front().nullable, output_slot.nullable);
+
+  const std::string printed = rg::PhysicalPlanToString(physical);
+  EXPECT_NE(printed.find("UnionDistinct"), std::string::npos);
+  EXPECT_NE(printed.find("logical=Union"), std::string::npos);
+}
+
+TEST(PhysicalPlanTest, ExecutesDetachedUnionAlgorithmsAndMappings) {
+  rg::InMemoryGraph graph;
+  rg::PhysicalPlan all = DetachedPhysicalPlan(
+      "RETURN 1 AS value UNION ALL RETURN 1.0 AS value "
+      "UNION ALL RETURN null AS value");
+  ASSERT_NE(FindPhysicalPlan(all.Root(), rg::PhysicalOperatorKind::kUnionAll),
+            nullptr);
+  const auto all_rows = PhysicalRows(all, graph, {"value"});
+  ASSERT_EQ(all_rows.size(), 3U);
+  ASSERT_EQ(all_rows[0].size(), 1U);
+  ASSERT_EQ(all_rows[1].size(), 1U);
+  ASSERT_EQ(all_rows[2].size(), 1U);
+  EXPECT_TRUE(all_rows[0][0].IsInteger());
+  EXPECT_TRUE(all_rows[1][0].IsDouble());
+  EXPECT_TRUE(all_rows[2][0].IsNull());
+  EXPECT_TRUE(all.Root().output_slots->At("value").nullable);
+
+  rg::PhysicalPlan distinct = DetachedPhysicalPlan(
+      "RETURN 1 AS value UNION RETURN 1.0 AS value "
+      "UNION RETURN null AS value UNION RETURN null AS value");
+  ASSERT_NE(FindPhysicalPlan(distinct.Root(),
+                             rg::PhysicalOperatorKind::kUnionDistinct),
+            nullptr);
+  const auto distinct_rows = PhysicalRows(distinct, graph, {"value"});
+  ASSERT_EQ(distinct_rows.size(), 2U);
+  EXPECT_EQ(std::count_if(distinct_rows.begin(), distinct_rows.end(),
+                          [](const auto &row) { return row[0].IsNull(); }),
+            1);
+  EXPECT_EQ(std::count_if(distinct_rows.begin(), distinct_rows.end(),
+                          [](const auto &row) {
+                            return rg::ValuesEqual(row[0], rg::Value(1));
+                          }),
+            1);
+
+  const auto node = graph.CreateNode({});
+  rg::PhysicalPlan merged_layout = DetachedPhysicalPlan(
+      "MATCH (n) RETURN n AS value UNION ALL RETURN 1 AS value");
+  const auto mapped_rows = PhysicalRows(merged_layout, graph, {"value"});
+  ASSERT_EQ(mapped_rows.size(), 2U);
+  EXPECT_EQ(mapped_rows[0][0], rg::Value(node));
+  EXPECT_EQ(mapped_rows[1][0], rg::Value(1));
+  EXPECT_EQ(merged_layout.Root().output_slots->At("value").kind,
+            rg::SlotKind::kReference);
+}
+
+TEST(PhysicalPlanTest, UnionOperatorsHandleResourcesAndEarlyClose) {
+  rg::InMemoryGraph graph;
+  rg::PhysicalPlan all = DetachedPhysicalPlan(
+      "RETURN 'left' AS value UNION ALL RETURN 'right' AS value");
+  std::unique_ptr<rg::PhysicalResultCursor> cursor =
+      rg::StartPhysicalPlan(all, graph, nullptr, {}, {"value"});
+  std::vector<rg::Value> row;
+  ASSERT_TRUE(cursor->Next(&row));
+  cursor->Close();
+  EXPECT_FALSE(cursor->Next(&row));
+
+  rg::QueryExecutionOptions all_memory_options;
+  all_memory_options.memory_limit_bytes = 1;
+  cursor = rg::StartPhysicalPlan(all, graph, nullptr, {}, {"value"},
+                                 all_memory_options);
+  EXPECT_TRUE(cursor->Next(&row));
+  EXPECT_TRUE(cursor->Next(&row));
+  EXPECT_FALSE(cursor->Next(&row));
+  EXPECT_EQ(cursor->PeakMemoryBytes(), 0U);
+
+  rg::QueryExecutionOptions cancellation_options;
+  cancellation_options.cancellation =
+      std::make_shared<rg::QueryCancellationToken>();
+  cursor = rg::StartPhysicalPlan(all, graph, nullptr, {}, {"value"},
+                                 cancellation_options);
+  cancellation_options.cancellation->Cancel();
+  EXPECT_THROW((void)cursor->Next(&row), common::QueryCancelledError);
+
+  rg::PhysicalPlan distinct = DetachedPhysicalPlan(
+      "RETURN 'left' AS value UNION RETURN 'right' AS value");
+  rg::QueryExecutionOptions distinct_memory_options;
+  distinct_memory_options.memory_limit_bytes = 1;
+  cursor = rg::StartPhysicalPlan(distinct, graph, nullptr, {}, {"value"},
+                                 distinct_memory_options);
+  EXPECT_THROW((void)cursor->Next(&row), common::MemoryLimitExceededError);
 }
 
 TEST(PhysicalPlanTest, PreservesScopedSemanticTypesForExpressions) {

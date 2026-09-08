@@ -781,7 +781,9 @@ class PhysicalPlanBuilder final {
       case ir::LogicalPlanNodeType::kPruningVarExpand:
         return PhysicalOperatorKind::kPruningVarExpand;
       case ir::LogicalPlanNodeType::kUnion:
-        return PhysicalOperatorKind::kUnion;
+        return static_cast<const ir::UnionPlan &>(plan).All()
+                   ? PhysicalOperatorKind::kUnionAll
+                   : PhysicalOperatorKind::kUnionDistinct;
     }
     THROW(common::InternalError,
           "unsupported physical operator: " + std::string(plan.Name()));
@@ -1266,6 +1268,18 @@ class PhysicalPlanBuilder final {
         node->data = LeftOuterHashJoinOp{.join_keys = join.JoinKeys()};
         return;
       }
+      case PhysicalOperatorKind::kUnionAll:
+        node->data = UnionAllOp{};
+        return;
+      case PhysicalOperatorKind::kUnionDistinct: {
+        UnionDistinctOp data;
+        data.key_slots.reserve(node->output_slots->Columns().size());
+        for (const auto &column : node->output_slots->Columns()) {
+          data.key_slots.push_back(node->output_slots->At(column));
+        }
+        node->data = std::move(data);
+        return;
+      }
       default:
         return;
     }
@@ -1414,8 +1428,10 @@ std::string_view ToString(PhysicalOperatorKind kind) {
       return "SelectOrSemiApply";
     case PhysicalOperatorKind::kPruningVarExpand:
       return "PruningVarExpand";
-    case PhysicalOperatorKind::kUnion:
-      return "Union";
+    case PhysicalOperatorKind::kUnionAll:
+      return "UnionAll";
+    case PhysicalOperatorKind::kUnionDistinct:
+      return "UnionDistinct";
   }
   THROW(common::InternalError, "unknown physical operator kind");
 }

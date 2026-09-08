@@ -4934,21 +4934,24 @@ class ValueHashJoinOperator final : public PullOperator {
   bool closed_ = false;
 };
 
-class UnionOperator final : public PullOperator {
+class UnionInputState final {
  public:
-  UnionOperator(const PhysicalPlanNode &node, RuntimeState &state,
-                std::unique_ptr<PullOperator> lhs,
-                std::unique_ptr<PullOperator> rhs)
+  UnionInputState(const PhysicalPlanNode &node, RuntimeState &state,
+                  std::unique_ptr<PullOperator> lhs,
+                  std::unique_ptr<PullOperator> rhs)
       : node_(&node),
         state_(&state),
         lhs_(std::move(lhs)),
         rhs_(std::move(rhs)) {}
 
-  ~UnionOperator() override { Close(); }
+  ~UnionInputState() { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override {
+  [[nodiscard]] bool Next(SlottedRow *row) {
+    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
     state_->CheckCancelled();
-    const auto &plan = static_cast<const ir::UnionPlan &>(*node_->logical);
+    if (closed_) {
+      return false;
+    }
     while (side_ < 2) {
       PullOperator *source = side_ == 0 ? lhs_.get() : rhs_.get();
       const PhysicalPlanNode &child = *node_->children[side_];
@@ -4960,20 +4963,6 @@ class UnionOperator final : public PullOperator {
       }
       SlottedRow output(node_->output_slots);
       CopyMappings(input, &output, node_->child_mappings[side_], *state_);
-      if (!plan.All()) {
-        CompositeValueKey key;
-        key.values.reserve(node_->output_slots->Columns().size());
-        for (const auto &column : node_->output_slots->Columns()) {
-          key.values.push_back(output.Get(column, *state_->graph_reader));
-        }
-        auto [seen, inserted] = seen_.insert(std::move(key));
-        if (!inserted) {
-          continue;
-        }
-        const std::size_t key_bytes = EstimatedKeyHeapUsage(*seen);
-        state_->memory_tracker.Reserve(key_bytes);
-        reserved_bytes_ += key_bytes;
-      }
       *row = std::move(output);
       return true;
     }
@@ -4981,15 +4970,17 @@ class UnionOperator final : public PullOperator {
     return false;
   }
 
-  void Close() noexcept override {
+  void Close() noexcept {
+    if (closed_) {
+      return;
+    }
     if (lhs_ != nullptr) {
       lhs_->Close();
     }
     if (rhs_ != nullptr) {
       rhs_->Close();
     }
-    state_->memory_tracker.Release(reserved_bytes_);
-    reserved_bytes_ = 0;
+    closed_ = true;
   }
 
  private:
@@ -4997,9 +4988,86 @@ class UnionOperator final : public PullOperator {
   RuntimeState *state_ = nullptr;
   std::unique_ptr<PullOperator> lhs_;
   std::unique_ptr<PullOperator> rhs_;
-  std::unordered_set<CompositeValueKey, ValueHash, ValueEqual> seen_;
   std::size_t side_ = 0;
+  bool closed_ = false;
+};
+
+class UnionAllOperator final : public PullOperator {
+ public:
+  UnionAllOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                   std::unique_ptr<PullOperator> lhs,
+                   std::unique_ptr<PullOperator> rhs)
+      : input_(node, state, std::move(lhs), std::move(rhs)) {
+    (void)OperatorData<UnionAllOp>(node);
+  }
+
+  ~UnionAllOperator() override { Close(); }
+
+  [[nodiscard]] bool Next(SlottedRow *row) override { return input_.Next(row); }
+
+  void Close() noexcept override { input_.Close(); }
+
+ private:
+  UnionInputState input_;
+};
+
+class UnionDistinctOperator final : public PullOperator {
+ public:
+  UnionDistinctOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                        std::unique_ptr<PullOperator> lhs,
+                        std::unique_ptr<PullOperator> rhs)
+      : node_(&node),
+        data_(&OperatorData<UnionDistinctOp>(node)),
+        state_(&state),
+        input_(node, state, std::move(lhs), std::move(rhs)) {}
+
+  ~UnionDistinctOperator() override { Close(); }
+
+  [[nodiscard]] bool Next(SlottedRow *row) override {
+    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    if (closed_) {
+      return false;
+    }
+    SlottedRow input(node_->output_slots);
+    while (input_.Next(&input)) {
+      CompositeValueKey key;
+      key.values.reserve(data_->key_slots.size());
+      for (const Slot &slot : data_->key_slots) {
+        key.values.push_back(input.Get(slot, *state_->graph_reader));
+      }
+      auto [seen, inserted] = seen_.insert(std::move(key));
+      if (!inserted) {
+        continue;
+      }
+      const std::size_t key_bytes = EstimatedKeyHeapUsage(*seen);
+      state_->memory_tracker.Reserve(key_bytes);
+      reserved_bytes_ += key_bytes;
+      *row = std::move(input);
+      return true;
+    }
+    Close();
+    return false;
+  }
+
+  void Close() noexcept override {
+    if (closed_) {
+      return;
+    }
+    input_.Close();
+    seen_.clear();
+    state_->memory_tracker.Release(reserved_bytes_);
+    reserved_bytes_ = 0;
+    closed_ = true;
+  }
+
+ private:
+  const PhysicalPlanNode *node_ = nullptr;
+  const UnionDistinctOp *data_ = nullptr;
+  RuntimeState *state_ = nullptr;
+  UnionInputState input_;
+  std::unordered_set<CompositeValueKey, ValueHash, ValueEqual> seen_;
   std::size_t reserved_bytes_ = 0;
+  bool closed_ = false;
 };
 
 class ApplyOperator final : public PullOperator {
@@ -5174,13 +5242,21 @@ class OperatorFactory final {
         return std::make_unique<MergeOperator>(
             node, *state_, *this,
             Build(*node.children[0], std::move(argument)));
-      case PhysicalOperatorKind::kUnion: {
+      case PhysicalOperatorKind::kUnionAll: {
         CHECK(node.children.size() == 2, common::InternalError,
-              "union physical node must have two children");
+              "UNION ALL physical node must have two children");
         auto lhs = Build(*node.children[0], argument);
         auto rhs = Build(*node.children[1], std::move(argument));
-        return std::make_unique<UnionOperator>(node, *state_, std::move(lhs),
-                                               std::move(rhs));
+        return std::make_unique<UnionAllOperator>(node, *state_, std::move(lhs),
+                                                  std::move(rhs));
+      }
+      case PhysicalOperatorKind::kUnionDistinct: {
+        CHECK(node.children.size() == 2, common::InternalError,
+              "UNION DISTINCT physical node must have two children");
+        auto lhs = Build(*node.children[0], argument);
+        auto rhs = Build(*node.children[1], std::move(argument));
+        return std::make_unique<UnionDistinctOperator>(
+            node, *state_, std::move(lhs), std::move(rhs));
       }
       case PhysicalOperatorKind::kValueHashJoin: {
         CHECK(node.children.size() == 2, common::InternalError,
