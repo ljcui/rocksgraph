@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "ast/ast_builder.h"
+#include "common/exception.h"
 #include "ir/query_ir.h"
 #include "planner/logical_plan_builder.h"
 #include "runtime/physical_plan_printer.h"
@@ -112,6 +113,26 @@ rg::PhysicalPlan DetachedProjectEndpoints(bool variable_length) {
     pattern.length.max = 2;
   }
   ir::ProjectEndpointsPlan logical(std::move(source), std::move(pattern));
+  return rg::CreatePhysicalPlan(logical);
+}
+
+rg::PhysicalPlan DetachedPruningVarExpand() {
+  std::unique_ptr<ast::Parameter> from = Parameter("from");
+  auto source = std::make_unique<ir::ProjectionPlan>(
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>{}),
+      std::vector<ir::LogicalProjectionItem>{
+          {.expression = from.get(),
+           .alias = "a",
+           .semantic_type = ast::SemanticVariableType::kNode}});
+  ir::PatternRelationship pattern{.variable = "rs",
+                                  .left_node = "a",
+                                  .right_node = "b",
+                                  .direction = ir::Direction::kOutgoing,
+                                  .types = {"R"}};
+  pattern.length.variable = true;
+  pattern.length.min = 0;
+  pattern.length.max = 2;
+  ir::PruningVarExpandPlan logical(std::move(source), std::move(pattern));
   return rg::CreatePhysicalPlan(logical);
 }
 
@@ -490,6 +511,52 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForFixedTraversalOperators) {
   }
 }
 
+TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForVariableTraversalOperators) {
+  {
+    PlannedQuery query =
+        Plan("MATCH (a)-[rs:R*0..3]->(b) RETURN size(rs) AS hops");
+    const auto *logical = static_cast<const ir::VarExpandPlan *>(
+        FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kVarExpand));
+    ASSERT_NE(logical, nullptr);
+    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+    const auto &data =
+        std::get<rg::VarExpandOp>(physical.NodeFor(*logical).data);
+    EXPECT_EQ(data.pattern.from_node, "a");
+    EXPECT_EQ(data.pattern.relationship, "rs");
+    EXPECT_EQ(data.pattern.to_node, "b");
+    EXPECT_EQ(data.pattern.direction, rg::PhysicalExpandDirection::kOutgoing);
+    EXPECT_EQ(data.pattern.types, (std::vector<std::string>{"R"}));
+    EXPECT_TRUE(data.length.variable);
+    EXPECT_EQ(data.length.min, 0);
+    EXPECT_EQ(data.length.max, 3);
+  }
+  {
+    rg::PhysicalPlan physical = DetachedPruningVarExpand();
+    ASSERT_EQ(physical.Root().kind,
+              rg::PhysicalOperatorKind::kPruningVarExpand);
+    const auto &data = std::get<rg::PruningVarExpandOp>(physical.Root().data);
+    EXPECT_EQ(data.pattern.from_node, "a");
+    EXPECT_EQ(data.pattern.to_node, "b");
+    EXPECT_EQ(data.pattern.direction, rg::PhysicalExpandDirection::kOutgoing);
+    EXPECT_EQ(data.pattern.types, (std::vector<std::string>{"R"}));
+    EXPECT_TRUE(data.length.variable);
+    EXPECT_EQ(data.length.min, 0);
+    EXPECT_EQ(data.length.max, 2);
+  }
+  {
+    PlannedQuery query = Plan("MATCH p = (a)-[rs:R*1..2]->(b) RETURN p");
+    const auto *logical = static_cast<const ir::PathBuildPlan *>(
+        FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kPathBuild));
+    ASSERT_NE(logical, nullptr);
+    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+    const auto &data =
+        std::get<rg::PathBuildOp>(physical.NodeFor(*logical).data);
+    EXPECT_EQ(data.path.variable, "p");
+    EXPECT_EQ(data.path.nodes, (std::vector<std::string>{"a", "b"}));
+    EXPECT_EQ(data.path.relationships, (std::vector<std::string>{"rs"}));
+  }
+}
+
 TEST(PhysicalPlanTest,
      ExecutesFixedTraversalAfterLogicalPlanAndAstAreDestroyed) {
   rg::InMemoryGraph graph;
@@ -579,6 +646,65 @@ TEST(PhysicalPlanTest, ClosesFixedExpandCursorEarly) {
   ASSERT_TRUE(cursor->Next(&row));
   cursor->Close();
   EXPECT_FALSE(cursor->Next(&row));
+}
+
+TEST(PhysicalPlanTest,
+     ExecutesVariableTraversalAfterLogicalPlanAndAstAreDestroyed) {
+  rg::InMemoryGraph graph;
+  auto first = graph.CreateNode({});
+  auto second = graph.CreateNode({});
+  auto third = graph.CreateNode({});
+  auto first_relationship = graph.CreateRelationship(first, second, "R");
+  auto second_relationship = graph.CreateRelationship(second, third, "R");
+  graph.CreateRelationship(first, third, "S");
+
+  rg::PhysicalPlan variable = DetachedPhysicalPlan(
+      "MATCH (a)-[rs:R*0..3]->(b) WHERE id(a) = " + std::to_string(first->id) +
+      " RETURN size(rs) AS hops");
+  EXPECT_EQ(FirstColumnIds(variable, graph, "hops"),
+            (std::vector<std::int64_t>{0, 1, 2}));
+
+  rg::PhysicalPlan pruning = DetachedPruningVarExpand();
+  EXPECT_EQ(FirstColumnIds(pruning, graph, "b", {{"from", rg::Value(first)}}),
+            (std::vector<std::int64_t>{first->id, second->id, third->id}));
+
+  rg::PhysicalPlan path =
+      DetachedPhysicalPlan("MATCH p = (a)-[rs:R*2..2]->(b) WHERE id(b) = " +
+                           std::to_string(third->id) + " RETURN p");
+  const auto rows = PhysicalRows(path, graph, {"p"});
+  ASSERT_EQ(rows.size(), 1U);
+  ASSERT_EQ(rows.front().size(), 1U);
+  ASSERT_TRUE(rows.front().front().IsPath());
+  const rg::Path &value = rows.front().front().AsPath();
+  ASSERT_EQ(value.nodes.size(), 3U);
+  ASSERT_EQ(value.relationships.size(), 2U);
+  EXPECT_EQ(value.nodes[0]->id, first->id);
+  EXPECT_EQ(value.nodes[1]->id, second->id);
+  EXPECT_EQ(value.nodes[2]->id, third->id);
+  EXPECT_EQ(value.relationships[0]->id, first_relationship->id);
+  EXPECT_EQ(value.relationships[1]->id, second_relationship->id);
+}
+
+TEST(PhysicalPlanTest, ClosesVariableExpandCursorEarlyAndEnforcesMemoryLimit) {
+  rg::InMemoryGraph graph;
+  auto first = graph.CreateNode({});
+  auto second = graph.CreateNode({});
+  graph.CreateRelationship(first, second, "R");
+  rg::PhysicalPlan physical = DetachedPhysicalPlan(
+      "MATCH (a)-[rs:R*1..2]->(b) WHERE id(a) = " + std::to_string(first->id) +
+      " RETURN id(b) AS b");
+
+  std::unique_ptr<rg::PhysicalResultCursor> cursor =
+      rg::StartPhysicalPlan(physical, graph, nullptr, {}, {"b"});
+  std::vector<rg::Value> row;
+  ASSERT_TRUE(cursor->Next(&row));
+  cursor->Close();
+  EXPECT_FALSE(cursor->Next(&row));
+
+  rg::QueryExecutionOptions options;
+  options.memory_limit_bytes = 1;
+  cursor = rg::StartPhysicalPlan(physical, graph, nullptr, {}, {"b"}, options);
+  EXPECT_THROW((void)cursor->Next(&row), common::MemoryLimitExceededError);
 }
 
 TEST(PhysicalPlanTest, ChoosesSmallerValueHashJoinBuildSide) {

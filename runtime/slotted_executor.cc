@@ -348,29 +348,7 @@ bool RelationshipHasType(const Relationship &relationship,
 
 std::unique_ptr<EntityIdCursor> ExpandCursor(const GraphReader &graph_reader,
                                              std::int64_t node_id,
-                                             ir::ExpandDirection direction);
-
-std::optional<std::int64_t> NextVarExpandNode(const Relationship &relationship,
-                                              std::int64_t current_node_id,
-                                              ir::ExpandDirection direction) {
-  if (direction == ir::ExpandDirection::kOutgoing) {
-    return relationship.start_node_id == current_node_id
-               ? std::optional<std::int64_t>(relationship.end_node_id)
-               : std::nullopt;
-  }
-  if (direction == ir::ExpandDirection::kIncoming) {
-    return relationship.end_node_id == current_node_id
-               ? std::optional<std::int64_t>(relationship.start_node_id)
-               : std::nullopt;
-  }
-  if (relationship.start_node_id == current_node_id) {
-    return relationship.end_node_id;
-  }
-  if (relationship.end_node_id == current_node_id) {
-    return relationship.start_node_id;
-  }
-  return std::nullopt;
-}
+                                             PhysicalExpandDirection direction);
 
 bool CanTraverse(const std::vector<GraphReader::RelationshipPtr> &relationships,
                  std::int64_t from, std::int64_t target) {
@@ -386,7 +364,7 @@ bool CanTraverse(const std::vector<GraphReader::RelationshipPtr> &relationships,
   return from == target;
 }
 
-Value BuildPathValue(const ir::PathPattern &pattern, const SlottedRow &row,
+Value BuildPathValue(const PhysicalPathPattern &pattern, const SlottedRow &row,
                      RuntimeState *state) {
   CHECK(state != nullptr && !pattern.nodes.empty(),
         common::InvalidArgumentError, "path has no nodes: " + pattern.variable);
@@ -1124,18 +1102,6 @@ int CompareValues(const Value &left, const Value &right) {
     return left_less ? -1 : 1;
   }
   return 0;
-}
-
-std::unique_ptr<EntityIdCursor> ExpandCursor(const GraphReader &graph_reader,
-                                             std::int64_t node_id,
-                                             ir::ExpandDirection direction) {
-  if (direction == ir::ExpandDirection::kOutgoing) {
-    return graph_reader.OutgoingRelationshipIds(node_id);
-  }
-  if (direction == ir::ExpandDirection::kIncoming) {
-    return graph_reader.IncomingRelationshipIds(node_id);
-  }
-  return graph_reader.RelationshipIdsConnectedTo(node_id);
 }
 
 std::unique_ptr<EntityIdCursor> ExpandCursor(
@@ -1941,16 +1907,17 @@ class VarExpandOperator final : public PullOperator {
   VarExpandOperator(const PhysicalPlanNode &node, RuntimeState &state,
                     std::unique_ptr<PullOperator> source)
       : node_(&node),
+        data_(&OperatorData<VarExpandOp>(node)),
         state_(&state),
-        source_(std::move(source)),
-        plan_(static_cast<const ir::VarExpandPlan &>(*node.logical)) {
-    CHECK(plan_.Length().min.value_or(1) >= 0 &&
-              plan_.Length().max.value_or(0) >= 0,
+        source_(std::move(source)) {
+    CHECK(data_->length.min.value_or(1) >= 0 &&
+              data_->length.max.value_or(0) >= 0,
           common::InvalidArgumentError, "negative variable path length");
   }
   ~VarExpandOperator() override { Close(); }
 
   bool Next(SlottedRow *row) override {
+    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
     while (!closed_) {
       state_->CheckCancelled();
       if (frames_.empty()) {
@@ -1960,22 +1927,22 @@ class VarExpandOperator final : public PullOperator {
           Close();
           return false;
         }
-        const auto from = NodeId(input, plan_.FromNode(), *state_);
+        const auto from = NodeId(input, data_->pattern.from_node, *state_);
         if (from < 0) {
           continue;
         }
         bound_to_.reset();
-        if (input.Slots()->Contains(plan_.ToNode()) &&
-            input.IsInitialized(plan_.ToNode())) {
-          const auto to = NodeId(input, plan_.ToNode(), *state_);
+        if (input.Slots()->Contains(data_->pattern.to_node) &&
+            input.IsInitialized(data_->pattern.to_node)) {
+          const auto to = NodeId(input, data_->pattern.to_node, *state_);
           if (to < 0) {
             continue;
           }
           bound_to_ = to;
         }
-        min_ = static_cast<std::size_t>(plan_.Length().min.value_or(1));
-        max_ = plan_.Length().max.has_value()
-                   ? static_cast<std::size_t>(*plan_.Length().max)
+        min_ = static_cast<std::size_t>(data_->length.min.value_or(1));
+        max_ = data_->length.max.has_value()
+                   ? static_cast<std::size_t>(*data_->length.max)
                    : state_->graph_reader->RelationshipCount();
         if (min_ > max_) {
           continue;
@@ -1995,10 +1962,10 @@ class VarExpandOperator final : public PullOperator {
           }
           auto output =
               input_->CopyTo(node_->output_slots, *state_->graph_reader);
-          if (TryBindSlot(&output, plan_.Relationship(),
+          if (TryBindSlot(&output, data_->pattern.relationship,
                           Value(std::move(relationships)),
                           *state_->graph_reader) &&
-              TryBindEntityId(&output, plan_.ToNode(), SlotKind::kNode,
+              TryBindEntityId(&output, data_->pattern.to_node, SlotKind::kNode,
                               frame.node, *state_->graph_reader)) {
             *row = std::move(output);
             return true;
@@ -2010,8 +1977,8 @@ class VarExpandOperator final : public PullOperator {
         continue;
       }
       if (frame.cursor == nullptr) {
-        frame.cursor = state_->TrackCursor(
-            ExpandCursor(*state_->graph_reader, frame.node, plan_.Direction()));
+        frame.cursor = state_->TrackCursor(ExpandCursor(
+            *state_->graph_reader, frame.node, data_->pattern.direction));
       }
       bool advanced = false;
       while (frame.cursor->Next()) {
@@ -2021,11 +1988,11 @@ class VarExpandOperator final : public PullOperator {
           continue;
         }
         const auto &relationship = *state_->graph_reader->RelationshipById(id);
-        if (!RelationshipHasType(relationship, plan_.Types())) {
+        if (!RelationshipHasType(relationship, data_->pattern.types)) {
           continue;
         }
-        const auto next =
-            NextVarExpandNode(relationship, frame.node, plan_.Direction());
+        const auto next = NextPhysicalExpandNode(relationship, frame.node,
+                                                 data_->pattern.direction);
         if (next.has_value()) {
           Push(*next);
           used_.insert(id);
@@ -2042,6 +2009,9 @@ class VarExpandOperator final : public PullOperator {
   }
 
   void Close() noexcept override {
+    if (closed_) {
+      return;
+    }
     for (const auto &frame : frames_) {
       if (frame.cursor != nullptr) {
         state_->ReleaseCursor(frame.cursor);
@@ -2084,9 +2054,9 @@ class VarExpandOperator final : public PullOperator {
     reserved_bytes_ -= kFrameBytes;
   }
   const PhysicalPlanNode *node_;
+  const VarExpandOp *data_;
   RuntimeState *state_;
   std::unique_ptr<PullOperator> source_;
-  const ir::VarExpandPlan &plan_;
   std::optional<SlottedRow> input_;
   std::optional<std::int64_t> bound_to_;
   std::vector<Frame> frames_;
@@ -2098,18 +2068,27 @@ class VarExpandOperator final : public PullOperator {
   bool closed_ = false;
 };
 
-class PruningExpandOperator final : public PullOperator {
+class PruningVarExpandOperator final : public PullOperator {
  public:
-  PruningExpandOperator(const PhysicalPlanNode &node, RuntimeState &state,
-                        std::unique_ptr<PullOperator> source)
+  PruningVarExpandOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                           std::unique_ptr<PullOperator> source)
       : node_(&node),
+        data_(&OperatorData<PruningVarExpandOp>(node)),
         state_(&state),
-        source_(std::move(source)),
-        pattern_(static_cast<const ir::PruningVarExpandPlan &>(*node.logical)
-                     .Pattern()) {}
-  ~PruningExpandOperator() override { Close(); }
+        source_(std::move(source)) {
+    CHECK(data_->pattern.direction != PhysicalExpandDirection::kBoth,
+          common::InternalError,
+          "pruning variable expand cannot be undirected");
+    CHECK(data_->length.min.value_or(1) >= 0 &&
+              data_->length.min.value_or(1) <= 1 &&
+              data_->length.max.value_or(0) >= 0,
+          common::InvalidArgumentError,
+          "unsupported pruning variable path length");
+  }
+  ~PruningVarExpandOperator() override { Close(); }
 
   bool Next(SlottedRow *row) override {
+    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
     while (!closed_) {
       state_->CheckCancelled();
       if (!input_.has_value()) {
@@ -2118,16 +2097,16 @@ class PruningExpandOperator final : public PullOperator {
           Close();
           return false;
         }
-        start_ = NodeId(input, pattern_.left_node, *state_);
+        start_ = NodeId(input, data_->pattern.from_node, *state_);
         if (start_ < 0) {
           continue;
         }
         input_.emplace(std::move(input));
-        max_ = pattern_.length.max.has_value()
-                   ? static_cast<std::size_t>(*pattern_.length.max)
+        max_ = data_->length.max.has_value()
+                   ? static_cast<std::size_t>(*data_->length.max)
                    : state_->graph_reader->RelationshipCount();
         Add(start_, 0);
-        start_emitted_ = pattern_.length.min.value_or(1) == 0;
+        start_emitted_ = data_->length.min.value_or(1) == 0;
         if (start_emitted_ && Emit(start_, row)) {
           return true;
         }
@@ -2139,31 +2118,29 @@ class PruningExpandOperator final : public PullOperator {
           continue;
         }
         if (cursor_ == nullptr) {
-          cursor_ = state_->TrackCursor(
-              ExpandCursor(*state_->graph_reader, from,
-                           pattern_.direction == ir::Direction::kOutgoing
-                               ? ir::ExpandDirection::kOutgoing
-                               : ir::ExpandDirection::kIncoming));
+          cursor_ = state_->TrackCursor(ExpandCursor(
+              *state_->graph_reader, from, data_->pattern.direction));
         }
         while (cursor_->Next()) {
           state_->CheckCancelled();
           const auto &relationship =
               *state_->graph_reader->RelationshipById(cursor_->Id());
-          if (!RelationshipHasType(relationship, pattern_.types)) {
+          if (!RelationshipHasType(relationship, data_->pattern.types)) {
             continue;
           }
-          const auto to = pattern_.direction == ir::Direction::kOutgoing
-                              ? relationship.end_node_id
-                              : relationship.start_node_id;
-          if (to == start_ && !start_emitted_) {
+          const std::optional<std::int64_t> to = NextPhysicalExpandNode(
+              relationship, from, data_->pattern.direction);
+          CHECK(to.has_value(), common::InternalError,
+                "pruning expand cursor returned a disconnected relationship");
+          if (*to == start_ && !start_emitted_) {
             start_emitted_ = true;
-            if (Emit(to, row)) {
+            if (Emit(*to, row)) {
               return true;
             }
           }
-          if (!visited_.contains(to)) {
-            Add(to, depth + 1);
-            if (Emit(to, row)) {
+          if (!visited_.contains(*to)) {
+            Add(*to, depth + 1);
+            if (Emit(*to, row)) {
               return true;
             }
           }
@@ -2178,6 +2155,9 @@ class PruningExpandOperator final : public PullOperator {
   }
 
   void Close() noexcept override {
+    if (closed_) {
+      return;
+    }
     if (cursor_ != nullptr) {
       state_->ReleaseCursor(cursor_);
       cursor_ = nullptr;
@@ -2197,7 +2177,7 @@ class PruningExpandOperator final : public PullOperator {
   }
   bool Emit(std::int64_t node, SlottedRow *row) {
     auto output = input_->CopyTo(node_->output_slots, *state_->graph_reader);
-    if (!TryBindEntityId(&output, pattern_.right_node, SlotKind::kNode, node,
+    if (!TryBindEntityId(&output, data_->pattern.to_node, SlotKind::kNode, node,
                          *state_->graph_reader)) {
       return false;
     }
@@ -2213,9 +2193,9 @@ class PruningExpandOperator final : public PullOperator {
     reserved_bytes_ = 0;
   }
   const PhysicalPlanNode *node_;
+  const PruningVarExpandOp *data_;
   RuntimeState *state_;
   std::unique_ptr<PullOperator> source_;
-  const ir::PatternRelationship &pattern_;
   std::optional<SlottedRow> input_;
   std::vector<std::pair<std::int64_t, std::size_t>> queue_;
   std::unordered_set<std::int64_t> visited_;
@@ -2829,6 +2809,54 @@ class ProduceResultsOperator final : public PullOperator {
   bool closed_ = false;
 };
 
+class PathBuildOperator final : public PullOperator {
+ public:
+  PathBuildOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                    std::unique_ptr<PullOperator> source)
+      : node_(&node),
+        data_(&OperatorData<PathBuildOp>(node)),
+        state_(&state),
+        source_(std::move(source)) {}
+
+  ~PathBuildOperator() override { Close(); }
+
+  [[nodiscard]] bool Next(SlottedRow *row) override {
+    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    while (!closed_) {
+      state_->CheckCancelled();
+      SlottedRow input(node_->children[0]->output_slots);
+      if (!source_->Next(&input)) {
+        Close();
+        return false;
+      }
+      SlottedRow output =
+          input.CopyTo(node_->output_slots, *state_->graph_reader);
+      if (TryBindSlot(&output, data_->path.variable,
+                      BuildPathValue(data_->path, input, state_),
+                      *state_->graph_reader)) {
+        *row = std::move(output);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void Close() noexcept override {
+    if (closed_) {
+      return;
+    }
+    source_->Close();
+    closed_ = true;
+  }
+
+ private:
+  const PhysicalPlanNode *node_ = nullptr;
+  const PathBuildOp *data_ = nullptr;
+  RuntimeState *state_ = nullptr;
+  std::unique_ptr<PullOperator> source_;
+  bool closed_ = false;
+};
+
 class StreamingUnaryOperator final : public PullOperator {
  public:
   StreamingUnaryOperator(const PhysicalPlanNode &node, RuntimeState &state,
@@ -2844,9 +2872,8 @@ class StreamingUnaryOperator final : public PullOperator {
       return false;
     }
     switch (node_->logical->Type()) {
-      case ir::LogicalPlanNodeType::kPathBuild:
       case ir::LogicalPlanNodeType::kProcedureCall:
-        return NextBufferedPerInput(row);
+        return NextProcedure(row);
       case ir::LogicalPlanNodeType::kUnwind:
         return NextUnwind(row);
       case ir::LogicalPlanNodeType::kAssertIsNode:
@@ -2885,7 +2912,7 @@ class StreamingUnaryOperator final : public PullOperator {
     return true;
   }
 
-  bool NextBufferedPerInput(SlottedRow *row) {
+  bool NextProcedure(SlottedRow *row) {
     while (buffer_index_ >= buffer_.size()) {
       state_->memory_tracker.Release(buffer_reserved_bytes_);
       buffer_reserved_bytes_ = 0;
@@ -2895,40 +2922,25 @@ class StreamingUnaryOperator final : public PullOperator {
       if (!PullInput(&input)) {
         return false;
       }
-      if (node_->logical->Type() == ir::LogicalPlanNodeType::kPathBuild) {
-        const auto &plan =
-            static_cast<const ir::PathBuildPlan &>(*node_->logical);
+      const auto &plan =
+          static_cast<const ir::ProcedureCallPlan &>(*node_->logical);
+      for (const auto &record : ExecuteProcedure(plan, state_)) {
         SlottedRow output =
             input.CopyTo(node_->output_slots, *state_->graph_reader);
-        if (TryBindSlot(&output, plan.PathVariable(),
-                        BuildPathValue(plan.Path(), input, state_),
-                        *state_->graph_reader)) {
-          const std::size_t bytes = output.EstimatedHeapUsage();
-          state_->memory_tracker.Reserve(bytes);
-          buffer_reserved_bytes_ += bytes;
-          buffer_.push_back(std::move(output));
+        for (const auto &item : plan.YieldItems()) {
+          const std::string &field = item.result_field.has_value()
+                                         ? *item.result_field
+                                         : item.variable;
+          const auto found = record.find(field);
+          CHECK(
+              found != record.end(), common::InvalidArgumentError,
+              "unknown yield field for " + plan.ProcedureName() + ": " + field);
+          output.Set(item.variable, found->second);
         }
-      } else {
-        const auto &plan =
-            static_cast<const ir::ProcedureCallPlan &>(*node_->logical);
-        for (const auto &record : ExecuteProcedure(plan, state_)) {
-          SlottedRow output =
-              input.CopyTo(node_->output_slots, *state_->graph_reader);
-          for (const auto &item : plan.YieldItems()) {
-            const std::string &field = item.result_field.has_value()
-                                           ? *item.result_field
-                                           : item.variable;
-            const auto found = record.find(field);
-            CHECK(found != record.end(), common::InvalidArgumentError,
-                  "unknown yield field for " + plan.ProcedureName() + ": " +
-                      field);
-            output.Set(item.variable, found->second);
-          }
-          const std::size_t bytes = output.EstimatedHeapUsage();
-          state_->memory_tracker.Reserve(bytes);
-          buffer_reserved_bytes_ += bytes;
-          buffer_.push_back(std::move(output));
-        }
+        const std::size_t bytes = output.EstimatedHeapUsage();
+        state_->memory_tracker.Reserve(bytes);
+        buffer_reserved_bytes_ += bytes;
+        buffer_.push_back(std::move(output));
       }
     }
     *row = std::move(buffer_[buffer_index_++]);
@@ -4858,7 +4870,7 @@ class OperatorFactory final {
       case PhysicalOperatorKind::kPruningVarExpand:
         CHECK(node.children.size() == 1, common::InternalError,
               "pruning expand physical node must have one child");
-        return std::make_unique<PruningExpandOperator>(
+        return std::make_unique<PruningVarExpandOperator>(
             node, *state_, Build(*node.children[0], std::move(argument)));
       case PhysicalOperatorKind::kProjectEndpoints:
         CHECK(node.children.size() == 1, common::InternalError,
@@ -4906,6 +4918,10 @@ class OperatorFactory final {
         return std::make_unique<ExpandIntoOperator>(
             node, *state_, Build(*node.children[0], std::move(argument)));
       case PhysicalOperatorKind::kPathBuild:
+        CHECK(node.children.size() == 1, common::InternalError,
+              "path build physical node must have one child");
+        return std::make_unique<PathBuildOperator>(
+            node, *state_, Build(*node.children[0], std::move(argument)));
       case PhysicalOperatorKind::kProcedureCall:
       case PhysicalOperatorKind::kUnwind:
       case PhysicalOperatorKind::kAssertIsNode:

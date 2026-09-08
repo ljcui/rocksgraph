@@ -986,6 +986,31 @@ class PhysicalPlanBuilder final {
                 .types = expand.Types()}};
         return;
       }
+      case PhysicalOperatorKind::kVarExpand: {
+        const auto &expand = static_cast<const ir::VarExpandPlan &>(plan);
+        node->data = VarExpandOp{
+            .pattern = {.from_node = expand.FromNode(),
+                        .relationship = expand.Relationship(),
+                        .to_node = expand.ToNode(),
+                        .direction =
+                            ToPhysicalExpandDirection(expand.Direction()),
+                        .types = expand.Types()},
+            .length = {.variable = true,
+                       .min = expand.Length().min,
+                       .max = expand.Length().max}};
+        return;
+      }
+      case PhysicalOperatorKind::kPruningVarExpand: {
+        const auto &expand =
+            static_cast<const ir::PruningVarExpandPlan &>(plan);
+        const ir::PatternRelationship &pattern = expand.Pattern();
+        node->data = PruningVarExpandOp{
+            .pattern = CopyPhysicalRelationshipPattern(pattern),
+            .length = {.variable = pattern.length.variable,
+                       .min = pattern.length.min,
+                       .max = pattern.length.max}};
+        return;
+      }
       case PhysicalOperatorKind::kOptionalExpand: {
         const auto &expand = static_cast<const ir::OptionalExpandPlan &>(plan);
         node->data = OptionalExpandOp{
@@ -1002,6 +1027,14 @@ class PhysicalPlanBuilder final {
             .length = {.variable = pattern.length.variable,
                        .min = pattern.length.min,
                        .max = pattern.length.max}};
+        return;
+      }
+      case PhysicalOperatorKind::kPathBuild: {
+        const auto &build = static_cast<const ir::PathBuildPlan &>(plan);
+        node->data =
+            PathBuildOp{.path = {.variable = build.Path().variable,
+                                 .nodes = build.Path().nodes,
+                                 .relationships = build.Path().relationships}};
         return;
       }
       case PhysicalOperatorKind::kFilter: {

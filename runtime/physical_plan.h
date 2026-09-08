@@ -155,6 +155,12 @@ struct PhysicalRelationshipPattern {
   std::vector<std::string> types;
 };
 
+struct PhysicalRelationshipLength {
+  bool variable = false;
+  std::optional<int> min;
+  std::optional<int> max;
+};
+
 struct RelationshipTypeScanOp {
   PhysicalRelationshipPattern pattern;
 };
@@ -192,15 +198,29 @@ struct ExpandIntoOp {
   PhysicalRelationshipPattern pattern;
 };
 
+struct VarExpandOp {
+  PhysicalRelationshipPattern pattern;
+  PhysicalRelationshipLength length;
+};
+
+struct PruningVarExpandOp {
+  PhysicalRelationshipPattern pattern;
+  PhysicalRelationshipLength length;
+};
+
 struct OptionalExpandOp {
   PhysicalRelationshipPattern pattern;
   std::vector<PhysicalExpression> predicates;
 };
 
-struct PhysicalRelationshipLength {
-  bool variable = false;
-  std::optional<int> min;
-  std::optional<int> max;
+struct PhysicalPathPattern {
+  std::string variable;
+  std::vector<std::string> nodes;
+  std::vector<std::string> relationships;
+};
+
+struct PathBuildOp {
+  PhysicalPathPattern path;
 };
 
 struct ProjectEndpointsOp {
@@ -240,7 +260,8 @@ using PhysicalOperatorData =
                  NodeIndexSeekOp, NodeIndexRangeSeekOp, RelationshipTypeScanOp,
                  RelationshipIndexSeekOp, RelationshipIndexRangeSeekOp,
                  NodeByIdSeekOp, RelationshipByIdSeekOp, ExpandOp, ExpandIntoOp,
-                 OptionalExpandOp, ProjectEndpointsOp, FilterOp, ProjectionOp,
+                 VarExpandOp, PruningVarExpandOp, OptionalExpandOp,
+                 ProjectEndpointsOp, PathBuildOp, FilterOp, ProjectionOp,
                  SkipOp, LimitOp, ProduceResultsOp>;
 
 struct PhysicalPlanNode {
