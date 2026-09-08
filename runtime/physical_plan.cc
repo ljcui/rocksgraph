@@ -15,6 +15,7 @@
 #include "ast/builtin_procedure.h"
 #include "ast/expression_dependency.h"
 #include "common/exception.h"
+#include "ir/logical_plan.h"
 
 namespace rg {
 
@@ -880,7 +881,6 @@ class PhysicalPlanBuilder final {
       const ir::LogicalPlan &plan, SlotConfigurationPtr argument_slots) {
     auto node = std::make_unique<PhysicalPlanNode>();
     node->id = next_id_++;
-    node->logical = &plan;
     node->logical_name = std::string(plan.Name());
     node->details = plan.Details();
     node->estimated_rows = plan.EstimatedRows();
@@ -1696,25 +1696,9 @@ PhysicalPlan::PhysicalPlan(std::unique_ptr<PhysicalPlanNode> root)
     : root_(std::move(root)) {
   CHECK(root_ != nullptr, common::InvalidArgumentError,
         "physical plan root is null");
-  Index(*root_);
 }
 
 const PhysicalPlanNode &PhysicalPlan::Root() const { return *root_; }
-
-const PhysicalPlanNode &PhysicalPlan::NodeFor(
-    const ir::LogicalPlan &logical) const {
-  const auto found = nodes_.find(&logical);
-  CHECK(found != nodes_.end(), common::InvalidArgumentError,
-        "logical plan is not part of the physical plan");
-  return *found->second;
-}
-
-void PhysicalPlan::Index(const PhysicalPlanNode &node) {
-  nodes_.emplace(node.logical, &node);
-  for (const auto &child : node.children) {
-    Index(*child);
-  }
-}
 
 PhysicalPlan CreatePhysicalPlan(const ir::LogicalPlan &plan) {
   return PhysicalPlanBuilder().Build(plan);

@@ -5,14 +5,16 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <variant>
 #include <vector>
 
 #include "ast/ast_node.h"
 #include "ast/precomputed_expression.h"
-#include "ir/logical_plan.h"
 #include "runtime/slotted_row.h"
+
+namespace ir {
+class LogicalPlan;
+}
 
 namespace rg {
 
@@ -504,9 +506,6 @@ struct PhysicalPlanNode {
   OperatorId id = 0;
   PhysicalOperatorKind kind = PhysicalOperatorKind::kArgument;
   PhysicalOperatorData data;
-  // Transitional debug origin. Runtime operators for migrated physical kinds
-  // must not read this pointer.
-  const ir::LogicalPlan *logical = nullptr;
   std::string logical_name;
   std::string details;
   std::optional<double> estimated_rows;
@@ -524,14 +523,9 @@ class PhysicalPlan final {
   explicit PhysicalPlan(std::unique_ptr<PhysicalPlanNode> root);
 
   [[nodiscard]] const PhysicalPlanNode &Root() const;
-  [[nodiscard]] const PhysicalPlanNode &NodeFor(
-      const ir::LogicalPlan &logical) const;
 
  private:
-  void Index(const PhysicalPlanNode &node);
-
   std::unique_ptr<PhysicalPlanNode> root_;
-  std::unordered_map<const ir::LogicalPlan *, const PhysicalPlanNode *> nodes_;
 };
 
 [[nodiscard]] PhysicalPlan CreatePhysicalPlan(const ir::LogicalPlan &plan);
