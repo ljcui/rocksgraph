@@ -76,6 +76,12 @@ std::unique_ptr<ast::Parameter> Parameter(std::string name) {
   return parameter;
 }
 
+std::unique_ptr<ast::IntegerLiteral> Integer(std::int64_t value) {
+  auto literal = std::make_unique<ast::IntegerLiteral>();
+  literal->value = value;
+  return literal;
+}
+
 rg::PhysicalPlan DetachedParameterNodeHashJoin() {
   std::unique_ptr<ast::Parameter> left_node = Parameter("left_node");
   std::unique_ptr<ast::Parameter> left_value = Parameter("left_value");
@@ -131,6 +137,48 @@ rg::PhysicalPlan DetachedParameterCartesianProduct() {
           {.expression = right_shared.get(), .alias = "shared"},
           {.expression = right_value.get(), .alias = "right"}});
   ir::CartesianProductPlan logical(std::move(left), std::move(right));
+  return rg::CreatePhysicalPlan(logical);
+}
+
+rg::PhysicalPlan DetachedLimitedApply() {
+  std::unique_ptr<ast::IntegerLiteral> one = Integer(1);
+  auto right = std::make_unique<ir::LimitPlan>(
+      std::make_unique<ir::ExpandPlan>(
+          std::make_unique<ir::ArgumentPlan>(std::vector<std::string>{"n"}),
+          "n", "r", "m", ir::ExpandDirection::kOutgoing,
+          std::vector<std::string>{"R"}),
+      one.get());
+  ir::ApplyPlan logical(std::make_unique<ir::NodeByLabelScanPlan>("n", "Input"),
+                        std::move(right));
+  return rg::CreatePhysicalPlan(logical);
+}
+
+rg::PhysicalPlan DetachedOptionalApply() {
+  auto right = std::make_unique<ir::ExpandPlan>(
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>{"n"}), "n",
+      "r", "m", ir::ExpandDirection::kOutgoing, std::vector<std::string>{"R"});
+  ir::OptionalApplyPlan logical(
+      std::make_unique<ir::NodeByLabelScanPlan>("n", "Input"),
+      std::move(right));
+  return rg::CreatePhysicalPlan(logical);
+}
+
+rg::PhysicalPlan DetachedConflictingApply() {
+  std::unique_ptr<ast::Parameter> left_shared = Parameter("left_shared");
+  std::unique_ptr<ast::Parameter> left_value = Parameter("left_value");
+  std::unique_ptr<ast::Parameter> right_shared = Parameter("right_shared");
+  std::unique_ptr<ast::Parameter> right_value = Parameter("right_value");
+  auto left = std::make_unique<ir::ProjectionPlan>(
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>{}),
+      std::vector<ir::LogicalProjectionItem>{
+          {.expression = left_shared.get(), .alias = "shared"},
+          {.expression = left_value.get(), .alias = "left"}});
+  auto right = std::make_unique<ir::ProjectionPlan>(
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>{"shared"}),
+      std::vector<ir::LogicalProjectionItem>{
+          {.expression = right_shared.get(), .alias = "shared"},
+          {.expression = right_value.get(), .alias = "right"}});
+  ir::ApplyPlan logical(std::move(left), std::move(right));
   return rg::CreatePhysicalPlan(logical);
 }
 
@@ -378,6 +426,121 @@ TEST(PhysicalPlanTest, UnionOperatorsHandleResourcesAndEarlyClose) {
   cursor = rg::StartPhysicalPlan(distinct, graph, nullptr, {}, {"value"},
                                  distinct_memory_options);
   EXPECT_THROW((void)cursor->Next(&row), common::MemoryLimitExceededError);
+}
+
+TEST(PhysicalPlanTest, BuildsTypedApplyAndOptionalApplyPayloads) {
+  PlannedQuery query =
+      Plan("MATCH (n) WITH DISTINCT n MATCH (n)-[r]->(m) RETURN n, r, m");
+  const ir::LogicalPlan *logical_apply =
+      FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kApply);
+  ASSERT_NE(logical_apply, nullptr);
+  rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+  const rg::PhysicalPlanNode &apply_node = physical.NodeFor(*logical_apply);
+  EXPECT_EQ(apply_node.kind, rg::PhysicalOperatorKind::kApply);
+  EXPECT_TRUE(std::holds_alternative<rg::ApplyOp>(apply_node.data));
+
+  rg::PhysicalPlan optional = DetachedOptionalApply();
+  EXPECT_EQ(optional.Root().kind, rg::PhysicalOperatorKind::kOptionalApply);
+  EXPECT_TRUE(
+      std::holds_alternative<rg::OptionalApplyOp>(optional.Root().data));
+  EXPECT_TRUE(optional.Root().output_slots->At("r").nullable);
+  EXPECT_TRUE(optional.Root().output_slots->At("m").nullable);
+}
+
+TEST(PhysicalPlanTest, ReinstantiatesStatefulApplyRightSideForEachLeftRow) {
+  rg::InMemoryGraph graph;
+  const auto first = graph.CreateNode({"Input"});
+  const auto second = graph.CreateNode({"Input"});
+  const auto unmatched = graph.CreateNode({"Input"});
+  const auto first_target = graph.CreateNode({});
+  const auto second_target = graph.CreateNode({});
+  graph.CreateRelationship(first, first_target, "R");
+  graph.CreateRelationship(first, second_target, "R");
+  graph.CreateRelationship(second, first_target, "R");
+  graph.CreateRelationship(second, second_target, "R");
+
+  rg::PhysicalPlan physical = DetachedLimitedApply();
+  ASSERT_EQ(physical.Root().kind, rg::PhysicalOperatorKind::kApply);
+  ASSERT_NE(FindPhysicalPlan(physical.Root(), rg::PhysicalOperatorKind::kLimit),
+            nullptr);
+  const auto rows = PhysicalRows(physical, graph, {"n", "m"});
+  ASSERT_EQ(rows.size(), 2U);
+  EXPECT_EQ(std::count_if(rows.begin(), rows.end(),
+                          [&](const auto &row) {
+                            return row[0] == rg::Value(first) &&
+                                   row[1].IsNode();
+                          }),
+            1);
+  EXPECT_EQ(std::count_if(rows.begin(), rows.end(),
+                          [&](const auto &row) {
+                            return row[0] == rg::Value(second) &&
+                                   row[1].IsNode();
+                          }),
+            1);
+  EXPECT_EQ(std::count_if(rows.begin(), rows.end(),
+                          [&](const auto &row) {
+                            return row[0] == rg::Value(unmatched);
+                          }),
+            0);
+
+  std::unique_ptr<rg::PhysicalResultCursor> cursor =
+      rg::StartPhysicalPlan(physical, graph, nullptr, {}, {"n", "m"});
+  std::vector<rg::Value> row;
+  ASSERT_TRUE(cursor->Next(&row));
+  cursor->Close();
+  EXPECT_FALSE(cursor->Next(&row));
+
+  rg::QueryExecutionOptions options;
+  options.cancellation = std::make_shared<rg::QueryCancellationToken>();
+  cursor =
+      rg::StartPhysicalPlan(physical, graph, nullptr, {}, {"n", "m"}, options);
+  options.cancellation->Cancel();
+  EXPECT_THROW((void)cursor->Next(&row), common::QueryCancelledError);
+}
+
+TEST(PhysicalPlanTest, OptionalApplyNullExtendsAfterLogicalPlanIsDestroyed) {
+  rg::InMemoryGraph graph;
+  const auto matched = graph.CreateNode({"Input"});
+  const auto unmatched = graph.CreateNode({"Input"});
+  const auto first = graph.CreateNode({});
+  const auto second = graph.CreateNode({});
+  graph.CreateRelationship(matched, first, "R");
+  graph.CreateRelationship(matched, second, "R");
+
+  rg::PhysicalPlan physical = DetachedOptionalApply();
+  const auto rows = PhysicalRows(physical, graph, {"n", "r", "m"});
+  ASSERT_EQ(rows.size(), 3U);
+  EXPECT_EQ(std::count_if(rows.begin(), rows.end(),
+                          [&](const auto &row) {
+                            return row[0] == rg::Value(matched) &&
+                                   row[1].IsRelationship() && row[2].IsNode();
+                          }),
+            2);
+  EXPECT_EQ(std::count_if(rows.begin(), rows.end(),
+                          [&](const auto &row) {
+                            return row[0] == rg::Value(unmatched) &&
+                                   row[1].IsNull() && row[2].IsNull();
+                          }),
+            1);
+}
+
+TEST(PhysicalPlanTest, ApplyRejectsConflictingSharedSlots) {
+  rg::InMemoryGraph graph;
+  rg::PhysicalPlan physical = DetachedConflictingApply();
+
+  EXPECT_EQ(PhysicalRows(physical, graph, {"shared", "left", "right"},
+                         {{"left_shared", rg::Value(1)},
+                          {"left_value", rg::Value("left")},
+                          {"right_shared", rg::Value(1)},
+                          {"right_value", rg::Value("right")}}),
+            (std::vector<std::vector<rg::Value>>{
+                {rg::Value(1), rg::Value("left"), rg::Value("right")}}));
+  EXPECT_TRUE(PhysicalRows(physical, graph, {"shared", "left", "right"},
+                           {{"left_shared", rg::Value(1)},
+                            {"left_value", rg::Value("left")},
+                            {"right_shared", rg::Value(2)},
+                            {"right_value", rg::Value("right")}})
+                  .empty());
 }
 
 TEST(PhysicalPlanTest, PreservesScopedSemanticTypesForExpressions) {

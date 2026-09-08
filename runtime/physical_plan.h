@@ -358,6 +358,10 @@ struct UnionDistinctOp {
   std::vector<Slot> key_slots;
 };
 
+struct ApplyOp {};
+
+struct OptionalApplyOp {};
+
 using PhysicalOperatorData = std::variant<
     std::monostate, ArgumentOp, AllNodeScanOp, NodeByLabelScanOp,
     NodeIndexSeekOp, NodeIndexRangeSeekOp, RelationshipTypeScanOp,
@@ -368,7 +372,7 @@ using PhysicalOperatorData = std::variant<
     HashAggregationOp, OrderedAggregationOp, FullSortOp, PartialSortOp, TopNOp,
     PartialTopNOp, SkipOp, LimitOp, ProduceResultsOp, ValueHashJoinOp,
     NodeHashJoinOp, LeftOuterHashJoinOp, CartesianProductOp, PredicateJoinOp,
-    UnionAllOp, UnionDistinctOp>;
+    UnionAllOp, UnionDistinctOp, ApplyOp, OptionalApplyOp>;
 
 struct PhysicalPlanNode {
   OperatorId id = 0;

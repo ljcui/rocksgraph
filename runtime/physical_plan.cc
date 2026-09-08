@@ -1280,6 +1280,12 @@ class PhysicalPlanBuilder final {
         node->data = std::move(data);
         return;
       }
+      case PhysicalOperatorKind::kApply:
+        node->data = ApplyOp{};
+        return;
+      case PhysicalOperatorKind::kOptionalApply:
+        node->data = OptionalApplyOp{};
+        return;
       default:
         return;
     }

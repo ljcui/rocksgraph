@@ -5070,23 +5070,98 @@ class UnionDistinctOperator final : public PullOperator {
   bool closed_ = false;
 };
 
+class CorrelatedRightState final {
+ public:
+  CorrelatedRightState(const PhysicalPlanNode &node, RuntimeState &state,
+                       OperatorFactory &factory,
+                       std::unique_ptr<PullOperator> lhs)
+      : node_(&node),
+        state_(&state),
+        factory_(&factory),
+        lhs_(std::move(lhs)) {}
+
+  ~CorrelatedRightState() { Close(); }
+
+  [[nodiscard]] bool NextLeft();
+  [[nodiscard]] bool NextRight(SlottedRow *row);
+  [[nodiscard]] bool HasLeft() const noexcept {
+    return current_left_.has_value();
+  }
+  [[nodiscard]] const SlottedRow &Left() const;
+  void FinishLeft() noexcept;
+  void Close() noexcept;
+
+ private:
+  const PhysicalPlanNode *node_ = nullptr;
+  RuntimeState *state_ = nullptr;
+  OperatorFactory *factory_ = nullptr;
+  std::unique_ptr<PullOperator> lhs_;
+  std::unique_ptr<PullOperator> rhs_;
+  std::optional<SlottedRow> current_left_;
+  bool closed_ = false;
+};
+
 class ApplyOperator final : public PullOperator {
  public:
   ApplyOperator(const PhysicalPlanNode &node, RuntimeState &state,
                 OperatorFactory &factory, std::unique_ptr<PullOperator> lhs)
       : node_(&node),
         state_(&state),
+        correlated_(node, state, factory, std::move(lhs)) {
+    (void)OperatorData<ApplyOp>(node);
+  }
+
+  ~ApplyOperator() override { Close(); }
+
+  [[nodiscard]] bool Next(SlottedRow *row) override;
+  void Close() noexcept override { correlated_.Close(); }
+
+ private:
+  const PhysicalPlanNode *node_ = nullptr;
+  RuntimeState *state_ = nullptr;
+  CorrelatedRightState correlated_;
+};
+
+class OptionalApplyOperator final : public PullOperator {
+ public:
+  OptionalApplyOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                        OperatorFactory &factory,
+                        std::unique_ptr<PullOperator> lhs)
+      : node_(&node),
+        state_(&state),
+        correlated_(node, state, factory, std::move(lhs)) {
+    (void)OperatorData<OptionalApplyOp>(node);
+  }
+
+  ~OptionalApplyOperator() override { Close(); }
+
+  [[nodiscard]] bool Next(SlottedRow *row) override;
+  void Close() noexcept override { correlated_.Close(); }
+
+ private:
+  const PhysicalPlanNode *node_ = nullptr;
+  RuntimeState *state_ = nullptr;
+  CorrelatedRightState correlated_;
+  bool rhs_produced_ = false;
+};
+
+class ExistenceAndRollUpApplyOperator final : public PullOperator {
+ public:
+  ExistenceAndRollUpApplyOperator(const PhysicalPlanNode &node,
+                                  RuntimeState &state, OperatorFactory &factory,
+                                  std::unique_ptr<PullOperator> lhs)
+      : node_(&node),
+        state_(&state),
         factory_(&factory),
         lhs_(std::move(lhs)) {}
 
-  ~ApplyOperator() override { Close(); }
+  ~ExistenceAndRollUpApplyOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override;
   void Close() noexcept override;
 
  private:
   bool NextLeft();
-  bool Combine(const SlottedRow &rhs, SlottedRow *row);
 
   const PhysicalPlanNode *node_ = nullptr;
   RuntimeState *state_ = nullptr;
@@ -5094,7 +5169,7 @@ class ApplyOperator final : public PullOperator {
   std::unique_ptr<PullOperator> lhs_;
   std::unique_ptr<PullOperator> rhs_;
   std::optional<SlottedRow> current_left_;
-  bool rhs_produced_ = false;
+  bool closed_ = false;
 };
 
 class MergeOperator final : public PullOperator {
@@ -5225,15 +5300,25 @@ class OperatorFactory final {
         return std::make_unique<PartialTopNOperator>(
             node, *state_, Build(*node.children[0], std::move(argument)));
       case PhysicalOperatorKind::kApply:
+        CHECK(node.children.size() == 2, common::InternalError,
+              "apply physical node must have two children");
+        return std::make_unique<ApplyOperator>(
+            node, *state_, *this,
+            Build(*node.children[0], std::move(argument)));
+      case PhysicalOperatorKind::kOptionalApply:
+        CHECK(node.children.size() == 2, common::InternalError,
+              "optional apply physical node must have two children");
+        return std::make_unique<OptionalApplyOperator>(
+            node, *state_, *this,
+            Build(*node.children[0], std::move(argument)));
       case PhysicalOperatorKind::kSemiApply:
       case PhysicalOperatorKind::kAntiSemiApply:
       case PhysicalOperatorKind::kLetSemiApply:
       case PhysicalOperatorKind::kSelectOrSemiApply:
       case PhysicalOperatorKind::kRollUpApply:
-      case PhysicalOperatorKind::kOptionalApply:
         CHECK(node.children.size() == 2, common::InternalError,
-              "apply physical node must have two children");
-        return std::make_unique<ApplyOperator>(
+              "existence/roll-up apply physical node must have two children");
+        return std::make_unique<ExistenceAndRollUpApplyOperator>(
             node, *state_, *this,
             Build(*node.children[0], std::move(argument)));
       case PhysicalOperatorKind::kMerge:
@@ -5393,7 +5478,120 @@ class OperatorFactory final {
   RuntimeState *state_ = nullptr;
 };
 
-bool ApplyOperator::NextLeft() {
+bool CorrelatedRightState::NextLeft() {
+  state_->CheckCancelled();
+  if (closed_) {
+    return false;
+  }
+  CHECK(!current_left_.has_value() && rhs_ == nullptr, common::InternalError,
+        "correlated right state still has an active left row");
+  SlottedRow lhs_row(node_->children[0]->output_slots);
+  if (!lhs_->Next(&lhs_row)) {
+    Close();
+    return false;
+  }
+  current_left_.emplace(std::move(lhs_row));
+  rhs_ = factory_->Build(*node_->children[1], *current_left_);
+  return true;
+}
+
+bool CorrelatedRightState::NextRight(SlottedRow *row) {
+  CHECK(row != nullptr, common::InvalidArgumentError, "right row is null");
+  CHECK(current_left_.has_value() && rhs_ != nullptr, common::InternalError,
+        "correlated right state has no active left row");
+  state_->CheckCancelled();
+  return rhs_->Next(row);
+}
+
+const SlottedRow &CorrelatedRightState::Left() const {
+  CHECK(current_left_.has_value(), common::InternalError,
+        "correlated right state has no active left row");
+  return *current_left_;
+}
+
+void CorrelatedRightState::FinishLeft() noexcept {
+  if (rhs_ != nullptr) {
+    rhs_->Close();
+    rhs_.reset();
+  }
+  current_left_.reset();
+}
+
+void CorrelatedRightState::Close() noexcept {
+  if (closed_) {
+    return;
+  }
+  FinishLeft();
+  if (lhs_ != nullptr) {
+    lhs_->Close();
+  }
+  closed_ = true;
+}
+
+bool ApplyOperator::Next(SlottedRow *row) {
+  CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+  while (true) {
+    state_->CheckCancelled();
+    if (!correlated_.HasLeft() && !correlated_.NextLeft()) {
+      return false;
+    }
+
+    SlottedRow rhs(node_->children[1]->output_slots);
+    while (correlated_.NextRight(&rhs)) {
+      SlottedRow output(node_->output_slots);
+      if (!MergeMappings(correlated_.Left(), &output, node_->child_mappings[0],
+                         *state_) ||
+          !MergeMappings(rhs, &output, node_->child_mappings[1], *state_)) {
+        continue;
+      }
+      *row = std::move(output);
+      return true;
+    }
+    correlated_.FinishLeft();
+  }
+}
+
+bool OptionalApplyOperator::Next(SlottedRow *row) {
+  CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+  while (true) {
+    state_->CheckCancelled();
+    if (!correlated_.HasLeft()) {
+      if (!correlated_.NextLeft()) {
+        return false;
+      }
+      rhs_produced_ = false;
+    }
+
+    SlottedRow rhs(node_->children[1]->output_slots);
+    while (correlated_.NextRight(&rhs)) {
+      rhs_produced_ = true;
+      SlottedRow output(node_->output_slots);
+      if (MergeMappings(correlated_.Left(), &output, node_->child_mappings[0],
+                        *state_) &&
+          MergeMappings(rhs, &output, node_->child_mappings[1], *state_)) {
+        *row = std::move(output);
+        return true;
+      }
+    }
+
+    if (!rhs_produced_) {
+      SlottedRow output(node_->output_slots);
+      CopyMappings(correlated_.Left(), &output, node_->child_mappings[0],
+                   *state_);
+      for (const auto &column : node_->output_slots->Columns()) {
+        if (!output.IsInitialized(column)) {
+          output.SetNull(column);
+        }
+      }
+      correlated_.FinishLeft();
+      *row = std::move(output);
+      return true;
+    }
+    correlated_.FinishLeft();
+  }
+}
+
+bool ExistenceAndRollUpApplyOperator::NextLeft() {
   SlottedRow lhs_row(node_->children[0]->output_slots);
   if (!lhs_->Next(&lhs_row)) {
     Close();
@@ -5409,24 +5607,15 @@ bool ApplyOperator::NextLeft() {
   if (!skip) {
     rhs_ = factory_->Build(*node_->children[1], *current_left_);
   }
-  rhs_produced_ = false;
   return true;
 }
 
-bool ApplyOperator::Combine(const SlottedRow &rhs, SlottedRow *row) {
-  SlottedRow output(node_->output_slots);
-  if (!MergeMappings(*current_left_, &output, node_->child_mappings[0],
-                     *state_) ||
-      !MergeMappings(rhs, &output, node_->child_mappings[1], *state_)) {
-    return false;
-  }
-  *row = std::move(output);
-  return true;
-}
-
-bool ApplyOperator::Next(SlottedRow *row) {
+bool ExistenceAndRollUpApplyOperator::Next(SlottedRow *row) {
   CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
   state_->CheckCancelled();
+  if (closed_) {
+    return false;
+  }
   const ir::LogicalPlanNodeType type = node_->logical->Type();
   while (true) {
     if (!current_left_.has_value() && !NextLeft()) {
@@ -5438,34 +5627,6 @@ bool ApplyOperator::Next(SlottedRow *row) {
       *row = current_left_->CopyTo(node_->output_slots, *state_->graph_reader);
       current_left_.reset();
       return true;
-    }
-
-    if (type == ir::LogicalPlanNodeType::kApply ||
-        type == ir::LogicalPlanNodeType::kOptionalApply) {
-      SlottedRow rhs_row(node_->children[1]->output_slots);
-      while (rhs_->Next(&rhs_row)) {
-        rhs_produced_ = true;
-        if (Combine(rhs_row, row)) {
-          return true;
-        }
-      }
-      rhs_->Close();
-      rhs_.reset();
-      if (type == ir::LogicalPlanNodeType::kOptionalApply && !rhs_produced_) {
-        SlottedRow output(node_->output_slots);
-        CopyMappings(*current_left_, &output, node_->child_mappings[0],
-                     *state_);
-        for (const auto &column : node_->output_slots->Columns()) {
-          if (!output.IsInitialized(column)) {
-            output.SetNull(column);
-          }
-        }
-        current_left_.reset();
-        *row = std::move(output);
-        return true;
-      }
-      current_left_.reset();
-      continue;
     }
 
     if (type == ir::LogicalPlanNodeType::kRollUpApply) {
@@ -5521,13 +5682,17 @@ bool ApplyOperator::Next(SlottedRow *row) {
   }
 }
 
-void ApplyOperator::Close() noexcept {
+void ExistenceAndRollUpApplyOperator::Close() noexcept {
+  if (closed_) {
+    return;
+  }
   if (rhs_ != nullptr) {
     rhs_->Close();
   }
   if (lhs_ != nullptr) {
     lhs_->Close();
   }
+  closed_ = true;
 }
 
 void MergeOperator::Initialize() {
