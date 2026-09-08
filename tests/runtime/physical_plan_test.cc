@@ -811,6 +811,18 @@ TEST(PhysicalPlanTest, SelectsOrderedGroupingAlgorithms) {
   EXPECT_EQ(aggregation_node.kind,
             rg::PhysicalOperatorKind::kOrderedAggregation);
   ASSERT_EQ(aggregation_node.provided_order.size(), 1U);
+  const auto &aggregation_data =
+      std::get<rg::OrderedAggregationOp>(aggregation_node.data);
+  ASSERT_EQ(aggregation_data.grouping_items.size(), 1U);
+  ASSERT_EQ(aggregation_data.aggregation_items.size(), 1U);
+  EXPECT_EQ(aggregation_data.grouping_items.front().alias, "x");
+  EXPECT_EQ(aggregation_data.aggregation_items.front().alias, "count");
+  const auto &logical_aggregation =
+      static_cast<const ir::AggregationPlan &>(*aggregation);
+  EXPECT_NE(aggregation_data.grouping_items.front().expression.Expression(),
+            logical_aggregation.GroupingItems().front().expression);
+  EXPECT_NE(aggregation_data.aggregation_items.front().expression.Expression(),
+            logical_aggregation.AggregationItems().front().expression);
   EXPECT_EQ(aggregation_physical.Root().provided_order.size(), 1U);
 }
 
@@ -861,8 +873,21 @@ TEST(PhysicalPlanTest, SelectsPartialSortAndHashFallbacks) {
   ASSERT_NE(aggregation, nullptr);
   rg::PhysicalPlan aggregation_physical =
       rg::CreatePhysicalPlan(*aggregation_query.logical_plan);
-  EXPECT_EQ(aggregation_physical.NodeFor(*aggregation).kind,
-            rg::PhysicalOperatorKind::kHashAggregation);
+  const rg::PhysicalPlanNode &aggregation_node =
+      aggregation_physical.NodeFor(*aggregation);
+  EXPECT_EQ(aggregation_node.kind, rg::PhysicalOperatorKind::kHashAggregation);
+  const auto &aggregation_data =
+      std::get<rg::HashAggregationOp>(aggregation_node.data);
+  ASSERT_EQ(aggregation_data.grouping_items.size(), 1U);
+  ASSERT_EQ(aggregation_data.aggregation_items.size(), 1U);
+  EXPECT_EQ(aggregation_data.grouping_items.front().alias, "x");
+  EXPECT_EQ(aggregation_data.aggregation_items.front().alias, "count");
+  const auto &logical_aggregation =
+      static_cast<const ir::AggregationPlan &>(*aggregation);
+  EXPECT_NE(aggregation_data.grouping_items.front().expression.Expression(),
+            logical_aggregation.GroupingItems().front().expression);
+  EXPECT_NE(aggregation_data.aggregation_items.front().expression.Expression(),
+            logical_aggregation.AggregationItems().front().expression);
 
   PlannedQuery sort_query = Plan("UNWIND [3, 1, 2] AS x RETURN x ORDER BY x");
   const ir::LogicalPlan *sort =
@@ -985,6 +1010,55 @@ TEST(PhysicalPlanTest,
   EXPECT_TRUE(rg::ValuesEqual(ordered_rows[0][0], rg::Value(1)));
   EXPECT_TRUE(rg::ValuesEqual(ordered_rows[1][0], rg::Value(2)));
   EXPECT_TRUE(ordered_rows[2][0].IsNull());
+}
+
+TEST(PhysicalPlanTest,
+     ExecutesAggregationOperatorsAfterLogicalPlanAndAstAreDestroyed) {
+  rg::InMemoryGraph graph;
+  graph.CreateNode({"N"}, {{"group", rg::Value(2)}, {"value", rg::Value(20)}});
+  graph.CreateNode({"N"}, {{"group", rg::Value(1)}, {"value", rg::Value(10)}});
+  graph.CreateNode({"N"},
+                   {{"group", rg::Value(2)}, {"value", rg::Value(20.0)}});
+  graph.CreateNode({"N"}, {{"group", rg::Value(1)}, {"value", rg::Value(5)}});
+  graph.CreateNode({"N"}, {{"value", rg::Value(7)}});
+
+  const std::string aggregation =
+      "RETURN n.group AS group, count(*) AS count, "
+      "sum(n.value) AS total, count(DISTINCT n.value) AS unique_count";
+  rg::PhysicalPlan hash_aggregation =
+      DetachedPhysicalPlan("MATCH (n:N) " + aggregation);
+  ASSERT_NE(FindPhysicalPlan(hash_aggregation.Root(),
+                             rg::PhysicalOperatorKind::kHashAggregation),
+            nullptr);
+  EXPECT_EQ(
+      PhysicalRows(hash_aggregation, graph,
+                   {"group", "count", "total", "unique_count"}),
+      (std::vector<std::vector<rg::Value>>{
+          {rg::Value(2), rg::Value(2), rg::Value(40.0), rg::Value(1)},
+          {rg::Value(1), rg::Value(2), rg::Value(15), rg::Value(2)},
+          {rg::Value::Null(), rg::Value(1), rg::Value(7), rg::Value(1)}}));
+
+  rg::PhysicalPlan ordered_aggregation = DetachedPhysicalPlan(
+      "MATCH (n:N) WITH n ORDER BY n.group " + aggregation);
+  ASSERT_NE(FindPhysicalPlan(ordered_aggregation.Root(),
+                             rg::PhysicalOperatorKind::kOrderedAggregation),
+            nullptr);
+  EXPECT_EQ(
+      PhysicalRows(ordered_aggregation, graph,
+                   {"group", "count", "total", "unique_count"}),
+      (std::vector<std::vector<rg::Value>>{
+          {rg::Value(1), rg::Value(2), rg::Value(15), rg::Value(2)},
+          {rg::Value(2), rg::Value(2), rg::Value(40.0), rg::Value(1)},
+          {rg::Value::Null(), rg::Value(1), rg::Value(7), rg::Value(1)}}));
+
+  rg::PhysicalPlan empty_aggregation = DetachedPhysicalPlan(
+      "MATCH (n:Missing) RETURN count(*) AS count, sum(n.value) AS total");
+  ASSERT_NE(FindPhysicalPlan(empty_aggregation.Root(),
+                             rg::PhysicalOperatorKind::kHashAggregation),
+            nullptr);
+  EXPECT_EQ(
+      PhysicalRows(empty_aggregation, graph, {"count", "total"}),
+      (std::vector<std::vector<rg::Value>>{{rg::Value(0), rg::Value(0)}}));
 }
 
 TEST(PhysicalPlanTest, PrintsAlgorithmsPropertiesAndSlots) {

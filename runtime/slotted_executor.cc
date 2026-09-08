@@ -626,16 +626,6 @@ void ExecuteCreatePattern(const ir::CreatePattern &pattern, SlottedRow *row,
   }
 }
 
-Value EvaluateProjectionItem(const ir::LogicalProjectionItem &item,
-                             const SlottedRow &row, RuntimeState *state) {
-  if (item.passthrough) {
-    return row.Get(item.alias, *state->graph_reader);
-  }
-  CHECK(item.expression != nullptr, common::InvalidArgumentError,
-        "projection expression is null");
-  return Evaluate(*item.expression, row, item.precomputed_expressions, *state);
-}
-
 std::size_t EstimatedKeyHeapUsage(const CompositeValueKey &key) {
   std::size_t bytes = key.values.capacity() * sizeof(Value);
   for (const Value &value : key.values) {
@@ -643,17 +633,6 @@ std::size_t EstimatedKeyHeapUsage(const CompositeValueKey &key) {
     bytes += value_bytes > sizeof(Value) ? value_bytes - sizeof(Value) : 0U;
   }
   return bytes;
-}
-
-std::vector<Value> EvaluateGroupingValues(
-    const std::vector<ir::LogicalProjectionItem> &items, const SlottedRow &row,
-    RuntimeState *state) {
-  std::vector<Value> values;
-  values.reserve(items.size());
-  for (const auto &item : items) {
-    values.push_back(EvaluateProjectionItem(item, row, state));
-  }
-  return values;
 }
 
 std::vector<Value> EvaluateGroupingValues(
@@ -688,7 +667,7 @@ enum class AggregateAccumulatorKind {
 };
 
 struct AggregateAccumulator {
-  const ir::LogicalProjectionItem *item = nullptr;
+  const PhysicalAggregationItem *item = nullptr;
   const ast::FunctionInvocation *function = nullptr;
   const ast::Expression *argument = nullptr;
   const ast::Expression *percentile_argument = nullptr;
@@ -709,19 +688,19 @@ struct AggregateAccumulator {
 };
 
 AggregateAccumulator CreateAggregateAccumulator(
-    const ir::LogicalProjectionItem &item) {
-  CHECK(item.expression != nullptr, common::InvalidArgumentError,
+    const PhysicalAggregationItem &item) {
+  const ast::Expression *expression = item.expression.Expression();
+  CHECK(expression != nullptr, common::InvalidArgumentError,
         "aggregation expression is null");
   AggregateAccumulator accumulator{.item = &item};
-  if (item.expression->Is(ast::ASTNodeType::kCountStarExpression)) {
+  if (expression->Is(ast::ASTNodeType::kCountStarExpression)) {
     accumulator.kind = AggregateAccumulatorKind::kCountStar;
     return accumulator;
   }
 
-  CHECK(item.expression->Is(ast::ASTNodeType::kFunctionInvocation),
+  CHECK(expression->Is(ast::ASTNodeType::kFunctionInvocation),
         common::InvalidArgumentError, "unsupported aggregation expression");
-  const auto &function =
-      ast::CastAst<ast::FunctionInvocation>(*item.expression);
+  const auto &function = ast::CastAst<ast::FunctionInvocation>(*expression);
   const ast::BuiltinFunction *builtin =
       ast::FindBuiltinFunction(function.function_name);
   CHECK(builtin != nullptr && builtin->aggregate, common::InvalidArgumentError,
@@ -770,6 +749,16 @@ AggregateAccumulator CreateAggregateAccumulator(
     accumulator.percentile_argument = function.arguments[1].get();
   }
   return accumulator;
+}
+
+std::vector<AggregateAccumulator> CreateAggregateAccumulators(
+    const std::vector<PhysicalAggregationItem> &items) {
+  std::vector<AggregateAccumulator> accumulators;
+  accumulators.reserve(items.size());
+  for (const auto &item : items) {
+    accumulators.push_back(CreateAggregateAccumulator(item));
+  }
+  return accumulators;
 }
 
 std::size_t EstimatedStoredValueHeapUsage(const Value &value) {
@@ -863,7 +852,8 @@ void UpdatePercentileParameter(AggregateAccumulator *accumulator,
   Value current;
   try {
     current = Evaluate(*accumulator->percentile_argument, row,
-                       accumulator->item->precomputed_expressions, *state);
+                       accumulator->item->expression.PrecomputedExpressions(),
+                       *state);
   } catch (const common::InvalidArgumentError &error) {
     accumulator->percentile_error = error.Message();
     return;
@@ -906,8 +896,9 @@ void UpdateAggregateAccumulator(AggregateAccumulator *accumulator,
 
   CHECK(accumulator->argument != nullptr, common::InternalError,
         "aggregate accumulator argument is null");
-  Value value = Evaluate(*accumulator->argument, row,
-                         accumulator->item->precomputed_expressions, *state);
+  Value value =
+      Evaluate(*accumulator->argument, row,
+               accumulator->item->expression.PrecomputedExpressions(), *state);
   if (IsPercentile(*accumulator)) {
     UpdatePercentileParameter(accumulator, row, state);
   }
@@ -3339,11 +3330,128 @@ class HashDistinctOperator final : public PullOperator {
   bool closed_ = false;
 };
 
+class HashAggregationOperator final : public PullOperator {
+ public:
+  HashAggregationOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                          std::unique_ptr<PullOperator> source)
+      : node_(&node),
+        data_(&OperatorData<HashAggregationOp>(node)),
+        state_(&state),
+        source_(std::move(source)) {}
+
+  ~HashAggregationOperator() override { Close(); }
+
+  [[nodiscard]] bool Next(SlottedRow *row) override {
+    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    state_->CheckCancelled();
+    if (closed_) {
+      return false;
+    }
+    if (!initialized_) {
+      Initialize();
+    }
+    if (next_ >= rows_.size()) {
+      Close();
+      return false;
+    }
+    *row = std::move(rows_[next_++]);
+    return true;
+  }
+
+  void Close() noexcept override {
+    if (closed_) {
+      return;
+    }
+    source_->Close();
+    state_->memory_tracker.Release(reserved_bytes_);
+    reserved_bytes_ = 0;
+    closed_ = true;
+  }
+
+ private:
+  struct Group {
+    Group(SlottedRow projected,
+          const std::vector<AggregateAccumulator> &templates)
+        : output(std::move(projected)), accumulators(templates) {}
+
+    SlottedRow output;
+    std::vector<AggregateAccumulator> accumulators;
+  };
+
+  void BufferRow(SlottedRow row) {
+    const std::size_t bytes = row.EstimatedHeapUsage();
+    state_->memory_tracker.Reserve(bytes);
+    reserved_bytes_ += bytes;
+    rows_.push_back(std::move(row));
+  }
+
+  void Initialize() {
+    initialized_ = true;
+    const std::vector<AggregateAccumulator> accumulator_templates =
+        CreateAggregateAccumulators(data_->aggregation_items);
+    std::vector<std::unique_ptr<Group>> groups;
+    std::unordered_map<CompositeValueKey, std::size_t, ValueHash, ValueEqual>
+        group_indexes;
+    SlottedRow input(node_->children[0]->output_slots);
+    while (source_->Next(&input)) {
+      state_->CheckCancelled();
+      std::vector<Value> values =
+          EvaluateGroupingValues(data_->grouping_items, input, state_);
+      auto [group, inserted] = group_indexes.emplace(
+          CompositeValueKey{.values = values}, groups.size());
+      if (inserted) {
+        SlottedRow projected(node_->output_slots);
+        for (std::size_t index = 0; index < values.size(); ++index) {
+          projected.Set(data_->grouping_items[index].alias,
+                        std::move(values[index]));
+        }
+        groups.push_back(std::make_unique<Group>(std::move(projected),
+                                                 accumulator_templates));
+        const std::size_t key_bytes = EstimatedKeyHeapUsage(group->first);
+        state_->memory_tracker.Reserve(key_bytes);
+        reserved_bytes_ += key_bytes;
+      }
+      Group *group_state = groups[group->second].get();
+      for (auto &accumulator : group_state->accumulators) {
+        UpdateAggregateAccumulator(&accumulator, input, state_,
+                                   &reserved_bytes_);
+      }
+    }
+    if (data_->grouping_items.empty() && groups.empty()) {
+      group_indexes.emplace(CompositeValueKey{}, 0U);
+      groups.push_back(std::make_unique<Group>(SlottedRow(node_->output_slots),
+                                               accumulator_templates));
+    }
+    for (auto &group : groups) {
+      state_->CheckCancelled();
+      for (auto &accumulator : group->accumulators) {
+        group->output.Set(accumulator.item->alias,
+                          FinalizeAggregateAccumulator(&accumulator, state_,
+                                                       &reserved_bytes_));
+      }
+      BufferRow(std::move(group->output));
+    }
+  }
+
+  const PhysicalPlanNode *node_ = nullptr;
+  const HashAggregationOp *data_ = nullptr;
+  RuntimeState *state_ = nullptr;
+  std::unique_ptr<PullOperator> source_;
+  std::vector<SlottedRow> rows_;
+  std::size_t reserved_bytes_ = 0;
+  std::size_t next_ = 0;
+  bool initialized_ = false;
+  bool closed_ = false;
+};
+
 class OrderedAggregationOperator final : public PullOperator {
  public:
   OrderedAggregationOperator(const PhysicalPlanNode &node, RuntimeState &state,
                              std::unique_ptr<PullOperator> source)
-      : node_(&node), state_(&state), source_(std::move(source)) {}
+      : node_(&node),
+        data_(&OperatorData<OrderedAggregationOp>(node)),
+        state_(&state),
+        source_(std::move(source)) {}
 
   ~OrderedAggregationOperator() override { Close(); }
 
@@ -3354,11 +3462,9 @@ class OrderedAggregationOperator final : public PullOperator {
       return false;
     }
 
-    const auto &plan =
-        static_cast<const ir::AggregationPlan &>(*node_->logical);
     SlottedRow input(node_->children[0]->output_slots);
     CompositeValueKey key;
-    if (!TakeFirstInput(plan, &input, &key)) {
+    if (!TakeFirstInput(&input, &key)) {
       finished_ = true;
       Close();
       return false;
@@ -3367,15 +3473,12 @@ class OrderedAggregationOperator final : public PullOperator {
     state_->memory_tracker.Reserve(key_bytes);
     reserved_bytes_ += key_bytes;
 
-    std::vector<AggregateAccumulator> accumulators;
-    accumulators.reserve(plan.AggregationItems().size());
-    for (const auto &item : plan.AggregationItems()) {
-      accumulators.push_back(CreateAggregateAccumulator(item));
-    }
+    std::vector<AggregateAccumulator> accumulators =
+        CreateAggregateAccumulators(data_->aggregation_items);
 
     SlottedRow output(node_->output_slots);
     for (std::size_t index = 0; index < key.values.size(); ++index) {
-      output.Set(plan.GroupingItems()[index].alias, key.values[index]);
+      output.Set(data_->grouping_items[index].alias, key.values[index]);
     }
 
     while (true) {
@@ -3390,8 +3493,8 @@ class OrderedAggregationOperator final : public PullOperator {
         source_exhausted_ = true;
         break;
       }
-      CompositeValueKey next_key{
-          .values = EvaluateGroupingValues(plan.GroupingItems(), next, state_)};
+      CompositeValueKey next_key{.values = EvaluateGroupingValues(
+                                     data_->grouping_items, next, state_)};
       if (!ValueEqual{}(key, next_key)) {
         BufferPending(std::move(next), std::move(next_key));
         break;
@@ -3430,8 +3533,7 @@ class OrderedAggregationOperator final : public PullOperator {
     std::size_t reserved_bytes = 0;
   };
 
-  bool TakeFirstInput(const ir::AggregationPlan &plan, SlottedRow *row,
-                      CompositeValueKey *key) {
+  bool TakeFirstInput(SlottedRow *row, CompositeValueKey *key) {
     CHECK(row != nullptr && key != nullptr, common::InternalError,
           "ordered aggregation input is null");
     if (pending_.has_value()) {
@@ -3446,7 +3548,7 @@ class OrderedAggregationOperator final : public PullOperator {
       source_exhausted_ = true;
       return false;
     }
-    key->values = EvaluateGroupingValues(plan.GroupingItems(), *row, state_);
+    key->values = EvaluateGroupingValues(data_->grouping_items, *row, state_);
     return true;
   }
 
@@ -3460,6 +3562,7 @@ class OrderedAggregationOperator final : public PullOperator {
   }
 
   const PhysicalPlanNode *node_ = nullptr;
+  const OrderedAggregationOp *data_ = nullptr;
   RuntimeState *state_ = nullptr;
   std::unique_ptr<PullOperator> source_;
   std::optional<PendingInput> pending_;
@@ -3980,69 +4083,8 @@ class BlockingUnaryOperator final : public PullOperator {
       return;
     }
 
-    switch (node_->logical->Type()) {
-      case ir::LogicalPlanNodeType::kAggregation: {
-        const auto &plan =
-            static_cast<const ir::AggregationPlan &>(*node_->logical);
-        std::vector<AggregateAccumulator> accumulator_templates;
-        accumulator_templates.reserve(plan.AggregationItems().size());
-        for (const auto &item : plan.AggregationItems()) {
-          accumulator_templates.push_back(CreateAggregateAccumulator(item));
-        }
-        struct Group {
-          Group(SlottedRow projected,
-                const std::vector<AggregateAccumulator> &templates)
-              : output(std::move(projected)), accumulators(templates) {}
-          SlottedRow output;
-          std::vector<AggregateAccumulator> accumulators;
-        };
-        std::vector<std::unique_ptr<Group>> groups;
-        std::unordered_map<CompositeValueKey, std::size_t, ValueHash,
-                           ValueEqual>
-            group_indexes;
-        SlottedRow input(node_->children[0]->output_slots);
-        while (source_->Next(&input)) {
-          std::vector<Value> values =
-              EvaluateGroupingValues(plan.GroupingItems(), input, state_);
-          auto [group, inserted] = group_indexes.emplace(
-              CompositeValueKey{.values = values}, groups.size());
-          if (inserted) {
-            SlottedRow projected(node_->output_slots);
-            for (std::size_t index = 0; index < values.size(); ++index) {
-              projected.Set(plan.GroupingItems()[index].alias,
-                            std::move(values[index]));
-            }
-            groups.push_back(std::make_unique<Group>(std::move(projected),
-                                                     accumulator_templates));
-            const std::size_t key_bytes = EstimatedKeyHeapUsage(group->first);
-            state_->memory_tracker.Reserve(key_bytes);
-            reserved_bytes_ += key_bytes;
-          }
-          Group *state = groups[group->second].get();
-          for (auto &accumulator : state->accumulators) {
-            UpdateAggregateAccumulator(&accumulator, input, state_,
-                                       &reserved_bytes_);
-          }
-        }
-        if (plan.GroupingItems().empty() && groups.empty()) {
-          group_indexes.emplace(CompositeValueKey{}, 0U);
-          groups.push_back(std::make_unique<Group>(
-              SlottedRow(node_->output_slots), accumulator_templates));
-        }
-        for (auto &group : groups) {
-          for (auto &accumulator : group->accumulators) {
-            group->output.Set(accumulator.item->alias,
-                              FinalizeAggregateAccumulator(&accumulator, state_,
-                                                           &reserved_bytes_));
-          }
-          BufferRow(std::move(group->output));
-        }
-        break;
-      }
-      default:
-        THROW(common::InternalError, "unsupported blocking unary operator: " +
-                                         std::string(node_->logical->Name()));
-    }
+    THROW(common::InternalError, "unsupported blocking unary operator: " +
+                                     std::string(node_->logical->Name()));
   }
 
   const PhysicalPlanNode *node_ = nullptr;
@@ -4990,6 +5032,11 @@ class OperatorFactory final {
               "ordered aggregation physical node must have one child");
         return std::make_unique<OrderedAggregationOperator>(
             node, *state_, Build(*node.children[0], std::move(argument)));
+      case PhysicalOperatorKind::kHashAggregation:
+        CHECK(node.children.size() == 1, common::InternalError,
+              "hash aggregation physical node must have one child");
+        return std::make_unique<HashAggregationOperator>(
+            node, *state_, Build(*node.children[0], std::move(argument)));
       case PhysicalOperatorKind::kPartialSort:
         CHECK(node.children.size() == 1, common::InternalError,
               "partial sort physical node must have one child");
@@ -5000,7 +5047,6 @@ class OperatorFactory final {
               "full sort physical node must have one child");
         return std::make_unique<FullSortOperator>(
             node, *state_, Build(*node.children[0], std::move(argument)));
-      case PhysicalOperatorKind::kHashAggregation:
       case PhysicalOperatorKind::kWriteBarrier:
       case PhysicalOperatorKind::kDelete:
       case PhysicalOperatorKind::kDetachDelete:

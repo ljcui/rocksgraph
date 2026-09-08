@@ -255,6 +255,21 @@ struct OrderedDistinctOp {
   std::vector<PhysicalGroupingItem> grouping_items;
 };
 
+struct PhysicalAggregationItem {
+  std::string alias;
+  PhysicalExpression expression;
+};
+
+struct HashAggregationOp {
+  std::vector<PhysicalGroupingItem> grouping_items;
+  std::vector<PhysicalAggregationItem> aggregation_items;
+};
+
+struct OrderedAggregationOp {
+  std::vector<PhysicalGroupingItem> grouping_items;
+  std::vector<PhysicalAggregationItem> aggregation_items;
+};
+
 enum class PhysicalSortDirection {
   kAscending,
   kDescending,
@@ -305,8 +320,9 @@ using PhysicalOperatorData =
                  NodeByIdSeekOp, RelationshipByIdSeekOp, ExpandOp, ExpandIntoOp,
                  VarExpandOp, PruningVarExpandOp, OptionalExpandOp,
                  ProjectEndpointsOp, PathBuildOp, FilterOp, ProjectionOp,
-                 HashDistinctOp, OrderedDistinctOp, FullSortOp, PartialSortOp,
-                 TopNOp, PartialTopNOp, SkipOp, LimitOp, ProduceResultsOp>;
+                 HashDistinctOp, OrderedDistinctOp, HashAggregationOp,
+                 OrderedAggregationOp, FullSortOp, PartialSortOp, TopNOp,
+                 PartialTopNOp, SkipOp, LimitOp, ProduceResultsOp>;
 
 struct PhysicalPlanNode {
   OperatorId id = 0;
