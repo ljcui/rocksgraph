@@ -656,6 +656,18 @@ std::vector<Value> EvaluateGroupingValues(
   return values;
 }
 
+std::vector<Value> EvaluateGroupingValues(
+    const std::vector<PhysicalGroupingItem> &items, const SlottedRow &row,
+    RuntimeState *state) {
+  CHECK(state != nullptr, common::InternalError, "runtime state is null");
+  std::vector<Value> values;
+  values.reserve(items.size());
+  for (const auto &item : items) {
+    values.push_back(Evaluate(item.expression, row, *state));
+  }
+  return values;
+}
+
 std::int64_t CheckedCount(std::size_t size) {
   CHECK(size <=
             static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max()),
@@ -3174,7 +3186,10 @@ class OrderedDistinctOperator final : public PullOperator {
  public:
   OrderedDistinctOperator(const PhysicalPlanNode &node, RuntimeState &state,
                           std::unique_ptr<PullOperator> source)
-      : node_(&node), state_(&state), source_(std::move(source)) {}
+      : node_(&node),
+        data_(&OperatorData<OrderedDistinctOp>(node)),
+        state_(&state),
+        source_(std::move(source)) {}
 
   ~OrderedDistinctOperator() override { Close(); }
 
@@ -3185,12 +3200,11 @@ class OrderedDistinctOperator final : public PullOperator {
       return false;
     }
 
-    const auto &plan = static_cast<const ir::DistinctPlan &>(*node_->logical);
     SlottedRow input(node_->children[0]->output_slots);
     while (source_->Next(&input)) {
       state_->CheckCancelled();
       std::vector<Value> values =
-          EvaluateGroupingValues(plan.GroupingItems(), input, state_);
+          EvaluateGroupingValues(data_->grouping_items, input, state_);
       CompositeValueKey key{.values = values};
       if (last_key_.has_value() && ValueEqual{}(*last_key_, key)) {
         continue;
@@ -3199,7 +3213,8 @@ class OrderedDistinctOperator final : public PullOperator {
 
       SlottedRow output(node_->output_slots);
       for (std::size_t index = 0; index < values.size(); ++index) {
-        output.Set(plan.GroupingItems()[index].alias, std::move(values[index]));
+        output.Set(data_->grouping_items[index].alias,
+                   std::move(values[index]));
       }
       *row = std::move(output);
       return true;
@@ -3235,10 +3250,92 @@ class OrderedDistinctOperator final : public PullOperator {
   }
 
   const PhysicalPlanNode *node_ = nullptr;
+  const OrderedDistinctOp *data_ = nullptr;
   RuntimeState *state_ = nullptr;
   std::unique_ptr<PullOperator> source_;
   std::optional<CompositeValueKey> last_key_;
   std::size_t reserved_bytes_ = 0;
+  bool closed_ = false;
+};
+
+class HashDistinctOperator final : public PullOperator {
+ public:
+  HashDistinctOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                       std::unique_ptr<PullOperator> source)
+      : node_(&node),
+        data_(&OperatorData<HashDistinctOp>(node)),
+        state_(&state),
+        source_(std::move(source)) {}
+
+  ~HashDistinctOperator() override { Close(); }
+
+  [[nodiscard]] bool Next(SlottedRow *row) override {
+    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    state_->CheckCancelled();
+    if (closed_) {
+      return false;
+    }
+    if (!initialized_) {
+      Initialize();
+    }
+    if (next_ >= rows_.size()) {
+      Close();
+      return false;
+    }
+    *row = std::move(rows_[next_++]);
+    return true;
+  }
+
+  void Close() noexcept override {
+    if (closed_) {
+      return;
+    }
+    source_->Close();
+    state_->memory_tracker.Release(reserved_bytes_);
+    reserved_bytes_ = 0;
+    closed_ = true;
+  }
+
+ private:
+  void BufferRow(SlottedRow row) {
+    const std::size_t bytes = row.EstimatedHeapUsage();
+    state_->memory_tracker.Reserve(bytes);
+    reserved_bytes_ += bytes;
+    rows_.push_back(std::move(row));
+  }
+
+  void Initialize() {
+    initialized_ = true;
+    std::unordered_set<CompositeValueKey, ValueHash, ValueEqual> seen;
+    SlottedRow input(node_->children[0]->output_slots);
+    while (source_->Next(&input)) {
+      state_->CheckCancelled();
+      std::vector<Value> values =
+          EvaluateGroupingValues(data_->grouping_items, input, state_);
+      auto [key, inserted] = seen.insert(CompositeValueKey{.values = values});
+      if (!inserted) {
+        continue;
+      }
+      const std::size_t key_bytes = EstimatedKeyHeapUsage(*key);
+      state_->memory_tracker.Reserve(key_bytes);
+      reserved_bytes_ += key_bytes;
+      SlottedRow output(node_->output_slots);
+      for (std::size_t index = 0; index < values.size(); ++index) {
+        output.Set(data_->grouping_items[index].alias,
+                   std::move(values[index]));
+      }
+      BufferRow(std::move(output));
+    }
+  }
+
+  const PhysicalPlanNode *node_ = nullptr;
+  const HashDistinctOp *data_ = nullptr;
+  RuntimeState *state_ = nullptr;
+  std::unique_ptr<PullOperator> source_;
+  std::vector<SlottedRow> rows_;
+  std::size_t reserved_bytes_ = 0;
+  std::size_t next_ = 0;
+  bool initialized_ = false;
   bool closed_ = false;
 };
 
@@ -3884,31 +3981,6 @@ class BlockingUnaryOperator final : public PullOperator {
     }
 
     switch (node_->logical->Type()) {
-      case ir::LogicalPlanNodeType::kDistinct: {
-        const auto &plan =
-            static_cast<const ir::DistinctPlan &>(*node_->logical);
-        std::unordered_set<CompositeValueKey, ValueHash, ValueEqual> seen;
-        SlottedRow input(node_->children[0]->output_slots);
-        while (source_->Next(&input)) {
-          std::vector<Value> values =
-              EvaluateGroupingValues(plan.GroupingItems(), input, state_);
-          auto [key, inserted] =
-              seen.insert(CompositeValueKey{.values = values});
-          if (!inserted) {
-            continue;
-          }
-          const std::size_t key_bytes = EstimatedKeyHeapUsage(*key);
-          state_->memory_tracker.Reserve(key_bytes);
-          reserved_bytes_ += key_bytes;
-          SlottedRow output(node_->output_slots);
-          for (std::size_t index = 0; index < values.size(); ++index) {
-            output.Set(plan.GroupingItems()[index].alias,
-                       std::move(values[index]));
-          }
-          BufferRow(std::move(output));
-        }
-        break;
-      }
       case ir::LogicalPlanNodeType::kAggregation: {
         const auto &plan =
             static_cast<const ir::AggregationPlan &>(*node_->logical);
@@ -4908,6 +4980,11 @@ class OperatorFactory final {
               "ordered distinct physical node must have one child");
         return std::make_unique<OrderedDistinctOperator>(
             node, *state_, Build(*node.children[0], std::move(argument)));
+      case PhysicalOperatorKind::kHashDistinct:
+        CHECK(node.children.size() == 1, common::InternalError,
+              "hash distinct physical node must have one child");
+        return std::make_unique<HashDistinctOperator>(
+            node, *state_, Build(*node.children[0], std::move(argument)));
       case PhysicalOperatorKind::kOrderedAggregation:
         CHECK(node.children.size() == 1, common::InternalError,
               "ordered aggregation physical node must have one child");
@@ -4923,7 +5000,6 @@ class OperatorFactory final {
               "full sort physical node must have one child");
         return std::make_unique<FullSortOperator>(
             node, *state_, Build(*node.children[0], std::move(argument)));
-      case PhysicalOperatorKind::kHashDistinct:
       case PhysicalOperatorKind::kHashAggregation:
       case PhysicalOperatorKind::kWriteBarrier:
       case PhysicalOperatorKind::kDelete:

@@ -788,6 +788,15 @@ TEST(PhysicalPlanTest, SelectsOrderedGroupingAlgorithms) {
       distinct_physical.NodeFor(*distinct);
   EXPECT_EQ(distinct_node.kind, rg::PhysicalOperatorKind::kOrderedDistinct);
   ASSERT_EQ(distinct_node.provided_order.size(), 1U);
+  const auto &distinct_data =
+      std::get<rg::OrderedDistinctOp>(distinct_node.data);
+  ASSERT_EQ(distinct_data.grouping_items.size(), 1U);
+  EXPECT_EQ(distinct_data.grouping_items.front().alias, "x");
+  EXPECT_NE(distinct_data.grouping_items.front().expression.Expression(),
+            static_cast<const ir::DistinctPlan &>(*distinct)
+                .GroupingItems()
+                .front()
+                .expression);
 
   PlannedQuery aggregation_query = Plan(
       "UNWIND [3, 1, 2, 1] AS x "
@@ -833,8 +842,17 @@ TEST(PhysicalPlanTest, SelectsPartialSortAndHashFallbacks) {
   ASSERT_NE(distinct, nullptr);
   rg::PhysicalPlan fallback_physical =
       rg::CreatePhysicalPlan(*fallback_query.logical_plan);
-  EXPECT_EQ(fallback_physical.NodeFor(*distinct).kind,
-            rg::PhysicalOperatorKind::kHashDistinct);
+  const rg::PhysicalPlanNode &distinct_node =
+      fallback_physical.NodeFor(*distinct);
+  EXPECT_EQ(distinct_node.kind, rg::PhysicalOperatorKind::kHashDistinct);
+  const auto &distinct_data = std::get<rg::HashDistinctOp>(distinct_node.data);
+  ASSERT_EQ(distinct_data.grouping_items.size(), 1U);
+  EXPECT_EQ(distinct_data.grouping_items.front().alias, "x");
+  EXPECT_NE(distinct_data.grouping_items.front().expression.Expression(),
+            static_cast<const ir::DistinctPlan &>(*distinct)
+                .GroupingItems()
+                .front()
+                .expression);
 
   PlannedQuery aggregation_query =
       Plan("UNWIND [3, 1, 2] AS x RETURN x, count(*) AS count");
@@ -933,6 +951,40 @@ TEST(PhysicalPlanTest,
       PhysicalRows(partial_top_n, graph, {"g", "v"}, {{"l", rg::Value(3)}}),
       (std::vector<std::vector<rg::Value>>(sorted.begin(),
                                            sorted.begin() + 3)));
+}
+
+TEST(PhysicalPlanTest,
+     ExecutesDistinctOperatorsAfterLogicalPlanAndAstAreDestroyed) {
+  rg::InMemoryGraph graph;
+  graph.CreateNode({"N"}, {{"value", rg::Value(2)}});
+  graph.CreateNode({"N"}, {{"value", rg::Value(1)}});
+  graph.CreateNode({"N"}, {{"value", rg::Value(2)}});
+  graph.CreateNode({"N"}, {{"value", rg::Value(1.0)}});
+  graph.CreateNode({"N"});
+  graph.CreateNode({"N"});
+
+  rg::PhysicalPlan hash_distinct =
+      DetachedPhysicalPlan("MATCH (n:N) RETURN DISTINCT n.value AS value");
+  ASSERT_NE(FindPhysicalPlan(hash_distinct.Root(),
+                             rg::PhysicalOperatorKind::kHashDistinct),
+            nullptr);
+  const auto hash_rows = PhysicalRows(hash_distinct, graph, {"value"});
+  ASSERT_EQ(hash_rows.size(), 3U);
+  EXPECT_TRUE(rg::ValuesEqual(hash_rows[0][0], rg::Value(2)));
+  EXPECT_TRUE(rg::ValuesEqual(hash_rows[1][0], rg::Value(1)));
+  EXPECT_TRUE(hash_rows[2][0].IsNull());
+
+  rg::PhysicalPlan ordered_distinct = DetachedPhysicalPlan(
+      "MATCH (n:N) WITH n ORDER BY n.value "
+      "RETURN DISTINCT n.value AS value");
+  ASSERT_NE(FindPhysicalPlan(ordered_distinct.Root(),
+                             rg::PhysicalOperatorKind::kOrderedDistinct),
+            nullptr);
+  const auto ordered_rows = PhysicalRows(ordered_distinct, graph, {"value"});
+  ASSERT_EQ(ordered_rows.size(), 3U);
+  EXPECT_TRUE(rg::ValuesEqual(ordered_rows[0][0], rg::Value(1)));
+  EXPECT_TRUE(rg::ValuesEqual(ordered_rows[1][0], rg::Value(2)));
+  EXPECT_TRUE(ordered_rows[2][0].IsNull());
 }
 
 TEST(PhysicalPlanTest, PrintsAlgorithmsPropertiesAndSlots) {

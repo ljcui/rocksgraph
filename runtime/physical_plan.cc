@@ -587,6 +587,18 @@ std::vector<PhysicalSortItem> CopyPhysicalSortItems(
   return copied;
 }
 
+std::vector<PhysicalGroupingItem> CopyPhysicalGroupingItems(
+    const std::vector<ir::LogicalProjectionItem> &items) {
+  std::vector<PhysicalGroupingItem> copied;
+  copied.reserve(items.size());
+  for (const auto &item : items) {
+    copied.push_back({.alias = item.alias,
+                      .expression = CopyPhysicalExpression(
+                          item.expression, item.precomputed_expressions)});
+  }
+  return copied;
+}
+
 PhysicalRelationshipPattern CopyPhysicalRelationshipPattern(
     const ir::PatternRelationship &pattern) {
   return {.from_node = pattern.left_node,
@@ -1078,6 +1090,19 @@ class PhysicalPlanBuilder final {
           data.items.push_back(std::move(physical_item));
         }
         node->data = std::move(data);
+        return;
+      }
+      case PhysicalOperatorKind::kHashDistinct: {
+        const auto &distinct = static_cast<const ir::DistinctPlan &>(plan);
+        node->data = HashDistinctOp{.grouping_items = CopyPhysicalGroupingItems(
+                                        distinct.GroupingItems())};
+        return;
+      }
+      case PhysicalOperatorKind::kOrderedDistinct: {
+        const auto &distinct = static_cast<const ir::DistinctPlan &>(plan);
+        node->data =
+            OrderedDistinctOp{.grouping_items = CopyPhysicalGroupingItems(
+                                  distinct.GroupingItems())};
         return;
       }
       case PhysicalOperatorKind::kFullSort: {

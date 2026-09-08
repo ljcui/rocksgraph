@@ -242,6 +242,19 @@ struct ProjectionOp {
   std::vector<PhysicalProjectionItem> items;
 };
 
+struct PhysicalGroupingItem {
+  std::string alias;
+  PhysicalExpression expression;
+};
+
+struct HashDistinctOp {
+  std::vector<PhysicalGroupingItem> grouping_items;
+};
+
+struct OrderedDistinctOp {
+  std::vector<PhysicalGroupingItem> grouping_items;
+};
+
 enum class PhysicalSortDirection {
   kAscending,
   kDescending,
@@ -292,8 +305,8 @@ using PhysicalOperatorData =
                  NodeByIdSeekOp, RelationshipByIdSeekOp, ExpandOp, ExpandIntoOp,
                  VarExpandOp, PruningVarExpandOp, OptionalExpandOp,
                  ProjectEndpointsOp, PathBuildOp, FilterOp, ProjectionOp,
-                 FullSortOp, PartialSortOp, TopNOp, PartialTopNOp, SkipOp,
-                 LimitOp, ProduceResultsOp>;
+                 HashDistinctOp, OrderedDistinctOp, FullSortOp, PartialSortOp,
+                 TopNOp, PartialTopNOp, SkipOp, LimitOp, ProduceResultsOp>;
 
 struct PhysicalPlanNode {
   OperatorId id = 0;
