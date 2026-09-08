@@ -516,25 +516,6 @@ Storage &RequireStorage(RuntimeState *state) {
   return *state->storage;
 }
 
-Value::Map EvaluatePropertyMap(const ir::PatternPropertyMap &property_map,
-                               const SlottedRow &row,
-                               std::string_view operation,
-                               RuntimeState *state) {
-  if (property_map.parameter != nullptr) {
-    Value value = Evaluate(*property_map.parameter, row, {}, *state);
-    CHECK(value.IsMap(), common::InvalidArgumentError,
-          std::string(operation) + " properties parameter must be a map");
-    return value.AsMap();
-  }
-  Value::Map properties;
-  for (const auto &entry : property_map.entries) {
-    CHECK(entry.value != nullptr, common::InvalidArgumentError,
-          std::string(operation) + " property value is null");
-    properties[entry.key] = Evaluate(*entry.value, row, {}, *state);
-  }
-  return properties;
-}
-
 Value::Map EvaluatePropertyMap(const PhysicalPropertyMap &property_map,
                                const SlottedRow &row,
                                std::string_view operation,
@@ -550,62 +531,6 @@ Value::Map EvaluatePropertyMap(const PhysicalPropertyMap &property_map,
     properties[entry.key] = Evaluate(entry.value, row, *state);
   }
   return properties;
-}
-
-void ApplySetPattern(const ir::SetMutatingPattern &pattern, SlottedRow *row,
-                     RuntimeState *state) {
-  CHECK(row != nullptr, common::InternalError, "write row is null");
-  Storage &storage = RequireStorage(state);
-  CHECK(pattern.entity != nullptr, common::InvalidArgumentError,
-        "SET entity expression is null");
-  const Value entity = Evaluate(*pattern.entity, *row, {}, *state);
-  if (entity.IsNull()) {
-    return;
-  }
-  if (pattern.kind == ir::SetMutatingPatternKind::kSetLabels) {
-    CHECK(entity.IsNode(), common::InvalidArgumentError,
-          "SET labels target is not a node");
-    storage.SetLabels(entity.AsNode().id, pattern.labels);
-    return;
-  }
-  CHECK(pattern.value != nullptr, common::InvalidArgumentError,
-        "SET value expression is null");
-  Value value = Evaluate(*pattern.value, *row, {}, *state);
-  if (pattern.kind == ir::SetMutatingPatternKind::kSetProperty) {
-    if (entity.IsNode()) {
-      storage.SetNodeProperty(entity.AsNode().id, pattern.property_key,
-                              std::move(value));
-    } else if (entity.IsRelationship()) {
-      storage.SetRelationshipProperty(entity.AsRelationship().id,
-                                      pattern.property_key, std::move(value));
-    } else {
-      THROW(common::InvalidArgumentError,
-            "SET property target is not an entity");
-    }
-    return;
-  }
-  CHECK(value.IsMap(), common::InvalidArgumentError,
-        "SET properties requires a map value");
-  const bool include_existing =
-      pattern.kind ==
-      ir::SetMutatingPatternKind::kSetIncludingPropertiesFromMap;
-  if (entity.IsNode()) {
-    storage.SetNodeProperties(entity.AsNode().id, std::move(value.AsMap()),
-                              include_existing);
-  } else if (entity.IsRelationship()) {
-    storage.SetRelationshipProperties(
-        entity.AsRelationship().id, std::move(value.AsMap()), include_existing);
-  } else {
-    THROW(common::InvalidArgumentError,
-          "SET properties target is not an entity");
-  }
-}
-
-void ApplySetPatterns(const std::vector<ir::SetMutatingPattern> &patterns,
-                      SlottedRow *row, RuntimeState *state) {
-  for (const auto &pattern : patterns) {
-    ApplySetPattern(pattern, row, state);
-  }
 }
 
 void ExecuteStreamingWrite(const CreateNodeOp &data, const SlottedRow &input,
@@ -634,6 +559,46 @@ void ExecuteStreamingWrite(const CreateRelationshipOp &data,
   CHECK(relationship != nullptr, common::InternalError,
         "storage returned a null created relationship");
   output->SetEntityId(data.relationship_slot, relationship->id);
+}
+
+Value::Map EvaluateMergeProperties(const PhysicalPropertyMap &properties,
+                                   const SlottedRow &row,
+                                   std::string_view entity,
+                                   RuntimeState *state) {
+  const std::string operation = "MERGE " + std::string(entity);
+  Value::Map values = EvaluatePropertyMap(properties, row, operation, state);
+  for (const auto &[key, value] : values) {
+    (void)key;
+    CHECK(!value.IsNull(), common::InvalidArgumentError,
+          operation + " property value is null");
+  }
+  return values;
+}
+
+void ExecuteMergeCreate(const CreateNodeOp &data, SlottedRow *row,
+                        RuntimeState *state) {
+  Storage &storage = RequireStorage(state);
+  const Value::NodePtr node = storage.CreateNode(
+      data.labels,
+      EvaluateMergeProperties(data.properties, *row, "node", state));
+  CHECK(node != nullptr, common::InternalError,
+        "storage returned a null created node");
+  row->SetEntityId(data.node_slot, node->id);
+}
+
+void ExecuteMergeCreate(const CreateRelationshipOp &data, SlottedRow *row,
+                        RuntimeState *state) {
+  Storage &storage = RequireStorage(state);
+  const std::int64_t left = NodeId(*row, data.left_node_slot, *state);
+  const std::int64_t right = NodeId(*row, data.right_node_slot, *state);
+  CHECK(left >= 0 && right >= 0, common::InvalidArgumentError,
+        "MERGE relationship endpoints must be nodes");
+  const Value::RelationshipPtr relationship = storage.CreateRelationship(
+      left, right, data.type,
+      EvaluateMergeProperties(data.properties, *row, "relationship", state));
+  CHECK(relationship != nullptr, common::InternalError,
+        "storage returned a null created relationship");
+  row->SetEntityId(data.relationship_slot, relationship->id);
 }
 
 void ExecuteStreamingWrite(const SetPropertyOp &data, const SlottedRow &,
@@ -690,6 +655,22 @@ void ExecuteStreamingWrite(const SetLabelsOp &data, const SlottedRow &,
   storage.SetLabels(entity.AsNode().id, data.labels);
 }
 
+void ExecuteMergeActions(const MergeOp &data, bool on_match, SlottedRow *row,
+                         RuntimeState *state) {
+  for (const auto &action : data.actions) {
+    if (action.on_match != on_match) {
+      continue;
+    }
+    for (const auto &operation : action.set_operations) {
+      std::visit(
+          [row, state](const auto &set_operation) {
+            ExecuteStreamingWrite(set_operation, *row, row, state);
+          },
+          operation);
+    }
+  }
+}
+
 void ExecuteStreamingWrite(const RemovePropertyOp &data, const SlottedRow &,
                            SlottedRow *output, RuntimeState *state) {
   Storage &storage = RequireStorage(state);
@@ -713,54 +694,6 @@ void ExecuteStreamingWrite(const RemoveLabelsOp &data, const SlottedRow &,
     CHECK(entity.IsNode(), common::InvalidArgumentError,
           "REMOVE labels target is not a node");
     storage.RemoveLabels(entity.AsNode().id, data.labels);
-  }
-}
-
-void ExecuteCreatePattern(const ir::CreatePattern &pattern, SlottedRow *row,
-                          RuntimeState *state, bool reject_null_properties) {
-  CHECK(row != nullptr, common::InternalError, "create row is null");
-  Storage &storage = RequireStorage(state);
-  for (const auto &command : pattern.commands) {
-    state->CheckCancelled();
-    if (command.kind == ir::CreateEntityKind::kNode) {
-      const auto &node_pattern = pattern.nodes.at(command.index);
-      Value::Map properties = EvaluatePropertyMap(
-          node_pattern.properties, *row,
-          reject_null_properties ? "MERGE node" : "CREATE node", state);
-      if (reject_null_properties) {
-        for (const auto &[key, value] : properties) {
-          (void)key;
-          CHECK(!value.IsNull(), common::InvalidArgumentError,
-                "MERGE node property value is null");
-        }
-      }
-      row->Set(node_pattern.variable,
-               Value(storage.CreateNode(node_pattern.labels,
-                                        std::move(properties))));
-      continue;
-    }
-    const auto &relationship = pattern.relationships.at(command.index);
-    const std::int64_t left = NodeId(*row, relationship.left_node, *state);
-    const std::int64_t right = NodeId(*row, relationship.right_node, *state);
-    CHECK(left >= 0 && right >= 0, common::InvalidArgumentError,
-          "CREATE relationship endpoints must be nodes");
-    Value::Map properties = EvaluatePropertyMap(
-        relationship.properties, *row,
-        reject_null_properties ? "MERGE relationship" : "CREATE relationship",
-        state);
-    if (reject_null_properties) {
-      for (const auto &[key, value] : properties) {
-        (void)key;
-        CHECK(!value.IsNull(), common::InvalidArgumentError,
-              "MERGE relationship property value is null");
-      }
-    }
-    row->Set(
-        relationship.variable,
-        Value(storage.CreateRelationship(
-            left, right,
-            relationship.types.empty() ? std::string() : relationship.types[0],
-            std::move(properties))));
   }
 }
 
@@ -5384,6 +5317,7 @@ class MergeOperator final : public PullOperator {
   MergeOperator(const PhysicalPlanNode &node, RuntimeState &state,
                 OperatorFactory &factory, std::unique_ptr<PullOperator> source)
       : node_(&node),
+        data_(&OperatorData<MergeOp>(node)),
         state_(&state),
         factory_(&factory),
         source_(std::move(source)) {}
@@ -5403,6 +5337,7 @@ class MergeOperator final : public PullOperator {
   }
 
   const PhysicalPlanNode *node_ = nullptr;
+  const MergeOp *data_ = nullptr;
   RuntimeState *state_ = nullptr;
   OperatorFactory *factory_ = nullptr;
   std::unique_ptr<PullOperator> source_;
@@ -5990,30 +5925,24 @@ void MergeOperator::Initialize() {
         continue;
       }
       matched = true;
-      for (const auto &action :
-           static_cast<const ir::MergePlan &>(*node_->logical)
-               .Merge()
-               .actions) {
-        if (action.on_match) {
-          ApplySetPatterns(action.set_patterns, &output, state_);
-        }
-      }
+      ExecuteMergeActions(*data_, true, &output, state_);
       BufferRow(std::move(output));
     }
     rhs->Close();
     if (matched) {
       continue;
     }
-    const auto &merge =
-        static_cast<const ir::MergePlan &>(*node_->logical).Merge();
     SlottedRow output =
         input.CopyTo(node_->output_slots, *state_->graph_reader);
-    ExecuteCreatePattern(merge.create_pattern, &output, state_, true);
-    for (const auto &action : merge.actions) {
-      if (!action.on_match) {
-        ApplySetPatterns(action.set_patterns, &output, state_);
-      }
+    for (const auto &command : data_->create_commands) {
+      state_->CheckCancelled();
+      std::visit(
+          [this, &output](const auto &create) {
+            ExecuteMergeCreate(create, &output, state_);
+          },
+          command);
     }
+    ExecuteMergeActions(*data_, false, &output, state_);
     BufferRow(std::move(output));
   }
 }

@@ -423,6 +423,21 @@ struct SetLabelsOp {
   std::vector<std::string> labels;
 };
 
+using PhysicalMergeCreateCommand =
+    std::variant<CreateNodeOp, CreateRelationshipOp>;
+using PhysicalMergeSetOperation =
+    std::variant<SetPropertyOp, SetPropertiesOp, SetLabelsOp>;
+
+struct PhysicalMergeAction {
+  bool on_match = false;
+  std::vector<PhysicalMergeSetOperation> set_operations;
+};
+
+struct MergeOp {
+  std::vector<PhysicalMergeCreateCommand> create_commands;
+  std::vector<PhysicalMergeAction> actions;
+};
+
 struct RemovePropertyOp {
   PhysicalExpression entity;
   std::string property_key;
@@ -455,7 +470,7 @@ using PhysicalOperatorData = std::variant<
     NodeHashJoinOp, LeftOuterHashJoinOp, CartesianProductOp, PredicateJoinOp,
     UnionAllOp, UnionDistinctOp, ApplyOp, OptionalApplyOp, SemiApplyOp,
     AntiSemiApplyOp, LetSemiApplyOp, SelectOrSemiApplyOp, RollUpApplyOp,
-    WriteBarrierOp, CreateNodeOp, CreateRelationshipOp, SetPropertyOp,
+    WriteBarrierOp, CreateNodeOp, CreateRelationshipOp, MergeOp, SetPropertyOp,
     SetPropertiesOp, SetLabelsOp, RemovePropertyOp, RemoveLabelsOp, DeleteOp,
     DetachDeleteOp>;
 

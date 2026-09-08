@@ -762,6 +762,113 @@ TEST(PhysicalPlanTest, ExecutesDetachedStreamingWriteOperators) {
       graph.RelationshipById(relationship.id)->properties.contains("weight"));
 }
 
+TEST(PhysicalPlanTest, BuildsOwnedMergePayload) {
+  PlannedQuery query = Plan(
+      "MERGE (n:Person {key: $key}) "
+      "ON CREATE SET n.created = true, n += {extra: 1}, n:Fresh "
+      "ON MATCH SET n.seen = true RETURN n");
+  const ir::LogicalPlan *logical =
+      FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kMerge);
+  ASSERT_NE(logical, nullptr);
+  const auto &logical_merge = static_cast<const ir::MergePlan &>(*logical);
+  const ir::MergePattern &logical_data = logical_merge.Merge();
+  ASSERT_EQ(logical_data.create_pattern.nodes.size(), 1U);
+  ASSERT_EQ(logical_data.create_pattern.nodes[0].properties.entries.size(), 1U);
+  const ast::Expression *logical_property =
+      logical_data.create_pattern.nodes[0].properties.entries[0].value;
+
+  rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+  const rg::PhysicalPlanNode *merge =
+      FindPhysicalPlan(physical.Root(), rg::PhysicalOperatorKind::kMerge);
+  ASSERT_NE(merge, nullptr);
+  const auto &data = std::get<rg::MergeOp>(merge->data);
+  ASSERT_EQ(data.create_commands.size(), 1U);
+  const auto &create = std::get<rg::CreateNodeOp>(data.create_commands.front());
+  EXPECT_EQ(create.node_slot.kind, rg::SlotKind::kNode);
+  EXPECT_EQ(create.labels, std::vector<std::string>{"Person"});
+  ASSERT_EQ(create.properties.entries.size(), 1U);
+  EXPECT_NE(create.properties.entries.front().value.Expression(),
+            logical_property);
+
+  ASSERT_EQ(data.actions.size(), 2U);
+  const rg::PhysicalMergeAction *on_create = nullptr;
+  const rg::PhysicalMergeAction *on_match = nullptr;
+  for (const auto &action : data.actions) {
+    (action.on_match ? on_match : on_create) = &action;
+  }
+  ASSERT_NE(on_create, nullptr);
+  ASSERT_NE(on_match, nullptr);
+  ASSERT_EQ(on_create->set_operations.size(), 3U);
+  EXPECT_TRUE(
+      std::holds_alternative<rg::SetPropertyOp>(on_create->set_operations[0]));
+  ASSERT_TRUE(std::holds_alternative<rg::SetPropertiesOp>(
+      on_create->set_operations[1]));
+  EXPECT_TRUE(std::get<rg::SetPropertiesOp>(on_create->set_operations[1])
+                  .include_existing);
+  EXPECT_TRUE(
+      std::holds_alternative<rg::SetLabelsOp>(on_create->set_operations[2]));
+  ASSERT_EQ(on_match->set_operations.size(), 1U);
+  EXPECT_TRUE(std::holds_alternative<rg::SetPropertyOp>(
+      on_match->set_operations.front()));
+}
+
+TEST(PhysicalPlanTest, ExecutesDetachedMergeCreateAndMatchActions) {
+  rg::InMemoryGraph graph;
+  rg::PhysicalPlan physical = DetachedPhysicalPlan(
+      "MERGE (n:Person) "
+      "ON CREATE SET n = {created: true}, n += {extra: 1}, n:Fresh "
+      "ON MATCH SET n.seen = true "
+      "RETURN n.created AS created, n.seen AS seen");
+
+  const auto created = PhysicalWriteRows(physical, &graph, {"created", "seen"});
+  ASSERT_EQ(created.size(), 1U);
+  ASSERT_EQ(created.front().size(), 2U);
+  EXPECT_EQ(created.front()[0], rg::Value(true));
+  EXPECT_TRUE(created.front()[1].IsNull());
+  ASSERT_EQ(graph.Nodes().size(), 1U);
+  EXPECT_EQ(graph.Nodes().front()->properties.at("extra"), rg::Value(1));
+  EXPECT_NE(std::find(graph.Nodes().front()->labels.begin(),
+                      graph.Nodes().front()->labels.end(), "Fresh"),
+            graph.Nodes().front()->labels.end());
+
+  const auto matched = PhysicalWriteRows(physical, &graph, {"created", "seen"});
+  ASSERT_EQ(matched.size(), 1U);
+  ASSERT_EQ(matched.front().size(), 2U);
+  EXPECT_EQ(matched.front()[0], rg::Value(true));
+  EXPECT_EQ(matched.front()[1], rg::Value(true));
+  EXPECT_EQ(graph.Nodes().size(), 1U);
+
+  rg::PhysicalPlan null_property =
+      DetachedPhysicalPlan("MERGE (n:Invalid {key: $key}) RETURN n");
+  EXPECT_THROW((void)PhysicalWriteRows(null_property, &graph, {"n"},
+                                       {{"key", rg::Value::Null()}}),
+               common::InvalidArgumentError);
+}
+
+TEST(PhysicalPlanTest, ExecutesDetachedRelationshipMerge) {
+  rg::InMemoryGraph graph;
+  graph.CreateNode({"Source"}, {{"key", rg::Value(7)}});
+  rg::PhysicalPlan physical = DetachedPhysicalPlan(
+      "MATCH (m:Source) "
+      "MERGE (m)-[r:LINK {weight: m.key}]->(n:Target {key: m.key}) "
+      "ON CREATE SET r.created = true "
+      "ON MATCH SET r.seen = true RETURN n, r");
+
+  ASSERT_EQ(PhysicalWriteRows(physical, &graph, {"n", "r"}).size(), 1U);
+  ASSERT_EQ(graph.Nodes().size(), 2U);
+  ASSERT_EQ(graph.Relationships().size(), 1U);
+  EXPECT_EQ(graph.Relationships().front()->properties.at("weight"),
+            rg::Value(7));
+  EXPECT_EQ(graph.Relationships().front()->properties.at("created"),
+            rg::Value(true));
+
+  ASSERT_EQ(PhysicalWriteRows(physical, &graph, {"n", "r"}).size(), 1U);
+  EXPECT_EQ(graph.Nodes().size(), 2U);
+  EXPECT_EQ(graph.Relationships().size(), 1U);
+  EXPECT_EQ(graph.Relationships().front()->properties.at("seen"),
+            rg::Value(true));
+}
+
 TEST(PhysicalPlanTest, BuildsOwnedDeletePayloads) {
   rg::PhysicalPlan delete_plan =
       DetachedPhysicalPlan("MATCH (n:N) DELETE n RETURN n");

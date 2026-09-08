@@ -610,6 +610,79 @@ PhysicalPropertyMap CopyPhysicalPropertyMap(
   return copied;
 }
 
+PhysicalMergeSetOperation CopyPhysicalMergeSetOperation(
+    const ir::SetMutatingPattern &pattern) {
+  switch (pattern.kind) {
+    case ir::SetMutatingPatternKind::kSetProperty:
+      return SetPropertyOp{.entity = CopyPhysicalExpression(pattern.entity, {}),
+                           .property_key = pattern.property_key,
+                           .value = CopyPhysicalExpression(pattern.value, {})};
+    case ir::SetMutatingPatternKind::kSetExactPropertiesFromMap:
+      return SetPropertiesOp{
+          .entity = CopyPhysicalExpression(pattern.entity, {}),
+          .value = CopyPhysicalExpression(pattern.value, {}),
+          .include_existing = false};
+    case ir::SetMutatingPatternKind::kSetIncludingPropertiesFromMap:
+      return SetPropertiesOp{
+          .entity = CopyPhysicalExpression(pattern.entity, {}),
+          .value = CopyPhysicalExpression(pattern.value, {}),
+          .include_existing = true};
+    case ir::SetMutatingPatternKind::kSetLabels:
+      return SetLabelsOp{.entity = CopyPhysicalExpression(pattern.entity, {}),
+                         .labels = pattern.labels};
+  }
+  THROW(common::InternalError, "unknown MERGE SET operation");
+}
+
+MergeOp CopyPhysicalMerge(const ir::MergePattern &merge,
+                          const SlotConfiguration &output_slots) {
+  MergeOp copied;
+  copied.create_commands.reserve(merge.create_pattern.commands.size());
+  for (const auto &command : merge.create_pattern.commands) {
+    switch (command.kind) {
+      case ir::CreateEntityKind::kNode: {
+        CHECK(command.index < merge.create_pattern.nodes.size(),
+              common::InvalidArgumentError,
+              "MERGE node command index is out of range");
+        const ir::CreateNodePattern &node =
+            merge.create_pattern.nodes[command.index];
+        copied.create_commands.emplace_back(CreateNodeOp{
+            .node_slot = output_slots.At(node.variable),
+            .labels = node.labels,
+            .properties = CopyPhysicalPropertyMap(node.properties)});
+        break;
+      }
+      case ir::CreateEntityKind::kRelationship: {
+        CHECK(command.index < merge.create_pattern.relationships.size(),
+              common::InvalidArgumentError,
+              "MERGE relationship command index is out of range");
+        const ir::CreateRelationshipPattern &relationship =
+            merge.create_pattern.relationships[command.index];
+        copied.create_commands.emplace_back(CreateRelationshipOp{
+            .relationship_slot = output_slots.At(relationship.variable),
+            .left_node_slot = output_slots.At(relationship.left_node),
+            .right_node_slot = output_slots.At(relationship.right_node),
+            .type = relationship.types.empty() ? std::string()
+                                               : relationship.types.front(),
+            .properties = CopyPhysicalPropertyMap(relationship.properties)});
+        break;
+      }
+    }
+  }
+
+  copied.actions.reserve(merge.actions.size());
+  for (const auto &action : merge.actions) {
+    PhysicalMergeAction physical_action{.on_match = action.on_match};
+    physical_action.set_operations.reserve(action.set_patterns.size());
+    for (const auto &set_pattern : action.set_patterns) {
+      physical_action.set_operations.push_back(
+          CopyPhysicalMergeSetOperation(set_pattern));
+    }
+    copied.actions.push_back(std::move(physical_action));
+  }
+  return copied;
+}
+
 PhysicalExpandDirection ToPhysicalExpandDirection(ir::Direction direction) {
   switch (direction) {
     case ir::Direction::kIncoming:
@@ -1359,6 +1432,11 @@ class PhysicalPlanBuilder final {
             .type = relationship.types.empty() ? std::string()
                                                : relationship.types.front(),
             .properties = CopyPhysicalPropertyMap(relationship.properties)};
+        return;
+      }
+      case PhysicalOperatorKind::kMerge: {
+        const auto &merge = static_cast<const ir::MergePlan &>(plan);
+        node->data = CopyPhysicalMerge(merge.Merge(), *node->output_slots);
         return;
       }
       case PhysicalOperatorKind::kSetProperty: {
