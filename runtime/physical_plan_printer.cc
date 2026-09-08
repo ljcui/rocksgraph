@@ -98,9 +98,11 @@ class PhysicalPlanPrinter final {
       metadata.push_back("prefix=" + std::to_string(top_n->prefix));
     }
     if (node.kind == PhysicalOperatorKind::kValueHashJoin) {
-      metadata.push_back(
-          std::string("build=") +
-          (node.value_hash_join_build_child == 0 ? "left" : "right"));
+      const auto *join = std::get_if<ValueHashJoinOp>(&node.data);
+      CHECK(join != nullptr, common::InternalError,
+            "value hash join physical payload is missing");
+      metadata.push_back(std::string("build=") +
+                         (join->build_child == 0 ? "left" : "right"));
     }
     metadata.push_back("slots=[" + FormatSlots(*node.output_slots) + "]");
 

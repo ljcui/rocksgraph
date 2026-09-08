@@ -853,14 +853,6 @@ class PhysicalPlanBuilder final {
     }
     node->argument_mapping =
         ComputeSlotMappings(*node->argument_slots, *node->output_slots);
-    if (plan.Type() == ir::LogicalPlanNodeType::kValueHashJoin) {
-      const auto &left_rows = plan.Child(0).EstimatedRows();
-      const auto &right_rows = plan.Child(1).EstimatedRows();
-      if (left_rows.has_value() && right_rows.has_value() &&
-          *left_rows < *right_rows) {
-        node->value_hash_join_build_child = 0;
-      }
-    }
     SelectOperator(plan, node.get());
     BuildOperatorData(plan, node.get());
     return node;
@@ -1230,6 +1222,24 @@ class PhysicalPlanBuilder final {
       case PhysicalOperatorKind::kProduceResults:
         node->data = ProduceResultsOp{.columns = plan.OutputColumns()};
         return;
+      case PhysicalOperatorKind::kValueHashJoin: {
+        const auto &join = static_cast<const ir::ValueHashJoinPlan &>(plan);
+        ValueHashJoinOp data;
+        data.keys.reserve(join.JoinKeys().size());
+        for (const auto &key : join.JoinKeys()) {
+          data.keys.push_back({.left = CopyPhysicalExpression(key.left, {}),
+                               .right = CopyPhysicalExpression(key.right, {})});
+        }
+        data.predicates = CopyPhysicalExpressions(join.Predicates());
+        const auto &left_rows = plan.Child(0).EstimatedRows();
+        const auto &right_rows = plan.Child(1).EstimatedRows();
+        if (left_rows.has_value() && right_rows.has_value() &&
+            *left_rows < *right_rows) {
+          data.build_child = 0;
+        }
+        node->data = std::move(data);
+        return;
+      }
       default:
         return;
     }

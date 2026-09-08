@@ -719,8 +719,47 @@ TEST(PhysicalPlanTest, ChoosesSmallerValueHashJoinBuildSide) {
             *logical_join->Child(1).EstimatedRows());
 
   rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+  const rg::PhysicalPlanNode &join_node = physical.NodeFor(*logical_join);
+  const auto &data = std::get<rg::ValueHashJoinOp>(join_node.data);
+  EXPECT_EQ(data.build_child, 0U);
+  const auto &logical =
+      static_cast<const ir::ValueHashJoinPlan &>(*logical_join);
+  ASSERT_EQ(data.keys.size(), logical.JoinKeys().size());
+  ASSERT_EQ(data.predicates.size(), logical.Predicates().size());
+  EXPECT_NE(data.keys.front().left.Expression(),
+            logical.JoinKeys().front().left);
+  EXPECT_NE(data.keys.front().right.Expression(),
+            logical.JoinKeys().front().right);
+  EXPECT_NE(data.predicates.front().Expression(), logical.Predicates().front());
+}
 
-  EXPECT_EQ(physical.NodeFor(*logical_join).value_hash_join_build_child, 0U);
+TEST(PhysicalPlanTest,
+     ExecutesValueHashJoinAfterLogicalPlanAndAstAreDestroyed) {
+  rg::InMemoryGraph graph;
+  graph.CreateNode({"Small"}, {{"first", rg::Value(1)},
+                               {"second", rg::Value("x")},
+                               {"name", rg::Value("match")}});
+  graph.CreateNode({"Small"}, {{"second", rg::Value("x")},
+                               {"name", rg::Value("null-left")}});
+  graph.CreateNode({"Large"}, {{"first", rg::Value(1.0)},
+                               {"second", rg::Value("x")},
+                               {"name", rg::Value("first")}});
+  graph.CreateNode({"Large"}, {{"first", rg::Value(1)},
+                               {"second", rg::Value("y")},
+                               {"name", rg::Value("wrong")}});
+  graph.CreateNode({"Large"}, {{"second", rg::Value("x")},
+                               {"name", rg::Value("null-right")}});
+
+  rg::PhysicalPlan physical = DetachedPhysicalPlan(
+      "MATCH (a:Small), (b:Large) "
+      "WHERE a.first = b.first AND a.second = b.second "
+      "RETURN a.name AS left, b.name AS right");
+  ASSERT_NE(FindPhysicalPlan(physical.Root(),
+                             rg::PhysicalOperatorKind::kValueHashJoin),
+            nullptr);
+  EXPECT_EQ(PhysicalRows(physical, graph, {"left", "right"}),
+            (std::vector<std::vector<rg::Value>>{
+                {rg::Value("match"), rg::Value("first")}}));
 }
 
 TEST(PhysicalPlanTest, SelectsTopNForRewrittenLogicalPlan) {

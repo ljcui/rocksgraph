@@ -4547,6 +4547,7 @@ class ValueHashJoinOperator final : public PullOperator {
                         std::unique_ptr<PullOperator> lhs,
                         std::unique_ptr<PullOperator> rhs)
       : node_(&node),
+        data_(&OperatorData<ValueHashJoinOp>(node)),
         state_(&state),
         lhs_(std::move(lhs)),
         rhs_(std::move(rhs)) {}
@@ -4625,9 +4626,7 @@ class ValueHashJoinOperator final : public PullOperator {
  private:
   using Bucket = std::vector<std::size_t>;
 
-  [[nodiscard]] std::size_t BuildChild() const {
-    return node_->value_hash_join_build_child;
-  }
+  [[nodiscard]] std::size_t BuildChild() const { return data_->build_child; }
 
   [[nodiscard]] std::size_t ProbeChild() const { return 1U - BuildChild(); }
 
@@ -4637,15 +4636,11 @@ class ValueHashJoinOperator final : public PullOperator {
 
   std::optional<CompositeValueKey> JoinKey(const SlottedRow &row,
                                            std::size_t child) const {
-    const auto &plan =
-        static_cast<const ir::ValueHashJoinPlan &>(*node_->logical);
     CompositeValueKey result;
-    result.values.reserve(plan.JoinKeys().size());
-    for (const ir::ValueHashJoinKey &key : plan.JoinKeys()) {
-      const ast::Expression *expression = child == 0 ? key.left : key.right;
-      CHECK(expression != nullptr, common::InvalidArgumentError,
-            "value hash join key expression is null");
-      Value value = Evaluate(*expression, row, {}, *state_);
+    result.values.reserve(data_->keys.size());
+    for (const auto &key : data_->keys) {
+      const PhysicalExpression &expression = child == 0 ? key.left : key.right;
+      Value value = Evaluate(expression, row, *state_);
       if (value.IsNull()) {
         return std::nullopt;
       }
@@ -4655,13 +4650,8 @@ class ValueHashJoinOperator final : public PullOperator {
   }
 
   bool PredicatesMatch(const SlottedRow &row) const {
-    const auto &predicates =
-        static_cast<const ir::ValueHashJoinPlan &>(*node_->logical)
-            .Predicates();
-    for (const ast::Expression *predicate : predicates) {
-      CHECK(predicate != nullptr, common::InvalidArgumentError,
-            "join predicate is null");
-      if (!PredicateIsTrue(Evaluate(*predicate, row, {}, *state_))) {
+    for (const auto &predicate : data_->predicates) {
+      if (!PredicateIsTrue(Evaluate(predicate, row, *state_))) {
         return false;
       }
     }
@@ -4710,6 +4700,7 @@ class ValueHashJoinOperator final : public PullOperator {
   }
 
   const PhysicalPlanNode *node_ = nullptr;
+  const ValueHashJoinOp *data_ = nullptr;
   RuntimeState *state_ = nullptr;
   std::unique_ptr<PullOperator> lhs_;
   std::unique_ptr<PullOperator> rhs_;
