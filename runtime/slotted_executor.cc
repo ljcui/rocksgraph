@@ -279,6 +279,12 @@ void CopyMappings(const SlottedRow &source, SlottedRow *target,
   CopySlots(source, target, mappings, *state.graph_reader);
 }
 
+SlottedRow CopyMappedRow(const SlottedRow &source, SlotConfigurationPtr target,
+                         const std::vector<SlotMapping> &mappings,
+                         const RuntimeState &state) {
+  return source.CopyTo(std::move(target), mappings, *state.graph_reader);
+}
+
 bool MergeMappings(const SlottedRow &source, SlottedRow *target,
                    const std::vector<SlotMapping> &mappings,
                    const RuntimeState &state) {
@@ -1428,7 +1434,8 @@ class ArgumentOperator final : public PullOperator {
       return false;
     }
     closed_ = true;
-    *row = argument_.CopyTo(node_->output_slots, *state_->graph_reader);
+    *row = CopyMappedRow(argument_, node_->output_slots,
+                         node_->argument_mapping, *state_);
     return true;
   }
 
@@ -1473,8 +1480,8 @@ class NodeScanOperator : public PullOperator {
                             *labels_to_verify_)) {
         continue;
       }
-      SlottedRow output =
-          argument_.CopyTo(node_->output_slots, *state_->graph_reader);
+      SlottedRow output = CopyMappedRow(argument_, node_->output_slots,
+                                        node_->argument_mapping, *state_);
       if (!TryBindEntityId(&output, *variable_, SlotKind::kNode, id,
                            *state_->graph_reader)) {
         continue;
@@ -1669,8 +1676,8 @@ class NodeByIdSeekOperator final : public PullOperator {
       } catch (const common::NotFoundError &) {
         continue;
       }
-      SlottedRow output =
-          argument_.CopyTo(node_->output_slots, *state_->graph_reader);
+      SlottedRow output = CopyMappedRow(argument_, node_->output_slots,
+                                        node_->argument_mapping, *state_);
       if (TryBindEntityId(&output, data_->variable, SlotKind::kNode, *id,
                           *state_->graph_reader)) {
         *row = std::move(output);
@@ -1717,7 +1724,8 @@ bool EmitRelationship(const PhysicalPlanNode &node,
       pattern.direction == PhysicalExpandDirection::kIncoming
           ? relationship.start_node_id
           : (reverse ? relationship.start_node_id : relationship.end_node_id);
-  SlottedRow output = argument.CopyTo(node.output_slots, *state.graph_reader);
+  SlottedRow output =
+      CopyMappedRow(argument, node.output_slots, node.argument_mapping, state);
   if (!TryBindEntityId(&output, pattern.from_node, SlotKind::kNode, from_id,
                        *state.graph_reader) ||
       !TryBindEntityId(&output, pattern.relationship, SlotKind::kRelationship,
@@ -1969,7 +1977,8 @@ class FixedExpandOperatorBase : public PullOperator {
             continue;
           }
           SlottedRow output =
-              input_->CopyTo(node_->output_slots, *state_->graph_reader);
+              CopyMappedRow(*input_, node_->output_slots,
+                            node_->child_mappings.front(), *state_);
           if (!TryBindEntityId(&output, pattern_->relationship,
                                SlotKind::kRelationship, relationship.id,
                                *state_->graph_reader) ||
@@ -2104,8 +2113,8 @@ class VarExpandOperator final : public PullOperator {
             relationships.emplace_back(
                 state_->graph_reader->RelationshipById(id));
           }
-          auto output =
-              input_->CopyTo(node_->output_slots, *state_->graph_reader);
+          auto output = CopyMappedRow(*input_, node_->output_slots,
+                                      node_->child_mappings.front(), *state_);
           if (TryBindSlot(&output, data_->pattern.relationship,
                           Value(std::move(relationships)),
                           *state_->graph_reader) &&
@@ -2320,7 +2329,8 @@ class PruningVarExpandOperator final : public PullOperator {
     queue_.emplace_back(node, depth);
   }
   bool Emit(std::int64_t node, SlottedRow *row) {
-    auto output = input_->CopyTo(node_->output_slots, *state_->graph_reader);
+    auto output = CopyMappedRow(*input_, node_->output_slots,
+                                node_->child_mappings.front(), *state_);
     if (!TryBindEntityId(&output, data_->pattern.to_node, SlotKind::kNode, node,
                          *state_->graph_reader)) {
       return false;
@@ -2393,7 +2403,8 @@ class OptionalExpandOperator final : public PullOperator {
           continue;
         }
         SlottedRow output =
-            input_->CopyTo(node_->output_slots, *state_->graph_reader);
+            CopyMappedRow(*input_, node_->output_slots,
+                          node_->child_mappings.front(), *state_);
         if (!TryBindEntityId(&output, data_->pattern.relationship,
                              SlotKind::kRelationship, relationship.id,
                              *state_->graph_reader) ||
@@ -2418,7 +2429,8 @@ class OptionalExpandOperator final : public PullOperator {
       }
       if (!matched_) {
         SlottedRow output =
-            input_->CopyTo(node_->output_slots, *state_->graph_reader);
+            CopyMappedRow(*input_, node_->output_slots,
+                          node_->child_mappings.front(), *state_);
         for (const auto &column : node_->output_slots->Columns()) {
           if (!output.IsInitialized(column)) {
             output.SetNull(column);
@@ -2485,7 +2497,8 @@ class ProjectEndpointsOperator final : public PullOperator {
       while (next_endpoint_ < endpoints_.size()) {
         const auto [from, to] = endpoints_[next_endpoint_++];
         SlottedRow output =
-            input_->CopyTo(node_->output_slots, *state_->graph_reader);
+            CopyMappedRow(*input_, node_->output_slots,
+                          node_->child_mappings.front(), *state_);
         if (TryBindEntityId(&output, data_->pattern.from_node, SlotKind::kNode,
                             from, *state_->graph_reader) &&
             TryBindEntityId(&output, data_->pattern.to_node, SlotKind::kNode,
@@ -2603,13 +2616,19 @@ class ProjectEndpointsOperator final : public PullOperator {
   bool closed_ = false;
 };
 
+SlottedRow CopyChildOutput(const PhysicalPlanNode &node, std::size_t child,
+                           const SlottedRow &input, const RuntimeState &state) {
+  CHECK(child < node.child_mappings.size(), common::InternalError,
+        "physical operator child mapping is missing");
+  return CopyMappedRow(input, node.output_slots, node.child_mappings[child],
+                       state);
+}
+
 SlottedRow CopyUnaryOutput(const PhysicalPlanNode &node,
                            const SlottedRow &input, const RuntimeState &state) {
   CHECK(node.child_mappings.size() == 1, common::InternalError,
         "unary physical operator mapping is missing");
-  SlottedRow output(node.output_slots);
-  CopyMappings(input, &output, node.child_mappings.front(), state);
-  return output;
+  return CopyChildOutput(node, 0, input, state);
 }
 
 std::int64_t EvaluatePaginationCount(const PhysicalExpression &expression,
@@ -2973,8 +2992,7 @@ class PathBuildOperator final : public PullOperator {
         Close();
         return false;
       }
-      SlottedRow output =
-          input.CopyTo(node_->output_slots, *state_->graph_reader);
+      SlottedRow output = CopyUnaryOutput(*node_, input, *state_);
       if (TryBindSlot(&output, data_->path.variable,
                       BuildPathValue(data_->path, input, state_),
                       *state_->graph_reader)) {
@@ -3242,8 +3260,7 @@ class StreamingWriteOperator final : public PullOperator {
       Close();
       return false;
     }
-    SlottedRow output =
-        input.CopyTo(node_->output_slots, *state_->graph_reader);
+    SlottedRow output = CopyUnaryOutput(*node_, input, *state_);
     ExecuteStreamingWrite(*data_, input, &output, state_);
     *row = std::move(output);
     return true;
@@ -3721,10 +3738,9 @@ class FullSortOperator final : public PullOperator {
     SlottedRow input(node_->children[0]->output_slots);
     while (source_->Next(&input)) {
       state_->CheckCancelled();
-      Entry entry{
-          .row = input.CopyTo(node_->output_slots, *state_->graph_reader),
-          .keys = EvaluateSortKeys(data_->items, input, state_),
-          .sequence = sequence_++};
+      Entry entry{.row = CopyUnaryOutput(*node_, input, *state_),
+                  .keys = EvaluateSortKeys(data_->items, input, state_),
+                  .sequence = sequence_++};
       entry.reserved_bytes = EstimatedSortEntryHeapUsage(entry.row, entry.keys);
       state_->memory_tracker.Reserve(entry.reserved_bytes);
       reserved_bytes_ += entry.reserved_bytes;
@@ -3807,7 +3823,7 @@ class PartialSortOperator final : public PullOperator {
   };
 
   [[nodiscard]] Entry ReadEntry(const SlottedRow &input) {
-    return {.row = input.CopyTo(node_->output_slots, *state_->graph_reader),
+    return {.row = CopyUnaryOutput(*node_, input, *state_),
             .keys = EvaluateSortKeys(data_->items, input, state_),
             .sequence = sequence_++};
   }
@@ -3934,7 +3950,7 @@ class PartialTopNOperator final : public PullOperator {
   };
 
   [[nodiscard]] Entry ReadEntry(const SlottedRow &input) {
-    return {.row = input.CopyTo(node_->output_slots, *state_->graph_reader),
+    return {.row = CopyUnaryOutput(*node_, input, *state_),
             .keys = EvaluateSortKeys(data_->items, input, state_),
             .sequence = sequence_++};
   }
@@ -4116,8 +4132,7 @@ class WriteBarrierOperator final : public PullOperator {
     SlottedRow input(node_->children[0]->output_slots);
     while (source_->Next(&input)) {
       state_->CheckCancelled();
-      SlottedRow output =
-          input.CopyTo(node_->output_slots, *state_->graph_reader);
+      SlottedRow output = CopyUnaryOutput(*node_, input, *state_);
       const std::size_t bytes = output.EstimatedHeapUsage();
       state_->memory_tracker.Reserve(bytes);
       reserved_bytes_ += bytes;
@@ -4193,7 +4208,7 @@ class DeleteOperator final : public PullOperator {
     SlottedRow input(node_->children[0]->output_slots);
     while (source_->Next(&input)) {
       state_->CheckCancelled();
-      BufferRow(input.CopyTo(node_->output_slots, *state_->graph_reader));
+      BufferRow(CopyUnaryOutput(*node_, input, *state_));
       for (const PhysicalExpression &expression : data_->expressions) {
         const Value entity = Evaluate(expression, input, *state_);
         if (entity.IsNull()) {
@@ -4301,7 +4316,7 @@ class TopNOperator final : public PullOperator {
   }
 
   [[nodiscard]] Entry CreateEntry(const SlottedRow &input) {
-    Entry entry{.row = input.CopyTo(node_->output_slots, *state_->graph_reader),
+    Entry entry{.row = CopyUnaryOutput(*node_, input, *state_),
                 .keys = EvaluateSortKeys(data_->items, input, state_),
                 .sequence = sequence_++};
     entry.reserved_bytes = EstimatedEntryHeapUsage(entry);
@@ -5888,7 +5903,7 @@ bool SemiApplyOperator::Next(SlottedRow *row) {
     const bool exists = correlated_.NextRight(&rhs);
     if (exists) {
       SlottedRow output =
-          correlated_.Left().CopyTo(node_->output_slots, *state_->graph_reader);
+          CopyChildOutput(*node_, 0, correlated_.Left(), *state_);
       correlated_.FinishLeft();
       *row = std::move(output);
       return true;
@@ -5906,7 +5921,7 @@ bool AntiSemiApplyOperator::Next(SlottedRow *row) {
     const bool exists = correlated_.NextRight(&rhs);
     if (!exists) {
       SlottedRow output =
-          correlated_.Left().CopyTo(node_->output_slots, *state_->graph_reader);
+          CopyChildOutput(*node_, 0, correlated_.Left(), *state_);
       correlated_.FinishLeft();
       *row = std::move(output);
       return true;
@@ -5924,8 +5939,7 @@ bool LetSemiApplyOperator::Next(SlottedRow *row) {
   correlated_.OpenRight();
   SlottedRow rhs(node_->children[1]->output_slots);
   const bool exists = correlated_.NextRight(&rhs);
-  SlottedRow output =
-      correlated_.Left().CopyTo(node_->output_slots, *state_->graph_reader);
+  SlottedRow output = CopyChildOutput(*node_, 0, correlated_.Left(), *state_);
   output.SetReference(data_->value_slot, Value(exists));
   correlated_.FinishLeft();
   *row = std::move(output);
@@ -5937,8 +5951,7 @@ bool SelectOrSemiApplyOperator::Next(SlottedRow *row) {
   while (correlated_.NextLeft()) {
     if (PredicateIsTrue(
             Evaluate(data_->predicate, correlated_.Left(), *state_))) {
-      *row =
-          correlated_.Left().CopyTo(node_->output_slots, *state_->graph_reader);
+      *row = CopyChildOutput(*node_, 0, correlated_.Left(), *state_);
       correlated_.FinishLeft();
       return true;
     }
@@ -5948,7 +5961,7 @@ bool SelectOrSemiApplyOperator::Next(SlottedRow *row) {
     const bool exists = correlated_.NextRight(&rhs);
     if (exists != data_->anti) {
       SlottedRow output =
-          correlated_.Left().CopyTo(node_->output_slots, *state_->graph_reader);
+          CopyChildOutput(*node_, 0, correlated_.Left(), *state_);
       correlated_.FinishLeft();
       *row = std::move(output);
       return true;
@@ -5975,8 +5988,7 @@ bool RollUpApplyOperator::Next(SlottedRow *row) {
       reserved_bytes += bytes;
       values.push_back(std::move(value));
     }
-    SlottedRow output =
-        correlated_.Left().CopyTo(node_->output_slots, *state_->graph_reader);
+    SlottedRow output = CopyChildOutput(*node_, 0, correlated_.Left(), *state_);
     output.SetReference(data_->collection_slot, Value(std::move(values)));
     state_->memory_tracker.Release(reserved_bytes);
     correlated_.FinishLeft();
@@ -6012,8 +6024,7 @@ void MergeOperator::Initialize() {
     if (matched) {
       continue;
     }
-    SlottedRow output =
-        input.CopyTo(node_->output_slots, *state_->graph_reader);
+    SlottedRow output = CopyChildOutput(*node_, 0, input, *state_);
     for (const auto &command : data_->create_commands) {
       state_->CheckCancelled();
       std::visit(

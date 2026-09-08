@@ -206,26 +206,11 @@ std::size_t SlottedRow::EstimatedHeapUsage() const {
 }
 
 SlottedRow SlottedRow::CopyTo(SlotConfigurationPtr target,
+                              const std::vector<SlotMapping> &mappings,
                               const GraphReader &graph_reader) const {
   SlottedRow out(std::move(target));
-  CopySlots(*this, &out, ComputeSlotMappings(*slots_, *out.Slots()),
-            graph_reader);
+  CopySlots(*this, &out, mappings, graph_reader);
   return out;
-}
-
-std::vector<SlotMapping> ComputeSlotMappings(const SlotConfiguration &source,
-                                             const SlotConfiguration &target) {
-  std::vector<SlotMapping> mappings;
-  for (const auto &column : target.Columns()) {
-    const Slot *source_slot = source.Find(column);
-    if (source_slot != nullptr) {
-      mappings.push_back({.source_name = column,
-                          .target_name = column,
-                          .source = *source_slot,
-                          .target = target.At(column)});
-    }
-  }
-  return mappings;
 }
 
 void CopySlots(const SlottedRow &source, SlottedRow *target,

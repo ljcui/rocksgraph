@@ -51,7 +51,12 @@ TEST(SlottedRowTest, CopiesBetweenLayoutsAndConvertsEntityRepresentations) {
 
   rg::SlottedRow source(entity_slots);
   source.Set("x", rg::Value(node));
-  rg::SlottedRow copied = source.CopyTo(reference_slots, graph);
+  const std::vector<rg::SlotMapping> mappings{
+      {.source_name = "x",
+       .target_name = "x",
+       .source = entity_slots->At("x"),
+       .target = reference_slots->At("x")}};
+  rg::SlottedRow copied = source.CopyTo(reference_slots, mappings, graph);
 
   EXPECT_EQ(copied.Slots()->At("x").kind, rg::SlotKind::kReference);
   EXPECT_TRUE(copied.Get("x", graph).IsNode());

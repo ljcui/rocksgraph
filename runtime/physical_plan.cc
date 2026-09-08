@@ -106,6 +106,21 @@ void BuildEffects(PhysicalPlanNode *node) {
   }
 }
 
+std::vector<SlotMapping> ComputeSlotMappings(const SlotConfiguration &source,
+                                             const SlotConfiguration &target) {
+  std::vector<SlotMapping> mappings;
+  for (const auto &column : target.Columns()) {
+    const Slot *source_slot = source.Find(column);
+    if (source_slot != nullptr) {
+      mappings.push_back({.source_name = column,
+                          .target_name = column,
+                          .source = *source_slot,
+                          .target = target.At(column)});
+    }
+  }
+  return mappings;
+}
+
 std::size_t CommonOrderingPrefix(const PhysicalOrdering &provided,
                                  const PhysicalOrdering &required) {
   const std::size_t limit = std::min(provided.size(), required.size());

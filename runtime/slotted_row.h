@@ -91,6 +91,7 @@ class SlottedRow final {
                           const GraphReader &graph_reader) const;
   [[nodiscard]] std::size_t EstimatedHeapUsage() const;
   [[nodiscard]] SlottedRow CopyTo(SlotConfigurationPtr target,
+                                  const std::vector<SlotMapping> &mappings,
                                   const GraphReader &graph_reader) const;
 
  private:
@@ -101,8 +102,6 @@ class SlottedRow final {
   std::vector<bool> reference_initialized_;
 };
 
-[[nodiscard]] std::vector<SlotMapping> ComputeSlotMappings(
-    const SlotConfiguration &source, const SlotConfiguration &target);
 void CopySlots(const SlottedRow &source, SlottedRow *target,
                const std::vector<SlotMapping> &mappings,
                const GraphReader &graph_reader);
