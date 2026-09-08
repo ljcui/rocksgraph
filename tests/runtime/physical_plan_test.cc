@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -73,6 +74,38 @@ std::unique_ptr<ast::Parameter> Parameter(std::string name) {
   auto parameter = std::make_unique<ast::Parameter>();
   parameter->name = std::move(name);
   return parameter;
+}
+
+rg::PhysicalPlan DetachedParameterNodeHashJoin() {
+  std::unique_ptr<ast::Parameter> left_node = Parameter("left_node");
+  std::unique_ptr<ast::Parameter> left_value = Parameter("left_value");
+  std::unique_ptr<ast::Parameter> right_node = Parameter("right_node");
+  std::unique_ptr<ast::Parameter> right_value = Parameter("right_value");
+  auto left = std::make_unique<ir::ProjectionPlan>(
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>{}),
+      std::vector<ir::LogicalProjectionItem>{
+          {.expression = left_node.get(),
+           .alias = "n",
+           .semantic_type = ast::SemanticVariableType::kNode},
+          {.expression = left_value.get(), .alias = "value"}});
+  auto right = std::make_unique<ir::ProjectionPlan>(
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>{}),
+      std::vector<ir::LogicalProjectionItem>{
+          {.expression = right_node.get(),
+           .alias = "n",
+           .semantic_type = ast::SemanticVariableType::kNode},
+          {.expression = right_value.get(), .alias = "value"}});
+  ir::NodeHashJoinPlan logical(std::move(left), std::move(right), {"n"});
+  return rg::CreatePhysicalPlan(logical);
+}
+
+rg::PhysicalPlan DetachedLeftOuterHashJoin() {
+  auto left = std::make_unique<ir::NodeByLabelScanPlan>("a", "Input");
+  auto right = std::make_unique<ir::ExpandPlan>(
+      std::make_unique<ir::NodeByLabelScanPlan>("a", "Input"), "a", "r", "b",
+      ir::ExpandDirection::kOutgoing, std::vector<std::string>{"R"});
+  ir::LeftOuterHashJoinPlan logical(std::move(left), std::move(right), {"a"});
+  return rg::CreatePhysicalPlan(logical);
 }
 
 rg::PhysicalPlan DetachedExpandInto() {
@@ -731,6 +764,112 @@ TEST(PhysicalPlanTest, ChoosesSmallerValueHashJoinBuildSide) {
   EXPECT_NE(data.keys.front().right.Expression(),
             logical.JoinKeys().front().right);
   EXPECT_NE(data.predicates.front().Expression(), logical.Predicates().front());
+}
+
+TEST(PhysicalPlanTest, BuildsTypedNodeAndLeftOuterHashJoinPayloads) {
+  auto left = std::make_unique<ir::AllNodeScanPlan>("n");
+  auto right = std::make_unique<ir::AllNodeScanPlan>("n");
+  left->SetCostEstimate(1.0, 1.0);
+  right->SetCostEstimate(2.0, 2.0);
+  ir::NodeHashJoinPlan logical(std::move(left), std::move(right), {"n"});
+
+  rg::PhysicalPlan node_join = rg::CreatePhysicalPlan(logical);
+  const auto &node_data = std::get<rg::NodeHashJoinOp>(node_join.Root().data);
+  EXPECT_EQ(node_data.join_keys, (std::vector<std::string>{"n"}));
+  EXPECT_EQ(node_data.build_child, 0U);
+  EXPECT_NE(rg::PhysicalPlanToString(node_join).find("build=left"),
+            std::string::npos);
+
+  rg::PhysicalPlan outer_join = DetachedLeftOuterHashJoin();
+  const auto &outer_data =
+      std::get<rg::LeftOuterHashJoinOp>(outer_join.Root().data);
+  EXPECT_EQ(outer_data.join_keys, (std::vector<std::string>{"a"}));
+}
+
+TEST(PhysicalPlanTest, ExecutesNodeHashJoinAfterLogicalPlanAndAstAreDestroyed) {
+  rg::InMemoryGraph graph;
+  const auto first =
+      graph.CreateNode({"Person"}, {{"name", rg::Value("first")}});
+  const auto second =
+      graph.CreateNode({"Person"}, {{"name", rg::Value("second")}});
+  const auto third =
+      graph.CreateNode({"Person"}, {{"name", rg::Value("third")}});
+  const auto center = graph.CreateNode({});
+  graph.CreateRelationship(first, center, "R");
+  graph.CreateRelationship(second, center, "R");
+  graph.CreateRelationship(third, center, "R");
+
+  rg::PhysicalPlan physical = DetachedPhysicalPlan(
+      "MATCH (a:Person)-[r1]->(b)<-[r2]-(c:Person) "
+      "RETURN a.name AS left, c.name AS right");
+  ASSERT_NE(FindPhysicalPlan(physical.Root(),
+                             rg::PhysicalOperatorKind::kNodeHashJoin),
+            nullptr);
+  const auto rows = PhysicalRows(physical, graph, {"left", "right"});
+  ASSERT_EQ(rows.size(), 6U);
+  std::set<std::string> pairs;
+  for (const auto &row : rows) {
+    ASSERT_EQ(row.size(), 2U);
+    ASSERT_TRUE(row[0].IsString());
+    ASSERT_TRUE(row[1].IsString());
+    EXPECT_NE(row[0], row[1]);
+    pairs.insert(row[0].AsString() + ":" + row[1].AsString());
+  }
+  EXPECT_EQ(pairs.size(), 6U);
+}
+
+TEST(PhysicalPlanTest, NodeHashJoinRejectsNullKeysAndConflictingSharedSlots) {
+  rg::InMemoryGraph graph;
+  const auto node = graph.CreateNode({});
+  rg::PhysicalPlan physical = DetachedParameterNodeHashJoin();
+  ASSERT_EQ(physical.Root().kind, rg::PhysicalOperatorKind::kNodeHashJoin);
+
+  EXPECT_EQ(
+      PhysicalRows(physical, graph, {"n", "value"},
+                   {{"left_node", rg::Value(node)},
+                    {"left_value", rg::Value(1)},
+                    {"right_node", rg::Value(node)},
+                    {"right_value", rg::Value(1)}}),
+      (std::vector<std::vector<rg::Value>>{{rg::Value(node), rg::Value(1)}}));
+  EXPECT_TRUE(PhysicalRows(physical, graph, {"n", "value"},
+                           {{"left_node", rg::Value(node)},
+                            {"left_value", rg::Value(1)},
+                            {"right_node", rg::Value(node)},
+                            {"right_value", rg::Value(2)}})
+                  .empty());
+  EXPECT_TRUE(PhysicalRows(physical, graph, {"n", "value"},
+                           {{"left_node", rg::Value::Null()},
+                            {"left_value", rg::Value(1)},
+                            {"right_node", rg::Value::Null()},
+                            {"right_value", rg::Value(1)}})
+                  .empty());
+}
+
+TEST(PhysicalPlanTest, ExecutesLeftOuterHashJoinAfterLogicalPlanIsDestroyed) {
+  rg::InMemoryGraph graph;
+  const auto matched = graph.CreateNode({"Input"});
+  const auto unmatched = graph.CreateNode({"Input"});
+  const auto first = graph.CreateNode({});
+  const auto second = graph.CreateNode({});
+  graph.CreateRelationship(matched, first, "R");
+  graph.CreateRelationship(matched, second, "R");
+
+  rg::PhysicalPlan physical = DetachedLeftOuterHashJoin();
+  ASSERT_EQ(physical.Root().kind, rg::PhysicalOperatorKind::kLeftOuterHashJoin);
+  const auto rows = PhysicalRows(physical, graph, {"a", "b"});
+  ASSERT_EQ(rows.size(), 3U);
+  EXPECT_EQ(std::count_if(rows.begin(), rows.end(),
+                          [&](const auto &row) {
+                            return row[0] == rg::Value(unmatched) &&
+                                   row[1].IsNull();
+                          }),
+            1);
+  EXPECT_EQ(std::count_if(rows.begin(), rows.end(),
+                          [&](const auto &row) {
+                            return row[0] == rg::Value(matched) &&
+                                   row[1].IsNode();
+                          }),
+            2);
 }
 
 TEST(PhysicalPlanTest,

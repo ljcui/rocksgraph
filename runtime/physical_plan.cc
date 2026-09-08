@@ -1222,6 +1222,18 @@ class PhysicalPlanBuilder final {
       case PhysicalOperatorKind::kProduceResults:
         node->data = ProduceResultsOp{.columns = plan.OutputColumns()};
         return;
+      case PhysicalOperatorKind::kNodeHashJoin: {
+        const auto &join = static_cast<const ir::NodeHashJoinPlan &>(plan);
+        NodeHashJoinOp data{.join_keys = join.JoinKeys()};
+        const auto &left_rows = plan.Child(0).EstimatedRows();
+        const auto &right_rows = plan.Child(1).EstimatedRows();
+        if (left_rows.has_value() && right_rows.has_value() &&
+            *left_rows < *right_rows) {
+          data.build_child = 0;
+        }
+        node->data = std::move(data);
+        return;
+      }
       case PhysicalOperatorKind::kValueHashJoin: {
         const auto &join = static_cast<const ir::ValueHashJoinPlan &>(plan);
         ValueHashJoinOp data;
@@ -1238,6 +1250,11 @@ class PhysicalPlanBuilder final {
           data.build_child = 0;
         }
         node->data = std::move(data);
+        return;
+      }
+      case PhysicalOperatorKind::kLeftOuterHashJoin: {
+        const auto &join = static_cast<const ir::LeftOuterHashJoinPlan &>(plan);
+        node->data = LeftOuterHashJoinOp{.join_keys = join.JoinKeys()};
         return;
       }
       default:

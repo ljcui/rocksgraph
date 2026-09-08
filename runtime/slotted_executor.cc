@@ -635,6 +635,22 @@ std::size_t EstimatedKeyHeapUsage(const CompositeValueKey &key) {
   return bytes;
 }
 
+std::optional<CompositeValueKey> NodeJoinKey(
+    const SlottedRow &row, const std::vector<std::string> &keys,
+    RuntimeState *state) {
+  CHECK(state != nullptr, common::InternalError, "runtime state is null");
+  CompositeValueKey result;
+  result.values.reserve(keys.size());
+  for (const auto &key : keys) {
+    Value value = row.Get(key, *state->graph_reader);
+    if (value.IsNull()) {
+      return std::nullopt;
+    }
+    result.values.push_back(std::move(value));
+  }
+  return result;
+}
+
 std::vector<Value> EvaluateGroupingValues(
     const std::vector<PhysicalGroupingItem> &items, const SlottedRow &row,
     RuntimeState *state) {
@@ -4266,31 +4282,20 @@ class LeftOuterHashJoinOperator final : public PullOperator {
                             std::unique_ptr<PullOperator> lhs,
                             std::unique_ptr<PullOperator> rhs)
       : node_(&node),
+        data_(&OperatorData<LeftOuterHashJoinOp>(node)),
         state_(&state),
         lhs_(std::move(lhs)),
         rhs_(std::move(rhs)) {}
   ~LeftOuterHashJoinOperator() override { Close(); }
 
   bool Next(SlottedRow *row) override {
+    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    state_->CheckCancelled();
     if (closed_) {
       return false;
     }
     if (!initialized_) {
-      initialized_ = true;
-      SlottedRow right(node_->children[1]->output_slots);
-      while (rhs_->Next(&right)) {
-        state_->CheckCancelled();
-        auto key = Key(right);
-        if (key.has_value()) {
-          const auto bytes = right.EstimatedHeapUsage() + sizeof(SlottedRow) +
-                             key->values.size() * sizeof(Value) +
-                             sizeof(CompositeValueKey);
-          state_->memory_tracker.Reserve(bytes);
-          reserved_bytes_ += bytes;
-          buckets_[std::move(*key)].push_back(right);
-        }
-      }
-      rhs_->Close();
+      Initialize();
     }
     while (true) {
       state_->CheckCancelled();
@@ -4304,7 +4309,8 @@ class LeftOuterHashJoinOperator final : public PullOperator {
         matches_ = nullptr;
         index_ = 0;
         matched_ = false;
-        if (auto key = Key(*left_); key.has_value()) {
+        if (auto key = NodeJoinKey(*left_, data_->join_keys, state_);
+            key.has_value()) {
           const auto found = buckets_.find(*key);
           if (found != buckets_.end()) {
             matches_ = &found->second;
@@ -4314,7 +4320,7 @@ class LeftOuterHashJoinOperator final : public PullOperator {
       while (matches_ != nullptr && index_ < matches_->size()) {
         SlottedRow output(node_->output_slots);
         CopyMappings(*left_, &output, node_->child_mappings[0], *state_);
-        if (MergeMappings((*matches_)[index_++], &output,
+        if (MergeMappings(build_rows_[(*matches_)[index_++]], &output,
                           node_->child_mappings[1], *state_)) {
           matched_ = true;
           *row = std::move(output);
@@ -4338,9 +4344,17 @@ class LeftOuterHashJoinOperator final : public PullOperator {
   }
 
   void Close() noexcept override {
-    lhs_->Close();
-    rhs_->Close();
+    if (closed_) {
+      return;
+    }
+    if (lhs_ != nullptr) {
+      lhs_->Close();
+    }
+    if (rhs_ != nullptr) {
+      rhs_->Close();
+    }
     buckets_.clear();
+    build_rows_.clear();
     left_.reset();
     matches_ = nullptr;
     state_->memory_tracker.Release(reserved_bytes_);
@@ -4349,28 +4363,56 @@ class LeftOuterHashJoinOperator final : public PullOperator {
   }
 
  private:
-  std::optional<CompositeValueKey> Key(const SlottedRow &row) const {
-    CompositeValueKey key;
-    for (const auto &column :
-         static_cast<const ir::LeftOuterHashJoinPlan &>(*node_->logical)
-             .JoinKeys()) {
-      auto value = row.Get(column, *state_->graph_reader);
-      if (value.IsNull()) {
-        return std::nullopt;
+  using Bucket = std::vector<std::size_t>;
+
+  void Initialize() {
+    initialized_ = true;
+    while (true) {
+      SlottedRow right(node_->children[1]->output_slots);
+      if (!rhs_->Next(&right)) {
+        rhs_->Close();
+        return;
       }
-      key.values.push_back(std::move(value));
+      state_->CheckCancelled();
+      std::optional<CompositeValueKey> key =
+          NodeJoinKey(right, data_->join_keys, state_);
+      if (!key.has_value()) {
+        continue;
+      }
+
+      const std::size_t row_bytes = right.EstimatedHeapUsage();
+      state_->memory_tracker.Reserve(row_bytes);
+      reserved_bytes_ += row_bytes;
+      const std::size_t row_index = build_rows_.size();
+      build_rows_.push_back(std::move(right));
+
+      auto [found, inserted] = buckets_.try_emplace(std::move(*key));
+      if (inserted) {
+        const std::size_t key_bytes = EstimatedKeyHeapUsage(found->first);
+        state_->memory_tracker.Reserve(key_bytes);
+        reserved_bytes_ += key_bytes;
+      }
+      const std::size_t old_capacity = found->second.capacity();
+      found->second.push_back(row_index);
+      const std::size_t new_capacity = found->second.capacity();
+      if (new_capacity > old_capacity) {
+        const std::size_t bucket_bytes =
+            (new_capacity - old_capacity) * sizeof(std::size_t);
+        state_->memory_tracker.Reserve(bucket_bytes);
+        reserved_bytes_ += bucket_bytes;
+      }
     }
-    return key;
   }
+
   const PhysicalPlanNode *node_;
+  const LeftOuterHashJoinOp *data_ = nullptr;
   RuntimeState *state_;
   std::unique_ptr<PullOperator> lhs_;
   std::unique_ptr<PullOperator> rhs_;
-  std::unordered_map<CompositeValueKey, std::vector<SlottedRow>, ValueHash,
-                     ValueEqual>
-      buckets_;
+  std::unordered_map<CompositeValueKey, Bucket, ValueHash, ValueEqual> buckets_;
+  std::vector<SlottedRow> build_rows_;
   std::optional<SlottedRow> left_;
-  const std::vector<SlottedRow> *matches_ = nullptr;
+  const Bucket *matches_ = nullptr;
   std::size_t index_ = 0;
   std::size_t reserved_bytes_ = 0;
   bool matched_ = false;
@@ -4435,20 +4477,6 @@ class BlockingBinaryOperator final : public PullOperator {
     rows_.push_back(std::move(row));
   }
 
-  std::optional<CompositeValueKey> NodeJoinKey(
-      const SlottedRow &row, const std::vector<std::string> &keys) const {
-    CompositeValueKey result;
-    result.values.reserve(keys.size());
-    for (const auto &key : keys) {
-      Value value = row.Get(key, *state_->graph_reader);
-      if (value.IsNull()) {
-        return std::nullopt;
-      }
-      result.values.push_back(std::move(value));
-    }
-    return result;
-  }
-
   bool EmitJoined(const SlottedRow &lhs, const SlottedRow &rhs,
                   const std::vector<const ast::Expression *> *predicates) {
     SlottedRow output(node_->output_slots);
@@ -4475,8 +4503,8 @@ class BlockingBinaryOperator final : public PullOperator {
         Collect(lhs_.get(), node_->children[0]->output_slots);
     std::vector<SlottedRow> rhs_rows =
         Collect(rhs_.get(), node_->children[1]->output_slots);
-    switch (node_->logical->Type()) {
-      case ir::LogicalPlanNodeType::kCartesianProduct:
+    switch (node_->kind) {
+      case PhysicalOperatorKind::kCartesianProduct:
         for (const auto &lhs : lhs_rows) {
           state_->CheckCancelled();
           for (const auto &rhs : rhs_rows) {
@@ -4484,37 +4512,7 @@ class BlockingBinaryOperator final : public PullOperator {
           }
         }
         break;
-      case ir::LogicalPlanNodeType::kNodeHashJoin: {
-        const auto &plan =
-            static_cast<const ir::NodeHashJoinPlan &>(*node_->logical);
-        std::unordered_map<CompositeValueKey, std::vector<const SlottedRow *>,
-                           ValueHash, ValueEqual>
-            buckets;
-        for (const auto &rhs : rhs_rows) {
-          if (std::optional<CompositeValueKey> key =
-                  NodeJoinKey(rhs, plan.JoinKeys());
-              key.has_value()) {
-            buckets[*key].push_back(&rhs);
-          }
-        }
-        for (const auto &lhs : lhs_rows) {
-          state_->CheckCancelled();
-          const std::optional<CompositeValueKey> key =
-              NodeJoinKey(lhs, plan.JoinKeys());
-          if (!key.has_value()) {
-            continue;
-          }
-          const auto found = buckets.find(*key);
-          if (found == buckets.end()) {
-            continue;
-          }
-          for (const SlottedRow *rhs : found->second) {
-            (void)EmitJoined(lhs, *rhs, nullptr);
-          }
-        }
-        break;
-      }
-      case ir::LogicalPlanNodeType::kPredicateJoin: {
+      case PhysicalOperatorKind::kPredicateJoin: {
         const auto &predicates =
             static_cast<const ir::PredicateJoinPlan &>(*node_->logical)
                 .Predicates();
@@ -4539,6 +4537,154 @@ class BlockingBinaryOperator final : public PullOperator {
   std::size_t reserved_bytes_ = 0;
   std::size_t next_ = 0;
   bool initialized_ = false;
+};
+
+class NodeHashJoinOperator final : public PullOperator {
+ public:
+  NodeHashJoinOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                       std::unique_ptr<PullOperator> lhs,
+                       std::unique_ptr<PullOperator> rhs)
+      : node_(&node),
+        data_(&OperatorData<NodeHashJoinOp>(node)),
+        state_(&state),
+        lhs_(std::move(lhs)),
+        rhs_(std::move(rhs)) {}
+
+  ~NodeHashJoinOperator() override { Close(); }
+
+  [[nodiscard]] bool Next(SlottedRow *row) override {
+    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    state_->CheckCancelled();
+    if (closed_) {
+      return false;
+    }
+    if (!initialized_) {
+      Initialize();
+    }
+
+    while (true) {
+      while (bucket_ != nullptr && bucket_offset_ < bucket_->size()) {
+        state_->CheckCancelled();
+        const SlottedRow &build_row = build_rows_[(*bucket_)[bucket_offset_++]];
+        const SlottedRow &lhs = BuildChild() == 0 ? build_row : *probe_row_;
+        const SlottedRow &rhs = BuildChild() == 0 ? *probe_row_ : build_row;
+        SlottedRow output(node_->output_slots);
+        if (!MergeMappings(lhs, &output, node_->child_mappings[0], *state_) ||
+            !MergeMappings(rhs, &output, node_->child_mappings[1], *state_)) {
+          continue;
+        }
+        *row = std::move(output);
+        return true;
+      }
+
+      bucket_ = nullptr;
+      bucket_offset_ = 0;
+      probe_row_.reset();
+      SlottedRow probe(node_->children[ProbeChild()]->output_slots);
+      if (!Source(ProbeChild())->Next(&probe)) {
+        Close();
+        return false;
+      }
+      state_->CheckCancelled();
+      std::optional<CompositeValueKey> key =
+          NodeJoinKey(probe, data_->join_keys, state_);
+      if (!key.has_value()) {
+        continue;
+      }
+      const auto found = buckets_.find(*key);
+      if (found == buckets_.end()) {
+        continue;
+      }
+      probe_row_.emplace(std::move(probe));
+      bucket_ = &found->second;
+    }
+  }
+
+  void Close() noexcept override {
+    if (closed_) {
+      return;
+    }
+    if (lhs_ != nullptr) {
+      lhs_->Close();
+    }
+    if (rhs_ != nullptr) {
+      rhs_->Close();
+    }
+    probe_row_.reset();
+    bucket_ = nullptr;
+    buckets_.clear();
+    build_rows_.clear();
+    state_->memory_tracker.Release(reserved_bytes_);
+    reserved_bytes_ = 0;
+    closed_ = true;
+  }
+
+ private:
+  using Bucket = std::vector<std::size_t>;
+
+  [[nodiscard]] std::size_t BuildChild() const { return data_->build_child; }
+
+  [[nodiscard]] std::size_t ProbeChild() const { return 1U - BuildChild(); }
+
+  PullOperator *Source(std::size_t child) const {
+    return child == 0 ? lhs_.get() : rhs_.get();
+  }
+
+  void Initialize() {
+    initialized_ = true;
+    CHECK(BuildChild() < 2, common::InternalError,
+          "invalid node hash join build child");
+    PullOperator *source = Source(BuildChild());
+    while (true) {
+      SlottedRow input(node_->children[BuildChild()]->output_slots);
+      if (!source->Next(&input)) {
+        source->Close();
+        return;
+      }
+      state_->CheckCancelled();
+      std::optional<CompositeValueKey> key =
+          NodeJoinKey(input, data_->join_keys, state_);
+      if (!key.has_value()) {
+        continue;
+      }
+
+      const std::size_t row_bytes = input.EstimatedHeapUsage();
+      state_->memory_tracker.Reserve(row_bytes);
+      reserved_bytes_ += row_bytes;
+      const std::size_t row_index = build_rows_.size();
+      build_rows_.push_back(std::move(input));
+
+      auto [found, inserted] = buckets_.try_emplace(std::move(*key));
+      if (inserted) {
+        const std::size_t key_bytes = EstimatedKeyHeapUsage(found->first);
+        state_->memory_tracker.Reserve(key_bytes);
+        reserved_bytes_ += key_bytes;
+      }
+      const std::size_t old_capacity = found->second.capacity();
+      found->second.push_back(row_index);
+      const std::size_t new_capacity = found->second.capacity();
+      if (new_capacity > old_capacity) {
+        const std::size_t bucket_bytes =
+            (new_capacity - old_capacity) * sizeof(std::size_t);
+        state_->memory_tracker.Reserve(bucket_bytes);
+        reserved_bytes_ += bucket_bytes;
+      }
+    }
+  }
+
+  const PhysicalPlanNode *node_ = nullptr;
+  const NodeHashJoinOp *data_ = nullptr;
+  RuntimeState *state_ = nullptr;
+  std::unique_ptr<PullOperator> lhs_;
+  std::unique_ptr<PullOperator> rhs_;
+  std::unordered_map<CompositeValueKey, Bucket, ValueHash, ValueEqual> buckets_;
+  std::vector<SlottedRow> build_rows_;
+  std::optional<SlottedRow> probe_row_;
+  const Bucket *bucket_ = nullptr;
+  std::size_t bucket_offset_ = 0;
+  std::size_t reserved_bytes_ = 0;
+  bool initialized_ = false;
+  bool closed_ = false;
 };
 
 class ValueHashJoinOperator final : public PullOperator {
@@ -4978,8 +5124,15 @@ class OperatorFactory final {
         return std::make_unique<LeftOuterHashJoinOperator>(
             node, *state_, std::move(lhs), std::move(rhs));
       }
+      case PhysicalOperatorKind::kNodeHashJoin: {
+        CHECK(node.children.size() == 2, common::InternalError,
+              "node hash join physical node must have two children");
+        auto lhs = Build(*node.children[0], argument);
+        auto rhs = Build(*node.children[1], std::move(argument));
+        return std::make_unique<NodeHashJoinOperator>(
+            node, *state_, std::move(lhs), std::move(rhs));
+      }
       case PhysicalOperatorKind::kCartesianProduct:
-      case PhysicalOperatorKind::kNodeHashJoin:
       case PhysicalOperatorKind::kPredicateJoin: {
         CHECK(node.children.size() == 2, common::InternalError,
               "blocking binary physical node must have two children");
