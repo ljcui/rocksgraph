@@ -596,6 +596,20 @@ std::vector<PhysicalExpression> CopyPhysicalExpressions(
   return copied;
 }
 
+PhysicalPropertyMap CopyPhysicalPropertyMap(
+    const ir::PatternPropertyMap &properties) {
+  PhysicalPropertyMap copied;
+  copied.entries.reserve(properties.entries.size());
+  for (const auto &entry : properties.entries) {
+    copied.entries.push_back(
+        {.key = entry.key, .value = CopyPhysicalExpression(entry.value, {})});
+  }
+  if (properties.parameter != nullptr) {
+    copied.parameter.emplace(CopyPhysicalExpression(properties.parameter, {}));
+  }
+  return copied;
+}
+
 PhysicalExpandDirection ToPhysicalExpandDirection(ir::Direction direction) {
   switch (direction) {
     case ir::Direction::kIncoming:
@@ -1315,6 +1329,73 @@ class PhysicalPlanBuilder final {
                 node->output_slots->At(apply.CollectionVariable()),
             .value_slot =
                 node->children[1]->output_slots->At(apply.ValueVariable())};
+        return;
+      }
+      case PhysicalOperatorKind::kWriteBarrier:
+        node->data = WriteBarrierOp{};
+        return;
+      case PhysicalOperatorKind::kCreateNode: {
+        const auto &create = static_cast<const ir::CreateNodePlan &>(plan);
+        const ir::CreateNodePattern &node_pattern = create.Node();
+        node->data = CreateNodeOp{
+            .node_slot = node->output_slots->At(node_pattern.variable),
+            .labels = node_pattern.labels,
+            .properties = CopyPhysicalPropertyMap(node_pattern.properties)};
+        return;
+      }
+      case PhysicalOperatorKind::kCreateRelationship: {
+        const auto &create =
+            static_cast<const ir::CreateRelationshipPlan &>(plan);
+        const ir::CreateRelationshipPattern &relationship =
+            create.Relationship();
+        CHECK(node->children.size() == 1, common::InternalError,
+              "create relationship physical node must have one child");
+        node->data = CreateRelationshipOp{
+            .relationship_slot = node->output_slots->At(relationship.variable),
+            .left_node_slot =
+                node->children[0]->output_slots->At(relationship.left_node),
+            .right_node_slot =
+                node->children[0]->output_slots->At(relationship.right_node),
+            .type = relationship.types.empty() ? std::string()
+                                               : relationship.types.front(),
+            .properties = CopyPhysicalPropertyMap(relationship.properties)};
+        return;
+      }
+      case PhysicalOperatorKind::kSetProperty: {
+        const auto &set = static_cast<const ir::SetPropertyPlan &>(plan);
+        node->data =
+            SetPropertyOp{.entity = CopyPhysicalExpression(set.Entity(), {}),
+                          .property_key = set.PropertyKey(),
+                          .value = CopyPhysicalExpression(set.Value(), {})};
+        return;
+      }
+      case PhysicalOperatorKind::kSetProperties: {
+        const auto &set = static_cast<const ir::SetPropertiesPlan &>(plan);
+        node->data =
+            SetPropertiesOp{.entity = CopyPhysicalExpression(set.Entity(), {}),
+                            .value = CopyPhysicalExpression(set.Value(), {}),
+                            .include_existing = set.IncludeExisting()};
+        return;
+      }
+      case PhysicalOperatorKind::kSetLabels: {
+        const auto &set = static_cast<const ir::SetLabelsPlan &>(plan);
+        node->data =
+            SetLabelsOp{.entity = CopyPhysicalExpression(set.Entity(), {}),
+                        .labels = set.Labels()};
+        return;
+      }
+      case PhysicalOperatorKind::kRemoveProperty: {
+        const auto &remove = static_cast<const ir::RemovePropertyPlan &>(plan);
+        node->data = RemovePropertyOp{
+            .entity = CopyPhysicalExpression(remove.Entity(), {}),
+            .property_key = remove.PropertyKey()};
+        return;
+      }
+      case PhysicalOperatorKind::kRemoveLabels: {
+        const auto &remove = static_cast<const ir::RemoveLabelsPlan &>(plan);
+        node->data = RemoveLabelsOp{
+            .entity = CopyPhysicalExpression(remove.Entity(), {}),
+            .labels = remove.Labels()};
         return;
       }
       default:

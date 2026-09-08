@@ -380,6 +380,59 @@ struct RollUpApplyOp {
   Slot value_slot;
 };
 
+struct PhysicalPropertyMapEntry {
+  std::string key;
+  PhysicalExpression value;
+};
+
+struct PhysicalPropertyMap {
+  std::vector<PhysicalPropertyMapEntry> entries;
+  std::optional<PhysicalExpression> parameter;
+};
+
+struct WriteBarrierOp {};
+
+struct CreateNodeOp {
+  Slot node_slot;
+  std::vector<std::string> labels;
+  PhysicalPropertyMap properties;
+};
+
+struct CreateRelationshipOp {
+  Slot relationship_slot;
+  Slot left_node_slot;
+  Slot right_node_slot;
+  std::string type;
+  PhysicalPropertyMap properties;
+};
+
+struct SetPropertyOp {
+  PhysicalExpression entity;
+  std::string property_key;
+  PhysicalExpression value;
+};
+
+struct SetPropertiesOp {
+  PhysicalExpression entity;
+  PhysicalExpression value;
+  bool include_existing = false;
+};
+
+struct SetLabelsOp {
+  PhysicalExpression entity;
+  std::vector<std::string> labels;
+};
+
+struct RemovePropertyOp {
+  PhysicalExpression entity;
+  std::string property_key;
+};
+
+struct RemoveLabelsOp {
+  PhysicalExpression entity;
+  std::vector<std::string> labels;
+};
+
 using PhysicalOperatorData = std::variant<
     std::monostate, ArgumentOp, AllNodeScanOp, NodeByLabelScanOp,
     NodeIndexSeekOp, NodeIndexRangeSeekOp, RelationshipTypeScanOp,
@@ -391,7 +444,9 @@ using PhysicalOperatorData = std::variant<
     PartialTopNOp, SkipOp, LimitOp, ProduceResultsOp, ValueHashJoinOp,
     NodeHashJoinOp, LeftOuterHashJoinOp, CartesianProductOp, PredicateJoinOp,
     UnionAllOp, UnionDistinctOp, ApplyOp, OptionalApplyOp, SemiApplyOp,
-    AntiSemiApplyOp, LetSemiApplyOp, SelectOrSemiApplyOp, RollUpApplyOp>;
+    AntiSemiApplyOp, LetSemiApplyOp, SelectOrSemiApplyOp, RollUpApplyOp,
+    WriteBarrierOp, CreateNodeOp, CreateRelationshipOp, SetPropertyOp,
+    SetPropertiesOp, SetLabelsOp, RemovePropertyOp, RemoveLabelsOp>;
 
 struct PhysicalPlanNode {
   OperatorId id = 0;

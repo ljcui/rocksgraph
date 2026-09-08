@@ -257,6 +257,20 @@ std::vector<std::vector<rg::Value>> PhysicalRows(
   return rows;
 }
 
+std::vector<std::vector<rg::Value>> PhysicalWriteRows(
+    const rg::PhysicalPlan &plan, rg::InMemoryGraph *graph,
+    const std::vector<std::string> &columns,
+    const rg::QueryParameters &parameters = {}) {
+  std::unique_ptr<rg::PhysicalResultCursor> cursor =
+      rg::StartPhysicalPlan(plan, *graph, graph, parameters, columns);
+  std::vector<std::vector<rg::Value>> rows;
+  std::vector<rg::Value> row;
+  while (cursor->Next(&row)) {
+    rows.push_back(row);
+  }
+  return rows;
+}
+
 std::vector<std::int64_t> FirstColumnIds(
     const rg::PhysicalPlan &plan, const rg::GraphReader &graph,
     std::string column, const rg::QueryParameters &parameters = {}) {
@@ -620,6 +634,132 @@ TEST(PhysicalPlanTest, ExecutesDetachedRollUpApplyAndHandlesResources) {
   cursor = rg::StartPhysicalPlan(physical, graph, nullptr, {}, {"id", "names"},
                                  memory_options);
   EXPECT_THROW((void)cursor->Next(&row), common::MemoryLimitExceededError);
+}
+
+TEST(PhysicalPlanTest, BuildsOwnedStreamingWritePayloads) {
+  rg::PhysicalPlan create =
+      DetachedPhysicalPlan("CREATE (a:Made $properties) RETURN a");
+  const rg::PhysicalPlanNode *create_node =
+      FindPhysicalPlan(create.Root(), rg::PhysicalOperatorKind::kCreateNode);
+  ASSERT_NE(create_node, nullptr);
+  const auto &create_node_data = std::get<rg::CreateNodeOp>(create_node->data);
+  EXPECT_EQ(create_node_data.node_slot.kind, rg::SlotKind::kNode);
+  EXPECT_EQ(create_node_data.labels, std::vector<std::string>{"Made"});
+  ASSERT_TRUE(create_node_data.properties.parameter.has_value());
+  EXPECT_NE(create_node_data.properties.parameter->Expression(), nullptr);
+  const rg::PhysicalPlanNode *barrier =
+      FindPhysicalPlan(create.Root(), rg::PhysicalOperatorKind::kWriteBarrier);
+  ASSERT_NE(barrier, nullptr);
+  EXPECT_TRUE(std::holds_alternative<rg::WriteBarrierOp>(barrier->data));
+
+  rg::PhysicalPlan create_relationship_plan = DetachedPhysicalPlan(
+      "CREATE (a:Made), (b:Made), "
+      "(a)-[r:LINK {weight: 2}]->(b) RETURN a, r, b");
+  const rg::PhysicalPlanNode *create_relationship =
+      FindPhysicalPlan(create_relationship_plan.Root(),
+                       rg::PhysicalOperatorKind::kCreateRelationship);
+  ASSERT_NE(create_relationship, nullptr);
+  const auto &relationship_data =
+      std::get<rg::CreateRelationshipOp>(create_relationship->data);
+  EXPECT_EQ(relationship_data.relationship_slot.kind,
+            rg::SlotKind::kRelationship);
+  EXPECT_EQ(relationship_data.left_node_slot.kind, rg::SlotKind::kNode);
+  EXPECT_EQ(relationship_data.right_node_slot.kind, rg::SlotKind::kNode);
+  EXPECT_EQ(relationship_data.type, "LINK");
+  ASSERT_EQ(relationship_data.properties.entries.size(), 1U);
+  EXPECT_NE(relationship_data.properties.entries[0].value.Expression(),
+            nullptr);
+
+  rg::PhysicalPlan mutations = DetachedPhysicalPlan(
+      "MATCH (n) SET n.changed = 'yes', n += {added: 2}, n:Added "
+      "REMOVE n.old, n:Old RETURN n");
+  const rg::PhysicalPlanNode *set_property = FindPhysicalPlan(
+      mutations.Root(), rg::PhysicalOperatorKind::kSetProperty);
+  ASSERT_NE(set_property, nullptr);
+  const auto &set_property_data =
+      std::get<rg::SetPropertyOp>(set_property->data);
+  EXPECT_EQ(set_property_data.property_key, "changed");
+  EXPECT_NE(set_property_data.entity.Expression(), nullptr);
+  EXPECT_NE(set_property_data.value.Expression(), nullptr);
+
+  const rg::PhysicalPlanNode *set_properties = FindPhysicalPlan(
+      mutations.Root(), rg::PhysicalOperatorKind::kSetProperties);
+  ASSERT_NE(set_properties, nullptr);
+  EXPECT_TRUE(
+      std::get<rg::SetPropertiesOp>(set_properties->data).include_existing);
+  const rg::PhysicalPlanNode *set_labels =
+      FindPhysicalPlan(mutations.Root(), rg::PhysicalOperatorKind::kSetLabels);
+  ASSERT_NE(set_labels, nullptr);
+  EXPECT_EQ(std::get<rg::SetLabelsOp>(set_labels->data).labels,
+            std::vector<std::string>{"Added"});
+
+  const rg::PhysicalPlanNode *remove_property = FindPhysicalPlan(
+      mutations.Root(), rg::PhysicalOperatorKind::kRemoveProperty);
+  ASSERT_NE(remove_property, nullptr);
+  EXPECT_EQ(std::get<rg::RemovePropertyOp>(remove_property->data).property_key,
+            "old");
+  const rg::PhysicalPlanNode *remove_labels = FindPhysicalPlan(
+      mutations.Root(), rg::PhysicalOperatorKind::kRemoveLabels);
+  ASSERT_NE(remove_labels, nullptr);
+  EXPECT_EQ(std::get<rg::RemoveLabelsOp>(remove_labels->data).labels,
+            std::vector<std::string>{"Old"});
+
+  rg::PhysicalPlan exact =
+      DetachedPhysicalPlan("MATCH (n) SET n = {only: 1} RETURN n");
+  const rg::PhysicalPlanNode *exact_set =
+      FindPhysicalPlan(exact.Root(), rg::PhysicalOperatorKind::kSetProperties);
+  ASSERT_NE(exact_set, nullptr);
+  EXPECT_FALSE(std::get<rg::SetPropertiesOp>(exact_set->data).include_existing);
+}
+
+TEST(PhysicalPlanTest, ExecutesDetachedStreamingWriteOperators) {
+  rg::InMemoryGraph graph;
+  rg::PhysicalPlan create = DetachedPhysicalPlan(
+      "CREATE (a:Made $properties), (b:Made), "
+      "(a)-[r:LINK {weight: 2}]->(b) RETURN a, b, r");
+  const auto create_rows = PhysicalWriteRows(
+      create, &graph, {"a", "b", "r"},
+      {{"properties", rg::Value(rg::Value::Map{{"name", rg::Value("left")}})}});
+  ASSERT_EQ(create_rows.size(), 1U);
+  ASSERT_EQ(create_rows[0].size(), 3U);
+  ASSERT_TRUE(create_rows[0][0].IsNode());
+  ASSERT_TRUE(create_rows[0][1].IsNode());
+  ASSERT_TRUE(create_rows[0][2].IsRelationship());
+  EXPECT_EQ(create_rows[0][0].AsNode().properties.at("name"),
+            rg::Value("left"));
+  EXPECT_EQ(create_rows[0][2].AsRelationship().type, "LINK");
+  EXPECT_EQ(create_rows[0][2].AsRelationship().properties.at("weight"),
+            rg::Value(2));
+
+  const auto target =
+      graph.CreateNode({"Target", "Old"},
+                       {{"old", rg::Value("remove")}, {"keep", rg::Value(1)}});
+  rg::PhysicalPlan mutations = DetachedPhysicalPlan(
+      "MATCH (n:Target) SET n.changed = 'yes', n += {added: 2}, n:Added "
+      "REMOVE n.old, n:Old RETURN n");
+  ASSERT_EQ(PhysicalWriteRows(mutations, &graph, {"n"}).size(), 1U);
+  EXPECT_EQ(target->properties.at("changed"), rg::Value("yes"));
+  EXPECT_EQ(target->properties.at("added"), rg::Value(2));
+  EXPECT_EQ(target->properties.at("keep"), rg::Value(1));
+  EXPECT_FALSE(target->properties.contains("old"));
+  EXPECT_NE(std::find(target->labels.begin(), target->labels.end(), "Added"),
+            target->labels.end());
+  EXPECT_EQ(std::find(target->labels.begin(), target->labels.end(), "Old"),
+            target->labels.end());
+
+  rg::PhysicalPlan exact =
+      DetachedPhysicalPlan("MATCH (n:Target) SET n = {only: 9} RETURN n");
+  ASSERT_EQ(PhysicalWriteRows(exact, &graph, {"n"}).size(), 1U);
+  EXPECT_EQ(target->properties, (rg::Value::Map{{"only", rg::Value(9)}}));
+
+  rg::PhysicalPlan relationship_mutation = DetachedPhysicalPlan(
+      "MATCH ()-[r:LINK]->() SET r.flag = true REMOVE r.weight RETURN r");
+  ASSERT_EQ(PhysicalWriteRows(relationship_mutation, &graph, {"r"}).size(), 1U);
+  const rg::Relationship &relationship = create_rows[0][2].AsRelationship();
+  EXPECT_EQ(graph.RelationshipById(relationship.id)->properties.at("flag"),
+            rg::Value(true));
+  EXPECT_FALSE(
+      graph.RelationshipById(relationship.id)->properties.contains("weight"));
 }
 
 TEST(PhysicalPlanTest, ReinstantiatesStatefulApplyRightSideForEachLeftRow) {

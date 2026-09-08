@@ -329,6 +329,19 @@ std::int64_t NodeId(const SlottedRow &row, std::string_view name,
   return value.AsNode().id;
 }
 
+std::int64_t NodeId(const SlottedRow &row, const Slot &slot,
+                    const RuntimeState &state) {
+  if (slot.kind == SlotKind::kNode) {
+    return row.EntityIdAt(slot);
+  }
+  const Value value = row.Get(slot, *state.graph_reader);
+  if (value.IsNull()) {
+    return -1;
+  }
+  CHECK(value.IsNode(), common::InvalidArgumentError, "expected node value");
+  return value.AsNode().id;
+}
+
 bool NodeHasAllLabels(const Node &node,
                       const std::vector<std::string> &labels) {
   for (const auto &label : labels) {
@@ -522,6 +535,23 @@ Value::Map EvaluatePropertyMap(const ir::PatternPropertyMap &property_map,
   return properties;
 }
 
+Value::Map EvaluatePropertyMap(const PhysicalPropertyMap &property_map,
+                               const SlottedRow &row,
+                               std::string_view operation,
+                               RuntimeState *state) {
+  if (property_map.parameter.has_value()) {
+    Value value = Evaluate(*property_map.parameter, row, *state);
+    CHECK(value.IsMap(), common::InvalidArgumentError,
+          std::string(operation) + " properties parameter must be a map");
+    return value.AsMap();
+  }
+  Value::Map properties;
+  for (const auto &entry : property_map.entries) {
+    properties[entry.key] = Evaluate(entry.value, row, *state);
+  }
+  return properties;
+}
+
 void ApplySetPattern(const ir::SetMutatingPattern &pattern, SlottedRow *row,
                      RuntimeState *state) {
   CHECK(row != nullptr, common::InternalError, "write row is null");
@@ -575,6 +605,114 @@ void ApplySetPatterns(const std::vector<ir::SetMutatingPattern> &patterns,
                       SlottedRow *row, RuntimeState *state) {
   for (const auto &pattern : patterns) {
     ApplySetPattern(pattern, row, state);
+  }
+}
+
+void ExecuteStreamingWrite(const CreateNodeOp &data, const SlottedRow &input,
+                           SlottedRow *output, RuntimeState *state) {
+  Storage &storage = RequireStorage(state);
+  const Value::NodePtr node = storage.CreateNode(
+      data.labels,
+      EvaluatePropertyMap(data.properties, input, "CREATE node", state));
+  CHECK(node != nullptr, common::InternalError,
+        "storage returned a null created node");
+  output->SetEntityId(data.node_slot, node->id);
+}
+
+void ExecuteStreamingWrite(const CreateRelationshipOp &data,
+                           const SlottedRow &input, SlottedRow *output,
+                           RuntimeState *state) {
+  Storage &storage = RequireStorage(state);
+  const std::int64_t left = NodeId(input, data.left_node_slot, *state);
+  const std::int64_t right = NodeId(input, data.right_node_slot, *state);
+  CHECK(left >= 0 && right >= 0, common::InvalidArgumentError,
+        "CREATE relationship endpoints must be nodes");
+  const Value::RelationshipPtr relationship = storage.CreateRelationship(
+      left, right, data.type,
+      EvaluatePropertyMap(data.properties, input, "CREATE relationship",
+                          state));
+  CHECK(relationship != nullptr, common::InternalError,
+        "storage returned a null created relationship");
+  output->SetEntityId(data.relationship_slot, relationship->id);
+}
+
+void ExecuteStreamingWrite(const SetPropertyOp &data, const SlottedRow &,
+                           SlottedRow *output, RuntimeState *state) {
+  Storage &storage = RequireStorage(state);
+  const Value entity = Evaluate(data.entity, *output, *state);
+  if (entity.IsNull()) {
+    return;
+  }
+  Value value = Evaluate(data.value, *output, *state);
+  if (entity.IsNode()) {
+    storage.SetNodeProperty(entity.AsNode().id, data.property_key,
+                            std::move(value));
+  } else if (entity.IsRelationship()) {
+    storage.SetRelationshipProperty(entity.AsRelationship().id,
+                                    data.property_key, std::move(value));
+  } else {
+    THROW(common::InvalidArgumentError, "SET property target is not an entity");
+  }
+}
+
+void ExecuteStreamingWrite(const SetPropertiesOp &data, const SlottedRow &,
+                           SlottedRow *output, RuntimeState *state) {
+  Storage &storage = RequireStorage(state);
+  const Value entity = Evaluate(data.entity, *output, *state);
+  if (entity.IsNull()) {
+    return;
+  }
+  Value value = Evaluate(data.value, *output, *state);
+  CHECK(value.IsMap(), common::InvalidArgumentError,
+        "SET properties requires a map value");
+  if (entity.IsNode()) {
+    storage.SetNodeProperties(entity.AsNode().id, std::move(value.AsMap()),
+                              data.include_existing);
+  } else if (entity.IsRelationship()) {
+    storage.SetRelationshipProperties(entity.AsRelationship().id,
+                                      std::move(value.AsMap()),
+                                      data.include_existing);
+  } else {
+    THROW(common::InvalidArgumentError,
+          "SET properties target is not an entity");
+  }
+}
+
+void ExecuteStreamingWrite(const SetLabelsOp &data, const SlottedRow &,
+                           SlottedRow *output, RuntimeState *state) {
+  Storage &storage = RequireStorage(state);
+  const Value entity = Evaluate(data.entity, *output, *state);
+  if (entity.IsNull()) {
+    return;
+  }
+  CHECK(entity.IsNode(), common::InvalidArgumentError,
+        "SET labels target is not a node");
+  storage.SetLabels(entity.AsNode().id, data.labels);
+}
+
+void ExecuteStreamingWrite(const RemovePropertyOp &data, const SlottedRow &,
+                           SlottedRow *output, RuntimeState *state) {
+  Storage &storage = RequireStorage(state);
+  const Value entity = Evaluate(data.entity, *output, *state);
+  if (entity.IsNode()) {
+    storage.RemoveNodeProperty(entity.AsNode().id, data.property_key);
+  } else if (entity.IsRelationship()) {
+    storage.RemoveRelationshipProperty(entity.AsRelationship().id,
+                                       data.property_key);
+  } else {
+    CHECK(entity.IsNull(), common::InvalidArgumentError,
+          "REMOVE property target is not an entity");
+  }
+}
+
+void ExecuteStreamingWrite(const RemoveLabelsOp &data, const SlottedRow &,
+                           SlottedRow *output, RuntimeState *state) {
+  Storage &storage = RequireStorage(state);
+  const Value entity = Evaluate(data.entity, *output, *state);
+  if (!entity.IsNull()) {
+    CHECK(entity.IsNode(), common::InvalidArgumentError,
+          "REMOVE labels target is not a node");
+    storage.RemoveLabels(entity.AsNode().id, data.labels);
   }
 }
 
@@ -2951,14 +3089,6 @@ class StreamingUnaryOperator final : public PullOperator {
         return NextUnwind(row);
       case ir::LogicalPlanNodeType::kAssertIsNode:
         return NextAssertIsNode(row);
-      case ir::LogicalPlanNodeType::kSetProperty:
-      case ir::LogicalPlanNodeType::kSetProperties:
-      case ir::LogicalPlanNodeType::kSetLabels:
-      case ir::LogicalPlanNodeType::kRemoveProperty:
-      case ir::LogicalPlanNodeType::kRemoveLabels:
-      case ir::LogicalPlanNodeType::kCreateNode:
-      case ir::LogicalPlanNodeType::kCreateRelationship:
-        return NextWrite(row);
       default:
         THROW(common::InternalError, "unsupported streaming operator: " +
                                          std::string(node_->logical->Name()));
@@ -3071,111 +3201,6 @@ class StreamingUnaryOperator final : public PullOperator {
     return true;
   }
 
-  bool NextWrite(SlottedRow *row) {
-    SlottedRow input(node_->children[0]->output_slots);
-    if (!PullInput(&input)) {
-      return false;
-    }
-    Storage &storage = RequireStorage(state_);
-    SlottedRow output =
-        input.CopyTo(node_->output_slots, *state_->graph_reader);
-    switch (node_->logical->Type()) {
-      case ir::LogicalPlanNodeType::kCreateNode: {
-        const auto &plan =
-            static_cast<const ir::CreateNodePlan &>(*node_->logical);
-        output.Set(plan.Node().variable,
-                   Value(storage.CreateNode(
-                       plan.Node().labels,
-                       EvaluatePropertyMap(plan.Node().properties, input,
-                                           "CREATE node", state_))));
-        break;
-      }
-      case ir::LogicalPlanNodeType::kCreateRelationship: {
-        const auto &plan =
-            static_cast<const ir::CreateRelationshipPlan &>(*node_->logical);
-        const auto &pattern = plan.Relationship();
-        const std::int64_t left = NodeId(input, pattern.left_node, *state_);
-        const std::int64_t right = NodeId(input, pattern.right_node, *state_);
-        CHECK(left >= 0 && right >= 0, common::InvalidArgumentError,
-              "CREATE relationship endpoints must be nodes");
-        output.Set(pattern.variable,
-                   Value(storage.CreateRelationship(
-                       left, right,
-                       pattern.types.empty() ? std::string() : pattern.types[0],
-                       EvaluatePropertyMap(pattern.properties, input,
-                                           "CREATE relationship", state_))));
-        break;
-      }
-      case ir::LogicalPlanNodeType::kSetProperty: {
-        const auto &plan =
-            static_cast<const ir::SetPropertyPlan &>(*node_->logical);
-        ApplySetPattern({.kind = ir::SetMutatingPatternKind::kSetProperty,
-                         .entity = plan.Entity(),
-                         .property_key = plan.PropertyKey(),
-                         .value = plan.Value()},
-                        &output, state_);
-        break;
-      }
-      case ir::LogicalPlanNodeType::kSetProperties: {
-        const auto &plan =
-            static_cast<const ir::SetPropertiesPlan &>(*node_->logical);
-        ApplySetPattern(
-            {.kind =
-                 plan.IncludeExisting()
-                     ? ir::SetMutatingPatternKind::
-                           kSetIncludingPropertiesFromMap
-                     : ir::SetMutatingPatternKind::kSetExactPropertiesFromMap,
-             .entity = plan.Entity(),
-             .value = plan.Value()},
-            &output, state_);
-        break;
-      }
-      case ir::LogicalPlanNodeType::kSetLabels: {
-        const auto &plan =
-            static_cast<const ir::SetLabelsPlan &>(*node_->logical);
-        ApplySetPattern({.kind = ir::SetMutatingPatternKind::kSetLabels,
-                         .entity = plan.Entity(),
-                         .labels = plan.Labels()},
-                        &output, state_);
-        break;
-      }
-      case ir::LogicalPlanNodeType::kRemoveProperty: {
-        const auto &plan =
-            static_cast<const ir::RemovePropertyPlan &>(*node_->logical);
-        CHECK(plan.Entity() != nullptr, common::InvalidArgumentError,
-              "REMOVE property expression is null");
-        const Value entity = Evaluate(*plan.Entity(), output, {}, *state_);
-        if (entity.IsNode()) {
-          storage.RemoveNodeProperty(entity.AsNode().id, plan.PropertyKey());
-        } else if (entity.IsRelationship()) {
-          storage.RemoveRelationshipProperty(entity.AsRelationship().id,
-                                             plan.PropertyKey());
-        } else {
-          CHECK(entity.IsNull(), common::InvalidArgumentError,
-                "REMOVE property target is not an entity");
-        }
-        break;
-      }
-      case ir::LogicalPlanNodeType::kRemoveLabels: {
-        const auto &plan =
-            static_cast<const ir::RemoveLabelsPlan &>(*node_->logical);
-        CHECK(plan.Entity() != nullptr, common::InvalidArgumentError,
-              "REMOVE labels expression is null");
-        const Value entity = Evaluate(*plan.Entity(), output, {}, *state_);
-        if (!entity.IsNull()) {
-          CHECK(entity.IsNode(), common::InvalidArgumentError,
-                "REMOVE labels target is not a node");
-          storage.RemoveLabels(entity.AsNode().id, plan.Labels());
-        }
-        break;
-      }
-      default:
-        THROW(common::InternalError, "unexpected streaming write operator");
-    }
-    *row = std::move(output);
-    return true;
-  }
-
   const PhysicalPlanNode *node_ = nullptr;
   RuntimeState *state_ = nullptr;
   std::unique_ptr<PullOperator> source_;
@@ -3186,6 +3211,52 @@ class StreamingUnaryOperator final : public PullOperator {
   std::size_t buffer_index_ = 0;
   std::size_t buffer_reserved_bytes_ = 0;
   std::size_t unwind_reserved_bytes_ = 0;
+  bool closed_ = false;
+};
+
+template <typename Data>
+class StreamingWriteOperator final : public PullOperator {
+ public:
+  StreamingWriteOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                         std::unique_ptr<PullOperator> source)
+      : node_(&node),
+        data_(&OperatorData<Data>(node)),
+        state_(&state),
+        source_(std::move(source)) {}
+
+  ~StreamingWriteOperator() override { Close(); }
+
+  [[nodiscard]] bool Next(SlottedRow *row) override {
+    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    state_->CheckCancelled();
+    if (closed_) {
+      return false;
+    }
+    SlottedRow input(node_->children[0]->output_slots);
+    if (!source_->Next(&input)) {
+      Close();
+      return false;
+    }
+    SlottedRow output =
+        input.CopyTo(node_->output_slots, *state_->graph_reader);
+    ExecuteStreamingWrite(*data_, input, &output, state_);
+    *row = std::move(output);
+    return true;
+  }
+
+  void Close() noexcept override {
+    if (closed_) {
+      return;
+    }
+    source_->Close();
+    closed_ = true;
+  }
+
+ private:
+  const PhysicalPlanNode *node_ = nullptr;
+  const Data *data_ = nullptr;
+  RuntimeState *state_ = nullptr;
+  std::unique_ptr<PullOperator> source_;
   bool closed_ = false;
 };
 
@@ -3994,6 +4065,72 @@ class PartialTopNOperator final : public PullOperator {
   bool closed_ = false;
 };
 
+class WriteBarrierOperator final : public PullOperator {
+ public:
+  WriteBarrierOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                       std::unique_ptr<PullOperator> source)
+      : node_(&node),
+        data_(&OperatorData<WriteBarrierOp>(node)),
+        state_(&state),
+        source_(std::move(source)) {}
+
+  ~WriteBarrierOperator() override { Close(); }
+
+  [[nodiscard]] bool Next(SlottedRow *row) override {
+    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    state_->CheckCancelled();
+    if (closed_) {
+      return false;
+    }
+    if (!initialized_) {
+      Initialize();
+    }
+    if (next_ >= rows_.size()) {
+      Close();
+      return false;
+    }
+    *row = std::move(rows_[next_++]);
+    return true;
+  }
+
+  void Close() noexcept override {
+    if (closed_) {
+      return;
+    }
+    source_->Close();
+    rows_.clear();
+    state_->memory_tracker.Release(reserved_bytes_);
+    reserved_bytes_ = 0;
+    closed_ = true;
+  }
+
+ private:
+  void Initialize() {
+    initialized_ = true;
+    (void)data_;
+    SlottedRow input(node_->children[0]->output_slots);
+    while (source_->Next(&input)) {
+      state_->CheckCancelled();
+      SlottedRow output =
+          input.CopyTo(node_->output_slots, *state_->graph_reader);
+      const std::size_t bytes = output.EstimatedHeapUsage();
+      state_->memory_tracker.Reserve(bytes);
+      reserved_bytes_ += bytes;
+      rows_.push_back(std::move(output));
+    }
+  }
+
+  const PhysicalPlanNode *node_ = nullptr;
+  const WriteBarrierOp *data_ = nullptr;
+  RuntimeState *state_ = nullptr;
+  std::unique_ptr<PullOperator> source_;
+  std::vector<SlottedRow> rows_;
+  std::size_t reserved_bytes_ = 0;
+  std::size_t next_ = 0;
+  bool initialized_ = false;
+  bool closed_ = false;
+};
+
 class BlockingUnaryOperator final : public PullOperator {
  public:
   BlockingUnaryOperator(const PhysicalPlanNode &node, RuntimeState &state,
@@ -4035,14 +4172,6 @@ class BlockingUnaryOperator final : public PullOperator {
 
   void Initialize() {
     initialized_ = true;
-    if (node_->logical->Type() == ir::LogicalPlanNodeType::kWriteBarrier) {
-      SlottedRow input(node_->children[0]->output_slots);
-      while (source_->Next(&input)) {
-        BufferRow(input.CopyTo(node_->output_slots, *state_->graph_reader));
-      }
-      return;
-    }
-
     if (node_->logical->Type() == ir::LogicalPlanNodeType::kDelete ||
         node_->logical->Type() == ir::LogicalPlanNodeType::kDetachDelete) {
       Storage &storage = RequireStorage(state_);
@@ -5536,12 +5665,16 @@ class OperatorFactory final {
               "full sort physical node must have one child");
         return std::make_unique<FullSortOperator>(
             node, *state_, Build(*node.children[0], std::move(argument)));
-      case PhysicalOperatorKind::kWriteBarrier:
       case PhysicalOperatorKind::kDelete:
       case PhysicalOperatorKind::kDetachDelete:
         CHECK(node.children.size() == 1, common::InternalError,
               "blocking physical node must have one child");
         return std::make_unique<BlockingUnaryOperator>(
+            node, *state_, Build(*node.children[0], std::move(argument)));
+      case PhysicalOperatorKind::kWriteBarrier:
+        CHECK(node.children.size() == 1, common::InternalError,
+              "write barrier physical node must have one child");
+        return std::make_unique<WriteBarrierOperator>(
             node, *state_, Build(*node.children[0], std::move(argument)));
       case PhysicalOperatorKind::kExpand:
         CHECK(node.children.size() == 1, common::InternalError,
@@ -5561,16 +5694,44 @@ class OperatorFactory final {
       case PhysicalOperatorKind::kProcedureCall:
       case PhysicalOperatorKind::kUnwind:
       case PhysicalOperatorKind::kAssertIsNode:
-      case PhysicalOperatorKind::kSetProperty:
-      case PhysicalOperatorKind::kSetProperties:
-      case PhysicalOperatorKind::kSetLabels:
-      case PhysicalOperatorKind::kRemoveProperty:
-      case PhysicalOperatorKind::kRemoveLabels:
-      case PhysicalOperatorKind::kCreateNode:
-      case PhysicalOperatorKind::kCreateRelationship:
         CHECK(node.children.size() == 1, common::InternalError,
               "streaming physical node must have one child");
         return std::make_unique<StreamingUnaryOperator>(
+            node, *state_, Build(*node.children[0], std::move(argument)));
+      case PhysicalOperatorKind::kCreateNode:
+        CHECK(node.children.size() == 1, common::InternalError,
+              "create node physical node must have one child");
+        return std::make_unique<StreamingWriteOperator<CreateNodeOp>>(
+            node, *state_, Build(*node.children[0], std::move(argument)));
+      case PhysicalOperatorKind::kCreateRelationship:
+        CHECK(node.children.size() == 1, common::InternalError,
+              "create relationship physical node must have one child");
+        return std::make_unique<StreamingWriteOperator<CreateRelationshipOp>>(
+            node, *state_, Build(*node.children[0], std::move(argument)));
+      case PhysicalOperatorKind::kSetProperty:
+        CHECK(node.children.size() == 1, common::InternalError,
+              "set property physical node must have one child");
+        return std::make_unique<StreamingWriteOperator<SetPropertyOp>>(
+            node, *state_, Build(*node.children[0], std::move(argument)));
+      case PhysicalOperatorKind::kSetProperties:
+        CHECK(node.children.size() == 1, common::InternalError,
+              "set properties physical node must have one child");
+        return std::make_unique<StreamingWriteOperator<SetPropertiesOp>>(
+            node, *state_, Build(*node.children[0], std::move(argument)));
+      case PhysicalOperatorKind::kSetLabels:
+        CHECK(node.children.size() == 1, common::InternalError,
+              "set labels physical node must have one child");
+        return std::make_unique<StreamingWriteOperator<SetLabelsOp>>(
+            node, *state_, Build(*node.children[0], std::move(argument)));
+      case PhysicalOperatorKind::kRemoveProperty:
+        CHECK(node.children.size() == 1, common::InternalError,
+              "remove property physical node must have one child");
+        return std::make_unique<StreamingWriteOperator<RemovePropertyOp>>(
+            node, *state_, Build(*node.children[0], std::move(argument)));
+      case PhysicalOperatorKind::kRemoveLabels:
+        CHECK(node.children.size() == 1, common::InternalError,
+              "remove labels physical node must have one child");
+        return std::make_unique<StreamingWriteOperator<RemoveLabelsOp>>(
             node, *state_, Build(*node.children[0], std::move(argument)));
     }
     THROW(common::InternalError, "unsupported physical operator kind: " +
