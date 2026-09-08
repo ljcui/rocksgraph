@@ -433,6 +433,16 @@ struct RemoveLabelsOp {
   std::vector<std::string> labels;
 };
 
+struct DeleteOp {
+  static constexpr bool kDetach = false;
+  std::vector<PhysicalExpression> expressions;
+};
+
+struct DetachDeleteOp {
+  static constexpr bool kDetach = true;
+  std::vector<PhysicalExpression> expressions;
+};
+
 using PhysicalOperatorData = std::variant<
     std::monostate, ArgumentOp, AllNodeScanOp, NodeByLabelScanOp,
     NodeIndexSeekOp, NodeIndexRangeSeekOp, RelationshipTypeScanOp,
@@ -446,7 +456,8 @@ using PhysicalOperatorData = std::variant<
     UnionAllOp, UnionDistinctOp, ApplyOp, OptionalApplyOp, SemiApplyOp,
     AntiSemiApplyOp, LetSemiApplyOp, SelectOrSemiApplyOp, RollUpApplyOp,
     WriteBarrierOp, CreateNodeOp, CreateRelationshipOp, SetPropertyOp,
-    SetPropertiesOp, SetLabelsOp, RemovePropertyOp, RemoveLabelsOp>;
+    SetPropertiesOp, SetLabelsOp, RemovePropertyOp, RemoveLabelsOp, DeleteOp,
+    DetachDeleteOp>;
 
 struct PhysicalPlanNode {
   OperatorId id = 0;

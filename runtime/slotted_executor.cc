@@ -4131,17 +4131,24 @@ class WriteBarrierOperator final : public PullOperator {
   bool closed_ = false;
 };
 
-class BlockingUnaryOperator final : public PullOperator {
+template <typename Data>
+class DeleteOperator final : public PullOperator {
  public:
-  BlockingUnaryOperator(const PhysicalPlanNode &node, RuntimeState &state,
-                        std::unique_ptr<PullOperator> source)
-      : node_(&node), state_(&state), source_(std::move(source)) {}
+  DeleteOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                 std::unique_ptr<PullOperator> source)
+      : node_(&node),
+        data_(&OperatorData<Data>(node)),
+        state_(&state),
+        source_(std::move(source)) {}
 
-  ~BlockingUnaryOperator() override { Close(); }
+  ~DeleteOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
     CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
     state_->CheckCancelled();
+    if (closed_) {
+      return false;
+    }
     if (!initialized_) {
       Initialize();
     }
@@ -4154,6 +4161,9 @@ class BlockingUnaryOperator final : public PullOperator {
   }
 
   void Close() noexcept override {
+    if (closed_) {
+      return;
+    }
     if (source_ != nullptr) {
       source_->Close();
     }
@@ -4172,67 +4182,52 @@ class BlockingUnaryOperator final : public PullOperator {
 
   void Initialize() {
     initialized_ = true;
-    if (node_->logical->Type() == ir::LogicalPlanNodeType::kDelete ||
-        node_->logical->Type() == ir::LogicalPlanNodeType::kDetachDelete) {
-      Storage &storage = RequireStorage(state_);
-      const bool detach =
-          node_->logical->Type() == ir::LogicalPlanNodeType::kDetachDelete;
-      const auto &expressions =
-          detach ? static_cast<const ir::DetachDeletePlan &>(*node_->logical)
-                       .Expressions()
-                 : static_cast<const ir::DeletePlan &>(*node_->logical)
-                       .Expressions();
-      std::set<std::int64_t> node_ids;
-      std::set<std::int64_t> relationship_ids;
-      SlottedRow input(node_->children[0]->output_slots);
-      while (source_->Next(&input)) {
-        state_->CheckCancelled();
-        BufferRow(input.CopyTo(node_->output_slots, *state_->graph_reader));
-        for (const ast::Expression *expression : expressions) {
-          CHECK(expression != nullptr, common::InvalidArgumentError,
-                "DELETE expression is null");
-          const Value entity = Evaluate(*expression, input, {}, *state_);
-          if (entity.IsNull()) {
-            continue;
-          }
-          CHECK(entity.IsNode() || entity.IsRelationship(),
-                common::InvalidArgumentError,
-                "DELETE expression is not a graph entity");
-          if (entity.IsNode()) {
-            node_ids.insert(entity.AsNode().id);
-          } else {
-            relationship_ids.insert(entity.AsRelationship().id);
-          }
+    Storage &storage = RequireStorage(state_);
+    std::set<std::int64_t> node_ids;
+    std::set<std::int64_t> relationship_ids;
+    SlottedRow input(node_->children[0]->output_slots);
+    while (source_->Next(&input)) {
+      state_->CheckCancelled();
+      BufferRow(input.CopyTo(node_->output_slots, *state_->graph_reader));
+      for (const PhysicalExpression &expression : data_->expressions) {
+        const Value entity = Evaluate(expression, input, *state_);
+        if (entity.IsNull()) {
+          continue;
+        }
+        CHECK(entity.IsNode() || entity.IsRelationship(),
+              common::InvalidArgumentError,
+              "DELETE expression is not a graph entity");
+        if (entity.IsNode()) {
+          node_ids.insert(entity.AsNode().id);
+        } else {
+          relationship_ids.insert(entity.AsRelationship().id);
         }
       }
-      for (std::int64_t node_id : node_ids) {
-        EntityIdCursor *relationships =
-            state_->TrackCursor(storage.RelationshipIdsConnectedTo(node_id));
-        while (relationships->Next()) {
-          if (detach) {
-            relationship_ids.insert(relationships->Id());
-          } else {
-            CHECK(relationship_ids.contains(relationships->Id()),
-                  common::InvalidArgumentError,
-                  "DELETE node still has relationships");
-          }
-        }
-        state_->ReleaseCursor(relationships);
-      }
-      for (std::int64_t relationship_id : relationship_ids) {
-        storage.DeleteRelationship(relationship_id);
-      }
-      for (std::int64_t node_id : node_ids) {
-        storage.DeleteNode(node_id);
-      }
-      return;
     }
-
-    THROW(common::InternalError, "unsupported blocking unary operator: " +
-                                     std::string(node_->logical->Name()));
+    for (std::int64_t node_id : node_ids) {
+      EntityIdCursor *relationships =
+          state_->TrackCursor(storage.RelationshipIdsConnectedTo(node_id));
+      while (relationships->Next()) {
+        if constexpr (Data::kDetach) {
+          relationship_ids.insert(relationships->Id());
+        } else {
+          CHECK(relationship_ids.contains(relationships->Id()),
+                common::InvalidArgumentError,
+                "DELETE node still has relationships");
+        }
+      }
+      state_->ReleaseCursor(relationships);
+    }
+    for (std::int64_t relationship_id : relationship_ids) {
+      storage.DeleteRelationship(relationship_id);
+    }
+    for (std::int64_t node_id : node_ids) {
+      storage.DeleteNode(node_id);
+    }
   }
 
   const PhysicalPlanNode *node_ = nullptr;
+  const Data *data_ = nullptr;
   RuntimeState *state_ = nullptr;
   std::unique_ptr<PullOperator> source_;
   std::vector<SlottedRow> rows_;
@@ -5666,10 +5661,14 @@ class OperatorFactory final {
         return std::make_unique<FullSortOperator>(
             node, *state_, Build(*node.children[0], std::move(argument)));
       case PhysicalOperatorKind::kDelete:
+        CHECK(node.children.size() == 1, common::InternalError,
+              "delete physical node must have one child");
+        return std::make_unique<DeleteOperator<DeleteOp>>(
+            node, *state_, Build(*node.children[0], std::move(argument)));
       case PhysicalOperatorKind::kDetachDelete:
         CHECK(node.children.size() == 1, common::InternalError,
-              "blocking physical node must have one child");
-        return std::make_unique<BlockingUnaryOperator>(
+              "detach-delete physical node must have one child");
+        return std::make_unique<DeleteOperator<DetachDeleteOp>>(
             node, *state_, Build(*node.children[0], std::move(argument)));
       case PhysicalOperatorKind::kWriteBarrier:
         CHECK(node.children.size() == 1, common::InternalError,

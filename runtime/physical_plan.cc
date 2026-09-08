@@ -1398,6 +1398,18 @@ class PhysicalPlanBuilder final {
             .labels = remove.Labels()};
         return;
       }
+      case PhysicalOperatorKind::kDelete: {
+        const auto &del = static_cast<const ir::DeletePlan &>(plan);
+        node->data =
+            DeleteOp{.expressions = CopyPhysicalExpressions(del.Expressions())};
+        return;
+      }
+      case PhysicalOperatorKind::kDetachDelete: {
+        const auto &del = static_cast<const ir::DetachDeletePlan &>(plan);
+        node->data = DetachDeleteOp{
+            .expressions = CopyPhysicalExpressions(del.Expressions())};
+        return;
+      }
       default:
         return;
     }

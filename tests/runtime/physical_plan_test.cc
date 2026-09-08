@@ -762,6 +762,96 @@ TEST(PhysicalPlanTest, ExecutesDetachedStreamingWriteOperators) {
       graph.RelationshipById(relationship.id)->properties.contains("weight"));
 }
 
+TEST(PhysicalPlanTest, BuildsOwnedDeletePayloads) {
+  rg::PhysicalPlan delete_plan =
+      DetachedPhysicalPlan("MATCH (n:N) DELETE n RETURN n");
+  const rg::PhysicalPlanNode *delete_node =
+      FindPhysicalPlan(delete_plan.Root(), rg::PhysicalOperatorKind::kDelete);
+  ASSERT_NE(delete_node, nullptr);
+  const auto &delete_data = std::get<rg::DeleteOp>(delete_node->data);
+  ASSERT_EQ(delete_data.expressions.size(), 1U);
+  EXPECT_NE(delete_data.expressions.front().Expression(), nullptr);
+
+  rg::PhysicalPlan detach_plan =
+      DetachedPhysicalPlan("MATCH (n:N) DETACH DELETE n RETURN n");
+  const rg::PhysicalPlanNode *detach_node = FindPhysicalPlan(
+      detach_plan.Root(), rg::PhysicalOperatorKind::kDetachDelete);
+  ASSERT_NE(detach_node, nullptr);
+  const auto &detach_data = std::get<rg::DetachDeleteOp>(detach_node->data);
+  ASSERT_EQ(detach_data.expressions.size(), 1U);
+  EXPECT_NE(detach_data.expressions.front().Expression(), nullptr);
+}
+
+TEST(PhysicalPlanTest, ExecutesDetachedDeleteOperators) {
+  rg::InMemoryGraph graph;
+  const auto isolated = graph.CreateNode({"N"});
+  rg::PhysicalPlan delete_plan =
+      DetachedPhysicalPlan("MATCH (n:N) DELETE n RETURN n");
+  const auto deleted_rows = PhysicalWriteRows(delete_plan, &graph, {"n"});
+  ASSERT_EQ(deleted_rows.size(), 1U);
+  ASSERT_EQ(deleted_rows.front().size(), 1U);
+  EXPECT_EQ(deleted_rows.front().front().AsNode().id, isolated->id);
+  EXPECT_TRUE(graph.Nodes().empty());
+
+  const auto left = graph.CreateNode({"N"});
+  const auto right = graph.CreateNode({"N"});
+  graph.CreateRelationship(left, right, "R");
+  rg::PhysicalPlan relationship_delete =
+      DetachedPhysicalPlan("MATCH ()-[r:R]->() DELETE r RETURN r");
+  const auto relationship_rows =
+      PhysicalWriteRows(relationship_delete, &graph, {"r"});
+  ASSERT_EQ(relationship_rows.size(), 1U);
+  EXPECT_TRUE(graph.Relationships().empty());
+  EXPECT_EQ(graph.Nodes().size(), 2U);
+
+  const auto connected_left = graph.CreateNode({"N"});
+  const auto connected_right = graph.CreateNode({"N"});
+  graph.CreateRelationship(connected_left, connected_right, "R");
+  rg::PhysicalPlan invalid_delete =
+      DetachedPhysicalPlan("MATCH (n:N) DELETE n RETURN n");
+  EXPECT_THROW((void)PhysicalWriteRows(invalid_delete, &graph, {"n"}),
+               common::InvalidArgumentError);
+  EXPECT_EQ(graph.Nodes().size(), 4U);
+  EXPECT_EQ(graph.Relationships().size(), 1U);
+
+  rg::PhysicalPlan detach_plan =
+      DetachedPhysicalPlan("MATCH (n:N) DETACH DELETE n RETURN n");
+  const auto detach_rows = PhysicalWriteRows(detach_plan, &graph, {"n"});
+  EXPECT_EQ(detach_rows.size(), 4U);
+  EXPECT_TRUE(graph.Nodes().empty());
+  EXPECT_TRUE(graph.Relationships().empty());
+}
+
+TEST(PhysicalPlanTest, DeleteOperatorHandlesCloseCancellationAndMemoryLimit) {
+  rg::InMemoryGraph graph;
+  graph.CreateNode({"N"});
+  rg::PhysicalPlan physical =
+      DetachedPhysicalPlan("MATCH (n:N) DELETE n RETURN n");
+  std::vector<rg::Value> row;
+
+  std::unique_ptr<rg::PhysicalResultCursor> cursor =
+      rg::StartPhysicalPlan(physical, graph, &graph, {}, {"n"});
+  cursor->Close();
+  EXPECT_FALSE(cursor->Next(&row));
+  EXPECT_EQ(graph.Nodes().size(), 1U);
+
+  rg::QueryExecutionOptions cancellation_options;
+  cancellation_options.cancellation =
+      std::make_shared<rg::QueryCancellationToken>();
+  cursor = rg::StartPhysicalPlan(physical, graph, &graph, {}, {"n"},
+                                 cancellation_options);
+  cancellation_options.cancellation->Cancel();
+  EXPECT_THROW((void)cursor->Next(&row), common::QueryCancelledError);
+  EXPECT_EQ(graph.Nodes().size(), 1U);
+
+  rg::QueryExecutionOptions memory_options;
+  memory_options.memory_limit_bytes = 1;
+  cursor = rg::StartPhysicalPlan(physical, graph, &graph, {}, {"n"},
+                                 memory_options);
+  EXPECT_THROW((void)cursor->Next(&row), common::MemoryLimitExceededError);
+  EXPECT_EQ(graph.Nodes().size(), 1U);
+}
+
 TEST(PhysicalPlanTest, ReinstantiatesStatefulApplyRightSideForEachLeftRow) {
   rg::InMemoryGraph graph;
   const auto first = graph.CreateNode({"Input"});
