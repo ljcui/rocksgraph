@@ -275,6 +275,15 @@ enum class PhysicalSortDirection {
   kDescending,
 };
 
+[[nodiscard]] std::string_view ToString(PhysicalSortDirection direction);
+
+struct PhysicalOrderingItem {
+  std::shared_ptr<const ast::Expression> expression;
+  PhysicalSortDirection direction = PhysicalSortDirection::kAscending;
+};
+
+using PhysicalOrdering = std::vector<PhysicalOrderingItem>;
+
 struct PhysicalSortItem {
   PhysicalExpression expression;
   PhysicalSortDirection direction = PhysicalSortDirection::kAscending;
@@ -337,7 +346,7 @@ struct PhysicalPlanNode {
   std::optional<double> cost;
   SlotConfigurationPtr argument_slots;
   SlotConfigurationPtr output_slots;
-  std::vector<ir::LogicalSortItem> provided_order;
+  PhysicalOrdering provided_order;
   std::vector<SlotMapping> argument_mapping;
   std::vector<std::vector<SlotMapping>> child_mappings;
   std::vector<std::unique_ptr<PhysicalPlanNode>> children;

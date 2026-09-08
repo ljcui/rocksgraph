@@ -18,7 +18,7 @@ std::string FormatNumber(double value) {
   return out.str();
 }
 
-std::string FormatOrdering(const std::vector<ir::LogicalSortItem> &items) {
+std::string FormatOrdering(const PhysicalOrdering &items) {
   std::ostringstream out;
   for (std::size_t index = 0; index < items.size(); ++index) {
     if (index > 0) {
@@ -28,7 +28,7 @@ std::string FormatOrdering(const std::vector<ir::LogicalSortItem> &items) {
     out << (item.expression == nullptr
                 ? "null"
                 : ast::ExpressionToString(*item.expression))
-        << ' ' << ir::ToString(item.direction);
+        << ' ' << ToString(item.direction);
   }
   return out.str();
 }

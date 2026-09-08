@@ -15,7 +15,6 @@
 #include "ast/builtin_procedure.h"
 #include "ast/expression_dependency.h"
 #include "common/exception.h"
-#include "planner/order_property.h"
 
 namespace rg {
 
@@ -46,44 +45,65 @@ struct TypeInfo {
 
 using TypeOverrides = std::unordered_map<std::string, TypeInfo>;
 
-std::size_t CommonOrderingPrefix(
-    const std::vector<ir::LogicalSortItem> &provided,
-    const std::vector<ir::LogicalSortItem> &required) {
+PhysicalSortDirection ToPhysicalSortDirection(
+    ir::LogicalOrderDirection direction) {
+  switch (direction) {
+    case ir::LogicalOrderDirection::kAscending:
+      return PhysicalSortDirection::kAscending;
+    case ir::LogicalOrderDirection::kDescending:
+      return PhysicalSortDirection::kDescending;
+  }
+  THROW(common::InternalError, "unknown sort direction");
+}
+
+PhysicalOrdering CopyPhysicalOrdering(
+    const std::vector<ir::LogicalSortItem> &items) {
+  PhysicalOrdering copied;
+  copied.reserve(items.size());
+  for (const auto &item : items) {
+    CHECK(item.expression != nullptr, common::InvalidArgumentError,
+          "physical ordering expression is null");
+    copied.push_back({.expression = std::shared_ptr<const ast::Expression>(
+                          ast::CloneExpression(*item.expression)),
+                      .direction = ToPhysicalSortDirection(item.direction)});
+  }
+  return copied;
+}
+
+std::size_t CommonOrderingPrefix(const PhysicalOrdering &provided,
+                                 const PhysicalOrdering &required) {
   const std::size_t limit = std::min(provided.size(), required.size());
   std::size_t prefix = 0;
   while (prefix < limit && provided[prefix].expression != nullptr &&
          required[prefix].expression != nullptr &&
          provided[prefix].direction == required[prefix].direction &&
-         ast::ASTEqual::Equal(provided[prefix].expression,
-                              required[prefix].expression)) {
+         ast::ASTEqual::Equal(provided[prefix].expression.get(),
+                              required[prefix].expression.get())) {
     ++prefix;
   }
   return prefix;
 }
 
-ir::LogicalSortItem AliasSortItem(std::string alias,
-                                  ir::LogicalOrderDirection direction) {
+PhysicalOrderingItem AliasOrderingItem(std::string alias,
+                                       PhysicalSortDirection direction) {
   auto variable = std::make_shared<ast::Variable>();
   variable->name = std::move(alias);
-  const ast::Expression *expression = variable.get();
-  return {.expression = expression,
-          .owned_expression = std::move(variable),
-          .direction = direction};
+  return {.expression = std::move(variable), .direction = direction};
 }
 
-std::optional<std::vector<ir::LogicalSortItem>> OrderedGroupingOutput(
-    const std::vector<ir::LogicalSortItem> &input_order,
+std::optional<PhysicalOrdering> OrderedGroupingOutput(
+    const PhysicalOrdering &input_order,
     const std::vector<ir::LogicalProjectionItem> &grouping_items) {
   if (grouping_items.empty() || input_order.size() < grouping_items.size()) {
     return std::nullopt;
   }
 
   std::vector<bool> matched(grouping_items.size(), false);
-  std::vector<ir::LogicalSortItem> output_order;
+  PhysicalOrdering output_order;
   output_order.reserve(grouping_items.size());
   for (std::size_t order_index = 0; order_index < grouping_items.size();
        ++order_index) {
-    const ir::LogicalSortItem &order = input_order[order_index];
+    const PhysicalOrderingItem &order = input_order[order_index];
     if (order.expression == nullptr) {
       return std::nullopt;
     }
@@ -91,7 +111,7 @@ std::optional<std::vector<ir::LogicalSortItem>> OrderedGroupingOutput(
     for (std::size_t index = 0; index < grouping_items.size(); ++index) {
       const ir::LogicalProjectionItem &grouping = grouping_items[index];
       if (!matched[index] && grouping.expression != nullptr &&
-          ast::ASTEqual::Equal(order.expression, grouping.expression)) {
+          ast::ASTEqual::Equal(order.expression.get(), grouping.expression)) {
         grouping_index = index;
         break;
       }
@@ -100,10 +120,47 @@ std::optional<std::vector<ir::LogicalSortItem>> OrderedGroupingOutput(
       return std::nullopt;
     }
     matched[*grouping_index] = true;
-    output_order.push_back(
-        AliasSortItem(grouping_items[*grouping_index].alias, order.direction));
+    output_order.push_back(AliasOrderingItem(
+        grouping_items[*grouping_index].alias, order.direction));
   }
   return output_order;
+}
+
+PhysicalOrdering ProjectOrdering(const PhysicalOrdering &ordering,
+                                 const ir::ProjectionPlan &projection) {
+  PhysicalOrdering projected;
+  projected.reserve(ordering.size());
+  const std::unordered_set<std::string> output_symbols(
+      projection.OutputColumns().begin(), projection.OutputColumns().end());
+
+  for (const auto &order_item : ordering) {
+    if (order_item.expression == nullptr) {
+      break;
+    }
+    const auto matching_item = std::find_if(
+        projection.Items().begin(), projection.Items().end(),
+        [&](const ir::LogicalProjectionItem &item) {
+          return item.expression != nullptr && !item.alias.empty() &&
+                 ast::ASTEqual::Equal(item.expression,
+                                      order_item.expression.get());
+        });
+    if (matching_item != projection.Items().end()) {
+      projected.push_back(
+          AliasOrderingItem(matching_item->alias, order_item.direction));
+      continue;
+    }
+    const auto dependencies =
+        ast::CollectExpressionDependencies(*order_item.expression);
+    if (std::all_of(dependencies.begin(), dependencies.end(),
+                    [&](const std::string &dependency) {
+                      return output_symbols.contains(dependency);
+                    })) {
+      projected.push_back(order_item);
+      continue;
+    }
+    break;
+  }
+  return projected;
 }
 
 std::vector<std::string> AppendUnique(std::vector<std::string> columns,
@@ -564,17 +621,6 @@ PhysicalExpandDirection ToPhysicalExpandDirection(
   THROW(common::InternalError, "unknown expand direction");
 }
 
-PhysicalSortDirection ToPhysicalSortDirection(
-    ir::LogicalOrderDirection direction) {
-  switch (direction) {
-    case ir::LogicalOrderDirection::kAscending:
-      return PhysicalSortDirection::kAscending;
-    case ir::LogicalOrderDirection::kDescending:
-      return PhysicalSortDirection::kDescending;
-  }
-  THROW(common::InternalError, "unknown sort direction");
-}
-
 std::vector<PhysicalSortItem> CopyPhysicalSortItems(
     const std::vector<ir::LogicalSortItem> &items) {
   std::vector<PhysicalSortItem> copied;
@@ -822,7 +868,7 @@ class PhysicalPlanBuilder final {
 
   void SelectOperator(const ir::LogicalPlan &plan, PhysicalPlanNode *node) {
     CHECK(node != nullptr, common::InternalError, "physical plan node is null");
-    node->provided_order = plan.OrderingTrait();
+    node->provided_order = CopyPhysicalOrdering(plan.OrderingTrait());
     if (!node->children.empty()) {
       switch (plan.Type()) {
         case ir::LogicalPlanNodeType::kFilter:
@@ -851,9 +897,9 @@ class PhysicalPlanBuilder final {
           node->provided_order = node->children[0]->provided_order;
           break;
         case ir::LogicalPlanNodeType::kProjection:
-          node->provided_order = ir::ProjectOrdering(
-              node->children[0]->provided_order,
-              static_cast<const ir::ProjectionPlan &>(plan));
+          node->provided_order =
+              ProjectOrdering(node->children[0]->provided_order,
+                              static_cast<const ir::ProjectionPlan &>(plan));
           break;
         default:
           break;
@@ -863,11 +909,12 @@ class PhysicalPlanBuilder final {
       CHECK(node->children.size() == 1, common::InternalError,
             "Sort physical node must have one child");
       const auto &sort = static_cast<const ir::SortPlan &>(plan);
-      const std::size_t prefix =
-          CommonOrderingPrefix(node->children[0]->provided_order, sort.Items());
+      PhysicalOrdering required_order = CopyPhysicalOrdering(sort.Items());
+      const std::size_t prefix = CommonOrderingPrefix(
+          node->children[0]->provided_order, required_order);
       node->kind = prefix == 0 ? PhysicalOperatorKind::kFullSort
                                : PhysicalOperatorKind::kPartialSort;
-      node->provided_order = sort.Items();
+      node->provided_order = std::move(required_order);
       return;
     }
 
@@ -875,11 +922,12 @@ class PhysicalPlanBuilder final {
       CHECK(node->children.size() == 1, common::InternalError,
             "Top-N physical node must have one child");
       const auto &top_n = static_cast<const ir::TopNPlan &>(plan);
+      PhysicalOrdering required_order = CopyPhysicalOrdering(top_n.Items());
       const std::size_t prefix = CommonOrderingPrefix(
-          node->children[0]->provided_order, top_n.Items());
+          node->children[0]->provided_order, required_order);
       node->kind = prefix == 0 ? PhysicalOperatorKind::kTopN
                                : PhysicalOperatorKind::kPartialTopN;
-      node->provided_order = top_n.Items();
+      node->provided_order = std::move(required_order);
       return;
     }
 
@@ -892,8 +940,7 @@ class PhysicalPlanBuilder final {
       node->kind = output_order.has_value()
                        ? PhysicalOperatorKind::kOrderedDistinct
                        : PhysicalOperatorKind::kHashDistinct;
-      node->provided_order =
-          output_order.value_or(std::vector<ir::LogicalSortItem>{});
+      node->provided_order = output_order.value_or(PhysicalOrdering{});
       return;
     }
 
@@ -906,8 +953,7 @@ class PhysicalPlanBuilder final {
       node->kind = output_order.has_value()
                        ? PhysicalOperatorKind::kOrderedAggregation
                        : PhysicalOperatorKind::kHashAggregation;
-      node->provided_order =
-          output_order.value_or(std::vector<ir::LogicalSortItem>{});
+      node->provided_order = output_order.value_or(PhysicalOrdering{});
       return;
     }
     node->kind = SelectOperatorKind(plan);
@@ -1144,10 +1190,10 @@ class PhysicalPlanBuilder final {
       }
       case PhysicalOperatorKind::kPartialSort: {
         const auto &sort = static_cast<const ir::SortPlan &>(plan);
-        node->data =
-            PartialSortOp{.items = CopyPhysicalSortItems(sort.Items()),
-                          .prefix = CommonOrderingPrefix(
-                              node->children[0]->provided_order, sort.Items())};
+        node->data = PartialSortOp{
+            .items = CopyPhysicalSortItems(sort.Items()),
+            .prefix = CommonOrderingPrefix(node->children[0]->provided_order,
+                                           node->provided_order)};
         return;
       }
       case PhysicalOperatorKind::kTopN: {
@@ -1164,7 +1210,7 @@ class PhysicalPlanBuilder final {
             .limit = CopyPhysicalExpression(top_n.Limit(),
                                             top_n.PrecomputedExpressions()),
             .prefix = CommonOrderingPrefix(node->children[0]->provided_order,
-                                           top_n.Items())};
+                                           node->provided_order)};
         return;
       }
       case PhysicalOperatorKind::kSkip: {
@@ -1336,6 +1382,16 @@ std::string_view ToString(PhysicalOperatorKind kind) {
       return "Union";
   }
   THROW(common::InternalError, "unknown physical operator kind");
+}
+
+std::string_view ToString(PhysicalSortDirection direction) {
+  switch (direction) {
+    case PhysicalSortDirection::kAscending:
+      return "ASC";
+    case PhysicalSortDirection::kDescending:
+      return "DESC";
+  }
+  THROW(common::InternalError, "unknown physical sort direction");
 }
 
 PhysicalPlan::PhysicalPlan(std::unique_ptr<PhysicalPlanNode> root)

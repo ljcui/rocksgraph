@@ -747,6 +747,12 @@ TEST(PhysicalPlanTest, SelectsTopNForRewrittenLogicalPlan) {
             rg::PhysicalSortDirection::kAscending);
   EXPECT_NE(data.limit.Expression(),
             static_cast<const ir::TopNPlan &>(*top_n).Limit());
+  ASSERT_EQ(top_n_node.provided_order.size(), 1U);
+  EXPECT_NE(
+      top_n_node.provided_order.front().expression.get(),
+      static_cast<const ir::TopNPlan &>(*top_n).Items().front().expression);
+  EXPECT_EQ(top_n_node.provided_order.front().direction,
+            rg::PhysicalSortDirection::kAscending);
   ASSERT_EQ(top_n_node.children.size(), 1U);
 }
 
@@ -847,6 +853,14 @@ TEST(PhysicalPlanTest, SelectsPartialSortAndHashFallbacks) {
                 .Items()
                 .front()
                 .expression);
+  ASSERT_EQ(partial_node.provided_order.size(), 2U);
+  EXPECT_NE(partial_node.provided_order.front().expression.get(),
+            static_cast<const ir::SortPlan &>(*outer_sort)
+                .Items()
+                .front()
+                .expression);
+  EXPECT_EQ(partial_node.provided_order.front().direction,
+            rg::PhysicalSortDirection::kAscending);
 
   PlannedQuery fallback_query = Plan("UNWIND [3, 1, 2] AS x RETURN DISTINCT x");
   const ir::LogicalPlan *distinct = FindPlan(
@@ -1061,12 +1075,11 @@ TEST(PhysicalPlanTest,
       (std::vector<std::vector<rg::Value>>{{rg::Value(0), rg::Value(0)}}));
 }
 
-TEST(PhysicalPlanTest, PrintsAlgorithmsPropertiesAndSlots) {
-  PlannedQuery query = Plan(
+TEST(PhysicalPlanTest, PrintsOwnedOrderingAfterLogicalPlanAndAstAreDestroyed) {
+  rg::PhysicalPlan physical = DetachedPhysicalPlan(
       "UNWIND [{a:1,b:2},{a:1,b:1}] AS x "
       "WITH x ORDER BY x.a "
       "RETURN x.a AS a, x.b AS b ORDER BY a, b");
-  rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
 
   const std::string printed = rg::PhysicalPlanToString(physical);
 
