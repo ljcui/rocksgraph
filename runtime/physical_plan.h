@@ -184,6 +184,30 @@ struct RelationshipByIdSeekOp {
   bool many = false;
 };
 
+struct ExpandOp {
+  PhysicalRelationshipPattern pattern;
+};
+
+struct ExpandIntoOp {
+  PhysicalRelationshipPattern pattern;
+};
+
+struct OptionalExpandOp {
+  PhysicalRelationshipPattern pattern;
+  std::vector<PhysicalExpression> predicates;
+};
+
+struct PhysicalRelationshipLength {
+  bool variable = false;
+  std::optional<int> min;
+  std::optional<int> max;
+};
+
+struct ProjectEndpointsOp {
+  PhysicalRelationshipPattern pattern;
+  PhysicalRelationshipLength length;
+};
+
 struct FilterOp {
   PhysicalExpression predicate;
 };
@@ -215,7 +239,8 @@ using PhysicalOperatorData =
     std::variant<std::monostate, ArgumentOp, AllNodeScanOp, NodeByLabelScanOp,
                  NodeIndexSeekOp, NodeIndexRangeSeekOp, RelationshipTypeScanOp,
                  RelationshipIndexSeekOp, RelationshipIndexRangeSeekOp,
-                 NodeByIdSeekOp, RelationshipByIdSeekOp, FilterOp, ProjectionOp,
+                 NodeByIdSeekOp, RelationshipByIdSeekOp, ExpandOp, ExpandIntoOp,
+                 OptionalExpandOp, ProjectEndpointsOp, FilterOp, ProjectionOp,
                  SkipOp, LimitOp, ProduceResultsOp>;
 
 struct PhysicalPlanNode {

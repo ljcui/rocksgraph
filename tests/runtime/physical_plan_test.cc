@@ -68,14 +68,74 @@ rg::PhysicalPlan DetachedRelationshipTypeScan() {
   return rg::CreatePhysicalPlan(logical);
 }
 
-std::vector<std::int64_t> FirstColumnIds(const rg::PhysicalPlan &plan,
-                                         const rg::GraphReader &graph,
-                                         std::string column) {
-  std::unique_ptr<rg::PhysicalResultCursor> cursor = rg::StartPhysicalPlan(
-      plan, graph, nullptr, {}, std::vector<std::string>{std::move(column)});
-  std::vector<std::int64_t> ids;
+std::unique_ptr<ast::Parameter> Parameter(std::string name) {
+  auto parameter = std::make_unique<ast::Parameter>();
+  parameter->name = std::move(name);
+  return parameter;
+}
+
+rg::PhysicalPlan DetachedExpandInto() {
+  std::unique_ptr<ast::Parameter> from = Parameter("from");
+  std::unique_ptr<ast::Parameter> to = Parameter("to");
+  auto source = std::make_unique<ir::ProjectionPlan>(
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>{}),
+      std::vector<ir::LogicalProjectionItem>{
+          {.expression = from.get(),
+           .alias = "a",
+           .semantic_type = ast::SemanticVariableType::kNode},
+          {.expression = to.get(),
+           .alias = "b",
+           .semantic_type = ast::SemanticVariableType::kNode}});
+  ir::ExpandIntoPlan logical(std::move(source), "a", "r", "b",
+                             ir::ExpandDirection::kOutgoing, {"R"});
+  return rg::CreatePhysicalPlan(logical);
+}
+
+rg::PhysicalPlan DetachedProjectEndpoints(bool variable_length) {
+  std::unique_ptr<ast::Parameter> relationship = Parameter("relationship");
+  auto source = std::make_unique<ir::ProjectionPlan>(
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>{}),
+      std::vector<ir::LogicalProjectionItem>{
+          {.expression = relationship.get(),
+           .alias = "r",
+           .semantic_type = variable_length
+                                ? ast::SemanticVariableType::kList
+                                : ast::SemanticVariableType::kRelationship}});
+  ir::PatternRelationship pattern{.variable = "r",
+                                  .left_node = "a",
+                                  .right_node = "b",
+                                  .direction = ir::Direction::kOutgoing,
+                                  .types = {"R"}};
+  pattern.length.variable = variable_length;
+  if (variable_length) {
+    pattern.length.min = 2;
+    pattern.length.max = 2;
+  }
+  ir::ProjectEndpointsPlan logical(std::move(source), std::move(pattern));
+  return rg::CreatePhysicalPlan(logical);
+}
+
+std::vector<std::vector<rg::Value>> PhysicalRows(
+    const rg::PhysicalPlan &plan, const rg::GraphReader &graph,
+    const std::vector<std::string> &columns,
+    const rg::QueryParameters &parameters = {}) {
+  std::unique_ptr<rg::PhysicalResultCursor> cursor =
+      rg::StartPhysicalPlan(plan, graph, nullptr, parameters, columns);
+  std::vector<std::vector<rg::Value>> rows;
   std::vector<rg::Value> row;
   while (cursor->Next(&row)) {
+    rows.push_back(row);
+  }
+  return rows;
+}
+
+std::vector<std::int64_t> FirstColumnIds(
+    const rg::PhysicalPlan &plan, const rg::GraphReader &graph,
+    std::string column, const rg::QueryParameters &parameters = {}) {
+  std::vector<std::int64_t> ids;
+  for (const auto &row :
+       PhysicalRows(plan, graph, std::vector<std::string>{std::move(column)},
+                    parameters)) {
     EXPECT_EQ(row.size(), 1U);
     if (row.front().IsInteger()) {
       ids.push_back(row.front().AsInteger());
@@ -364,6 +424,161 @@ TEST(PhysicalPlanTest, ExecutesLeafAccessAfterLogicalPlanAndAstAreDestroyed) {
                                "RETURN id(r) AS id"),
                            graph, "id"),
             (std::vector<std::int64_t>{relationship->id}));
+}
+
+TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForFixedTraversalOperators) {
+  {
+    PlannedQuery query =
+        Plan("MATCH (a)-[r:R]->(b) RETURN id(a) AS a, id(r) AS r, id(b) AS b");
+    const auto *logical = static_cast<const ir::ExpandPlan *>(
+        FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kExpand));
+    ASSERT_NE(logical, nullptr);
+    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+    const auto &data = std::get<rg::ExpandOp>(physical.NodeFor(*logical).data);
+    EXPECT_EQ(data.pattern.from_node, "a");
+    EXPECT_EQ(data.pattern.relationship, "r");
+    EXPECT_EQ(data.pattern.to_node, "b");
+    EXPECT_EQ(data.pattern.direction, rg::PhysicalExpandDirection::kOutgoing);
+    EXPECT_EQ(data.pattern.types, (std::vector<std::string>{"R"}));
+  }
+  {
+    PlannedQuery query =
+        Plan("MATCH (a) WITH a, a AS b MATCH (a)-[r:R]->(b) RETURN id(r) AS r");
+    const auto *logical = static_cast<const ir::ExpandIntoPlan *>(
+        FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kExpandInto));
+    ASSERT_NE(logical, nullptr);
+    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+    const auto &data =
+        std::get<rg::ExpandIntoOp>(physical.NodeFor(*logical).data);
+    EXPECT_EQ(data.pattern.from_node, "a");
+    EXPECT_EQ(data.pattern.to_node, "b");
+    EXPECT_EQ(data.pattern.direction, rg::PhysicalExpandDirection::kOutgoing);
+  }
+  {
+    PlannedQuery query = Plan(
+        "MATCH (a) OPTIONAL MATCH (a)-[r:R]->(b) WHERE r.value = 10 "
+        "RETURN id(a) AS a, id(r) AS r, id(b) AS b");
+    const auto *logical = static_cast<const ir::OptionalExpandPlan *>(FindPlan(
+        *query.logical_plan, ir::LogicalPlanNodeType::kOptionalExpand));
+    ASSERT_NE(logical, nullptr);
+    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+    const auto &data =
+        std::get<rg::OptionalExpandOp>(physical.NodeFor(*logical).data);
+    ASSERT_EQ(data.predicates.size(), logical->Predicates().size());
+    EXPECT_NE(data.predicates.front().Expression(),
+              logical->Predicates().front());
+  }
+  {
+    ir::PatternRelationship pattern{.variable = "rs",
+                                    .left_node = "a",
+                                    .right_node = "b",
+                                    .direction = ir::Direction::kBoth,
+                                    .types = {"R"}};
+    pattern.length.variable = true;
+    pattern.length.min = 2;
+    pattern.length.max = 3;
+    ir::ProjectEndpointsPlan logical(
+        std::make_unique<ir::ArgumentPlan>(std::vector<std::string>{"rs"}),
+        std::move(pattern));
+    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(logical);
+    const auto &data = std::get<rg::ProjectEndpointsOp>(physical.Root().data);
+    EXPECT_EQ(data.pattern.relationship, "rs");
+    EXPECT_EQ(data.pattern.direction, rg::PhysicalExpandDirection::kBoth);
+    EXPECT_TRUE(data.length.variable);
+    EXPECT_EQ(data.length.min, 2);
+    EXPECT_EQ(data.length.max, 3);
+  }
+}
+
+TEST(PhysicalPlanTest,
+     ExecutesFixedTraversalAfterLogicalPlanAndAstAreDestroyed) {
+  rg::InMemoryGraph graph;
+  auto first = graph.CreateNode({});
+  auto second = graph.CreateNode({});
+  auto third = graph.CreateNode({});
+  auto first_relationship =
+      graph.CreateRelationship(first, second, "R", {{"value", rg::Value(10)}});
+  auto second_relationship =
+      graph.CreateRelationship(second, third, "R", {{"value", rg::Value(20)}});
+
+  EXPECT_EQ(FirstColumnIds(
+                DetachedPhysicalPlan("MATCH (a)-[r:R]->(b) RETURN id(r) AS r"),
+                graph, "r"),
+            (std::vector<std::int64_t>{first_relationship->id,
+                                       second_relationship->id}));
+
+  const auto optional_rows = PhysicalRows(
+      DetachedPhysicalPlan(
+          "MATCH (a) OPTIONAL MATCH (a)-[r:R]->(b) WHERE r.value = 10 "
+          "RETURN id(a) AS a, id(r) AS r, id(b) AS b"),
+      graph, {"a", "r", "b"});
+  ASSERT_EQ(optional_rows.size(), 3U);
+  EXPECT_EQ(std::count_if(optional_rows.begin(), optional_rows.end(),
+                          [](const auto &row) { return row[1].IsNull(); }),
+            2);
+  const auto matched =
+      std::find_if(optional_rows.begin(), optional_rows.end(),
+                   [](const auto &row) { return !row[1].IsNull(); });
+  ASSERT_NE(matched, optional_rows.end());
+  EXPECT_EQ((*matched)[0], rg::Value(first->id));
+  EXPECT_EQ((*matched)[1], rg::Value(first_relationship->id));
+  EXPECT_EQ((*matched)[2], rg::Value(second->id));
+
+  rg::PhysicalPlan expand_into = DetachedExpandInto();
+  EXPECT_EQ(
+      FirstColumnIds(expand_into, graph, "r",
+                     {{"from", rg::Value(first)}, {"to", rg::Value(second)}}),
+      (std::vector<std::int64_t>{first_relationship->id}));
+  EXPECT_TRUE(
+      FirstColumnIds(expand_into, graph, "r",
+                     {{"from", rg::Value(first)}, {"to", rg::Value(third)}})
+          .empty());
+
+  auto self = graph.CreateRelationship(first, first, "R");
+  EXPECT_EQ(
+      FirstColumnIds(expand_into, graph, "r",
+                     {{"from", rg::Value(first)}, {"to", rg::Value(first)}}),
+      (std::vector<std::int64_t>{self->id}));
+
+  rg::PhysicalPlan project_fixed = DetachedProjectEndpoints(false);
+  const rg::QueryParameters fixed_parameters{
+      {"relationship", rg::Value(first_relationship)}};
+  EXPECT_EQ(FirstColumnIds(project_fixed, graph, "a", fixed_parameters),
+            (std::vector<std::int64_t>{first->id}));
+  EXPECT_EQ(FirstColumnIds(project_fixed, graph, "b", fixed_parameters),
+            (std::vector<std::int64_t>{second->id}));
+
+  rg::PhysicalPlan project_variable = DetachedProjectEndpoints(true);
+  const rg::QueryParameters variable_parameters{
+      {"relationship",
+       rg::Value(rg::Value::List{rg::Value(first_relationship),
+                                 rg::Value(second_relationship)})}};
+  EXPECT_EQ(FirstColumnIds(project_variable, graph, "a", variable_parameters),
+            (std::vector<std::int64_t>{first->id}));
+  EXPECT_EQ(FirstColumnIds(project_variable, graph, "b", variable_parameters),
+            (std::vector<std::int64_t>{third->id}));
+
+  EXPECT_EQ(FirstColumnIds(
+                DetachedPhysicalPlan("MATCH (a)-[r:R]-(b) RETURN id(r) AS r"),
+                graph, "r"),
+            (std::vector<std::int64_t>{
+                first_relationship->id, first_relationship->id,
+                second_relationship->id, second_relationship->id, self->id}));
+}
+
+TEST(PhysicalPlanTest, ClosesFixedExpandCursorEarly) {
+  rg::InMemoryGraph graph;
+  auto first = graph.CreateNode({});
+  auto second = graph.CreateNode({});
+  graph.CreateRelationship(first, second, "R");
+  rg::PhysicalPlan physical = DetachedPhysicalPlan(
+      "MATCH (a)-[r:R]->(b) RETURN id(r) AS relationship_id");
+  std::unique_ptr<rg::PhysicalResultCursor> cursor =
+      rg::StartPhysicalPlan(physical, graph, nullptr, {}, {"relationship_id"});
+  std::vector<rg::Value> row;
+  ASSERT_TRUE(cursor->Next(&row));
+  cursor->Close();
+  EXPECT_FALSE(cursor->Next(&row));
 }
 
 TEST(PhysicalPlanTest, ChoosesSmallerValueHashJoinBuildSide) {

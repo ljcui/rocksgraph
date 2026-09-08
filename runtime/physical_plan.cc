@@ -964,6 +964,46 @@ class PhysicalPlanBuilder final {
             .many = seek.Many()};
         return;
       }
+      case PhysicalOperatorKind::kExpand: {
+        const auto &expand = static_cast<const ir::ExpandPlan &>(plan);
+        node->data = ExpandOp{
+            .pattern = {
+                .from_node = expand.FromNode(),
+                .relationship = expand.Relationship(),
+                .to_node = expand.ToNode(),
+                .direction = ToPhysicalExpandDirection(expand.Direction()),
+                .types = expand.Types()}};
+        return;
+      }
+      case PhysicalOperatorKind::kExpandInto: {
+        const auto &expand = static_cast<const ir::ExpandIntoPlan &>(plan);
+        node->data = ExpandIntoOp{
+            .pattern = {
+                .from_node = expand.FromNode(),
+                .relationship = expand.Relationship(),
+                .to_node = expand.ToNode(),
+                .direction = ToPhysicalExpandDirection(expand.Direction()),
+                .types = expand.Types()}};
+        return;
+      }
+      case PhysicalOperatorKind::kOptionalExpand: {
+        const auto &expand = static_cast<const ir::OptionalExpandPlan &>(plan);
+        node->data = OptionalExpandOp{
+            .pattern = CopyPhysicalRelationshipPattern(expand.Pattern()),
+            .predicates = CopyPhysicalExpressions(expand.Predicates())};
+        return;
+      }
+      case PhysicalOperatorKind::kProjectEndpoints: {
+        const auto &project =
+            static_cast<const ir::ProjectEndpointsPlan &>(plan);
+        const ir::PatternRelationship &pattern = project.Pattern();
+        node->data = ProjectEndpointsOp{
+            .pattern = CopyPhysicalRelationshipPattern(pattern),
+            .length = {.variable = pattern.length.variable,
+                       .min = pattern.length.min,
+                       .max = pattern.length.max}};
+        return;
+      }
       case PhysicalOperatorKind::kFilter: {
         const auto &filter = static_cast<const ir::FilterPlan &>(plan);
         node->data =

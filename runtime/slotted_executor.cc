@@ -329,24 +329,6 @@ std::int64_t NodeId(const SlottedRow &row, std::string_view name,
   return value.AsNode().id;
 }
 
-bool RelationshipMatchesDirection(const Relationship &relationship,
-                                  std::int64_t from_id,
-                                  ir::ExpandDirection direction) {
-  if (direction == ir::ExpandDirection::kOutgoing) {
-    return relationship.start_node_id == from_id;
-  }
-  if (direction == ir::ExpandDirection::kIncoming) {
-    return relationship.end_node_id == from_id;
-  }
-  return relationship.start_node_id == from_id ||
-         relationship.end_node_id == from_id;
-}
-
-std::int64_t OtherNode(const Relationship &relationship, std::int64_t from_id) {
-  return relationship.start_node_id == from_id ? relationship.end_node_id
-                                               : relationship.start_node_id;
-}
-
 bool NodeHasAllLabels(const Node &node,
                       const std::vector<std::string> &labels) {
   for (const auto &label : labels) {
@@ -1156,6 +1138,40 @@ std::unique_ptr<EntityIdCursor> ExpandCursor(const GraphReader &graph_reader,
   return graph_reader.RelationshipIdsConnectedTo(node_id);
 }
 
+std::unique_ptr<EntityIdCursor> ExpandCursor(
+    const GraphReader &graph_reader, std::int64_t node_id,
+    PhysicalExpandDirection direction) {
+  if (direction == PhysicalExpandDirection::kOutgoing) {
+    return graph_reader.OutgoingRelationshipIds(node_id);
+  }
+  if (direction == PhysicalExpandDirection::kIncoming) {
+    return graph_reader.IncomingRelationshipIds(node_id);
+  }
+  return graph_reader.RelationshipIdsConnectedTo(node_id);
+}
+
+std::optional<std::int64_t> NextPhysicalExpandNode(
+    const Relationship &relationship, std::int64_t current_node_id,
+    PhysicalExpandDirection direction) {
+  if (direction == PhysicalExpandDirection::kOutgoing) {
+    return relationship.start_node_id == current_node_id
+               ? std::optional<std::int64_t>(relationship.end_node_id)
+               : std::nullopt;
+  }
+  if (direction == PhysicalExpandDirection::kIncoming) {
+    return relationship.end_node_id == current_node_id
+               ? std::optional<std::int64_t>(relationship.start_node_id)
+               : std::nullopt;
+  }
+  if (relationship.start_node_id == current_node_id) {
+    return relationship.end_node_id;
+  }
+  if (relationship.end_node_id == current_node_id) {
+    return relationship.start_node_id;
+  }
+  return std::nullopt;
+}
+
 class OperatorFactory;
 
 std::optional<std::int64_t> SeekId(const Value &value) {
@@ -1812,6 +1828,114 @@ class RelationshipByIdSeekOperator final : public PullOperator {
   bool closed_ = false;
 };
 
+class FixedExpandOperatorBase : public PullOperator {
+ protected:
+  FixedExpandOperatorBase(const PhysicalPlanNode &node, RuntimeState &state,
+                          std::unique_ptr<PullOperator> source,
+                          const PhysicalRelationshipPattern &pattern, bool into)
+      : node_(&node),
+        state_(&state),
+        source_(std::move(source)),
+        pattern_(&pattern),
+        into_(into) {}
+
+ public:
+  ~FixedExpandOperatorBase() override { Close(); }
+
+  [[nodiscard]] bool Next(SlottedRow *row) override {
+    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    while (!closed_) {
+      state_->CheckCancelled();
+      if (cursor_ != nullptr) {
+        while (cursor_->Next()) {
+          state_->CheckCancelled();
+          const Relationship &relationship =
+              *state_->graph_reader->RelationshipById(cursor_->Id());
+          const std::optional<std::int64_t> to = NextPhysicalExpandNode(
+              relationship, from_id_, pattern_->direction);
+          if (!to.has_value() ||
+              !RelationshipHasType(relationship, pattern_->types) ||
+              (into_ && *to != to_id_)) {
+            continue;
+          }
+          SlottedRow output =
+              input_->CopyTo(node_->output_slots, *state_->graph_reader);
+          if (!TryBindEntityId(&output, pattern_->relationship,
+                               SlotKind::kRelationship, relationship.id,
+                               *state_->graph_reader) ||
+              (!into_ &&
+               !TryBindEntityId(&output, pattern_->to_node, SlotKind::kNode,
+                                *to, *state_->graph_reader))) {
+            continue;
+          }
+          *row = std::move(output);
+          return true;
+        }
+        state_->ReleaseCursor(cursor_);
+        cursor_ = nullptr;
+        input_.reset();
+      }
+
+      SlottedRow input(node_->children[0]->output_slots);
+      if (!source_->Next(&input)) {
+        Close();
+        return false;
+      }
+      from_id_ = NodeId(input, pattern_->from_node, *state_);
+      to_id_ = into_ ? NodeId(input, pattern_->to_node, *state_) : -1;
+      if (from_id_ < 0 || (into_ && to_id_ < 0)) {
+        continue;
+      }
+      input_.emplace(std::move(input));
+      cursor_ = state_->TrackCursor(
+          ExpandCursor(*state_->graph_reader, from_id_, pattern_->direction));
+    }
+    return false;
+  }
+
+  void Close() noexcept override {
+    if (closed_) {
+      return;
+    }
+    if (cursor_ != nullptr) {
+      state_->ReleaseCursor(cursor_);
+      cursor_ = nullptr;
+    }
+    input_.reset();
+    source_->Close();
+    closed_ = true;
+  }
+
+ private:
+  const PhysicalPlanNode *node_ = nullptr;
+  RuntimeState *state_ = nullptr;
+  std::unique_ptr<PullOperator> source_;
+  const PhysicalRelationshipPattern *pattern_ = nullptr;
+  std::optional<SlottedRow> input_;
+  EntityIdCursor *cursor_ = nullptr;
+  std::int64_t from_id_ = -1;
+  std::int64_t to_id_ = -1;
+  bool into_ = false;
+  bool closed_ = false;
+};
+
+class ExpandOperator final : public FixedExpandOperatorBase {
+ public:
+  ExpandOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                 std::unique_ptr<PullOperator> source)
+      : FixedExpandOperatorBase(node, state, std::move(source),
+                                OperatorData<ExpandOp>(node).pattern, false) {}
+};
+
+class ExpandIntoOperator final : public FixedExpandOperatorBase {
+ public:
+  ExpandIntoOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                     std::unique_ptr<PullOperator> source)
+      : FixedExpandOperatorBase(node, state, std::move(source),
+                                OperatorData<ExpandIntoOp>(node).pattern,
+                                true) {}
+};
+
 class VarExpandOperator final : public PullOperator {
  public:
   VarExpandOperator(const PhysicalPlanNode &node, RuntimeState &state,
@@ -2104,14 +2228,19 @@ class PruningExpandOperator final : public PullOperator {
   bool closed_ = false;
 };
 
-class PatternOperator final : public PullOperator {
+class OptionalExpandOperator final : public PullOperator {
  public:
-  PatternOperator(const PhysicalPlanNode &node, RuntimeState &state,
-                  std::unique_ptr<PullOperator> source)
-      : node_(&node), state_(&state), source_(std::move(source)) {}
-  ~PatternOperator() override { Close(); }
+  OptionalExpandOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                         std::unique_ptr<PullOperator> source)
+      : node_(&node),
+        data_(&OperatorData<OptionalExpandOp>(node)),
+        state_(&state),
+        source_(std::move(source)) {}
 
-  bool Next(SlottedRow *row) override {
+  ~OptionalExpandOperator() override { Close(); }
+
+  [[nodiscard]] bool Next(SlottedRow *row) override {
+    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
     while (!closed_) {
       state_->CheckCancelled();
       if (!input_.has_value()) {
@@ -2122,83 +2251,121 @@ class PatternOperator final : public PullOperator {
         }
         input_.emplace(std::move(input));
         matched_ = false;
-        if (node_->logical->Type() ==
-            ir::LogicalPlanNodeType::kProjectEndpoints) {
-          ProjectEndpoints();
-        } else {
-          const auto &pattern = Optional().Pattern();
-          const auto from = NodeId(*input_, pattern.left_node, *state_);
-          if (from >= 0) {
-            cursor_ = state_->TrackCursor(ExpandCursor(
-                *state_->graph_reader, from, Direction(pattern.direction)));
-          }
+        from_id_ = NodeId(*input_, data_->pattern.from_node, *state_);
+        if (from_id_ >= 0) {
+          cursor_ = state_->TrackCursor(ExpandCursor(
+              *state_->graph_reader, from_id_, data_->pattern.direction));
         }
       }
-      if (node_->logical->Type() ==
-          ir::LogicalPlanNodeType::kProjectEndpoints) {
-        const auto &pattern =
-            static_cast<const ir::ProjectEndpointsPlan &>(*node_->logical)
-                .Pattern();
-        while (endpoint_index_ < endpoints_.size()) {
-          const auto [from, to] = endpoints_[endpoint_index_++];
-          auto output =
-              input_->CopyTo(node_->output_slots, *state_->graph_reader);
-          if (TryBindEntityId(&output, pattern.left_node, SlotKind::kNode, from,
-                              *state_->graph_reader) &&
-              TryBindEntityId(&output, pattern.right_node, SlotKind::kNode, to,
-                              *state_->graph_reader)) {
-            *row = std::move(output);
-            return true;
+
+      while (cursor_ != nullptr && cursor_->Next()) {
+        state_->CheckCancelled();
+        const Relationship &relationship =
+            *state_->graph_reader->RelationshipById(cursor_->Id());
+        const std::optional<std::int64_t> to = NextPhysicalExpandNode(
+            relationship, from_id_, data_->pattern.direction);
+        if (!to.has_value() ||
+            !RelationshipHasType(relationship, data_->pattern.types)) {
+          continue;
+        }
+        SlottedRow output =
+            input_->CopyTo(node_->output_slots, *state_->graph_reader);
+        if (!TryBindEntityId(&output, data_->pattern.relationship,
+                             SlotKind::kRelationship, relationship.id,
+                             *state_->graph_reader) ||
+            !TryBindEntityId(&output, data_->pattern.to_node, SlotKind::kNode,
+                             *to, *state_->graph_reader)) {
+          continue;
+        }
+        if (!std::all_of(data_->predicates.begin(), data_->predicates.end(),
+                         [&](const PhysicalExpression &predicate) {
+                           return PredicateIsTrue(
+                               Evaluate(predicate, output, *state_));
+                         })) {
+          continue;
+        }
+        matched_ = true;
+        *row = std::move(output);
+        return true;
+      }
+      if (cursor_ != nullptr) {
+        state_->ReleaseCursor(cursor_);
+        cursor_ = nullptr;
+      }
+      if (!matched_) {
+        SlottedRow output =
+            input_->CopyTo(node_->output_slots, *state_->graph_reader);
+        for (const auto &column : node_->output_slots->Columns()) {
+          if (!output.IsInitialized(column)) {
+            output.SetNull(column);
           }
         }
-      } else {
-        const auto &pattern = Optional().Pattern();
-        while (cursor_ != nullptr && cursor_->Next()) {
-          state_->CheckCancelled();
-          const auto &relationship =
-              *state_->graph_reader->RelationshipById(cursor_->Id());
-          const auto from = NodeId(*input_, pattern.left_node, *state_);
-          const auto to = NextVarExpandNode(relationship, from,
-                                            Direction(pattern.direction));
-          if (!to.has_value() ||
-              !RelationshipHasType(relationship, pattern.types)) {
-            continue;
-          }
-          auto output =
-              input_->CopyTo(node_->output_slots, *state_->graph_reader);
-          if (!TryBindEntityId(&output, pattern.variable,
-                               SlotKind::kRelationship, relationship.id,
-                               *state_->graph_reader) ||
-              !TryBindEntityId(&output, pattern.right_node, SlotKind::kNode,
-                               *to, *state_->graph_reader)) {
-            continue;
-          }
-          bool accepted = true;
-          for (const auto *predicate : Optional().Predicates()) {
-            if (!PredicateIsTrue(Evaluate(*predicate, output, {}, *state_))) {
-              accepted = false;
-              break;
-            }
-          }
-          if (accepted) {
-            matched_ = true;
-            *row = std::move(output);
-            return true;
-          }
+        input_.reset();
+        *row = std::move(output);
+        return true;
+      }
+      input_.reset();
+    }
+    return false;
+  }
+
+  void Close() noexcept override {
+    if (closed_) {
+      return;
+    }
+    if (cursor_ != nullptr) {
+      state_->ReleaseCursor(cursor_);
+      cursor_ = nullptr;
+    }
+    input_.reset();
+    source_->Close();
+    closed_ = true;
+  }
+
+ private:
+  const PhysicalPlanNode *node_ = nullptr;
+  const OptionalExpandOp *data_ = nullptr;
+  RuntimeState *state_ = nullptr;
+  std::unique_ptr<PullOperator> source_;
+  std::optional<SlottedRow> input_;
+  EntityIdCursor *cursor_ = nullptr;
+  std::int64_t from_id_ = -1;
+  bool matched_ = false;
+  bool closed_ = false;
+};
+
+class ProjectEndpointsOperator final : public PullOperator {
+ public:
+  ProjectEndpointsOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                           std::unique_ptr<PullOperator> source)
+      : node_(&node),
+        data_(&OperatorData<ProjectEndpointsOp>(node)),
+        state_(&state),
+        source_(std::move(source)) {}
+
+  ~ProjectEndpointsOperator() override { Close(); }
+
+  [[nodiscard]] bool Next(SlottedRow *row) override {
+    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    while (!closed_) {
+      state_->CheckCancelled();
+      if (!input_.has_value()) {
+        SlottedRow input(node_->children[0]->output_slots);
+        if (!source_->Next(&input)) {
+          Close();
+          return false;
         }
-        if (cursor_ != nullptr) {
-          state_->ReleaseCursor(cursor_);
-          cursor_ = nullptr;
-        }
-        if (!matched_) {
-          auto output =
-              input_->CopyTo(node_->output_slots, *state_->graph_reader);
-          for (const auto &column : node_->output_slots->Columns()) {
-            if (!output.IsInitialized(column)) {
-              output.SetNull(column);
-            }
-          }
-          input_.reset();
+        input_.emplace(std::move(input));
+        PrepareEndpoints();
+      }
+      while (next_endpoint_ < endpoints_.size()) {
+        const auto [from, to] = endpoints_[next_endpoint_++];
+        SlottedRow output =
+            input_->CopyTo(node_->output_slots, *state_->graph_reader);
+        if (TryBindEntityId(&output, data_->pattern.from_node, SlotKind::kNode,
+                            from, *state_->graph_reader) &&
+            TryBindEntityId(&output, data_->pattern.to_node, SlotKind::kNode,
+                            to, *state_->graph_reader)) {
           *row = std::move(output);
           return true;
         }
@@ -2209,52 +2376,39 @@ class PatternOperator final : public PullOperator {
   }
 
   void Close() noexcept override {
-    if (cursor_ != nullptr) {
-      state_->ReleaseCursor(cursor_);
-      cursor_ = nullptr;
+    if (closed_) {
+      return;
     }
-    source_->Close();
     input_.reset();
+    endpoints_.clear();
+    source_->Close();
     closed_ = true;
   }
 
  private:
-  static ir::ExpandDirection Direction(ir::Direction direction) {
-    return direction == ir::Direction::kIncoming
-               ? ir::ExpandDirection::kIncoming
-           : direction == ir::Direction::kOutgoing
-               ? ir::ExpandDirection::kOutgoing
-               : ir::ExpandDirection::kBoth;
-  }
-
-  const ir::OptionalExpandPlan &Optional() const {
-    return static_cast<const ir::OptionalExpandPlan &>(*node_->logical);
-  }
-
-  void ProjectEndpoints() {
+  void PrepareEndpoints() {
     endpoints_.clear();
-    endpoint_index_ = 0;
-    const auto &pattern =
-        static_cast<const ir::ProjectEndpointsPlan &>(*node_->logical)
-            .Pattern();
-    const Value value = input_->Get(pattern.variable, *state_->graph_reader);
+    next_endpoint_ = 0;
+    const Value value =
+        input_->Get(data_->pattern.relationship, *state_->graph_reader);
     if (value.IsNull()) {
       return;
     }
+
     std::vector<const Relationship *> relationships;
-    if (pattern.length.variable) {
+    if (data_->length.variable) {
       CHECK(value.IsList(), common::InvalidArgumentError,
             "expected a relationship list");
-      for (const auto &item : value.AsList()) {
+      for (const Value &item : value.AsList()) {
         if (!item.IsRelationship()) {
           return;
         }
         relationships.push_back(&item.AsRelationship());
       }
-      const auto length = relationships.size();
-      if (length < static_cast<std::size_t>(pattern.length.min.value_or(1)) ||
-          (pattern.length.max.has_value() &&
-           length > static_cast<std::size_t>(*pattern.length.max))) {
+      const std::size_t length = relationships.size();
+      if (length < static_cast<std::size_t>(data_->length.min.value_or(1)) ||
+          (data_->length.max.has_value() &&
+           length > static_cast<std::size_t>(*data_->length.max))) {
         return;
       }
     } else {
@@ -2262,23 +2416,26 @@ class PatternOperator final : public PullOperator {
             "expected a relationship");
       relationships.push_back(&value.AsRelationship());
     }
+
     std::unordered_set<std::int64_t> used;
-    for (const auto &relationship : relationships) {
+    for (const Relationship *relationship : relationships) {
       state_->CheckCancelled();
       try {
         (void)state_->graph_reader->RelationshipById(relationship->id);
       } catch (const common::NotFoundError &) {
         return;
       }
-      if (!RelationshipHasType(*relationship, pattern.types) ||
+      if (!RelationshipHasType(*relationship, data_->pattern.types) ||
           !used.insert(relationship->id).second) {
         return;
       }
     }
+
     if (relationships.empty()) {
-      for (const auto &name : {pattern.left_node, pattern.right_node}) {
+      for (const auto &name :
+           {data_->pattern.from_node, data_->pattern.to_node}) {
         if (input_->Slots()->Contains(name) && input_->IsInitialized(name)) {
-          const auto id = NodeId(*input_, name, *state_);
+          const std::int64_t id = NodeId(*input_, name, *state_);
           if (id >= 0) {
             endpoints_.emplace_back(id, id);
           }
@@ -2287,20 +2444,21 @@ class PatternOperator final : public PullOperator {
       }
       return;
     }
-    const auto &first = *relationships.front();
+
+    const Relationship &first = *relationships.front();
     std::vector<std::int64_t> starts;
-    if (pattern.direction != ir::Direction::kIncoming) {
+    if (data_->pattern.direction != PhysicalExpandDirection::kIncoming) {
       starts.push_back(first.start_node_id);
     }
-    if (pattern.direction != ir::Direction::kOutgoing &&
+    if (data_->pattern.direction != PhysicalExpandDirection::kOutgoing &&
         (starts.empty() || starts.front() != first.end_node_id)) {
       starts.push_back(first.end_node_id);
     }
-    for (const auto start : starts) {
-      auto current = std::optional<std::int64_t>(start);
-      for (const auto &relationship : relationships) {
-        current = NextVarExpandNode(*relationship, *current,
-                                    Direction(pattern.direction));
+    for (const std::int64_t start : starts) {
+      std::optional<std::int64_t> current = start;
+      for (const Relationship *relationship : relationships) {
+        current = NextPhysicalExpandNode(*relationship, *current,
+                                         data_->pattern.direction);
         if (!current.has_value()) {
           break;
         }
@@ -2311,14 +2469,13 @@ class PatternOperator final : public PullOperator {
     }
   }
 
-  const PhysicalPlanNode *node_;
-  RuntimeState *state_;
+  const PhysicalPlanNode *node_ = nullptr;
+  const ProjectEndpointsOp *data_ = nullptr;
+  RuntimeState *state_ = nullptr;
   std::unique_ptr<PullOperator> source_;
   std::optional<SlottedRow> input_;
-  EntityIdCursor *cursor_ = nullptr;
   std::vector<std::pair<std::int64_t, std::int64_t>> endpoints_;
-  std::size_t endpoint_index_ = 0;
-  bool matched_ = false;
+  std::size_t next_endpoint_ = 0;
   bool closed_ = false;
 };
 
@@ -2687,9 +2844,6 @@ class StreamingUnaryOperator final : public PullOperator {
       return false;
     }
     switch (node_->logical->Type()) {
-      case ir::LogicalPlanNodeType::kExpand:
-      case ir::LogicalPlanNodeType::kExpandInto:
-        return NextExpand(row);
       case ir::LogicalPlanNodeType::kPathBuild:
       case ir::LogicalPlanNodeType::kProcedureCall:
         return NextBufferedPerInput(row);
@@ -2712,10 +2866,6 @@ class StreamingUnaryOperator final : public PullOperator {
   }
 
   void Close() noexcept override {
-    if (relationship_cursor_ != nullptr) {
-      state_->ReleaseCursor(relationship_cursor_);
-      relationship_cursor_ = nullptr;
-    }
     if (source_ != nullptr) {
       source_->Close();
     }
@@ -2733,90 +2883,6 @@ class StreamingUnaryOperator final : public PullOperator {
       return false;
     }
     return true;
-  }
-
-  bool NextExpand(SlottedRow *row) {
-    while (true) {
-      if (relationship_cursor_ != nullptr) {
-        while (relationship_cursor_->Next()) {
-          const Relationship &relationship =
-              *state_->graph_reader->RelationshipById(
-                  relationship_cursor_->Id());
-          std::string rel_name;
-          std::string to_name;
-          ir::ExpandDirection direction;
-          const std::vector<std::string> *types = nullptr;
-          bool into = false;
-          if (node_->logical->Type() == ir::LogicalPlanNodeType::kExpand) {
-            const auto &expand =
-                static_cast<const ir::ExpandPlan &>(*node_->logical);
-            rel_name = expand.Relationship();
-            to_name = expand.ToNode();
-            direction = expand.Direction();
-            types = &expand.Types();
-          } else {
-            const auto &expand =
-                static_cast<const ir::ExpandIntoPlan &>(*node_->logical);
-            rel_name = expand.Relationship();
-            to_name = expand.ToNode();
-            direction = expand.Direction();
-            types = &expand.Types();
-            into = true;
-          }
-          if (!RelationshipHasType(relationship, *types) ||
-              !RelationshipMatchesDirection(relationship, current_from_id_,
-                                            direction)) {
-            continue;
-          }
-          const std::int64_t other = OtherNode(relationship, current_from_id_);
-          if (into && other != current_to_id_) {
-            continue;
-          }
-          SlottedRow output = current_input_->CopyTo(node_->output_slots,
-                                                     *state_->graph_reader);
-          if (!TryBindEntityId(&output, rel_name, SlotKind::kRelationship,
-                               relationship.id, *state_->graph_reader) ||
-              (!into && !TryBindEntityId(&output, to_name, SlotKind::kNode,
-                                         other, *state_->graph_reader))) {
-            continue;
-          }
-          *row = std::move(output);
-          return true;
-        }
-        state_->ReleaseCursor(relationship_cursor_);
-        relationship_cursor_ = nullptr;
-        current_input_.reset();
-      }
-
-      SlottedRow input(node_->children[0]->output_slots);
-      if (!PullInput(&input)) {
-        return false;
-      }
-      std::string from_name;
-      ir::ExpandDirection direction;
-      if (node_->logical->Type() == ir::LogicalPlanNodeType::kExpand) {
-        const auto &expand =
-            static_cast<const ir::ExpandPlan &>(*node_->logical);
-        from_name = expand.FromNode();
-        direction = expand.Direction();
-        current_to_id_ = -1;
-      } else {
-        const auto &expand =
-            static_cast<const ir::ExpandIntoPlan &>(*node_->logical);
-        from_name = expand.FromNode();
-        direction = expand.Direction();
-        current_to_id_ = NodeId(input, expand.ToNode(), *state_);
-      }
-      current_from_id_ = NodeId(input, from_name, *state_);
-      if (current_from_id_ < 0 ||
-          (node_->logical->Type() == ir::LogicalPlanNodeType::kExpandInto &&
-           current_to_id_ < 0)) {
-        continue;
-      }
-      current_input_.emplace(std::move(input));
-      relationship_cursor_ = state_->TrackCursor(
-          ExpandCursor(*state_->graph_reader, current_from_id_, direction));
-    }
   }
 
   bool NextBufferedPerInput(SlottedRow *row) {
@@ -3028,8 +3094,6 @@ class StreamingUnaryOperator final : public PullOperator {
   const PhysicalPlanNode *node_ = nullptr;
   RuntimeState *state_ = nullptr;
   std::unique_ptr<PullOperator> source_;
-  EntityIdCursor *relationship_cursor_ = nullptr;
-  std::optional<SlottedRow> current_input_;
   std::optional<SlottedRow> unwind_input_;
   std::vector<Value> unwind_values_;
   std::vector<SlottedRow> buffer_;
@@ -3037,8 +3101,6 @@ class StreamingUnaryOperator final : public PullOperator {
   std::size_t buffer_index_ = 0;
   std::size_t buffer_reserved_bytes_ = 0;
   std::size_t unwind_reserved_bytes_ = 0;
-  std::int64_t current_from_id_ = -1;
-  std::int64_t current_to_id_ = -1;
   bool closed_ = false;
 };
 
@@ -4799,10 +4861,14 @@ class OperatorFactory final {
         return std::make_unique<PruningExpandOperator>(
             node, *state_, Build(*node.children[0], std::move(argument)));
       case PhysicalOperatorKind::kProjectEndpoints:
+        CHECK(node.children.size() == 1, common::InternalError,
+              "project endpoints physical node must have one child");
+        return std::make_unique<ProjectEndpointsOperator>(
+            node, *state_, Build(*node.children[0], std::move(argument)));
       case PhysicalOperatorKind::kOptionalExpand:
         CHECK(node.children.size() == 1, common::InternalError,
-              "pattern physical node must have one child");
-        return std::make_unique<PatternOperator>(
+              "optional expand physical node must have one child");
+        return std::make_unique<OptionalExpandOperator>(
             node, *state_, Build(*node.children[0], std::move(argument)));
       case PhysicalOperatorKind::kOrderedDistinct:
         CHECK(node.children.size() == 1, common::InternalError,
@@ -4830,7 +4896,15 @@ class OperatorFactory final {
         return std::make_unique<BlockingUnaryOperator>(
             node, *state_, Build(*node.children[0], std::move(argument)));
       case PhysicalOperatorKind::kExpand:
+        CHECK(node.children.size() == 1, common::InternalError,
+              "expand physical node must have one child");
+        return std::make_unique<ExpandOperator>(
+            node, *state_, Build(*node.children[0], std::move(argument)));
       case PhysicalOperatorKind::kExpandInto:
+        CHECK(node.children.size() == 1, common::InternalError,
+              "expand-into physical node must have one child");
+        return std::make_unique<ExpandIntoOperator>(
+            node, *state_, Build(*node.children[0], std::move(argument)));
       case PhysicalOperatorKind::kPathBuild:
       case PhysicalOperatorKind::kProcedureCall:
       case PhysicalOperatorKind::kUnwind:
