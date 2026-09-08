@@ -58,6 +58,13 @@ struct ParsedQueryOwner {
   std::unique_ptr<ir::LogicalPlan> logical_plan;
 };
 
+enum class TransactionState {
+  kNone,
+  kActive,
+  kCommitted,
+  kRolledBack,
+};
+
 class QueryResultCursorImpl final : public QueryResultCursor {
  public:
   QueryResultCursorImpl(const ir::LogicalPlan &logical_plan,
@@ -66,15 +73,18 @@ class QueryResultCursorImpl final : public QueryResultCursor {
                         QueryExecutionOptions options,
                         std::shared_ptr<void> owner = {})
       : owner_(std::move(owner)),
-        write_(PlanContainsWrites(logical_plan)),
         physical_plan_(CreatePhysicalPlan(logical_plan)) {
-    if (write_) {
+    const bool writes = physical_plan_.Effects().writes;
+    if (writes) {
       CHECK(storage != nullptr, common::InvalidArgumentError,
             "write execution requires storage");
       transaction_ = storage->BeginTransaction();
+      if (transaction_ != nullptr) {
+        transaction_state_ = TransactionState::kActive;
+      }
     }
     if (logical_plan.Type() == ir::LogicalPlanNodeType::kProduceResults ||
-        !write_) {
+        !writes) {
       columns_ = logical_plan.OutputColumns();
     }
     try {
@@ -125,9 +135,7 @@ class QueryResultCursorImpl final : public QueryResultCursor {
       return;
     }
     ClosePhysicalCursor();
-    if (!completed_) {
-      Rollback();
-    }
+    Rollback();
     closed_ = true;
   }
 
@@ -141,20 +149,20 @@ class QueryResultCursorImpl final : public QueryResultCursor {
     ClosePhysicalCursor();
     if (transaction_ != nullptr) {
       transaction_->Commit();
+      transaction_state_ = TransactionState::kCommitted;
     }
-    completed_ = true;
     closed_ = true;
   }
 
   void Rollback() noexcept {
-    if (transaction_ == nullptr || completed_) {
+    if (transaction_state_ != TransactionState::kActive) {
       return;
     }
     try {
       transaction_->Rollback();
     } catch (...) {
     }
-    completed_ = true;
+    transaction_state_ = TransactionState::kRolledBack;
   }
 
   void ClosePhysicalCursor() noexcept {
@@ -165,13 +173,12 @@ class QueryResultCursorImpl final : public QueryResultCursor {
   }
 
   std::shared_ptr<void> owner_;
-  bool write_ = false;
-  std::vector<std::string> columns_;
   PhysicalPlan physical_plan_;
+  std::vector<std::string> columns_;
   std::unique_ptr<PhysicalResultCursor> physical_cursor_;
   std::unique_ptr<StorageTransaction> transaction_;
   std::size_t peak_memory_bytes_ = 0;
-  bool completed_ = false;
+  TransactionState transaction_state_ = TransactionState::kNone;
   bool closed_ = false;
 };
 

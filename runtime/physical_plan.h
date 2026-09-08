@@ -287,6 +287,16 @@ struct PhysicalOrderingItem {
 
 using PhysicalOrdering = std::vector<PhysicalOrderingItem>;
 
+struct PhysicalOperatorTraits {
+  bool writes = false;
+  bool write_barrier = false;
+};
+
+struct PhysicalPlanEffects {
+  bool writes = false;
+  bool contains_write_barrier = false;
+};
+
 struct PhysicalSortItem {
   PhysicalExpression expression;
   PhysicalSortDirection direction = PhysicalSortDirection::kAscending;
@@ -513,6 +523,8 @@ struct PhysicalPlanNode {
   SlotConfigurationPtr argument_slots;
   SlotConfigurationPtr output_slots;
   PhysicalOrdering provided_order;
+  PhysicalOperatorTraits traits;
+  PhysicalPlanEffects subtree_effects;
   std::vector<SlotMapping> argument_mapping;
   std::vector<std::vector<SlotMapping>> child_mappings;
   std::vector<std::unique_ptr<PhysicalPlanNode>> children;
@@ -523,12 +535,12 @@ class PhysicalPlan final {
   explicit PhysicalPlan(std::unique_ptr<PhysicalPlanNode> root);
 
   [[nodiscard]] const PhysicalPlanNode &Root() const;
+  [[nodiscard]] const PhysicalPlanEffects &Effects() const noexcept;
 
  private:
   std::unique_ptr<PhysicalPlanNode> root_;
 };
 
 [[nodiscard]] PhysicalPlan CreatePhysicalPlan(const ir::LogicalPlan &plan);
-[[nodiscard]] bool PlanContainsWrites(const ir::LogicalPlan &plan);
 
 }  // namespace rg

@@ -71,6 +71,41 @@ PhysicalOrdering CopyPhysicalOrdering(
   return copied;
 }
 
+PhysicalOperatorTraits OperatorTraits(const PhysicalPlanNode &node) {
+  switch (node.kind) {
+    case PhysicalOperatorKind::kProcedureCall:
+      return {.writes = !std::get<ProcedureCallOp>(node.data).read_only};
+    case PhysicalOperatorKind::kWriteBarrier:
+      return {.write_barrier = true};
+    case PhysicalOperatorKind::kCreateNode:
+    case PhysicalOperatorKind::kCreateRelationship:
+    case PhysicalOperatorKind::kMerge:
+    case PhysicalOperatorKind::kSetProperty:
+    case PhysicalOperatorKind::kSetProperties:
+    case PhysicalOperatorKind::kSetLabels:
+    case PhysicalOperatorKind::kRemoveProperty:
+    case PhysicalOperatorKind::kRemoveLabels:
+    case PhysicalOperatorKind::kDelete:
+    case PhysicalOperatorKind::kDetachDelete:
+      return {.writes = true};
+    default:
+      return {};
+  }
+}
+
+void BuildEffects(PhysicalPlanNode *node) {
+  CHECK(node != nullptr, common::InternalError, "physical plan node is null");
+  node->traits = OperatorTraits(*node);
+  node->subtree_effects = {
+      .writes = node->traits.writes,
+      .contains_write_barrier = node->traits.write_barrier};
+  for (const auto &child : node->children) {
+    node->subtree_effects.writes |= child->subtree_effects.writes;
+    node->subtree_effects.contains_write_barrier |=
+        child->subtree_effects.contains_write_barrier;
+  }
+}
+
 std::size_t CommonOrderingPrefix(const PhysicalOrdering &provided,
                                  const PhysicalOrdering &required) {
   const std::size_t limit = std::min(provided.size(), required.size());
@@ -944,6 +979,7 @@ class PhysicalPlanBuilder final {
         ComputeSlotMappings(*node->argument_slots, *node->output_slots);
     SelectOperator(plan, node.get());
     BuildOperatorData(plan, node.get());
+    BuildEffects(node.get());
     return node;
   }
 
@@ -1302,10 +1338,12 @@ class PhysicalPlanBuilder final {
       }
       case PhysicalOperatorKind::kLimit: {
         const auto &limit = static_cast<const ir::LimitPlan &>(plan);
+        CHECK(node->children.size() == 1, common::InternalError,
+              "limit physical node must have one child");
         node->data =
             LimitOp{.count = CopyPhysicalExpression(
                         limit.Limit(), limit.PrecomputedExpressions()),
-                    .exhaust_child = PlanContainsWrites(plan.Child(0))};
+                    .exhaust_child = node->children[0]->subtree_effects.writes};
         return;
       }
       case PhysicalOperatorKind::kProduceResults:
@@ -1700,37 +1738,12 @@ PhysicalPlan::PhysicalPlan(std::unique_ptr<PhysicalPlanNode> root)
 
 const PhysicalPlanNode &PhysicalPlan::Root() const { return *root_; }
 
-PhysicalPlan CreatePhysicalPlan(const ir::LogicalPlan &plan) {
-  return PhysicalPlanBuilder().Build(plan);
+const PhysicalPlanEffects &PhysicalPlan::Effects() const noexcept {
+  return root_->subtree_effects;
 }
 
-bool PlanContainsWrites(const ir::LogicalPlan &plan) {
-  switch (plan.Type()) {
-    case ir::LogicalPlanNodeType::kCreateNode:
-    case ir::LogicalPlanNodeType::kCreateRelationship:
-    case ir::LogicalPlanNodeType::kMerge:
-    case ir::LogicalPlanNodeType::kSetProperty:
-    case ir::LogicalPlanNodeType::kSetProperties:
-    case ir::LogicalPlanNodeType::kSetLabels:
-    case ir::LogicalPlanNodeType::kRemoveProperty:
-    case ir::LogicalPlanNodeType::kRemoveLabels:
-    case ir::LogicalPlanNodeType::kDelete:
-    case ir::LogicalPlanNodeType::kDetachDelete:
-      return true;
-    case ir::LogicalPlanNodeType::kProcedureCall:
-      if (!static_cast<const ir::ProcedureCallPlan &>(plan).ReadOnly()) {
-        return true;
-      }
-      break;
-    default:
-      break;
-  }
-  for (const auto &child : plan.Children()) {
-    if (child != nullptr && PlanContainsWrites(*child)) {
-      return true;
-    }
-  }
-  return false;
+PhysicalPlan CreatePhysicalPlan(const ir::LogicalPlan &plan) {
+  return PhysicalPlanBuilder().Build(plan);
 }
 
 }  // namespace rg

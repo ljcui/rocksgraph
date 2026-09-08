@@ -641,9 +641,13 @@ TEST(PhysicalPlanTest, ExecutesDetachedRollUpApplyAndHandlesResources) {
 TEST(PhysicalPlanTest, BuildsOwnedStreamingWritePayloads) {
   rg::PhysicalPlan create =
       DetachedPhysicalPlan("CREATE (a:Made $properties) RETURN a");
+  EXPECT_TRUE(create.Effects().writes);
+  EXPECT_TRUE(create.Effects().contains_write_barrier);
   const rg::PhysicalPlanNode *create_node =
       FindPhysicalPlan(create.Root(), rg::PhysicalOperatorKind::kCreateNode);
   ASSERT_NE(create_node, nullptr);
+  EXPECT_TRUE(create_node->traits.writes);
+  EXPECT_FALSE(create_node->traits.write_barrier);
   const auto &create_node_data = std::get<rg::CreateNodeOp>(create_node->data);
   EXPECT_EQ(create_node_data.node_slot.kind, rg::SlotKind::kNode);
   EXPECT_EQ(create_node_data.labels, std::vector<std::string>{"Made"});
@@ -653,6 +657,10 @@ TEST(PhysicalPlanTest, BuildsOwnedStreamingWritePayloads) {
       FindPhysicalPlan(create.Root(), rg::PhysicalOperatorKind::kWriteBarrier);
   ASSERT_NE(barrier, nullptr);
   EXPECT_TRUE(std::holds_alternative<rg::WriteBarrierOp>(barrier->data));
+  EXPECT_FALSE(barrier->traits.writes);
+  EXPECT_TRUE(barrier->traits.write_barrier);
+  EXPECT_FALSE(barrier->subtree_effects.writes);
+  EXPECT_TRUE(barrier->subtree_effects.contains_write_barrier);
 
   rg::PhysicalPlan create_relationship_plan = DetachedPhysicalPlan(
       "CREATE (a:Made), (b:Made), "
@@ -661,6 +669,7 @@ TEST(PhysicalPlanTest, BuildsOwnedStreamingWritePayloads) {
       FindPhysicalPlan(create_relationship_plan.Root(),
                        rg::PhysicalOperatorKind::kCreateRelationship);
   ASSERT_NE(create_relationship, nullptr);
+  EXPECT_TRUE(create_relationship->traits.writes);
   const auto &relationship_data =
       std::get<rg::CreateRelationshipOp>(create_relationship->data);
   EXPECT_EQ(relationship_data.relationship_slot.kind,
@@ -678,6 +687,7 @@ TEST(PhysicalPlanTest, BuildsOwnedStreamingWritePayloads) {
   const rg::PhysicalPlanNode *set_property = FindPhysicalPlan(
       mutations.Root(), rg::PhysicalOperatorKind::kSetProperty);
   ASSERT_NE(set_property, nullptr);
+  EXPECT_TRUE(set_property->traits.writes);
   const auto &set_property_data =
       std::get<rg::SetPropertyOp>(set_property->data);
   EXPECT_EQ(set_property_data.property_key, "changed");
@@ -687,22 +697,26 @@ TEST(PhysicalPlanTest, BuildsOwnedStreamingWritePayloads) {
   const rg::PhysicalPlanNode *set_properties = FindPhysicalPlan(
       mutations.Root(), rg::PhysicalOperatorKind::kSetProperties);
   ASSERT_NE(set_properties, nullptr);
+  EXPECT_TRUE(set_properties->traits.writes);
   EXPECT_TRUE(
       std::get<rg::SetPropertiesOp>(set_properties->data).include_existing);
   const rg::PhysicalPlanNode *set_labels =
       FindPhysicalPlan(mutations.Root(), rg::PhysicalOperatorKind::kSetLabels);
   ASSERT_NE(set_labels, nullptr);
+  EXPECT_TRUE(set_labels->traits.writes);
   EXPECT_EQ(std::get<rg::SetLabelsOp>(set_labels->data).labels,
             std::vector<std::string>{"Added"});
 
   const rg::PhysicalPlanNode *remove_property = FindPhysicalPlan(
       mutations.Root(), rg::PhysicalOperatorKind::kRemoveProperty);
   ASSERT_NE(remove_property, nullptr);
+  EXPECT_TRUE(remove_property->traits.writes);
   EXPECT_EQ(std::get<rg::RemovePropertyOp>(remove_property->data).property_key,
             "old");
   const rg::PhysicalPlanNode *remove_labels = FindPhysicalPlan(
       mutations.Root(), rg::PhysicalOperatorKind::kRemoveLabels);
   ASSERT_NE(remove_labels, nullptr);
+  EXPECT_TRUE(remove_labels->traits.writes);
   EXPECT_EQ(std::get<rg::RemoveLabelsOp>(remove_labels->data).labels,
             std::vector<std::string>{"Old"});
 
@@ -783,6 +797,8 @@ TEST(PhysicalPlanTest, BuildsOwnedMergePayload) {
   const rg::PhysicalPlanNode *merge =
       FindPhysicalPlan(physical.Root(), rg::PhysicalOperatorKind::kMerge);
   ASSERT_NE(merge, nullptr);
+  EXPECT_TRUE(merge->traits.writes);
+  EXPECT_TRUE(physical.Effects().writes);
   const auto &data = std::get<rg::MergeOp>(merge->data);
   ASSERT_EQ(data.create_commands.size(), 1U);
   const auto &create = std::get<rg::CreateNodeOp>(data.create_commands.front());
@@ -902,6 +918,16 @@ TEST(PhysicalPlanTest, BuildsOwnedRemainingUnaryPayloads) {
   EXPECT_EQ(procedure_data.yields.front().output_slot.kind,
             rg::SlotKind::kReference);
   EXPECT_TRUE(procedure_data.read_only);
+  EXPECT_FALSE(procedure.Effects().writes);
+
+  ir::ProcedureCallPlan logical_write_procedure(
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>{}),
+      "custom.write", {}, {}, false, false);
+  rg::PhysicalPlan write_procedure =
+      rg::CreatePhysicalPlan(logical_write_procedure);
+  EXPECT_TRUE(write_procedure.Root().traits.writes);
+  EXPECT_TRUE(write_procedure.Effects().writes);
+  EXPECT_FALSE(write_procedure.Effects().contains_write_barrier);
 
   rg::PhysicalPlan assertion = DetachedAssertIsNode();
   const auto &assertion_data =
@@ -1004,6 +1030,7 @@ TEST(PhysicalPlanTest, BuildsOwnedDeletePayloads) {
   const rg::PhysicalPlanNode *delete_node =
       FindPhysicalPlan(delete_plan.Root(), rg::PhysicalOperatorKind::kDelete);
   ASSERT_NE(delete_node, nullptr);
+  EXPECT_TRUE(delete_node->traits.writes);
   const auto &delete_data = std::get<rg::DeleteOp>(delete_node->data);
   ASSERT_EQ(delete_data.expressions.size(), 1U);
   EXPECT_NE(delete_data.expressions.front().Expression(), nullptr);
@@ -1013,6 +1040,7 @@ TEST(PhysicalPlanTest, BuildsOwnedDeletePayloads) {
   const rg::PhysicalPlanNode *detach_node = FindPhysicalPlan(
       detach_plan.Root(), rg::PhysicalOperatorKind::kDetachDelete);
   ASSERT_NE(detach_node, nullptr);
+  EXPECT_TRUE(detach_node->traits.writes);
   const auto &detach_data = std::get<rg::DetachDeleteOp>(detach_node->data);
   ASSERT_EQ(detach_data.expressions.size(), 1U);
   EXPECT_NE(detach_data.expressions.front().Expression(), nullptr);
@@ -1197,6 +1225,8 @@ TEST(PhysicalPlanTest, BuildsOwnedPayloadsForMigratedOperators) {
   PlannedQuery query =
       Plan("MATCH (n) WHERE id(n) > 0 RETURN n AS node SKIP 1 LIMIT 2");
   rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+  EXPECT_FALSE(physical.Effects().writes);
+  EXPECT_FALSE(physical.Effects().contains_write_barrier);
 
   const ir::LogicalPlan *filter =
       FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kFilter);
@@ -2029,6 +2059,7 @@ TEST(PhysicalPlanTest, DoesNotRewriteTopNAcrossSkipOrWrites) {
   const rg::PhysicalPlanNode *skipped_limit_node = FindPhysicalPlan(
       skipped_physical.Root(), rg::PhysicalOperatorKind::kLimit);
   ASSERT_NE(skipped_limit_node, nullptr);
+  EXPECT_FALSE(skipped_physical.Effects().writes);
   EXPECT_FALSE(std::get<rg::LimitOp>(skipped_limit_node->data).exhaust_child);
 
   PlannedQuery write =
@@ -2037,6 +2068,8 @@ TEST(PhysicalPlanTest, DoesNotRewriteTopNAcrossSkipOrWrites) {
   const rg::PhysicalPlanNode *write_limit_node =
       FindPhysicalPlan(write_physical.Root(), rg::PhysicalOperatorKind::kLimit);
   ASSERT_NE(write_limit_node, nullptr);
+  EXPECT_TRUE(write_physical.Effects().writes);
+  EXPECT_TRUE(write_physical.Effects().contains_write_barrier);
   EXPECT_TRUE(std::get<rg::LimitOp>(write_limit_node->data).exhaust_child);
 }
 

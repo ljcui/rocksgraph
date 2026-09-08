@@ -1385,6 +1385,78 @@ TEST(QueryExecutorTest, ExecutesCreateNodeAndRelationship) {
   EXPECT_EQ(StringRows(check), (std::vector<std::vector<std::string>>{{"1"}}));
 }
 
+TEST(QueryExecutorTest, CommitsWritesAfterLimitedCursorIsExhausted) {
+  rg::InMemoryGraph graph;
+  std::unique_ptr<rg::QueryResultCursor> cursor = rg::ExecuteQueryCursor(
+      graph,
+      "UNWIND [1, 2] AS value CREATE (:Made {value: value}) "
+      "RETURN value LIMIT 1");
+
+  std::vector<rg::Value> row;
+  ASSERT_TRUE(cursor->Next(&row));
+  EXPECT_EQ(row, std::vector<rg::Value>{rg::Value(1)});
+  EXPECT_EQ(graph.Nodes().size(), 2U);
+
+  EXPECT_FALSE(cursor->Next(&row));
+  cursor->Close();
+  EXPECT_EQ(graph.Nodes().size(), 2U);
+}
+
+TEST(QueryExecutorTest, CommitsExhaustedWritesUnderZeroLimit) {
+  rg::InMemoryGraph graph;
+  std::unique_ptr<rg::QueryResultCursor> cursor = rg::ExecuteQueryCursor(
+      graph,
+      "UNWIND [1, 2] AS value CREATE (:Made {value: value}) "
+      "RETURN value LIMIT 0");
+
+  std::vector<rg::Value> row;
+  EXPECT_FALSE(cursor->Next(&row));
+  EXPECT_EQ(graph.Nodes().size(), 2U);
+}
+
+TEST(QueryExecutorTest, RollsBackLimitedWritesWhenCursorClosesEarly) {
+  rg::InMemoryGraph graph;
+  std::unique_ptr<rg::QueryResultCursor> cursor = rg::ExecuteQueryCursor(
+      graph,
+      "UNWIND [1, 2] AS value CREATE (:Made {value: value}) "
+      "RETURN value LIMIT 1");
+
+  std::vector<rg::Value> row;
+  ASSERT_TRUE(cursor->Next(&row));
+  EXPECT_EQ(graph.Nodes().size(), 2U);
+
+  cursor->Close();
+  EXPECT_TRUE(graph.Nodes().empty());
+  EXPECT_FALSE(cursor->Next(&row));
+}
+
+TEST(QueryExecutorTest, RollsBackLimitedWritesWhenCursorIsCancelled) {
+  rg::InMemoryGraph graph;
+  std::unique_ptr<rg::QueryResultCursor> cursor = rg::ExecuteQueryCursor(
+      graph,
+      "UNWIND [1, 2] AS value CREATE (:Made {value: value}) "
+      "RETURN value LIMIT 1");
+
+  std::vector<rg::Value> row;
+  ASSERT_TRUE(cursor->Next(&row));
+  EXPECT_EQ(graph.Nodes().size(), 2U);
+
+  cursor->Cancel();
+  EXPECT_TRUE(graph.Nodes().empty());
+  EXPECT_FALSE(cursor->Next(&row));
+}
+
+TEST(QueryExecutorTest, WriteBarrierStabilizesReadsBeforeWrites) {
+  rg::InMemoryGraph graph;
+  graph.CreateNode({"Seed"});
+
+  rg::QueryResult result = rg::ExecuteQuery(
+      graph, "MATCH (n:Seed) CREATE (:Seed) RETURN id(n) AS id");
+
+  ASSERT_EQ(result.rows.size(), 1U);
+  EXPECT_EQ(graph.Nodes().size(), 2U);
+}
+
 TEST(QueryExecutorTest, RollsBackWritesWhenALaterRowFails) {
   rg::InMemoryGraph graph;
 
