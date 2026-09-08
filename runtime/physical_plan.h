@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "ast/ast_node.h"
+#include "ast/precomputed_expression.h"
 #include "ir/logical_plan.h"
 #include "runtime/slotted_row.h"
 
@@ -79,6 +80,12 @@ enum class PhysicalOperatorKind {
 
 [[nodiscard]] std::string_view ToString(PhysicalOperatorKind kind);
 
+enum class PhysicalExpandDirection {
+  kIncoming,
+  kOutgoing,
+  kBoth,
+};
+
 struct PhysicalPrecomputedExpression {
   std::unique_ptr<ast::Expression> expression;
   std::string variable;
@@ -99,7 +106,7 @@ class PhysicalExpression final {
   [[nodiscard]] const ast::Expression *Expression() const noexcept {
     return expression_.get();
   }
-  [[nodiscard]] const std::vector<ir::LogicalPrecomputedExpression> &
+  [[nodiscard]] const std::vector<ast::PrecomputedExpression> &
   PrecomputedExpressions() const noexcept {
     return precomputed_expression_views_;
   }
@@ -110,12 +117,71 @@ class PhysicalExpression final {
  private:
   std::unique_ptr<ast::Expression> expression_;
   std::vector<PhysicalPrecomputedExpression> precomputed_expressions_;
-  std::vector<ir::LogicalPrecomputedExpression> precomputed_expression_views_;
+  std::vector<ast::PrecomputedExpression> precomputed_expression_views_;
   bool requires_input_row_ = false;
 };
 
 struct AllNodeScanOp {
   std::string variable;
+};
+
+struct ArgumentOp {};
+
+struct NodeByLabelScanOp {
+  std::string variable;
+  std::vector<std::string> labels;
+};
+
+struct NodeIndexSeekOp {
+  std::string variable;
+  std::vector<std::string> labels;
+  std::string property_key;
+  PhysicalExpression value;
+  bool unique = false;
+};
+
+struct NodeIndexRangeSeekOp {
+  std::string variable;
+  std::vector<std::string> labels;
+  std::string property_key;
+  std::vector<PhysicalExpression> predicates;
+};
+
+struct PhysicalRelationshipPattern {
+  std::string from_node;
+  std::string relationship;
+  std::string to_node;
+  PhysicalExpandDirection direction = PhysicalExpandDirection::kBoth;
+  std::vector<std::string> types;
+};
+
+struct RelationshipTypeScanOp {
+  PhysicalRelationshipPattern pattern;
+};
+
+struct RelationshipIndexSeekOp {
+  PhysicalRelationshipPattern pattern;
+  std::string property_key;
+  PhysicalExpression value;
+  bool unique = false;
+};
+
+struct RelationshipIndexRangeSeekOp {
+  PhysicalRelationshipPattern pattern;
+  std::string property_key;
+  std::vector<PhysicalExpression> predicates;
+};
+
+struct NodeByIdSeekOp {
+  std::string variable;
+  PhysicalExpression ids;
+  bool many = false;
+};
+
+struct RelationshipByIdSeekOp {
+  PhysicalRelationshipPattern pattern;
+  PhysicalExpression ids;
+  bool many = false;
 };
 
 struct FilterOp {
@@ -146,8 +212,11 @@ struct ProduceResultsOp {
 };
 
 using PhysicalOperatorData =
-    std::variant<std::monostate, AllNodeScanOp, FilterOp, ProjectionOp, SkipOp,
-                 LimitOp, ProduceResultsOp>;
+    std::variant<std::monostate, ArgumentOp, AllNodeScanOp, NodeByLabelScanOp,
+                 NodeIndexSeekOp, NodeIndexRangeSeekOp, RelationshipTypeScanOp,
+                 RelationshipIndexSeekOp, RelationshipIndexRangeSeekOp,
+                 NodeByIdSeekOp, RelationshipByIdSeekOp, FilterOp, ProjectionOp,
+                 SkipOp, LimitOp, ProduceResultsOp>;
 
 struct PhysicalPlanNode {
   OperatorId id = 0;

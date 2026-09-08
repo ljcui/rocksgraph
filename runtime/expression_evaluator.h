@@ -4,7 +4,7 @@
 #include <string_view>
 #include <vector>
 
-#include "ir/logical_plan.h"
+#include "ast/precomputed_expression.h"
 #include "runtime/execution_context.h"
 #include "value/value.h"
 
@@ -40,7 +40,7 @@ class ExpressionBindings {
 
 [[nodiscard]] Value EvaluateExpression(
     const ast::Expression &expression, const ExpressionBindings &bindings,
-    const std::vector<ir::LogicalPrecomputedExpression> &precomputed = {},
+    const std::vector<ast::PrecomputedExpression> &precomputed = {},
     ExecutionContext context = {});
 
 [[nodiscard]] Value EvaluateExpression(const ast::Expression &expression,

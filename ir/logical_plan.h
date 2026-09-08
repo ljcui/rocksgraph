@@ -8,6 +8,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "ast/precomputed_expression.h"
 #include "ir/query_ir.h"
 
 namespace ast {
@@ -91,16 +92,11 @@ enum class LogicalOrderDirection {
 
 [[nodiscard]] std::string_view ToString(LogicalOrderDirection direction);
 
-struct LogicalPrecomputedExpression {
-  const ast::Expression *expression = nullptr;
-  std::string variable;
-};
-
 struct LogicalProjectionItem {
   const ast::Expression *expression = nullptr;
   std::string alias;
   ast::SemanticVariableType semantic_type = ast::SemanticVariableType::kUnknown;
-  std::vector<LogicalPrecomputedExpression> precomputed_expressions;
+  std::vector<ast::PrecomputedExpression> precomputed_expressions;
   bool passthrough = false;
 };
 
@@ -108,7 +104,7 @@ struct LogicalSortItem {
   const ast::Expression *expression = nullptr;
   std::shared_ptr<ast::Expression> owned_expression;
   LogicalOrderDirection direction = LogicalOrderDirection::kAscending;
-  std::vector<LogicalPrecomputedExpression> precomputed_expressions;
+  std::vector<ast::PrecomputedExpression> precomputed_expressions;
 };
 
 struct LogicalPlanMetadata {
@@ -607,12 +603,12 @@ class FilterPlan final : public LogicalPlan {
  public:
   FilterPlan(LogicalPlanPtr source, const ast::Expression *predicate);
   FilterPlan(LogicalPlanPtr source, const ast::Expression *predicate,
-             std::vector<LogicalPrecomputedExpression> precomputed_expressions);
+             std::vector<ast::PrecomputedExpression> precomputed_expressions);
 
   [[nodiscard]] const ast::Expression *Predicate() const noexcept {
     return predicate_;
   }
-  [[nodiscard]] const std::vector<LogicalPrecomputedExpression> &
+  [[nodiscard]] const std::vector<ast::PrecomputedExpression> &
   PrecomputedExpressions() const noexcept {
     return precomputed_expressions_;
   }
@@ -620,7 +616,7 @@ class FilterPlan final : public LogicalPlan {
 
  private:
   const ast::Expression *predicate_ = nullptr;
-  std::vector<LogicalPrecomputedExpression> precomputed_expressions_;
+  std::vector<ast::PrecomputedExpression> precomputed_expressions_;
 };
 
 class ProjectionPlan final : public LogicalPlan {
@@ -691,10 +687,10 @@ class SkipPlan final : public LogicalPlan {
  public:
   SkipPlan(LogicalPlanPtr source, const ast::Expression *skip);
   SkipPlan(LogicalPlanPtr source, const ast::Expression *skip,
-           std::vector<LogicalPrecomputedExpression> precomputed_expressions);
+           std::vector<ast::PrecomputedExpression> precomputed_expressions);
 
   [[nodiscard]] const ast::Expression *Skip() const noexcept { return skip_; }
-  [[nodiscard]] const std::vector<LogicalPrecomputedExpression> &
+  [[nodiscard]] const std::vector<ast::PrecomputedExpression> &
   PrecomputedExpressions() const noexcept {
     return precomputed_expressions_;
   }
@@ -702,17 +698,17 @@ class SkipPlan final : public LogicalPlan {
 
  private:
   const ast::Expression *skip_ = nullptr;
-  std::vector<LogicalPrecomputedExpression> precomputed_expressions_;
+  std::vector<ast::PrecomputedExpression> precomputed_expressions_;
 };
 
 class LimitPlan final : public LogicalPlan {
  public:
   LimitPlan(LogicalPlanPtr source, const ast::Expression *limit);
   LimitPlan(LogicalPlanPtr source, const ast::Expression *limit,
-            std::vector<LogicalPrecomputedExpression> precomputed_expressions);
+            std::vector<ast::PrecomputedExpression> precomputed_expressions);
 
   [[nodiscard]] const ast::Expression *Limit() const noexcept { return limit_; }
-  [[nodiscard]] const std::vector<LogicalPrecomputedExpression> &
+  [[nodiscard]] const std::vector<ast::PrecomputedExpression> &
   PrecomputedExpressions() const noexcept {
     return precomputed_expressions_;
   }
@@ -720,7 +716,7 @@ class LimitPlan final : public LogicalPlan {
 
  private:
   const ast::Expression *limit_ = nullptr;
-  std::vector<LogicalPrecomputedExpression> precomputed_expressions_;
+  std::vector<ast::PrecomputedExpression> precomputed_expressions_;
 };
 
 class TopNPlan final : public LogicalPlan {
@@ -729,13 +725,13 @@ class TopNPlan final : public LogicalPlan {
            const ast::Expression *limit);
   TopNPlan(LogicalPlanPtr source, std::vector<LogicalSortItem> items,
            const ast::Expression *limit,
-           std::vector<LogicalPrecomputedExpression> precomputed_expressions);
+           std::vector<ast::PrecomputedExpression> precomputed_expressions);
 
   [[nodiscard]] const std::vector<LogicalSortItem> &Items() const noexcept {
     return items_;
   }
   [[nodiscard]] const ast::Expression *Limit() const noexcept { return limit_; }
-  [[nodiscard]] const std::vector<LogicalPrecomputedExpression> &
+  [[nodiscard]] const std::vector<ast::PrecomputedExpression> &
   PrecomputedExpressions() const noexcept {
     return precomputed_expressions_;
   }
@@ -744,7 +740,7 @@ class TopNPlan final : public LogicalPlan {
  private:
   std::vector<LogicalSortItem> items_;
   const ast::Expression *limit_ = nullptr;
-  std::vector<LogicalPrecomputedExpression> precomputed_expressions_;
+  std::vector<ast::PrecomputedExpression> precomputed_expressions_;
 };
 
 class ProduceResultsPlan final : public LogicalPlan {

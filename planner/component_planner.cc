@@ -153,9 +153,9 @@ std::vector<const ast::Expression *> PredicateExpressions(
   return expressions;
 }
 
-std::vector<LogicalPrecomputedExpression> PrecomputedExpressions(
+std::vector<ast::PrecomputedExpression> PrecomputedExpressions(
     const std::vector<NestedIRExpression> &nested_expressions) {
-  std::vector<LogicalPrecomputedExpression> out;
+  std::vector<ast::PrecomputedExpression> out;
   out.reserve(nested_expressions.size());
   for (const auto &nested : nested_expressions) {
     if (nested.expression == nullptr) {

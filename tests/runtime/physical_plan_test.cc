@@ -2,8 +2,11 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "ast/ast_builder.h"
 #include "ir/query_ir.h"
@@ -39,6 +42,53 @@ const ir::LogicalPlan *FindPlan(const ir::LogicalPlan &plan,
     }
   }
   return nullptr;
+}
+
+const rg::PhysicalPlanNode *FindPhysicalPlan(const rg::PhysicalPlanNode &node,
+                                             rg::PhysicalOperatorKind kind) {
+  if (node.kind == kind) {
+    return &node;
+  }
+  for (const auto &child : node.children) {
+    if (const rg::PhysicalPlanNode *found = FindPhysicalPlan(*child, kind)) {
+      return found;
+    }
+  }
+  return nullptr;
+}
+
+rg::PhysicalPlan DetachedPhysicalPlan(const std::string &cypher) {
+  PlannedQuery query = Plan(cypher);
+  return rg::CreatePhysicalPlan(*query.logical_plan);
+}
+
+rg::PhysicalPlan DetachedRelationshipTypeScan() {
+  ir::RelationshipTypeScanPlan logical("a", "r", "b",
+                                       ir::ExpandDirection::kOutgoing, {"R"});
+  return rg::CreatePhysicalPlan(logical);
+}
+
+std::vector<std::int64_t> FirstColumnIds(const rg::PhysicalPlan &plan,
+                                         const rg::GraphReader &graph,
+                                         std::string column) {
+  std::unique_ptr<rg::PhysicalResultCursor> cursor = rg::StartPhysicalPlan(
+      plan, graph, nullptr, {}, std::vector<std::string>{std::move(column)});
+  std::vector<std::int64_t> ids;
+  std::vector<rg::Value> row;
+  while (cursor->Next(&row)) {
+    EXPECT_EQ(row.size(), 1U);
+    if (row.front().IsInteger()) {
+      ids.push_back(row.front().AsInteger());
+    } else if (row.front().IsNode()) {
+      ids.push_back(row.front().AsNode().id);
+    } else if (row.front().IsRelationship()) {
+      ids.push_back(row.front().AsRelationship().id);
+    } else {
+      ADD_FAILURE() << "first result column is not an entity or integer";
+    }
+  }
+  std::sort(ids.begin(), ids.end());
+  return ids;
 }
 
 }  // namespace
@@ -154,6 +204,166 @@ TEST(PhysicalPlanTest, ExecutesMigratedPlanAfterLogicalPlanIsDestroyed) {
   ASSERT_EQ(row.size(), 1U);
   EXPECT_EQ(row.front(), rg::Value(2));
   EXPECT_FALSE(cursor->Next(&row));
+}
+
+TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForLeafAccessOperators) {
+  {
+    PlannedQuery query = Plan("RETURN 1 AS value");
+    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+    const rg::PhysicalPlanNode *node =
+        FindPhysicalPlan(physical.Root(), rg::PhysicalOperatorKind::kArgument);
+    ASSERT_NE(node, nullptr);
+    EXPECT_TRUE(std::holds_alternative<rg::ArgumentOp>(node->data));
+  }
+  {
+    PlannedQuery query = Plan("MATCH (n:N) RETURN id(n) AS id");
+    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+    const rg::PhysicalPlanNode *node = FindPhysicalPlan(
+        physical.Root(), rg::PhysicalOperatorKind::kNodeByLabelScan);
+    ASSERT_NE(node, nullptr);
+    const auto &data = std::get<rg::NodeByLabelScanOp>(node->data);
+    EXPECT_EQ(data.variable, "n");
+    EXPECT_EQ(data.labels, (std::vector<std::string>{"N"}));
+  }
+  {
+    PlannedQuery query =
+        Plan("MATCH (n:N) WHERE n.value = 10 RETURN id(n) AS id");
+    const auto *logical = static_cast<const ir::NodeIndexSeekPlan *>(
+        FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kNodeIndexSeek));
+    ASSERT_NE(logical, nullptr);
+    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+    const auto &data =
+        std::get<rg::NodeIndexSeekOp>(physical.NodeFor(*logical).data);
+    EXPECT_EQ(data.property_key, "value");
+    EXPECT_NE(data.value.Expression(), logical->ValueExpression());
+  }
+  {
+    PlannedQuery query =
+        Plan("MATCH (n:N) WHERE n.value >= 10 RETURN id(n) AS id");
+    const auto *logical =
+        static_cast<const ir::NodeIndexRangeSeekPlan *>(FindPlan(
+            *query.logical_plan, ir::LogicalPlanNodeType::kNodeIndexRangeSeek));
+    ASSERT_NE(logical, nullptr);
+    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+    const auto &data =
+        std::get<rg::NodeIndexRangeSeekOp>(physical.NodeFor(*logical).data);
+    ASSERT_EQ(data.predicates.size(), logical->Predicates().size());
+    EXPECT_NE(data.predicates.front().Expression(),
+              logical->Predicates().front());
+  }
+  {
+    ir::RelationshipTypeScanPlan logical("a", "r", "b",
+                                         ir::ExpandDirection::kOutgoing, {"R"});
+    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(logical);
+    const auto &data =
+        std::get<rg::RelationshipTypeScanOp>(physical.Root().data);
+    EXPECT_EQ(data.pattern.relationship, "r");
+    EXPECT_EQ(data.pattern.types, (std::vector<std::string>{"R"}));
+  }
+  {
+    PlannedQuery query =
+        Plan("MATCH ()-[r:R]->() WHERE r.value = 10 RETURN id(r) AS id");
+    const auto *logical = static_cast<const ir::RelationshipIndexSeekPlan *>(
+        FindPlan(*query.logical_plan,
+                 ir::LogicalPlanNodeType::kRelationshipIndexSeek));
+    ASSERT_NE(logical, nullptr);
+    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+    const auto &data =
+        std::get<rg::RelationshipIndexSeekOp>(physical.NodeFor(*logical).data);
+    EXPECT_EQ(data.pattern.relationship, "r");
+    EXPECT_NE(data.value.Expression(), logical->ValueExpression());
+  }
+  {
+    PlannedQuery query =
+        Plan("MATCH ()-[r:R]->() WHERE r.value >= 10 RETURN id(r) AS id");
+    const auto *logical =
+        static_cast<const ir::RelationshipIndexRangeSeekPlan *>(
+            FindPlan(*query.logical_plan,
+                     ir::LogicalPlanNodeType::kRelationshipIndexRangeSeek));
+    ASSERT_NE(logical, nullptr);
+    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+    const auto &data = std::get<rg::RelationshipIndexRangeSeekOp>(
+        physical.NodeFor(*logical).data);
+    ASSERT_EQ(data.predicates.size(), logical->Predicates().size());
+    EXPECT_NE(data.predicates.front().Expression(),
+              logical->Predicates().front());
+  }
+  {
+    PlannedQuery query =
+        Plan("MATCH (n) WHERE id(n) IN [0, 1] RETURN id(n) AS id");
+    const auto *logical = static_cast<const ir::NodeByIdSeekPlan *>(
+        FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kNodeByIdSeek));
+    ASSERT_NE(logical, nullptr);
+    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+    const auto &data =
+        std::get<rg::NodeByIdSeekOp>(physical.NodeFor(*logical).data);
+    EXPECT_TRUE(data.many);
+    EXPECT_NE(data.ids.Expression(), logical->Ids());
+  }
+  {
+    PlannedQuery query =
+        Plan("MATCH ()-[r]->() WHERE id(r) IN [0, 1] RETURN id(r) AS id");
+    const auto *logical = static_cast<const ir::RelationshipByIdSeekPlan *>(
+        FindPlan(*query.logical_plan,
+                 ir::LogicalPlanNodeType::kRelationshipByIdSeek));
+    ASSERT_NE(logical, nullptr);
+    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+    const auto &data =
+        std::get<rg::RelationshipByIdSeekOp>(physical.NodeFor(*logical).data);
+    EXPECT_TRUE(data.many);
+    EXPECT_NE(data.ids.Expression(), logical->Ids());
+  }
+}
+
+TEST(PhysicalPlanTest, ExecutesLeafAccessAfterLogicalPlanAndAstAreDestroyed) {
+  rg::InMemoryGraph graph;
+  auto first = graph.CreateNode({"N"}, {{"value", rg::Value(10)}});
+  auto second = graph.CreateNode({"N"}, {{"value", rg::Value(20)}});
+  auto relationship =
+      graph.CreateRelationship(first, second, "R", {{"value", rg::Value(10)}});
+  graph.AddNodeIndex({"N"}, "value");
+  graph.AddRelationshipIndex({"R"}, "value");
+
+  EXPECT_EQ(
+      FirstColumnIds(DetachedPhysicalPlan("RETURN 1 AS value"), graph, "value"),
+      (std::vector<std::int64_t>{1}));
+  EXPECT_EQ(
+      FirstColumnIds(DetachedPhysicalPlan("MATCH (n:N) RETURN id(n) AS id"),
+                     graph, "id"),
+      (std::vector<std::int64_t>{first->id, second->id}));
+  EXPECT_EQ(
+      FirstColumnIds(DetachedPhysicalPlan(
+                         "MATCH (n:N) WHERE n.value = 10 RETURN id(n) AS id"),
+                     graph, "id"),
+      (std::vector<std::int64_t>{first->id}));
+  EXPECT_EQ(
+      FirstColumnIds(DetachedPhysicalPlan(
+                         "MATCH (n:N) WHERE n.value >= 20 RETURN id(n) AS id"),
+                     graph, "id"),
+      (std::vector<std::int64_t>{second->id}));
+  EXPECT_EQ(FirstColumnIds(DetachedRelationshipTypeScan(), graph, "r"),
+            (std::vector<std::int64_t>{relationship->id}));
+  EXPECT_EQ(FirstColumnIds(
+                DetachedPhysicalPlan(
+                    "MATCH ()-[r:R]->() WHERE r.value = 10 RETURN id(r) AS id"),
+                graph, "id"),
+            (std::vector<std::int64_t>{relationship->id}));
+  EXPECT_EQ(
+      FirstColumnIds(
+          DetachedPhysicalPlan(
+              "MATCH ()-[r:R]->() WHERE r.value >= 10 RETURN id(r) AS id"),
+          graph, "id"),
+      (std::vector<std::int64_t>{relationship->id}));
+  EXPECT_EQ(FirstColumnIds(
+                DetachedPhysicalPlan(
+                    "MATCH (n) WHERE id(n) IN [0, 0, 99] RETURN id(n) AS id"),
+                graph, "id"),
+            (std::vector<std::int64_t>{first->id}));
+  EXPECT_EQ(FirstColumnIds(DetachedPhysicalPlan(
+                               "MATCH ()-[r]->() WHERE id(r) IN [0, 0, 99] "
+                               "RETURN id(r) AS id"),
+                           graph, "id"),
+            (std::vector<std::int64_t>{relationship->id}));
 }
 
 TEST(PhysicalPlanTest, ChoosesSmallerValueHashJoinBuildSide) {

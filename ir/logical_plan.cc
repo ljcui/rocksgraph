@@ -961,7 +961,7 @@ FilterPlan::FilterPlan(LogicalPlanPtr source, const ast::Expression *predicate)
 
 FilterPlan::FilterPlan(
     LogicalPlanPtr source, const ast::Expression *predicate,
-    std::vector<LogicalPrecomputedExpression> precomputed_expressions)
+    std::vector<ast::PrecomputedExpression> precomputed_expressions)
     : LogicalPlan(LogicalPlanNodeType::kFilter,
                   UnaryChildren(std::move(source), "Filter")),
       predicate_(predicate),
@@ -1060,7 +1060,7 @@ SkipPlan::SkipPlan(LogicalPlanPtr source, const ast::Expression *skip)
 
 SkipPlan::SkipPlan(
     LogicalPlanPtr source, const ast::Expression *skip,
-    std::vector<LogicalPrecomputedExpression> precomputed_expressions)
+    std::vector<ast::PrecomputedExpression> precomputed_expressions)
     : LogicalPlan(LogicalPlanNodeType::kSkip,
                   UnaryChildren(std::move(source), "Skip")),
       skip_(skip),
@@ -1086,7 +1086,7 @@ LimitPlan::LimitPlan(LogicalPlanPtr source, const ast::Expression *limit)
 
 LimitPlan::LimitPlan(
     LogicalPlanPtr source, const ast::Expression *limit,
-    std::vector<LogicalPrecomputedExpression> precomputed_expressions)
+    std::vector<ast::PrecomputedExpression> precomputed_expressions)
     : LogicalPlan(LogicalPlanNodeType::kLimit,
                   UnaryChildren(std::move(source), "Limit")),
       limit_(limit),
@@ -1115,7 +1115,7 @@ TopNPlan::TopNPlan(LogicalPlanPtr source, std::vector<LogicalSortItem> items,
 TopNPlan::TopNPlan(
     LogicalPlanPtr source, std::vector<LogicalSortItem> items,
     const ast::Expression *limit,
-    std::vector<LogicalPrecomputedExpression> precomputed_expressions)
+    std::vector<ast::PrecomputedExpression> precomputed_expressions)
     : LogicalPlan(LogicalPlanNodeType::kTopN,
                   UnaryChildren(std::move(source), "TopN")),
       items_(std::move(items)),

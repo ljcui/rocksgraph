@@ -510,7 +510,7 @@ std::vector<SlotMapping> NamedMappings(
 
 PhysicalExpression CopyPhysicalExpression(
     const ast::Expression *expression,
-    const std::vector<ir::LogicalPrecomputedExpression> &precomputed) {
+    const std::vector<ast::PrecomputedExpression> &precomputed) {
   CHECK(expression != nullptr, common::InvalidArgumentError,
         "physical expression is null");
   std::vector<PhysicalPrecomputedExpression> copied_precomputed;
@@ -527,6 +527,50 @@ PhysicalExpression CopyPhysicalExpression(
       !precomputed.empty();
   return PhysicalExpression(ast::CloneExpression(*expression),
                             std::move(copied_precomputed), requires_input_row);
+}
+
+std::vector<PhysicalExpression> CopyPhysicalExpressions(
+    const std::vector<const ast::Expression *> &expressions) {
+  std::vector<PhysicalExpression> copied;
+  copied.reserve(expressions.size());
+  for (const ast::Expression *expression : expressions) {
+    copied.push_back(CopyPhysicalExpression(expression, {}));
+  }
+  return copied;
+}
+
+PhysicalExpandDirection ToPhysicalExpandDirection(ir::Direction direction) {
+  switch (direction) {
+    case ir::Direction::kIncoming:
+      return PhysicalExpandDirection::kIncoming;
+    case ir::Direction::kOutgoing:
+      return PhysicalExpandDirection::kOutgoing;
+    case ir::Direction::kBoth:
+      return PhysicalExpandDirection::kBoth;
+  }
+  THROW(common::InternalError, "unknown relationship direction");
+}
+
+PhysicalExpandDirection ToPhysicalExpandDirection(
+    ir::ExpandDirection direction) {
+  switch (direction) {
+    case ir::ExpandDirection::kIncoming:
+      return PhysicalExpandDirection::kIncoming;
+    case ir::ExpandDirection::kOutgoing:
+      return PhysicalExpandDirection::kOutgoing;
+    case ir::ExpandDirection::kBoth:
+      return PhysicalExpandDirection::kBoth;
+  }
+  THROW(common::InternalError, "unknown expand direction");
+}
+
+PhysicalRelationshipPattern CopyPhysicalRelationshipPattern(
+    const ir::PatternRelationship &pattern) {
+  return {.from_node = pattern.left_node,
+          .relationship = pattern.variable,
+          .to_node = pattern.right_node,
+          .direction = ToPhysicalExpandDirection(pattern.direction),
+          .types = pattern.types};
 }
 
 class PhysicalPlanBuilder final {
@@ -828,9 +872,96 @@ class PhysicalPlanBuilder final {
   void BuildOperatorData(const ir::LogicalPlan &plan, PhysicalPlanNode *node) {
     CHECK(node != nullptr, common::InternalError, "physical plan node is null");
     switch (node->kind) {
+      case PhysicalOperatorKind::kArgument:
+        node->data = ArgumentOp{};
+        return;
       case PhysicalOperatorKind::kAllNodeScan: {
         const auto &scan = static_cast<const ir::AllNodeScanPlan &>(plan);
         node->data = AllNodeScanOp{.variable = scan.Variable()};
+        return;
+      }
+      case PhysicalOperatorKind::kNodeByLabelScan: {
+        const auto &scan = static_cast<const ir::NodeByLabelScanPlan &>(plan);
+        node->data = NodeByLabelScanOp{.variable = scan.Variable(),
+                                       .labels = scan.Labels()};
+        return;
+      }
+      case PhysicalOperatorKind::kNodeIndexSeek: {
+        const auto &seek = static_cast<const ir::NodeIndexSeekPlan &>(plan);
+        node->data = NodeIndexSeekOp{
+            .variable = seek.Variable(),
+            .labels = seek.Labels(),
+            .property_key = seek.PropertyKey(),
+            .value = CopyPhysicalExpression(seek.ValueExpression(), {}),
+            .unique = seek.Unique()};
+        return;
+      }
+      case PhysicalOperatorKind::kNodeIndexRangeSeek: {
+        const auto &seek =
+            static_cast<const ir::NodeIndexRangeSeekPlan &>(plan);
+        node->data = NodeIndexRangeSeekOp{
+            .variable = seek.Variable(),
+            .labels = seek.Labels(),
+            .property_key = seek.PropertyKey(),
+            .predicates = CopyPhysicalExpressions(seek.Predicates())};
+        return;
+      }
+      case PhysicalOperatorKind::kRelationshipTypeScan: {
+        const auto &scan =
+            static_cast<const ir::RelationshipTypeScanPlan &>(plan);
+        node->data = RelationshipTypeScanOp{
+            .pattern = {
+                .from_node = scan.FromNode(),
+                .relationship = scan.Relationship(),
+                .to_node = scan.ToNode(),
+                .direction = ToPhysicalExpandDirection(scan.Direction()),
+                .types = scan.Types()}};
+        return;
+      }
+      case PhysicalOperatorKind::kRelationshipIndexSeek: {
+        const auto &seek =
+            static_cast<const ir::RelationshipIndexSeekPlan &>(plan);
+        node->data = RelationshipIndexSeekOp{
+            .pattern = {.from_node = seek.FromNode(),
+                        .relationship = seek.Relationship(),
+                        .to_node = seek.ToNode(),
+                        .direction =
+                            ToPhysicalExpandDirection(seek.Direction()),
+                        .types = seek.Types()},
+            .property_key = seek.PropertyKey(),
+            .value = CopyPhysicalExpression(seek.ValueExpression(), {}),
+            .unique = seek.Unique()};
+        return;
+      }
+      case PhysicalOperatorKind::kRelationshipIndexRangeSeek: {
+        const auto &seek =
+            static_cast<const ir::RelationshipIndexRangeSeekPlan &>(plan);
+        node->data = RelationshipIndexRangeSeekOp{
+            .pattern = {.from_node = seek.FromNode(),
+                        .relationship = seek.Relationship(),
+                        .to_node = seek.ToNode(),
+                        .direction =
+                            ToPhysicalExpandDirection(seek.Direction()),
+                        .types = seek.Types()},
+            .property_key = seek.PropertyKey(),
+            .predicates = CopyPhysicalExpressions(seek.Predicates())};
+        return;
+      }
+      case PhysicalOperatorKind::kNodeByIdSeek: {
+        const auto &seek = static_cast<const ir::NodeByIdSeekPlan &>(plan);
+        node->data =
+            NodeByIdSeekOp{.variable = seek.Variable(),
+                           .ids = CopyPhysicalExpression(seek.Ids(), {}),
+                           .many = seek.Many()};
+        return;
+      }
+      case PhysicalOperatorKind::kRelationshipByIdSeek: {
+        const auto &seek =
+            static_cast<const ir::RelationshipByIdSeekPlan &>(plan);
+        node->data = RelationshipByIdSeekOp{
+            .pattern = CopyPhysicalRelationshipPattern(seek.Pattern()),
+            .ids = CopyPhysicalExpression(seek.Ids(), {}),
+            .many = seek.Many()};
         return;
       }
       case PhysicalOperatorKind::kFilter: {

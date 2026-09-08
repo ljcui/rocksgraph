@@ -44,9 +44,9 @@ std::vector<std::string> ProjectionAliases(
   return aliases;
 }
 
-std::vector<LogicalPrecomputedExpression> PrecomputedExpressions(
+std::vector<ast::PrecomputedExpression> PrecomputedExpressions(
     const std::vector<NestedIRExpression> &nested_expressions) {
-  std::vector<LogicalPrecomputedExpression> out;
+  std::vector<ast::PrecomputedExpression> out;
   out.reserve(nested_expressions.size());
   for (const auto &nested : nested_expressions) {
     if (nested.expression == nullptr) {
@@ -73,7 +73,7 @@ std::vector<LogicalPrecomputedExpression> PrecomputedExpressions(
 std::vector<LogicalProjectionItem> LogicalProjectionItems(
     const std::vector<ProjectionItem> &items,
     const std::vector<NestedIRExpression> &nested_expressions = {}) {
-  std::vector<LogicalPrecomputedExpression> precomputed_expressions =
+  std::vector<ast::PrecomputedExpression> precomputed_expressions =
       PrecomputedExpressions(nested_expressions);
   std::vector<LogicalProjectionItem> logical_items;
   logical_items.reserve(items.size());
@@ -147,7 +147,7 @@ std::vector<std::string> ProjectionTailPassthroughVariables(
     }
     (void)AddUniqueString(&variables, variable);
   };
-  const std::vector<LogicalPrecomputedExpression> precomputed_expressions =
+  const std::vector<ast::PrecomputedExpression> precomputed_expressions =
       PrecomputedExpressions(projection.nested_expressions);
   const auto add_expression_variables = [&](const ast::Expression *expression) {
     if (expression == nullptr) {
@@ -236,7 +236,7 @@ void ValidateProjectionTailExpressionsAvailable(
     const std::vector<LogicalSortItem> *sort_items = nullptr) {
   const std::unordered_set<std::string> available(input.OutputColumns().begin(),
                                                   input.OutputColumns().end());
-  const std::vector<LogicalPrecomputedExpression> precomputed_expressions =
+  const std::vector<ast::PrecomputedExpression> precomputed_expressions =
       PrecomputedExpressions(projection.nested_expressions);
   const auto validate_dependencies = [&](const ast::Expression *expression,
                                          std::string_view context) {
@@ -304,7 +304,7 @@ std::vector<LogicalSortItem> SortItems(
     const RequiredOrder &required_order,
     const std::vector<NestedIRExpression> &nested_expressions) {
   std::vector<LogicalSortItem> items = SortItems(required_order);
-  std::vector<LogicalPrecomputedExpression> precomputed_expressions =
+  std::vector<ast::PrecomputedExpression> precomputed_expressions =
       PrecomputedExpressions(nested_expressions);
   for (auto &item : items) {
     item.precomputed_expressions = precomputed_expressions;

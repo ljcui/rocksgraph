@@ -185,7 +185,7 @@ TruthValue EqualityTruth(const Value &left, const Value &right) {
 
 std::optional<Value> LookupPrecomputedExpression(
     const ast::Expression &expression, const ExpressionBindings &row,
-    const std::vector<ir::LogicalPrecomputedExpression> &precomputed) {
+    const std::vector<ast::PrecomputedExpression> &precomputed) {
   for (const auto &entry : precomputed) {
     if (entry.expression == nullptr ||
         !ast::ASTEqual::Equal(&expression, entry.expression)) {
@@ -283,7 +283,7 @@ bool MultiplyWouldOverflow(std::int64_t left, std::int64_t right) {
 
 Value EvaluateFunction(
     const ast::FunctionInvocation &function, const ExpressionBindings &row,
-    const std::vector<ir::LogicalPrecomputedExpression> &precomputed,
+    const std::vector<ast::PrecomputedExpression> &precomputed,
     ExecutionContext context) {
   const ast::BuiltinFunction *builtin =
       ast::FindBuiltinFunction(function.function_name);
@@ -313,7 +313,7 @@ Value EvaluateFunction(
 
 Value EvaluateListIndex(
     const ast::ListIndexExpression &expression, const ExpressionBindings &row,
-    const std::vector<ir::LogicalPrecomputedExpression> &precomputed,
+    const std::vector<ast::PrecomputedExpression> &precomputed,
     ExecutionContext context) {
   CHECK(expression.list != nullptr && expression.index != nullptr,
         common::InvalidArgumentError, "list index expression is incomplete");
@@ -334,7 +334,7 @@ Value EvaluateListIndex(
 
 Value EvaluateListSlice(
     const ast::ListSliceExpression &expression, const ExpressionBindings &row,
-    const std::vector<ir::LogicalPrecomputedExpression> &precomputed,
+    const std::vector<ast::PrecomputedExpression> &precomputed,
     ExecutionContext context) {
   CHECK(expression.list != nullptr, common::InvalidArgumentError,
         "list slice base expression is null");
@@ -367,7 +367,7 @@ Value EvaluateListSlice(
 
 Value EvaluateCaseExpression(
     const ast::CaseExpression &expression, const ExpressionBindings &row,
-    const std::vector<ir::LogicalPrecomputedExpression> &precomputed,
+    const std::vector<ast::PrecomputedExpression> &precomputed,
     ExecutionContext context) {
   std::optional<Value> test;
   if (expression.test != nullptr) {
@@ -398,7 +398,7 @@ Value EvaluateCaseExpression(
 
 Value EvaluateListComprehension(
     const ast::ListComprehension &expression, const ExpressionBindings &row,
-    const std::vector<ir::LogicalPrecomputedExpression> &precomputed,
+    const std::vector<ast::PrecomputedExpression> &precomputed,
     ExecutionContext context) {
   CHECK(!expression.variable.empty() && expression.list_expr != nullptr,
         common::InvalidArgumentError, "list comprehension is incomplete");
@@ -426,7 +426,7 @@ Value EvaluateListComprehension(
 Value EvaluateQuantifier(
     const ast::Quantifier &quantifier, QuantifierMode mode,
     const ExpressionBindings &row,
-    const std::vector<ir::LogicalPrecomputedExpression> &precomputed,
+    const std::vector<ast::PrecomputedExpression> &precomputed,
     ExecutionContext context) {
   CHECK(!quantifier.variable.empty() && quantifier.list_expr != nullptr &&
             quantifier.predicate != nullptr,
@@ -476,7 +476,7 @@ Value EvaluateQuantifier(
 
 Value EvaluateArithmetic(
     const ast::Expression &expression, const ExpressionBindings &row,
-    const std::vector<ir::LogicalPrecomputedExpression> &precomputed,
+    const std::vector<ast::PrecomputedExpression> &precomputed,
     ExecutionContext context) {
   const auto &binary = ast::CastAst<ast::BinaryExpression>(expression);
   CHECK(binary.left != nullptr && binary.right != nullptr,
@@ -616,7 +616,7 @@ double AsDoubleValue(const Value &value) {
 
 Value EvaluateExpression(
     const ast::Expression &expression, const ExpressionBindings &row,
-    const std::vector<ir::LogicalPrecomputedExpression> &precomputed,
+    const std::vector<ast::PrecomputedExpression> &precomputed,
     ExecutionContext context) {
   if (std::optional<Value> value =
           LookupPrecomputedExpression(expression, row, precomputed);

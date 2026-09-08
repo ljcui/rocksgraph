@@ -243,7 +243,7 @@ class SlottedExpressionBindings final : public ExpressionBindings {
 };
 
 Value Evaluate(const ast::Expression &expression, const SlottedRow &row,
-               const std::vector<ir::LogicalPrecomputedExpression> &precomputed,
+               const std::vector<ast::PrecomputedExpression> &precomputed,
                RuntimeState &state) {
   const RuntimeExpressionProgram &program =
       state.ExpressionProgram(expression, *row.Slots());
@@ -1175,10 +1175,10 @@ std::optional<std::int64_t> SeekId(const Value &value) {
   return std::nullopt;
 }
 
-IndexRange EvaluateIndexRange(
-    const std::vector<const ast::Expression *> &predicates,
-    std::string_view variable, std::string_view property_key,
-    const SlottedRow &argument, RuntimeState &state) {
+IndexRange EvaluateIndexRange(const std::vector<PhysicalExpression> &predicates,
+                              std::string_view variable,
+                              std::string_view property_key,
+                              const SlottedRow &argument, RuntimeState &state) {
   auto is_property = [&](const ast::Expression *expression) {
     const auto *property = ir::AsPropertyExpression(expression);
     const auto *owner = property == nullptr
@@ -1188,8 +1188,8 @@ IndexRange EvaluateIndexRange(
            property->property_key == property_key;
   };
   IndexRange range;
-  for (const auto *predicate : predicates) {
-    const auto *expression = ir::UnwrapParenthesized(predicate);
+  for (const auto &predicate : predicates) {
+    const auto *expression = ir::UnwrapParenthesized(predicate.Expression());
     CHECK(expression != nullptr, common::InternalError,
           "index range predicate is null");
     if (expression->Is(ast::ASTNodeType::kStringPredicateExpression)) {
@@ -1198,7 +1198,8 @@ IndexRange EvaluateIndexRange(
       CHECK(prefix.op == "STARTS WITH" && is_property(prefix.left.get()) &&
                 prefix.right != nullptr,
             common::InternalError, "invalid index prefix predicate");
-      range.prefix = Evaluate(*prefix.right, argument, {}, state);
+      range.prefix = Evaluate(*prefix.right, argument,
+                              predicate.PrecomputedExpressions(), state);
       continue;
     }
     CHECK(expression->Is(ast::ASTNodeType::kComparisonExpression),
@@ -1216,8 +1217,10 @@ IndexRange EvaluateIndexRange(
     auto &bounds = (comparison.op.front() == '>') != reversed
                        ? range.lower_bounds
                        : range.upper_bounds;
-    bounds.push_back({.value = Evaluate(*bound, argument, {}, state),
-                      .inclusive = comparison.op.size() == 2});
+    bounds.push_back(
+        {.value = Evaluate(*bound, argument, predicate.PrecomputedExpressions(),
+                           state),
+         .inclusive = comparison.op.size() == 2});
   }
   return range;
 }
@@ -1276,17 +1279,21 @@ class AllNodeScanOperator final : public PullOperator {
   bool closed_ = false;
 };
 
-class LeafOperator final : public PullOperator {
- public:
-  LeafOperator(const PhysicalPlanNode &node, RuntimeState &state,
-               std::optional<SlottedRow> argument)
-      : node_(&node), state_(&state), argument_(std::move(argument)) {
-    if (!argument_.has_value()) {
-      argument_.emplace(EmptyArgument(node.argument_slots));
-    }
-  }
+SlottedRow LeafArgument(const PhysicalPlanNode &node,
+                        std::optional<SlottedRow> argument) {
+  return argument.has_value() ? std::move(*argument)
+                              : EmptyArgument(node.argument_slots);
+}
 
-  ~LeafOperator() override { Close(); }
+class ArgumentOperator final : public PullOperator {
+ public:
+  ArgumentOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                   std::optional<SlottedRow> argument)
+      : node_(&node),
+        state_(&state),
+        argument_(LeafArgument(node, std::move(argument))) {
+    (void)OperatorData<ArgumentOp>(node);
+  }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
     CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
@@ -1294,45 +1301,365 @@ class LeafOperator final : public PullOperator {
     if (closed_) {
       return false;
     }
-    const ir::LogicalPlan &plan = *node_->logical;
-    if (plan.Type() == ir::LogicalPlanNodeType::kArgument) {
-      if (emitted_argument_) {
-        Close();
-        return false;
+    closed_ = true;
+    *row = argument_.CopyTo(node_->output_slots, *state_->graph_reader);
+    return true;
+  }
+
+  void Close() noexcept override { closed_ = true; }
+
+ private:
+  const PhysicalPlanNode *node_ = nullptr;
+  RuntimeState *state_ = nullptr;
+  SlottedRow argument_;
+  bool closed_ = false;
+};
+
+class NodeScanOperator : public PullOperator {
+ public:
+  NodeScanOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                   std::optional<SlottedRow> argument,
+                   const std::string &variable,
+                   const std::vector<std::string> *labels_to_verify,
+                   const std::vector<PhysicalExpression> *predicates)
+      : node_(&node),
+        state_(&state),
+        argument_(LeafArgument(node, std::move(argument))),
+        variable_(&variable),
+        labels_to_verify_(labels_to_verify),
+        predicates_(predicates) {}
+
+  ~NodeScanOperator() override { Close(); }
+
+  [[nodiscard]] bool Next(SlottedRow *row) override {
+    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    state_->CheckCancelled();
+    if (closed_) {
+      return false;
+    }
+    if (cursor_ == nullptr) {
+      cursor_ = state_->TrackCursor(OpenCursor());
+    }
+    while (cursor_->Next()) {
+      const std::int64_t id = cursor_->Id();
+      if (labels_to_verify_ != nullptr &&
+          !NodeHasAllLabels(*state_->graph_reader->NodeById(id),
+                            *labels_to_verify_)) {
+        continue;
       }
-      emitted_argument_ = true;
-      *row = argument_->CopyTo(node_->output_slots, *state_->graph_reader);
+      SlottedRow output =
+          argument_.CopyTo(node_->output_slots, *state_->graph_reader);
+      if (!TryBindEntityId(&output, *variable_, SlotKind::kNode, id,
+                           *state_->graph_reader)) {
+        continue;
+      }
+      if (predicates_ != nullptr &&
+          !std::all_of(predicates_->begin(), predicates_->end(),
+                       [&](const PhysicalExpression &predicate) {
+                         return PredicateIsTrue(
+                             Evaluate(predicate, output, *state_));
+                       })) {
+        continue;
+      }
+      *row = std::move(output);
       return true;
     }
+    Close();
+    return false;
+  }
 
-    if (plan.Type() == ir::LogicalPlanNodeType::kNodeByIdSeek ||
-        plan.Type() == ir::LogicalPlanNodeType::kRelationshipByIdSeek) {
-      return NextId(row);
+  void Close() noexcept override {
+    if (cursor_ != nullptr) {
+      state_->ReleaseCursor(cursor_);
+      cursor_ = nullptr;
     }
+    closed_ = true;
+  }
 
-    EnsureCursor();
-    if (pending_reverse_) {
-      pending_reverse_ = false;
-      if (EmitRelationship(pending_relationship_id_, true, row)) {
+ protected:
+  [[nodiscard]] virtual std::unique_ptr<EntityIdCursor> OpenCursor() = 0;
+  [[nodiscard]] const SlottedRow &Argument() const noexcept {
+    return argument_;
+  }
+  [[nodiscard]] RuntimeState &State() const noexcept { return *state_; }
+
+ private:
+  const PhysicalPlanNode *node_ = nullptr;
+  RuntimeState *state_ = nullptr;
+  SlottedRow argument_;
+  const std::string *variable_ = nullptr;
+  const std::vector<std::string> *labels_to_verify_ = nullptr;
+  const std::vector<PhysicalExpression> *predicates_ = nullptr;
+  EntityIdCursor *cursor_ = nullptr;
+  bool closed_ = false;
+};
+
+class NodeByLabelScanOperator final : public NodeScanOperator {
+ public:
+  NodeByLabelScanOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                          std::optional<SlottedRow> argument)
+      : NodeScanOperator(node, state, std::move(argument),
+                         OperatorData<NodeByLabelScanOp>(node).variable,
+                         &OperatorData<NodeByLabelScanOp>(node).labels,
+                         nullptr),
+        data_(&OperatorData<NodeByLabelScanOp>(node)) {}
+
+ private:
+  [[nodiscard]] std::unique_ptr<EntityIdCursor> OpenCursor() override {
+    return State().graph_reader->ScanNodeIdsByLabels(data_->labels);
+  }
+
+  const NodeByLabelScanOp *data_ = nullptr;
+};
+
+class NodeIndexSeekOperator final : public NodeScanOperator {
+ public:
+  NodeIndexSeekOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                        std::optional<SlottedRow> argument)
+      : NodeScanOperator(node, state, std::move(argument),
+                         OperatorData<NodeIndexSeekOp>(node).variable, nullptr,
+                         nullptr),
+        data_(&OperatorData<NodeIndexSeekOp>(node)) {}
+
+ private:
+  [[nodiscard]] std::unique_ptr<EntityIdCursor> OpenCursor() override {
+    Value expected = Evaluate(data_->value, Argument(), State());
+    return State().graph_reader->FindNodeIdsByIndex(
+        data_->labels, data_->property_key, expected);
+  }
+
+  const NodeIndexSeekOp *data_ = nullptr;
+};
+
+class NodeIndexRangeSeekOperator final : public NodeScanOperator {
+ public:
+  NodeIndexRangeSeekOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                             std::optional<SlottedRow> argument)
+      : NodeScanOperator(node, state, std::move(argument),
+                         OperatorData<NodeIndexRangeSeekOp>(node).variable,
+                         nullptr,
+                         &OperatorData<NodeIndexRangeSeekOp>(node).predicates),
+        data_(&OperatorData<NodeIndexRangeSeekOp>(node)) {}
+
+ private:
+  [[nodiscard]] std::unique_ptr<EntityIdCursor> OpenCursor() override {
+    const IndexRange range =
+        EvaluateIndexRange(data_->predicates, data_->variable,
+                           data_->property_key, Argument(), State());
+    return State().graph_reader->FindNodeIdsByIndexRange(
+        data_->labels, data_->property_key, range);
+  }
+
+  const NodeIndexRangeSeekOp *data_ = nullptr;
+};
+
+class IdSeekValues final {
+ public:
+  IdSeekValues(const PhysicalExpression &expression, bool many,
+               const SlottedRow &argument, RuntimeState &state)
+      : expression_(&expression),
+        many_(many),
+        argument_(&argument),
+        state_(&state) {}
+
+  IdSeekValues(const IdSeekValues &) = delete;
+  IdSeekValues &operator=(const IdSeekValues &) = delete;
+  ~IdSeekValues() { Close(); }
+
+  [[nodiscard]] std::optional<std::int64_t> Next() {
+    Initialize();
+    while (next_ < values_.size()) {
+      state_->CheckCancelled();
+      const std::optional<std::int64_t> id = SeekId(values_[next_++]);
+      if (!id.has_value() || *id < 0 || seen_.contains(*id)) {
+        continue;
+      }
+      constexpr std::size_t kSeenIdBytes = 4 * sizeof(std::int64_t);
+      state_->memory_tracker.Reserve(kSeenIdBytes);
+      reserved_bytes_ += kSeenIdBytes;
+      seen_.insert(*id);
+      return id;
+    }
+    return std::nullopt;
+  }
+
+  void Close() noexcept {
+    values_.clear();
+    seen_.clear();
+    state_->memory_tracker.Release(reserved_bytes_);
+    reserved_bytes_ = 0;
+  }
+
+ private:
+  void Initialize() {
+    if (initialized_) {
+      return;
+    }
+    initialized_ = true;
+    Value value = Evaluate(*expression_, *argument_, *state_);
+    const std::size_t bytes = EstimatedValueHeapUsage(value);
+    state_->memory_tracker.Reserve(bytes);
+    reserved_bytes_ += bytes;
+    if (many_ && !value.IsNull()) {
+      CHECK(value.IsList(), common::InvalidArgumentError, "IN requires a list");
+      values_ = value.AsList();
+    } else if (!many_) {
+      values_.push_back(std::move(value));
+    }
+  }
+
+  const PhysicalExpression *expression_ = nullptr;
+  bool many_ = false;
+  const SlottedRow *argument_ = nullptr;
+  RuntimeState *state_ = nullptr;
+  Value::List values_;
+  std::unordered_set<std::int64_t> seen_;
+  std::size_t next_ = 0;
+  std::size_t reserved_bytes_ = 0;
+  bool initialized_ = false;
+};
+
+class NodeByIdSeekOperator final : public PullOperator {
+ public:
+  NodeByIdSeekOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                       std::optional<SlottedRow> argument)
+      : node_(&node),
+        data_(&OperatorData<NodeByIdSeekOp>(node)),
+        state_(&state),
+        argument_(LeafArgument(node, std::move(argument))),
+        values_(data_->ids, data_->many, argument_, state) {}
+
+  ~NodeByIdSeekOperator() override { Close(); }
+
+  [[nodiscard]] bool Next(SlottedRow *row) override {
+    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    state_->CheckCancelled();
+    if (closed_) {
+      return false;
+    }
+    while (const std::optional<std::int64_t> id = values_.Next()) {
+      try {
+        (void)state_->graph_reader->NodeById(*id);
+      } catch (const common::NotFoundError &) {
+        continue;
+      }
+      SlottedRow output =
+          argument_.CopyTo(node_->output_slots, *state_->graph_reader);
+      if (TryBindEntityId(&output, data_->variable, SlotKind::kNode, *id,
+                          *state_->graph_reader)) {
+        *row = std::move(output);
         return true;
       }
     }
-    while (cursor_ != nullptr && cursor_->Next()) {
-      const std::int64_t id = cursor_->Id();
-      if (IsNodeLeaf(plan.Type())) {
-        if (EmitNode(id, row)) {
-          return true;
-        }
-      } else {
-        if (EmitRelationship(id, false, row)) {
-          return true;
-        }
-        if (pending_reverse_) {
-          pending_reverse_ = false;
-          if (EmitRelationship(pending_relationship_id_, true, row)) {
-            return true;
-          }
-        }
+    Close();
+    return false;
+  }
+
+  void Close() noexcept override {
+    values_.Close();
+    closed_ = true;
+  }
+
+ private:
+  const PhysicalPlanNode *node_ = nullptr;
+  const NodeByIdSeekOp *data_ = nullptr;
+  RuntimeState *state_ = nullptr;
+  SlottedRow argument_;
+  IdSeekValues values_;
+  bool closed_ = false;
+};
+
+bool EmitRelationship(const PhysicalPlanNode &node,
+                      const PhysicalRelationshipPattern &pattern,
+                      const std::vector<PhysicalExpression> *predicates,
+                      const SlottedRow &argument, std::int64_t id, bool reverse,
+                      std::optional<std::int64_t> *pending_reverse,
+                      SlottedRow *row, RuntimeState &state) {
+  const Relationship &relationship = *state.graph_reader->RelationshipById(id);
+  if (!RelationshipHasType(relationship, pattern.types)) {
+    return false;
+  }
+  if (pattern.direction == PhysicalExpandDirection::kBoth && !reverse &&
+      relationship.start_node_id != relationship.end_node_id) {
+    *pending_reverse = id;
+  }
+  const std::int64_t from_id =
+      pattern.direction == PhysicalExpandDirection::kIncoming
+          ? relationship.end_node_id
+          : (reverse ? relationship.end_node_id : relationship.start_node_id);
+  const std::int64_t to_id =
+      pattern.direction == PhysicalExpandDirection::kIncoming
+          ? relationship.start_node_id
+          : (reverse ? relationship.start_node_id : relationship.end_node_id);
+  SlottedRow output = argument.CopyTo(node.output_slots, *state.graph_reader);
+  if (!TryBindEntityId(&output, pattern.from_node, SlotKind::kNode, from_id,
+                       *state.graph_reader) ||
+      !TryBindEntityId(&output, pattern.relationship, SlotKind::kRelationship,
+                       relationship.id, *state.graph_reader) ||
+      !TryBindEntityId(&output, pattern.to_node, SlotKind::kNode, to_id,
+                       *state.graph_reader)) {
+    return false;
+  }
+  if (predicates != nullptr &&
+      !std::all_of(predicates->begin(), predicates->end(),
+                   [&](const PhysicalExpression &predicate) {
+                     return PredicateIsTrue(Evaluate(predicate, output, state));
+                   })) {
+    return false;
+  }
+  *row = std::move(output);
+  return true;
+}
+
+bool EmitPendingRelationship(const PhysicalPlanNode &node,
+                             const PhysicalRelationshipPattern &pattern,
+                             const std::vector<PhysicalExpression> *predicates,
+                             const SlottedRow &argument,
+                             std::optional<std::int64_t> *pending_reverse,
+                             SlottedRow *row, RuntimeState &state) {
+  if (!pending_reverse->has_value()) {
+    return false;
+  }
+  const std::int64_t id = **pending_reverse;
+  pending_reverse->reset();
+  return EmitRelationship(node, pattern, predicates, argument, id, true,
+                          pending_reverse, row, state);
+}
+
+class RelationshipScanOperator : public PullOperator {
+ public:
+  RelationshipScanOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                           std::optional<SlottedRow> argument,
+                           const PhysicalRelationshipPattern &pattern,
+                           const std::vector<PhysicalExpression> *predicates)
+      : node_(&node),
+        state_(&state),
+        argument_(LeafArgument(node, std::move(argument))),
+        pattern_(&pattern),
+        predicates_(predicates) {}
+
+  ~RelationshipScanOperator() override { Close(); }
+
+  [[nodiscard]] bool Next(SlottedRow *row) override {
+    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    state_->CheckCancelled();
+    if (closed_) {
+      return false;
+    }
+    if (cursor_ == nullptr) {
+      cursor_ = state_->TrackCursor(OpenCursor());
+    }
+    if (EmitPendingRelationship(*node_, *pattern_, predicates_, argument_,
+                                &pending_reverse_, row, *state_)) {
+      return true;
+    }
+    while (cursor_->Next()) {
+      if (EmitRelationship(*node_, *pattern_, predicates_, argument_,
+                           cursor_->Id(), false, &pending_reverse_, row,
+                           *state_) ||
+          EmitPendingRelationship(*node_, *pattern_, predicates_, argument_,
+                                  &pending_reverse_, row, *state_)) {
+        return true;
       }
     }
     Close();
@@ -1344,287 +1671,144 @@ class LeafOperator final : public PullOperator {
       state_->ReleaseCursor(cursor_);
       cursor_ = nullptr;
     }
-    id_values_.clear();
-    seen_ids_.clear();
-    state_->memory_tracker.Release(id_reserved_bytes_);
-    id_reserved_bytes_ = 0;
+    pending_reverse_.reset();
     closed_ = true;
   }
 
+ protected:
+  [[nodiscard]] virtual std::unique_ptr<EntityIdCursor> OpenCursor() = 0;
+  [[nodiscard]] const SlottedRow &Argument() const noexcept {
+    return argument_;
+  }
+  [[nodiscard]] RuntimeState &State() const noexcept { return *state_; }
+
  private:
-  bool NextId(SlottedRow *row) {
-    const bool node =
-        node_->logical->Type() == ir::LogicalPlanNodeType::kNodeByIdSeek;
-    if (!initialized_) {
-      initialized_ = true;
-      const ast::Expression *expression = nullptr;
-      bool many = false;
-      if (node) {
-        const auto &plan =
-            static_cast<const ir::NodeByIdSeekPlan &>(*node_->logical);
-        expression = plan.Ids();
-        many = plan.Many();
-      } else {
-        const auto &plan =
-            static_cast<const ir::RelationshipByIdSeekPlan &>(*node_->logical);
-        expression = plan.Ids();
-        many = plan.Many();
-      }
-      Value value = Evaluate(*expression, *argument_, {}, *state_);
-      const auto bytes = EstimatedValueHeapUsage(value);
-      state_->memory_tracker.Reserve(bytes);
-      id_reserved_bytes_ += bytes;
-      if (many && !value.IsNull()) {
-        CHECK(value.IsList(), common::InvalidArgumentError,
-              "IN requires a list");
-        id_values_ = value.AsList();
-      } else if (!many) {
-        id_values_.push_back(std::move(value));
-      }
+  const PhysicalPlanNode *node_ = nullptr;
+  RuntimeState *state_ = nullptr;
+  SlottedRow argument_;
+  const PhysicalRelationshipPattern *pattern_ = nullptr;
+  const std::vector<PhysicalExpression> *predicates_ = nullptr;
+  EntityIdCursor *cursor_ = nullptr;
+  std::optional<std::int64_t> pending_reverse_;
+  bool closed_ = false;
+};
+
+class RelationshipTypeScanOperator final : public RelationshipScanOperator {
+ public:
+  RelationshipTypeScanOperator(const PhysicalPlanNode &node,
+                               RuntimeState &state,
+                               std::optional<SlottedRow> argument)
+      : RelationshipScanOperator(
+            node, state, std::move(argument),
+            OperatorData<RelationshipTypeScanOp>(node).pattern, nullptr),
+        data_(&OperatorData<RelationshipTypeScanOp>(node)) {}
+
+ private:
+  [[nodiscard]] std::unique_ptr<EntityIdCursor> OpenCursor() override {
+    return State().graph_reader->ScanRelationshipIdsByTypes(
+        data_->pattern.types);
+  }
+
+  const RelationshipTypeScanOp *data_ = nullptr;
+};
+
+class RelationshipIndexSeekOperator final : public RelationshipScanOperator {
+ public:
+  RelationshipIndexSeekOperator(const PhysicalPlanNode &node,
+                                RuntimeState &state,
+                                std::optional<SlottedRow> argument)
+      : RelationshipScanOperator(
+            node, state, std::move(argument),
+            OperatorData<RelationshipIndexSeekOp>(node).pattern, nullptr),
+        data_(&OperatorData<RelationshipIndexSeekOp>(node)) {}
+
+ private:
+  [[nodiscard]] std::unique_ptr<EntityIdCursor> OpenCursor() override {
+    Value expected = Evaluate(data_->value, Argument(), State());
+    return State().graph_reader->FindRelationshipIdsByIndex(
+        data_->pattern.types, data_->property_key, expected);
+  }
+
+  const RelationshipIndexSeekOp *data_ = nullptr;
+};
+
+class RelationshipIndexRangeSeekOperator final
+    : public RelationshipScanOperator {
+ public:
+  RelationshipIndexRangeSeekOperator(const PhysicalPlanNode &node,
+                                     RuntimeState &state,
+                                     std::optional<SlottedRow> argument)
+      : RelationshipScanOperator(
+            node, state, std::move(argument),
+            OperatorData<RelationshipIndexRangeSeekOp>(node).pattern,
+            &OperatorData<RelationshipIndexRangeSeekOp>(node).predicates),
+        data_(&OperatorData<RelationshipIndexRangeSeekOp>(node)) {}
+
+ private:
+  [[nodiscard]] std::unique_ptr<EntityIdCursor> OpenCursor() override {
+    const IndexRange range =
+        EvaluateIndexRange(data_->predicates, data_->pattern.relationship,
+                           data_->property_key, Argument(), State());
+    return State().graph_reader->FindRelationshipIdsByIndexRange(
+        data_->pattern.types, data_->property_key, range);
+  }
+
+  const RelationshipIndexRangeSeekOp *data_ = nullptr;
+};
+
+class RelationshipByIdSeekOperator final : public PullOperator {
+ public:
+  RelationshipByIdSeekOperator(const PhysicalPlanNode &node,
+                               RuntimeState &state,
+                               std::optional<SlottedRow> argument)
+      : node_(&node),
+        data_(&OperatorData<RelationshipByIdSeekOp>(node)),
+        state_(&state),
+        argument_(LeafArgument(node, std::move(argument))),
+        values_(data_->ids, data_->many, argument_, state) {}
+
+  ~RelationshipByIdSeekOperator() override { Close(); }
+
+  [[nodiscard]] bool Next(SlottedRow *row) override {
+    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    state_->CheckCancelled();
+    if (closed_) {
+      return false;
     }
-    if (pending_reverse_) {
-      pending_reverse_ = false;
-      if (EmitRelationship(pending_relationship_id_, true, row)) {
-        return true;
-      }
+    if (EmitPendingRelationship(*node_, data_->pattern, nullptr, argument_,
+                                &pending_reverse_, row, *state_)) {
+      return true;
     }
-    while (id_index_ < id_values_.size()) {
-      state_->CheckCancelled();
-      const auto id = SeekId(id_values_[id_index_++]);
-      if (!id.has_value() || *id < 0 || seen_ids_.contains(*id)) {
-        continue;
-      }
-      constexpr std::size_t bytes = 4 * sizeof(std::int64_t);
-      state_->memory_tracker.Reserve(bytes);
-      id_reserved_bytes_ += bytes;
-      seen_ids_.insert(*id);
+    while (const std::optional<std::int64_t> id = values_.Next()) {
       try {
-        if (node) {
-          (void)state_->graph_reader->NodeById(*id);
-        } else {
-          (void)state_->graph_reader->RelationshipById(*id);
-        }
+        (void)state_->graph_reader->RelationshipById(*id);
       } catch (const common::NotFoundError &) {
         continue;
       }
-      if (node ? EmitNode(*id, row) : EmitRelationship(*id, false, row)) {
+      if (EmitRelationship(*node_, data_->pattern, nullptr, argument_, *id,
+                           false, &pending_reverse_, row, *state_) ||
+          EmitPendingRelationship(*node_, data_->pattern, nullptr, argument_,
+                                  &pending_reverse_, row, *state_)) {
         return true;
-      }
-      if (pending_reverse_) {
-        pending_reverse_ = false;
-        if (EmitRelationship(*id, true, row)) {
-          return true;
-        }
       }
     }
     Close();
     return false;
   }
 
-  static bool IsNodeLeaf(ir::LogicalPlanNodeType type) {
-    return type == ir::LogicalPlanNodeType::kNodeByLabelScan ||
-           type == ir::LogicalPlanNodeType::kNodeIndexSeek ||
-           type == ir::LogicalPlanNodeType::kNodeIndexRangeSeek;
+  void Close() noexcept override {
+    values_.Close();
+    pending_reverse_.reset();
+    closed_ = true;
   }
 
-  void EnsureCursor() {
-    if (cursor_ != nullptr || initialized_) {
-      return;
-    }
-    initialized_ = true;
-    const ir::LogicalPlan &plan = *node_->logical;
-    switch (plan.Type()) {
-      case ir::LogicalPlanNodeType::kNodeByLabelScan:
-        cursor_ = state_->TrackCursor(state_->graph_reader->ScanNodeIdsByLabels(
-            static_cast<const ir::NodeByLabelScanPlan &>(plan).Labels()));
-        break;
-      case ir::LogicalPlanNodeType::kNodeIndexSeek: {
-        const auto &seek = static_cast<const ir::NodeIndexSeekPlan &>(plan);
-        Value expected =
-            Evaluate(*seek.ValueExpression(), *argument_, {}, *state_);
-        cursor_ = state_->TrackCursor(state_->graph_reader->FindNodeIdsByIndex(
-            seek.Labels(), seek.PropertyKey(), expected));
-        break;
-      }
-      case ir::LogicalPlanNodeType::kNodeIndexRangeSeek: {
-        const auto &seek =
-            static_cast<const ir::NodeIndexRangeSeekPlan &>(plan);
-        const auto range =
-            EvaluateIndexRange(seek.Predicates(), seek.Variable(),
-                               seek.PropertyKey(), *argument_, *state_);
-        cursor_ =
-            state_->TrackCursor(state_->graph_reader->FindNodeIdsByIndexRange(
-                seek.Labels(), seek.PropertyKey(), range));
-        break;
-      }
-      case ir::LogicalPlanNodeType::kRelationshipTypeScan:
-        cursor_ = state_->TrackCursor(
-            state_->graph_reader->ScanRelationshipIdsByTypes(
-                static_cast<const ir::RelationshipTypeScanPlan &>(plan)
-                    .Types()));
-        break;
-      case ir::LogicalPlanNodeType::kRelationshipIndexSeek: {
-        const auto &seek =
-            static_cast<const ir::RelationshipIndexSeekPlan &>(plan);
-        Value expected =
-            Evaluate(*seek.ValueExpression(), *argument_, {}, *state_);
-        cursor_ = state_->TrackCursor(
-            state_->graph_reader->FindRelationshipIdsByIndex(
-                seek.Types(), seek.PropertyKey(), expected));
-        break;
-      }
-      case ir::LogicalPlanNodeType::kRelationshipIndexRangeSeek: {
-        const auto &seek =
-            static_cast<const ir::RelationshipIndexRangeSeekPlan &>(plan);
-        const auto range =
-            EvaluateIndexRange(seek.Predicates(), seek.Relationship(),
-                               seek.PropertyKey(), *argument_, *state_);
-        cursor_ = state_->TrackCursor(
-            state_->graph_reader->FindRelationshipIdsByIndexRange(
-                seek.Types(), seek.PropertyKey(), range));
-        break;
-      }
-      default:
-        THROW(common::InternalError,
-              "unsupported physical leaf: " + std::string(plan.Name()));
-    }
-  }
-
-  bool EmitNode(std::int64_t id, SlottedRow *row) {
-    const ir::LogicalPlan &plan = *node_->logical;
-    std::string variable;
-    if (plan.Type() == ir::LogicalPlanNodeType::kNodeByIdSeek) {
-      variable = static_cast<const ir::NodeByIdSeekPlan &>(plan).Variable();
-    } else if (plan.Type() == ir::LogicalPlanNodeType::kNodeByLabelScan) {
-      const auto &scan = static_cast<const ir::NodeByLabelScanPlan &>(plan);
-      if (!NodeHasAllLabels(*state_->graph_reader->NodeById(id),
-                            scan.Labels())) {
-        return false;
-      }
-      variable = scan.Variable();
-    } else if (plan.Type() == ir::LogicalPlanNodeType::kNodeIndexSeek) {
-      variable = static_cast<const ir::NodeIndexSeekPlan &>(plan).Variable();
-    } else {
-      variable =
-          static_cast<const ir::NodeIndexRangeSeekPlan &>(plan).Variable();
-    }
-
-    SlottedRow next =
-        argument_->CopyTo(node_->output_slots, *state_->graph_reader);
-    if (!TryBindEntityId(&next, variable, SlotKind::kNode, id,
-                         *state_->graph_reader)) {
-      return false;
-    }
-    if (plan.Type() == ir::LogicalPlanNodeType::kNodeIndexRangeSeek) {
-      const auto &seek = static_cast<const ir::NodeIndexRangeSeekPlan &>(plan);
-      for (const ast::Expression *predicate : seek.Predicates()) {
-        if (!PredicateIsTrue(Evaluate(*predicate, next, {}, *state_))) {
-          return false;
-        }
-      }
-    }
-    *row = std::move(next);
-    return true;
-  }
-
-  bool EmitRelationship(std::int64_t id, bool reverse, SlottedRow *row) {
-    const ir::LogicalPlan &plan = *node_->logical;
-    const Relationship &relationship =
-        *state_->graph_reader->RelationshipById(id);
-    std::string from;
-    std::string rel;
-    std::string to;
-    ir::ExpandDirection direction = ir::ExpandDirection::kBoth;
-    std::vector<std::string> types;
-    const std::vector<const ast::Expression *> *predicates = nullptr;
-    if (plan.Type() == ir::LogicalPlanNodeType::kRelationshipByIdSeek) {
-      const auto &pattern =
-          static_cast<const ir::RelationshipByIdSeekPlan &>(plan).Pattern();
-      from = pattern.left_node;
-      rel = pattern.variable;
-      to = pattern.right_node;
-      types = pattern.types;
-      direction = pattern.direction == ir::Direction::kIncoming
-                      ? ir::ExpandDirection::kIncoming
-                  : pattern.direction == ir::Direction::kOutgoing
-                      ? ir::ExpandDirection::kOutgoing
-                      : ir::ExpandDirection::kBoth;
-    } else if (plan.Type() == ir::LogicalPlanNodeType::kRelationshipTypeScan) {
-      const auto &scan =
-          static_cast<const ir::RelationshipTypeScanPlan &>(plan);
-      from = scan.FromNode();
-      rel = scan.Relationship();
-      to = scan.ToNode();
-      direction = scan.Direction();
-      types = scan.Types();
-    } else if (plan.Type() == ir::LogicalPlanNodeType::kRelationshipIndexSeek) {
-      const auto &scan =
-          static_cast<const ir::RelationshipIndexSeekPlan &>(plan);
-      from = scan.FromNode();
-      rel = scan.Relationship();
-      to = scan.ToNode();
-      direction = scan.Direction();
-      types = scan.Types();
-    } else {
-      const auto &scan =
-          static_cast<const ir::RelationshipIndexRangeSeekPlan &>(plan);
-      from = scan.FromNode();
-      rel = scan.Relationship();
-      to = scan.ToNode();
-      direction = scan.Direction();
-      types = scan.Types();
-      predicates = &scan.Predicates();
-    }
-    if (!RelationshipHasType(relationship, types)) {
-      return false;
-    }
-
-    if (direction == ir::ExpandDirection::kBoth && !reverse &&
-        relationship.start_node_id != relationship.end_node_id) {
-      pending_reverse_ = true;
-      pending_relationship_id_ = id;
-    }
-    const std::int64_t from_id =
-        direction == ir::ExpandDirection::kIncoming
-            ? relationship.end_node_id
-            : (reverse ? relationship.end_node_id : relationship.start_node_id);
-    const std::int64_t to_id =
-        direction == ir::ExpandDirection::kIncoming
-            ? relationship.start_node_id
-            : (reverse ? relationship.start_node_id : relationship.end_node_id);
-    SlottedRow next =
-        argument_->CopyTo(node_->output_slots, *state_->graph_reader);
-    if (!TryBindEntityId(&next, from, SlotKind::kNode, from_id,
-                         *state_->graph_reader) ||
-        !TryBindEntityId(&next, rel, SlotKind::kRelationship, relationship.id,
-                         *state_->graph_reader) ||
-        !TryBindEntityId(&next, to, SlotKind::kNode, to_id,
-                         *state_->graph_reader)) {
-      return false;
-    }
-    if (predicates != nullptr) {
-      for (const ast::Expression *predicate : *predicates) {
-        if (!PredicateIsTrue(Evaluate(*predicate, next, {}, *state_))) {
-          return false;
-        }
-      }
-    }
-    *row = std::move(next);
-    return true;
-  }
-
+ private:
   const PhysicalPlanNode *node_ = nullptr;
+  const RelationshipByIdSeekOp *data_ = nullptr;
   RuntimeState *state_ = nullptr;
-  std::optional<SlottedRow> argument_;
-  EntityIdCursor *cursor_ = nullptr;
-  std::int64_t pending_relationship_id_ = -1;
-  Value::List id_values_;
-  std::unordered_set<std::int64_t> seen_ids_;
-  std::size_t id_index_ = 0;
-  std::size_t id_reserved_bytes_ = 0;
-  bool emitted_argument_ = false;
-  bool initialized_ = false;
-  bool pending_reverse_ = false;
+  SlottedRow argument_;
+  IdSeekValues values_;
+  std::optional<std::int64_t> pending_reverse_;
   bool closed_ = false;
 };
 
@@ -4466,11 +4650,57 @@ class OperatorFactory final {
       const PhysicalPlanNode &node,
       std::optional<SlottedRow> argument = std::nullopt) {
     switch (node.kind) {
+      case PhysicalOperatorKind::kArgument:
+        CHECK(node.children.empty(), common::InternalError,
+              "argument physical node must not have children");
+        return std::make_unique<ArgumentOperator>(node, *state_,
+                                                  std::move(argument));
       case PhysicalOperatorKind::kAllNodeScan:
         CHECK(node.children.empty(), common::InternalError,
               "all-node scan physical node must not have children");
         return std::make_unique<AllNodeScanOperator>(node, *state_,
                                                      std::move(argument));
+      case PhysicalOperatorKind::kNodeByLabelScan:
+        CHECK(node.children.empty(), common::InternalError,
+              "node-by-label scan physical node must not have children");
+        return std::make_unique<NodeByLabelScanOperator>(node, *state_,
+                                                         std::move(argument));
+      case PhysicalOperatorKind::kNodeIndexSeek:
+        CHECK(node.children.empty(), common::InternalError,
+              "node index seek physical node must not have children");
+        return std::make_unique<NodeIndexSeekOperator>(node, *state_,
+                                                       std::move(argument));
+      case PhysicalOperatorKind::kNodeIndexRangeSeek:
+        CHECK(node.children.empty(), common::InternalError,
+              "node index range seek physical node must not have children");
+        return std::make_unique<NodeIndexRangeSeekOperator>(
+            node, *state_, std::move(argument));
+      case PhysicalOperatorKind::kRelationshipTypeScan:
+        CHECK(node.children.empty(), common::InternalError,
+              "relationship type scan physical node must not have children");
+        return std::make_unique<RelationshipTypeScanOperator>(
+            node, *state_, std::move(argument));
+      case PhysicalOperatorKind::kRelationshipIndexSeek:
+        CHECK(node.children.empty(), common::InternalError,
+              "relationship index seek physical node must not have children");
+        return std::make_unique<RelationshipIndexSeekOperator>(
+            node, *state_, std::move(argument));
+      case PhysicalOperatorKind::kRelationshipIndexRangeSeek:
+        CHECK(node.children.empty(), common::InternalError,
+              "relationship index range seek physical node must not have "
+              "children");
+        return std::make_unique<RelationshipIndexRangeSeekOperator>(
+            node, *state_, std::move(argument));
+      case PhysicalOperatorKind::kNodeByIdSeek:
+        CHECK(node.children.empty(), common::InternalError,
+              "node-by-id seek physical node must not have children");
+        return std::make_unique<NodeByIdSeekOperator>(node, *state_,
+                                                      std::move(argument));
+      case PhysicalOperatorKind::kRelationshipByIdSeek:
+        CHECK(node.children.empty(), common::InternalError,
+              "relationship-by-id seek physical node must not have children");
+        return std::make_unique<RelationshipByIdSeekOperator>(
+            node, *state_, std::move(argument));
       case PhysicalOperatorKind::kFilter:
         CHECK(node.children.size() == 1, common::InternalError,
               "filter physical node must have one child");
@@ -4506,19 +4736,6 @@ class OperatorFactory final {
               "partial Top-N physical node must have one child");
         return std::make_unique<PartialTopNOperator>(
             node, *state_, Build(*node.children[0], std::move(argument)));
-      case PhysicalOperatorKind::kArgument:
-      case PhysicalOperatorKind::kNodeByLabelScan:
-      case PhysicalOperatorKind::kNodeIndexSeek:
-      case PhysicalOperatorKind::kNodeIndexRangeSeek:
-      case PhysicalOperatorKind::kRelationshipTypeScan:
-      case PhysicalOperatorKind::kRelationshipIndexSeek:
-      case PhysicalOperatorKind::kRelationshipIndexRangeSeek:
-      case PhysicalOperatorKind::kNodeByIdSeek:
-      case PhysicalOperatorKind::kRelationshipByIdSeek:
-        CHECK(node.logical->ChildCount() == 0, common::InternalError,
-              "leaf physical node must not have children");
-        return std::make_unique<LeafOperator>(node, *state_,
-                                              std::move(argument));
       case PhysicalOperatorKind::kApply:
       case PhysicalOperatorKind::kSemiApply:
       case PhysicalOperatorKind::kAntiSemiApply:
