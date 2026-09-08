@@ -108,6 +108,32 @@ rg::PhysicalPlan DetachedLeftOuterHashJoin() {
   return rg::CreatePhysicalPlan(logical);
 }
 
+rg::PhysicalPlan DetachedCartesianProduct() {
+  ir::CartesianProductPlan logical(
+      std::make_unique<ir::NodeByLabelScanPlan>("a", "Left"),
+      std::make_unique<ir::NodeByLabelScanPlan>("b", "Right"));
+  return rg::CreatePhysicalPlan(logical);
+}
+
+rg::PhysicalPlan DetachedParameterCartesianProduct() {
+  std::unique_ptr<ast::Parameter> left_shared = Parameter("left_shared");
+  std::unique_ptr<ast::Parameter> left_value = Parameter("left_value");
+  std::unique_ptr<ast::Parameter> right_shared = Parameter("right_shared");
+  std::unique_ptr<ast::Parameter> right_value = Parameter("right_value");
+  auto left = std::make_unique<ir::ProjectionPlan>(
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>{}),
+      std::vector<ir::LogicalProjectionItem>{
+          {.expression = left_shared.get(), .alias = "shared"},
+          {.expression = left_value.get(), .alias = "left"}});
+  auto right = std::make_unique<ir::ProjectionPlan>(
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>{}),
+      std::vector<ir::LogicalProjectionItem>{
+          {.expression = right_shared.get(), .alias = "shared"},
+          {.expression = right_value.get(), .alias = "right"}});
+  ir::CartesianProductPlan logical(std::move(left), std::move(right));
+  return rg::CreatePhysicalPlan(logical);
+}
+
 rg::PhysicalPlan DetachedExpandInto() {
   std::unique_ptr<ast::Parameter> from = Parameter("from");
   std::unique_ptr<ast::Parameter> to = Parameter("to");
@@ -764,6 +790,134 @@ TEST(PhysicalPlanTest, ChoosesSmallerValueHashJoinBuildSide) {
   EXPECT_NE(data.keys.front().right.Expression(),
             logical.JoinKeys().front().right);
   EXPECT_NE(data.predicates.front().Expression(), logical.Predicates().front());
+}
+
+TEST(PhysicalPlanTest, BuildsTypedNestedLoopBinaryPayloads) {
+  PlannedQuery product_query = Plan("MATCH (a), (b) RETURN a, b");
+  const ir::LogicalPlan *logical_product = FindPlan(
+      *product_query.logical_plan, ir::LogicalPlanNodeType::kCartesianProduct);
+  ASSERT_NE(logical_product, nullptr);
+  rg::PhysicalPlan product =
+      rg::CreatePhysicalPlan(*product_query.logical_plan);
+  const auto &product_node = product.NodeFor(*logical_product);
+  const auto &product_data =
+      std::get<rg::CartesianProductOp>(product_node.data);
+  EXPECT_EQ(product_data.cached_child, 1U);
+  EXPECT_NE(rg::PhysicalPlanToString(product).find("cache=right"),
+            std::string::npos);
+
+  PlannedQuery predicate_query =
+      Plan("MATCH (a), (b) WHERE a.age > b.age RETURN a, b");
+  const ir::LogicalPlan *logical_predicate = FindPlan(
+      *predicate_query.logical_plan, ir::LogicalPlanNodeType::kPredicateJoin);
+  ASSERT_NE(logical_predicate, nullptr);
+  rg::PhysicalPlan predicate =
+      rg::CreatePhysicalPlan(*predicate_query.logical_plan);
+  const auto &predicate_node = predicate.NodeFor(*logical_predicate);
+  const auto &predicate_data =
+      std::get<rg::PredicateJoinOp>(predicate_node.data);
+  ASSERT_EQ(predicate_data.predicates.size(), 1U);
+  EXPECT_EQ(predicate_data.cached_child, 1U);
+  EXPECT_NE(predicate_data.predicates.front().Expression(),
+            static_cast<const ir::PredicateJoinPlan &>(*logical_predicate)
+                .Predicates()
+                .front());
+  EXPECT_NE(rg::PhysicalPlanToString(predicate).find("cache=right"),
+            std::string::npos);
+}
+
+TEST(PhysicalPlanTest, StreamsCartesianProductAfterLogicalPlanIsDestroyed) {
+  rg::InMemoryGraph graph;
+  graph.CreateNode({"Left"});
+  graph.CreateNode({"Left"});
+  graph.CreateNode({"Right"});
+  graph.CreateNode({"Right"});
+  graph.CreateNode({"Right"});
+  rg::PhysicalPlan physical = DetachedCartesianProduct();
+  ASSERT_EQ(physical.Root().kind, rg::PhysicalOperatorKind::kCartesianProduct);
+
+  const auto rows = PhysicalRows(physical, graph, {"a", "b"});
+  ASSERT_EQ(rows.size(), 6U);
+  std::set<std::string> pairs;
+  for (const auto &row : rows) {
+    ASSERT_EQ(row.size(), 2U);
+    ASSERT_TRUE(row[0].IsNode());
+    ASSERT_TRUE(row[1].IsNode());
+    pairs.insert(std::to_string(row[0].AsNode().id) + ":" +
+                 std::to_string(row[1].AsNode().id));
+  }
+  EXPECT_EQ(pairs.size(), 6U);
+
+  std::unique_ptr<rg::PhysicalResultCursor> cursor =
+      rg::StartPhysicalPlan(physical, graph, nullptr, {}, {"a", "b"});
+  std::vector<rg::Value> row;
+  ASSERT_TRUE(cursor->Next(&row));
+  cursor->Close();
+  EXPECT_FALSE(cursor->Next(&row));
+
+  rg::QueryExecutionOptions memory_options;
+  memory_options.memory_limit_bytes = 1;
+  cursor = rg::StartPhysicalPlan(physical, graph, nullptr, {}, {"a", "b"},
+                                 memory_options);
+  EXPECT_THROW((void)cursor->Next(&row), common::MemoryLimitExceededError);
+
+  rg::QueryExecutionOptions cancellation_options;
+  cancellation_options.cancellation =
+      std::make_shared<rg::QueryCancellationToken>();
+  cursor = rg::StartPhysicalPlan(physical, graph, nullptr, {}, {"a", "b"},
+                                 cancellation_options);
+  cancellation_options.cancellation->Cancel();
+  EXPECT_THROW((void)cursor->Next(&row), common::QueryCancelledError);
+
+  rg::InMemoryGraph empty_right;
+  empty_right.CreateNode({"Left"});
+  EXPECT_TRUE(PhysicalRows(physical, empty_right, {"a", "b"}).empty());
+}
+
+TEST(PhysicalPlanTest,
+     ExecutesPredicateJoinAfterLogicalPlanAndAstAreDestroyed) {
+  rg::InMemoryGraph graph;
+  graph.CreateNode({}, {{"age", rg::Value(3)}, {"name", rg::Value("old")}});
+  graph.CreateNode({}, {{"age", rg::Value(2)}, {"name", rg::Value("middle")}});
+  graph.CreateNode({}, {{"age", rg::Value(1)}, {"name", rg::Value("young")}});
+  graph.CreateNode({}, {{"name", rg::Value("unknown")}});
+  rg::PhysicalPlan physical = DetachedPhysicalPlan(
+      "MATCH (a), (b) WHERE a.age > b.age "
+      "RETURN a.name AS older, b.name AS younger");
+  ASSERT_NE(FindPhysicalPlan(physical.Root(),
+                             rg::PhysicalOperatorKind::kPredicateJoin),
+            nullptr);
+
+  const auto rows = PhysicalRows(physical, graph, {"older", "younger"});
+  ASSERT_EQ(rows.size(), 3U);
+  std::set<std::string> pairs;
+  for (const auto &row : rows) {
+    ASSERT_EQ(row.size(), 2U);
+    ASSERT_TRUE(row[0].IsString());
+    ASSERT_TRUE(row[1].IsString());
+    pairs.insert(row[0].AsString() + ":" + row[1].AsString());
+  }
+  EXPECT_EQ(pairs,
+            (std::set<std::string>{"middle:young", "old:middle", "old:young"}));
+}
+
+TEST(PhysicalPlanTest, CartesianProductRejectsConflictingSharedSlots) {
+  rg::InMemoryGraph graph;
+  rg::PhysicalPlan physical = DetachedParameterCartesianProduct();
+
+  EXPECT_EQ(PhysicalRows(physical, graph, {"shared", "left", "right"},
+                         {{"left_shared", rg::Value(1)},
+                          {"left_value", rg::Value("left")},
+                          {"right_shared", rg::Value(1)},
+                          {"right_value", rg::Value("right")}}),
+            (std::vector<std::vector<rg::Value>>{
+                {rg::Value(1), rg::Value("left"), rg::Value("right")}}));
+  EXPECT_TRUE(PhysicalRows(physical, graph, {"shared", "left", "right"},
+                           {{"left_shared", rg::Value(1)},
+                            {"left_value", rg::Value("left")},
+                            {"right_shared", rg::Value(2)},
+                            {"right_value", rg::Value("right")}})
+                  .empty());
 }
 
 TEST(PhysicalPlanTest, BuildsTypedNodeAndLeftOuterHashJoinPayloads) {

@@ -1222,6 +1222,9 @@ class PhysicalPlanBuilder final {
       case PhysicalOperatorKind::kProduceResults:
         node->data = ProduceResultsOp{.columns = plan.OutputColumns()};
         return;
+      case PhysicalOperatorKind::kCartesianProduct:
+        node->data = CartesianProductOp{};
+        return;
       case PhysicalOperatorKind::kNodeHashJoin: {
         const auto &join = static_cast<const ir::NodeHashJoinPlan &>(plan);
         NodeHashJoinOp data{.join_keys = join.JoinKeys()};
@@ -1250,6 +1253,12 @@ class PhysicalPlanBuilder final {
           data.build_child = 0;
         }
         node->data = std::move(data);
+        return;
+      }
+      case PhysicalOperatorKind::kPredicateJoin: {
+        const auto &join = static_cast<const ir::PredicateJoinPlan &>(plan);
+        node->data = PredicateJoinOp{
+            .predicates = CopyPhysicalExpressions(join.Predicates())};
         return;
       }
       case PhysicalOperatorKind::kLeftOuterHashJoin: {

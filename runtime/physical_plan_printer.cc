@@ -111,6 +111,20 @@ class PhysicalPlanPrinter final {
       metadata.push_back(std::string("build=") +
                          (join->build_child == 0 ? "left" : "right"));
     }
+    if (node.kind == PhysicalOperatorKind::kCartesianProduct) {
+      const auto *product = std::get_if<CartesianProductOp>(&node.data);
+      CHECK(product != nullptr, common::InternalError,
+            "Cartesian product physical payload is missing");
+      metadata.push_back(std::string("cache=") +
+                         (product->cached_child == 0 ? "left" : "right"));
+    }
+    if (node.kind == PhysicalOperatorKind::kPredicateJoin) {
+      const auto *join = std::get_if<PredicateJoinOp>(&node.data);
+      CHECK(join != nullptr, common::InternalError,
+            "predicate join physical payload is missing");
+      metadata.push_back(std::string("cache=") +
+                         (join->cached_child == 0 ? "left" : "right"));
+    }
     metadata.push_back("slots=[" + FormatSlots(*node.output_slots) + "]");
 
     line.append(" {");

@@ -4420,112 +4420,97 @@ class LeftOuterHashJoinOperator final : public PullOperator {
   bool closed_ = false;
 };
 
-class BlockingBinaryOperator final : public PullOperator {
+class CachedNestedLoopState final {
  public:
-  BlockingBinaryOperator(const PhysicalPlanNode &node, RuntimeState &state,
-                         std::unique_ptr<PullOperator> lhs,
-                         std::unique_ptr<PullOperator> rhs)
+  CachedNestedLoopState(const PhysicalPlanNode &node, RuntimeState &state,
+                        std::unique_ptr<PullOperator> lhs,
+                        std::unique_ptr<PullOperator> rhs,
+                        std::size_t cached_child)
       : node_(&node),
         state_(&state),
         lhs_(std::move(lhs)),
-        rhs_(std::move(rhs)) {}
+        rhs_(std::move(rhs)),
+        cached_child_(cached_child) {}
 
-  ~BlockingBinaryOperator() override { Close(); }
+  ~CachedNestedLoopState() { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override {
+  [[nodiscard]] bool Next(const SlottedRow **lhs, const SlottedRow **rhs) {
+    CHECK(lhs != nullptr && rhs != nullptr, common::InvalidArgumentError,
+          "nested-loop output rows are null");
     state_->CheckCancelled();
+    if (closed_) {
+      return false;
+    }
     if (!initialized_) {
       Initialize();
     }
-    if (next_ >= rows_.size()) {
+    if (cached_rows_.empty()) {
       Close();
       return false;
     }
-    *row = std::move(rows_[next_++]);
-    return true;
+
+    while (true) {
+      if (!probe_row_.has_value()) {
+        SlottedRow probe(node_->children[ProbeChild()]->output_slots);
+        if (!Source(ProbeChild())->Next(&probe)) {
+          Close();
+          return false;
+        }
+        probe_row_.emplace(std::move(probe));
+        cached_offset_ = 0;
+      }
+      if (cached_offset_ < cached_rows_.size()) {
+        const SlottedRow &cached = cached_rows_[cached_offset_++];
+        *lhs = CachedChild() == 0 ? &cached : &*probe_row_;
+        *rhs = CachedChild() == 0 ? &*probe_row_ : &cached;
+        return true;
+      }
+      probe_row_.reset();
+    }
   }
 
-  void Close() noexcept override {
+  void Close() noexcept {
+    if (closed_) {
+      return;
+    }
     if (lhs_ != nullptr) {
       lhs_->Close();
     }
     if (rhs_ != nullptr) {
       rhs_->Close();
     }
+    probe_row_.reset();
+    cached_rows_.clear();
     state_->memory_tracker.Release(reserved_bytes_);
     reserved_bytes_ = 0;
+    closed_ = true;
   }
 
  private:
-  std::vector<SlottedRow> Collect(PullOperator *source,
-                                  SlotConfigurationPtr source_slots) {
-    std::vector<SlottedRow> rows;
-    SlottedRow row(std::move(source_slots));
-    while (source->Next(&row)) {
-      const std::size_t bytes = row.EstimatedHeapUsage();
-      state_->memory_tracker.Reserve(bytes);
-      reserved_bytes_ += bytes;
-      rows.push_back(row);
-    }
-    return rows;
-  }
+  [[nodiscard]] std::size_t CachedChild() const { return cached_child_; }
 
-  void BufferRow(SlottedRow row) {
-    const std::size_t bytes = row.EstimatedHeapUsage();
-    state_->memory_tracker.Reserve(bytes);
-    reserved_bytes_ += bytes;
-    rows_.push_back(std::move(row));
-  }
+  [[nodiscard]] std::size_t ProbeChild() const { return 1U - CachedChild(); }
 
-  bool EmitJoined(const SlottedRow &lhs, const SlottedRow &rhs,
-                  const std::vector<const ast::Expression *> *predicates) {
-    SlottedRow output(node_->output_slots);
-    if (!MergeMappings(lhs, &output, node_->child_mappings[0], *state_) ||
-        !MergeMappings(rhs, &output, node_->child_mappings[1], *state_)) {
-      return false;
-    }
-    if (predicates != nullptr) {
-      for (const ast::Expression *predicate : *predicates) {
-        CHECK(predicate != nullptr, common::InvalidArgumentError,
-              "join predicate is null");
-        if (!PredicateIsTrue(Evaluate(*predicate, output, {}, *state_))) {
-          return false;
-        }
-      }
-    }
-    BufferRow(std::move(output));
-    return true;
+  PullOperator *Source(std::size_t child) const {
+    return child == 0 ? lhs_.get() : rhs_.get();
   }
 
   void Initialize() {
     initialized_ = true;
-    std::vector<SlottedRow> lhs_rows =
-        Collect(lhs_.get(), node_->children[0]->output_slots);
-    std::vector<SlottedRow> rhs_rows =
-        Collect(rhs_.get(), node_->children[1]->output_slots);
-    switch (node_->kind) {
-      case PhysicalOperatorKind::kCartesianProduct:
-        for (const auto &lhs : lhs_rows) {
-          state_->CheckCancelled();
-          for (const auto &rhs : rhs_rows) {
-            (void)EmitJoined(lhs, rhs, nullptr);
-          }
-        }
-        break;
-      case PhysicalOperatorKind::kPredicateJoin: {
-        const auto &predicates =
-            static_cast<const ir::PredicateJoinPlan &>(*node_->logical)
-                .Predicates();
-        for (const auto &lhs : lhs_rows) {
-          state_->CheckCancelled();
-          for (const auto &rhs : rhs_rows) {
-            (void)EmitJoined(lhs, rhs, &predicates);
-          }
-        }
-        break;
+    CHECK(CachedChild() < 2, common::InternalError,
+          "invalid nested-loop cached child");
+    PullOperator *source = Source(CachedChild());
+    while (true) {
+      SlottedRow input(node_->children[CachedChild()]->output_slots);
+      if (!source->Next(&input)) {
+        source->Close();
+        return;
       }
-      default:
-        THROW(common::InternalError, "unexpected blocking binary operator");
+      state_->CheckCancelled();
+      const std::size_t bytes = input.EstimatedHeapUsage();
+      state_->memory_tracker.Reserve(bytes);
+      reserved_bytes_ += bytes;
+      cached_rows_.push_back(std::move(input));
     }
   }
 
@@ -4533,10 +4518,99 @@ class BlockingBinaryOperator final : public PullOperator {
   RuntimeState *state_ = nullptr;
   std::unique_ptr<PullOperator> lhs_;
   std::unique_ptr<PullOperator> rhs_;
-  std::vector<SlottedRow> rows_;
+  std::vector<SlottedRow> cached_rows_;
+  std::optional<SlottedRow> probe_row_;
+  std::size_t cached_child_ = 1;
+  std::size_t cached_offset_ = 0;
   std::size_t reserved_bytes_ = 0;
-  std::size_t next_ = 0;
   bool initialized_ = false;
+  bool closed_ = false;
+};
+
+class CartesianProductOperator final : public PullOperator {
+ public:
+  CartesianProductOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                           std::unique_ptr<PullOperator> lhs,
+                           std::unique_ptr<PullOperator> rhs)
+      : node_(&node),
+        data_(&OperatorData<CartesianProductOp>(node)),
+        state_(&state),
+        loop_(node, state, std::move(lhs), std::move(rhs),
+              data_->cached_child) {}
+
+  ~CartesianProductOperator() override { Close(); }
+
+  [[nodiscard]] bool Next(SlottedRow *row) override {
+    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    const SlottedRow *lhs = nullptr;
+    const SlottedRow *rhs = nullptr;
+    while (loop_.Next(&lhs, &rhs)) {
+      SlottedRow output(node_->output_slots);
+      if (!MergeMappings(*lhs, &output, node_->child_mappings[0], *state_) ||
+          !MergeMappings(*rhs, &output, node_->child_mappings[1], *state_)) {
+        continue;
+      }
+      *row = std::move(output);
+      return true;
+    }
+    return false;
+  }
+
+  void Close() noexcept override { loop_.Close(); }
+
+ private:
+  const PhysicalPlanNode *node_ = nullptr;
+  const CartesianProductOp *data_ = nullptr;
+  RuntimeState *state_ = nullptr;
+  CachedNestedLoopState loop_;
+};
+
+class PredicateJoinOperator final : public PullOperator {
+ public:
+  PredicateJoinOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                        std::unique_ptr<PullOperator> lhs,
+                        std::unique_ptr<PullOperator> rhs)
+      : node_(&node),
+        data_(&OperatorData<PredicateJoinOp>(node)),
+        state_(&state),
+        loop_(node, state, std::move(lhs), std::move(rhs),
+              data_->cached_child) {}
+
+  ~PredicateJoinOperator() override { Close(); }
+
+  [[nodiscard]] bool Next(SlottedRow *row) override {
+    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    const SlottedRow *lhs = nullptr;
+    const SlottedRow *rhs = nullptr;
+    while (loop_.Next(&lhs, &rhs)) {
+      SlottedRow output(node_->output_slots);
+      if (!MergeMappings(*lhs, &output, node_->child_mappings[0], *state_) ||
+          !MergeMappings(*rhs, &output, node_->child_mappings[1], *state_)) {
+        continue;
+      }
+      bool matches = true;
+      for (const auto &predicate : data_->predicates) {
+        if (!PredicateIsTrue(Evaluate(predicate, output, *state_))) {
+          matches = false;
+          break;
+        }
+      }
+      if (!matches) {
+        continue;
+      }
+      *row = std::move(output);
+      return true;
+    }
+    return false;
+  }
+
+  void Close() noexcept override { loop_.Close(); }
+
+ private:
+  const PhysicalPlanNode *node_ = nullptr;
+  const PredicateJoinOp *data_ = nullptr;
+  RuntimeState *state_ = nullptr;
+  CachedNestedLoopState loop_;
 };
 
 class NodeHashJoinOperator final : public PullOperator {
@@ -5132,13 +5206,20 @@ class OperatorFactory final {
         return std::make_unique<NodeHashJoinOperator>(
             node, *state_, std::move(lhs), std::move(rhs));
       }
-      case PhysicalOperatorKind::kCartesianProduct:
-      case PhysicalOperatorKind::kPredicateJoin: {
+      case PhysicalOperatorKind::kCartesianProduct: {
         CHECK(node.children.size() == 2, common::InternalError,
-              "blocking binary physical node must have two children");
+              "Cartesian product physical node must have two children");
         auto lhs = Build(*node.children[0], argument);
         auto rhs = Build(*node.children[1], std::move(argument));
-        return std::make_unique<BlockingBinaryOperator>(
+        return std::make_unique<CartesianProductOperator>(
+            node, *state_, std::move(lhs), std::move(rhs));
+      }
+      case PhysicalOperatorKind::kPredicateJoin: {
+        CHECK(node.children.size() == 2, common::InternalError,
+              "predicate join physical node must have two children");
+        auto lhs = Build(*node.children[0], argument);
+        auto rhs = Build(*node.children[1], std::move(argument));
+        return std::make_unique<PredicateJoinOperator>(
             node, *state_, std::move(lhs), std::move(rhs));
       }
       case PhysicalOperatorKind::kVarExpand:

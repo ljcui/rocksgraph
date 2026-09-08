@@ -342,17 +342,25 @@ struct LeftOuterHashJoinOp {
   std::vector<std::string> join_keys;
 };
 
-using PhysicalOperatorData =
-    std::variant<std::monostate, ArgumentOp, AllNodeScanOp, NodeByLabelScanOp,
-                 NodeIndexSeekOp, NodeIndexRangeSeekOp, RelationshipTypeScanOp,
-                 RelationshipIndexSeekOp, RelationshipIndexRangeSeekOp,
-                 NodeByIdSeekOp, RelationshipByIdSeekOp, ExpandOp, ExpandIntoOp,
-                 VarExpandOp, PruningVarExpandOp, OptionalExpandOp,
-                 ProjectEndpointsOp, PathBuildOp, FilterOp, ProjectionOp,
-                 HashDistinctOp, OrderedDistinctOp, HashAggregationOp,
-                 OrderedAggregationOp, FullSortOp, PartialSortOp, TopNOp,
-                 PartialTopNOp, SkipOp, LimitOp, ProduceResultsOp,
-                 ValueHashJoinOp, NodeHashJoinOp, LeftOuterHashJoinOp>;
+struct CartesianProductOp {
+  std::size_t cached_child = 1;
+};
+
+struct PredicateJoinOp {
+  std::vector<PhysicalExpression> predicates;
+  std::size_t cached_child = 1;
+};
+
+using PhysicalOperatorData = std::variant<
+    std::monostate, ArgumentOp, AllNodeScanOp, NodeByLabelScanOp,
+    NodeIndexSeekOp, NodeIndexRangeSeekOp, RelationshipTypeScanOp,
+    RelationshipIndexSeekOp, RelationshipIndexRangeSeekOp, NodeByIdSeekOp,
+    RelationshipByIdSeekOp, ExpandOp, ExpandIntoOp, VarExpandOp,
+    PruningVarExpandOp, OptionalExpandOp, ProjectEndpointsOp, PathBuildOp,
+    FilterOp, ProjectionOp, HashDistinctOp, OrderedDistinctOp,
+    HashAggregationOp, OrderedAggregationOp, FullSortOp, PartialSortOp, TopNOp,
+    PartialTopNOp, SkipOp, LimitOp, ProduceResultsOp, ValueHashJoinOp,
+    NodeHashJoinOp, LeftOuterHashJoinOp, CartesianProductOp, PredicateJoinOp>;
 
 struct PhysicalPlanNode {
   OperatorId id = 0;
