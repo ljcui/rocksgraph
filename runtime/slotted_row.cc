@@ -140,19 +140,17 @@ void SlottedRow::SetReference(const Slot &slot, Value value) {
   reference_initialized_[slot.offset] = true;
 }
 
-void SlottedRow::Set(std::string_view name, Value value) {
-  const Slot &slot = slots_->At(name);
+void SlottedRow::Set(const Slot &slot, Value value) {
   switch (slot.kind) {
     case SlotKind::kNode:
       CHECK(value.IsNull() || value.IsNode(), common::InvalidArgumentError,
-            "node slot received a non-node value: " + std::string(name));
+            "node slot received a non-node value");
       SetEntityId(slot, value.IsNull() ? -1 : value.AsNode().id);
       return;
     case SlotKind::kRelationship:
       CHECK(value.IsNull() || value.IsRelationship(),
             common::InvalidArgumentError,
-            "relationship slot received a non-relationship value: " +
-                std::string(name));
+            "relationship slot received a non-relationship value");
       SetEntityId(slot, value.IsNull() ? -1 : value.AsRelationship().id);
       return;
     case SlotKind::kReference:
@@ -161,14 +159,19 @@ void SlottedRow::Set(std::string_view name, Value value) {
   }
 }
 
-void SlottedRow::SetNull(std::string_view name) {
-  const Slot &slot = slots_->At(name);
+void SlottedRow::Set(std::string_view name, Value value) {
+  Set(slots_->At(name), std::move(value));
+}
+
+void SlottedRow::SetNull(const Slot &slot) {
   if (IsEntitySlot(slot)) {
     SetEntityId(slot, -1);
   } else {
     SetReference(slot, Value::Null());
   }
 }
+
+void SlottedRow::SetNull(std::string_view name) { SetNull(slots_->At(name)); }
 
 Value SlottedRow::Get(std::string_view name,
                       const GraphReader &graph_reader) const {
@@ -231,9 +234,18 @@ void CopySlots(const SlottedRow &source, SlottedRow *target,
       continue;
     }
 
-    target->Set(mapping.target_name,
-                source.Get(mapping.source_name, graph_reader));
+    target->Set(mapping.target, source.Get(mapping.source, graph_reader));
   }
+}
+
+bool TryBindSlot(SlottedRow *row, const Slot &slot, Value value,
+                 const GraphReader &graph_reader) {
+  CHECK(row != nullptr, common::InternalError, "query row is null");
+  if (!row->IsInitialized(slot)) {
+    row->Set(slot, std::move(value));
+    return true;
+  }
+  return ValuesEqual(row->Get(slot, graph_reader), value);
 }
 
 bool TryBindSlot(SlottedRow *row, std::string_view name, Value value,
@@ -242,22 +254,15 @@ bool TryBindSlot(SlottedRow *row, std::string_view name, Value value,
   if (name.empty()) {
     return true;
   }
-  if (!row->IsInitialized(name)) {
-    row->Set(name, std::move(value));
-    return true;
-  }
-  return ValuesEqual(row->Get(name, graph_reader), value);
+  return TryBindSlot(row, row->Slots()->At(name), std::move(value),
+                     graph_reader);
 }
 
-bool TryBindEntityId(SlottedRow *row, std::string_view name, SlotKind kind,
+bool TryBindEntityId(SlottedRow *row, const Slot &slot, SlotKind kind,
                      std::int64_t id, const GraphReader &graph_reader) {
   CHECK(row != nullptr, common::InternalError, "query row is null");
   CHECK(kind == SlotKind::kNode || kind == SlotKind::kRelationship,
         common::InvalidArgumentError, "entity binding kind is invalid");
-  if (name.empty()) {
-    return true;
-  }
-  const Slot &slot = row->Slots()->At(name);
   if (slot.kind == kind) {
     if (!row->IsInitialized(slot)) {
       row->SetEntityId(slot, id);
@@ -268,7 +273,16 @@ bool TryBindEntityId(SlottedRow *row, std::string_view name, SlotKind kind,
   Value value = kind == SlotKind::kNode
                     ? Value(graph_reader.NodeById(id))
                     : Value(graph_reader.RelationshipById(id));
-  return TryBindSlot(row, name, std::move(value), graph_reader);
+  return TryBindSlot(row, slot, std::move(value), graph_reader);
+}
+
+bool TryBindEntityId(SlottedRow *row, std::string_view name, SlotKind kind,
+                     std::int64_t id, const GraphReader &graph_reader) {
+  CHECK(row != nullptr, common::InternalError, "query row is null");
+  if (name.empty()) {
+    return true;
+  }
+  return TryBindEntityId(row, row->Slots()->At(name), kind, id, graph_reader);
 }
 
 }  // namespace rg

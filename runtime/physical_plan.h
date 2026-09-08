@@ -195,25 +195,41 @@ struct RelationshipByIdSeekOp {
 
 struct ExpandOp {
   PhysicalRelationshipPattern pattern;
+  Slot from_node_input_slot;
+  Slot relationship_output_slot;
+  Slot to_node_output_slot;
 };
 
 struct ExpandIntoOp {
   PhysicalRelationshipPattern pattern;
+  Slot from_node_input_slot;
+  Slot to_node_input_slot;
+  Slot relationship_output_slot;
 };
 
 struct VarExpandOp {
   PhysicalRelationshipPattern pattern;
   PhysicalRelationshipLength length;
+  Slot from_node_input_slot;
+  std::optional<Slot> to_node_input_slot;
+  Slot relationship_output_slot;
+  Slot to_node_output_slot;
 };
 
 struct PruningVarExpandOp {
   PhysicalRelationshipPattern pattern;
   PhysicalRelationshipLength length;
+  Slot from_node_input_slot;
+  Slot to_node_output_slot;
 };
 
 struct OptionalExpandOp {
   PhysicalRelationshipPattern pattern;
   std::vector<PhysicalExpression> predicates;
+  Slot from_node_input_slot;
+  Slot relationship_output_slot;
+  Slot to_node_output_slot;
+  std::vector<Slot> output_slots;
 };
 
 struct PhysicalPathPattern {
@@ -224,11 +240,19 @@ struct PhysicalPathPattern {
 
 struct PathBuildOp {
   PhysicalPathPattern path;
+  std::vector<Slot> node_input_slots;
+  std::vector<Slot> relationship_input_slots;
+  Slot path_output_slot;
 };
 
 struct ProjectEndpointsOp {
   PhysicalRelationshipPattern pattern;
   PhysicalRelationshipLength length;
+  Slot relationship_input_slot;
+  std::optional<Slot> from_node_input_slot;
+  std::optional<Slot> to_node_input_slot;
+  Slot from_node_output_slot;
+  Slot to_node_output_slot;
 };
 
 struct FilterOp {

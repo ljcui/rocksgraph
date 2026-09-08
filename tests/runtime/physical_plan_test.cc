@@ -303,6 +303,13 @@ std::vector<std::int64_t> FirstColumnIds(
   return ids;
 }
 
+void ExpectSameSlot(const rg::Slot &actual, const rg::Slot &expected) {
+  EXPECT_EQ(actual.offset, expected.offset);
+  EXPECT_EQ(actual.kind, expected.kind);
+  EXPECT_EQ(actual.type, expected.type);
+  EXPECT_EQ(actual.nullable, expected.nullable);
+}
+
 }  // namespace
 
 TEST(PhysicalPlanTest, AllocatesTypedNullableSlotsForOptionalExpand) {
@@ -1468,6 +1475,10 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForFixedTraversalOperators) {
     EXPECT_EQ(data.pattern.to_node, "b");
     EXPECT_EQ(data.pattern.direction, rg::PhysicalExpandDirection::kOutgoing);
     EXPECT_EQ(data.pattern.types, (std::vector<std::string>{"R"}));
+    ExpectSameSlot(data.from_node_input_slot,
+                   node->children[0]->output_slots->At("a"));
+    ExpectSameSlot(data.relationship_output_slot, node->output_slots->At("r"));
+    ExpectSameSlot(data.to_node_output_slot, node->output_slots->At("b"));
   }
   {
     PlannedQuery query =
@@ -1483,6 +1494,11 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForFixedTraversalOperators) {
     EXPECT_EQ(data.pattern.from_node, "a");
     EXPECT_EQ(data.pattern.to_node, "b");
     EXPECT_EQ(data.pattern.direction, rg::PhysicalExpandDirection::kOutgoing);
+    ExpectSameSlot(data.from_node_input_slot,
+                   node->children[0]->output_slots->At("a"));
+    ExpectSameSlot(data.to_node_input_slot,
+                   node->children[0]->output_slots->At("b"));
+    ExpectSameSlot(data.relationship_output_slot, node->output_slots->At("r"));
   }
   {
     PlannedQuery query = Plan(
@@ -1499,6 +1515,11 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForFixedTraversalOperators) {
     ASSERT_EQ(data.predicates.size(), logical->Predicates().size());
     EXPECT_NE(data.predicates.front().Expression(),
               logical->Predicates().front());
+    ExpectSameSlot(data.from_node_input_slot,
+                   node->children[0]->output_slots->At("a"));
+    ExpectSameSlot(data.relationship_output_slot, node->output_slots->At("r"));
+    ExpectSameSlot(data.to_node_output_slot, node->output_slots->At("b"));
+    EXPECT_EQ(data.output_slots.size(), node->output_slots->Columns().size());
   }
   {
     ir::PatternRelationship pattern{.variable = "rs",
@@ -1519,6 +1540,14 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForFixedTraversalOperators) {
     EXPECT_TRUE(data.length.variable);
     EXPECT_EQ(data.length.min, 2);
     EXPECT_EQ(data.length.max, 3);
+    ExpectSameSlot(data.relationship_input_slot,
+                   physical.Root().children[0]->output_slots->At("rs"));
+    EXPECT_FALSE(data.from_node_input_slot.has_value());
+    EXPECT_FALSE(data.to_node_input_slot.has_value());
+    ExpectSameSlot(data.from_node_output_slot,
+                   physical.Root().output_slots->At("a"));
+    ExpectSameSlot(data.to_node_output_slot,
+                   physical.Root().output_slots->At("b"));
   }
 }
 
@@ -1542,6 +1571,11 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForVariableTraversalOperators) {
     EXPECT_TRUE(data.length.variable);
     EXPECT_EQ(data.length.min, 0);
     EXPECT_EQ(data.length.max, 3);
+    ExpectSameSlot(data.from_node_input_slot,
+                   node->children[0]->output_slots->At("a"));
+    EXPECT_FALSE(data.to_node_input_slot.has_value());
+    ExpectSameSlot(data.relationship_output_slot, node->output_slots->At("rs"));
+    ExpectSameSlot(data.to_node_output_slot, node->output_slots->At("b"));
   }
   {
     rg::PhysicalPlan physical = DetachedPruningVarExpand();
@@ -1555,6 +1589,10 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForVariableTraversalOperators) {
     EXPECT_TRUE(data.length.variable);
     EXPECT_EQ(data.length.min, 0);
     EXPECT_EQ(data.length.max, 2);
+    ExpectSameSlot(data.from_node_input_slot,
+                   physical.Root().children[0]->output_slots->At("a"));
+    ExpectSameSlot(data.to_node_output_slot,
+                   physical.Root().output_slots->At("b"));
   }
   {
     PlannedQuery query = Plan("MATCH p = (a)-[rs:R*1..2]->(b) RETURN p");
@@ -1569,6 +1607,27 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForVariableTraversalOperators) {
     EXPECT_EQ(data.path.variable, "p");
     EXPECT_EQ(data.path.nodes, (std::vector<std::string>{"a", "b"}));
     EXPECT_EQ(data.path.relationships, (std::vector<std::string>{"rs"}));
+    ASSERT_EQ(data.node_input_slots.size(), 2U);
+    ASSERT_EQ(data.relationship_input_slots.size(), 1U);
+    ExpectSameSlot(data.node_input_slots[0],
+                   node->children[0]->output_slots->At("a"));
+    ExpectSameSlot(data.node_input_slots[1],
+                   node->children[0]->output_slots->At("b"));
+    ExpectSameSlot(data.relationship_input_slots[0],
+                   node->children[0]->output_slots->At("rs"));
+    ExpectSameSlot(data.path_output_slot, node->output_slots->At("p"));
+  }
+
+  {
+    ir::VarExpandPlan logical(
+        std::make_unique<ir::ArgumentPlan>(std::vector<std::string>{"a", "b"}),
+        "a", "rs", "b", ir::ExpandDirection::kOutgoing, {"R"},
+        {.min = 1, .max = 2});
+    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(logical);
+    const auto &data = std::get<rg::VarExpandOp>(physical.Root().data);
+    ASSERT_TRUE(data.to_node_input_slot.has_value());
+    ExpectSameSlot(*data.to_node_input_slot,
+                   physical.Root().children[0]->output_slots->At("b"));
   }
 }
 

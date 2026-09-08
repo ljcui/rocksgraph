@@ -616,6 +616,12 @@ std::vector<SlotMapping> NamedMappings(
   return mappings;
 }
 
+std::optional<Slot> FindSlot(const SlotConfiguration &slots,
+                             std::string_view name) {
+  const Slot *slot = slots.Find(name);
+  return slot == nullptr ? std::nullopt : std::optional<Slot>(*slot);
+}
+
 PhysicalExpression CopyPhysicalExpression(
     const ast::Expression *expression,
     const std::vector<ast::PrecomputedExpression> &precomputed) {
@@ -1188,28 +1194,45 @@ class PhysicalPlanBuilder final {
       }
       case PhysicalOperatorKind::kExpand: {
         const auto &expand = static_cast<const ir::ExpandPlan &>(plan);
+        CHECK(node->children.size() == 1, common::InternalError,
+              "Expand physical node must have one child");
         node->data = ExpandOp{
-            .pattern = {
-                .from_node = expand.FromNode(),
-                .relationship = expand.Relationship(),
-                .to_node = expand.ToNode(),
-                .direction = ToPhysicalExpandDirection(expand.Direction()),
-                .types = expand.Types()}};
+            .pattern = {.from_node = expand.FromNode(),
+                        .relationship = expand.Relationship(),
+                        .to_node = expand.ToNode(),
+                        .direction =
+                            ToPhysicalExpandDirection(expand.Direction()),
+                        .types = expand.Types()},
+            .from_node_input_slot =
+                node->children[0]->output_slots->At(expand.FromNode()),
+            .relationship_output_slot =
+                node->output_slots->At(expand.Relationship()),
+            .to_node_output_slot = node->output_slots->At(expand.ToNode())};
         return;
       }
       case PhysicalOperatorKind::kExpandInto: {
         const auto &expand = static_cast<const ir::ExpandIntoPlan &>(plan);
+        CHECK(node->children.size() == 1, common::InternalError,
+              "ExpandInto physical node must have one child");
         node->data = ExpandIntoOp{
-            .pattern = {
-                .from_node = expand.FromNode(),
-                .relationship = expand.Relationship(),
-                .to_node = expand.ToNode(),
-                .direction = ToPhysicalExpandDirection(expand.Direction()),
-                .types = expand.Types()}};
+            .pattern = {.from_node = expand.FromNode(),
+                        .relationship = expand.Relationship(),
+                        .to_node = expand.ToNode(),
+                        .direction =
+                            ToPhysicalExpandDirection(expand.Direction()),
+                        .types = expand.Types()},
+            .from_node_input_slot =
+                node->children[0]->output_slots->At(expand.FromNode()),
+            .to_node_input_slot =
+                node->children[0]->output_slots->At(expand.ToNode()),
+            .relationship_output_slot =
+                node->output_slots->At(expand.Relationship())};
         return;
       }
       case PhysicalOperatorKind::kVarExpand: {
         const auto &expand = static_cast<const ir::VarExpandPlan &>(plan);
+        CHECK(node->children.size() == 1, common::InternalError,
+              "VarExpand physical node must have one child");
         node->data = VarExpandOp{
             .pattern = {.from_node = expand.FromNode(),
                         .relationship = expand.Relationship(),
@@ -1219,44 +1242,94 @@ class PhysicalPlanBuilder final {
                         .types = expand.Types()},
             .length = {.variable = true,
                        .min = expand.Length().min,
-                       .max = expand.Length().max}};
+                       .max = expand.Length().max},
+            .from_node_input_slot =
+                node->children[0]->output_slots->At(expand.FromNode()),
+            .to_node_input_slot =
+                FindSlot(*node->children[0]->output_slots, expand.ToNode()),
+            .relationship_output_slot =
+                node->output_slots->At(expand.Relationship()),
+            .to_node_output_slot = node->output_slots->At(expand.ToNode())};
         return;
       }
       case PhysicalOperatorKind::kPruningVarExpand: {
         const auto &expand =
             static_cast<const ir::PruningVarExpandPlan &>(plan);
         const ir::PatternRelationship &pattern = expand.Pattern();
+        CHECK(node->children.size() == 1, common::InternalError,
+              "PruningVarExpand physical node must have one child");
         node->data = PruningVarExpandOp{
             .pattern = CopyPhysicalRelationshipPattern(pattern),
             .length = {.variable = pattern.length.variable,
                        .min = pattern.length.min,
-                       .max = pattern.length.max}};
+                       .max = pattern.length.max},
+            .from_node_input_slot =
+                node->children[0]->output_slots->At(pattern.left_node),
+            .to_node_output_slot = node->output_slots->At(pattern.right_node)};
         return;
       }
       case PhysicalOperatorKind::kOptionalExpand: {
         const auto &expand = static_cast<const ir::OptionalExpandPlan &>(plan);
-        node->data = OptionalExpandOp{
-            .pattern = CopyPhysicalRelationshipPattern(expand.Pattern()),
-            .predicates = CopyPhysicalExpressions(expand.Predicates())};
+        const ir::PatternRelationship &pattern = expand.Pattern();
+        CHECK(node->children.size() == 1, common::InternalError,
+              "OptionalExpand physical node must have one child");
+        OptionalExpandOp data{
+            .pattern = CopyPhysicalRelationshipPattern(pattern),
+            .predicates = CopyPhysicalExpressions(expand.Predicates()),
+            .from_node_input_slot =
+                node->children[0]->output_slots->At(pattern.left_node),
+            .relationship_output_slot =
+                node->output_slots->At(pattern.variable),
+            .to_node_output_slot = node->output_slots->At(pattern.right_node)};
+        data.output_slots.reserve(node->output_slots->Columns().size());
+        for (const auto &column : node->output_slots->Columns()) {
+          data.output_slots.push_back(node->output_slots->At(column));
+        }
+        node->data = std::move(data);
         return;
       }
       case PhysicalOperatorKind::kProjectEndpoints: {
         const auto &project =
             static_cast<const ir::ProjectEndpointsPlan &>(plan);
         const ir::PatternRelationship &pattern = project.Pattern();
+        CHECK(node->children.size() == 1, common::InternalError,
+              "ProjectEndpoints physical node must have one child");
         node->data = ProjectEndpointsOp{
             .pattern = CopyPhysicalRelationshipPattern(pattern),
             .length = {.variable = pattern.length.variable,
                        .min = pattern.length.min,
-                       .max = pattern.length.max}};
+                       .max = pattern.length.max},
+            .relationship_input_slot =
+                node->children[0]->output_slots->At(pattern.variable),
+            .from_node_input_slot =
+                FindSlot(*node->children[0]->output_slots, pattern.left_node),
+            .to_node_input_slot =
+                FindSlot(*node->children[0]->output_slots, pattern.right_node),
+            .from_node_output_slot = node->output_slots->At(pattern.left_node),
+            .to_node_output_slot = node->output_slots->At(pattern.right_node)};
         return;
       }
       case PhysicalOperatorKind::kPathBuild: {
         const auto &build = static_cast<const ir::PathBuildPlan &>(plan);
-        node->data =
-            PathBuildOp{.path = {.variable = build.Path().variable,
-                                 .nodes = build.Path().nodes,
-                                 .relationships = build.Path().relationships}};
+        CHECK(node->children.size() == 1, common::InternalError,
+              "PathBuild physical node must have one child");
+        PathBuildOp data{
+            .path = {.variable = build.Path().variable,
+                     .nodes = build.Path().nodes,
+                     .relationships = build.Path().relationships},
+            .path_output_slot = node->output_slots->At(build.Path().variable)};
+        data.node_input_slots.reserve(build.Path().nodes.size());
+        for (const auto &name : build.Path().nodes) {
+          data.node_input_slots.push_back(
+              node->children[0]->output_slots->At(name));
+        }
+        data.relationship_input_slots.reserve(
+            build.Path().relationships.size());
+        for (const auto &name : build.Path().relationships) {
+          data.relationship_input_slots.push_back(
+              node->children[0]->output_slots->At(name));
+        }
+        node->data = std::move(data);
         return;
       }
       case PhysicalOperatorKind::kFilter: {

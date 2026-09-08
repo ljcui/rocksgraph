@@ -82,7 +82,9 @@ class SlottedRow final {
 
   void SetEntityId(const Slot &slot, std::int64_t id);
   void SetReference(const Slot &slot, Value value);
+  void Set(const Slot &slot, Value value);
   void Set(std::string_view name, Value value);
+  void SetNull(const Slot &slot);
   void SetNull(std::string_view name);
 
   [[nodiscard]] Value Get(std::string_view name,
@@ -105,8 +107,13 @@ class SlottedRow final {
 void CopySlots(const SlottedRow &source, SlottedRow *target,
                const std::vector<SlotMapping> &mappings,
                const GraphReader &graph_reader);
+[[nodiscard]] bool TryBindSlot(SlottedRow *row, const Slot &slot, Value value,
+                               const GraphReader &graph_reader);
 [[nodiscard]] bool TryBindSlot(SlottedRow *row, std::string_view name,
                                Value value, const GraphReader &graph_reader);
+[[nodiscard]] bool TryBindEntityId(SlottedRow *row, const Slot &slot,
+                                   SlotKind kind, std::int64_t id,
+                                   const GraphReader &graph_reader);
 [[nodiscard]] bool TryBindEntityId(SlottedRow *row, std::string_view name,
                                    SlotKind kind, std::int64_t id,
                                    const GraphReader &graph_reader);
