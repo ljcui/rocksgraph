@@ -362,6 +362,19 @@ struct ApplyOp {};
 
 struct OptionalApplyOp {};
 
+struct SemiApplyOp {};
+
+struct AntiSemiApplyOp {};
+
+struct LetSemiApplyOp {
+  Slot value_slot;
+};
+
+struct SelectOrSemiApplyOp {
+  PhysicalExpression predicate;
+  bool anti = false;
+};
+
 using PhysicalOperatorData = std::variant<
     std::monostate, ArgumentOp, AllNodeScanOp, NodeByLabelScanOp,
     NodeIndexSeekOp, NodeIndexRangeSeekOp, RelationshipTypeScanOp,
@@ -372,7 +385,8 @@ using PhysicalOperatorData = std::variant<
     HashAggregationOp, OrderedAggregationOp, FullSortOp, PartialSortOp, TopNOp,
     PartialTopNOp, SkipOp, LimitOp, ProduceResultsOp, ValueHashJoinOp,
     NodeHashJoinOp, LeftOuterHashJoinOp, CartesianProductOp, PredicateJoinOp,
-    UnionAllOp, UnionDistinctOp, ApplyOp, OptionalApplyOp>;
+    UnionAllOp, UnionDistinctOp, ApplyOp, OptionalApplyOp, SemiApplyOp,
+    AntiSemiApplyOp, LetSemiApplyOp, SelectOrSemiApplyOp>;
 
 struct PhysicalPlanNode {
   OperatorId id = 0;

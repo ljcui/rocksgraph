@@ -5083,6 +5083,7 @@ class CorrelatedRightState final {
   ~CorrelatedRightState() { Close(); }
 
   [[nodiscard]] bool NextLeft();
+  void OpenRight();
   [[nodiscard]] bool NextRight(SlottedRow *row);
   [[nodiscard]] bool HasLeft() const noexcept {
     return current_left_.has_value();
@@ -5145,17 +5146,104 @@ class OptionalApplyOperator final : public PullOperator {
   bool rhs_produced_ = false;
 };
 
-class ExistenceAndRollUpApplyOperator final : public PullOperator {
+class SemiApplyOperator final : public PullOperator {
  public:
-  ExistenceAndRollUpApplyOperator(const PhysicalPlanNode &node,
-                                  RuntimeState &state, OperatorFactory &factory,
-                                  std::unique_ptr<PullOperator> lhs)
+  SemiApplyOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                    OperatorFactory &factory, std::unique_ptr<PullOperator> lhs)
+      : node_(&node),
+        state_(&state),
+        correlated_(node, state, factory, std::move(lhs)) {
+    (void)OperatorData<SemiApplyOp>(node);
+  }
+
+  ~SemiApplyOperator() override { Close(); }
+
+  [[nodiscard]] bool Next(SlottedRow *row) override;
+  void Close() noexcept override { correlated_.Close(); }
+
+ private:
+  const PhysicalPlanNode *node_ = nullptr;
+  RuntimeState *state_ = nullptr;
+  CorrelatedRightState correlated_;
+};
+
+class AntiSemiApplyOperator final : public PullOperator {
+ public:
+  AntiSemiApplyOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                        OperatorFactory &factory,
+                        std::unique_ptr<PullOperator> lhs)
+      : node_(&node),
+        state_(&state),
+        correlated_(node, state, factory, std::move(lhs)) {
+    (void)OperatorData<AntiSemiApplyOp>(node);
+  }
+
+  ~AntiSemiApplyOperator() override { Close(); }
+
+  [[nodiscard]] bool Next(SlottedRow *row) override;
+  void Close() noexcept override { correlated_.Close(); }
+
+ private:
+  const PhysicalPlanNode *node_ = nullptr;
+  RuntimeState *state_ = nullptr;
+  CorrelatedRightState correlated_;
+};
+
+class LetSemiApplyOperator final : public PullOperator {
+ public:
+  LetSemiApplyOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                       OperatorFactory &factory,
+                       std::unique_ptr<PullOperator> lhs)
+      : node_(&node),
+        data_(&OperatorData<LetSemiApplyOp>(node)),
+        state_(&state),
+        correlated_(node, state, factory, std::move(lhs)) {}
+
+  ~LetSemiApplyOperator() override { Close(); }
+
+  [[nodiscard]] bool Next(SlottedRow *row) override;
+  void Close() noexcept override { correlated_.Close(); }
+
+ private:
+  const PhysicalPlanNode *node_ = nullptr;
+  const LetSemiApplyOp *data_ = nullptr;
+  RuntimeState *state_ = nullptr;
+  CorrelatedRightState correlated_;
+};
+
+class SelectOrSemiApplyOperator final : public PullOperator {
+ public:
+  SelectOrSemiApplyOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                            OperatorFactory &factory,
+                            std::unique_ptr<PullOperator> lhs)
+      : node_(&node),
+        data_(&OperatorData<SelectOrSemiApplyOp>(node)),
+        state_(&state),
+        correlated_(node, state, factory, std::move(lhs)) {}
+
+  ~SelectOrSemiApplyOperator() override { Close(); }
+
+  [[nodiscard]] bool Next(SlottedRow *row) override;
+  void Close() noexcept override { correlated_.Close(); }
+
+ private:
+  const PhysicalPlanNode *node_ = nullptr;
+  const SelectOrSemiApplyOp *data_ = nullptr;
+  RuntimeState *state_ = nullptr;
+  CorrelatedRightState correlated_;
+};
+
+class RollUpApplyOperator final : public PullOperator {
+ public:
+  RollUpApplyOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                      OperatorFactory &factory,
+                      std::unique_ptr<PullOperator> lhs)
       : node_(&node),
         state_(&state),
         factory_(&factory),
         lhs_(std::move(lhs)) {}
 
-  ~ExistenceAndRollUpApplyOperator() override { Close(); }
+  ~RollUpApplyOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override;
   void Close() noexcept override;
@@ -5312,13 +5400,33 @@ class OperatorFactory final {
             node, *state_, *this,
             Build(*node.children[0], std::move(argument)));
       case PhysicalOperatorKind::kSemiApply:
+        CHECK(node.children.size() == 2, common::InternalError,
+              "semi apply physical node must have two children");
+        return std::make_unique<SemiApplyOperator>(
+            node, *state_, *this,
+            Build(*node.children[0], std::move(argument)));
       case PhysicalOperatorKind::kAntiSemiApply:
+        CHECK(node.children.size() == 2, common::InternalError,
+              "anti-semi apply physical node must have two children");
+        return std::make_unique<AntiSemiApplyOperator>(
+            node, *state_, *this,
+            Build(*node.children[0], std::move(argument)));
       case PhysicalOperatorKind::kLetSemiApply:
+        CHECK(node.children.size() == 2, common::InternalError,
+              "let-semi apply physical node must have two children");
+        return std::make_unique<LetSemiApplyOperator>(
+            node, *state_, *this,
+            Build(*node.children[0], std::move(argument)));
       case PhysicalOperatorKind::kSelectOrSemiApply:
+        CHECK(node.children.size() == 2, common::InternalError,
+              "select-or-semi apply physical node must have two children");
+        return std::make_unique<SelectOrSemiApplyOperator>(
+            node, *state_, *this,
+            Build(*node.children[0], std::move(argument)));
       case PhysicalOperatorKind::kRollUpApply:
         CHECK(node.children.size() == 2, common::InternalError,
-              "existence/roll-up apply physical node must have two children");
-        return std::make_unique<ExistenceAndRollUpApplyOperator>(
+              "roll-up apply physical node must have two children");
+        return std::make_unique<RollUpApplyOperator>(
             node, *state_, *this,
             Build(*node.children[0], std::move(argument)));
       case PhysicalOperatorKind::kMerge:
@@ -5491,8 +5599,15 @@ bool CorrelatedRightState::NextLeft() {
     return false;
   }
   current_left_.emplace(std::move(lhs_row));
-  rhs_ = factory_->Build(*node_->children[1], *current_left_);
   return true;
+}
+
+void CorrelatedRightState::OpenRight() {
+  state_->CheckCancelled();
+  CHECK(!closed_ && current_left_.has_value() && rhs_ == nullptr,
+        common::InternalError,
+        "correlated right state cannot open the right child");
+  rhs_ = factory_->Build(*node_->children[1], *current_left_);
 }
 
 bool CorrelatedRightState::NextRight(SlottedRow *row) {
@@ -5532,8 +5647,11 @@ bool ApplyOperator::Next(SlottedRow *row) {
   CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
   while (true) {
     state_->CheckCancelled();
-    if (!correlated_.HasLeft() && !correlated_.NextLeft()) {
-      return false;
+    if (!correlated_.HasLeft()) {
+      if (!correlated_.NextLeft()) {
+        return false;
+      }
+      correlated_.OpenRight();
     }
 
     SlottedRow rhs(node_->children[1]->output_slots);
@@ -5559,6 +5677,7 @@ bool OptionalApplyOperator::Next(SlottedRow *row) {
       if (!correlated_.NextLeft()) {
         return false;
       }
+      correlated_.OpenRight();
       rhs_produced_ = false;
     }
 
@@ -5591,98 +5710,129 @@ bool OptionalApplyOperator::Next(SlottedRow *row) {
   }
 }
 
-bool ExistenceAndRollUpApplyOperator::NextLeft() {
+bool SemiApplyOperator::Next(SlottedRow *row) {
+  CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+  while (correlated_.NextLeft()) {
+    correlated_.OpenRight();
+    SlottedRow rhs(node_->children[1]->output_slots);
+    const bool exists = correlated_.NextRight(&rhs);
+    if (exists) {
+      SlottedRow output =
+          correlated_.Left().CopyTo(node_->output_slots, *state_->graph_reader);
+      correlated_.FinishLeft();
+      *row = std::move(output);
+      return true;
+    }
+    correlated_.FinishLeft();
+  }
+  return false;
+}
+
+bool AntiSemiApplyOperator::Next(SlottedRow *row) {
+  CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+  while (correlated_.NextLeft()) {
+    correlated_.OpenRight();
+    SlottedRow rhs(node_->children[1]->output_slots);
+    const bool exists = correlated_.NextRight(&rhs);
+    if (!exists) {
+      SlottedRow output =
+          correlated_.Left().CopyTo(node_->output_slots, *state_->graph_reader);
+      correlated_.FinishLeft();
+      *row = std::move(output);
+      return true;
+    }
+    correlated_.FinishLeft();
+  }
+  return false;
+}
+
+bool LetSemiApplyOperator::Next(SlottedRow *row) {
+  CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+  if (!correlated_.NextLeft()) {
+    return false;
+  }
+  correlated_.OpenRight();
+  SlottedRow rhs(node_->children[1]->output_slots);
+  const bool exists = correlated_.NextRight(&rhs);
+  SlottedRow output =
+      correlated_.Left().CopyTo(node_->output_slots, *state_->graph_reader);
+  output.SetReference(data_->value_slot, Value(exists));
+  correlated_.FinishLeft();
+  *row = std::move(output);
+  return true;
+}
+
+bool SelectOrSemiApplyOperator::Next(SlottedRow *row) {
+  CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+  while (correlated_.NextLeft()) {
+    if (PredicateIsTrue(
+            Evaluate(data_->predicate, correlated_.Left(), *state_))) {
+      *row =
+          correlated_.Left().CopyTo(node_->output_slots, *state_->graph_reader);
+      correlated_.FinishLeft();
+      return true;
+    }
+
+    correlated_.OpenRight();
+    SlottedRow rhs(node_->children[1]->output_slots);
+    const bool exists = correlated_.NextRight(&rhs);
+    if (exists != data_->anti) {
+      SlottedRow output =
+          correlated_.Left().CopyTo(node_->output_slots, *state_->graph_reader);
+      correlated_.FinishLeft();
+      *row = std::move(output);
+      return true;
+    }
+    correlated_.FinishLeft();
+  }
+  return false;
+}
+
+bool RollUpApplyOperator::NextLeft() {
   SlottedRow lhs_row(node_->children[0]->output_slots);
   if (!lhs_->Next(&lhs_row)) {
     Close();
     return false;
   }
   current_left_.emplace(std::move(lhs_row));
-  const bool skip =
-      node_->logical->Type() == ir::LogicalPlanNodeType::kSelectOrSemiApply &&
-      PredicateIsTrue(Evaluate(
-          *static_cast<const ir::SelectOrSemiApplyPlan &>(*node_->logical)
-               .Predicate(),
-          *current_left_, {}, *state_));
-  if (!skip) {
-    rhs_ = factory_->Build(*node_->children[1], *current_left_);
-  }
+  rhs_ = factory_->Build(*node_->children[1], *current_left_);
   return true;
 }
 
-bool ExistenceAndRollUpApplyOperator::Next(SlottedRow *row) {
+bool RollUpApplyOperator::Next(SlottedRow *row) {
   CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
   state_->CheckCancelled();
   if (closed_) {
     return false;
   }
-  const ir::LogicalPlanNodeType type = node_->logical->Type();
-  while (true) {
-    if (!current_left_.has_value() && !NextLeft()) {
-      return false;
-    }
-
-    if (type == ir::LogicalPlanNodeType::kSelectOrSemiApply &&
-        rhs_ == nullptr) {
-      *row = current_left_->CopyTo(node_->output_slots, *state_->graph_reader);
-      current_left_.reset();
-      return true;
-    }
-
-    if (type == ir::LogicalPlanNodeType::kRollUpApply) {
-      const auto &rollup =
-          static_cast<const ir::RollUpApplyPlan &>(*node_->logical);
-      Value::List values;
-      std::size_t reserved_bytes = 0;
-      SlottedRow rhs_row(node_->children[1]->output_slots);
-      while (rhs_->Next(&rhs_row)) {
-        Value value =
-            rhs_row.Get(rollup.ValueVariable(), *state_->graph_reader);
-        const std::size_t bytes = EstimatedValueHeapUsage(value);
-        state_->memory_tracker.Reserve(bytes);
-        reserved_bytes += bytes;
-        values.push_back(std::move(value));
-      }
-      SlottedRow output =
-          current_left_->CopyTo(node_->output_slots, *state_->graph_reader);
-      output.Set(rollup.CollectionVariable(), Value(std::move(values)));
-      state_->memory_tracker.Release(reserved_bytes);
-      rhs_->Close();
-      rhs_.reset();
-      current_left_.reset();
-      *row = std::move(output);
-      return true;
-    }
-
-    SlottedRow rhs_row(node_->children[1]->output_slots);
-    const bool exists = rhs_->Next(&rhs_row);
-    rhs_->Close();
-    rhs_.reset();
-    const bool emit =
-        type == ir::LogicalPlanNodeType::kSelectOrSemiApply
-            ? exists != static_cast<const ir::SelectOrSemiApplyPlan &>(
-                            *node_->logical)
-                            .Anti()
-        : type == ir::LogicalPlanNodeType::kSemiApply
-            ? exists
-            : (type == ir::LogicalPlanNodeType::kAntiSemiApply ? !exists
-                                                               : true);
-    SlottedRow output =
-        current_left_->CopyTo(node_->output_slots, *state_->graph_reader);
-    if (type == ir::LogicalPlanNodeType::kLetSemiApply) {
-      output.Set(static_cast<const ir::LetSemiApplyPlan &>(*node_->logical)
-                     .ValueVariable(),
-                 Value(exists));
-    }
-    current_left_.reset();
-    if (emit) {
-      *row = std::move(output);
-      return true;
-    }
+  if (!current_left_.has_value() && !NextLeft()) {
+    return false;
   }
+
+  const auto &rollup =
+      static_cast<const ir::RollUpApplyPlan &>(*node_->logical);
+  Value::List values;
+  std::size_t reserved_bytes = 0;
+  SlottedRow rhs_row(node_->children[1]->output_slots);
+  while (rhs_->Next(&rhs_row)) {
+    Value value = rhs_row.Get(rollup.ValueVariable(), *state_->graph_reader);
+    const std::size_t bytes = EstimatedValueHeapUsage(value);
+    state_->memory_tracker.Reserve(bytes);
+    reserved_bytes += bytes;
+    values.push_back(std::move(value));
+  }
+  SlottedRow output =
+      current_left_->CopyTo(node_->output_slots, *state_->graph_reader);
+  output.Set(rollup.CollectionVariable(), Value(std::move(values)));
+  state_->memory_tracker.Release(reserved_bytes);
+  rhs_->Close();
+  rhs_.reset();
+  current_left_.reset();
+  *row = std::move(output);
+  return true;
 }
 
-void ExistenceAndRollUpApplyOperator::Close() noexcept {
+void RollUpApplyOperator::Close() noexcept {
   if (closed_) {
     return;
   }

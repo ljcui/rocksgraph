@@ -447,6 +447,111 @@ TEST(PhysicalPlanTest, BuildsTypedApplyAndOptionalApplyPayloads) {
   EXPECT_TRUE(optional.Root().output_slots->At("m").nullable);
 }
 
+TEST(PhysicalPlanTest, BuildsOwnedExistenceApplyPayloads) {
+  rg::PhysicalPlan semi = DetachedPhysicalPlan(
+      "MATCH (n) WHERE EXISTS { MATCH (n)-[:R]->() RETURN 1 AS ok } RETURN n");
+  const rg::PhysicalPlanNode *semi_node =
+      FindPhysicalPlan(semi.Root(), rg::PhysicalOperatorKind::kSemiApply);
+  ASSERT_NE(semi_node, nullptr);
+  EXPECT_TRUE(std::holds_alternative<rg::SemiApplyOp>(semi_node->data));
+
+  rg::PhysicalPlan anti = DetachedPhysicalPlan(
+      "MATCH (n) WHERE NOT EXISTS { MATCH (n)-[:R]->() RETURN 1 AS ok } "
+      "RETURN n");
+  const rg::PhysicalPlanNode *anti_node =
+      FindPhysicalPlan(anti.Root(), rg::PhysicalOperatorKind::kAntiSemiApply);
+  ASSERT_NE(anti_node, nullptr);
+  EXPECT_TRUE(std::holds_alternative<rg::AntiSemiApplyOp>(anti_node->data));
+
+  rg::PhysicalPlan let = DetachedPhysicalPlan(
+      "MATCH (n) RETURN EXISTS { MATCH (n)-[:R]->() RETURN 1 AS ok } AS has");
+  const rg::PhysicalPlanNode *let_node =
+      FindPhysicalPlan(let.Root(), rg::PhysicalOperatorKind::kLetSemiApply);
+  ASSERT_NE(let_node, nullptr);
+  const auto &let_data = std::get<rg::LetSemiApplyOp>(let_node->data);
+  EXPECT_EQ(let_data.value_slot.kind, rg::SlotKind::kReference);
+  EXPECT_EQ(let_data.value_slot.type, ast::SemanticVariableType::kScalar);
+  EXPECT_FALSE(let_data.value_slot.nullable);
+
+  rg::PhysicalPlan select =
+      DetachedPhysicalPlan("MATCH (n) WHERE n.active OR (n)-[:R]->() RETURN n");
+  const rg::PhysicalPlanNode *select_node = FindPhysicalPlan(
+      select.Root(), rg::PhysicalOperatorKind::kSelectOrSemiApply);
+  ASSERT_NE(select_node, nullptr);
+  const auto &select_data =
+      std::get<rg::SelectOrSemiApplyOp>(select_node->data);
+  EXPECT_NE(select_data.predicate.Expression(), nullptr);
+  EXPECT_FALSE(select_data.anti);
+
+  rg::PhysicalPlan select_anti = DetachedPhysicalPlan(
+      "MATCH (n) WHERE n.active OR NOT (n)-[:R]->() RETURN n");
+  const rg::PhysicalPlanNode *select_anti_node = FindPhysicalPlan(
+      select_anti.Root(), rg::PhysicalOperatorKind::kSelectOrSemiApply);
+  ASSERT_NE(select_anti_node, nullptr);
+  EXPECT_TRUE(std::get<rg::SelectOrSemiApplyOp>(select_anti_node->data).anti);
+}
+
+TEST(PhysicalPlanTest, ExecutesDetachedExistenceApplyOperators) {
+  rg::InMemoryGraph graph;
+  const auto matched =
+      graph.CreateNode({"Input"}, {{"active", rg::Value(false)}});
+  const auto unmatched =
+      graph.CreateNode({"Input"}, {{"active", rg::Value(false)}});
+  const auto short_circuited =
+      graph.CreateNode({"Input"}, {{"active", rg::Value(true)}});
+  const auto first_target = graph.CreateNode({});
+  const auto second_target = graph.CreateNode({});
+  graph.CreateRelationship(matched, first_target, "R");
+  graph.CreateRelationship(matched, second_target, "R");
+
+  rg::PhysicalPlan semi = DetachedPhysicalPlan(
+      "MATCH (n:Input) WHERE EXISTS { MATCH (n)-[:R]->() RETURN 1 AS ok } "
+      "RETURN id(n) AS id");
+  EXPECT_EQ(FirstColumnIds(semi, graph, "id"),
+            (std::vector<std::int64_t>{matched->id}));
+
+  rg::PhysicalPlan anti = DetachedPhysicalPlan(
+      "MATCH (n:Input) WHERE NOT EXISTS { MATCH (n)-[:R]->() RETURN 1 AS ok } "
+      "RETURN id(n) AS id");
+  std::vector<std::int64_t> expected_anti{unmatched->id, short_circuited->id};
+  std::sort(expected_anti.begin(), expected_anti.end());
+  EXPECT_EQ(FirstColumnIds(anti, graph, "id"), expected_anti);
+
+  rg::PhysicalPlan let = DetachedPhysicalPlan(
+      "MATCH (n:Input) RETURN id(n) AS id, "
+      "EXISTS { MATCH (n)-[:R]->() RETURN 1 AS ok } AS has");
+  const auto let_rows = PhysicalRows(let, graph, {"id", "has"});
+  ASSERT_EQ(let_rows.size(), 3U);
+  for (const auto &result : let_rows) {
+    ASSERT_EQ(result.size(), 2U);
+    ASSERT_TRUE(result[0].IsInteger());
+    ASSERT_TRUE(result[1].IsBool());
+    EXPECT_EQ(result[1].AsBool(), result[0].AsInteger() == matched->id);
+  }
+
+  rg::PhysicalPlan select = DetachedPhysicalPlan(
+      "MATCH (n:Input) WHERE n.active OR (n)-[:R]->() "
+      "RETURN id(n) AS id");
+  std::vector<std::int64_t> expected_select{matched->id, short_circuited->id};
+  std::sort(expected_select.begin(), expected_select.end());
+  EXPECT_EQ(FirstColumnIds(select, graph, "id"), expected_select);
+
+  rg::PhysicalPlan select_anti = DetachedPhysicalPlan(
+      "MATCH (n:Input) WHERE n.active OR NOT (n)-[:R]->() "
+      "RETURN id(n) AS id");
+  std::vector<std::int64_t> expected_select_anti{unmatched->id,
+                                                 short_circuited->id};
+  std::sort(expected_select_anti.begin(), expected_select_anti.end());
+  EXPECT_EQ(FirstColumnIds(select_anti, graph, "id"), expected_select_anti);
+
+  std::unique_ptr<rg::PhysicalResultCursor> cursor =
+      rg::StartPhysicalPlan(let, graph, nullptr, {}, {"id", "has"});
+  std::vector<rg::Value> row;
+  ASSERT_TRUE(cursor->Next(&row));
+  cursor->Close();
+  EXPECT_FALSE(cursor->Next(&row));
+}
+
 TEST(PhysicalPlanTest, ReinstantiatesStatefulApplyRightSideForEachLeftRow) {
   rg::InMemoryGraph graph;
   const auto first = graph.CreateNode({"Input"});

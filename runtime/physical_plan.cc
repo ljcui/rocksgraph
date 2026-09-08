@@ -1286,6 +1286,26 @@ class PhysicalPlanBuilder final {
       case PhysicalOperatorKind::kOptionalApply:
         node->data = OptionalApplyOp{};
         return;
+      case PhysicalOperatorKind::kSemiApply:
+        node->data = SemiApplyOp{};
+        return;
+      case PhysicalOperatorKind::kAntiSemiApply:
+        node->data = AntiSemiApplyOp{};
+        return;
+      case PhysicalOperatorKind::kLetSemiApply: {
+        const auto &apply = static_cast<const ir::LetSemiApplyPlan &>(plan);
+        node->data = LetSemiApplyOp{
+            .value_slot = node->output_slots->At(apply.ValueVariable())};
+        return;
+      }
+      case PhysicalOperatorKind::kSelectOrSemiApply: {
+        const auto &apply =
+            static_cast<const ir::SelectOrSemiApplyPlan &>(plan);
+        node->data = SelectOrSemiApplyOp{
+            .predicate = CopyPhysicalExpression(apply.Predicate(), {}),
+            .anti = apply.Anti()};
+        return;
+      }
       default:
         return;
     }
