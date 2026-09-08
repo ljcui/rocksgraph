@@ -91,11 +91,11 @@ class PhysicalPlanPrinter final {
     if (!node.provided_order.empty()) {
       metadata.push_back("order=[" + FormatOrdering(node.provided_order) + "]");
     }
-    if (node.partial_sort_prefix > 0) {
-      metadata.push_back("prefix=" + std::to_string(node.partial_sort_prefix));
+    if (const auto *sort = std::get_if<PartialSortOp>(&node.data)) {
+      metadata.push_back("prefix=" + std::to_string(sort->prefix));
     }
-    if (node.partial_top_n_prefix > 0) {
-      metadata.push_back("prefix=" + std::to_string(node.partial_top_n_prefix));
+    if (const auto *top_n = std::get_if<PartialTopNOp>(&node.data)) {
+      metadata.push_back("prefix=" + std::to_string(top_n->prefix));
     }
     if (node.kind == PhysicalOperatorKind::kValueHashJoin) {
       metadata.push_back(

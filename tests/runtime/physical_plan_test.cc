@@ -738,9 +738,16 @@ TEST(PhysicalPlanTest, SelectsTopNForRewrittenLogicalPlan) {
   const rg::PhysicalPlanNode &top_n_node = physical.NodeFor(*top_n);
 
   EXPECT_EQ(top_n_node.kind, rg::PhysicalOperatorKind::kTopN);
-  EXPECT_EQ(top_n_node.top_n, top_n);
+  const auto &data = std::get<rg::TopNOp>(top_n_node.data);
+  ASSERT_EQ(data.items.size(), 1U);
+  EXPECT_NE(
+      data.items.front().expression.Expression(),
+      static_cast<const ir::TopNPlan &>(*top_n).Items().front().expression);
+  EXPECT_EQ(data.items.front().direction,
+            rg::PhysicalSortDirection::kAscending);
+  EXPECT_NE(data.limit.Expression(),
+            static_cast<const ir::TopNPlan &>(*top_n).Limit());
   ASSERT_EQ(top_n_node.children.size(), 1U);
-  EXPECT_EQ(top_n_node.children[0]->logical, &top_n->Child(0));
 }
 
 TEST(PhysicalPlanTest, DoesNotRewriteTopNAcrossSkipOrWrites) {
@@ -811,7 +818,14 @@ TEST(PhysicalPlanTest, SelectsPartialSortAndHashFallbacks) {
   const rg::PhysicalPlanNode &partial_node =
       partial_physical.NodeFor(*outer_sort);
   EXPECT_EQ(partial_node.kind, rg::PhysicalOperatorKind::kPartialSort);
-  EXPECT_EQ(partial_node.partial_sort_prefix, 1U);
+  const auto &partial_data = std::get<rg::PartialSortOp>(partial_node.data);
+  EXPECT_EQ(partial_data.prefix, 1U);
+  ASSERT_EQ(partial_data.items.size(), 2U);
+  EXPECT_NE(partial_data.items.front().expression.Expression(),
+            static_cast<const ir::SortPlan &>(*outer_sort)
+                .Items()
+                .front()
+                .expression);
 
   PlannedQuery fallback_query = Plan("UNWIND [3, 1, 2] AS x RETURN DISTINCT x");
   const ir::LogicalPlan *distinct = FindPlan(
@@ -838,8 +852,13 @@ TEST(PhysicalPlanTest, SelectsPartialSortAndHashFallbacks) {
   ASSERT_NE(sort, nullptr);
   rg::PhysicalPlan sort_physical =
       rg::CreatePhysicalPlan(*sort_query.logical_plan);
-  EXPECT_EQ(sort_physical.NodeFor(*sort).kind,
-            rg::PhysicalOperatorKind::kFullSort);
+  const rg::PhysicalPlanNode &sort_node = sort_physical.NodeFor(*sort);
+  EXPECT_EQ(sort_node.kind, rg::PhysicalOperatorKind::kFullSort);
+  const auto &sort_data = std::get<rg::FullSortOp>(sort_node.data);
+  ASSERT_EQ(sort_data.items.size(), 1U);
+  EXPECT_NE(
+      sort_data.items.front().expression.Expression(),
+      static_cast<const ir::SortPlan &>(*sort).Items().front().expression);
 }
 
 TEST(PhysicalPlanTest, SelectsPartialTopNForProvidedOrderingPrefix) {
@@ -855,8 +874,65 @@ TEST(PhysicalPlanTest, SelectsPartialTopNForProvidedOrderingPrefix) {
   const rg::PhysicalPlanNode &node = physical.NodeFor(*top_n);
 
   EXPECT_EQ(node.kind, rg::PhysicalOperatorKind::kPartialTopN);
-  EXPECT_EQ(node.partial_top_n_prefix, 1U);
-  EXPECT_EQ(node.top_n, top_n);
+  const auto &data = std::get<rg::PartialTopNOp>(node.data);
+  EXPECT_EQ(data.prefix, 1U);
+  ASSERT_EQ(data.items.size(), 2U);
+  EXPECT_NE(
+      data.items.front().expression.Expression(),
+      static_cast<const ir::TopNPlan &>(*top_n).Items().front().expression);
+  EXPECT_NE(data.limit.Expression(),
+            static_cast<const ir::TopNPlan &>(*top_n).Limit());
+}
+
+TEST(PhysicalPlanTest,
+     ExecutesSortOperatorsAfterLogicalPlanAndAstAreDestroyed) {
+  rg::InMemoryGraph graph;
+  graph.CreateNode({"N"}, {{"g", rg::Value(2)}, {"v", rg::Value(2)}});
+  graph.CreateNode({"N"}, {{"g", rg::Value(1)}, {"v", rg::Value(2)}});
+  graph.CreateNode({"N"}, {{"g", rg::Value(2)}, {"v", rg::Value(1)}});
+  graph.CreateNode({"N"}, {{"g", rg::Value(1)}, {"v", rg::Value(1)}});
+
+  rg::PhysicalPlan full_sort =
+      DetachedPhysicalPlan("MATCH (n:N) RETURN n.v AS v ORDER BY v");
+  ASSERT_NE(
+      FindPhysicalPlan(full_sort.Root(), rg::PhysicalOperatorKind::kFullSort),
+      nullptr);
+  EXPECT_EQ(
+      PhysicalRows(full_sort, graph, {"v"}),
+      (std::vector<std::vector<rg::Value>>{
+          {rg::Value(1)}, {rg::Value(1)}, {rg::Value(2)}, {rg::Value(2)}}));
+
+  rg::PhysicalPlan top_n = DetachedPhysicalPlan(
+      "MATCH (n:N) RETURN n.v AS v ORDER BY v DESC LIMIT $l");
+  ASSERT_NE(FindPhysicalPlan(top_n.Root(), rg::PhysicalOperatorKind::kTopN),
+            nullptr);
+  EXPECT_EQ(
+      PhysicalRows(top_n, graph, {"v"}, {{"l", rg::Value(2)}}),
+      (std::vector<std::vector<rg::Value>>{{rg::Value(2)}, {rg::Value(2)}}));
+
+  const std::string partial_query =
+      "MATCH (n:N) WITH n ORDER BY n.g "
+      "RETURN n.g AS g, n.v AS v ORDER BY g, v";
+  rg::PhysicalPlan partial_sort = DetachedPhysicalPlan(partial_query);
+  ASSERT_NE(FindPhysicalPlan(partial_sort.Root(),
+                             rg::PhysicalOperatorKind::kPartialSort),
+            nullptr);
+  const std::vector<std::vector<rg::Value>> sorted{
+      {rg::Value(1), rg::Value(1)},
+      {rg::Value(1), rg::Value(2)},
+      {rg::Value(2), rg::Value(1)},
+      {rg::Value(2), rg::Value(2)}};
+  EXPECT_EQ(PhysicalRows(partial_sort, graph, {"g", "v"}), sorted);
+
+  rg::PhysicalPlan partial_top_n =
+      DetachedPhysicalPlan(partial_query + " LIMIT $l");
+  ASSERT_NE(FindPhysicalPlan(partial_top_n.Root(),
+                             rg::PhysicalOperatorKind::kPartialTopN),
+            nullptr);
+  EXPECT_EQ(
+      PhysicalRows(partial_top_n, graph, {"g", "v"}, {{"l", rg::Value(3)}}),
+      (std::vector<std::vector<rg::Value>>(sorted.begin(),
+                                           sorted.begin() + 3)));
 }
 
 TEST(PhysicalPlanTest, PrintsAlgorithmsPropertiesAndSlots) {

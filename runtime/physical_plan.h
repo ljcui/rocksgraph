@@ -242,6 +242,36 @@ struct ProjectionOp {
   std::vector<PhysicalProjectionItem> items;
 };
 
+enum class PhysicalSortDirection {
+  kAscending,
+  kDescending,
+};
+
+struct PhysicalSortItem {
+  PhysicalExpression expression;
+  PhysicalSortDirection direction = PhysicalSortDirection::kAscending;
+};
+
+struct FullSortOp {
+  std::vector<PhysicalSortItem> items;
+};
+
+struct PartialSortOp {
+  std::vector<PhysicalSortItem> items;
+  std::size_t prefix = 0;
+};
+
+struct TopNOp {
+  std::vector<PhysicalSortItem> items;
+  PhysicalExpression limit;
+};
+
+struct PartialTopNOp {
+  std::vector<PhysicalSortItem> items;
+  PhysicalExpression limit;
+  std::size_t prefix = 0;
+};
+
 struct SkipOp {
   PhysicalExpression count;
 };
@@ -262,7 +292,8 @@ using PhysicalOperatorData =
                  NodeByIdSeekOp, RelationshipByIdSeekOp, ExpandOp, ExpandIntoOp,
                  VarExpandOp, PruningVarExpandOp, OptionalExpandOp,
                  ProjectEndpointsOp, PathBuildOp, FilterOp, ProjectionOp,
-                 SkipOp, LimitOp, ProduceResultsOp>;
+                 FullSortOp, PartialSortOp, TopNOp, PartialTopNOp, SkipOp,
+                 LimitOp, ProduceResultsOp>;
 
 struct PhysicalPlanNode {
   OperatorId id = 0;
@@ -271,7 +302,6 @@ struct PhysicalPlanNode {
   // Transitional debug origin. Runtime operators for migrated physical kinds
   // must not read this pointer.
   const ir::LogicalPlan *logical = nullptr;
-  const ir::TopNPlan *top_n = nullptr;
   std::string logical_name;
   std::string details;
   std::optional<double> estimated_rows;
@@ -282,8 +312,6 @@ struct PhysicalPlanNode {
   std::vector<SlotMapping> argument_mapping;
   std::vector<std::vector<SlotMapping>> child_mappings;
   std::vector<std::unique_ptr<PhysicalPlanNode>> children;
-  std::size_t partial_sort_prefix = 0;
-  std::size_t partial_top_n_prefix = 0;
   std::size_t value_hash_join_build_child = 1;
 };
 

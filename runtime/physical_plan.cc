@@ -564,6 +564,29 @@ PhysicalExpandDirection ToPhysicalExpandDirection(
   THROW(common::InternalError, "unknown expand direction");
 }
 
+PhysicalSortDirection ToPhysicalSortDirection(
+    ir::LogicalOrderDirection direction) {
+  switch (direction) {
+    case ir::LogicalOrderDirection::kAscending:
+      return PhysicalSortDirection::kAscending;
+    case ir::LogicalOrderDirection::kDescending:
+      return PhysicalSortDirection::kDescending;
+  }
+  THROW(common::InternalError, "unknown sort direction");
+}
+
+std::vector<PhysicalSortItem> CopyPhysicalSortItems(
+    const std::vector<ir::LogicalSortItem> &items) {
+  std::vector<PhysicalSortItem> copied;
+  copied.reserve(items.size());
+  for (const auto &item : items) {
+    copied.push_back({.expression = CopyPhysicalExpression(
+                          item.expression, item.precomputed_expressions),
+                      .direction = ToPhysicalSortDirection(item.direction)});
+  }
+  return copied;
+}
+
 PhysicalRelationshipPattern CopyPhysicalRelationshipPattern(
     const ir::PatternRelationship &pattern) {
   return {.from_node = pattern.left_node,
@@ -816,11 +839,10 @@ class PhysicalPlanBuilder final {
       CHECK(node->children.size() == 1, common::InternalError,
             "Sort physical node must have one child");
       const auto &sort = static_cast<const ir::SortPlan &>(plan);
-      node->partial_sort_prefix =
+      const std::size_t prefix =
           CommonOrderingPrefix(node->children[0]->provided_order, sort.Items());
-      node->kind = node->partial_sort_prefix == 0
-                       ? PhysicalOperatorKind::kFullSort
-                       : PhysicalOperatorKind::kPartialSort;
+      node->kind = prefix == 0 ? PhysicalOperatorKind::kFullSort
+                               : PhysicalOperatorKind::kPartialSort;
       node->provided_order = sort.Items();
       return;
     }
@@ -829,12 +851,10 @@ class PhysicalPlanBuilder final {
       CHECK(node->children.size() == 1, common::InternalError,
             "Top-N physical node must have one child");
       const auto &top_n = static_cast<const ir::TopNPlan &>(plan);
-      node->top_n = &top_n;
-      node->partial_top_n_prefix = CommonOrderingPrefix(
+      const std::size_t prefix = CommonOrderingPrefix(
           node->children[0]->provided_order, top_n.Items());
-      node->kind = node->partial_top_n_prefix == 0
-                       ? PhysicalOperatorKind::kTopN
-                       : PhysicalOperatorKind::kPartialTopN;
+      node->kind = prefix == 0 ? PhysicalOperatorKind::kTopN
+                               : PhysicalOperatorKind::kPartialTopN;
       node->provided_order = top_n.Items();
       return;
     }
@@ -1058,6 +1078,36 @@ class PhysicalPlanBuilder final {
           data.items.push_back(std::move(physical_item));
         }
         node->data = std::move(data);
+        return;
+      }
+      case PhysicalOperatorKind::kFullSort: {
+        const auto &sort = static_cast<const ir::SortPlan &>(plan);
+        node->data = FullSortOp{.items = CopyPhysicalSortItems(sort.Items())};
+        return;
+      }
+      case PhysicalOperatorKind::kPartialSort: {
+        const auto &sort = static_cast<const ir::SortPlan &>(plan);
+        node->data =
+            PartialSortOp{.items = CopyPhysicalSortItems(sort.Items()),
+                          .prefix = CommonOrderingPrefix(
+                              node->children[0]->provided_order, sort.Items())};
+        return;
+      }
+      case PhysicalOperatorKind::kTopN: {
+        const auto &top_n = static_cast<const ir::TopNPlan &>(plan);
+        node->data = TopNOp{.items = CopyPhysicalSortItems(top_n.Items()),
+                            .limit = CopyPhysicalExpression(
+                                top_n.Limit(), top_n.PrecomputedExpressions())};
+        return;
+      }
+      case PhysicalOperatorKind::kPartialTopN: {
+        const auto &top_n = static_cast<const ir::TopNPlan &>(plan);
+        node->data = PartialTopNOp{
+            .items = CopyPhysicalSortItems(top_n.Items()),
+            .limit = CopyPhysicalExpression(top_n.Limit(),
+                                            top_n.PrecomputedExpressions()),
+            .prefix = CommonOrderingPrefix(node->children[0]->provided_order,
+                                           top_n.Items())};
         return;
       }
       case PhysicalOperatorKind::kSkip: {
