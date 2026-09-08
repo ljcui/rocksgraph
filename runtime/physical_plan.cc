@@ -1306,6 +1306,17 @@ class PhysicalPlanBuilder final {
             .anti = apply.Anti()};
         return;
       }
+      case PhysicalOperatorKind::kRollUpApply: {
+        const auto &apply = static_cast<const ir::RollUpApplyPlan &>(plan);
+        CHECK(node->children.size() == 2, common::InternalError,
+              "roll-up apply physical node must have two children");
+        node->data = RollUpApplyOp{
+            .collection_slot =
+                node->output_slots->At(apply.CollectionVariable()),
+            .value_slot =
+                node->children[1]->output_slots->At(apply.ValueVariable())};
+        return;
+      }
       default:
         return;
     }

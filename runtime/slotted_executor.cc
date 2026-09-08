@@ -5239,25 +5239,20 @@ class RollUpApplyOperator final : public PullOperator {
                       OperatorFactory &factory,
                       std::unique_ptr<PullOperator> lhs)
       : node_(&node),
+        data_(&OperatorData<RollUpApplyOp>(node)),
         state_(&state),
-        factory_(&factory),
-        lhs_(std::move(lhs)) {}
+        correlated_(node, state, factory, std::move(lhs)) {}
 
   ~RollUpApplyOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override;
-  void Close() noexcept override;
+  void Close() noexcept override { correlated_.Close(); }
 
  private:
-  bool NextLeft();
-
   const PhysicalPlanNode *node_ = nullptr;
+  const RollUpApplyOp *data_ = nullptr;
   RuntimeState *state_ = nullptr;
-  OperatorFactory *factory_ = nullptr;
-  std::unique_ptr<PullOperator> lhs_;
-  std::unique_ptr<PullOperator> rhs_;
-  std::optional<SlottedRow> current_left_;
-  bool closed_ = false;
+  CorrelatedRightState correlated_;
 };
 
 class MergeOperator final : public PullOperator {
@@ -5788,61 +5783,35 @@ bool SelectOrSemiApplyOperator::Next(SlottedRow *row) {
   return false;
 }
 
-bool RollUpApplyOperator::NextLeft() {
-  SlottedRow lhs_row(node_->children[0]->output_slots);
-  if (!lhs_->Next(&lhs_row)) {
-    Close();
-    return false;
-  }
-  current_left_.emplace(std::move(lhs_row));
-  rhs_ = factory_->Build(*node_->children[1], *current_left_);
-  return true;
-}
-
 bool RollUpApplyOperator::Next(SlottedRow *row) {
   CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
-  state_->CheckCancelled();
-  if (closed_) {
+  if (!correlated_.NextLeft()) {
     return false;
   }
-  if (!current_left_.has_value() && !NextLeft()) {
-    return false;
-  }
-
-  const auto &rollup =
-      static_cast<const ir::RollUpApplyPlan &>(*node_->logical);
+  correlated_.OpenRight();
   Value::List values;
   std::size_t reserved_bytes = 0;
-  SlottedRow rhs_row(node_->children[1]->output_slots);
-  while (rhs_->Next(&rhs_row)) {
-    Value value = rhs_row.Get(rollup.ValueVariable(), *state_->graph_reader);
-    const std::size_t bytes = EstimatedValueHeapUsage(value);
-    state_->memory_tracker.Reserve(bytes);
-    reserved_bytes += bytes;
-    values.push_back(std::move(value));
+  try {
+    SlottedRow rhs(node_->children[1]->output_slots);
+    while (correlated_.NextRight(&rhs)) {
+      Value value = rhs.Get(data_->value_slot, *state_->graph_reader);
+      const std::size_t bytes = EstimatedValueHeapUsage(value);
+      state_->memory_tracker.Reserve(bytes);
+      reserved_bytes += bytes;
+      values.push_back(std::move(value));
+    }
+    SlottedRow output =
+        correlated_.Left().CopyTo(node_->output_slots, *state_->graph_reader);
+    output.SetReference(data_->collection_slot, Value(std::move(values)));
+    state_->memory_tracker.Release(reserved_bytes);
+    correlated_.FinishLeft();
+    *row = std::move(output);
+    return true;
+  } catch (...) {
+    state_->memory_tracker.Release(reserved_bytes);
+    correlated_.FinishLeft();
+    throw;
   }
-  SlottedRow output =
-      current_left_->CopyTo(node_->output_slots, *state_->graph_reader);
-  output.Set(rollup.CollectionVariable(), Value(std::move(values)));
-  state_->memory_tracker.Release(reserved_bytes);
-  rhs_->Close();
-  rhs_.reset();
-  current_left_.reset();
-  *row = std::move(output);
-  return true;
-}
-
-void RollUpApplyOperator::Close() noexcept {
-  if (closed_) {
-    return;
-  }
-  if (rhs_ != nullptr) {
-    rhs_->Close();
-  }
-  if (lhs_ != nullptr) {
-    lhs_->Close();
-  }
-  closed_ = true;
 }
 
 void MergeOperator::Initialize() {

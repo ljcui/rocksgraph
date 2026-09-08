@@ -552,6 +552,76 @@ TEST(PhysicalPlanTest, ExecutesDetachedExistenceApplyOperators) {
   EXPECT_FALSE(cursor->Next(&row));
 }
 
+TEST(PhysicalPlanTest, BuildsOwnedRollUpApplyPayload) {
+  rg::PhysicalPlan physical = DetachedPhysicalPlan(
+      "MATCH (n:Input) RETURN id(n) AS id, "
+      "[(n)-[:R]->(m) | m.name] AS names");
+  const rg::PhysicalPlanNode *roll_up =
+      FindPhysicalPlan(physical.Root(), rg::PhysicalOperatorKind::kRollUpApply);
+  ASSERT_NE(roll_up, nullptr);
+  const auto &data = std::get<rg::RollUpApplyOp>(roll_up->data);
+  EXPECT_EQ(data.collection_slot.kind, rg::SlotKind::kReference);
+  EXPECT_EQ(data.collection_slot.type, ast::SemanticVariableType::kList);
+  EXPECT_FALSE(data.collection_slot.nullable);
+  EXPECT_EQ(data.value_slot.kind, rg::SlotKind::kReference);
+  EXPECT_EQ(data.value_slot.type, ast::SemanticVariableType::kScalar);
+  EXPECT_NE(rg::PhysicalPlanToString(physical).find("RollUpApply"),
+            std::string::npos);
+}
+
+TEST(PhysicalPlanTest, ExecutesDetachedRollUpApplyAndHandlesResources) {
+  rg::InMemoryGraph graph;
+  const auto matched = graph.CreateNode({"Input"});
+  const auto unmatched = graph.CreateNode({"Input"});
+  const auto first =
+      graph.CreateNode({}, {{"name", rg::Value("first target")}});
+  const auto second =
+      graph.CreateNode({}, {{"name", rg::Value("second target")}});
+  graph.CreateRelationship(matched, first, "R");
+  graph.CreateRelationship(matched, second, "R");
+
+  rg::PhysicalPlan physical = DetachedPhysicalPlan(
+      "MATCH (n:Input) RETURN id(n) AS id, "
+      "[(n)-[:R]->(m) | m.name] AS names");
+  const auto rows = PhysicalRows(physical, graph, {"id", "names"});
+  ASSERT_EQ(rows.size(), 2U);
+  for (const auto &result : rows) {
+    ASSERT_EQ(result.size(), 2U);
+    ASSERT_TRUE(result[0].IsInteger());
+    ASSERT_TRUE(result[1].IsList());
+    const rg::Value::List &names = result[1].AsList();
+    if (result[0].AsInteger() == matched->id) {
+      ASSERT_EQ(names.size(), 2U);
+      EXPECT_EQ(names[0], rg::Value("first target"));
+      EXPECT_EQ(names[1], rg::Value("second target"));
+    } else {
+      EXPECT_EQ(result[0].AsInteger(), unmatched->id);
+      EXPECT_TRUE(names.empty());
+    }
+  }
+
+  std::unique_ptr<rg::PhysicalResultCursor> cursor =
+      rg::StartPhysicalPlan(physical, graph, nullptr, {}, {"id", "names"});
+  std::vector<rg::Value> row;
+  ASSERT_TRUE(cursor->Next(&row));
+  cursor->Close();
+  EXPECT_FALSE(cursor->Next(&row));
+
+  rg::QueryExecutionOptions cancellation_options;
+  cancellation_options.cancellation =
+      std::make_shared<rg::QueryCancellationToken>();
+  cursor = rg::StartPhysicalPlan(physical, graph, nullptr, {}, {"id", "names"},
+                                 cancellation_options);
+  cancellation_options.cancellation->Cancel();
+  EXPECT_THROW((void)cursor->Next(&row), common::QueryCancelledError);
+
+  rg::QueryExecutionOptions memory_options;
+  memory_options.memory_limit_bytes = 1;
+  cursor = rg::StartPhysicalPlan(physical, graph, nullptr, {}, {"id", "names"},
+                                 memory_options);
+  EXPECT_THROW((void)cursor->Next(&row), common::MemoryLimitExceededError);
+}
+
 TEST(PhysicalPlanTest, ReinstantiatesStatefulApplyRightSideForEachLeftRow) {
   rg::InMemoryGraph graph;
   const auto first = graph.CreateNode({"Input"});

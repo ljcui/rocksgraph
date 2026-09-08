@@ -375,6 +375,11 @@ struct SelectOrSemiApplyOp {
   bool anti = false;
 };
 
+struct RollUpApplyOp {
+  Slot collection_slot;
+  Slot value_slot;
+};
+
 using PhysicalOperatorData = std::variant<
     std::monostate, ArgumentOp, AllNodeScanOp, NodeByLabelScanOp,
     NodeIndexSeekOp, NodeIndexRangeSeekOp, RelationshipTypeScanOp,
@@ -386,7 +391,7 @@ using PhysicalOperatorData = std::variant<
     PartialTopNOp, SkipOp, LimitOp, ProduceResultsOp, ValueHashJoinOp,
     NodeHashJoinOp, LeftOuterHashJoinOp, CartesianProductOp, PredicateJoinOp,
     UnionAllOp, UnionDistinctOp, ApplyOp, OptionalApplyOp, SemiApplyOp,
-    AntiSemiApplyOp, LetSemiApplyOp, SelectOrSemiApplyOp>;
+    AntiSemiApplyOp, LetSemiApplyOp, SelectOrSemiApplyOp, RollUpApplyOp>;
 
 struct PhysicalPlanNode {
   OperatorId id = 0;
