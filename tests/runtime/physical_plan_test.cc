@@ -243,6 +243,16 @@ rg::PhysicalPlan DetachedPruningVarExpand() {
   return rg::CreatePhysicalPlan(logical);
 }
 
+rg::PhysicalPlan DetachedAssertIsNode() {
+  std::unique_ptr<ast::Parameter> value = Parameter("value");
+  auto source = std::make_unique<ir::ProjectionPlan>(
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>{}),
+      std::vector<ir::LogicalProjectionItem>{
+          {.expression = value.get(), .alias = "n"}});
+  ir::AssertIsNodePlan logical(std::move(source), {"n"});
+  return rg::CreatePhysicalPlan(logical);
+}
+
 std::vector<std::vector<rg::Value>> PhysicalRows(
     const rg::PhysicalPlan &plan, const rg::GraphReader &graph,
     const std::vector<std::string> &columns,
@@ -867,6 +877,133 @@ TEST(PhysicalPlanTest, ExecutesDetachedRelationshipMerge) {
   EXPECT_EQ(graph.Relationships().size(), 1U);
   EXPECT_EQ(graph.Relationships().front()->properties.at("seen"),
             rg::Value(true));
+}
+
+TEST(PhysicalPlanTest, BuildsOwnedRemainingUnaryPayloads) {
+  PlannedQuery unwind_query = Plan("UNWIND $values AS x RETURN x");
+  const ir::LogicalPlan *logical_unwind =
+      FindPlan(*unwind_query.logical_plan, ir::LogicalPlanNodeType::kUnwind);
+  ASSERT_NE(logical_unwind, nullptr);
+  const ast::Expression *logical_expression =
+      static_cast<const ir::UnwindPlan &>(*logical_unwind).Expression();
+  rg::PhysicalPlan unwind = rg::CreatePhysicalPlan(*unwind_query.logical_plan);
+  const rg::PhysicalPlanNode *unwind_node =
+      FindPhysicalPlan(unwind.Root(), rg::PhysicalOperatorKind::kUnwind);
+  ASSERT_NE(unwind_node, nullptr);
+  const auto &unwind_data = std::get<rg::UnwindOp>(unwind_node->data);
+  EXPECT_NE(unwind_data.expression.Expression(), logical_expression);
+  EXPECT_EQ(unwind_data.value_slot.kind, rg::SlotKind::kReference);
+
+  std::unique_ptr<ast::Parameter> argument = Parameter("argument");
+  ir::ProcedureCallPlan logical_procedure(
+      std::make_unique<ir::ArgumentPlan>(std::vector<std::string>{}),
+      "db.labels", {argument.get()},
+      {{.result_field = "label", .variable = "l"}}, false, true);
+  rg::PhysicalPlan procedure = rg::CreatePhysicalPlan(logical_procedure);
+  const auto &procedure_data =
+      std::get<rg::ProcedureCallOp>(procedure.Root().data);
+  EXPECT_EQ(procedure_data.procedure_name, "db.labels");
+  ASSERT_EQ(procedure_data.arguments.size(), 1U);
+  EXPECT_NE(procedure_data.arguments.front().Expression(), argument.get());
+  ASSERT_EQ(procedure_data.yields.size(), 1U);
+  EXPECT_EQ(procedure_data.yields.front().result_field, "label");
+  EXPECT_EQ(procedure_data.yields.front().output_slot.kind,
+            rg::SlotKind::kReference);
+  EXPECT_TRUE(procedure_data.read_only);
+
+  rg::PhysicalPlan assertion = DetachedAssertIsNode();
+  const auto &assertion_data =
+      std::get<rg::AssertIsNodeOp>(assertion.Root().data);
+  ASSERT_EQ(assertion_data.nodes.size(), 1U);
+  EXPECT_EQ(assertion_data.nodes.front().variable, "n");
+  EXPECT_EQ(assertion_data.nodes.front().input_slot.kind,
+            rg::SlotKind::kReference);
+}
+
+TEST(PhysicalPlanTest, ExecutesDetachedUnwindAndProcedureCall) {
+  rg::InMemoryGraph graph;
+  rg::PhysicalPlan unwind =
+      DetachedPhysicalPlan("UNWIND $values AS x RETURN x");
+
+  const auto list_rows = PhysicalRows(
+      unwind, graph, {"x"},
+      {{"values", rg::Value(rg::Value::List{rg::Value(1), rg::Value(2)})}});
+  ASSERT_EQ(list_rows.size(), 2U);
+  EXPECT_EQ(list_rows[0][0], rg::Value(1));
+  EXPECT_EQ(list_rows[1][0], rg::Value(2));
+  const auto scalar_rows =
+      PhysicalRows(unwind, graph, {"x"}, {{"values", rg::Value(3)}});
+  ASSERT_EQ(scalar_rows.size(), 1U);
+  EXPECT_EQ(scalar_rows[0][0], rg::Value(3));
+  EXPECT_TRUE(
+      PhysicalRows(unwind, graph, {"x"}, {{"values", rg::Value::Null()}})
+          .empty());
+
+  graph.CreateNode({"B", "A"});
+  rg::PhysicalPlan procedure = DetachedPhysicalPlan(
+      "UNWIND [0, 1] AS i "
+      "CALL db.labels() YIELD label AS l RETURN i, l");
+  const auto procedure_rows = PhysicalRows(procedure, graph, {"i", "l"});
+  ASSERT_EQ(procedure_rows.size(), 4U);
+  EXPECT_EQ(procedure_rows[0],
+            (std::vector<rg::Value>{rg::Value(0), rg::Value("A")}));
+  EXPECT_EQ(procedure_rows[1],
+            (std::vector<rg::Value>{rg::Value(0), rg::Value("B")}));
+  EXPECT_EQ(procedure_rows[2],
+            (std::vector<rg::Value>{rg::Value(1), rg::Value("A")}));
+  EXPECT_EQ(procedure_rows[3],
+            (std::vector<rg::Value>{rg::Value(1), rg::Value("B")}));
+}
+
+TEST(PhysicalPlanTest, ExecutesDetachedAssertIsNode) {
+  rg::InMemoryGraph graph;
+  const auto node = graph.CreateNode({"N"});
+  rg::PhysicalPlan assertion = DetachedAssertIsNode();
+
+  const auto node_rows =
+      PhysicalRows(assertion, graph, {"n"}, {{"value", rg::Value(node)}});
+  ASSERT_EQ(node_rows.size(), 1U);
+  ASSERT_TRUE(node_rows[0][0].IsNode());
+  EXPECT_EQ(node_rows[0][0].AsNode().id, node->id);
+  const auto null_rows =
+      PhysicalRows(assertion, graph, {"n"}, {{"value", rg::Value::Null()}});
+  ASSERT_EQ(null_rows.size(), 1U);
+  EXPECT_TRUE(null_rows[0][0].IsNull());
+  EXPECT_THROW(
+      (void)PhysicalRows(assertion, graph, {"n"}, {{"value", rg::Value(1)}}),
+      common::InvalidArgumentError);
+}
+
+TEST(PhysicalPlanTest, RemainingUnaryOperatorsHandleResources) {
+  rg::InMemoryGraph graph;
+  graph.CreateNode({"Label"});
+  rg::PhysicalPlan procedure = DetachedPhysicalPlan("CALL db.labels()");
+  std::vector<rg::Value> row;
+
+  std::unique_ptr<rg::PhysicalResultCursor> cursor =
+      rg::StartPhysicalPlan(procedure, graph, nullptr, {}, {"label"});
+  cursor->Close();
+  EXPECT_FALSE(cursor->Next(&row));
+
+  rg::QueryExecutionOptions cancellation_options;
+  cancellation_options.cancellation =
+      std::make_shared<rg::QueryCancellationToken>();
+  cursor = rg::StartPhysicalPlan(procedure, graph, nullptr, {}, {"label"},
+                                 cancellation_options);
+  cancellation_options.cancellation->Cancel();
+  EXPECT_THROW((void)cursor->Next(&row), common::QueryCancelledError);
+
+  rg::QueryExecutionOptions memory_options;
+  memory_options.memory_limit_bytes = 1;
+  cursor = rg::StartPhysicalPlan(procedure, graph, nullptr, {}, {"label"},
+                                 memory_options);
+  EXPECT_THROW((void)cursor->Next(&row), common::MemoryLimitExceededError);
+
+  rg::PhysicalPlan unwind =
+      DetachedPhysicalPlan("UNWIND ['value'] AS x RETURN x");
+  cursor =
+      rg::StartPhysicalPlan(unwind, graph, nullptr, {}, {"x"}, memory_options);
+  EXPECT_THROW((void)cursor->Next(&row), common::MemoryLimitExceededError);
 }
 
 TEST(PhysicalPlanTest, BuildsOwnedDeletePayloads) {

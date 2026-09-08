@@ -323,6 +323,32 @@ struct ProduceResultsOp {
   std::vector<std::string> columns;
 };
 
+struct PhysicalAssertedNode {
+  std::string variable;
+  Slot input_slot;
+};
+
+struct AssertIsNodeOp {
+  std::vector<PhysicalAssertedNode> nodes;
+};
+
+struct UnwindOp {
+  PhysicalExpression expression;
+  Slot value_slot;
+};
+
+struct PhysicalProcedureYield {
+  std::string result_field;
+  Slot output_slot;
+};
+
+struct ProcedureCallOp {
+  std::string procedure_name;
+  std::vector<PhysicalExpression> arguments;
+  std::vector<PhysicalProcedureYield> yields;
+  bool read_only = false;
+};
+
 struct PhysicalValueHashJoinKey {
   PhysicalExpression left;
   PhysicalExpression right;
@@ -466,13 +492,13 @@ using PhysicalOperatorData = std::variant<
     PruningVarExpandOp, OptionalExpandOp, ProjectEndpointsOp, PathBuildOp,
     FilterOp, ProjectionOp, HashDistinctOp, OrderedDistinctOp,
     HashAggregationOp, OrderedAggregationOp, FullSortOp, PartialSortOp, TopNOp,
-    PartialTopNOp, SkipOp, LimitOp, ProduceResultsOp, ValueHashJoinOp,
-    NodeHashJoinOp, LeftOuterHashJoinOp, CartesianProductOp, PredicateJoinOp,
-    UnionAllOp, UnionDistinctOp, ApplyOp, OptionalApplyOp, SemiApplyOp,
-    AntiSemiApplyOp, LetSemiApplyOp, SelectOrSemiApplyOp, RollUpApplyOp,
-    WriteBarrierOp, CreateNodeOp, CreateRelationshipOp, MergeOp, SetPropertyOp,
-    SetPropertiesOp, SetLabelsOp, RemovePropertyOp, RemoveLabelsOp, DeleteOp,
-    DetachDeleteOp>;
+    PartialTopNOp, SkipOp, LimitOp, ProduceResultsOp, AssertIsNodeOp, UnwindOp,
+    ProcedureCallOp, ValueHashJoinOp, NodeHashJoinOp, LeftOuterHashJoinOp,
+    CartesianProductOp, PredicateJoinOp, UnionAllOp, UnionDistinctOp, ApplyOp,
+    OptionalApplyOp, SemiApplyOp, AntiSemiApplyOp, LetSemiApplyOp,
+    SelectOrSemiApplyOp, RollUpApplyOp, WriteBarrierOp, CreateNodeOp,
+    CreateRelationshipOp, MergeOp, SetPropertyOp, SetPropertiesOp, SetLabelsOp,
+    RemovePropertyOp, RemoveLabelsOp, DeleteOp, DetachDeleteOp>;
 
 struct PhysicalPlanNode {
   OperatorId id = 0;

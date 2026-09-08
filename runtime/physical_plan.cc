@@ -1311,6 +1311,44 @@ class PhysicalPlanBuilder final {
       case PhysicalOperatorKind::kProduceResults:
         node->data = ProduceResultsOp{.columns = plan.OutputColumns()};
         return;
+      case PhysicalOperatorKind::kAssertIsNode: {
+        const auto &assertion = static_cast<const ir::AssertIsNodePlan &>(plan);
+        CHECK(node->children.size() == 1, common::InternalError,
+              "assert-is-node physical node must have one child");
+        AssertIsNodeOp data;
+        data.nodes.reserve(assertion.Variables().size());
+        for (const auto &variable : assertion.Variables()) {
+          data.nodes.push_back(
+              {.variable = variable,
+               .input_slot = node->children[0]->output_slots->At(variable)});
+        }
+        node->data = std::move(data);
+        return;
+      }
+      case PhysicalOperatorKind::kUnwind: {
+        const auto &unwind = static_cast<const ir::UnwindPlan &>(plan);
+        node->data = UnwindOp{
+            .expression = CopyPhysicalExpression(unwind.Expression(), {}),
+            .value_slot = node->output_slots->At(unwind.Alias())};
+        return;
+      }
+      case PhysicalOperatorKind::kProcedureCall: {
+        const auto &call = static_cast<const ir::ProcedureCallPlan &>(plan);
+        ProcedureCallOp data{
+            .procedure_name = call.ProcedureName(),
+            .arguments = CopyPhysicalExpressions(call.Arguments()),
+            .read_only = call.ReadOnly()};
+        data.yields.reserve(call.YieldItems().size());
+        for (const auto &item : call.YieldItems()) {
+          data.yields.push_back(
+              {.result_field = item.result_field.has_value()
+                                   ? *item.result_field
+                                   : item.variable,
+               .output_slot = node->output_slots->At(item.variable)});
+        }
+        node->data = std::move(data);
+        return;
+      }
       case PhysicalOperatorKind::kCartesianProduct:
         node->data = CartesianProductOp{};
         return;

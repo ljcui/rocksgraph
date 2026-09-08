@@ -427,24 +427,24 @@ Value BuildPathValue(const PhysicalPathPattern &pattern, const SlottedRow &row,
 
 using ProcedureRecord = Value::Map;
 
-std::vector<ProcedureRecord> ExecuteProcedure(const ir::ProcedureCallPlan &plan,
+std::vector<ProcedureRecord> ExecuteProcedure(const ProcedureCallOp &data,
                                               RuntimeState *state) {
   CHECK(state != nullptr, common::InternalError, "runtime state is null");
   const ast::BuiltinProcedure *procedure =
-      ast::FindBuiltinProcedure(plan.ProcedureName());
+      ast::FindBuiltinProcedure(data.procedure_name);
   CHECK(procedure != nullptr, common::InvalidArgumentError,
-        "unknown procedure: " + plan.ProcedureName());
-  CHECK(plan.Arguments().size() == procedure->argument_count,
+        "unknown procedure: " + data.procedure_name);
+  CHECK(data.arguments.size() == procedure->argument_count,
         common::InvalidArgumentError,
         procedure->name + "() received an invalid argument count");
-  CHECK(procedure->read_only && plan.ReadOnly(), common::InvalidArgumentError,
+  CHECK(procedure->read_only && data.read_only, common::InvalidArgumentError,
         "write procedure calls are not supported");
-  for (const auto &item : plan.YieldItems()) {
-    const std::string &field =
-        item.result_field.has_value() ? *item.result_field : item.variable;
-    CHECK(ast::FindBuiltinProcedureYield(*procedure, field) != nullptr,
+  for (const auto &item : data.yields) {
+    CHECK(ast::FindBuiltinProcedureYield(*procedure, item.result_field) !=
+              nullptr,
           common::InvalidArgumentError,
-          "unknown yield field for " + procedure->name + ": " + field);
+          "unknown yield field for " + procedure->name + ": " +
+              item.result_field);
   }
   std::set<std::string> values;
   if (procedure->kind == ast::BuiltinProcedureKind::kLabels ||
@@ -3001,13 +3001,16 @@ class PathBuildOperator final : public PullOperator {
   bool closed_ = false;
 };
 
-class StreamingUnaryOperator final : public PullOperator {
+class ProcedureCallOperator final : public PullOperator {
  public:
-  StreamingUnaryOperator(const PhysicalPlanNode &node, RuntimeState &state,
-                         std::unique_ptr<PullOperator> source)
-      : node_(&node), state_(&state), source_(std::move(source)) {}
+  ProcedureCallOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                        std::unique_ptr<PullOperator> source)
+      : node_(&node),
+        data_(&OperatorData<ProcedureCallOp>(node)),
+        state_(&state),
+        source_(std::move(source)) {}
 
-  ~StreamingUnaryOperator() override { Close(); }
+  ~ProcedureCallOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
     CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
@@ -3015,31 +3018,26 @@ class StreamingUnaryOperator final : public PullOperator {
     if (closed_) {
       return false;
     }
-    switch (node_->logical->Type()) {
-      case ir::LogicalPlanNodeType::kProcedureCall:
-        return NextProcedure(row);
-      case ir::LogicalPlanNodeType::kUnwind:
-        return NextUnwind(row);
-      case ir::LogicalPlanNodeType::kAssertIsNode:
-        return NextAssertIsNode(row);
-      default:
-        THROW(common::InternalError, "unsupported streaming operator: " +
-                                         std::string(node_->logical->Name()));
-    }
+    return NextProcedure(row);
   }
 
   void Close() noexcept override {
-    if (source_ != nullptr) {
-      source_->Close();
+    if (closed_) {
+      return;
     }
-    state_->memory_tracker.Release(buffer_reserved_bytes_);
-    state_->memory_tracker.Release(unwind_reserved_bytes_);
-    buffer_reserved_bytes_ = 0;
-    unwind_reserved_bytes_ = 0;
+    source_->Close();
+    ReleaseBuffer();
     closed_ = true;
   }
 
  private:
+  void ReleaseBuffer() noexcept {
+    state_->memory_tracker.Release(buffer_reserved_bytes_);
+    buffer_reserved_bytes_ = 0;
+    buffer_.clear();
+    buffer_index_ = 0;
+  }
+
   bool PullInput(SlottedRow *input) {
     if (!source_->Next(input)) {
       Close();
@@ -3050,28 +3048,23 @@ class StreamingUnaryOperator final : public PullOperator {
 
   bool NextProcedure(SlottedRow *row) {
     while (buffer_index_ >= buffer_.size()) {
-      state_->memory_tracker.Release(buffer_reserved_bytes_);
-      buffer_reserved_bytes_ = 0;
-      buffer_.clear();
-      buffer_index_ = 0;
+      ReleaseBuffer();
       SlottedRow input(node_->children[0]->output_slots);
       if (!PullInput(&input)) {
         return false;
       }
-      const auto &plan =
-          static_cast<const ir::ProcedureCallPlan &>(*node_->logical);
-      for (const auto &record : ExecuteProcedure(plan, state_)) {
-        SlottedRow output =
-            input.CopyTo(node_->output_slots, *state_->graph_reader);
-        for (const auto &item : plan.YieldItems()) {
-          const std::string &field = item.result_field.has_value()
-                                         ? *item.result_field
-                                         : item.variable;
-          const auto found = record.find(field);
-          CHECK(
-              found != record.end(), common::InvalidArgumentError,
-              "unknown yield field for " + plan.ProcedureName() + ": " + field);
-          output.Set(item.variable, found->second);
+      for (const auto &record : ExecuteProcedure(*data_, state_)) {
+        SlottedRow output(node_->output_slots);
+        CopyMappings(input, &output, node_->child_mappings[0], *state_);
+        for (const auto &item : data_->yields) {
+          const auto found = record.find(item.result_field);
+          CHECK(found != record.end(), common::InvalidArgumentError,
+                "unknown yield field for " + data_->procedure_name + ": " +
+                    item.result_field);
+          CHECK(item.output_slot.kind == SlotKind::kReference,
+                common::InternalError,
+                "procedure yield target is not a reference slot");
+          output.SetReference(item.output_slot, found->second);
         }
         const std::size_t bytes = output.EstimatedHeapUsage();
         state_->memory_tracker.Reserve(bytes);
@@ -3083,67 +3076,146 @@ class StreamingUnaryOperator final : public PullOperator {
     return true;
   }
 
-  bool NextUnwind(SlottedRow *row) {
-    const auto &unwind = static_cast<const ir::UnwindPlan &>(*node_->logical);
+  const PhysicalPlanNode *node_ = nullptr;
+  const ProcedureCallOp *data_ = nullptr;
+  RuntimeState *state_ = nullptr;
+  std::unique_ptr<PullOperator> source_;
+  std::vector<SlottedRow> buffer_;
+  std::size_t buffer_index_ = 0;
+  std::size_t buffer_reserved_bytes_ = 0;
+  bool closed_ = false;
+};
+
+class UnwindOperator final : public PullOperator {
+ public:
+  UnwindOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                 std::unique_ptr<PullOperator> source)
+      : node_(&node),
+        data_(&OperatorData<UnwindOp>(node)),
+        state_(&state),
+        source_(std::move(source)) {}
+
+  ~UnwindOperator() override { Close(); }
+
+  [[nodiscard]] bool Next(SlottedRow *row) override {
+    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    state_->CheckCancelled();
+    if (closed_) {
+      return false;
+    }
     while (true) {
-      if (unwind_input_.has_value() && unwind_index_ < unwind_values_.size()) {
-        SlottedRow output =
-            unwind_input_->CopyTo(node_->output_slots, *state_->graph_reader);
-        output.Set(unwind.Alias(), unwind_values_[unwind_index_++]);
+      if (input_.has_value() && value_index_ < values_.size()) {
+        SlottedRow output(node_->output_slots);
+        CopyMappings(*input_, &output, node_->child_mappings[0], *state_);
+        CHECK(data_->value_slot.kind == SlotKind::kReference,
+              common::InternalError,
+              "UNWIND value target is not a reference slot");
+        output.SetReference(data_->value_slot, values_[value_index_++]);
         *row = std::move(output);
         return true;
       }
-      unwind_values_.clear();
-      state_->memory_tracker.Release(unwind_reserved_bytes_);
-      unwind_reserved_bytes_ = 0;
-      unwind_index_ = 0;
+
+      ReleaseValues();
       SlottedRow input(node_->children[0]->output_slots);
-      if (!PullInput(&input)) {
+      if (!source_->Next(&input)) {
+        Close();
         return false;
       }
-      Value value = Evaluate(*unwind.Expression(), input, {}, *state_);
+      Value value = Evaluate(data_->expression, input, *state_);
       if (value.IsNull()) {
         continue;
       }
       if (value.IsList()) {
-        unwind_values_ = value.AsList();
+        values_ = value.AsList();
       } else {
-        unwind_values_.push_back(std::move(value));
+        values_.push_back(std::move(value));
       }
-      for (const auto &item : unwind_values_) {
-        unwind_reserved_bytes_ += EstimatedValueHeapUsage(item);
+      std::size_t reserved_bytes = 0;
+      for (const auto &item : values_) {
+        reserved_bytes += EstimatedValueHeapUsage(item);
       }
-      state_->memory_tracker.Reserve(unwind_reserved_bytes_);
-      unwind_input_.emplace(std::move(input));
+      state_->memory_tracker.Reserve(reserved_bytes);
+      reserved_bytes_ = reserved_bytes;
+      input_.emplace(std::move(input));
     }
   }
 
-  bool NextAssertIsNode(SlottedRow *row) {
-    const auto &assertion =
-        static_cast<const ir::AssertIsNodePlan &>(*node_->logical);
-    SlottedRow input(node_->children[0]->output_slots);
-    if (!PullInput(&input)) {
-      return false;
+  void Close() noexcept override {
+    if (closed_) {
+      return;
     }
-    for (const auto &variable : assertion.Variables()) {
-      const Value value = input.Get(variable, *state_->graph_reader);
-      CHECK(value.IsNull() || value.IsNode(), common::InvalidArgumentError,
-            "expected node value: " + variable);
-    }
-    *row = input.CopyTo(node_->output_slots, *state_->graph_reader);
-    return true;
+    source_->Close();
+    ReleaseValues();
+    input_.reset();
+    closed_ = true;
+  }
+
+ private:
+  void ReleaseValues() noexcept {
+    state_->memory_tracker.Release(reserved_bytes_);
+    reserved_bytes_ = 0;
+    values_.clear();
+    value_index_ = 0;
   }
 
   const PhysicalPlanNode *node_ = nullptr;
+  const UnwindOp *data_ = nullptr;
   RuntimeState *state_ = nullptr;
   std::unique_ptr<PullOperator> source_;
-  std::optional<SlottedRow> unwind_input_;
-  std::vector<Value> unwind_values_;
-  std::vector<SlottedRow> buffer_;
-  std::size_t unwind_index_ = 0;
-  std::size_t buffer_index_ = 0;
-  std::size_t buffer_reserved_bytes_ = 0;
-  std::size_t unwind_reserved_bytes_ = 0;
+  std::optional<SlottedRow> input_;
+  std::vector<Value> values_;
+  std::size_t value_index_ = 0;
+  std::size_t reserved_bytes_ = 0;
+  bool closed_ = false;
+};
+
+class AssertIsNodeOperator final : public PullOperator {
+ public:
+  AssertIsNodeOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                       std::unique_ptr<PullOperator> source)
+      : node_(&node),
+        data_(&OperatorData<AssertIsNodeOp>(node)),
+        state_(&state),
+        source_(std::move(source)) {}
+
+  ~AssertIsNodeOperator() override { Close(); }
+
+  [[nodiscard]] bool Next(SlottedRow *row) override {
+    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    state_->CheckCancelled();
+    if (closed_) {
+      return false;
+    }
+    SlottedRow input(node_->children[0]->output_slots);
+    if (!source_->Next(&input)) {
+      Close();
+      return false;
+    }
+    for (const auto &assertion : data_->nodes) {
+      const Value value =
+          input.Get(assertion.input_slot, *state_->graph_reader);
+      CHECK(value.IsNull() || value.IsNode(), common::InvalidArgumentError,
+            "expected node value: " + assertion.variable);
+    }
+    SlottedRow output(node_->output_slots);
+    CopyMappings(input, &output, node_->child_mappings[0], *state_);
+    *row = std::move(output);
+    return true;
+  }
+
+  void Close() noexcept override {
+    if (closed_) {
+      return;
+    }
+    source_->Close();
+    closed_ = true;
+  }
+
+ private:
+  const PhysicalPlanNode *node_ = nullptr;
+  const AssertIsNodeOp *data_ = nullptr;
+  RuntimeState *state_ = nullptr;
+  std::unique_ptr<PullOperator> source_;
   bool closed_ = false;
 };
 
@@ -5626,11 +5698,19 @@ class OperatorFactory final {
         return std::make_unique<PathBuildOperator>(
             node, *state_, Build(*node.children[0], std::move(argument)));
       case PhysicalOperatorKind::kProcedureCall:
+        CHECK(node.children.size() == 1, common::InternalError,
+              "procedure call physical node must have one child");
+        return std::make_unique<ProcedureCallOperator>(
+            node, *state_, Build(*node.children[0], std::move(argument)));
       case PhysicalOperatorKind::kUnwind:
+        CHECK(node.children.size() == 1, common::InternalError,
+              "UNWIND physical node must have one child");
+        return std::make_unique<UnwindOperator>(
+            node, *state_, Build(*node.children[0], std::move(argument)));
       case PhysicalOperatorKind::kAssertIsNode:
         CHECK(node.children.size() == 1, common::InternalError,
-              "streaming physical node must have one child");
-        return std::make_unique<StreamingUnaryOperator>(
+              "assert-is-node physical node must have one child");
+        return std::make_unique<AssertIsNodeOperator>(
             node, *state_, Build(*node.children[0], std::move(argument)));
       case PhysicalOperatorKind::kCreateNode:
         CHECK(node.children.size() == 1, common::InternalError,
