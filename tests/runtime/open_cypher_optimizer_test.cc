@@ -14,6 +14,7 @@
 #include "planner/planned_query.h"
 #include "runtime/query_executor.h"
 #include "storage/in_memory_graph.h"
+#include "tests/runtime/query_test_utils.h"
 
 namespace {
 
@@ -61,6 +62,9 @@ class ObservedGraph final : public rg::GraphReader {
 
     const rg::GraphReader &Reader() const override { return *graph_; }
     rg::Storage *Writer() override { return nullptr; }
+    [[nodiscard]] State GetState() const noexcept override {
+      return delegate_->GetState();
+    }
     void Commit() override { delegate_->Commit(); }
     void Rollback() override { delegate_->Rollback(); }
 
@@ -69,7 +73,7 @@ class ObservedGraph final : public rg::GraphReader {
     std::unique_ptr<rg::StorageTransaction> delegate_;
   };
 
-  std::unique_ptr<rg::StorageTransaction> BeginTransaction() override {
+  std::unique_ptr<rg::StorageTransaction> BeginTransaction() {
     return std::make_unique<Transaction>(this, graph.BeginTransaction());
   }
 
@@ -179,25 +183,27 @@ TEST(OpenCypherOptimizerTest, SeeksIdsWithoutScanningAndDeduplicatesValues) {
   auto b = graph.graph.CreateNode({"B"});
   graph.graph.CreateRelationship(a, b, "R");
   graph.graph.CreateRelationship(a, a, "R");
-  auto result = rg::ExecuteReadQuery(
+  auto result = rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (n) WHERE id(n) IN [0,0.0,1,1,9,-1,null,0.5,'0'] RETURN id(n)");
   EXPECT_EQ(Rows(result),
             (std::multiset<std::vector<std::string>>{{"0"}, {"1"}}));
-  result = rg::ExecuteReadQuery(
+  result = rg::test::ExecuteQueryAndCommit(
       graph, "MATCH (a)-[r:R]-(b) WHERE id(r) IN [0,0,1,9] RETURN id(a),id(b)");
   EXPECT_EQ(Rows(result), (std::multiset<std::vector<std::string>>{
                               {"0", "1"}, {"1", "0"}, {"0", "0"}}));
   EXPECT_EQ(graph.scans, 0U);
   EXPECT_EQ(graph.expansions, 0U);
-  EXPECT_TRUE(rg::ExecuteReadQuery(graph, "MATCH (n:B) WHERE id(n)=0 RETURN n")
+  EXPECT_TRUE(rg::test::ExecuteQueryAndCommit(
+                  graph, "MATCH (n:B) WHERE id(n)=0 RETURN n")
                   .rows.empty());
-  EXPECT_TRUE(
-      rg::ExecuteReadQuery(graph, "MATCH ()-[r:S]->() WHERE id(r)=0 RETURN r")
-          .rows.empty());
-  EXPECT_TRUE(rg::ExecuteReadQuery(graph, "MATCH (n) WHERE id(n)=null RETURN n")
+  EXPECT_TRUE(rg::test::ExecuteQueryAndCommit(
+                  graph, "MATCH ()-[r:S]->() WHERE id(r)=0 RETURN r")
                   .rows.empty());
-  EXPECT_EQ(rg::ExecuteReadQuery(
+  EXPECT_TRUE(rg::test::ExecuteQueryAndCommit(
+                  graph, "MATCH (n) WHERE id(n)=null RETURN n")
+                  .rows.empty());
+  EXPECT_EQ(rg::test::ExecuteQueryAndCommit(
                 graph, "UNWIND [0,1] AS x MATCH (n) WHERE x=id(n) RETURN n")
                 .rows.size(),
             2U);
@@ -211,31 +217,33 @@ TEST(OpenCypherOptimizerTest,
   auto c = graph.graph.CreateNode({});
   graph.graph.CreateRelationship(a, b, "R");
   graph.graph.CreateRelationship(b, c, "R");
-  auto result = rg::ExecuteReadQuery(graph,
-                                     "MATCH ()-[r]->() WHERE id(r)=0 WITH r "
-                                     "MATCH (a)-[r]-(b) RETURN id(a),id(b)");
+  auto result =
+      rg::test::ExecuteQueryAndCommit(graph,
+                                      "MATCH ()-[r]->() WHERE id(r)=0 WITH r "
+                                      "MATCH (a)-[r]-(b) RETURN id(a),id(b)");
   EXPECT_EQ(Rows(result),
             (std::multiset<std::vector<std::string>>{{"0", "1"}, {"1", "0"}}));
   EXPECT_EQ(graph.scans, 0U);
   EXPECT_EQ(graph.expansions, 0U);
-  result =
-      rg::ExecuteReadQuery(graph,
-                           "MATCH (a)-[rs*2..2]->(b) WHERE id(a)=0 WITH rs "
-                           "MATCH (x)-[rs*2..2]->(y) RETURN id(x),id(y)");
+  result = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "MATCH (a)-[rs*2..2]->(b) WHERE id(a)=0 WITH rs "
+      "MATCH (x)-[rs*2..2]->(y) RETURN id(x),id(y)");
   EXPECT_EQ(Rows(result),
             (std::multiset<std::vector<std::string>>{{"0", "2"}}));
   EXPECT_EQ(graph.scans, 0U);
   EXPECT_EQ(graph.expansions, 2U);
-  result = rg::ExecuteReadQuery(graph,
-                                "MATCH (a) WHERE id(a)=0 WITH a, [] AS rs "
-                                "MATCH (a)-[rs*0..1]->(b) RETURN id(b)");
+  result = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "MATCH (a) WHERE id(a)=0 WITH a, [] AS rs "
+      "MATCH (a)-[rs*0..1]->(b) RETURN id(b)");
   EXPECT_EQ(Rows(result), (std::multiset<std::vector<std::string>>{{"0"}}));
   EXPECT_TRUE(
-      rg::ExecuteReadQuery(
+      rg::test::ExecuteQueryAndCommit(
           graph,
           "MATCH ()-[r]->() WHERE id(r)=0 WITH r MATCH (a)-[r:S]->(b) RETURN a")
           .rows.empty());
-  EXPECT_TRUE(rg::ExecuteReadQuery(
+  EXPECT_TRUE(rg::test::ExecuteQueryAndCommit(
                   graph,
                   "MATCH (a) WHERE id(a)=0 OPTIONAL MATCH (a)-[r:S]->() WITH r "
                   "MATCH ()-[r]->() RETURN r")
@@ -248,17 +256,17 @@ TEST(OpenCypherOptimizerTest, OptionalExpandKeepsNullsAndDuplicateMatches) {
   auto b = graph.CreateNode({});
   graph.CreateRelationship(a, b, "R");
   graph.CreateRelationship(a, b, "R");
-  auto result = rg::ExecuteReadQuery(
+  auto result = rg::test::ExecuteQueryAndCommit(
       graph, "MATCH (a) OPTIONAL MATCH (a)-[r:R]->(b) RETURN id(a),id(b)");
   EXPECT_EQ(Rows(result), (std::multiset<std::vector<std::string>>{
                               {"0", "1"}, {"0", "1"}, {"1", "null"}}));
-  result = rg::ExecuteReadQuery(
+  result = rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (a) OPTIONAL MATCH (a)-[r:R]->(b) WHERE b.missing=1 "
       "OPTIONAL MATCH (b)-[s:R]->(c) RETURN id(a),b,c");
   EXPECT_EQ(Rows(result), (std::multiset<std::vector<std::string>>{
                               {"0", "null", "null"}, {"1", "null", "null"}}));
-  result = rg::ExecuteReadQuery(
+  result = rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (a),(b) OPTIONAL MATCH (a)-[r:R]->(b) RETURN id(a),id(b),id(r)");
   EXPECT_EQ(result.rows.size(), 5U);
@@ -278,18 +286,21 @@ TEST(OpenCypherOptimizerTest, ShortCircuitsExistenceWithoutTraversing) {
         std::string("MATCH (a) WHERE ") + predicate + " RETURN a";
     ir::PlannedQuery query = ir::PlanCypher(text);
     ASSERT_NE(Find(query.Plan(), Type::kSelectOrSemiApply), nullptr);
-    EXPECT_EQ(rg::QueryExecutor(graph).Execute(query.Plan()).rows.size(), 2U);
+    EXPECT_EQ(rg::test::CommittingQueryExecutor(graph)
+                  .Execute(query.Plan())
+                  .rows.size(),
+              2U);
   }
   EXPECT_EQ(graph.expansions, 0U);
-  EXPECT_EQ(rg::ExecuteReadQuery(
+  EXPECT_EQ(rg::test::ExecuteQueryAndCommit(
                 graph, "MATCH (a) WHERE null OR (a)-[:R]->() RETURN a")
                 .rows.size(),
             1U);
-  EXPECT_EQ(rg::ExecuteReadQuery(
+  EXPECT_EQ(rg::test::ExecuteQueryAndCommit(
                 graph, "MATCH (a) WHERE null OR NOT (a)-[:R]->() RETURN a")
                 .rows.size(),
             1U);
-  EXPECT_TRUE(rg::ExecuteReadQuery(
+  EXPECT_TRUE(rg::test::ExecuteQueryAndCommit(
                   graph, "MATCH (a) WHERE null OR (a)-[:S]->() RETURN a")
                   .rows.empty());
 }
@@ -304,14 +315,15 @@ TEST(OpenCypherOptimizerTest, StreamsVariablePathsAndClosesEarly) {
   }
   rg::QueryOptions options;
   options.execution.memory_limit_bytes = 1024;
-  const auto result = rg::ExecuteReadQuery(
+  const auto result = rg::test::ExecuteQueryAndCommit(
       graph, "MATCH (a)-[r:R*1..100]->(b) WHERE id(a)=0 RETURN id(b) LIMIT 1",
       options);
   ASSERT_EQ(result.rows.size(), 1U);
   EXPECT_EQ(result.rows[0][0].AsInteger(), 1);
   EXPECT_EQ(graph.expansions, 1U);
-  auto cursor = rg::ExecuteReadQueryCursor(
-      graph, "MATCH (a)-[r:R*1..100]->(b) WHERE id(a)=0 RETURN b");
+  auto transaction = graph.graph.BeginTransaction();
+  auto cursor = rg::ExecuteQueryCursor(
+      *transaction, "MATCH (a)-[r:R*1..100]->(b) WHERE id(a)=0 RETURN b");
   std::vector<rg::Value> row;
   ASSERT_TRUE(cursor->Next(&row));
   cursor->Cancel();
@@ -340,12 +352,12 @@ TEST(OpenCypherOptimizerTest, PruningMatchesTrailEnumerationOnDirectedCycles) {
                                    nodes[edges[i].second], "R");
         }
       }
-      auto expected =
-          Rows(rg::QueryExecutor(graph).Execute(enumeration.Plan()));
+      auto expected = Rows(
+          rg::test::CommittingQueryExecutor(graph).Execute(enumeration.Plan()));
       const std::set<std::vector<std::string>> unique(expected.begin(),
                                                       expected.end());
-      const auto actual =
-          Rows(rg::QueryExecutor(graph).Execute(pruning.Plan()));
+      const auto actual = Rows(
+          rg::test::CommittingQueryExecutor(graph).Execute(pruning.Plan()));
       EXPECT_EQ(actual, (std::multiset<std::vector<std::string>>(
                             unique.begin(), unique.end())));
     }
@@ -380,7 +392,8 @@ TEST(OpenCypherOptimizerTest,
   graph.CreateRelationship(a, b, "R");
   graph.CreateRelationship(a, b, "R");
   graph.CreateRelationship(b, c, "S");
-  const auto result = rg::QueryExecutor(graph).Execute(query.Plan());
+  const auto result =
+      rg::test::CommittingQueryExecutor(graph).Execute(query.Plan());
   ASSERT_EQ(result.rows.size(), 12U);
   EXPECT_EQ(std::count_if(result.rows.begin(), result.rows.end(),
                           [](const auto &row) { return row[2].IsNull(); }),
@@ -398,13 +411,13 @@ TEST(OpenCypherOptimizerTest,
 TEST(OpenCypherOptimizerTest, ClonesNewNodesAndReadsWritesInTheSameQuery) {
   rg::InMemoryGraph graph;
   EXPECT_EQ(
-      rg::ExecuteQuery(
+      rg::test::ExecuteQueryAndCommit(
           graph,
           "CREATE (a)-[r:R]->(b) WITH r MATCH (x)-[r]->(y) RETURN id(x),id(y)")
           .rows.size(),
       1U);
   EXPECT_EQ(
-      rg::ExecuteQuery(
+      rg::test::ExecuteQueryAndCommit(
           graph, "CREATE (n) WITH id(n) AS x MATCH (m) WHERE id(m)=x RETURN m")
           .rows.size(),
       1U);
@@ -417,8 +430,9 @@ TEST(OpenCypherOptimizerTest, ClonesNewNodesAndReadsWritesInTheSameQuery) {
         "MATCH (a),(d) OPTIONAL MATCH (a)-[:R]->(b)-[:R]->(c) RETURN c"}) {
     ir::PlannedQuery query = ir::PlanCypher(text);
     auto clone = ir::CloneComponentPlan(query.Plan());
-    EXPECT_EQ(Rows(rg::QueryExecutor(graph).Execute(query.Plan())),
-              Rows(rg::QueryExecutor(graph).Execute(*clone)));
+    EXPECT_EQ(
+        Rows(rg::test::CommittingQueryExecutor(graph).Execute(query.Plan())),
+        Rows(rg::test::CommittingQueryExecutor(graph).Execute(*clone)));
   }
 }
 
@@ -428,18 +442,18 @@ TEST(OpenCypherOptimizerTest,
   auto a = graph.CreateNode({});
   auto b = graph.CreateNode({});
   graph.CreateRelationship(a, b, "R");
-  EXPECT_TRUE(rg::ExecuteReadQuery(
+  EXPECT_TRUE(rg::test::ExecuteQueryAndCommit(
                   graph,
                   "MATCH ()-[r]->() OPTIONAL MATCH (x:Missing) WITH r,x "
                   "MATCH (x)-[r]->(y) RETURN y")
                   .rows.empty());
+  EXPECT_TRUE(rg::test::ExecuteQueryAndCommit(
+                  graph,
+                  "MATCH (a) OPTIONAL MATCH (b:Missing) WITH a,b "
+                  "MATCH (a)-[:R*0..2]->(b) RETURN DISTINCT b")
+                  .rows.empty());
   EXPECT_TRUE(
-      rg::ExecuteReadQuery(graph,
-                           "MATCH (a) OPTIONAL MATCH (b:Missing) WITH a,b "
-                           "MATCH (a)-[:R*0..2]->(b) RETURN DISTINCT b")
-          .rows.empty());
-  EXPECT_TRUE(
-      rg::ExecuteQuery(
+      rg::test::ExecuteQueryAndCommit(
           graph,
           "MATCH ()-[r]->() DELETE r WITH r MATCH (a)-[r]->(b) RETURN a,b")
           .rows.empty());
@@ -452,19 +466,19 @@ TEST(OpenCypherOptimizerTest, PreservesUndirectedListOrientationAndEmptyPaths) {
   auto b = graph.CreateNode({});
   graph.CreateRelationship(a, b, "R");
   graph.CreateRelationship(b, a, "R");
-  auto result =
-      rg::ExecuteReadQuery(graph,
-                           "MATCH (a)-[rs:R*2..2]->(b) WHERE id(a)=0 WITH rs "
-                           "MATCH (x)-[rs*2..2]-(y) RETURN id(x),id(y)");
+  auto result = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "MATCH (a)-[rs:R*2..2]->(b) WHERE id(a)=0 WITH rs "
+      "MATCH (x)-[rs*2..2]-(y) RETURN id(x),id(y)");
   EXPECT_EQ(Rows(result),
             (std::multiset<std::vector<std::string>>{{"0", "0"}, {"1", "1"}}));
-  result = rg::ExecuteReadQuery(
+  result = rg::test::ExecuteQueryAndCommit(
       graph, "WITH [] AS rs MATCH (a)-[rs*0..0]->(b) RETURN id(a),id(b)");
   EXPECT_EQ(Rows(result),
             (std::multiset<std::vector<std::string>>{{"0", "0"}, {"1", "1"}}));
-  EXPECT_TRUE(
-      rg::ExecuteReadQuery(graph, "MATCH (a)-[:R*1..0]->(b) RETURN DISTINCT b")
-          .rows.empty());
+  EXPECT_TRUE(rg::test::ExecuteQueryAndCommit(
+                  graph, "MATCH (a)-[:R*1..0]->(b) RETURN DISTINCT b")
+                  .rows.empty());
   ir::PlannedQuery volatile_optional = ir::PlanCypher(
       "MATCH (a) OPTIONAL MATCH (a)-[r]->(b) WHERE rand()>0.5 RETURN b");
   EXPECT_EQ(Find(volatile_optional.Plan(), Type::kOptionalExpand), nullptr);
@@ -485,9 +499,9 @@ TEST(OpenCypherOptimizerTest, EnforcesMemoryLimitsForNewStatefulOperators) {
         "MATCH (a),(d) OPTIONAL MATCH (a)-[:R]->(b)-[:S]->(c) RETURN c"}) {
     SCOPED_TRACE(text);
     ir::PlannedQuery query = ir::PlanCypher(text);
-    EXPECT_THROW(
-        (void)rg::QueryExecutor(graph).Execute(query.Plan(), {}, options),
-        common::MemoryLimitExceededError);
+    EXPECT_THROW((void)rg::test::CommittingQueryExecutor(graph).Execute(
+                     query.Plan(), {}, options),
+                 common::MemoryLimitExceededError);
   }
 }
 
@@ -503,7 +517,8 @@ TEST(OpenCypherOptimizerTest, KeepsCorrelatedRelationshipIdSeeksInsideApply) {
   auto c = graph.CreateNode({});
   graph.CreateRelationship(a, b, "R");
   graph.CreateRelationship(b, c, "S");
-  const auto result = rg::QueryExecutor(graph).Execute(query.Plan());
+  const auto result =
+      rg::test::CommittingQueryExecutor(graph).Execute(query.Plan());
   EXPECT_EQ(result.rows.size(), 9U);
   EXPECT_EQ(std::count_if(result.rows.begin(), result.rows.end(),
                           [](const auto &row) { return row[2].IsNull(); }),
@@ -519,7 +534,8 @@ TEST(OpenCypherOptimizerTest, KeepsRuntimeNodeAssertionsInOptionalMatches) {
   graph.CreateNode({});
   rg::QueryParameters parameters{
       {"values", rg::Value(rg::Value::List{rg::Value(1)})}};
-  EXPECT_THROW((void)rg::QueryExecutor(graph).Execute(query.Plan(), parameters),
+  EXPECT_THROW((void)rg::test::CommittingQueryExecutor(graph).Execute(
+                   query.Plan(), parameters),
                common::InvalidArgumentError);
 }
 
@@ -534,17 +550,19 @@ TEST(OpenCypherOptimizerTest, UsesLabelAndTypeCursorsWithoutFullScans) {
     graph.graph.CreateNode({"Other"});
     graph.graph.CreateRelationship(a, b, "Other");
   }
-  auto result = rg::ExecuteReadQuery(graph, "MATCH (n:A:B) RETURN id(n)");
+  auto result =
+      rg::test::ExecuteQueryAndCommit(graph, "MATCH (n:A:B) RETURN id(n)");
   EXPECT_EQ(Rows(result), (std::multiset<std::vector<std::string>>{{"0"}}));
   EXPECT_EQ(graph.label_scans, 1U);
   EXPECT_EQ(graph.candidates, 1U);
   EXPECT_TRUE(
-      rg::ExecuteReadQuery(graph, "MATCH (n:Missing) RETURN n").rows.empty());
+      rg::test::ExecuteQueryAndCommit(graph, "MATCH (n:Missing) RETURN n")
+          .rows.empty());
 
   graph.candidates = 0;
   ir::RelationshipTypeScanPlan scan("a", "r", "b", ir::ExpandDirection::kBoth,
                                     {"R", "S", "R", "Missing"});
-  result = rg::QueryExecutor(graph).Execute(scan);
+  result = rg::test::CommittingQueryExecutor(graph).Execute(scan);
   EXPECT_EQ(result.rows.size(), 5U);
   EXPECT_EQ(graph.type_scans, 1U);
   EXPECT_EQ(graph.candidates, 3U);
@@ -572,7 +590,7 @@ TEST(OpenCypherOptimizerTest, RangeSeeksOnlyReturnBoundedCandidates) {
     SCOPED_TRACE(query);
     graph.candidates = 0;
     graph.range_seeks = 0;
-    const auto result = rg::ExecuteReadQuery(graph, query, options);
+    const auto result = rg::test::ExecuteQueryAndCommit(graph, query, options);
     EXPECT_EQ(Rows(result), (std::multiset<std::vector<std::string>>{
                                 {"100"}, {"101"}, {"102"}}));
     EXPECT_EQ(graph.range_seeks, 1U);
@@ -606,7 +624,8 @@ TEST(OpenCypherOptimizerTest, PrefixSeeksUseStringIndexIntervals) {
       options.parameters = {{"prefix", prefix}};
       graph.candidates = 0;
       graph.range_seeks = 0;
-      const auto result = rg::ExecuteReadQuery(graph, query, options);
+      const auto result =
+          rg::test::ExecuteQueryAndCommit(graph, query, options);
       const std::size_t expected = prefix.IsString()
                                        ? (prefix.AsString() == "ab"   ? 2U
                                           : prefix.AsString().empty() ? 7U
@@ -635,7 +654,7 @@ TEST(OpenCypherOptimizerTest,
   graph.CreateNode({"N"}, {{"x", rg::Value(1)}, {"y", rg::Value(2)}});
   graph.AddNodeIndex({"N"}, "x");
   rg::QueryOptions options{.planner_catalog = &graph};
-  const auto result = rg::ExecuteReadQuery(
+  const auto result = rg::test::ExecuteQueryAndCommit(
       graph, "MATCH (n:N) WHERE n.x >= 0 AND n.x > n.y RETURN n.x", options);
   EXPECT_EQ(Rows(result), (std::multiset<std::vector<std::string>>{{"3"}}));
 }

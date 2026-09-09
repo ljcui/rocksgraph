@@ -10,6 +10,7 @@
 #include "common/exception.h"
 #include "runtime/query_executor.h"
 #include "storage/in_memory_graph.h"
+#include "tests/runtime/query_test_utils.h"
 
 namespace {
 
@@ -207,8 +208,10 @@ TEST(IndexAccessTest, RangeResultsMatchFiltersAcrossValueTypes) {
         rg::QueryOptions scan_options{.parameters = {{"bound", bound}}};
         auto seek_options = scan_options;
         seek_options.planner_catalog = &graph;
-        EXPECT_EQ(ResultIds(rg::ExecuteReadQuery(graph, query, seek_options)),
-                  ResultIds(rg::ExecuteReadQuery(graph, query, scan_options)));
+        EXPECT_EQ(ResultIds(rg::test::ExecuteQueryAndCommit(graph, query,
+                                                            seek_options)),
+                  ResultIds(rg::test::ExecuteQueryAndCommit(graph, query,
+                                                            scan_options)));
       }
     }
   }

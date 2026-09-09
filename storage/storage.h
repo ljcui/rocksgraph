@@ -1,12 +1,14 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
 #include "storage/graph_reader.h"
+#include "storage/storage_transaction.h"
 #include "value/value.h"
 
 namespace rg {
@@ -20,6 +22,10 @@ class Storage : public GraphReader {
   Storage(const Storage &) = delete;
   Storage &operator=(const Storage &) = delete;
   ~Storage() override = default;
+
+  // The caller owns the returned transaction and must commit it explicitly.
+  [[nodiscard]] virtual std::unique_ptr<StorageTransaction>
+  BeginTransaction() = 0;
 
   NodePtr CreateNode(std::vector<std::string> labels) {
     return CreateNode(std::move(labels), {});

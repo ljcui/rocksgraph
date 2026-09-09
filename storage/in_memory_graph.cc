@@ -317,7 +317,7 @@ class InMemoryGraph::Transaction final : public StorageTransaction {
   }
 
   ~Transaction() override {
-    if (!finished_) {
+    if (state_ == State::kActive) {
       try {
         Rollback();
       } catch (...) {
@@ -328,29 +328,39 @@ class InMemoryGraph::Transaction final : public StorageTransaction {
   const GraphReader &Reader() const override {
     CHECK(graph_ != nullptr, common::InternalError,
           "transaction graph is null");
+    CHECK(state_ == State::kActive, common::InvalidArgumentError,
+          "transaction is no longer active");
     return *graph_;
   }
 
   Storage *Writer() override {
     CHECK(graph_ != nullptr, common::InternalError,
           "transaction graph is null");
+    CHECK(state_ == State::kActive, common::InvalidArgumentError,
+          "transaction is no longer active");
     return graph_;
   }
 
+  [[nodiscard]] State GetState() const noexcept override { return state_; }
+
   void Commit() override {
-    if (finished_) {
+    if (state_ == State::kCommitted) {
       return;
     }
+    CHECK(state_ == State::kActive, common::InvalidArgumentError,
+          "cannot commit a rolled back transaction");
     CHECK(graph_ != nullptr, common::InternalError,
           "transaction graph is null");
     graph_->transaction_active_ = false;
-    finished_ = true;
+    state_ = State::kCommitted;
   }
 
   void Rollback() override {
-    if (finished_) {
+    if (state_ == State::kRolledBack) {
       return;
     }
+    CHECK(state_ == State::kActive, common::InvalidArgumentError,
+          "cannot roll back a committed transaction");
     CHECK(graph_ != nullptr, common::InternalError,
           "transaction graph is null");
 
@@ -398,7 +408,7 @@ class InMemoryGraph::Transaction final : public StorageTransaction {
       graph_->AddRelationshipToIndexes(relationship);
     }
     graph_->transaction_active_ = false;
-    finished_ = true;
+    state_ = State::kRolledBack;
   }
 
  private:
@@ -416,7 +426,7 @@ class InMemoryGraph::Transaction final : public StorageTransaction {
   };
 
   InMemoryGraph *graph_ = nullptr;
-  bool finished_ = false;
+  State state_ = State::kActive;
   int64_t next_node_id_ = 0;
   int64_t next_relationship_id_ = 0;
   std::vector<MutableNodePtr> nodes_;

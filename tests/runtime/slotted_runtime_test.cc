@@ -9,6 +9,7 @@
 #include "common/exception.h"
 #include "runtime/query_executor.h"
 #include "storage/in_memory_graph.h"
+#include "tests/runtime/query_test_utils.h"
 
 TEST(SlottedRuntimeTest, ExhaustsWritesBelowLimit) {
   rg::InMemoryGraph graph;
@@ -16,7 +17,7 @@ TEST(SlottedRuntimeTest, ExhaustsWritesBelowLimit) {
   graph.CreateNode({"N"});
   graph.CreateNode({"N"});
 
-  const rg::QueryResult result = rg::ExecuteQuery(
+  const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph, "MATCH (n:N) SET n.marked = true RETURN n LIMIT 1");
 
   ASSERT_EQ(result.rows.size(), 1U);
@@ -32,8 +33,8 @@ TEST(SlottedRuntimeTest, KeepsDeletedEntitiesAvailableToResults) {
   rg::InMemoryGraph graph;
   auto node = graph.CreateNode({"N"}, {{"name", rg::Value("deleted node")}});
 
-  const rg::QueryResult result =
-      rg::ExecuteQuery(graph, "MATCH (n:N) DELETE n RETURN n, n.name AS name");
+  const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+      graph, "MATCH (n:N) DELETE n RETURN n, n.name AS name");
 
   ASSERT_EQ(result.rows.size(), 1U);
   ASSERT_EQ(result.rows.front().size(), 2U);
@@ -48,8 +49,9 @@ TEST(SlottedRuntimeTest, StreamsRowsAndCanCloseEarly) {
   graph.CreateNode({"N"}, {{"value", rg::Value(1)}});
   graph.CreateNode({"N"}, {{"value", rg::Value(2)}});
 
-  std::unique_ptr<rg::QueryResultCursor> cursor = rg::ExecuteReadQueryCursor(
-      graph, "MATCH (n:N) RETURN n.value AS value ORDER BY value");
+  auto transaction = graph.BeginTransaction();
+  std::unique_ptr<rg::QueryResultCursor> cursor = rg::ExecuteQueryCursor(
+      *transaction, "MATCH (n:N) RETURN n.value AS value ORDER BY value");
   EXPECT_EQ(cursor->Columns(), std::vector<std::string>{"value"});
   std::vector<rg::Value> row;
   ASSERT_TRUE(cursor->Next(&row));
@@ -65,8 +67,9 @@ TEST(SlottedRuntimeTest, ObservesExternalCancellation) {
   rg::QueryOptions options;
   options.execution.cancellation =
       std::make_shared<rg::QueryCancellationToken>();
+  auto transaction = graph.BeginTransaction();
   std::unique_ptr<rg::QueryResultCursor> cursor =
-      rg::ExecuteReadQueryCursor(graph, "MATCH (n:N) RETURN n", options);
+      rg::ExecuteQueryCursor(*transaction, "MATCH (n:N) RETURN n", options);
   options.execution.cancellation->Cancel();
 
   std::vector<rg::Value> row;
@@ -75,8 +78,9 @@ TEST(SlottedRuntimeTest, ObservesExternalCancellation) {
 
 TEST(SlottedRuntimeTest, RollsBackWritesWhenCursorClosesEarly) {
   rg::InMemoryGraph graph;
+  auto transaction = graph.BeginTransaction();
   std::unique_ptr<rg::QueryResultCursor> cursor = rg::ExecuteQueryCursor(
-      graph, "UNWIND [1, 2, 3] AS x CREATE (:N {value: x}) RETURN x");
+      *transaction, "UNWIND [1, 2, 3] AS x CREATE (:N {value: x}) RETURN x");
   std::vector<rg::Value> row;
   ASSERT_TRUE(cursor->Next(&row));
   ASSERT_EQ(graph.Nodes().size(), 1U);
@@ -89,8 +93,10 @@ TEST(SlottedRuntimeTest, EnforcesBlockingOperatorMemoryLimit) {
   rg::InMemoryGraph graph;
   rg::QueryOptions options;
   options.execution.memory_limit_bytes = 1;
-  std::unique_ptr<rg::QueryResultCursor> cursor = rg::ExecuteReadQueryCursor(
-      graph, "UNWIND range(1, 100) AS x RETURN x ORDER BY x DESC", options);
+  auto transaction = graph.BeginTransaction();
+  std::unique_ptr<rg::QueryResultCursor> cursor = rg::ExecuteQueryCursor(
+      *transaction, "UNWIND range(1, 100) AS x RETURN x ORDER BY x DESC",
+      options);
 
   std::vector<rg::Value> row;
   EXPECT_THROW((void)cursor->Next(&row), common::MemoryLimitExceededError);
@@ -98,15 +104,15 @@ TEST(SlottedRuntimeTest, EnforcesBlockingOperatorMemoryLimit) {
 
 TEST(SlottedRuntimeTest, ReportsPeakMemoryForBlockingOperators) {
   rg::InMemoryGraph graph;
-  const rg::QueryResult result =
-      rg::ExecuteReadQuery(graph, "UNWIND [3, 1, 2] AS x RETURN x ORDER BY x");
+  const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+      graph, "UNWIND [3, 1, 2] AS x RETURN x ORDER BY x");
 
   EXPECT_GT(result.peak_memory_bytes, 0U);
 }
 
 TEST(SlottedRuntimeTest, ExecutesStableMultiKeyTopN) {
   rg::InMemoryGraph graph;
-  const rg::QueryResult result = rg::ExecuteReadQuery(
+  const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "UNWIND [{score: 1, bucket: 'a', name: 'first'}, "
       "{score: 2, bucket: 'z', name: 'highest'}, "
@@ -128,20 +134,20 @@ TEST(SlottedRuntimeTest, SupportsParameterizedAndZeroTopNLimits) {
   rg::QueryOptions options;
   options.parameters = {{"l", rg::Value(2)}};
 
-  const rg::QueryResult parameterized = rg::ExecuteReadQuery(
+  const rg::QueryResult parameterized = rg::test::ExecuteQueryAndCommit(
       graph, "UNWIND [3, 1, 2] AS x RETURN x ORDER BY x LIMIT $l", options);
   ASSERT_EQ(parameterized.rows.size(), 2U);
   EXPECT_EQ(parameterized.rows[0][0], rg::Value(1));
   EXPECT_EQ(parameterized.rows[1][0], rg::Value(2));
 
-  const rg::QueryResult empty = rg::ExecuteReadQuery(
+  const rg::QueryResult empty = rg::test::ExecuteQueryAndCommit(
       graph, "UNWIND [3, 1, 2] AS x RETURN x ORDER BY x LIMIT 0");
   EXPECT_TRUE(empty.rows.empty());
 }
 
 TEST(SlottedRuntimeTest, ExecutesStableTopOne) {
   rg::InMemoryGraph graph;
-  const rg::QueryResult result = rg::ExecuteReadQuery(
+  const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "UNWIND [{score:1,name:'first'}, {score:2,name:'other'}, "
       "{score:1,name:'second'}] AS item "
@@ -153,7 +159,7 @@ TEST(SlottedRuntimeTest, ExecutesStableTopOne) {
 
 TEST(SlottedRuntimeTest, ExecutesPartialTopNByOrderingPrefix) {
   rg::InMemoryGraph graph;
-  const rg::QueryResult result = rg::ExecuteReadQuery(
+  const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "UNWIND [{a:2,b:0},{a:1,b:3},{a:1,b:1},{a:2,b:2},{a:1,b:2}] AS x "
       "WITH x ORDER BY x.a "
@@ -178,7 +184,7 @@ TEST(SlottedRuntimeTest, KeepsOnlyTopNRowsInMemory) {
   rg::QueryOptions options;
   options.execution.memory_limit_bytes = 4096;
 
-  const rg::QueryResult result = rg::ExecuteReadQuery(
+  const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph, "MATCH (n:N) RETURN n.value AS value ORDER BY value DESC LIMIT 3",
       options);
 
@@ -194,26 +200,26 @@ TEST(SlottedRuntimeTest, ExecutesOrderedGroupingAndPartialSort) {
   rg::InMemoryGraph graph;
 
   const rg::QueryResult distinct =
-      rg::ExecuteReadQuery(graph,
-                           "UNWIND [3, 1, 2, 1] AS x "
-                           "WITH x ORDER BY x RETURN DISTINCT x");
+      rg::test::ExecuteQueryAndCommit(graph,
+                                      "UNWIND [3, 1, 2, 1] AS x "
+                                      "WITH x ORDER BY x RETURN DISTINCT x");
   ASSERT_EQ(distinct.rows.size(), 3U);
   EXPECT_EQ(distinct.rows[0][0], rg::Value(1));
   EXPECT_EQ(distinct.rows[1][0], rg::Value(2));
   EXPECT_EQ(distinct.rows[2][0], rg::Value(3));
 
   const rg::QueryResult typed_distinct =
-      rg::ExecuteReadQuery(graph,
-                           "UNWIND [1, 1.0, 2] AS x "
-                           "WITH x ORDER BY x RETURN DISTINCT x");
+      rg::test::ExecuteQueryAndCommit(graph,
+                                      "UNWIND [1, 1.0, 2] AS x "
+                                      "WITH x ORDER BY x RETURN DISTINCT x");
   ASSERT_EQ(typed_distinct.rows.size(), 2U);
   EXPECT_TRUE(rg::ValuesEqual(typed_distinct.rows[0][0], rg::Value(1)));
   EXPECT_TRUE(rg::ValuesEqual(typed_distinct.rows[1][0], rg::Value(2)));
 
-  const rg::QueryResult aggregation =
-      rg::ExecuteReadQuery(graph,
-                           "UNWIND [3, 1, 2, 1] AS x "
-                           "WITH x ORDER BY x RETURN x, count(*) AS count");
+  const rg::QueryResult aggregation = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "UNWIND [3, 1, 2, 1] AS x "
+      "WITH x ORDER BY x RETURN x, count(*) AS count");
   ASSERT_EQ(aggregation.rows.size(), 3U);
   EXPECT_EQ(aggregation.rows[0][0], rg::Value(1));
   EXPECT_EQ(aggregation.rows[0][1], rg::Value(2));
@@ -222,7 +228,7 @@ TEST(SlottedRuntimeTest, ExecutesOrderedGroupingAndPartialSort) {
   EXPECT_EQ(aggregation.rows[2][0], rg::Value(3));
   EXPECT_EQ(aggregation.rows[2][1], rg::Value(1));
 
-  const rg::QueryResult partial = rg::ExecuteReadQuery(
+  const rg::QueryResult partial = rg::test::ExecuteQueryAndCommit(
       graph,
       "UNWIND [{a:1,b:2},{a:1,b:1},{a:2,b:1},{a:1,b:3}] AS x "
       "WITH x ORDER BY x.a "
@@ -246,13 +252,13 @@ TEST(SlottedRuntimeTest, KeepsBasicAggregationMemoryBounded) {
   rg::QueryOptions options;
   options.execution.memory_limit_bytes = 4096;
 
-  const rg::QueryResult result =
-      rg::ExecuteReadQuery(graph,
-                           "MATCH (n:N) "
-                           "RETURN count(*) AS rows, count(n.value) AS values, "
-                           "sum(n.value) AS total, avg(n.value) AS average, "
-                           "min(n.value) AS minimum, max(n.value) AS maximum",
-                           options);
+  const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "MATCH (n:N) "
+      "RETURN count(*) AS rows, count(n.value) AS values, "
+      "sum(n.value) AS total, avg(n.value) AS average, "
+      "min(n.value) AS minimum, max(n.value) AS maximum",
+      options);
 
   ASSERT_EQ(result.rows.size(), 1U);
   ASSERT_EQ(result.rows[0].size(), 6U);
@@ -275,7 +281,7 @@ TEST(SlottedRuntimeTest, TracksOnlyRetainedAggregationValues) {
   rg::QueryOptions options;
   options.execution.memory_limit_bytes = 16384;
 
-  const rg::QueryResult result = rg::ExecuteReadQuery(
+  const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (n:N) WITH n.value AS value, n.large AS unused "
       "RETURN collect(value) AS values",
@@ -288,8 +294,9 @@ TEST(SlottedRuntimeTest, TracksOnlyRetainedAggregationValues) {
   EXPECT_EQ(values.front(), rg::Value(1));
   EXPECT_EQ(values.back(), rg::Value(64));
 
-  std::unique_ptr<rg::QueryResultCursor> cursor = rg::ExecuteReadQueryCursor(
-      graph, "MATCH (n:N) RETURN collect(n.large) AS values", options);
+  auto transaction = graph.BeginTransaction();
+  std::unique_ptr<rg::QueryResultCursor> cursor = rg::ExecuteQueryCursor(
+      *transaction, "MATCH (n:N) RETURN collect(n.large) AS values", options);
   std::vector<rg::Value> row;
   EXPECT_THROW((void)cursor->Next(&row), common::MemoryLimitExceededError);
 }
@@ -315,10 +322,10 @@ TEST(SlottedRuntimeTest, UsesTypedDistinctAggregationState) {
   graph.CreateNode({"N"}, {{"key", rg::Value(-nan)}});
   graph.CreateNode({"N"});
 
-  const rg::QueryResult result =
-      rg::ExecuteReadQuery(graph,
-                           "MATCH (n:N) RETURN count(DISTINCT n.key) AS count, "
-                           "collect(DISTINCT n.key) AS values");
+  const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "MATCH (n:N) RETURN count(DISTINCT n.key) AS count, "
+      "collect(DISTINCT n.key) AS values");
 
   ASSERT_EQ(result.rows.size(), 1U);
   EXPECT_EQ(result.rows[0][0], rg::Value(4));
@@ -336,7 +343,7 @@ TEST(SlottedRuntimeTest, MaintainsPercentileParameterState) {
   valid.CreateNode({"N"}, {{"value", rg::Value(10.0)}, {"p", rg::Value(0.5)}});
   valid.CreateNode({"N"}, {{"value", rg::Value(20)}, {"p", rg::Value(0.5)}});
   valid.CreateNode({"N"}, {{"value", rg::Value(30)}, {"p", rg::Value(0.5)}});
-  const rg::QueryResult valid_result = rg::ExecuteReadQuery(
+  const rg::QueryResult valid_result = rg::test::ExecuteQueryAndCommit(
       valid,
       "MATCH (n:N) "
       "RETURN percentileDisc(DISTINCT n.value, n.p) AS percentile");
@@ -347,7 +354,7 @@ TEST(SlottedRuntimeTest, MaintainsPercentileParameterState) {
   varying.CreateNode({"N"}, {{"value", rg::Value(1)}, {"p", rg::Value(0.25)}});
   varying.CreateNode({"N"}, {{"value", rg::Value(2)}, {"p", rg::Value(0.75)}});
   EXPECT_THROW(
-      (void)rg::ExecuteReadQuery(
+      (void)rg::test::ExecuteQueryAndCommit(
           varying,
           "MATCH (n:N) RETURN percentileDisc(n.value, n.p) AS percentile"),
       common::InvalidArgumentError);
@@ -357,7 +364,7 @@ TEST(SlottedRuntimeTest, MaintainsPercentileParameterState) {
       {"N"}, {{"value", rg::Value(1)}, {"p", rg::Value::Null()}});
   null_parameter.CreateNode({"N"},
                             {{"value", rg::Value(2)}, {"p", rg::Value(0.5)}});
-  const rg::QueryResult null_result = rg::ExecuteReadQuery(
+  const rg::QueryResult null_result = rg::test::ExecuteQueryAndCommit(
       null_parameter,
       "MATCH (n:N) RETURN percentileCont(n.value, n.p) AS percentile");
   ASSERT_EQ(null_result.rows.size(), 1U);
@@ -365,7 +372,7 @@ TEST(SlottedRuntimeTest, MaintainsPercentileParameterState) {
 
   rg::InMemoryGraph all_null;
   all_null.CreateNode({"N"}, {{"p", rg::Value(2.0)}});
-  const rg::QueryResult all_null_result = rg::ExecuteReadQuery(
+  const rg::QueryResult all_null_result = rg::test::ExecuteQueryAndCommit(
       all_null,
       "MATCH (n:N) RETURN percentileCont(n.value, n.p) AS percentile");
   ASSERT_EQ(all_null_result.rows.size(), 1U);
@@ -375,13 +382,13 @@ TEST(SlottedRuntimeTest, MaintainsPercentileParameterState) {
 TEST(SlottedRuntimeTest, UsesTypedKeysAcrossSetOperators) {
   rg::InMemoryGraph graph;
 
-  const rg::QueryResult distinct =
-      rg::ExecuteReadQuery(graph, "UNWIND [1, 1.0, 2] AS x RETURN DISTINCT x");
+  const rg::QueryResult distinct = rg::test::ExecuteQueryAndCommit(
+      graph, "UNWIND [1, 1.0, 2] AS x RETURN DISTINCT x");
   ASSERT_EQ(distinct.rows.size(), 2U);
   EXPECT_TRUE(rg::ValuesEqual(distinct.rows[0][0], rg::Value(1)));
   EXPECT_TRUE(rg::ValuesEqual(distinct.rows[1][0], rg::Value(2)));
 
-  const rg::QueryResult grouped = rg::ExecuteReadQuery(
+  const rg::QueryResult grouped = rg::test::ExecuteQueryAndCommit(
       graph, "UNWIND [1, 1.0, 2] AS x RETURN x, count(*) AS count");
   ASSERT_EQ(grouped.rows.size(), 2U);
   EXPECT_TRUE(rg::ValuesEqual(grouped.rows[0][0], rg::Value(1)));
@@ -389,12 +396,12 @@ TEST(SlottedRuntimeTest, UsesTypedKeysAcrossSetOperators) {
   EXPECT_TRUE(rg::ValuesEqual(grouped.rows[1][0], rg::Value(2)));
   EXPECT_EQ(grouped.rows[1][1], rg::Value(1));
 
-  const rg::QueryResult aggregate_distinct = rg::ExecuteReadQuery(
+  const rg::QueryResult aggregate_distinct = rg::test::ExecuteQueryAndCommit(
       graph, "UNWIND [1, 1.0, 2] AS x RETURN count(DISTINCT x) AS count");
   ASSERT_EQ(aggregate_distinct.rows.size(), 1U);
   EXPECT_EQ(aggregate_distinct.rows[0][0], rg::Value(2));
 
-  const rg::QueryResult union_distinct = rg::ExecuteReadQuery(
+  const rg::QueryResult union_distinct = rg::test::ExecuteQueryAndCommit(
       graph, "RETURN [1] AS value UNION RETURN [1.0] AS value");
   EXPECT_EQ(union_distinct.rows.size(), 1U);
 }
@@ -419,7 +426,7 @@ TEST(SlottedRuntimeTest, ValueHashJoinUsesTypedCompositeKeys) {
   rg::QueryOptions options;
   options.planner_statistics = &graph;
   options.planner_catalog = &graph;
-  const rg::QueryResult result = rg::ExecuteReadQuery(
+  const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (a:Small), (b:Large) "
       "WHERE b.first = a.first AND a.second = b.second "
@@ -452,11 +459,11 @@ TEST(SlottedRuntimeTest, ValueHashJoinRechecksCandidatePredicates) {
   rg::QueryOptions options;
   options.planner_statistics = &graph;
   options.planner_catalog = &graph;
-  const rg::QueryResult result =
-      rg::ExecuteReadQuery(graph,
-                           "MATCH (a:Small), (b:Large) WHERE a.key = b.key "
-                           "RETURN a.name AS name",
-                           options);
+  const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "MATCH (a:Small), (b:Large) WHERE a.key = b.key "
+      "RETURN a.name AS name",
+      options);
 
   ASSERT_EQ(result.rows.size(), 1U);
   EXPECT_EQ(result.rows[0][0], rg::Value("valid"));
@@ -472,9 +479,10 @@ TEST(SlottedRuntimeTest, EnforcesValueHashJoinMemoryLimit) {
   options.planner_statistics = &graph;
   options.planner_catalog = &graph;
   options.execution.memory_limit_bytes = 1;
-  std::unique_ptr<rg::QueryResultCursor> cursor = rg::ExecuteReadQueryCursor(
-      graph, "MATCH (a:Small), (b:Large) WHERE a.key = b.key RETURN a, b",
-      options);
+  auto transaction = graph.BeginTransaction();
+  std::unique_ptr<rg::QueryResultCursor> cursor = rg::ExecuteQueryCursor(
+      *transaction,
+      "MATCH (a:Small), (b:Large) WHERE a.key = b.key RETURN a, b", options);
 
   std::vector<rg::Value> row;
   EXPECT_THROW((void)cursor->Next(&row), common::MemoryLimitExceededError);

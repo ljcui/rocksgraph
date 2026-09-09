@@ -12,6 +12,7 @@
 #include "common/exception.h"
 #include "planner/planned_query.h"
 #include "storage/in_memory_graph.h"
+#include "tests/runtime/query_test_utils.h"
 
 namespace {
 
@@ -66,9 +67,9 @@ ir::PlannedQuery PlannedQueryFor(const rg::InMemoryGraph &graph,
 }
 
 std::unique_ptr<rg::QueryResultCursor> CursorFromTemporaryPlannedQuery(
-    rg::GraphReader &graph_reader) {
+    rg::StorageTransaction &transaction) {
   ir::PlannedQuery query = ir::PlanCypher("RETURN 1 + 2 AS value");
-  return rg::QueryExecutor(graph_reader).ExecuteCursor(query.Plan());
+  return rg::QueryExecutor(transaction).ExecuteCursor(query.Plan());
 }
 
 const ir::LogicalPlan *FindPlanNode(const ir::LogicalPlan &plan,
@@ -94,7 +95,7 @@ TEST(QueryExecutorTest, ExecutesNodeLabelAndPropertyQuery) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph, "MATCH (n:Person) WHERE n.name = 'Ada' RETURN n.name AS name");
 
   ASSERT_EQ(result.columns, std::vector<std::string>{"name"});
@@ -109,7 +110,8 @@ TEST(QueryExecutorTest, DefaultLogicalPlanDoesNotAssumeIndexes) {
   ir::PlannedQuery query =
       ir::PlanCypher("MATCH (n:Person) WHERE n.name = 'Ada' RETURN id(n)");
 
-  const rg::QueryResult result = rg::QueryExecutor(graph).Execute(query.Plan());
+  const rg::QueryResult result =
+      rg::test::CommittingQueryExecutor(graph).Execute(query.Plan());
   ASSERT_EQ(result.rows.size(), 1U);
   ASSERT_EQ(result.rows.front().size(), 1U);
   EXPECT_EQ(result.rows.front().front().AsInteger(), ada->id);
@@ -117,8 +119,9 @@ TEST(QueryExecutorTest, DefaultLogicalPlanDoesNotAssumeIndexes) {
 
 TEST(QueryExecutorTest, CursorOwnsPlanAfterPlanningArtifactsExpire) {
   rg::InMemoryGraph graph;
+  auto transaction = graph.BeginTransaction();
   std::unique_ptr<rg::QueryResultCursor> cursor =
-      CursorFromTemporaryPlannedQuery(graph);
+      CursorFromTemporaryPlannedQuery(*transaction);
 
   std::vector<rg::Value> row;
   ASSERT_TRUE(cursor->Next(&row));
@@ -127,10 +130,11 @@ TEST(QueryExecutorTest, CursorOwnsPlanAfterPlanningArtifactsExpire) {
   EXPECT_FALSE(cursor->Next(&row));
 }
 
-TEST(QueryExecutorTest, ReadCursorOwnsTransactionUntilItFinishes) {
+TEST(QueryExecutorTest, ExhaustedCursorLeavesTransactionActive) {
   rg::InMemoryGraph graph;
+  auto transaction = graph.BeginTransaction();
   std::unique_ptr<rg::QueryResultCursor> cursor =
-      rg::ExecuteReadQueryCursor(graph, "UNWIND [1, 2] AS x RETURN x");
+      rg::ExecuteQueryCursor(*transaction, "UNWIND [1, 2] AS x RETURN x");
 
   EXPECT_THROW((void)graph.BeginTransaction(), common::InvalidArgumentError);
 
@@ -139,18 +143,23 @@ TEST(QueryExecutorTest, ReadCursorOwnsTransactionUntilItFinishes) {
   ASSERT_TRUE(cursor->Next(&row));
   EXPECT_FALSE(cursor->Next(&row));
 
+  EXPECT_EQ(transaction->GetState(), rg::StorageTransaction::State::kActive);
+  transaction->Commit();
   std::unique_ptr<rg::StorageTransaction> next_transaction;
   EXPECT_NO_THROW(next_transaction = graph.BeginTransaction());
   ASSERT_NE(next_transaction, nullptr);
   next_transaction->Rollback();
 }
 
-TEST(QueryExecutorTest, ClosingReadCursorReleasesItsTransaction) {
+TEST(QueryExecutorTest, ClosingCursorRollsBackItsTransaction) {
   rg::InMemoryGraph graph;
+  auto transaction = graph.BeginTransaction();
   std::unique_ptr<rg::QueryResultCursor> cursor =
-      rg::ExecuteReadQueryCursor(graph, "UNWIND [1, 2] AS x RETURN x");
+      rg::ExecuteQueryCursor(*transaction, "UNWIND [1, 2] AS x RETURN x");
 
   cursor->Close();
+  EXPECT_EQ(transaction->GetState(),
+            rg::StorageTransaction::State::kRolledBack);
 
   std::unique_ptr<rg::StorageTransaction> next_transaction;
   EXPECT_NO_THROW(next_transaction = graph.BeginTransaction());
@@ -158,18 +167,79 @@ TEST(QueryExecutorTest, ClosingReadCursorReleasesItsTransaction) {
   next_transaction->Rollback();
 }
 
-TEST(QueryExecutorTest, ReadCursorRollsBackAfterExecutionFailure) {
+TEST(QueryExecutorTest, CursorRollsBackAfterExecutionFailure) {
   rg::InMemoryGraph graph;
+  auto transaction = graph.BeginTransaction();
   std::unique_ptr<rg::QueryResultCursor> cursor =
-      rg::ExecuteReadQueryCursor(graph, "RETURN 1 / 0 AS value");
+      rg::ExecuteQueryCursor(*transaction, "RETURN 1 / 0 AS value");
 
   std::vector<rg::Value> row;
   EXPECT_THROW((void)cursor->Next(&row), common::InvalidArgumentError);
+  EXPECT_EQ(transaction->GetState(),
+            rg::StorageTransaction::State::kRolledBack);
 
   std::unique_ptr<rg::StorageTransaction> next_transaction;
   EXPECT_NO_THROW(next_transaction = graph.BeginTransaction());
   ASSERT_NE(next_transaction, nullptr);
   next_transaction->Rollback();
+}
+
+TEST(QueryExecutorTest, ExecutesReadsAndWritesInOneExplicitTransaction) {
+  rg::InMemoryGraph graph;
+  auto transaction = graph.BeginTransaction();
+
+  rg::QueryResult created = rg::ExecuteQuery(
+      *transaction, "CREATE (:Person {name: 'Ada'}) RETURN count(*) AS count");
+  EXPECT_EQ(StringRows(created),
+            (std::vector<std::vector<std::string>>{{"1"}}));
+  EXPECT_EQ(transaction->GetState(), rg::StorageTransaction::State::kActive);
+
+  rg::QueryResult read =
+      rg::ExecuteQuery(*transaction, "MATCH (n:Person) RETURN n.name AS name");
+  EXPECT_EQ(StringRows(read),
+            (std::vector<std::vector<std::string>>{{"\"Ada\""}}));
+  EXPECT_EQ(transaction->GetState(), rg::StorageTransaction::State::kActive);
+
+  transaction->Commit();
+  EXPECT_EQ(transaction->GetState(), rg::StorageTransaction::State::kCommitted);
+  rg::QueryResult committed = rg::test::ExecuteQueryAndCommit(
+      graph, "MATCH (n:Person) RETURN count(n) AS count");
+  EXPECT_EQ(StringRows(committed),
+            (std::vector<std::vector<std::string>>{{"1"}}));
+}
+
+TEST(QueryExecutorTest, ExecuteQueryDoesNotCommitTransaction) {
+  rg::InMemoryGraph graph;
+  {
+    auto transaction = graph.BeginTransaction();
+    (void)rg::ExecuteQuery(*transaction, "CREATE (:Temporary)");
+    EXPECT_EQ(transaction->GetState(), rg::StorageTransaction::State::kActive);
+    ASSERT_EQ(graph.Nodes().size(), 1U);
+  }
+
+  EXPECT_TRUE(graph.Nodes().empty());
+}
+
+TEST(QueryExecutorTest, RollbackUndoesAllStatementsInTransaction) {
+  rg::InMemoryGraph graph;
+  auto original =
+      graph.CreateNode({"Person"}, {{"name", rg::Value("Original")}});
+  auto transaction = graph.BeginTransaction();
+
+  (void)rg::ExecuteQuery(*transaction,
+                         "MATCH (n:Person) SET n.name = 'Changed'");
+  (void)rg::ExecuteQuery(*transaction, "CREATE (:Person {name: 'Added'})");
+  ASSERT_EQ(graph.Nodes().size(), 2U);
+
+  transaction->Rollback();
+  EXPECT_EQ(transaction->GetState(),
+            rg::StorageTransaction::State::kRolledBack);
+  ASSERT_EQ(graph.Nodes().size(), 1U);
+  EXPECT_EQ(graph.Nodes().front(), original);
+  EXPECT_EQ(original->properties.at("name"), rg::Value("Original"));
+  EXPECT_THROW(transaction->Commit(), common::InvalidArgumentError);
+  EXPECT_THROW((void)rg::ExecuteQuery(*transaction, "RETURN 1"),
+               common::InvalidArgumentError);
 }
 
 TEST(QueryExecutorTest, ExecutesGraphEndpointAndListFunctions) {
@@ -178,7 +248,7 @@ TEST(QueryExecutorTest, ExecutesGraphEndpointAndListFunctions) {
   auto grace = graph.CreateNode({}, {{"name", rg::Value("Grace")}});
   graph.CreateRelationship(ada, grace, "KNOWS");
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (a)-[r:KNOWS]->(b) "
       "RETURN head([1, 2, 3]) AS first, startNode(r).name AS start_name, "
@@ -203,11 +273,12 @@ TEST(QueryExecutorTest, ExecutesQueriesWithParameters) {
       {"properties", rg::Value(rg::Value::Map{{"name", rg::Value("Grace")},
                                               {"age", rg::Value(85)}})}};
 
-  rg::ExecuteWriteQuery(graph, "CREATE (:Person {name: $name, age: $ages[0]})",
-                        options);
-  rg::ExecuteWriteQuery(graph, "CREATE (:Person $properties)", options);
+  rg::test::ExecuteQueryAndCommit(
+      graph, "CREATE (:Person {name: $name, age: $ages[0]})", options);
+  rg::test::ExecuteQueryAndCommit(graph, "CREATE (:Person $properties)",
+                                  options);
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (n:Person) WHERE n.name = $name OR n.age IN $ages "
       "RETURN n.name AS name ORDER BY name SKIP $s LIMIT $l",
@@ -221,20 +292,21 @@ TEST(QueryExecutorTest, ExecutesQueriesWithParameters) {
 TEST(QueryExecutorTest, RejectsMissingQueryParameters) {
   rg::InMemoryGraph graph;
 
-  EXPECT_THROW((void)rg::ExecuteReadQuery(graph, "RETURN $missing AS value"),
-               common::InvalidArgumentError);
+  EXPECT_THROW(
+      (void)rg::test::ExecuteQueryAndCommit(graph, "RETURN $missing AS value"),
+      common::InvalidArgumentError);
 }
 
 TEST(QueryExecutorTest, ImplementsThreeValuedBooleanLogic) {
   rg::InMemoryGraph graph;
 
-  rg::QueryResult result =
-      rg::ExecuteReadQuery(graph,
-                           "RETURN true AND null AS true_and_null, "
-                           "false AND null AS false_and_null, "
-                           "true OR null AS true_or_null, "
-                           "false OR null AS false_or_null, "
-                           "true XOR null AS xor_null, NOT null AS not_null");
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "RETURN true AND null AS true_and_null, "
+      "false AND null AS false_and_null, "
+      "true OR null AS true_or_null, "
+      "false OR null AS false_or_null, "
+      "true XOR null AS xor_null, NOT null AS not_null");
 
   ASSERT_EQ(result.columns,
             (std::vector<std::string>{"true_and_null", "false_and_null",
@@ -248,10 +320,10 @@ TEST(QueryExecutorTest, ImplementsThreeValuedBooleanLogic) {
 TEST(QueryExecutorTest, ShortCircuitsBooleanExpressions) {
   rg::InMemoryGraph graph;
 
-  rg::QueryResult result =
-      rg::ExecuteReadQuery(graph,
-                           "RETURN false AND (1 / 0 = 1) AS conjunction, "
-                           "true OR (1 / 0 = 1) AS disjunction");
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "RETURN false AND (1 / 0 = 1) AS conjunction, "
+      "true OR (1 / 0 = 1) AS disjunction");
 
   ASSERT_EQ(result.columns,
             (std::vector<std::string>{"conjunction", "disjunction"}));
@@ -262,7 +334,7 @@ TEST(QueryExecutorTest, ShortCircuitsBooleanExpressions) {
 TEST(QueryExecutorTest, PropagatesNullThroughScalarOperators) {
   rg::InMemoryGraph graph;
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "RETURN null = null AS equals_null, null <> 1 AS not_equals_null, "
       "null < 1 AS less_null, 1 + null AS add_null, -null AS negate_null, "
@@ -281,10 +353,10 @@ TEST(QueryExecutorTest, PropagatesNullThroughCollectionEquality) {
   rg::InMemoryGraph graph;
 
   rg::QueryResult result =
-      rg::ExecuteReadQuery(graph,
-                           "RETURN [null] = [null] AS list_unknown, "
-                           "[1, null] = [2, null] AS list_false, "
-                           "[1, null] IN [[1, null]] AS in_unknown");
+      rg::test::ExecuteQueryAndCommit(graph,
+                                      "RETURN [null] = [null] AS list_unknown, "
+                                      "[1, null] = [2, null] AS list_false, "
+                                      "[1, null] IN [[1, null]] AS in_unknown");
 
   ASSERT_EQ(result.columns, (std::vector<std::string>{
                                 "list_unknown", "list_false", "in_unknown"}));
@@ -295,7 +367,7 @@ TEST(QueryExecutorTest, PropagatesNullThroughCollectionEquality) {
 TEST(QueryExecutorTest, ImplementsNullAwareInAndQuantifierSemantics) {
   rg::InMemoryGraph graph;
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "RETURN 1 IN [null, 1] AS in_match, 2 IN [null, 1] AS in_unknown, "
       "null IN [] AS null_in_empty, "
@@ -321,18 +393,18 @@ TEST(QueryExecutorTest, ImplementsNullAwareInAndQuantifierSemantics) {
 TEST(QueryExecutorTest, UsesNumericEqualityAcrossIntegerAndDoubleValues) {
   rg::InMemoryGraph graph;
 
-  rg::QueryResult comparison = rg::ExecuteReadQuery(
+  rg::QueryResult comparison = rg::test::ExecuteQueryAndCommit(
       graph, "RETURN 1 = 1.0 AS equal, 1 IN [1.0] AS contained");
-  rg::QueryResult aggregation = rg::ExecuteReadQuery(
+  rg::QueryResult aggregation = rg::test::ExecuteQueryAndCommit(
       graph, "UNWIND [1, 1.0] AS x RETURN count(DISTINCT x) AS distinct_count");
-  rg::QueryResult nested = rg::ExecuteReadQuery(
+  rg::QueryResult nested = rg::test::ExecuteQueryAndCommit(
       graph,
       "UNWIND [[1], [1.0]] AS x RETURN count(DISTINCT x) AS distinct_count");
-  rg::QueryResult precise =
-      rg::ExecuteReadQuery(graph,
-                           "UNWIND [1.0000001, 1.0000002] AS x "
-                           "RETURN count(DISTINCT x) AS distinct_count");
-  rg::QueryResult boundary = rg::ExecuteReadQuery(
+  rg::QueryResult precise = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "UNWIND [1.0000001, 1.0000002] AS x "
+      "RETURN count(DISTINCT x) AS distinct_count");
+  rg::QueryResult boundary = rg::test::ExecuteQueryAndCommit(
       graph,
       "RETURN 9223372036854775807 < 9.223372036854776e18 AS ordered, "
       "9223372036854775807 = 9.223372036854776e18 AS equal");
@@ -356,7 +428,7 @@ TEST(QueryExecutorTest, UsesNumericEqualityForIndexSeeks) {
   graph.CreateNode({"Item"}, {{"score", rg::Value(1)}});
   graph.AddNodeIndex({"Item"}, "score");
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph, "MATCH (n:Item) WHERE n.score = 1.0 RETURN count(n) AS matches",
       QueryOptionsFor(graph));
 
@@ -367,30 +439,33 @@ TEST(QueryExecutorTest, UsesNumericEqualityForIndexSeeks) {
 TEST(QueryExecutorTest, RejectsInvalidPredicatesAndUnsafeIntegerArithmetic) {
   rg::InMemoryGraph graph;
 
-  EXPECT_THROW((void)rg::ExecuteReadQuery(graph, "RETURN NOT 1 AS value"),
-               ast::SemanticError);
-  EXPECT_THROW((void)rg::ExecuteReadQuery(
+  EXPECT_THROW(
+      (void)rg::test::ExecuteQueryAndCommit(graph, "RETURN NOT 1 AS value"),
+      ast::SemanticError);
+  EXPECT_THROW((void)rg::test::ExecuteQueryAndCommit(
                    graph, "RETURN 9223372036854775807 + 1 AS value"),
                common::InvalidArgumentError);
-  EXPECT_THROW((void)rg::ExecuteReadQuery(
+  EXPECT_THROW((void)rg::test::ExecuteQueryAndCommit(
                    graph, "RETURN -9223372036854775807 - 2 AS value"),
                common::InvalidArgumentError);
-  EXPECT_THROW((void)rg::ExecuteReadQuery(
+  EXPECT_THROW((void)rg::test::ExecuteQueryAndCommit(
                    graph, "RETURN 3037000500 * 3037000500 AS value"),
                common::InvalidArgumentError);
-  EXPECT_THROW((void)rg::ExecuteReadQuery(graph, "RETURN 1 / 0 AS value"),
-               common::InvalidArgumentError);
-  EXPECT_THROW((void)rg::ExecuteReadQuery(graph, "RETURN 1 % 0 AS value"),
-               common::InvalidArgumentError);
-  EXPECT_THROW((void)rg::ExecuteReadQuery(
+  EXPECT_THROW(
+      (void)rg::test::ExecuteQueryAndCommit(graph, "RETURN 1 / 0 AS value"),
+      common::InvalidArgumentError);
+  EXPECT_THROW(
+      (void)rg::test::ExecuteQueryAndCommit(graph, "RETURN 1 % 0 AS value"),
+      common::InvalidArgumentError);
+  EXPECT_THROW((void)rg::test::ExecuteQueryAndCommit(
                    graph, "RETURN (-9223372036854775807 - 1) % -1 AS value"),
                common::InvalidArgumentError);
   EXPECT_THROW(
-      (void)rg::ExecuteReadQuery(
+      (void)rg::test::ExecuteQueryAndCommit(
           graph, "UNWIND [9223372036854775807, 1] AS x RETURN sum(x) AS value"),
       common::InvalidArgumentError);
 
-  rg::QueryResult conversion = rg::ExecuteReadQuery(
+  rg::QueryResult conversion = rg::test::ExecuteQueryAndCommit(
       graph, "RETURN toInteger(9.223372036854776e18) AS value");
   EXPECT_EQ(StringRows(conversion),
             (std::vector<std::vector<std::string>>{{"null"}}));
@@ -399,7 +474,7 @@ TEST(QueryExecutorTest, RejectsInvalidPredicatesAndUnsafeIntegerArithmetic) {
 TEST(QueryExecutorTest, ExecutesCypherArithmeticAndStringPredicateSemantics) {
   rg::InMemoryGraph graph;
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "RETURN [1, 2] + [3, 4] AS concatenated, "
       "[1, 2] + 3 AS appended, 0 + [1, 2] AS prepended, "
@@ -418,7 +493,7 @@ TEST(QueryExecutorTest, ExecutesCypherArithmeticAndStringPredicateSemantics) {
 TEST(QueryExecutorTest, ImplementsIeeeFloatingDivisionAndNanComparisons) {
   rg::InMemoryGraph graph;
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "RETURN 0.0 / 0.0 = 0.0 / 0.0 AS equal, "
       "0.0 / 0.0 <> 1 AS not_equal, "
@@ -434,10 +509,10 @@ TEST(QueryExecutorTest, ExecutesRelationshipExpandQuery) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result =
-      rg::ExecuteReadQuery(graph,
-                           "MATCH (a:Person)-[r:KNOWS]->(b:Person) "
-                           "RETURN a.name AS a, b.name AS b, r.since AS since");
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "MATCH (a:Person)-[r:KNOWS]->(b:Person) "
+      "RETURN a.name AS a, b.name AS b, r.since AS since");
 
   ASSERT_EQ(result.columns, (std::vector<std::string>{"a", "b", "since"}));
   EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{
@@ -458,18 +533,18 @@ TEST(QueryExecutorTest, FiltersOptionalMatchUsingIncomingRelationshipVariable) {
   graph.CreateRelationship(a, c1, "KNOWS", {});
 
   rg::QueryResult missing =
-      rg::ExecuteReadQuery(graph,
-                           "MATCH (a:A)-[:KNOWS]->(b)-->(c) "
-                           "OPTIONAL MATCH (a)-[r:KNOWS]->(c) "
-                           "WITH c WHERE r IS NULL RETURN c.name");
+      rg::test::ExecuteQueryAndCommit(graph,
+                                      "MATCH (a:A)-[:KNOWS]->(b)-->(c) "
+                                      "OPTIONAL MATCH (a)-[r:KNOWS]->(c) "
+                                      "WITH c WHERE r IS NULL RETURN c.name");
   EXPECT_EQ(StringRows(missing),
             (std::vector<std::vector<std::string>>{{"\"c2\""}}));
 
-  rg::QueryResult present =
-      rg::ExecuteReadQuery(graph,
-                           "MATCH (a:A)-[:KNOWS]->(b)-->(c) "
-                           "OPTIONAL MATCH (a)-[r:KNOWS]->(c) "
-                           "WITH c WHERE r IS NOT NULL RETURN c.name");
+  rg::QueryResult present = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "MATCH (a:A)-[:KNOWS]->(b)-->(c) "
+      "OPTIONAL MATCH (a)-[r:KNOWS]->(c) "
+      "WITH c WHERE r IS NOT NULL RETURN c.name");
   EXPECT_EQ(StringRows(present),
             (std::vector<std::vector<std::string>>{{"\"c1\""}}));
 }
@@ -478,7 +553,7 @@ TEST(QueryExecutorTest, ExecutesSortSkipLimit) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (n:Person) RETURN n.name AS name ORDER BY name SKIP 1 "
       "LIMIT 1");
@@ -491,11 +566,13 @@ TEST(QueryExecutorTest, ExecutesSortSkipLimit) {
 TEST(QueryExecutorTest, RejectsInvalidSkipAndLimitCounts) {
   rg::InMemoryGraph graph;
 
-  EXPECT_THROW((void)rg::ExecuteReadQuery(graph, "RETURN 1 AS x SKIP -1"),
-               ast::SemanticError);
-  EXPECT_THROW((void)rg::ExecuteReadQuery(graph, "RETURN 1 AS x LIMIT 1.5"),
-               ast::SemanticError);
-  EXPECT_THROW((void)rg::ExecuteReadQuery(
+  EXPECT_THROW(
+      (void)rg::test::ExecuteQueryAndCommit(graph, "RETURN 1 AS x SKIP -1"),
+      ast::SemanticError);
+  EXPECT_THROW(
+      (void)rg::test::ExecuteQueryAndCommit(graph, "RETURN 1 AS x LIMIT 1.5"),
+      ast::SemanticError);
+  EXPECT_THROW((void)rg::test::ExecuteQueryAndCommit(
                    graph, "MATCH (n:Missing) RETURN n LIMIT null"),
                common::InvalidArgumentError);
 }
@@ -504,7 +581,7 @@ TEST(QueryExecutorTest, OrdersByPreProjectionExpression) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph, "MATCH (n:Person) RETURN n.name AS name ORDER BY n.age");
 
   ASSERT_EQ(result.columns, std::vector<std::string>{"name"});
@@ -516,7 +593,7 @@ TEST(QueryExecutorTest, ExecutesCountAggregation) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph, "MATCH (n:Person) RETURN count(*) AS rows, count(n.age) AS ages");
 
   ASSERT_EQ(result.columns, (std::vector<std::string>{"rows", "ages"}));
@@ -528,7 +605,7 @@ TEST(QueryExecutorTest, ExecutesNumericAggregations) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (n:Person) RETURN sum(n.age) AS total, avg(n.age) AS average, "
       "min(n.age) AS youngest, max(n.age) AS oldest");
@@ -549,7 +626,7 @@ TEST(QueryExecutorTest, ExecutesPercentileAggregations) {
   rg::QueryOptions options = QueryOptionsFor(graph);
   options.parameters = {{"percentile", rg::Value(0.25)}};
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (n) RETURN percentileDisc(n.value, 0.5) AS discrete, "
       "percentileCont(n.value, $percentile) AS continuous",
@@ -565,7 +642,7 @@ TEST(QueryExecutorTest, ExecutesAggregateSubexpressions) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (n:Person) "
       "RETURN n.age AS age, n.age + count(*) AS total, "
@@ -584,7 +661,7 @@ TEST(QueryExecutorTest, ExecutesAggregateExpressionsInOrderBy) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (n) RETURN n:Person AS person, count(*) + 1 AS total "
       "ORDER BY count(1) + total DESC");
@@ -597,7 +674,7 @@ TEST(QueryExecutorTest, ExecutesAggregateExpressionsInOrderBy) {
 TEST(QueryExecutorTest, ConstructsAndAccessesTemporalValues) {
   rg::InMemoryGraph graph;
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "WITH datetime({year: 1984, month: 11, day: 11, hour: 12, "
       "minute: 31, second: 14, nanosecond: 645876123, "
@@ -621,7 +698,7 @@ TEST(QueryExecutorTest, ExecutesQuantifierOverCollectedValues) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (n:Person) "
       "RETURN ALL(ok IN collect(n.age >= 36) WHERE ok) AS okay");
@@ -635,10 +712,10 @@ TEST(QueryExecutorTest, ExecutesCollectAggregation) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result =
-      rg::ExecuteReadQuery(graph,
-                           "MATCH (n:Person) RETURN collect(n.name) AS names, "
-                           "collect(DISTINCT n.age > 40) AS older_flags");
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "MATCH (n:Person) RETURN collect(n.name) AS names, "
+      "collect(DISTINCT n.age > 40) AS older_flags");
 
   ASSERT_EQ(result.columns, (std::vector<std::string>{"names", "older_flags"}));
   EXPECT_EQ(StringRows(result),
@@ -652,7 +729,7 @@ TEST(QueryExecutorTest, ExecutesDistinctAggregations) {
   graph.CreateNode({"Person"}, {{"age", rg::Value(36)}});
   graph.CreateNode({"Person"}, {{"age", rg::Value(85)}});
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (n:Person) RETURN count(DISTINCT n.age) AS ages, "
       "sum(DISTINCT n.age) AS total, avg(DISTINCT n.age) AS average");
@@ -667,7 +744,7 @@ TEST(QueryExecutorTest, ExecutesGroupedAggregations) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (n) RETURN labels(n) AS labels, count(*) AS c "
       "ORDER BY c DESC, labels");
@@ -682,7 +759,7 @@ TEST(QueryExecutorTest, AggregationsIgnoreNullValues) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (n) RETURN count(n.missing) AS c, collect(n.missing) AS values, "
       "sum(n.missing) AS total, avg(n.missing) AS average, "
@@ -698,7 +775,7 @@ TEST(QueryExecutorTest, AggregationsIgnoreNullValues) {
 TEST(QueryExecutorTest, GlobalAggregationsProduceRowForEmptyInput) {
   rg::InMemoryGraph graph;
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (n:Person) RETURN count(*) AS rows, count(n.age) AS ages, "
       "collect(n.name) AS names, sum(n.age) AS total, avg(n.age) AS average, "
@@ -715,8 +792,8 @@ TEST(QueryExecutorTest, GlobalAggregationsProduceRowForEmptyInput) {
 TEST(QueryExecutorTest, ExecutesUnionAll) {
   rg::InMemoryGraph graph;
 
-  rg::QueryResult result =
-      rg::ExecuteReadQuery(graph, "RETURN 1 AS x UNION ALL RETURN 1 AS x");
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+      graph, "RETURN 1 AS x UNION ALL RETURN 1 AS x");
 
   ASSERT_EQ(result.columns, std::vector<std::string>{"x"});
   EXPECT_EQ(StringRows(result),
@@ -726,8 +803,8 @@ TEST(QueryExecutorTest, ExecutesUnionAll) {
 TEST(QueryExecutorTest, ExecutesUnionDistinct) {
   rg::InMemoryGraph graph;
 
-  rg::QueryResult result =
-      rg::ExecuteReadQuery(graph, "RETURN 1 AS x UNION RETURN 1 AS x");
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+      graph, "RETURN 1 AS x UNION RETURN 1 AS x");
 
   ASSERT_EQ(result.columns, std::vector<std::string>{"x"});
   EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{{"1"}}));
@@ -737,7 +814,8 @@ TEST(QueryExecutorTest, ExecutesDbLabelsProcedure) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result = rg::ExecuteReadQuery(graph, "CALL db.labels()");
+  rg::QueryResult result =
+      rg::test::ExecuteQueryAndCommit(graph, "CALL db.labels()");
 
   ASSERT_EQ(result.columns, std::vector<std::string>{"label"});
   EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{
@@ -748,7 +826,7 @@ TEST(QueryExecutorTest, ExecutesDbLabelsProcedureWithYieldWhere) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph, "CALL db.labels() YIELD label AS l WHERE l = 'Person' RETURN l");
 
   ASSERT_EQ(result.columns, std::vector<std::string>{"l"});
@@ -761,7 +839,7 @@ TEST(QueryExecutorTest, ExecutesDbRelationshipTypesProcedure) {
   SeedDemoGraph(&graph);
 
   rg::QueryResult result =
-      rg::ExecuteReadQuery(graph, "CALL db.relationshipTypes()");
+      rg::test::ExecuteQueryAndCommit(graph, "CALL db.relationshipTypes()");
 
   ASSERT_EQ(result.columns, std::vector<std::string>{"relationshipType"});
   EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{
@@ -772,10 +850,10 @@ TEST(QueryExecutorTest, ExecutesDbPropertyKeysProcedureWithYieldWhere) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result =
-      rg::ExecuteReadQuery(graph,
-                           "CALL db.propertyKeys() YIELD propertyKey AS k "
-                           "WHERE k STARTS WITH 's' RETURN k");
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "CALL db.propertyKeys() YIELD propertyKey AS k "
+      "WHERE k STARTS WITH 's' RETURN k");
 
   ASSERT_EQ(result.columns, std::vector<std::string>{"k"});
   EXPECT_EQ(StringRows(result),
@@ -785,7 +863,7 @@ TEST(QueryExecutorTest, ExecutesDbPropertyKeysProcedureWithYieldWhere) {
 TEST(QueryExecutorTest, ExecutesDbmsProcedures) {
   rg::InMemoryGraph graph;
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "CALL dbms.procedures() "
       "YIELD name, signature, description, mode, worksOnSystem "
@@ -816,7 +894,7 @@ TEST(QueryExecutorTest, ExecutesNamedPath) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph, "MATCH p = (a:Person)-[r:KNOWS]->(b:Person) RETURN p");
 
   ASSERT_EQ(result.columns, std::vector<std::string>{"p"});
@@ -831,10 +909,10 @@ TEST(QueryExecutorTest, ExecutesNamedPathLength) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result =
-      rg::ExecuteReadQuery(graph,
-                           "MATCH p = (a:Person)-[r:KNOWS]->(b:Person) "
-                           "RETURN length(p) AS len");
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "MATCH p = (a:Person)-[r:KNOWS]->(b:Person) "
+      "RETURN length(p) AS len");
 
   ASSERT_EQ(result.columns, std::vector<std::string>{"len"});
   EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{{"1"}}));
@@ -844,7 +922,7 @@ TEST(QueryExecutorTest, ExecutesPathBuiltInFunctions) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH p = (a:Person {name: 'Ada'})-[r:KNOWS]->(b:Person) "
       "RETURN size(nodes(p)) AS node_count, "
@@ -861,7 +939,7 @@ TEST(QueryExecutorTest, ExecutesPathBuiltInFunctions) {
 TEST(QueryExecutorTest, ExecutesNamedCreatePathLength) {
   rg::InMemoryGraph graph;
 
-  rg::QueryResult result = rg::ExecuteQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph, "CREATE p = (a)-[r:KNOWS]->(b) RETURN length(p) AS len");
 
   ASSERT_EQ(result.columns, std::vector<std::string>{"len"});
@@ -871,12 +949,12 @@ TEST(QueryExecutorTest, ExecutesNamedCreatePathLength) {
 TEST(QueryExecutorTest, ExecutesQuantifierExpressions) {
   rg::InMemoryGraph graph;
 
-  rg::QueryResult result =
-      rg::ExecuteReadQuery(graph,
-                           "RETURN ALL(x IN [1, 2] WHERE x > 0) AS all_ok, "
-                           "ANY(x IN [1, 2] WHERE x = 2) AS any_ok, "
-                           "NONE(x IN [1, 2] WHERE x = 3) AS none_ok, "
-                           "SINGLE(x IN [1, 2] WHERE x = 2) AS single_ok");
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "RETURN ALL(x IN [1, 2] WHERE x > 0) AS all_ok, "
+      "ANY(x IN [1, 2] WHERE x = 2) AS any_ok, "
+      "NONE(x IN [1, 2] WHERE x = 3) AS none_ok, "
+      "SINGLE(x IN [1, 2] WHERE x = 2) AS single_ok");
 
   ASSERT_EQ(result.columns, (std::vector<std::string>{"all_ok", "any_ok",
                                                       "none_ok", "single_ok"}));
@@ -887,7 +965,7 @@ TEST(QueryExecutorTest, ExecutesQuantifierExpressions) {
 TEST(QueryExecutorTest, ExecutesListIndexAndSliceExpressions) {
   rg::InMemoryGraph graph;
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "RETURN [10, 20, 30][1] AS second, [10, 20, 30][-1] AS last, "
       "[10, 20, 30][99] AS missing, [10, 20, 30][0..2] AS head, "
@@ -905,7 +983,7 @@ TEST(QueryExecutorTest, ExecutesLiteralDynamicPropertyLookup) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph, "MATCH (n) WHERE n.name = 'Ada' RETURN n['name'] AS name");
 
   EXPECT_EQ(StringRows(result),
@@ -916,21 +994,21 @@ TEST(QueryExecutorTest, ExecutesSubqueryExpressionsInUpdates) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult created = rg::ExecuteQuery(
+  rg::QueryResult created = rg::test::ExecuteQueryAndCommit(
       graph,
       "CREATE (a {p: EXISTS { MATCH (b) WHERE b.name = 'Ada' RETURN b }}) "
       "RETURN a.p AS p");
   EXPECT_EQ(StringRows(created),
             (std::vector<std::vector<std::string>>{{"true"}}));
 
-  rg::QueryResult set = rg::ExecuteQuery(
+  rg::QueryResult set = rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (n) WHERE n.name = 'Grace' "
       "SET n.p = EXISTS { MATCH (m) WHERE m.name = 'Ada' RETURN m } "
       "RETURN n.p AS p");
   EXPECT_EQ(StringRows(set), (std::vector<std::vector<std::string>>{{"true"}}));
 
-  rg::QueryResult ordered_set = rg::ExecuteQuery(
+  rg::QueryResult ordered_set = rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (n) WHERE n.name = 'Grace' "
       "SET n.ready = true, "
@@ -944,7 +1022,7 @@ TEST(QueryExecutorTest, PreservesSubqueryDependenciesAcrossWith) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "WITH 'Ada' AS name MATCH (n) WHERE EXISTS { "
       "WITH 'Lovelace' AS lastName MATCH (m) "
@@ -958,7 +1036,7 @@ TEST(QueryExecutorTest, PreservesSubqueryDependenciesInReturnOrderBy) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "WITH 1 AS x MATCH (n) WHERE EXISTS { "
       "MATCH (m) RETURN m ORDER BY x } RETURN n.name AS name");
@@ -969,7 +1047,7 @@ TEST(QueryExecutorTest, PreservesSubqueryDependenciesInReturnOrderBy) {
 TEST(QueryExecutorTest, ExecutesScalarBuiltInFunctions) {
   rg::InMemoryGraph graph;
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "RETURN coalesce(null, 'fallback') AS c, isEmpty([]) AS empty_list, "
       "isEmpty('') AS empty_string, range(1, 5, 2) AS forward, "
@@ -994,7 +1072,7 @@ TEST(QueryExecutorTest, ExecutesScalarBuiltInFunctions) {
 TEST(QueryExecutorTest, ExecutesNumericListAndStringBuiltInFunctions) {
   rg::InMemoryGraph graph;
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "RETURN abs(-7) AS absolute, ceil(1.2) AS ceiling, sqrt(12.96) AS root, "
       "sign(-5) AS negative_sign, sign(0) AS zero_sign, "
@@ -1018,7 +1096,8 @@ TEST(QueryExecutorTest, ExecutesNumericListAndStringBuiltInFunctions) {
 TEST(QueryExecutorTest, PreservesCompactDoubleLiteralsInResultColumns) {
   rg::InMemoryGraph graph;
 
-  rg::QueryResult result = rg::ExecuteReadQuery(graph, "RETURN sqrt(12.96)");
+  rg::QueryResult result =
+      rg::test::ExecuteQueryAndCommit(graph, "RETURN sqrt(12.96)");
 
   ASSERT_EQ(result.columns, std::vector<std::string>{"sqrt(12.96)"});
   EXPECT_EQ(StringRows(result),
@@ -1028,7 +1107,7 @@ TEST(QueryExecutorTest, PreservesCompactDoubleLiteralsInResultColumns) {
 TEST(QueryExecutorTest, RandReturnsValueInUnitInterval) {
   rg::InMemoryGraph graph;
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph, "RETURN rand() >= 0.0 AND rand() < 1.0 AS in_range");
 
   ASSERT_EQ(result.columns, std::vector<std::string>{"in_range"});
@@ -1039,11 +1118,11 @@ TEST(QueryExecutorTest, RandReturnsValueInUnitInterval) {
 TEST(QueryExecutorTest, ExecutesRegisteredFunctionsCaseInsensitively) {
   rg::InMemoryGraph graph;
 
-  rg::QueryResult result =
-      rg::ExecuteReadQuery(graph,
-                           "UNWIND [1, 2, null] AS x "
-                           "RETURN COUNT(x) AS count, CoLlEcT(x) AS values, "
-                           "MAX(x) AS maximum");
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "UNWIND [1, 2, null] AS x "
+      "RETURN COUNT(x) AS count, CoLlEcT(x) AS values, "
+      "MAX(x) AS maximum");
 
   ASSERT_EQ(result.columns,
             (std::vector<std::string>{"count", "values", "maximum"}));
@@ -1055,13 +1134,13 @@ TEST(QueryExecutorTest, ExecutesMapAndEntityBuiltInFunctions) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result =
-      rg::ExecuteReadQuery(graph,
-                           "MATCH (n:Person {name: 'Ada'})-[r:KNOWS]->() "
-                           "RETURN keys({age: 36, name: 'Ada'}) AS map_keys, "
-                           "properties({age: 36, name: 'Ada'}) AS map_props, "
-                           "keys(n) AS node_keys, properties(n) AS node_props, "
-                           "keys(r) AS rel_keys, properties(r) AS rel_props");
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "MATCH (n:Person {name: 'Ada'})-[r:KNOWS]->() "
+      "RETURN keys({age: 36, name: 'Ada'}) AS map_keys, "
+      "properties({age: 36, name: 'Ada'}) AS map_props, "
+      "keys(n) AS node_keys, properties(n) AS node_props, "
+      "keys(r) AS rel_keys, properties(r) AS rel_props");
 
   ASSERT_EQ(result.columns,
             (std::vector<std::string>{"map_keys", "map_props", "node_keys",
@@ -1077,7 +1156,7 @@ TEST(QueryExecutorTest, ExecutesCaseExpressions) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (n:Person) RETURN n.name AS name, "
       "CASE WHEN n.age > 40 THEN 'senior' ELSE 'junior' END AS bucket, "
@@ -1093,7 +1172,7 @@ TEST(QueryExecutorTest, ExecutesCaseExpressions) {
 TEST(QueryExecutorTest, ExecutesListComprehension) {
   rg::InMemoryGraph graph;
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "RETURN [x IN [1, 2, 3] WHERE x > 1 | x * 10] AS scaled, "
       "[x IN [1, 2, 3] WHERE x > 1] AS filtered, "
@@ -1109,12 +1188,12 @@ TEST(QueryExecutorTest, ExecutesExistsSubqueryProjection) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result =
-      rg::ExecuteReadQuery(graph,
-                           "MATCH (n:Person) "
-                           "RETURN n.name AS name, "
-                           "EXISTS { MATCH (n)-[:KNOWS]->(m) RETURN 1 } AS has "
-                           "ORDER BY name");
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "MATCH (n:Person) "
+      "RETURN n.name AS name, "
+      "EXISTS { MATCH (n)-[:KNOWS]->(m) RETURN 1 } AS has "
+      "ORDER BY name");
 
   ASSERT_EQ(result.columns, (std::vector<std::string>{"name", "has"}));
   EXPECT_EQ(StringRows(result),
@@ -1126,7 +1205,7 @@ TEST(QueryExecutorTest, OrdersByExistsSubquery) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (n:Person) "
       "RETURN n.name AS name "
@@ -1141,7 +1220,7 @@ TEST(QueryExecutorTest, ExecutesNotExistsSubqueryProjection) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (n:Person) "
       "RETURN n.name AS name, "
@@ -1158,7 +1237,7 @@ TEST(QueryExecutorTest, ExecutesNestedExistsInFilterAndCaseExpression) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (n:Person) "
       "WITH n "
@@ -1176,7 +1255,7 @@ TEST(QueryExecutorTest, ExecutesPatternComprehension) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (n:Person) "
       "RETURN n.name AS name, [(n)-[:KNOWS]->(m) | m.name] AS names "
@@ -1193,11 +1272,11 @@ TEST(QueryExecutorTest, UsesPatternComprehensionInPagination) {
   SeedDemoGraph(&graph);
 
   rg::QueryResult result =
-      rg::ExecuteReadQuery(graph,
-                           "MATCH (n:Person) "
-                           "RETURN n.name AS name "
-                           "ORDER BY name "
-                           "SKIP size([()-[:KNOWS]->(m) | m])");
+      rg::test::ExecuteQueryAndCommit(graph,
+                                      "MATCH (n:Person) "
+                                      "RETURN n.name AS name "
+                                      "ORDER BY name "
+                                      "SKIP size([()-[:KNOWS]->(m) | m])");
 
   ASSERT_EQ(result.columns, std::vector<std::string>{"name"});
   EXPECT_EQ(StringRows(result),
@@ -1209,10 +1288,10 @@ TEST(QueryExecutorTest, WithDropsOrderByPassthroughColumnsAfterOrdering) {
   SeedDemoGraph(&graph);
 
   rg::QueryResult result =
-      rg::ExecuteReadQuery(graph,
-                           "MATCH (n:Person) "
-                           "WITH n.name AS name ORDER BY n.age "
-                           "RETURN name");
+      rg::test::ExecuteQueryAndCommit(graph,
+                                      "MATCH (n:Person) "
+                                      "WITH n.name AS name ORDER BY n.age "
+                                      "RETURN name");
 
   ASSERT_EQ(result.columns, std::vector<std::string>{"name"});
   EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{
@@ -1223,7 +1302,7 @@ TEST(QueryExecutorTest, ExecutesDistinctExistsSubqueryProjection) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (n:Person) "
       "RETURN DISTINCT EXISTS { MATCH (n)-[:KNOWS]->(m) RETURN 1 } AS has "
@@ -1238,7 +1317,7 @@ TEST(QueryExecutorTest, ExecutesExistsSubqueryGroupedAggregation) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (n:Person) "
       "RETURN EXISTS { MATCH (n)-[:KNOWS]->(m) RETURN 1 } AS has, "
@@ -1253,7 +1332,7 @@ TEST(QueryExecutorTest, ExecutesExistsSubqueryGroupedAggregation) {
 TEST(QueryExecutorTest, ExecutesUnwind) {
   rg::InMemoryGraph graph;
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph, "UNWIND [1, 2, 3] AS x RETURN x, x * 10 AS y ORDER BY x");
 
   ASSERT_EQ(result.columns, (std::vector<std::string>{"x", "y"}));
@@ -1265,7 +1344,7 @@ TEST(QueryExecutorTest, ExecutesVariableLengthExpand) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (a:Person {name: 'Ada'})-[r*0..2]->(b) "
       "RETURN b.name AS name, size(r) AS hops ORDER BY hops, name");
@@ -1280,10 +1359,10 @@ TEST(QueryExecutorTest, ExecutesVariableLengthExpandWithTypeFilter) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result =
-      rg::ExecuteReadQuery(graph,
-                           "MATCH (a:Person {name: 'Ada'})-[r:KNOWS*1..2]->(b) "
-                           "RETURN b.name AS name, size(r) AS hops");
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "MATCH (a:Person {name: 'Ada'})-[r:KNOWS*1..2]->(b) "
+      "RETURN b.name AS name, size(r) AS hops");
 
   ASSERT_EQ(result.columns, (std::vector<std::string>{"name", "hops"}));
   EXPECT_EQ(StringRows(result),
@@ -1298,7 +1377,7 @@ TEST(QueryExecutorTest, FiltersPropertiesOnVariableLengthRelationships) {
   graph.CreateRelationship(a, b, "WORKED_WITH", {{"year", rg::Value(1987)}});
   graph.CreateRelationship(b, c, "WORKED_WITH", {{"year", rg::Value(1988)}});
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (a:Artist)-[:WORKED_WITH* {year: 1988}]->(b:Artist) "
       "RETURN b");
@@ -1312,7 +1391,7 @@ TEST(QueryExecutorTest, ExecutesVariableLengthExpandIntoBoundEndpoint) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (a:Person {name: 'Ada'}), (b:Language {name: 'C++'}) "
       "WITH a, b MATCH (a)-[r*1..2]->(b) RETURN size(r) AS hops");
@@ -1325,10 +1404,10 @@ TEST(QueryExecutorTest, ExecutesVariableLengthNamedPath) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result =
-      rg::ExecuteReadQuery(graph,
-                           "MATCH p = (a:Person {name: 'Ada'})-[r*1..2]->"
-                           "(b:Language) RETURN length(p) AS len");
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "MATCH p = (a:Person {name: 'Ada'})-[r*1..2]->"
+      "(b:Language) RETURN length(p) AS len");
 
   ASSERT_EQ(result.columns, std::vector<std::string>{"len"});
   EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{{"2"}}));
@@ -1339,9 +1418,9 @@ TEST(QueryExecutorTest, ExecutesReversePlannedVariableLengthNamedPath) {
   SeedDemoGraph(&graph);
 
   rg::QueryResult result =
-      rg::ExecuteReadQuery(graph,
-                           "MATCH p = (a)-[r*1..2]->(b:Language) "
-                           "RETURN length(p) AS len ORDER BY len");
+      rg::test::ExecuteQueryAndCommit(graph,
+                                      "MATCH p = (a)-[r*1..2]->(b:Language) "
+                                      "RETURN length(p) AS len ORDER BY len");
 
   ASSERT_EQ(result.columns, std::vector<std::string>{"len"});
   EXPECT_EQ(StringRows(result),
@@ -1352,10 +1431,10 @@ TEST(QueryExecutorTest, VariableLengthExpandReturnsNoRowsWhenBoundsDoNotMatch) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result =
-      rg::ExecuteReadQuery(graph,
-                           "MATCH (a:Person {name: 'Ada'})-[r:KNOWS*2..2]->(b) "
-                           "RETURN count(r) AS c");
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "MATCH (a:Person {name: 'Ada'})-[r:KNOWS*2..2]->(b) "
+      "RETURN count(r) AS c");
 
   ASSERT_EQ(result.columns, std::vector<std::string>{"c"});
   EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{{"0"}}));
@@ -1365,11 +1444,11 @@ TEST(QueryExecutorTest, OptionalMatchNullExtendsMissingRows) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result =
-      rg::ExecuteReadQuery(graph,
-                           "MATCH (n:Language) "
-                           "OPTIONAL MATCH (n)-[r]->(m) "
-                           "RETURN n.name AS n, m.name AS m, type(r) AS rel");
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "MATCH (n:Language) "
+      "OPTIONAL MATCH (n)-[r]->(m) "
+      "RETURN n.name AS n, m.name AS m, type(r) AS rel");
 
   ASSERT_EQ(result.columns, (std::vector<std::string>{"n", "m", "rel"}));
   EXPECT_EQ(
@@ -1380,11 +1459,11 @@ TEST(QueryExecutorTest, OptionalMatchNullExtendsMissingRows) {
 TEST(QueryExecutorTest, NullExpandSourceProducesNoMatches) {
   rg::InMemoryGraph graph;
 
-  rg::QueryResult required = rg::ExecuteQuery(
+  rg::QueryResult required = rg::test::ExecuteQueryAndCommit(
       graph, "OPTIONAL MATCH (a) WITH a MATCH (a)-->(b) RETURN b");
   EXPECT_TRUE(required.rows.empty());
 
-  rg::QueryResult optional = rg::ExecuteQuery(
+  rg::QueryResult optional = rg::test::ExecuteQueryAndCommit(
       graph, "OPTIONAL MATCH (a) WITH a OPTIONAL MATCH (a)-->(b) RETURN b");
   EXPECT_EQ(StringRows(optional),
             (std::vector<std::vector<std::string>>{{"null"}}));
@@ -1394,11 +1473,11 @@ TEST(QueryExecutorTest, OptionalMatchPreservesMatchedRows) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result =
-      rg::ExecuteReadQuery(graph,
-                           "MATCH (n:Person {name: 'Ada'}) "
-                           "OPTIONAL MATCH (n)-[r:KNOWS]->(m) "
-                           "RETURN n.name AS n, m.name AS m, type(r) AS rel");
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "MATCH (n:Person {name: 'Ada'}) "
+      "OPTIONAL MATCH (n)-[r:KNOWS]->(m) "
+      "RETURN n.name AS n, m.name AS m, type(r) AS rel");
 
   ASSERT_EQ(result.columns, (std::vector<std::string>{"n", "m", "rel"}));
   EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{
@@ -1409,12 +1488,12 @@ TEST(QueryExecutorTest, OptionalMatchNullExtendsWhenLocalWhereRejectsRows) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result =
-      rg::ExecuteReadQuery(graph,
-                           "MATCH (n:Person {name: 'Ada'}) "
-                           "OPTIONAL MATCH (n)-[r:KNOWS]->(m) "
-                           "WHERE m.name = 'Missing' "
-                           "RETURN n.name AS n, m.name AS m, type(r) AS rel");
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "MATCH (n:Person {name: 'Ada'}) "
+      "OPTIONAL MATCH (n)-[r:KNOWS]->(m) "
+      "WHERE m.name = 'Missing' "
+      "RETURN n.name AS n, m.name AS m, type(r) AS rel");
 
   ASSERT_EQ(result.columns, (std::vector<std::string>{"n", "m", "rel"}));
   EXPECT_EQ(
@@ -1426,7 +1505,7 @@ TEST(QueryExecutorTest, OptionalMatchNullsCanBeAggregated) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (n:Language) "
       "OPTIONAL MATCH (n)-[r]->(m) "
@@ -1440,7 +1519,7 @@ TEST(QueryExecutorTest, OptionalMatchNullsCanBeAggregated) {
 TEST(QueryExecutorTest, ExecutesCreateNodeAndRelationship) {
   rg::InMemoryGraph graph;
 
-  rg::QueryResult result = rg::ExecuteQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "CREATE (a:Person {name: 'Ada'})-[r:KNOWS {since: 2026}]->"
       "(b:Person {name: 'Grace'}) "
@@ -1450,15 +1529,16 @@ TEST(QueryExecutorTest, ExecutesCreateNodeAndRelationship) {
   EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{
                                     {"\"Ada\"", "\"Grace\"", "2026"}}));
 
-  rg::QueryResult check = rg::ExecuteReadQuery(
+  rg::QueryResult check = rg::test::ExecuteQueryAndCommit(
       graph, "MATCH (a:Person)-[r:KNOWS]->(b:Person) RETURN count(r) AS c");
   EXPECT_EQ(StringRows(check), (std::vector<std::vector<std::string>>{{"1"}}));
 }
 
 TEST(QueryExecutorTest, CommitsWritesAfterLimitedCursorIsExhausted) {
   rg::InMemoryGraph graph;
+  auto transaction = graph.BeginTransaction();
   std::unique_ptr<rg::QueryResultCursor> cursor = rg::ExecuteQueryCursor(
-      graph,
+      *transaction,
       "UNWIND [1, 2] AS value CREATE (:Made {value: value}) "
       "RETURN value LIMIT 1");
 
@@ -1468,26 +1548,31 @@ TEST(QueryExecutorTest, CommitsWritesAfterLimitedCursorIsExhausted) {
   EXPECT_EQ(graph.Nodes().size(), 2U);
 
   EXPECT_FALSE(cursor->Next(&row));
+  EXPECT_EQ(transaction->GetState(), rg::StorageTransaction::State::kActive);
+  transaction->Commit();
   cursor->Close();
   EXPECT_EQ(graph.Nodes().size(), 2U);
 }
 
 TEST(QueryExecutorTest, CommitsExhaustedWritesUnderZeroLimit) {
   rg::InMemoryGraph graph;
+  auto transaction = graph.BeginTransaction();
   std::unique_ptr<rg::QueryResultCursor> cursor = rg::ExecuteQueryCursor(
-      graph,
+      *transaction,
       "UNWIND [1, 2] AS value CREATE (:Made {value: value}) "
       "RETURN value LIMIT 0");
 
   std::vector<rg::Value> row;
   EXPECT_FALSE(cursor->Next(&row));
+  transaction->Commit();
   EXPECT_EQ(graph.Nodes().size(), 2U);
 }
 
 TEST(QueryExecutorTest, RollsBackLimitedWritesWhenCursorClosesEarly) {
   rg::InMemoryGraph graph;
+  auto transaction = graph.BeginTransaction();
   std::unique_ptr<rg::QueryResultCursor> cursor = rg::ExecuteQueryCursor(
-      graph,
+      *transaction,
       "UNWIND [1, 2] AS value CREATE (:Made {value: value}) "
       "RETURN value LIMIT 1");
 
@@ -1502,8 +1587,9 @@ TEST(QueryExecutorTest, RollsBackLimitedWritesWhenCursorClosesEarly) {
 
 TEST(QueryExecutorTest, RollsBackLimitedWritesWhenCursorIsCancelled) {
   rg::InMemoryGraph graph;
+  auto transaction = graph.BeginTransaction();
   std::unique_ptr<rg::QueryResultCursor> cursor = rg::ExecuteQueryCursor(
-      graph,
+      *transaction,
       "UNWIND [1, 2] AS value CREATE (:Made {value: value}) "
       "RETURN value LIMIT 1");
 
@@ -1520,7 +1606,7 @@ TEST(QueryExecutorTest, WriteBarrierStabilizesReadsBeforeWrites) {
   rg::InMemoryGraph graph;
   graph.CreateNode({"Seed"});
 
-  rg::QueryResult result = rg::ExecuteQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph, "MATCH (n:Seed) CREATE (:Seed) RETURN id(n) AS id");
 
   ASSERT_EQ(result.rows.size(), 1U);
@@ -1530,7 +1616,7 @@ TEST(QueryExecutorTest, WriteBarrierStabilizesReadsBeforeWrites) {
 TEST(QueryExecutorTest, RollsBackWritesWhenALaterRowFails) {
   rg::InMemoryGraph graph;
 
-  EXPECT_THROW((void)rg::ExecuteQuery(
+  EXPECT_THROW((void)rg::test::ExecuteQueryAndCommit(
                    graph,
                    "UNWIND [1, 0] AS divisor CREATE (n {value: 1 / divisor}) "
                    "RETURN n"),
@@ -1542,9 +1628,9 @@ TEST(QueryExecutorTest, RollsBackWritesWhenALaterRowFails) {
 TEST(QueryExecutorTest, RollsBackWritesWhenAWriteExpressionFails) {
   rg::InMemoryGraph graph;
 
-  EXPECT_THROW(rg::ExecuteWriteQuery(graph,
-                                     "CREATE (n) SET n.value = 1 / 0 "
-                                     "RETURN n"),
+  EXPECT_THROW(rg::test::ExecuteQueryAndCommit(graph,
+                                               "CREATE (n) SET n.value = 1 / 0 "
+                                               "RETURN n"),
                common::InvalidArgumentError);
   EXPECT_TRUE(graph.Nodes().empty());
   EXPECT_TRUE(graph.Relationships().empty());
@@ -1555,11 +1641,11 @@ TEST(QueryExecutorTest, RollsBackExistingEntityMutationsAndIndexes) {
   auto node = graph.CreateNode({"Person"}, {{"name", rg::Value("Ada")}});
   graph.AddNodeIndex({"Person"}, "name");
 
-  EXPECT_THROW(
-      (void)rg::ExecuteQuery(graph,
-                             "MATCH (n:Person {name: 'Ada'}) "
-                             "SET n.name = 'Bob', n.value = 1 / 0 RETURN n"),
-      common::InvalidArgumentError);
+  EXPECT_THROW((void)rg::test::ExecuteQueryAndCommit(
+                   graph,
+                   "MATCH (n:Person {name: 'Ada'}) "
+                   "SET n.name = 'Bob', n.value = 1 / 0 RETURN n"),
+               common::InvalidArgumentError);
 
   ASSERT_EQ(graph.Nodes().size(), 1U);
   ASSERT_EQ(graph.Nodes().front(), node);
@@ -1574,31 +1660,42 @@ TEST(QueryExecutorTest, RollsBackExistingEntityMutationsAndIndexes) {
           .empty());
 }
 
-TEST(QueryExecutorTest, ExecuteReadQueryRejectsWritesWithGraphReaderOnly) {
+TEST(QueryExecutorTest, ReadOnlyTransactionRejectsWrites) {
   rg::InMemoryGraph graph;
-  rg::GraphReader &graph_reader = graph;
-
-  EXPECT_THROW((void)rg::ExecuteReadQuery(graph_reader, "CREATE (n) RETURN n"),
-               common::InvalidArgumentError);
-  EXPECT_THROW((void)rg::ExecuteReadQuery(
-                   graph_reader, "MATCH (n:Missing) SET n.value = 1 RETURN n"),
-               common::InvalidArgumentError);
-
-  rg::QueryResult check =
-      rg::ExecuteReadQuery(graph_reader, "MATCH (n) RETURN count(n) AS c");
-  EXPECT_EQ(StringRows(check), (std::vector<std::vector<std::string>>{{"0"}}));
+  {
+    rg::test::ReadOnlyTransaction transaction(graph.BeginTransaction());
+    EXPECT_THROW((void)rg::ExecuteQuery(transaction, "CREATE (n) RETURN n"),
+                 common::InvalidArgumentError);
+    EXPECT_EQ(transaction.GetState(),
+              rg::StorageTransaction::State::kRolledBack);
+  }
+  {
+    rg::test::ReadOnlyTransaction transaction(graph.BeginTransaction());
+    EXPECT_THROW((void)rg::ExecuteQuery(
+                     transaction, "MATCH (n:Missing) SET n.value = 1 RETURN n"),
+                 common::InvalidArgumentError);
+  }
+  {
+    rg::test::ReadOnlyTransaction transaction(graph.BeginTransaction());
+    rg::QueryResult check =
+        rg::ExecuteQuery(transaction, "MATCH (n) RETURN count(n) AS c");
+    EXPECT_EQ(StringRows(check),
+              (std::vector<std::vector<std::string>>{{"0"}}));
+    transaction.Commit();
+  }
 }
 
 TEST(QueryExecutorTest, ExecutesSetRemoveAndDetachDelete) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::ExecuteWriteQuery(graph,
-                        "MATCH (n:Person) WHERE n.name = 'Ada' "
-                        "SET n.score = 7, n += {team: 'db'}, n:Engineer "
-                        "REMOVE n.age");
+  rg::test::ExecuteQueryAndCommit(
+      graph,
+      "MATCH (n:Person) WHERE n.name = 'Ada' "
+      "SET n.score = 7, n += {team: 'db'}, n:Engineer "
+      "REMOVE n.age");
 
-  rg::QueryResult updated = rg::ExecuteReadQuery(
+  rg::QueryResult updated = rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (n:Engineer) WHERE n.name = 'Ada' "
       "RETURN n.score AS score, n.team AS team, n.age AS age");
@@ -1607,10 +1704,10 @@ TEST(QueryExecutorTest, ExecutesSetRemoveAndDetachDelete) {
   EXPECT_EQ(StringRows(updated),
             (std::vector<std::vector<std::string>>{{"7", "\"db\"", "null"}}));
 
-  rg::ExecuteWriteQuery(graph,
-                        "MATCH (n:Engineer) WHERE n.name = 'Ada' "
-                        "DETACH DELETE n");
-  rg::QueryResult deleted = rg::ExecuteReadQuery(
+  rg::test::ExecuteQueryAndCommit(graph,
+                                  "MATCH (n:Engineer) WHERE n.name = 'Ada' "
+                                  "DETACH DELETE n");
+  rg::QueryResult deleted = rg::test::ExecuteQueryAndCommit(
       graph, "MATCH (n:Person) WHERE n.name = 'Ada' RETURN count(n) AS c");
   EXPECT_EQ(StringRows(deleted),
             (std::vector<std::vector<std::string>>{{"0"}}));
@@ -1630,7 +1727,7 @@ TEST(QueryExecutorTest, NullWriteTargetsAreIgnored) {
       "OPTIONAL MATCH (a:Missing) DETACH DELETE a RETURN a",
   };
   for (const auto &query : queries) {
-    rg::QueryResult result = rg::ExecuteQuery(graph, query);
+    rg::QueryResult result = rg::test::ExecuteQueryAndCommit(graph, query);
     EXPECT_EQ(StringRows(result),
               (std::vector<std::vector<std::string>>{{"null"}}))
         << query;
@@ -1644,20 +1741,20 @@ TEST(QueryExecutorTest, RemovesNullPropertiesAndUpdatesRelationshipMaps) {
   graph.AddNodeIndex({"Person"}, "name");
   graph.AddRelationshipIndex({"KNOWS"}, "since");
   const rg::QueryOptions options = QueryOptionsFor(graph);
-  rg::ExecuteWriteQuery(
+  rg::test::ExecuteQueryAndCommit(
       graph,
       "CREATE (:Person {name: 'Ada', missing: null})"
       "-[r:KNOWS {since: 2020, missing: null}]->(:Person {name: 'Grace'})",
       options);
 
-  rg::ExecuteWriteQuery(
+  rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (a:Person {name: 'Ada'})-[r:KNOWS]->() "
       "SET a.name = null, r = {kind: 'friend', missing: null}, "
       "r += {since: 2026, kind: null}",
       options);
 
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (a:Person)-[r:KNOWS]->() "
       "RETURN a.name AS name, a.missing AS node_missing, "
@@ -1682,12 +1779,12 @@ TEST(QueryExecutorTest, RemovesNullPropertiesAndUpdatesRelationshipMaps) {
 
 TEST(QueryExecutorTest, DeduplicatesDeleteTargetsAcrossRows) {
   rg::InMemoryGraph graph;
-  rg::ExecuteWriteQuery(graph,
-                        "CREATE (a:Node)-[:LINK]->(:Node), "
-                        "(a)-[:LINK]->(:Node)");
+  rg::test::ExecuteQueryAndCommit(graph,
+                                  "CREATE (a:Node)-[:LINK]->(:Node), "
+                                  "(a)-[:LINK]->(:Node)");
 
-  EXPECT_NO_THROW(
-      rg::ExecuteWriteQuery(graph, "MATCH (a:Node)-[r:LINK]->() DELETE r, a"));
+  EXPECT_NO_THROW(rg::test::ExecuteQueryAndCommit(
+      graph, "MATCH (a:Node)-[r:LINK]->() DELETE r, a"));
   EXPECT_EQ(graph.Nodes().size(), 2U);
   EXPECT_TRUE(graph.Relationships().empty());
 }
@@ -1695,18 +1792,19 @@ TEST(QueryExecutorTest, DeduplicatesDeleteTargetsAcrossRows) {
 TEST(QueryExecutorTest, ExecutesMergeCreateAndMatchActions) {
   rg::InMemoryGraph graph;
 
-  rg::QueryResult created = rg::ExecuteQuery(graph,
-                                             "MERGE (n:Person {name: 'Ada'}) "
-                                             "ON CREATE SET n.created = true "
-                                             "RETURN n.created AS created");
+  rg::QueryResult created =
+      rg::test::ExecuteQueryAndCommit(graph,
+                                      "MERGE (n:Person {name: 'Ada'}) "
+                                      "ON CREATE SET n.created = true "
+                                      "RETURN n.created AS created");
   ASSERT_EQ(StringRows(created),
             (std::vector<std::vector<std::string>>{{"true"}}));
 
-  rg::QueryResult matched =
-      rg::ExecuteQuery(graph,
-                       "MERGE (n:Person {name: 'Ada'}) "
-                       "ON MATCH SET n.seen = true "
-                       "RETURN n.created AS created, n.seen AS seen");
+  rg::QueryResult matched = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "MERGE (n:Person {name: 'Ada'}) "
+      "ON MATCH SET n.seen = true "
+      "RETURN n.created AS created, n.seen AS seen");
   ASSERT_EQ(matched.columns, (std::vector<std::string>{"created", "seen"}));
   EXPECT_EQ(StringRows(matched),
             (std::vector<std::vector<std::string>>{{"true", "true"}}));
@@ -1715,10 +1813,10 @@ TEST(QueryExecutorTest, ExecutesMergeCreateAndMatchActions) {
 TEST(QueryExecutorTest, PreservesBindingsAcrossConsecutiveMerges) {
   rg::InMemoryGraph graph;
 
-  rg::QueryResult result =
-      rg::ExecuteQuery(graph,
-                       "CREATE (a) WITH a MERGE (x) MERGE (y) "
-                       "MERGE (x)-[:T]->(y) CREATE (b) CREATE (a)<-[:T]-(b)");
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "CREATE (a) WITH a MERGE (x) MERGE (y) "
+      "MERGE (x)-[:T]->(y) CREATE (b) CREATE (a)<-[:T]-(b)");
 
   EXPECT_TRUE(result.columns.empty());
   EXPECT_TRUE(result.rows.empty());
@@ -1729,10 +1827,10 @@ TEST(QueryExecutorTest, PreservesBindingsAcrossConsecutiveMerges) {
 TEST(QueryExecutorTest, PreservesBindingsAcrossUnwind) {
   rg::InMemoryGraph graph;
 
-  rg::QueryResult result =
-      rg::ExecuteQuery(graph,
-                       "CREATE (a) WITH a UNWIND [0] AS i CREATE (b) "
-                       "CREATE (a)<-[:T]-(b)");
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "CREATE (a) WITH a UNWIND [0] AS i CREATE (b) "
+      "CREATE (a)<-[:T]-(b)");
 
   EXPECT_TRUE(result.columns.empty());
   EXPECT_TRUE(result.rows.empty());
@@ -1744,31 +1842,31 @@ TEST(QueryExecutorTest, ExecutesNamedMergePaths) {
   rg::InMemoryGraph graph;
 
   rg::QueryResult node_path =
-      rg::ExecuteQuery(graph, "MERGE p = (a {num: 1}) RETURN p");
+      rg::test::ExecuteQueryAndCommit(graph, "MERGE p = (a {num: 1}) RETURN p");
   ASSERT_EQ(node_path.rows.size(), 1U);
   ASSERT_TRUE(node_path.rows[0][0].IsPath());
   EXPECT_EQ(node_path.rows[0][0].AsPath().nodes.size(), 1U);
   EXPECT_TRUE(node_path.rows[0][0].AsPath().relationships.empty());
 
   rg::QueryResult matched_node_path =
-      rg::ExecuteQuery(graph, "MERGE p = (a {num: 1}) RETURN p");
+      rg::test::ExecuteQueryAndCommit(graph, "MERGE p = (a {num: 1}) RETURN p");
   ASSERT_EQ(matched_node_path.rows.size(), 1U);
   ASSERT_TRUE(matched_node_path.rows[0][0].IsPath());
   EXPECT_EQ(matched_node_path.rows[0][0].AsPath().nodes.size(), 1U);
 
   rg::QueryResult relationship_path =
-      rg::ExecuteQuery(graph,
-                       "MERGE (a {num: 1}) MERGE (b {num: 2}) "
-                       "MERGE p = (a)-[:R]->(b) RETURN p");
+      rg::test::ExecuteQueryAndCommit(graph,
+                                      "MERGE (a {num: 1}) MERGE (b {num: 2}) "
+                                      "MERGE p = (a)-[:R]->(b) RETURN p");
   ASSERT_EQ(relationship_path.rows.size(), 1U);
   ASSERT_TRUE(relationship_path.rows[0][0].IsPath());
   EXPECT_EQ(relationship_path.rows[0][0].AsPath().nodes.size(), 2U);
   EXPECT_EQ(relationship_path.rows[0][0].AsPath().relationships.size(), 1U);
 
   rg::QueryResult matched_relationship_path =
-      rg::ExecuteQuery(graph,
-                       "MERGE (a {num: 1}) MERGE (b {num: 2}) "
-                       "MERGE p = (a)-[:R]->(b) RETURN p");
+      rg::test::ExecuteQueryAndCommit(graph,
+                                      "MERGE (a {num: 1}) MERGE (b {num: 2}) "
+                                      "MERGE p = (a)-[:R]->(b) RETURN p");
   ASSERT_EQ(matched_relationship_path.rows.size(), 1U);
   ASSERT_TRUE(matched_relationship_path.rows[0][0].IsPath());
   EXPECT_EQ(matched_relationship_path.rows[0][0].AsPath().nodes.size(), 2U);
@@ -1844,42 +1942,42 @@ TEST(QueryExecutorTest, MaintainsNodeIndexAcrossWrites) {
   graph.AddNodeIndex({"Person"}, "name");
   const rg::QueryOptions options = QueryOptionsFor(graph);
 
-  rg::ExecuteWriteQuery(
+  rg::test::ExecuteQueryAndCommit(
       graph, "CREATE (:Person {name: 'Ada'}), (:Person {name: 'Grace'})",
       options);
 
-  rg::QueryResult created = rg::ExecuteReadQuery(
+  rg::QueryResult created = rg::test::ExecuteQueryAndCommit(
       graph, "MATCH (n:Person) WHERE n.name = 'Ada' RETURN count(n) AS c",
       options);
   EXPECT_EQ(StringRows(created),
             (std::vector<std::vector<std::string>>{{"1"}}));
 
-  rg::ExecuteWriteQuery(graph,
-                        "MATCH (n:Person) WHERE n.name = 'Ada' "
-                        "SET n.name = 'Lovelace'",
-                        options);
-  rg::ExecuteWriteQuery(graph,
-                        "MATCH (n:Person) WHERE n.name = 'Lovelace' "
-                        "SET n.name = 'Lovelace'",
-                        options);
+  rg::test::ExecuteQueryAndCommit(graph,
+                                  "MATCH (n:Person) WHERE n.name = 'Ada' "
+                                  "SET n.name = 'Lovelace'",
+                                  options);
+  rg::test::ExecuteQueryAndCommit(graph,
+                                  "MATCH (n:Person) WHERE n.name = 'Lovelace' "
+                                  "SET n.name = 'Lovelace'",
+                                  options);
 
-  rg::QueryResult old_name = rg::ExecuteReadQuery(
+  rg::QueryResult old_name = rg::test::ExecuteQueryAndCommit(
       graph, "MATCH (n:Person) WHERE n.name = 'Ada' RETURN count(n) AS c",
       options);
   EXPECT_EQ(StringRows(old_name),
             (std::vector<std::vector<std::string>>{{"0"}}));
 
-  rg::QueryResult new_name = rg::ExecuteReadQuery(
+  rg::QueryResult new_name = rg::test::ExecuteQueryAndCommit(
       graph, "MATCH (n:Person) WHERE n.name = 'Lovelace' RETURN count(n) AS c",
       options);
   EXPECT_EQ(StringRows(new_name),
             (std::vector<std::vector<std::string>>{{"1"}}));
 
-  rg::ExecuteWriteQuery(graph,
-                        "MATCH (n:Person) WHERE n.name = 'Lovelace' "
-                        "REMOVE n.name",
-                        options);
-  rg::QueryResult removed = rg::ExecuteReadQuery(
+  rg::test::ExecuteQueryAndCommit(graph,
+                                  "MATCH (n:Person) WHERE n.name = 'Lovelace' "
+                                  "REMOVE n.name",
+                                  options);
+  rg::QueryResult removed = rg::test::ExecuteQueryAndCommit(
       graph, "MATCH (n:Person) WHERE n.name = 'Lovelace' RETURN count(n) AS c",
       options);
   EXPECT_EQ(StringRows(removed),
@@ -1891,44 +1989,44 @@ TEST(QueryExecutorTest, MaintainsRelationshipIndexAcrossWrites) {
   graph.AddRelationshipIndex({"KNOWS"}, "since");
   const rg::QueryOptions options = QueryOptionsFor(graph);
 
-  rg::ExecuteWriteQuery(
+  rg::test::ExecuteQueryAndCommit(
       graph,
       "CREATE (:Person {name: 'Ada'})-[r:KNOWS {since: 2020}]->"
       "(:Person {name: 'Grace'})",
       options);
 
-  rg::QueryResult created = rg::ExecuteReadQuery(
+  rg::QueryResult created = rg::test::ExecuteQueryAndCommit(
       graph, "MATCH ()-[r:KNOWS]->() WHERE r.since = 2020 RETURN count(r) AS c",
       options);
   EXPECT_EQ(StringRows(created),
             (std::vector<std::vector<std::string>>{{"1"}}));
 
-  rg::ExecuteWriteQuery(graph,
-                        "MATCH ()-[r:KNOWS]->() WHERE r.since = 2020 "
-                        "SET r.since = 2021",
-                        options);
-  rg::ExecuteWriteQuery(graph,
-                        "MATCH ()-[r:KNOWS]->() WHERE r.since = 2021 "
-                        "SET r.since = 2021",
-                        options);
+  rg::test::ExecuteQueryAndCommit(graph,
+                                  "MATCH ()-[r:KNOWS]->() WHERE r.since = 2020 "
+                                  "SET r.since = 2021",
+                                  options);
+  rg::test::ExecuteQueryAndCommit(graph,
+                                  "MATCH ()-[r:KNOWS]->() WHERE r.since = 2021 "
+                                  "SET r.since = 2021",
+                                  options);
 
-  rg::QueryResult old_since = rg::ExecuteReadQuery(
+  rg::QueryResult old_since = rg::test::ExecuteQueryAndCommit(
       graph, "MATCH ()-[r:KNOWS]->() WHERE r.since = 2020 RETURN count(r) AS c",
       options);
   EXPECT_EQ(StringRows(old_since),
             (std::vector<std::vector<std::string>>{{"0"}}));
 
-  rg::QueryResult new_since = rg::ExecuteReadQuery(
+  rg::QueryResult new_since = rg::test::ExecuteQueryAndCommit(
       graph, "MATCH ()-[r:KNOWS]->() WHERE r.since = 2021 RETURN count(r) AS c",
       options);
   EXPECT_EQ(StringRows(new_since),
             (std::vector<std::vector<std::string>>{{"1"}}));
 
-  rg::ExecuteWriteQuery(graph,
-                        "MATCH ()-[r:KNOWS]->() WHERE r.since = 2021 "
-                        "REMOVE r.since",
-                        options);
-  rg::QueryResult removed = rg::ExecuteReadQuery(
+  rg::test::ExecuteQueryAndCommit(graph,
+                                  "MATCH ()-[r:KNOWS]->() WHERE r.since = 2021 "
+                                  "REMOVE r.since",
+                                  options);
+  rg::QueryResult removed = rg::test::ExecuteQueryAndCommit(
       graph, "MATCH ()-[r:KNOWS]->() WHERE r.since = 2021 RETURN count(r) AS c",
       options);
   EXPECT_EQ(StringRows(removed),
@@ -1940,12 +2038,12 @@ TEST(QueryExecutorTest, UsesMaintainedNodeRangeIndexCandidates) {
   graph.AddNodeIndex({"Person"}, "age");
   const rg::QueryOptions options = QueryOptionsFor(graph);
 
-  rg::ExecuteWriteQuery(graph,
-                        "CREATE (:Person {name: 'Ada', age: 36}), "
-                        "(:Person {name: 'Grace', age: 85})",
-                        options);
+  rg::test::ExecuteQueryAndCommit(graph,
+                                  "CREATE (:Person {name: 'Ada', age: 36}), "
+                                  "(:Person {name: 'Grace', age: 85})",
+                                  options);
 
-  rg::QueryResult initial = rg::ExecuteReadQuery(
+  rg::QueryResult initial = rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (n:Person) WHERE n.age >= 40 RETURN n.name AS name "
       "ORDER BY name",
@@ -1953,10 +2051,10 @@ TEST(QueryExecutorTest, UsesMaintainedNodeRangeIndexCandidates) {
   EXPECT_EQ(StringRows(initial),
             (std::vector<std::vector<std::string>>{{"\"Grace\""}}));
 
-  rg::ExecuteWriteQuery(
+  rg::test::ExecuteQueryAndCommit(
       graph, "MATCH (n:Person) WHERE n.age = 36 SET n.age = 41", options);
 
-  rg::QueryResult updated = rg::ExecuteReadQuery(
+  rg::QueryResult updated = rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (n:Person) WHERE n.age >= 40 RETURN n.name AS name "
       "ORDER BY name",
@@ -1970,7 +2068,7 @@ TEST(QueryExecutorTest, UsesMaintainedRelationshipRangeIndexCandidates) {
   graph.AddRelationshipIndex({"KNOWS"}, "since");
   const rg::QueryOptions options = QueryOptionsFor(graph);
 
-  rg::ExecuteWriteQuery(
+  rg::test::ExecuteQueryAndCommit(
       graph,
       "CREATE (:Person {name: 'Ada'})-[:KNOWS {since: 2020}]->"
       "(:Person {name: 'Grace'}), "
@@ -1978,24 +2076,24 @@ TEST(QueryExecutorTest, UsesMaintainedRelationshipRangeIndexCandidates) {
       "(:Person {name: 'Katherine'})",
       options);
 
-  rg::QueryResult initial =
-      rg::ExecuteReadQuery(graph,
-                           "MATCH ()-[r:KNOWS]->() WHERE r.since >= 2021 "
-                           "RETURN r.since AS since ORDER BY since",
-                           options);
+  rg::QueryResult initial = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "MATCH ()-[r:KNOWS]->() WHERE r.since >= 2021 "
+      "RETURN r.since AS since ORDER BY since",
+      options);
   EXPECT_EQ(StringRows(initial),
             (std::vector<std::vector<std::string>>{{"2026"}}));
 
-  rg::ExecuteWriteQuery(graph,
-                        "MATCH ()-[r:KNOWS]->() WHERE r.since = 2020 "
-                        "SET r.since = 2027",
-                        options);
+  rg::test::ExecuteQueryAndCommit(graph,
+                                  "MATCH ()-[r:KNOWS]->() WHERE r.since = 2020 "
+                                  "SET r.since = 2027",
+                                  options);
 
-  rg::QueryResult updated =
-      rg::ExecuteReadQuery(graph,
-                           "MATCH ()-[r:KNOWS]->() WHERE r.since >= 2021 "
-                           "RETURN r.since AS since ORDER BY since",
-                           options);
+  rg::QueryResult updated = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "MATCH ()-[r:KNOWS]->() WHERE r.since >= 2021 "
+      "RETURN r.since AS since ORDER BY since",
+      options);
   EXPECT_EQ(StringRows(updated),
             (std::vector<std::vector<std::string>>{{"2026"}, {"2027"}}));
 }
@@ -2004,14 +2102,14 @@ TEST(QueryExecutorTest, MaintainsAdjacencyAfterDetachDelete) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  rg::ExecuteWriteQuery(graph,
-                        "MATCH (n:Person) WHERE n.name = 'Ada' "
-                        "DETACH DELETE n");
+  rg::test::ExecuteQueryAndCommit(graph,
+                                  "MATCH (n:Person) WHERE n.name = 'Ada' "
+                                  "DETACH DELETE n");
 
-  rg::QueryResult incoming =
-      rg::ExecuteReadQuery(graph,
-                           "MATCH (g:Person) WHERE g.name = 'Grace' "
-                           "MATCH ()-[r:KNOWS]->(g) RETURN count(r) AS c");
+  rg::QueryResult incoming = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "MATCH (g:Person) WHERE g.name = 'Grace' "
+      "MATCH ()-[r:KNOWS]->(g) RETURN count(r) AS c");
   EXPECT_EQ(StringRows(incoming),
             (std::vector<std::vector<std::string>>{{"0"}}));
 }

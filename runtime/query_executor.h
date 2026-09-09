@@ -8,7 +8,7 @@
 
 #include "ir/logical_plan.h"
 #include "runtime/execution_context.h"
-#include "storage/storage.h"
+#include "storage/storage_transaction.h"
 #include "value/value.h"
 
 namespace ir {
@@ -51,38 +51,30 @@ struct QueryOptions {
 
 class QueryExecutor final {
  public:
-  explicit QueryExecutor(Storage &storage)
-      : graph_reader_(&storage), storage_(&storage) {}
-  explicit QueryExecutor(GraphReader &graph_reader)
-      : graph_reader_(&graph_reader) {}
+  explicit QueryExecutor(StorageTransaction &transaction)
+      : transaction_(&transaction) {}
 
+  // Execution requires an active transaction and never commits it.
   [[nodiscard]] QueryResult Execute(const ir::LogicalPlan &plan,
                                     const QueryParameters &parameters = {},
                                     QueryExecutionOptions options = {}) const;
   // The plan and its referenced AST expressions only need to remain valid
-  // until this call returns; the cursor owns the resulting physical plan and
-  // transaction.
+  // until this call returns. The cursor borrows the caller-owned transaction.
   [[nodiscard]] std::unique_ptr<QueryResultCursor> ExecuteCursor(
       const ir::LogicalPlan &plan, const QueryParameters &parameters = {},
       QueryExecutionOptions options = {}) const;
 
  private:
-  GraphReader *graph_reader_ = nullptr;
-  Storage *storage_ = nullptr;
+  StorageTransaction *transaction_ = nullptr;
 };
 
-[[nodiscard]] QueryResult ExecuteReadQuery(GraphReader &graph_reader,
-                                           std::string_view cypher,
-                                           QueryOptions options = {});
-[[nodiscard]] QueryResult ExecuteQuery(Storage &storage,
+// Executes one Cypher statement in an active transaction. The caller owns the
+// transaction boundary and must commit it explicitly.
+[[nodiscard]] QueryResult ExecuteQuery(StorageTransaction &transaction,
                                        std::string_view cypher,
                                        QueryOptions options = {});
-void ExecuteWriteQuery(Storage &storage, std::string_view cypher,
-                       QueryOptions options = {});
-[[nodiscard]] std::unique_ptr<QueryResultCursor> ExecuteReadQueryCursor(
-    GraphReader &graph_reader, std::string_view cypher,
-    QueryOptions options = {});
 [[nodiscard]] std::unique_ptr<QueryResultCursor> ExecuteQueryCursor(
-    Storage &storage, std::string_view cypher, QueryOptions options = {});
+    StorageTransaction &transaction, std::string_view cypher,
+    QueryOptions options = {});
 
 }  // namespace rg

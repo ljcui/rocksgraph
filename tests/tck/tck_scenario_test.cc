@@ -21,6 +21,7 @@
 #include "planner/planned_query.h"
 #include "runtime/query_executor.h"
 #include "storage/in_memory_graph.h"
+#include "tests/runtime/query_test_utils.h"
 #include "value/value.h"
 
 namespace {
@@ -331,7 +332,7 @@ rg::QueryOptions QueryOptionsFor(const rg::InMemoryGraph &graph,
 }
 
 rg::Value ParseValue(const std::string &text, rg::InMemoryGraph *graph) {
-  rg::QueryResult result = rg::ExecuteReadQuery(
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       *graph, "RETURN " + text + " AS value", QueryOptionsFor(*graph));
   EXPECT_EQ(result.rows.size(), 1U) << text;
   EXPECT_EQ(result.rows[0].size(), 1U) << text;
@@ -553,7 +554,7 @@ void RunScenario(const Scenario &scenario) {
       << "named graph loading is not implemented: " << scenario.graph;
   rg::InMemoryGraph graph;
   for (const auto &setup : scenario.setup_queries) {
-    (void)rg::ExecuteQuery(graph, setup, QueryOptionsFor(graph));
+    (void)rg::test::ExecuteQueryAndCommit(graph, setup, QueryOptionsFor(graph));
   }
   const rg::QueryParameters parameters =
       ParseParameters(scenario.parameters, &graph);
@@ -574,8 +575,8 @@ void RunScenario(const Scenario &scenario) {
     } else {
       ASSERT_FALSE(compile_failed);
       ASSERT_TRUE(planned_query.has_value());
-      EXPECT_THROW((void)rg::QueryExecutor(graph).Execute(planned_query->Plan(),
-                                                          parameters),
+      EXPECT_THROW((void)rg::test::CommittingQueryExecutor(graph).Execute(
+                       planned_query->Plan(), parameters),
                    common::Exception);
     }
     EXPECT_EQ(Snapshot(graph).nodes, before.nodes);
@@ -584,8 +585,8 @@ void RunScenario(const Scenario &scenario) {
     EXPECT_EQ(Snapshot(graph).labels, before.labels);
     return;
   }
-  rg::QueryResult actual = rg::ExecuteQuery(graph, scenario.query,
-                                            QueryOptionsFor(graph, parameters));
+  rg::QueryResult actual = rg::test::ExecuteQueryAndCommit(
+      graph, scenario.query, QueryOptionsFor(graph, parameters));
   EXPECT_EQ(actual.columns, scenario.result.header);
   std::vector<std::vector<std::string>> actual_rows = FormatRows(actual);
   std::vector<std::vector<std::string>> expected_rows = scenario.result.rows;
