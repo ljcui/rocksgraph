@@ -17,10 +17,8 @@
 #include <utility>
 #include <vector>
 
-#include "ast/ast_builder.h"
 #include "common/exception.h"
-#include "ir/query_ir.h"
-#include "planner/logical_plan_builder.h"
+#include "planner/planned_query.h"
 #include "runtime/query_executor.h"
 #include "storage/in_memory_graph.h"
 #include "value/value.h"
@@ -562,15 +560,12 @@ void RunScenario(const Scenario &scenario) {
   const GraphSnapshot before = Snapshot(graph);
 
   if (scenario.error_phase.has_value()) {
-    std::unique_ptr<ast::Statement> statement;
-    std::unique_ptr<ir::QueryIR> query_ir;
-    std::unique_ptr<ir::LogicalPlan> plan;
+    std::optional<ir::PlannedQuery> planned_query;
     bool compile_failed = false;
     try {
-      statement = ast::ParseCypherAndRewrite(scenario.query);
-      query_ir = ir::CreateQueryIR(*statement);
-      plan = ir::CreateLogicalPlan(
-          *query_ir, {.planner_statistics = &graph, .planner_catalog = &graph});
+      planned_query.emplace(ir::PlanCypher(
+          scenario.query,
+          {.planner_statistics = &graph, .planner_catalog = &graph}));
     } catch (const common::Exception &) {
       compile_failed = true;
     }
@@ -578,8 +573,9 @@ void RunScenario(const Scenario &scenario) {
       EXPECT_TRUE(compile_failed);
     } else {
       ASSERT_FALSE(compile_failed);
-      ASSERT_NE(plan, nullptr);
-      EXPECT_THROW((void)rg::QueryExecutor(graph).Execute(*plan, parameters),
+      ASSERT_TRUE(planned_query.has_value());
+      EXPECT_THROW((void)rg::QueryExecutor(graph).Execute(planned_query->Plan(),
+                                                          parameters),
                    common::Exception);
     }
     EXPECT_EQ(Snapshot(graph).nodes, before.nodes);

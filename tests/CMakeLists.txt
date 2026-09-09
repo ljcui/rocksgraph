@@ -23,6 +23,8 @@ add_rocksgraph_test(logical_plan_builder_test
                     planner/logical_plan_builder_test.cc rocksgraph_planner)
 add_rocksgraph_test(logical_plan_rewriter_test
                     planner/logical_plan_rewriter_test.cc rocksgraph_planner)
+add_rocksgraph_test(planned_query_test planner/planned_query_test.cc
+                    rocksgraph_planner)
 
 add_rocksgraph_test(
   builtin_function_evaluator_test runtime/builtin_function_evaluator_test.cc

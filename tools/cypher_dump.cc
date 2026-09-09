@@ -9,7 +9,7 @@
 #include "ir/logical_plan_printer.h"
 #include "ir/query_ir.h"
 #include "ir/query_ir_printer.h"
-#include "planner/logical_plan_builder.h"
+#include "planner/planned_query.h"
 #include "runtime/physical_plan.h"
 #include "runtime/physical_plan_printer.h"
 #include "spdlog/spdlog.h"
@@ -76,28 +76,20 @@ int main(int argc, char **argv) {
       return 0;
     }
     if (FLAGS_mode == "logical_plan" || FLAGS_mode == "physical_plan") {
-      auto statement = ast::ParseCypherAndRewrite(input);
-      std::unique_ptr<ir::QueryIR> query_ir;
       try {
-        query_ir = ir::CreateQueryIR(*statement);
+        ir::PlannedQuery planned_query = ir::PlanCypher(input);
+        if (FLAGS_mode == "logical_plan") {
+          ir::PrintLogicalPlan(
+              planned_query.Plan(), std::cout,
+              ir::LogicalPlanPrinterOptions{.include_metadata = true});
+        } else {
+          rg::PhysicalPlan physical_plan =
+              rg::CreatePhysicalPlan(planned_query.Plan());
+          rg::PrintPhysicalPlan(physical_plan, std::cout);
+        }
       } catch (const Exception &e) {
-        spdlog::error("Query IR error: {}", e.Message());
+        spdlog::error("Planning error: {}", e.Message());
         return 1;
-      }
-      std::unique_ptr<ir::LogicalPlan> logical_plan;
-      try {
-        logical_plan = ir::CreateLogicalPlan(*query_ir);
-      } catch (const Exception &e) {
-        spdlog::error("Logical plan error: {}", e.Message());
-        return 1;
-      }
-      if (FLAGS_mode == "logical_plan") {
-        ir::PrintLogicalPlan(
-            *logical_plan, std::cout,
-            ir::LogicalPlanPrinterOptions{.include_metadata = true});
-      } else {
-        rg::PhysicalPlan physical_plan = rg::CreatePhysicalPlan(*logical_plan);
-        rg::PrintPhysicalPlan(physical_plan, std::cout);
       }
       return 0;
     }

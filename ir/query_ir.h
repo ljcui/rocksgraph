@@ -526,7 +526,8 @@ std::unique_ptr<QueryIR> MakeUnionQueryIR(std::unique_ptr<QueryIR> lhs,
 // pipeline, normally produced by ast::ParseCypherAndRewrite. Raw parser output
 // is rejected when it still contains unexpanded-star, missing-alias,
 // anonymous-pattern, or pattern-predicate states that the query IR does not
-// consume directly.
+// consume directly. The returned IR borrows expressions from statement, which
+// must therefore outlive it. Prefer ir::PlanCypher when starting from text.
 std::unique_ptr<QueryIR> CreateQueryIR(const ast::Statement &statement);
 
 }  // namespace ir

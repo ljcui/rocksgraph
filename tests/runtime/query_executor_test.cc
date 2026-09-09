@@ -8,11 +8,9 @@
 #include <unordered_set>
 #include <vector>
 
-#include "ast/ast_builder.h"
 #include "ast/ast_exception.h"
 #include "common/exception.h"
-#include "ir/query_ir.h"
-#include "planner/logical_plan_builder.h"
+#include "planner/planned_query.h"
 #include "storage/in_memory_graph.h"
 
 namespace {
@@ -59,16 +57,18 @@ std::vector<std::int64_t> CursorIds(
   return ids;
 }
 
-std::unique_ptr<ir::LogicalPlan> LogicalPlanFor(const rg::InMemoryGraph &graph,
-                                                const std::string &cypher) {
-  std::unique_ptr<ast::Statement> statement =
-      ast::ParseCypherAndRewrite(cypher);
-  std::unique_ptr<ir::QueryIR> query_ir = ir::CreateQueryIR(*statement);
-  return ir::CreateLogicalPlan(
-      *query_ir, ir::LogicalPlanBuilderOptions{
-                     .max_idp_candidates_per_relationship_count = 128,
-                     .planner_statistics = &graph,
-                     .planner_catalog = &graph});
+ir::PlannedQuery PlannedQueryFor(const rg::InMemoryGraph &graph,
+                                 const std::string &cypher) {
+  return ir::PlanCypher(cypher,
+                        {.max_idp_candidates_per_relationship_count = 128,
+                         .planner_statistics = &graph,
+                         .planner_catalog = &graph});
+}
+
+std::unique_ptr<rg::QueryResultCursor> CursorFromTemporaryPlannedQuery(
+    const rg::GraphReader &graph_reader) {
+  ir::PlannedQuery query = ir::PlanCypher("RETURN 1 + 2 AS value");
+  return rg::QueryExecutor(graph_reader).ExecuteCursor(query.Plan());
 }
 
 const ir::LogicalPlan *FindPlanNode(const ir::LogicalPlan &plan,
@@ -106,15 +106,25 @@ TEST(QueryExecutorTest, DefaultLogicalPlanDoesNotAssumeIndexes) {
   rg::InMemoryGraph graph;
   auto ada = graph.CreateNode({"Person"}, {{"name", rg::Value("Ada")}});
 
-  auto statement = ast::ParseCypherAndRewrite(
-      "MATCH (n:Person) WHERE n.name = 'Ada' RETURN id(n)");
-  auto query_ir = ir::CreateQueryIR(*statement);
-  auto plan = ir::CreateLogicalPlan(*query_ir);
+  ir::PlannedQuery query =
+      ir::PlanCypher("MATCH (n:Person) WHERE n.name = 'Ada' RETURN id(n)");
 
-  const rg::QueryResult result = rg::QueryExecutor(graph).Execute(*plan);
+  const rg::QueryResult result = rg::QueryExecutor(graph).Execute(query.Plan());
   ASSERT_EQ(result.rows.size(), 1U);
   ASSERT_EQ(result.rows.front().size(), 1U);
   EXPECT_EQ(result.rows.front().front().AsInteger(), ada->id);
+}
+
+TEST(QueryExecutorTest, CursorOwnsPlanAfterPlanningArtifactsExpire) {
+  rg::InMemoryGraph graph;
+  std::unique_ptr<rg::QueryResultCursor> cursor =
+      CursorFromTemporaryPlannedQuery(graph);
+
+  std::vector<rg::Value> row;
+  ASSERT_TRUE(cursor->Next(&row));
+  ASSERT_EQ(row.size(), 1U);
+  EXPECT_EQ(row.front(), rg::Value(3));
+  EXPECT_FALSE(cursor->Next(&row));
 }
 
 TEST(QueryExecutorTest, ExecutesGraphEndpointAndListFunctions) {
@@ -1763,29 +1773,25 @@ TEST(QueryExecutorTest, LogicalPlanUsesInMemoryGraphStatistics) {
   rg::InMemoryGraph graph;
   SeedDemoGraph(&graph);
 
-  std::unique_ptr<ir::LogicalPlan> label_scan_plan =
-      LogicalPlanFor(graph, "MATCH (n:Person) RETURN n");
-  ASSERT_NE(label_scan_plan, nullptr);
-  const ir::LogicalPlan *label_scan =
-      FindPlanNode(*label_scan_plan, ir::LogicalPlanNodeType::kNodeByLabelScan);
+  ir::PlannedQuery label_scan_plan =
+      PlannedQueryFor(graph, "MATCH (n:Person) RETURN n");
+  const ir::LogicalPlan *label_scan = FindPlanNode(
+      label_scan_plan.Plan(), ir::LogicalPlanNodeType::kNodeByLabelScan);
   ASSERT_NE(label_scan, nullptr);
   ASSERT_TRUE(label_scan->EstimatedRows().has_value());
   EXPECT_EQ(label_scan->EstimatedRows(), 2.0);
 
-  std::unique_ptr<ir::LogicalPlan> all_scan_plan =
-      LogicalPlanFor(graph, "MATCH (n) RETURN n");
-  ASSERT_NE(all_scan_plan, nullptr);
+  ir::PlannedQuery all_scan_plan = PlannedQueryFor(graph, "MATCH (n) RETURN n");
   const ir::LogicalPlan *all_scan =
-      FindPlanNode(*all_scan_plan, ir::LogicalPlanNodeType::kAllNodeScan);
+      FindPlanNode(all_scan_plan.Plan(), ir::LogicalPlanNodeType::kAllNodeScan);
   ASSERT_NE(all_scan, nullptr);
   ASSERT_TRUE(all_scan->EstimatedRows().has_value());
   EXPECT_EQ(all_scan->EstimatedRows(), 3.0);
 
-  std::unique_ptr<ir::LogicalPlan> procedure_plan =
-      LogicalPlanFor(graph, "CALL db.propertyKeys()");
-  ASSERT_NE(procedure_plan, nullptr);
-  ASSERT_TRUE(procedure_plan->EstimatedRows().has_value());
-  EXPECT_EQ(procedure_plan->EstimatedRows(), 3.0);
+  ir::PlannedQuery procedure_plan =
+      PlannedQueryFor(graph, "CALL db.propertyKeys()");
+  ASSERT_TRUE(procedure_plan.Plan().EstimatedRows().has_value());
+  EXPECT_EQ(procedure_plan.Plan().EstimatedRows(), 3.0);
 }
 
 TEST(QueryExecutorTest, MaintainsNodeIndexAcrossWrites) {

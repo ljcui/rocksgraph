@@ -6,11 +6,8 @@
 #include <utility>
 #include <vector>
 
-#include "ast/ast_builder.h"
 #include "common/exception.h"
-#include "ir/query_ir.h"
-#include "planner/catalog.h"
-#include "planner/logical_plan_builder.h"
+#include "planner/planned_query.h"
 #include "runtime/physical_plan.h"
 #include "runtime/slotted_executor.h"
 
@@ -25,12 +22,6 @@ ir::LogicalPlanBuilderOptions PlannerOptionsFor(const QueryOptions &options) {
       .planner_catalog = options.planner_catalog};
 }
 
-struct ParsedQueryOwner {
-  std::unique_ptr<ast::Statement> statement;
-  std::unique_ptr<ir::QueryIR> query_ir;
-  std::unique_ptr<ir::LogicalPlan> logical_plan;
-};
-
 enum class TransactionState {
   kNone,
   kActive,
@@ -43,10 +34,8 @@ class QueryResultCursorImpl final : public QueryResultCursor {
   QueryResultCursorImpl(const ir::LogicalPlan &logical_plan,
                         const GraphReader &graph_reader, Storage *storage,
                         const QueryParameters &parameters,
-                        QueryExecutionOptions options,
-                        std::shared_ptr<void> owner = {})
-      : owner_(std::move(owner)),
-        physical_plan_(CreatePhysicalPlan(logical_plan)) {
+                        QueryExecutionOptions options)
+      : physical_plan_(CreatePhysicalPlan(logical_plan)) {
     const bool writes = physical_plan_.Effects().writes;
     if (writes) {
       CHECK(storage != nullptr, common::InvalidArgumentError,
@@ -145,7 +134,6 @@ class QueryResultCursorImpl final : public QueryResultCursor {
     }
   }
 
-  std::shared_ptr<void> owner_;
   PhysicalPlan physical_plan_;
   std::vector<std::string> columns_;
   std::unique_ptr<PhysicalResultCursor> physical_cursor_;
@@ -154,16 +142,6 @@ class QueryResultCursorImpl final : public QueryResultCursor {
   TransactionState transaction_state_ = TransactionState::kNone;
   bool closed_ = false;
 };
-
-std::shared_ptr<ParsedQueryOwner> BuildParsedQuery(
-    std::string_view cypher, const QueryOptions &options) {
-  auto owner = std::make_shared<ParsedQueryOwner>();
-  owner->statement = ast::ParseCypherAndRewrite(std::string(cypher));
-  owner->query_ir = ir::CreateQueryIR(*owner->statement);
-  owner->logical_plan =
-      ir::CreateLogicalPlan(*owner->query_ir, PlannerOptionsFor(options));
-  return owner;
-}
 
 QueryResult ConsumeCursor(std::unique_ptr<QueryResultCursor> cursor) {
   QueryResult result;
@@ -215,19 +193,21 @@ void ExecuteWriteQuery(Storage &storage, std::string_view cypher,
 std::unique_ptr<QueryResultCursor> ExecuteReadQueryCursor(
     const GraphReader &graph_reader, std::string_view cypher,
     QueryOptions options) {
-  std::shared_ptr<ParsedQueryOwner> owner = BuildParsedQuery(cypher, options);
+  ir::PlannedQuery planned_query =
+      ir::PlanCypher(cypher, PlannerOptionsFor(options));
   return std::make_unique<QueryResultCursorImpl>(
-      *owner->logical_plan, graph_reader, nullptr, options.parameters,
-      std::move(options.execution), owner);
+      planned_query.Plan(), graph_reader, nullptr, options.parameters,
+      std::move(options.execution));
 }
 
 std::unique_ptr<QueryResultCursor> ExecuteQueryCursor(Storage &storage,
                                                       std::string_view cypher,
                                                       QueryOptions options) {
-  std::shared_ptr<ParsedQueryOwner> owner = BuildParsedQuery(cypher, options);
-  return std::make_unique<QueryResultCursorImpl>(
-      *owner->logical_plan, storage, &storage, options.parameters,
-      std::move(options.execution), owner);
+  ir::PlannedQuery planned_query =
+      ir::PlanCypher(cypher, PlannerOptionsFor(options));
+  return std::make_unique<QueryResultCursorImpl>(planned_query.Plan(), storage,
+                                                 &storage, options.parameters,
+                                                 std::move(options.execution));
 }
 
 }  // namespace rg

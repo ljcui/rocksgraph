@@ -11,8 +11,7 @@
 
 #include "ast/ast_builder.h"
 #include "common/exception.h"
-#include "ir/query_ir.h"
-#include "planner/logical_plan_builder.h"
+#include "planner/planned_query.h"
 #include "runtime/physical_plan_printer.h"
 #include "runtime/slotted_executor.h"
 #include "storage/in_memory_graph.h"
@@ -20,20 +19,11 @@
 
 namespace {
 
-struct PlannedQuery {
-  std::unique_ptr<ast::Statement> statement;
-  std::unique_ptr<ir::QueryIR> query_ir;
-  std::unique_ptr<ir::LogicalPlan> logical_plan;
-};
+using PlannedQuery = ir::PlannedQuery;
 
-PlannedQuery Plan(std::string cypher) {
-  PlannedQuery query;
-  query.statement = ast::ParseCypherAndRewrite(std::move(cypher));
-  query.query_ir = ir::CreateQueryIR(*query.statement);
-  query.logical_plan = ir::CreateLogicalPlan(
-      *query.query_ir,
-      {.planner_catalog = &test_support::AssumeAllIndexesCatalog()});
-  return query;
+ir::PlannedQuery Plan(std::string cypher) {
+  return ir::PlanCypher(
+      cypher, {.planner_catalog = &test_support::AssumeAllIndexesCatalog()});
 }
 
 const ir::LogicalPlan *FindPlan(const ir::LogicalPlan &plan,
@@ -63,8 +53,8 @@ const rg::PhysicalPlanNode *FindPhysicalPlan(const rg::PhysicalPlanNode &node,
 }
 
 rg::PhysicalPlan DetachedPhysicalPlan(const std::string &cypher) {
-  PlannedQuery query = Plan(cypher);
-  return rg::CreatePhysicalPlan(*query.logical_plan);
+  ir::PlannedQuery query = Plan(cypher);
+  return rg::CreatePhysicalPlan(query.Plan());
 }
 
 rg::PhysicalPlan DetachedRelationshipTypeScan() {
@@ -318,7 +308,7 @@ void ExpectSameSlot(const rg::Slot &actual, const rg::Slot &expected) {
 TEST(PhysicalPlanTest, AllocatesTypedNullableSlotsForOptionalExpand) {
   PlannedQuery query =
       Plan("MATCH (n) OPTIONAL MATCH (n)-[r]->(m) RETURN n, r, m");
-  rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+  rg::PhysicalPlan physical = rg::CreatePhysicalPlan(query.Plan());
 
   const rg::Slot &n = physical.Root().output_slots->At("n");
   const rg::Slot &r = physical.Root().output_slots->At("r");
@@ -341,7 +331,7 @@ TEST(PhysicalPlanTest, AllocatesTypedNullableSlotsForOptionalExpand) {
 TEST(PhysicalPlanTest, UnifiesIncompatibleUnionSlotsAsReferences) {
   PlannedQuery query =
       Plan("MATCH (n) RETURN n AS value UNION ALL RETURN 1 AS value");
-  rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+  rg::PhysicalPlan physical = rg::CreatePhysicalPlan(query.Plan());
 
   const rg::Slot &value = physical.Root().output_slots->At("value");
   EXPECT_EQ(value.kind, rg::SlotKind::kReference);
@@ -357,7 +347,7 @@ TEST(PhysicalPlanTest, UnifiesIncompatibleUnionSlotsAsReferences) {
 
 TEST(PhysicalPlanTest, SelectsDedicatedUnionPhysicalAlgorithms) {
   PlannedQuery query = Plan("RETURN 1 AS value UNION RETURN 2 AS value");
-  rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+  rg::PhysicalPlan physical = rg::CreatePhysicalPlan(query.Plan());
   const rg::PhysicalPlanNode *union_node = FindPhysicalPlan(
       physical.Root(), rg::PhysicalOperatorKind::kUnionDistinct);
   ASSERT_NE(union_node, nullptr);
@@ -459,7 +449,7 @@ TEST(PhysicalPlanTest, UnionOperatorsHandleResourcesAndEarlyClose) {
 TEST(PhysicalPlanTest, BuildsTypedApplyAndOptionalApplyPayloads) {
   PlannedQuery query =
       Plan("MATCH (n) WITH DISTINCT n MATCH (n)-[r]->(m) RETURN n, r, m");
-  rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+  rg::PhysicalPlan physical = rg::CreatePhysicalPlan(query.Plan());
   const rg::PhysicalPlanNode *apply_node =
       FindPhysicalPlan(physical.Root(), rg::PhysicalOperatorKind::kApply);
   ASSERT_NE(apply_node, nullptr);
@@ -794,7 +784,7 @@ TEST(PhysicalPlanTest, BuildsOwnedMergePayload) {
       "ON CREATE SET n.created = true, n += {extra: 1}, n:Fresh "
       "ON MATCH SET n.seen = true RETURN n");
   const ir::LogicalPlan *logical =
-      FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kMerge);
+      FindPlan(query.Plan(), ir::LogicalPlanNodeType::kMerge);
   ASSERT_NE(logical, nullptr);
   const auto &logical_merge = static_cast<const ir::MergePlan &>(*logical);
   const ir::MergePattern &logical_data = logical_merge.Merge();
@@ -803,7 +793,7 @@ TEST(PhysicalPlanTest, BuildsOwnedMergePayload) {
   const ast::Expression *logical_property =
       logical_data.create_pattern.nodes[0].properties.entries[0].value;
 
-  rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+  rg::PhysicalPlan physical = rg::CreatePhysicalPlan(query.Plan());
   const rg::PhysicalPlanNode *merge =
       FindPhysicalPlan(physical.Root(), rg::PhysicalOperatorKind::kMerge);
   ASSERT_NE(merge, nullptr);
@@ -900,11 +890,11 @@ TEST(PhysicalPlanTest, ExecutesDetachedRelationshipMerge) {
 TEST(PhysicalPlanTest, BuildsOwnedRemainingUnaryPayloads) {
   PlannedQuery unwind_query = Plan("UNWIND $values AS x RETURN x");
   const ir::LogicalPlan *logical_unwind =
-      FindPlan(*unwind_query.logical_plan, ir::LogicalPlanNodeType::kUnwind);
+      FindPlan(unwind_query.Plan(), ir::LogicalPlanNodeType::kUnwind);
   ASSERT_NE(logical_unwind, nullptr);
   const ast::Expression *logical_expression =
       static_cast<const ir::UnwindPlan &>(*logical_unwind).Expression();
-  rg::PhysicalPlan unwind = rg::CreatePhysicalPlan(*unwind_query.logical_plan);
+  rg::PhysicalPlan unwind = rg::CreatePhysicalPlan(unwind_query.Plan());
   const rg::PhysicalPlanNode *unwind_node =
       FindPhysicalPlan(unwind.Root(), rg::PhysicalOperatorKind::kUnwind);
   ASSERT_NE(unwind_node, nullptr);
@@ -1224,7 +1214,7 @@ TEST(PhysicalPlanTest, ApplyRejectsConflictingSharedSlots) {
 
 TEST(PhysicalPlanTest, PreservesScopedSemanticTypesForExpressions) {
   PlannedQuery query = Plan("MATCH (n) RETURN [n][0] AS x");
-  rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+  rg::PhysicalPlan physical = rg::CreatePhysicalPlan(query.Plan());
 
   const rg::Slot &x = physical.Root().output_slots->At("x");
   EXPECT_EQ(x.type, ast::SemanticVariableType::kNode);
@@ -1234,12 +1224,12 @@ TEST(PhysicalPlanTest, PreservesScopedSemanticTypesForExpressions) {
 TEST(PhysicalPlanTest, BuildsOwnedPayloadsForMigratedOperators) {
   PlannedQuery query =
       Plan("MATCH (n) WHERE id(n) > 0 RETURN n AS node SKIP 1 LIMIT 2");
-  rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+  rg::PhysicalPlan physical = rg::CreatePhysicalPlan(query.Plan());
   EXPECT_FALSE(physical.Effects().writes);
   EXPECT_FALSE(physical.Effects().contains_write_barrier);
 
   const ir::LogicalPlan *filter =
-      FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kFilter);
+      FindPlan(query.Plan(), ir::LogicalPlanNodeType::kFilter);
   ASSERT_NE(filter, nullptr);
 
   const rg::PhysicalPlanNode *scan_node =
@@ -1273,7 +1263,7 @@ TEST(PhysicalPlanTest, ExecutesMigratedPlanAfterLogicalPlanIsDestroyed) {
   rg::PhysicalPlan physical = [] {
     PlannedQuery query =
         Plan("MATCH (n) WHERE id(n) > 0 RETURN id(n) AS id SKIP 1 LIMIT 1");
-    return rg::CreatePhysicalPlan(*query.logical_plan);
+    return rg::CreatePhysicalPlan(query.Plan());
   }();
   rg::InMemoryGraph graph;
   graph.CreateNode({});
@@ -1292,7 +1282,7 @@ TEST(PhysicalPlanTest, ExecutesMigratedPlanAfterLogicalPlanIsDestroyed) {
 TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForLeafAccessOperators) {
   {
     PlannedQuery query = Plan("RETURN 1 AS value");
-    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(query.Plan());
     const rg::PhysicalPlanNode *node =
         FindPhysicalPlan(physical.Root(), rg::PhysicalOperatorKind::kArgument);
     ASSERT_NE(node, nullptr);
@@ -1300,7 +1290,7 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForLeafAccessOperators) {
   }
   {
     PlannedQuery query = Plan("MATCH (n:N) RETURN id(n) AS id");
-    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(query.Plan());
     const rg::PhysicalPlanNode *node = FindPhysicalPlan(
         physical.Root(), rg::PhysicalOperatorKind::kNodeByLabelScan);
     ASSERT_NE(node, nullptr);
@@ -1312,9 +1302,9 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForLeafAccessOperators) {
     PlannedQuery query =
         Plan("MATCH (n:N) WHERE n.value = 10 RETURN id(n) AS id");
     const auto *logical = static_cast<const ir::NodeIndexSeekPlan *>(
-        FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kNodeIndexSeek));
+        FindPlan(query.Plan(), ir::LogicalPlanNodeType::kNodeIndexSeek));
     ASSERT_NE(logical, nullptr);
-    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(query.Plan());
     const rg::PhysicalPlanNode *node = FindPhysicalPlan(
         physical.Root(), rg::PhysicalOperatorKind::kNodeIndexSeek);
     ASSERT_NE(node, nullptr);
@@ -1325,11 +1315,10 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForLeafAccessOperators) {
   {
     PlannedQuery query =
         Plan("MATCH (n:N) WHERE n.value >= 10 RETURN id(n) AS id");
-    const auto *logical =
-        static_cast<const ir::NodeIndexRangeSeekPlan *>(FindPlan(
-            *query.logical_plan, ir::LogicalPlanNodeType::kNodeIndexRangeSeek));
+    const auto *logical = static_cast<const ir::NodeIndexRangeSeekPlan *>(
+        FindPlan(query.Plan(), ir::LogicalPlanNodeType::kNodeIndexRangeSeek));
     ASSERT_NE(logical, nullptr);
-    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(query.Plan());
     const rg::PhysicalPlanNode *node = FindPhysicalPlan(
         physical.Root(), rg::PhysicalOperatorKind::kNodeIndexRangeSeek);
     ASSERT_NE(node, nullptr);
@@ -1350,11 +1339,11 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForLeafAccessOperators) {
   {
     PlannedQuery query =
         Plan("MATCH ()-[r:R]->() WHERE r.value = 10 RETURN id(r) AS id");
-    const auto *logical = static_cast<const ir::RelationshipIndexSeekPlan *>(
-        FindPlan(*query.logical_plan,
-                 ir::LogicalPlanNodeType::kRelationshipIndexSeek));
+    const auto *logical =
+        static_cast<const ir::RelationshipIndexSeekPlan *>(FindPlan(
+            query.Plan(), ir::LogicalPlanNodeType::kRelationshipIndexSeek));
     ASSERT_NE(logical, nullptr);
-    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(query.Plan());
     const rg::PhysicalPlanNode *node = FindPhysicalPlan(
         physical.Root(), rg::PhysicalOperatorKind::kRelationshipIndexSeek);
     ASSERT_NE(node, nullptr);
@@ -1367,10 +1356,10 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForLeafAccessOperators) {
         Plan("MATCH ()-[r:R]->() WHERE r.value >= 10 RETURN id(r) AS id");
     const auto *logical =
         static_cast<const ir::RelationshipIndexRangeSeekPlan *>(
-            FindPlan(*query.logical_plan,
+            FindPlan(query.Plan(),
                      ir::LogicalPlanNodeType::kRelationshipIndexRangeSeek));
     ASSERT_NE(logical, nullptr);
-    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(query.Plan());
     const rg::PhysicalPlanNode *node = FindPhysicalPlan(
         physical.Root(), rg::PhysicalOperatorKind::kRelationshipIndexRangeSeek);
     ASSERT_NE(node, nullptr);
@@ -1383,9 +1372,9 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForLeafAccessOperators) {
     PlannedQuery query =
         Plan("MATCH (n) WHERE id(n) IN [0, 1] RETURN id(n) AS id");
     const auto *logical = static_cast<const ir::NodeByIdSeekPlan *>(
-        FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kNodeByIdSeek));
+        FindPlan(query.Plan(), ir::LogicalPlanNodeType::kNodeByIdSeek));
     ASSERT_NE(logical, nullptr);
-    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(query.Plan());
     const rg::PhysicalPlanNode *node = FindPhysicalPlan(
         physical.Root(), rg::PhysicalOperatorKind::kNodeByIdSeek);
     ASSERT_NE(node, nullptr);
@@ -1397,10 +1386,9 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForLeafAccessOperators) {
     PlannedQuery query =
         Plan("MATCH ()-[r]->() WHERE id(r) IN [0, 1] RETURN id(r) AS id");
     const auto *logical = static_cast<const ir::RelationshipByIdSeekPlan *>(
-        FindPlan(*query.logical_plan,
-                 ir::LogicalPlanNodeType::kRelationshipByIdSeek));
+        FindPlan(query.Plan(), ir::LogicalPlanNodeType::kRelationshipByIdSeek));
     ASSERT_NE(logical, nullptr);
-    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(query.Plan());
     const rg::PhysicalPlanNode *node = FindPhysicalPlan(
         physical.Root(), rg::PhysicalOperatorKind::kRelationshipByIdSeek);
     ASSERT_NE(node, nullptr);
@@ -1466,9 +1454,9 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForFixedTraversalOperators) {
     PlannedQuery query =
         Plan("MATCH (a)-[r:R]->(b) RETURN id(a) AS a, id(r) AS r, id(b) AS b");
     const auto *logical = static_cast<const ir::ExpandPlan *>(
-        FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kExpand));
+        FindPlan(query.Plan(), ir::LogicalPlanNodeType::kExpand));
     ASSERT_NE(logical, nullptr);
-    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(query.Plan());
     const rg::PhysicalPlanNode *node =
         FindPhysicalPlan(physical.Root(), rg::PhysicalOperatorKind::kExpand);
     ASSERT_NE(node, nullptr);
@@ -1487,9 +1475,9 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForFixedTraversalOperators) {
     PlannedQuery query =
         Plan("MATCH (a) WITH a, a AS b MATCH (a)-[r:R]->(b) RETURN id(r) AS r");
     const auto *logical = static_cast<const ir::ExpandIntoPlan *>(
-        FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kExpandInto));
+        FindPlan(query.Plan(), ir::LogicalPlanNodeType::kExpandInto));
     ASSERT_NE(logical, nullptr);
-    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(query.Plan());
     const rg::PhysicalPlanNode *node = FindPhysicalPlan(
         physical.Root(), rg::PhysicalOperatorKind::kExpandInto);
     ASSERT_NE(node, nullptr);
@@ -1507,10 +1495,10 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForFixedTraversalOperators) {
     PlannedQuery query = Plan(
         "MATCH (a) OPTIONAL MATCH (a)-[r:R]->(b) WHERE r.value = 10 "
         "RETURN id(a) AS a, id(r) AS r, id(b) AS b");
-    const auto *logical = static_cast<const ir::OptionalExpandPlan *>(FindPlan(
-        *query.logical_plan, ir::LogicalPlanNodeType::kOptionalExpand));
+    const auto *logical = static_cast<const ir::OptionalExpandPlan *>(
+        FindPlan(query.Plan(), ir::LogicalPlanNodeType::kOptionalExpand));
     ASSERT_NE(logical, nullptr);
-    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(query.Plan());
     const rg::PhysicalPlanNode *node = FindPhysicalPlan(
         physical.Root(), rg::PhysicalOperatorKind::kOptionalExpand);
     ASSERT_NE(node, nullptr);
@@ -1559,9 +1547,9 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForVariableTraversalOperators) {
     PlannedQuery query =
         Plan("MATCH (a)-[rs:R*0..3]->(b) RETURN size(rs) AS hops");
     const auto *logical = static_cast<const ir::VarExpandPlan *>(
-        FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kVarExpand));
+        FindPlan(query.Plan(), ir::LogicalPlanNodeType::kVarExpand));
     ASSERT_NE(logical, nullptr);
-    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(query.Plan());
     const rg::PhysicalPlanNode *node =
         FindPhysicalPlan(physical.Root(), rg::PhysicalOperatorKind::kVarExpand);
     ASSERT_NE(node, nullptr);
@@ -1600,9 +1588,9 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForVariableTraversalOperators) {
   {
     PlannedQuery query = Plan("MATCH p = (a)-[rs:R*1..2]->(b) RETURN p");
     const auto *logical = static_cast<const ir::PathBuildPlan *>(
-        FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kPathBuild));
+        FindPlan(query.Plan(), ir::LogicalPlanNodeType::kPathBuild));
     ASSERT_NE(logical, nullptr);
-    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+    rg::PhysicalPlan physical = rg::CreatePhysicalPlan(query.Plan());
     const rg::PhysicalPlanNode *node =
         FindPhysicalPlan(physical.Root(), rg::PhysicalOperatorKind::kPathBuild);
     ASSERT_NE(node, nullptr);
@@ -1788,14 +1776,14 @@ TEST(PhysicalPlanTest, ChoosesSmallerValueHashJoinBuildSide) {
   PlannedQuery query =
       Plan("MATCH (a:Person), (b) WHERE a.id = b.id RETURN a, b");
   const ir::LogicalPlan *logical_join =
-      FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kValueHashJoin);
+      FindPlan(query.Plan(), ir::LogicalPlanNodeType::kValueHashJoin);
   ASSERT_NE(logical_join, nullptr);
   ASSERT_TRUE(logical_join->Child(0).EstimatedRows().has_value());
   ASSERT_TRUE(logical_join->Child(1).EstimatedRows().has_value());
   ASSERT_LT(*logical_join->Child(0).EstimatedRows(),
             *logical_join->Child(1).EstimatedRows());
 
-  rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+  rg::PhysicalPlan physical = rg::CreatePhysicalPlan(query.Plan());
   const rg::PhysicalPlanNode *join_node = FindPhysicalPlan(
       physical.Root(), rg::PhysicalOperatorKind::kValueHashJoin);
   ASSERT_NE(join_node, nullptr);
@@ -1815,10 +1803,9 @@ TEST(PhysicalPlanTest, ChoosesSmallerValueHashJoinBuildSide) {
 TEST(PhysicalPlanTest, BuildsTypedNestedLoopBinaryPayloads) {
   PlannedQuery product_query = Plan("MATCH (a), (b) RETURN a, b");
   const ir::LogicalPlan *logical_product = FindPlan(
-      *product_query.logical_plan, ir::LogicalPlanNodeType::kCartesianProduct);
+      product_query.Plan(), ir::LogicalPlanNodeType::kCartesianProduct);
   ASSERT_NE(logical_product, nullptr);
-  rg::PhysicalPlan product =
-      rg::CreatePhysicalPlan(*product_query.logical_plan);
+  rg::PhysicalPlan product = rg::CreatePhysicalPlan(product_query.Plan());
   const rg::PhysicalPlanNode *product_node = FindPhysicalPlan(
       product.Root(), rg::PhysicalOperatorKind::kCartesianProduct);
   ASSERT_NE(product_node, nullptr);
@@ -1830,11 +1817,10 @@ TEST(PhysicalPlanTest, BuildsTypedNestedLoopBinaryPayloads) {
 
   PlannedQuery predicate_query =
       Plan("MATCH (a), (b) WHERE a.age > b.age RETURN a, b");
-  const ir::LogicalPlan *logical_predicate = FindPlan(
-      *predicate_query.logical_plan, ir::LogicalPlanNodeType::kPredicateJoin);
+  const ir::LogicalPlan *logical_predicate =
+      FindPlan(predicate_query.Plan(), ir::LogicalPlanNodeType::kPredicateJoin);
   ASSERT_NE(logical_predicate, nullptr);
-  rg::PhysicalPlan predicate =
-      rg::CreatePhysicalPlan(*predicate_query.logical_plan);
+  rg::PhysicalPlan predicate = rg::CreatePhysicalPlan(predicate_query.Plan());
   const rg::PhysicalPlanNode *predicate_node = FindPhysicalPlan(
       predicate.Root(), rg::PhysicalOperatorKind::kPredicateJoin);
   ASSERT_NE(predicate_node, nullptr);
@@ -2083,14 +2069,12 @@ TEST(PhysicalPlanTest, SelectsTopNForRewrittenLogicalPlan) {
   PlannedQuery query =
       Plan("UNWIND [3, 1, 2] AS x RETURN x ORDER BY x LIMIT $l");
   const ir::LogicalPlan *top_n =
-      FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kTopN);
+      FindPlan(query.Plan(), ir::LogicalPlanNodeType::kTopN);
   ASSERT_NE(top_n, nullptr);
-  EXPECT_EQ(FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kLimit),
-            nullptr);
-  EXPECT_EQ(FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kSort),
-            nullptr);
+  EXPECT_EQ(FindPlan(query.Plan(), ir::LogicalPlanNodeType::kLimit), nullptr);
+  EXPECT_EQ(FindPlan(query.Plan(), ir::LogicalPlanNodeType::kSort), nullptr);
 
-  rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+  rg::PhysicalPlan physical = rg::CreatePhysicalPlan(query.Plan());
   const rg::PhysicalPlanNode *top_n_node =
       FindPhysicalPlan(physical.Root(), rg::PhysicalOperatorKind::kTopN);
   ASSERT_NE(top_n_node, nullptr);
@@ -2116,8 +2100,7 @@ TEST(PhysicalPlanTest, SelectsTopNForRewrittenLogicalPlan) {
 TEST(PhysicalPlanTest, DoesNotRewriteTopNAcrossSkipOrWrites) {
   PlannedQuery skipped =
       Plan("UNWIND [3, 1, 2] AS x RETURN x ORDER BY x SKIP 1 LIMIT 1");
-  rg::PhysicalPlan skipped_physical =
-      rg::CreatePhysicalPlan(*skipped.logical_plan);
+  rg::PhysicalPlan skipped_physical = rg::CreatePhysicalPlan(skipped.Plan());
   const rg::PhysicalPlanNode *skipped_limit_node = FindPhysicalPlan(
       skipped_physical.Root(), rg::PhysicalOperatorKind::kLimit);
   ASSERT_NE(skipped_limit_node, nullptr);
@@ -2126,7 +2109,7 @@ TEST(PhysicalPlanTest, DoesNotRewriteTopNAcrossSkipOrWrites) {
 
   PlannedQuery write =
       Plan("MATCH (n) SET n.x = 1 RETURN n ORDER BY n LIMIT 2");
-  rg::PhysicalPlan write_physical = rg::CreatePhysicalPlan(*write.logical_plan);
+  rg::PhysicalPlan write_physical = rg::CreatePhysicalPlan(write.Plan());
   const rg::PhysicalPlanNode *write_limit_node =
       FindPhysicalPlan(write_physical.Root(), rg::PhysicalOperatorKind::kLimit);
   ASSERT_NE(write_limit_node, nullptr);
@@ -2139,11 +2122,11 @@ TEST(PhysicalPlanTest, SelectsOrderedGroupingAlgorithms) {
   PlannedQuery distinct_query = Plan(
       "UNWIND [3, 1, 2, 1] AS x "
       "WITH x ORDER BY x RETURN DISTINCT x");
-  const ir::LogicalPlan *distinct = FindPlan(
-      *distinct_query.logical_plan, ir::LogicalPlanNodeType::kDistinct);
+  const ir::LogicalPlan *distinct =
+      FindPlan(distinct_query.Plan(), ir::LogicalPlanNodeType::kDistinct);
   ASSERT_NE(distinct, nullptr);
   rg::PhysicalPlan distinct_physical =
-      rg::CreatePhysicalPlan(*distinct_query.logical_plan);
+      rg::CreatePhysicalPlan(distinct_query.Plan());
   const rg::PhysicalPlanNode *distinct_node = FindPhysicalPlan(
       distinct_physical.Root(), rg::PhysicalOperatorKind::kOrderedDistinct);
   ASSERT_NE(distinct_node, nullptr);
@@ -2161,11 +2144,11 @@ TEST(PhysicalPlanTest, SelectsOrderedGroupingAlgorithms) {
   PlannedQuery aggregation_query = Plan(
       "UNWIND [3, 1, 2, 1] AS x "
       "WITH x ORDER BY x RETURN x, count(*) AS count");
-  const ir::LogicalPlan *aggregation = FindPlan(
-      *aggregation_query.logical_plan, ir::LogicalPlanNodeType::kAggregation);
+  const ir::LogicalPlan *aggregation =
+      FindPlan(aggregation_query.Plan(), ir::LogicalPlanNodeType::kAggregation);
   ASSERT_NE(aggregation, nullptr);
   rg::PhysicalPlan aggregation_physical =
-      rg::CreatePhysicalPlan(*aggregation_query.logical_plan);
+      rg::CreatePhysicalPlan(aggregation_query.Plan());
   const rg::PhysicalPlanNode *aggregation_node =
       FindPhysicalPlan(aggregation_physical.Root(),
                        rg::PhysicalOperatorKind::kOrderedAggregation);
@@ -2192,10 +2175,10 @@ TEST(PhysicalPlanTest, SelectsPartialSortAndHashFallbacks) {
       "WITH x ORDER BY x.a "
       "RETURN x.a AS a, x.b AS b ORDER BY a, b");
   const ir::LogicalPlan *outer_sort =
-      FindPlan(*partial_query.logical_plan, ir::LogicalPlanNodeType::kSort);
+      FindPlan(partial_query.Plan(), ir::LogicalPlanNodeType::kSort);
   ASSERT_NE(outer_sort, nullptr);
   rg::PhysicalPlan partial_physical =
-      rg::CreatePhysicalPlan(*partial_query.logical_plan);
+      rg::CreatePhysicalPlan(partial_query.Plan());
   const rg::PhysicalPlanNode *partial_node = FindPhysicalPlan(
       partial_physical.Root(), rg::PhysicalOperatorKind::kPartialSort);
   ASSERT_NE(partial_node, nullptr);
@@ -2217,11 +2200,11 @@ TEST(PhysicalPlanTest, SelectsPartialSortAndHashFallbacks) {
             rg::PhysicalSortDirection::kAscending);
 
   PlannedQuery fallback_query = Plan("UNWIND [3, 1, 2] AS x RETURN DISTINCT x");
-  const ir::LogicalPlan *distinct = FindPlan(
-      *fallback_query.logical_plan, ir::LogicalPlanNodeType::kDistinct);
+  const ir::LogicalPlan *distinct =
+      FindPlan(fallback_query.Plan(), ir::LogicalPlanNodeType::kDistinct);
   ASSERT_NE(distinct, nullptr);
   rg::PhysicalPlan fallback_physical =
-      rg::CreatePhysicalPlan(*fallback_query.logical_plan);
+      rg::CreatePhysicalPlan(fallback_query.Plan());
   const rg::PhysicalPlanNode *distinct_node = FindPhysicalPlan(
       fallback_physical.Root(), rg::PhysicalOperatorKind::kHashDistinct);
   ASSERT_NE(distinct_node, nullptr);
@@ -2236,11 +2219,11 @@ TEST(PhysicalPlanTest, SelectsPartialSortAndHashFallbacks) {
 
   PlannedQuery aggregation_query =
       Plan("UNWIND [3, 1, 2] AS x RETURN x, count(*) AS count");
-  const ir::LogicalPlan *aggregation = FindPlan(
-      *aggregation_query.logical_plan, ir::LogicalPlanNodeType::kAggregation);
+  const ir::LogicalPlan *aggregation =
+      FindPlan(aggregation_query.Plan(), ir::LogicalPlanNodeType::kAggregation);
   ASSERT_NE(aggregation, nullptr);
   rg::PhysicalPlan aggregation_physical =
-      rg::CreatePhysicalPlan(*aggregation_query.logical_plan);
+      rg::CreatePhysicalPlan(aggregation_query.Plan());
   const rg::PhysicalPlanNode *aggregation_node = FindPhysicalPlan(
       aggregation_physical.Root(), rg::PhysicalOperatorKind::kHashAggregation);
   ASSERT_NE(aggregation_node, nullptr);
@@ -2259,10 +2242,9 @@ TEST(PhysicalPlanTest, SelectsPartialSortAndHashFallbacks) {
 
   PlannedQuery sort_query = Plan("UNWIND [3, 1, 2] AS x RETURN x ORDER BY x");
   const ir::LogicalPlan *sort =
-      FindPlan(*sort_query.logical_plan, ir::LogicalPlanNodeType::kSort);
+      FindPlan(sort_query.Plan(), ir::LogicalPlanNodeType::kSort);
   ASSERT_NE(sort, nullptr);
-  rg::PhysicalPlan sort_physical =
-      rg::CreatePhysicalPlan(*sort_query.logical_plan);
+  rg::PhysicalPlan sort_physical = rg::CreatePhysicalPlan(sort_query.Plan());
   const rg::PhysicalPlanNode *sort_node = FindPhysicalPlan(
       sort_physical.Root(), rg::PhysicalOperatorKind::kFullSort);
   ASSERT_NE(sort_node, nullptr);
@@ -2279,10 +2261,10 @@ TEST(PhysicalPlanTest, SelectsPartialTopNForProvidedOrderingPrefix) {
       "WITH x ORDER BY x.a "
       "RETURN x.a AS a, x.b AS b ORDER BY a, b LIMIT 2");
   const ir::LogicalPlan *top_n =
-      FindPlan(*query.logical_plan, ir::LogicalPlanNodeType::kTopN);
+      FindPlan(query.Plan(), ir::LogicalPlanNodeType::kTopN);
   ASSERT_NE(top_n, nullptr);
 
-  rg::PhysicalPlan physical = rg::CreatePhysicalPlan(*query.logical_plan);
+  rg::PhysicalPlan physical = rg::CreatePhysicalPlan(query.Plan());
   const rg::PhysicalPlanNode *node =
       FindPhysicalPlan(physical.Root(), rg::PhysicalOperatorKind::kPartialTopN);
   ASSERT_NE(node, nullptr);

@@ -17,6 +17,7 @@
 #include "common/exception.h"
 #include "ir/logical_plan_printer.h"
 #include "ir/query_ir.h"
+#include "planner/planned_query.h"
 #include "tests/planner/assume_all_indexes_catalog.h"
 #include "tests/planner/fake_planner_statistics.h"
 
@@ -110,15 +111,10 @@ std::string LogicalPlanText(const std::string &query,
   return ir::LogicalPlanToString(*logical_plan);
 }
 
-std::unique_ptr<ir::LogicalPlan> LogicalPlanFor(
+ir::PlannedQuery PlannedQueryFor(
     const std::string &query,
     const ir::LogicalPlanBuilderOptions &options = {}) {
-  auto statement = ParseOrFail(query);
-  if (!statement) {
-    return {};
-  }
-  std::unique_ptr<ir::QueryIR> query_ir = ir::CreateQueryIR(*statement);
-  return ir::CreateLogicalPlan(*query_ir, options);
+  return ir::PlanCypher(query, options);
 }
 
 ir::LogicalPlanBuilderOptions WithAllIndexes(
@@ -178,19 +174,18 @@ TEST(LogicalPlanBuilderTest, UsesNodeLabelPredicateAsLeafScan) {
 }
 
 TEST(LogicalPlanBuilderTest, AnnotatesCostMetadataAndPrintsWhenRequested) {
-  std::unique_ptr<ir::LogicalPlan> plan =
-      LogicalPlanFor("MATCH (n:Person) RETURN n");
-  ASSERT_NE(plan, nullptr);
+  ir::PlannedQuery query = PlannedQueryFor("MATCH (n:Person) RETURN n");
+  const ir::LogicalPlan &plan = query.Plan();
 
-  EXPECT_TRUE(plan->EstimatedRows().has_value());
-  EXPECT_TRUE(plan->Cost().has_value());
-  EXPECT_EQ(plan->EstimatedRows(), 100.0);
-  EXPECT_EQ(plan->Cost(), 102.0);
-  EXPECT_EQ(plan->Child(0).Cost(), 101.0);
-  EXPECT_EQ(plan->Child(0).Child(0).Cost(), 100.0);
+  EXPECT_TRUE(plan.EstimatedRows().has_value());
+  EXPECT_TRUE(plan.Cost().has_value());
+  EXPECT_EQ(plan.EstimatedRows(), 100.0);
+  EXPECT_EQ(plan.Cost(), 102.0);
+  EXPECT_EQ(plan.Child(0).Cost(), 101.0);
+  EXPECT_EQ(plan.Child(0).Child(0).Cost(), 100.0);
 
   EXPECT_EQ(ir::LogicalPlanToString(
-                *plan, ir::LogicalPlanPrinterOptions{.include_metadata = true}),
+                plan, ir::LogicalPlanPrinterOptions{.include_metadata = true}),
             R"(ProduceResults [n] {rows=100, cost=102}
   Projection [n] {rows=100, cost=101}
     NodeByLabelScan [n:Person] {rows=100, cost=100}
@@ -874,17 +869,17 @@ TEST(LogicalPlanBuilderTest, BuildsDistinctOrderByPlan) {
 }
 
 TEST(LogicalPlanBuilderTest, AnnotatesOrderingAndDistinctTraits) {
-  std::unique_ptr<ir::LogicalPlan> plan =
-      LogicalPlanFor("MATCH (n) RETURN DISTINCT n ORDER BY n");
-  ASSERT_NE(plan, nullptr);
+  ir::PlannedQuery query =
+      PlannedQueryFor("MATCH (n) RETURN DISTINCT n ORDER BY n");
+  const ir::LogicalPlan &plan = query.Plan();
 
-  EXPECT_TRUE(plan->DistinctTrait());
-  ASSERT_EQ(plan->OrderingTrait().size(), 1U);
-  EXPECT_NE(plan->OrderingTrait()[0].expression, nullptr);
-  EXPECT_EQ(plan->OrderingTrait()[0].direction,
+  EXPECT_TRUE(plan.DistinctTrait());
+  ASSERT_EQ(plan.OrderingTrait().size(), 1U);
+  EXPECT_NE(plan.OrderingTrait()[0].expression, nullptr);
+  EXPECT_EQ(plan.OrderingTrait()[0].direction,
             ir::LogicalOrderDirection::kAscending);
 
-  const ir::LogicalPlan &sort = plan->Child(0);
+  const ir::LogicalPlan &sort = plan.Child(0);
   EXPECT_TRUE(sort.DistinctTrait());
   ASSERT_EQ(sort.OrderingTrait().size(), 1U);
   EXPECT_TRUE(sort.Child(0).DistinctTrait());
@@ -931,11 +926,11 @@ TEST(LogicalPlanBuilderTest, BuildsPostAggregationProjectionPlan) {
 }
 
 TEST(LogicalPlanBuilderTest, DeduplicatesAggregateSubexpressions) {
-  std::unique_ptr<ir::LogicalPlan> plan =
-      LogicalPlanFor("MATCH (n) RETURN count(n) + count(n) AS doubled");
-  ASSERT_NE(plan, nullptr);
-  ASSERT_EQ(plan->Type(), ir::LogicalPlanNodeType::kProduceResults);
-  const ir::LogicalPlan &projection = plan->Child(0);
+  ir::PlannedQuery query =
+      PlannedQueryFor("MATCH (n) RETURN count(n) + count(n) AS doubled");
+  const ir::LogicalPlan &plan = query.Plan();
+  ASSERT_EQ(plan.Type(), ir::LogicalPlanNodeType::kProduceResults);
+  const ir::LogicalPlan &projection = plan.Child(0);
   ASSERT_EQ(projection.Type(), ir::LogicalPlanNodeType::kProjection);
   const auto &aggregation =
       static_cast<const ir::AggregationPlan &>(projection.Child(0));
@@ -1128,18 +1123,18 @@ TEST(LogicalPlanBuilderTest, BuildsProcedureMetadataCallPlan) {
 TEST(LogicalPlanBuilderTest, AnnotatesProcedureCallCostMetadata) {
   test_support::FakePlannerStatistics statistics;
   statistics.procedure_rows = 3.0;
-  std::unique_ptr<ir::LogicalPlan> plan = LogicalPlanFor(
+  ir::PlannedQuery query = PlannedQueryFor(
       "CALL db.labels()",
       ir::LogicalPlanBuilderOptions{.planner_statistics = &statistics});
-  ASSERT_NE(plan, nullptr);
+  const ir::LogicalPlan &plan = query.Plan();
 
-  EXPECT_EQ(plan->Type(), ir::LogicalPlanNodeType::kProcedureCall);
-  EXPECT_EQ(plan->EstimatedRows(), 3.0);
-  EXPECT_DOUBLE_EQ(plan->Cost().value_or(-1.0), 3.25);
-  EXPECT_EQ(plan->Child(0).Cost(), 0.1);
+  EXPECT_EQ(plan.Type(), ir::LogicalPlanNodeType::kProcedureCall);
+  EXPECT_EQ(plan.EstimatedRows(), 3.0);
+  EXPECT_DOUBLE_EQ(plan.Cost().value_or(-1.0), 3.25);
+  EXPECT_EQ(plan.Child(0).Cost(), 0.1);
 
   EXPECT_EQ(ir::LogicalPlanToString(
-                *plan, ir::LogicalPlanPrinterOptions{.include_metadata = true}),
+                plan, ir::LogicalPlanPrinterOptions{.include_metadata = true}),
             R"(ProcedureCall [CALL db.labels() YIELD label] {rows=3, cost=3.25}
   Argument {rows=1, cost=0.1}
 )");

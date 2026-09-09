@@ -59,7 +59,8 @@ class QueryExecutor final {
   [[nodiscard]] QueryResult Execute(const ir::LogicalPlan &plan,
                                     const QueryParameters &parameters = {},
                                     QueryExecutionOptions options = {}) const;
-  // The plan and its source statement must outlive the returned cursor.
+  // The plan and its referenced AST expressions only need to remain valid
+  // until this call returns; the cursor owns the resulting physical plan.
   [[nodiscard]] std::unique_ptr<QueryResultCursor> ExecuteCursor(
       const ir::LogicalPlan &plan, const QueryParameters &parameters = {},
       QueryExecutionOptions options = {}) const;
