@@ -211,3 +211,100 @@ TEST(IndexAccessTest, IntersectsBoundsAndHandlesEmptyRanges) {
   cursor->Close();
   EXPECT_FALSE(cursor->Next());
 }
+
+TEST(IndexAccessTest, RejectsDeletingNodeWithRelationships) {
+  rg::InMemoryGraph graph;
+  auto a = graph.CreateNode({"N"});
+  auto b = graph.CreateNode({"N"});
+  auto relationship = graph.CreateRelationship(a, b, "R");
+
+  EXPECT_THROW(graph.DeleteNode(a->id), common::InvalidArgumentError);
+  EXPECT_EQ(graph.RelationshipCount(), 1U);
+  EXPECT_EQ(graph.NodeById(a->id)->id, a->id);
+
+  graph.DeleteRelationship(relationship->id);
+  EXPECT_NO_THROW(graph.DeleteNode(a->id));
+  EXPECT_THROW((void)graph.NodeById(a->id), common::NotFoundError);
+}
+
+TEST(IndexAccessTest, EnforcesUniqueIndexesOnCreateAndUpdate) {
+  rg::InMemoryGraph graph;
+  auto first = graph.CreateNode({"N"}, {{"key", rg::Value(1)}});
+  graph.AddNodeIndex({"N"}, "key", true);
+  EXPECT_THROW(graph.CreateNode({"N"}, {{"key", rg::Value(1)}}),
+               common::InvalidArgumentError);
+
+  auto second = graph.CreateNode({"N"}, {{"key", rg::Value(2)}});
+  EXPECT_EQ(second->id, first->id + 1);
+  EXPECT_THROW(graph.SetNodeProperty(second->id, "key", rg::Value(1)),
+               common::InvalidArgumentError);
+  EXPECT_EQ(graph.NodeProperty(second->id, "key"), rg::Value(2));
+  EXPECT_EQ(Ids(graph.FindNodeIdsByIndex({"N"}, "key", rg::Value(1))),
+            (std::vector<std::int64_t>{first->id}));
+
+  auto other = graph.CreateNode({"Other"}, {{"key", rg::Value(1)}});
+  EXPECT_THROW(graph.SetLabels(other->id, {"N"}), common::InvalidArgumentError);
+  EXPECT_EQ(other->labels, std::vector<std::string>{"Other"});
+  EXPECT_EQ(Ids(graph.FindNodeIdsByIndex({"N"}, "key", rg::Value(1))),
+            (std::vector<std::int64_t>{first->id}));
+}
+
+TEST(IndexAccessTest, EnforcesUniqueRelationshipIndexes) {
+  rg::InMemoryGraph graph;
+  auto a = graph.CreateNode({});
+  auto b = graph.CreateNode({});
+  auto first = graph.CreateRelationship(a, b, "R", {{"key", rg::Value(1)}});
+  graph.AddRelationshipIndex({"R"}, "key", true);
+  EXPECT_THROW(graph.CreateRelationship(a, b, "R", {{"key", rg::Value(1)}}),
+               common::InvalidArgumentError);
+
+  auto second = graph.CreateRelationship(a, b, "R", {{"key", rg::Value(2)}});
+  EXPECT_EQ(second->id, first->id + 1);
+  EXPECT_THROW(graph.SetRelationshipProperty(second->id, "key", rg::Value(1)),
+               common::InvalidArgumentError);
+  EXPECT_EQ(graph.RelationshipProperty(second->id, "key"), rg::Value(2));
+  EXPECT_EQ(Ids(graph.FindRelationshipIdsByIndex({"R"}, "key", rg::Value(1))),
+            (std::vector<std::int64_t>{first->id}));
+}
+
+TEST(IndexAccessTest, RejectsUniqueIndexesOverExistingDuplicates) {
+  rg::InMemoryGraph graph;
+  auto a = graph.CreateNode({"N"}, {{"key", rg::Value(1)}});
+  auto b = graph.CreateNode({"N"}, {{"key", rg::Value(1)}});
+  graph.CreateRelationship(a, b, "R", {{"key", rg::Value(1)}});
+  graph.CreateRelationship(b, a, "R", {{"key", rg::Value(1)}});
+
+  EXPECT_THROW(graph.AddNodeIndex({"N"}, "key", true),
+               common::InvalidArgumentError);
+  EXPECT_THROW(graph.AddRelationshipIndex({"R"}, "key", true),
+               common::InvalidArgumentError);
+  EXPECT_FALSE(graph.FindNodeIndex({"N"}, "key").has_value());
+  EXPECT_FALSE(graph.FindRelationshipIndex({"R"}, "key").has_value());
+}
+
+TEST(IndexAccessTest, UniqueIndexCreationIsAtomicWhenReplacingAnIndex) {
+  rg::InMemoryGraph graph;
+  auto first = graph.CreateNode({"N"}, {{"key", rg::Value(1)}});
+  auto second = graph.CreateNode({"N"}, {{"key", rg::Value(1)}});
+  graph.AddNodeIndex({"N"}, "key");
+
+  EXPECT_THROW(graph.AddNodeIndex({"N"}, "key", true),
+               common::InvalidArgumentError);
+  ASSERT_TRUE(graph.FindNodeIndex({"N"}, "key").has_value());
+  EXPECT_FALSE(graph.FindNodeIndex({"N"}, "key")->unique);
+  EXPECT_EQ(Ids(graph.FindNodeIdsByIndex({"N"}, "key", rg::Value(1))),
+            (std::vector<std::int64_t>{first->id, second->id}));
+}
+
+TEST(IndexAccessTest, IndexKeySeparatesEmbeddedDelimiters) {
+  rg::InMemoryGraph graph;
+  auto labeled = graph.CreateNode({"L"}, {{"p", rg::Value(1)}});
+  auto unqualified = graph.CreateNode({}, {{"p\nL", rg::Value(2)}});
+  graph.AddNodeIndex({"L"}, "p");
+  graph.AddNodeIndex({}, "p\nL");
+
+  EXPECT_EQ(Ids(graph.FindNodeIdsByIndex({"L", "L"}, "p", rg::Value(1))),
+            (std::vector<std::int64_t>{labeled->id}));
+  EXPECT_EQ(Ids(graph.FindNodeIdsByIndex({}, "p\nL", rg::Value(2))),
+            (std::vector<std::int64_t>{unqualified->id}));
+}

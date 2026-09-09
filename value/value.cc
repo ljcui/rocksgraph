@@ -524,13 +524,6 @@ const Node &Value::AsNode() const {
   return *ptr;
 }
 
-Node &Value::AsNode() {
-  assert(IsNode());
-  auto &ptr = std::get<NodePtr>(storage_);
-  assert(ptr != nullptr);
-  return *ptr;
-}
-
 const Relationship &Value::AsRelationship() const {
   assert(IsRelationship());
   const auto &ptr = std::get<RelationshipPtr>(storage_);
@@ -538,23 +531,9 @@ const Relationship &Value::AsRelationship() const {
   return *ptr;
 }
 
-Relationship &Value::AsRelationship() {
-  assert(IsRelationship());
-  auto &ptr = std::get<RelationshipPtr>(storage_);
-  assert(ptr != nullptr);
-  return *ptr;
-}
-
 const Path &Value::AsPath() const {
   assert(IsPath());
   const auto &ptr = std::get<PathPtr>(storage_);
-  assert(ptr != nullptr);
-  return *ptr;
-}
-
-Path &Value::AsPath() {
-  assert(IsPath());
-  auto &ptr = std::get<PathPtr>(storage_);
   assert(ptr != nullptr);
   return *ptr;
 }

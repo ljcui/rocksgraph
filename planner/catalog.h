@@ -36,28 +36,22 @@ class PlannerCatalog {
                         std::string_view property_key) const = 0;
 };
 
-class HeuristicPlannerCatalog final : public PlannerCatalog {
+class EmptyPlannerCatalog final : public PlannerCatalog {
  public:
   [[nodiscard]] std::optional<NodeIndexDescriptor> FindNodeIndex(
       const std::vector<std::string> &labels,
       std::string_view property_key) const override {
     (void)labels;
-    if (property_key.empty()) {
-      return std::nullopt;
-    }
-    return NodeIndexDescriptor{.property_key = std::string(property_key),
-                               .unique = false};
+    (void)property_key;
+    return std::nullopt;
   }
 
   [[nodiscard]] std::optional<RelationshipIndexDescriptor>
   FindRelationshipIndex(const std::vector<std::string> &relationship_types,
                         std::string_view property_key) const override {
     (void)relationship_types;
-    if (property_key.empty()) {
-      return std::nullopt;
-    }
-    return RelationshipIndexDescriptor{
-        .property_key = std::string(property_key), .unique = false};
+    (void)property_key;
+    return std::nullopt;
   }
 };
 

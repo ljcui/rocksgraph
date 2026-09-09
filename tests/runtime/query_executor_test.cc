@@ -102,6 +102,21 @@ TEST(QueryExecutorTest, ExecutesNodeLabelAndPropertyQuery) {
             (std::vector<std::vector<std::string>>{{"\"Ada\""}}));
 }
 
+TEST(QueryExecutorTest, DefaultLogicalPlanDoesNotAssumeIndexes) {
+  rg::InMemoryGraph graph;
+  auto ada = graph.CreateNode({"Person"}, {{"name", rg::Value("Ada")}});
+
+  auto statement = ast::ParseCypherAndRewrite(
+      "MATCH (n:Person) WHERE n.name = 'Ada' RETURN id(n)");
+  auto query_ir = ir::CreateQueryIR(*statement);
+  auto plan = ir::CreateLogicalPlan(*query_ir);
+
+  const rg::QueryResult result = rg::QueryExecutor(graph).Execute(*plan);
+  ASSERT_EQ(result.rows.size(), 1U);
+  ASSERT_EQ(result.rows.front().size(), 1U);
+  EXPECT_EQ(result.rows.front().front().AsInteger(), ada->id);
+}
+
 TEST(QueryExecutorTest, ExecutesGraphEndpointAndListFunctions) {
   rg::InMemoryGraph graph;
   auto ada = graph.CreateNode({}, {{"name", rg::Value("Ada")}});

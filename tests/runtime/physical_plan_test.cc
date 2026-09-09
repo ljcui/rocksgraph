@@ -16,6 +16,7 @@
 #include "runtime/physical_plan_printer.h"
 #include "runtime/slotted_executor.h"
 #include "storage/in_memory_graph.h"
+#include "tests/planner/assume_all_indexes_catalog.h"
 
 namespace {
 
@@ -29,7 +30,9 @@ PlannedQuery Plan(std::string cypher) {
   PlannedQuery query;
   query.statement = ast::ParseCypherAndRewrite(std::move(cypher));
   query.query_ir = ir::CreateQueryIR(*query.statement);
-  query.logical_plan = ir::CreateLogicalPlan(*query.query_ir);
+  query.logical_plan = ir::CreateLogicalPlan(
+      *query.query_ir,
+      {.planner_catalog = &test_support::AssumeAllIndexesCatalog()});
   return query;
 }
 
@@ -1117,8 +1120,8 @@ TEST(PhysicalPlanTest, DeleteOperatorHandlesCloseCancellationAndMemoryLimit) {
 
   rg::QueryExecutionOptions memory_options;
   memory_options.memory_limit_bytes = 1;
-  cursor = rg::StartPhysicalPlan(physical, graph, &graph, {}, {"n"},
-                                 memory_options);
+  cursor =
+      rg::StartPhysicalPlan(physical, graph, &graph, {}, {"n"}, memory_options);
   EXPECT_THROW((void)cursor->Next(&row), common::MemoryLimitExceededError);
   EXPECT_EQ(graph.Nodes().size(), 1U);
 }

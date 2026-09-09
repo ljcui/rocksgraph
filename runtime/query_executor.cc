@@ -1,7 +1,6 @@
 #include "runtime/query_executor.h"
 
 #include <memory>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -18,38 +17,12 @@
 namespace rg {
 namespace {
 
-class NoIndexPlannerCatalog final : public ir::PlannerCatalog {
- public:
-  [[nodiscard]] std::optional<ir::NodeIndexDescriptor> FindNodeIndex(
-      const std::vector<std::string> &labels,
-      std::string_view property_key) const override {
-    (void)labels;
-    (void)property_key;
-    return std::nullopt;
-  }
-
-  [[nodiscard]] std::optional<ir::RelationshipIndexDescriptor>
-  FindRelationshipIndex(const std::vector<std::string> &relationship_types,
-                        std::string_view property_key) const override {
-    (void)relationship_types;
-    (void)property_key;
-    return std::nullopt;
-  }
-};
-
-const ir::PlannerCatalog &DefaultRuntimePlannerCatalog() {
-  static const NoIndexPlannerCatalog kCatalog;
-  return kCatalog;
-}
-
 ir::LogicalPlanBuilderOptions PlannerOptionsFor(const QueryOptions &options) {
   return ir::LogicalPlanBuilderOptions{
       .max_idp_candidates_per_relationship_count =
           options.max_idp_candidates_per_relationship_count,
       .planner_statistics = options.planner_statistics,
-      .planner_catalog = options.planner_catalog != nullptr
-                             ? options.planner_catalog
-                             : &DefaultRuntimePlannerCatalog()};
+      .planner_catalog = options.planner_catalog};
 }
 
 struct ParsedQueryOwner {

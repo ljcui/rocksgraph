@@ -4,7 +4,9 @@
 
 #include <cmath>
 #include <limits>
+#include <type_traits>
 #include <unordered_set>
+#include <utility>
 
 namespace {
 
@@ -15,6 +17,17 @@ void ExpectEquivalentKeys(const rg::Value &left, const rg::Value &right) {
 }
 
 }  // namespace
+
+static_assert(std::is_const_v<typename rg::Value::NodePtr::element_type>);
+static_assert(
+    std::is_const_v<typename rg::Value::RelationshipPtr::element_type>);
+static_assert(std::is_const_v<typename rg::Value::PathPtr::element_type>);
+static_assert(std::is_const_v<std::remove_reference_t<
+                  decltype(std::declval<rg::Value &>().AsNode())>>);
+static_assert(std::is_const_v<std::remove_reference_t<
+                  decltype(std::declval<rg::Value &>().AsRelationship())>>);
+static_assert(std::is_const_v<std::remove_reference_t<
+                  decltype(std::declval<rg::Value &>().AsPath())>>);
 
 TEST(ValueTest, ScalarTypes) {
   rg::Value null_value;

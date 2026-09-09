@@ -84,8 +84,7 @@ class InMemoryGraph final : public Storage,
   void DeleteNode(int64_t node_id) override;
   void DeleteRelationship(int64_t relationship_id) override;
 
-  [[nodiscard]] const RelationshipPtr &RelationshipById(
-      int64_t id) const override;
+  [[nodiscard]] RelationshipPtr RelationshipById(int64_t id) const override;
 
   void AddNodeIndex(std::vector<std::string> labels,
                     std::string_view property_key, bool unique = false);
@@ -95,14 +94,9 @@ class InMemoryGraph final : public Storage,
   [[nodiscard]] std::size_t RelationshipCount() const override {
     return relationships_.size();
   }
-  [[nodiscard]] const std::vector<NodePtr> &Nodes() const noexcept {
-    return nodes_;
-  }
-  [[nodiscard]] const std::vector<RelationshipPtr> &Relationships()
-      const noexcept {
-    return relationships_;
-  }
-  [[nodiscard]] const NodePtr &NodeById(int64_t id) const override;
+  [[nodiscard]] std::vector<NodePtr> Nodes() const;
+  [[nodiscard]] std::vector<RelationshipPtr> Relationships() const;
+  [[nodiscard]] NodePtr NodeById(int64_t id) const override;
   [[nodiscard]] Value NodeProperty(
       int64_t node_id, std::string_view property_key) const override;
   [[nodiscard]] Value RelationshipProperty(
@@ -141,25 +135,42 @@ class InMemoryGraph final : public Storage,
 
  private:
   class Transaction;
+  using MutableNodePtr = std::shared_ptr<Node>;
+  using MutableRelationshipPtr = std::shared_ptr<Relationship>;
 
-  void SetNodeProperty(const NodePtr &node, std::string property_key,
+  void SetNodeProperty(const MutableNodePtr &node, std::string property_key,
                        Value value);
-  void SetRelationshipProperty(const RelationshipPtr &relationship,
+  void SetRelationshipProperty(const MutableRelationshipPtr &relationship,
                                std::string property_key, Value value);
-  void SetNodeProperties(const NodePtr &node, Value::Map properties,
+  void SetNodeProperties(const MutableNodePtr &node, Value::Map properties,
                          bool include_existing);
-  void SetRelationshipProperties(const RelationshipPtr &relationship,
+  void SetRelationshipProperties(const MutableRelationshipPtr &relationship,
                                  Value::Map properties, bool include_existing);
-  void SetLabels(const NodePtr &node, std::vector<std::string> labels);
-  void RemoveNodeProperty(const NodePtr &node, std::string_view property_key);
-  void RemoveRelationshipProperty(const RelationshipPtr &relationship,
+  void SetLabels(const MutableNodePtr &node, std::vector<std::string> labels);
+  void RemoveNodeProperty(const MutableNodePtr &node,
+                          std::string_view property_key);
+  void RemoveRelationshipProperty(const MutableRelationshipPtr &relationship,
                                   std::string_view property_key);
-  void RemoveLabels(const NodePtr &node,
+  void RemoveLabels(const MutableNodePtr &node,
                     const std::vector<std::string> &labels);
-  void DeleteNode(const NodePtr &node);
-  void DeleteRelationship(const RelationshipPtr &relationship);
+  void DeleteNode(const MutableNodePtr &node);
+  void DeleteRelationship(const MutableRelationshipPtr &relationship);
+  [[nodiscard]] const MutableNodePtr &MutableNodeById(int64_t id) const;
+  [[nodiscard]] const MutableRelationshipPtr &MutableRelationshipById(
+      int64_t id) const;
   [[nodiscard]] bool HasRelationship(int64_t id) const noexcept;
   [[nodiscard]] bool HasNode(int64_t id) const noexcept;
+
+  struct IndexKey {
+    std::vector<std::string> qualifiers;
+    std::string property_key;
+
+    bool operator==(const IndexKey &other) const = default;
+  };
+
+  struct IndexKeyHash {
+    [[nodiscard]] std::size_t operator()(const IndexKey &key) const noexcept;
+  };
 
   struct IndexDescriptor {
     std::vector<std::string> qualifiers;
@@ -174,9 +185,10 @@ class InMemoryGraph final : public Storage,
   };
 
   using NodeIndexBuckets =
-      std::unordered_map<Value, std::vector<NodePtr>, ValueHash, ValueEqual>;
+      std::unordered_map<Value, std::vector<MutableNodePtr>, ValueHash,
+                         ValueEqual>;
   using RelationshipIndexBuckets =
-      std::unordered_map<Value, std::vector<RelationshipPtr>, ValueHash,
+      std::unordered_map<Value, std::vector<MutableRelationshipPtr>, ValueHash,
                          ValueEqual>;
 
   struct IndexValueLess {
@@ -186,28 +198,34 @@ class InMemoryGraph final : public Storage,
   using RangeIndexBuckets = std::unordered_map<
       ValueType, std::map<Value, std::vector<EntityPtr>, IndexValueLess>>;
 
-  [[nodiscard]] static std::string IndexKey(std::vector<std::string> qualifiers,
-                                            std::string_view property_key);
+  [[nodiscard]] static IndexKey MakeIndexKey(
+      std::vector<std::string> qualifiers, std::string_view property_key);
 
-  void AddNodeToIndexes(const NodePtr &node);
-  void RemoveNodeFromIndexes(const NodePtr &node);
-  void AddRelationshipToIndexes(const RelationshipPtr &relationship);
-  void RemoveRelationshipFromIndexes(const RelationshipPtr &relationship);
-  void AddNodeToIndex(const std::string &index_key,
-                      const IndexDescriptor &descriptor, const NodePtr &node);
-  void RemoveNodeFromIndex(const std::string &index_key,
+  void ValidateNodeUniqueIndexes(const Node &node) const;
+  void ValidateRelationshipUniqueIndexes(
+      const Relationship &relationship) const;
+  void AddNodeToIndexes(const MutableNodePtr &node);
+  void RemoveNodeFromIndexes(const MutableNodePtr &node);
+  void AddRelationshipToIndexes(const MutableRelationshipPtr &relationship);
+  void RemoveRelationshipFromIndexes(
+      const MutableRelationshipPtr &relationship);
+  void AddNodeToIndex(const IndexKey &index_key,
+                      const IndexDescriptor &descriptor,
+                      const MutableNodePtr &node);
+  void RemoveNodeFromIndex(const IndexKey &index_key,
                            const IndexDescriptor &descriptor,
-                           const NodePtr &node);
-  void AddRelationshipToIndex(const std::string &index_key,
+                           const MutableNodePtr &node);
+  void AddRelationshipToIndex(const IndexKey &index_key,
                               const IndexDescriptor &descriptor,
-                              const RelationshipPtr &relationship);
-  void RemoveRelationshipFromIndex(const std::string &index_key,
+                              const MutableRelationshipPtr &relationship);
+  void RemoveRelationshipFromIndex(const IndexKey &index_key,
                                    const IndexDescriptor &descriptor,
-                                   const RelationshipPtr &relationship);
-  void AddRelationshipToAdjacency(const RelationshipPtr &relationship);
-  void RemoveRelationshipFromAdjacency(const RelationshipPtr &relationship);
-  void AddNodeToLabels(const NodePtr &node);
-  void RemoveNodeFromLabels(const NodePtr &node);
+                                   const MutableRelationshipPtr &relationship);
+  void AddRelationshipToAdjacency(const MutableRelationshipPtr &relationship);
+  void RemoveRelationshipFromAdjacency(
+      const MutableRelationshipPtr &relationship);
+  void AddNodeToLabels(const MutableNodePtr &node);
+  void RemoveNodeFromLabels(const MutableNodePtr &node);
   [[nodiscard]] PropertyDistribution NodePropertyDistribution(
       const std::unordered_set<std::string> &labels,
       std::string_view property_key) const;
@@ -221,25 +239,28 @@ class InMemoryGraph final : public Storage,
 
   int64_t next_node_id_ = 0;
   int64_t next_relationship_id_ = 0;
-  std::vector<NodePtr> nodes_;
-  std::vector<RelationshipPtr> relationships_;
-  std::unordered_map<int64_t, NodePtr> nodes_by_id_;
-  std::unordered_map<int64_t, RelationshipPtr> relationships_by_id_;
-  std::unordered_map<std::string, IndexDescriptor> node_indexes_;
-  std::unordered_map<std::string, IndexDescriptor> relationship_indexes_;
-  std::unordered_map<std::string, NodeIndexBuckets> node_index_buckets_;
-  std::unordered_map<std::string, RelationshipIndexBuckets>
+  std::vector<MutableNodePtr> nodes_;
+  std::vector<MutableRelationshipPtr> relationships_;
+  std::unordered_map<int64_t, MutableNodePtr> nodes_by_id_;
+  std::unordered_map<int64_t, MutableRelationshipPtr> relationships_by_id_;
+  std::unordered_map<IndexKey, IndexDescriptor, IndexKeyHash> node_indexes_;
+  std::unordered_map<IndexKey, IndexDescriptor, IndexKeyHash>
+      relationship_indexes_;
+  std::unordered_map<IndexKey, NodeIndexBuckets, IndexKeyHash>
+      node_index_buckets_;
+  std::unordered_map<IndexKey, RelationshipIndexBuckets, IndexKeyHash>
       relationship_index_buckets_;
-  std::unordered_map<std::string, RangeIndexBuckets<NodePtr>>
+  std::unordered_map<IndexKey, RangeIndexBuckets<MutableNodePtr>, IndexKeyHash>
       node_range_index_buckets_;
-  std::unordered_map<std::string, RangeIndexBuckets<RelationshipPtr>>
+  std::unordered_map<IndexKey, RangeIndexBuckets<MutableRelationshipPtr>,
+                     IndexKeyHash>
       relationship_range_index_buckets_;
-  std::unordered_map<std::string, std::vector<NodePtr>> nodes_by_label_;
-  std::unordered_map<std::string, std::vector<RelationshipPtr>>
+  std::unordered_map<std::string, std::vector<MutableNodePtr>> nodes_by_label_;
+  std::unordered_map<std::string, std::vector<MutableRelationshipPtr>>
       relationships_by_type_;
-  std::unordered_map<int64_t, std::vector<RelationshipPtr>>
+  std::unordered_map<int64_t, std::vector<MutableRelationshipPtr>>
       outgoing_relationships_;
-  std::unordered_map<int64_t, std::vector<RelationshipPtr>>
+  std::unordered_map<int64_t, std::vector<MutableRelationshipPtr>>
       incoming_relationships_;
 };
 

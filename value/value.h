@@ -81,9 +81,9 @@ class Value {
  public:
   using List = std::vector<Value>;
   using Map = std::map<std::string, Value>;
-  using NodePtr = std::shared_ptr<Node>;
-  using RelationshipPtr = std::shared_ptr<Relationship>;
-  using PathPtr = std::shared_ptr<Path>;
+  using NodePtr = std::shared_ptr<const Node>;
+  using RelationshipPtr = std::shared_ptr<const Relationship>;
+  using PathPtr = std::shared_ptr<const Path>;
 
   Value();
   static Value Null();
@@ -137,11 +137,8 @@ class Value {
   Map &AsMap();
 
   [[nodiscard]] const Node &AsNode() const;
-  Node &AsNode();
   [[nodiscard]] const Relationship &AsRelationship() const;
-  Relationship &AsRelationship();
   [[nodiscard]] const Path &AsPath() const;
-  Path &AsPath();
 
   [[nodiscard]] const Date &AsDate() const;
   [[nodiscard]] const LocalTime &AsLocalTime() const;

@@ -17,6 +17,7 @@
 #include "common/exception.h"
 #include "ir/logical_plan_printer.h"
 #include "ir/query_ir.h"
+#include "tests/planner/assume_all_indexes_catalog.h"
 #include "tests/planner/fake_planner_statistics.h"
 
 namespace {
@@ -120,6 +121,12 @@ std::unique_ptr<ir::LogicalPlan> LogicalPlanFor(
   return ir::CreateLogicalPlan(*query_ir, options);
 }
 
+ir::LogicalPlanBuilderOptions WithAllIndexes(
+    const ir::PlannerStatistics *statistics = nullptr) {
+  return {.planner_statistics = statistics,
+          .planner_catalog = &test_support::AssumeAllIndexesCatalog()};
+}
+
 void ExpectLogicalPlanText(const std::string &query,
                            const std::string &expected,
                            const ir::LogicalPlanBuilderOptions &options = {}) {
@@ -198,24 +205,22 @@ TEST(LogicalPlanBuilderTest, UsesMultiLabelPredicateAsLeafScan) {
 )");
 }
 
-TEST(LogicalPlanBuilderTest, UsesNodePropertyIndexSeek) {
+TEST(LogicalPlanBuilderTest, UsesNodePropertyIndexSeekWithCatalog) {
   ExpectLogicalPlanText("MATCH (n:Person) WHERE n.name = 'Ada' RETURN n",
                         R"(ProduceResults [n]
   Projection [n]
     NodeIndexSeek [n:Person WHERE n.name = 'Ada']
-)");
+)",
+                        WithAllIndexes());
 }
 
-TEST(LogicalPlanBuilderTest, KeepsNodePropertyFilterWhenIndexUnavailable) {
-  FakePlannerCatalog catalog;
-  ExpectLogicalPlanText(
-      "MATCH (n:Person) WHERE n.name = 'Ada' RETURN n",
-      R"(ProduceResults [n]
+TEST(LogicalPlanBuilderTest, KeepsNodePropertyFilterByDefault) {
+  ExpectLogicalPlanText("MATCH (n:Person) WHERE n.name = 'Ada' RETURN n",
+                        R"(ProduceResults [n]
   Projection [n]
     Filter [n.name = 'Ada']
       NodeByLabelScan [n:Person]
-)",
-      ir::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
+)");
 }
 
 TEST(LogicalPlanBuilderTest, UsesNodeIndexOnlyWhenCatalogLabelsMatch) {
@@ -243,14 +248,13 @@ TEST(LogicalPlanBuilderTest, UsesNodeIndexOnlyWhenCatalogLabelsMatch) {
 TEST(LogicalPlanBuilderTest, UsesCheaperNodeScanWhenIndexCostIsHigher) {
   test_support::FakePlannerStatistics statistics;
   statistics.node_index_seek_selectivity_by_key = {{"name", 2.0}};
-  ExpectLogicalPlanText(
-      "MATCH (n:Person) WHERE n.name = 'Ada' RETURN n",
-      R"(ProduceResults [n]
+  ExpectLogicalPlanText("MATCH (n:Person) WHERE n.name = 'Ada' RETURN n",
+                        R"(ProduceResults [n]
   Projection [n]
     Filter [n.name = 'Ada']
       NodeByLabelScan [n:Person]
 )",
-      ir::LogicalPlanBuilderOptions{.planner_statistics = &statistics});
+                        WithAllIndexes(&statistics));
 }
 
 TEST(LogicalPlanBuilderTest, UsesNodePropertyIndexSeekForReversedEquality) {
@@ -258,7 +262,8 @@ TEST(LogicalPlanBuilderTest, UsesNodePropertyIndexSeekForReversedEquality) {
                         R"(ProduceResults [n]
   Projection [n]
     NodeIndexSeek [n WHERE n.id = 1]
-)");
+)",
+                        WithAllIndexes());
 }
 
 TEST(LogicalPlanBuilderTest, UsesCheapestNodePropertyIndexSeekCandidate) {
@@ -272,7 +277,7 @@ TEST(LogicalPlanBuilderTest, UsesCheapestNodePropertyIndexSeekCandidate) {
     Filter [n.a_slow = 1]
       NodeIndexSeek [n WHERE n.z_fast = 2]
 )",
-      ir::LogicalPlanBuilderOptions{.planner_statistics = &statistics});
+      WithAllIndexes(&statistics));
 }
 
 TEST(LogicalPlanBuilderTest, UsesOnlyCatalogAvailableNodePropertyIndex) {
@@ -309,7 +314,8 @@ TEST(LogicalPlanBuilderTest, UsesNodePropertyIndexRangeSeek) {
                         R"(ProduceResults [n]
   Projection [n]
     NodeIndexRangeSeek [n WHERE n.age >= 10 AND n.age < 20]
-)");
+)",
+                        WithAllIndexes());
 }
 
 TEST(LogicalPlanBuilderTest, KeepsNodeRangeFiltersWhenIndexUnavailable) {
@@ -357,7 +363,8 @@ TEST(LogicalPlanBuilderTest, UsesNodePropertyIndexRangeSeekForReversedBounds) {
                         R"(ProduceResults [n]
   Projection [n]
     NodeIndexRangeSeek [n WHERE 5 <= n.age AND 20 > n.age]
-)");
+)",
+                        WithAllIndexes());
 }
 
 TEST(LogicalPlanBuilderTest, UsesNodePropertyIndexRangeSeekForStartsWith) {
@@ -365,7 +372,8 @@ TEST(LogicalPlanBuilderTest, UsesNodePropertyIndexRangeSeekForStartsWith) {
                         R"(ProduceResults [n]
   Projection [n]
     NodeIndexRangeSeek [n WHERE n.name STARTS WITH 'A']
-)");
+)",
+                        WithAllIndexes());
 }
 
 TEST(LogicalPlanBuilderTest, KeepsStructuredPropertyPredicatesAsFilters) {
@@ -449,12 +457,13 @@ TEST(LogicalPlanBuilderTest, UsesRelationshipTypeScanWhenCheaper) {
       ir::LogicalPlanBuilderOptions{.planner_statistics = &statistics});
 }
 
-TEST(LogicalPlanBuilderTest, UsesRelationshipPropertyIndexSeek) {
+TEST(LogicalPlanBuilderTest, UsesRelationshipPropertyIndexSeekWithCatalog) {
   ExpectLogicalPlanText("MATCH (a)-[r]->(b) WHERE r.since = 2020 RETURN r",
                         R"(ProduceResults [r]
   Projection [r]
     RelationshipIndexSeek [(a)-[r]->(b) WHERE r.since = 2020]
-)");
+)",
+                        WithAllIndexes());
 }
 
 TEST(LogicalPlanBuilderTest,
@@ -506,7 +515,7 @@ TEST(LogicalPlanBuilderTest,
     Filter [r.a_slow = 1]
       RelationshipIndexSeek [(a)-[r]->(b) WHERE r.z_fast = 2]
 )",
-      ir::LogicalPlanBuilderOptions{.planner_statistics = &statistics});
+      WithAllIndexes(&statistics));
 }
 
 TEST(LogicalPlanBuilderTest,
@@ -545,7 +554,8 @@ TEST(LogicalPlanBuilderTest,
                         R"(ProduceResults [r]
   Projection [r]
     RelationshipIndexSeek [(a)-[r]->(b) WHERE r.since = 2020]
-)");
+)",
+                        WithAllIndexes());
 }
 
 TEST(LogicalPlanBuilderTest, UsesRelationshipPropertyIndexRangeSeek) {
@@ -554,7 +564,8 @@ TEST(LogicalPlanBuilderTest, UsesRelationshipPropertyIndexRangeSeek) {
       R"(ProduceResults [r]
   Projection [r]
     RelationshipIndexRangeSeek [(a)-[r]->(b) WHERE r.since >= 2000 AND r.since < 2020]
-)");
+)",
+      WithAllIndexes());
 }
 
 TEST(LogicalPlanBuilderTest, PushesRelationshipTypePredicateIntoGraphReader) {
@@ -563,7 +574,8 @@ TEST(LogicalPlanBuilderTest, PushesRelationshipTypePredicateIntoGraphReader) {
       R"(ProduceResults [r]
   Projection [r]
     RelationshipIndexSeek [(a)-[r:KNOWS]->(b) WHERE r.since = 2020]
-)");
+)",
+      WithAllIndexes());
 }
 
 TEST(LogicalPlanBuilderTest,
@@ -711,7 +723,8 @@ TEST(LogicalPlanBuilderTest, PushesAvailableWherePredicatesIntoFilters) {
     Filter [a:Person]
       Expand [(b)<-[r:KNOWS]-(a)]
         NodeIndexSeek [b WHERE b.name = 'Ada']
-)");
+)",
+      WithAllIndexes());
 }
 
 TEST(LogicalPlanBuilderTest, BuildsCartesianProductForDisconnectedComponents) {
@@ -1410,19 +1423,20 @@ TEST(LogicalPlanBuilderTest, BuildsMergeMatchPlanWithIndexablePredicates) {
       WriteBarrier
         Argument
       NodeIndexSeek [n:Person WHERE n.id = 1]
-)");
+)",
+                        WithAllIndexes());
 }
 
 TEST(LogicalPlanBuilderTest, BuildsNamedMergePathAfterMergePlan) {
-  ExpectLogicalPlanText("MERGE p = (a {num: 1}) RETURN p",
-                        R"(ProduceResults [p]
+  ExpectLogicalPlanText("MERGE p = (a {num: 1}) RETURN p", R"(ProduceResults [p]
   Projection [p]
     PathBuild [p]
       Merge [a {num: 1}, p]
         WriteBarrier
           Argument
         NodeIndexSeek [a WHERE a.num = 1]
-)");
+)",
+                        WithAllIndexes());
 }
 
 TEST(LogicalPlanBuilderTest, RejectsPlannerHintsWithLogicalPlanStage) {

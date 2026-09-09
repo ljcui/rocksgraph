@@ -28,7 +28,7 @@ constexpr std::string_view kLogicalPlanStage = "logical plan";
 
 const PlannerCatalog &PlannerCatalogFor(
     const LogicalPlanBuilderOptions &options) {
-  static const HeuristicPlannerCatalog kDefaultCatalog;
+  static const EmptyPlannerCatalog kDefaultCatalog;
   return options.planner_catalog == nullptr ? kDefaultCatalog
                                             : *options.planner_catalog;
 }

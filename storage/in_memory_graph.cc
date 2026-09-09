@@ -370,12 +370,12 @@ class InMemoryGraph::Transaction final : public StorageTransaction {
 
  private:
   struct NodeState {
-    NodePtr node;
+    MutableNodePtr node;
     std::vector<std::string> labels;
     Value::Map properties;
   };
   struct RelationshipState {
-    RelationshipPtr relationship;
+    MutableRelationshipPtr relationship;
     int64_t start_node_id = 0;
     int64_t end_node_id = 0;
     std::string type;
@@ -386,12 +386,13 @@ class InMemoryGraph::Transaction final : public StorageTransaction {
   bool finished_ = false;
   int64_t next_node_id_ = 0;
   int64_t next_relationship_id_ = 0;
-  std::vector<NodePtr> nodes_;
-  std::vector<RelationshipPtr> relationships_;
+  std::vector<MutableNodePtr> nodes_;
+  std::vector<MutableRelationshipPtr> relationships_;
   std::vector<NodeState> node_states_;
   std::vector<RelationshipState> relationship_states_;
-  std::unordered_map<std::string, IndexDescriptor> node_indexes_;
-  std::unordered_map<std::string, IndexDescriptor> relationship_indexes_;
+  std::unordered_map<IndexKey, IndexDescriptor, IndexKeyHash> node_indexes_;
+  std::unordered_map<IndexKey, IndexDescriptor, IndexKeyHash>
+      relationship_indexes_;
 };
 
 InMemoryGraph::~InMemoryGraph() = default;
@@ -412,11 +413,11 @@ bool InMemoryGraph::IndexValueLess::operator()(const Value &left,
 }
 
 std::unique_ptr<EntityIdCursor> InMemoryGraph::ScanNodeIds() const {
-  return MakePointerCursor<NodePtr>({&nodes_});
+  return MakePointerCursor<MutableNodePtr>({&nodes_});
 }
 
 std::unique_ptr<EntityIdCursor> InMemoryGraph::ScanRelationshipIds() const {
-  return MakePointerCursor<RelationshipPtr>({&relationships_});
+  return MakePointerCursor<MutableRelationshipPtr>({&relationships_});
 }
 
 std::unique_ptr<EntityIdCursor> InMemoryGraph::ScanNodeIdsByLabels(
@@ -424,19 +425,20 @@ std::unique_ptr<EntityIdCursor> InMemoryGraph::ScanNodeIdsByLabels(
   if (labels.empty()) {
     return ScanNodeIds();
   }
-  const std::vector<NodePtr> *smallest = nullptr;
+  const std::vector<MutableNodePtr> *smallest = nullptr;
   for (const auto &label : labels) {
     const auto found = nodes_by_label_.find(label);
     if (found == nodes_by_label_.end()) {
-      return MakePointerCursor<NodePtr>({});
+      return MakePointerCursor<MutableNodePtr>({});
     }
     if (smallest == nullptr || found->second.size() < smallest->size()) {
       smallest = &found->second;
     }
   }
-  return MakePointerCursor<NodePtr>({smallest}, [labels](const NodePtr &node) {
-    return NodeHasLabels(*node, labels);
-  });
+  return MakePointerCursor<MutableNodePtr>(
+      {smallest}, [labels](const MutableNodePtr &node) {
+        return NodeHasLabels(*node, labels);
+      });
 }
 
 std::unique_ptr<EntityIdCursor> InMemoryGraph::ScanRelationshipIdsByTypes(
@@ -444,7 +446,7 @@ std::unique_ptr<EntityIdCursor> InMemoryGraph::ScanRelationshipIdsByTypes(
   if (types.empty()) {
     return ScanRelationshipIds();
   }
-  std::vector<const std::vector<RelationshipPtr> *> sources;
+  std::vector<const std::vector<MutableRelationshipPtr> *> sources;
   std::unordered_set<std::string> seen;
   for (const auto &type : types) {
     const auto found = relationships_by_type_.find(type);
@@ -452,12 +454,12 @@ std::unique_ptr<EntityIdCursor> InMemoryGraph::ScanRelationshipIdsByTypes(
       sources.push_back(&found->second);
     }
   }
-  return MakePointerCursor<RelationshipPtr>(std::move(sources));
+  return MakePointerCursor<MutableRelationshipPtr>(std::move(sources));
 }
 
 std::unique_ptr<EntityIdCursor> InMemoryGraph::RelationshipIdsConnectedTo(
     int64_t node_id) const {
-  std::vector<const std::vector<RelationshipPtr> *> sources;
+  std::vector<const std::vector<MutableRelationshipPtr> *> sources;
   const auto outgoing = outgoing_relationships_.find(node_id);
   if (outgoing != outgoing_relationships_.end()) {
     sources.push_back(&outgoing->second);
@@ -466,43 +468,46 @@ std::unique_ptr<EntityIdCursor> InMemoryGraph::RelationshipIdsConnectedTo(
   if (incoming != incoming_relationships_.end()) {
     sources.push_back(&incoming->second);
   }
-  return MakePointerCursor<RelationshipPtr>(std::move(sources), {}, true);
+  return MakePointerCursor<MutableRelationshipPtr>(std::move(sources), {},
+                                                   true);
 }
 
 std::unique_ptr<EntityIdCursor> InMemoryGraph::OutgoingRelationshipIds(
     int64_t node_id) const {
   const auto found = outgoing_relationships_.find(node_id);
-  return MakePointerCursor<RelationshipPtr>(
+  return MakePointerCursor<MutableRelationshipPtr>(
       found == outgoing_relationships_.end()
-          ? std::vector<const std::vector<RelationshipPtr> *>{}
-          : std::vector<const std::vector<RelationshipPtr> *>{&found->second});
+          ? std::vector<const std::vector<MutableRelationshipPtr> *>{}
+          : std::vector<const std::vector<MutableRelationshipPtr> *>{
+                &found->second});
 }
 
 std::unique_ptr<EntityIdCursor> InMemoryGraph::IncomingRelationshipIds(
     int64_t node_id) const {
   const auto found = incoming_relationships_.find(node_id);
-  return MakePointerCursor<RelationshipPtr>(
+  return MakePointerCursor<MutableRelationshipPtr>(
       found == incoming_relationships_.end()
-          ? std::vector<const std::vector<RelationshipPtr> *>{}
-          : std::vector<const std::vector<RelationshipPtr> *>{&found->second});
+          ? std::vector<const std::vector<MutableRelationshipPtr> *>{}
+          : std::vector<const std::vector<MutableRelationshipPtr> *>{
+                &found->second});
 }
 
 std::unique_ptr<EntityIdCursor> InMemoryGraph::FindNodeIdsByIndex(
     const std::vector<std::string> &labels, std::string_view property_key,
     const Value &value) const {
-  const std::string index_key = IndexKey(labels, property_key);
+  const IndexKey index_key = MakeIndexKey(labels, property_key);
   const auto indexes = node_indexes_.find(index_key);
   const auto buckets = node_index_buckets_.find(index_key);
   if (indexes == node_indexes_.end() || buckets == node_index_buckets_.end()) {
-    return MakePointerCursor<NodePtr>({});
+    return MakePointerCursor<MutableNodePtr>({});
   }
   const auto bucket = buckets->second.find(value);
   if (bucket == buckets->second.end()) {
-    return MakePointerCursor<NodePtr>({});
+    return MakePointerCursor<MutableNodePtr>({});
   }
   const IndexDescriptor descriptor = indexes->second;
-  return MakePointerCursor<NodePtr>(
-      {&bucket->second}, [this, descriptor, value](const NodePtr &node) {
+  return MakePointerCursor<MutableNodePtr>(
+      {&bucket->second}, [this, descriptor, value](const MutableNodePtr &node) {
         if (!HasNode(node->id) ||
             !NodeHasLabels(*node, descriptor.qualifiers)) {
           return false;
@@ -516,17 +521,17 @@ std::unique_ptr<EntityIdCursor> InMemoryGraph::FindNodeIdsByIndex(
 std::unique_ptr<EntityIdCursor> InMemoryGraph::FindNodeIdsByIndexRange(
     const std::vector<std::string> &labels, std::string_view property_key,
     const IndexRange &range) const {
-  const std::string index_key = IndexKey(labels, property_key);
+  const IndexKey index_key = MakeIndexKey(labels, property_key);
   const auto indexes = node_indexes_.find(index_key);
   const auto buckets = node_range_index_buckets_.find(index_key);
   if (indexes == node_indexes_.end() ||
       buckets == node_range_index_buckets_.end()) {
-    return MakePointerCursor<NodePtr>({});
+    return MakePointerCursor<MutableNodePtr>({});
   }
   const IndexDescriptor descriptor = indexes->second;
-  return MakePointerCursor<NodePtr>(
-      RangeSources<NodePtr>(buckets->second, range),
-      [this, descriptor, range](const NodePtr &node) {
+  return MakePointerCursor<MutableNodePtr>(
+      RangeSources<MutableNodePtr>(buckets->second, range),
+      [this, descriptor, range](const MutableNodePtr &node) {
         return HasNode(node->id) &&
                NodeHasLabels(*node, descriptor.qualifiers) &&
                node->properties.contains(descriptor.property_key) &&
@@ -539,21 +544,21 @@ std::unique_ptr<EntityIdCursor> InMemoryGraph::FindNodeIdsByIndexRange(
 std::unique_ptr<EntityIdCursor> InMemoryGraph::FindRelationshipIdsByIndex(
     const std::vector<std::string> &relationship_types,
     std::string_view property_key, const Value &value) const {
-  const std::string index_key = IndexKey(relationship_types, property_key);
+  const IndexKey index_key = MakeIndexKey(relationship_types, property_key);
   const auto indexes = relationship_indexes_.find(index_key);
   const auto buckets = relationship_index_buckets_.find(index_key);
   if (indexes == relationship_indexes_.end() ||
       buckets == relationship_index_buckets_.end()) {
-    return MakePointerCursor<RelationshipPtr>({});
+    return MakePointerCursor<MutableRelationshipPtr>({});
   }
   const auto bucket = buckets->second.find(value);
   if (bucket == buckets->second.end()) {
-    return MakePointerCursor<RelationshipPtr>({});
+    return MakePointerCursor<MutableRelationshipPtr>({});
   }
   const IndexDescriptor descriptor = indexes->second;
-  return MakePointerCursor<RelationshipPtr>(
+  return MakePointerCursor<MutableRelationshipPtr>(
       {&bucket->second},
-      [this, descriptor, value](const RelationshipPtr &relationship) {
+      [this, descriptor, value](const MutableRelationshipPtr &relationship) {
         if (!HasRelationship(relationship->id) ||
             !RelationshipHasAnyType(*relationship, descriptor.qualifiers)) {
           return false;
@@ -568,17 +573,17 @@ std::unique_ptr<EntityIdCursor> InMemoryGraph::FindRelationshipIdsByIndex(
 std::unique_ptr<EntityIdCursor> InMemoryGraph::FindRelationshipIdsByIndexRange(
     const std::vector<std::string> &relationship_types,
     std::string_view property_key, const IndexRange &range) const {
-  const std::string index_key = IndexKey(relationship_types, property_key);
+  const IndexKey index_key = MakeIndexKey(relationship_types, property_key);
   const auto indexes = relationship_indexes_.find(index_key);
   const auto buckets = relationship_range_index_buckets_.find(index_key);
   if (indexes == relationship_indexes_.end() ||
       buckets == relationship_range_index_buckets_.end()) {
-    return MakePointerCursor<RelationshipPtr>({});
+    return MakePointerCursor<MutableRelationshipPtr>({});
   }
   const IndexDescriptor descriptor = indexes->second;
-  return MakePointerCursor<RelationshipPtr>(
-      RangeSources<RelationshipPtr>(buckets->second, range),
-      [this, descriptor, range](const RelationshipPtr &relationship) {
+  return MakePointerCursor<MutableRelationshipPtr>(
+      RangeSources<MutableRelationshipPtr>(buckets->second, range),
+      [this, descriptor, range](const MutableRelationshipPtr &relationship) {
         return HasRelationship(relationship->id) &&
                RelationshipHasAnyType(*relationship, descriptor.qualifiers) &&
                relationship->properties.contains(descriptor.property_key) &&
@@ -595,9 +600,11 @@ std::unique_ptr<StorageTransaction> InMemoryGraph::BeginTransaction() {
 InMemoryGraph::NodePtr InMemoryGraph::CreateNode(
     std::vector<std::string> labels, Value::Map properties) {
   auto node = std::make_shared<Node>();
-  node->id = next_node_id_++;
+  node->id = next_node_id_;
   node->labels = std::move(labels);
   ApplyPropertyMap(std::move(properties), false, &node->properties);
+  ValidateNodeUniqueIndexes(*node);
+  ++next_node_id_;
   nodes_by_id_.emplace(node->id, node);
   nodes_.push_back(node);
   AddNodeToLabels(node);
@@ -614,11 +621,13 @@ InMemoryGraph::RelationshipPtr InMemoryGraph::CreateRelationship(
         "relationship end node does not exist");
 
   auto relationship = std::make_shared<Relationship>();
-  relationship->id = next_relationship_id_++;
+  relationship->id = next_relationship_id_;
   relationship->start_node_id = start_node_id;
   relationship->end_node_id = end_node_id;
   relationship->type = std::move(type);
   ApplyPropertyMap(std::move(properties), false, &relationship->properties);
+  ValidateRelationshipUniqueIndexes(*relationship);
+  ++next_relationship_id_;
   relationships_by_id_.emplace(relationship->id, relationship);
   relationships_.push_back(relationship);
   relationships_by_type_[relationship->type].push_back(relationship);
@@ -638,110 +647,141 @@ InMemoryGraph::RelationshipPtr InMemoryGraph::CreateRelationship(
                             std::move(properties));
 }
 
-void InMemoryGraph::SetNodeProperty(const NodePtr &node,
+void InMemoryGraph::SetNodeProperty(const MutableNodePtr &node,
                                     std::string property_key, Value value) {
   CHECK(node != nullptr, common::InvalidArgumentError, "node is null");
-  RemoveNodeFromIndexes(node);
+  Node updated = *node;
   if (value.IsNull()) {
-    node->properties.erase(property_key);
+    updated.properties.erase(property_key);
   } else {
-    node->properties.insert_or_assign(std::move(property_key),
-                                      std::move(value));
+    updated.properties.insert_or_assign(property_key, value);
   }
+  ValidateNodeUniqueIndexes(updated);
+  RemoveNodeFromIndexes(node);
+  node->properties = std::move(updated.properties);
   AddNodeToIndexes(node);
 }
 
-void InMemoryGraph::SetRelationshipProperty(const RelationshipPtr &relationship,
-                                            std::string property_key,
-                                            Value value) {
+void InMemoryGraph::SetRelationshipProperty(
+    const MutableRelationshipPtr &relationship, std::string property_key,
+    Value value) {
   CHECK(relationship != nullptr, common::InvalidArgumentError,
         "relationship is null");
-  RemoveRelationshipFromIndexes(relationship);
+  Relationship updated = *relationship;
   if (value.IsNull()) {
-    relationship->properties.erase(property_key);
+    updated.properties.erase(property_key);
   } else {
-    relationship->properties.insert_or_assign(std::move(property_key),
-                                              std::move(value));
+    updated.properties.insert_or_assign(property_key, value);
   }
+  ValidateRelationshipUniqueIndexes(updated);
+  RemoveRelationshipFromIndexes(relationship);
+  relationship->properties = std::move(updated.properties);
   AddRelationshipToIndexes(relationship);
 }
 
-void InMemoryGraph::SetNodeProperties(const NodePtr &node,
+void InMemoryGraph::SetNodeProperties(const MutableNodePtr &node,
                                       Value::Map properties,
                                       bool include_existing) {
   CHECK(node != nullptr, common::InvalidArgumentError, "node is null");
+  Node updated = *node;
+  ApplyPropertyMap(std::move(properties), include_existing,
+                   &updated.properties);
+  ValidateNodeUniqueIndexes(updated);
   RemoveNodeFromIndexes(node);
-  ApplyPropertyMap(std::move(properties), include_existing, &node->properties);
+  node->properties = std::move(updated.properties);
   AddNodeToIndexes(node);
 }
 
 void InMemoryGraph::SetRelationshipProperties(
-    const RelationshipPtr &relationship, Value::Map properties,
+    const MutableRelationshipPtr &relationship, Value::Map properties,
     bool include_existing) {
   CHECK(relationship != nullptr, common::InvalidArgumentError,
         "relationship is null");
-  RemoveRelationshipFromIndexes(relationship);
+  Relationship updated = *relationship;
   ApplyPropertyMap(std::move(properties), include_existing,
-                   &relationship->properties);
+                   &updated.properties);
+  ValidateRelationshipUniqueIndexes(updated);
+  RemoveRelationshipFromIndexes(relationship);
+  relationship->properties = std::move(updated.properties);
   AddRelationshipToIndexes(relationship);
 }
 
-void InMemoryGraph::SetLabels(const NodePtr &node,
+void InMemoryGraph::SetLabels(const MutableNodePtr &node,
                               std::vector<std::string> labels) {
   CHECK(node != nullptr, common::InvalidArgumentError, "node is null");
-  RemoveNodeFromIndexes(node);
-  RemoveNodeFromLabels(node);
+  Node updated = *node;
   for (const auto &label : labels) {
-    if (std::find(node->labels.begin(), node->labels.end(), label) ==
-        node->labels.end()) {
-      node->labels.push_back(label);
+    if (!ContainsString(updated.labels, label)) {
+      updated.labels.push_back(label);
     }
   }
-  std::sort(node->labels.begin(), node->labels.end());
+  std::sort(updated.labels.begin(), updated.labels.end());
+  ValidateNodeUniqueIndexes(updated);
+  RemoveNodeFromIndexes(node);
+  RemoveNodeFromLabels(node);
+  node->labels = std::move(updated.labels);
   AddNodeToLabels(node);
   AddNodeToIndexes(node);
 }
 
-void InMemoryGraph::RemoveNodeProperty(const NodePtr &node,
+void InMemoryGraph::RemoveNodeProperty(const MutableNodePtr &node,
                                        std::string_view property_key) {
   CHECK(node != nullptr, common::InvalidArgumentError, "node is null");
+  Node updated = *node;
+  updated.properties.erase(std::string(property_key));
+  ValidateNodeUniqueIndexes(updated);
   RemoveNodeFromIndexes(node);
-  node->properties.erase(std::string(property_key));
+  node->properties = std::move(updated.properties);
   AddNodeToIndexes(node);
 }
 
 void InMemoryGraph::RemoveRelationshipProperty(
-    const RelationshipPtr &relationship, std::string_view property_key) {
+    const MutableRelationshipPtr &relationship, std::string_view property_key) {
   CHECK(relationship != nullptr, common::InvalidArgumentError,
         "relationship is null");
+  Relationship updated = *relationship;
+  updated.properties.erase(std::string(property_key));
+  ValidateRelationshipUniqueIndexes(updated);
   RemoveRelationshipFromIndexes(relationship);
-  relationship->properties.erase(std::string(property_key));
+  relationship->properties = std::move(updated.properties);
   AddRelationshipToIndexes(relationship);
 }
 
-void InMemoryGraph::RemoveLabels(const NodePtr &node,
+void InMemoryGraph::RemoveLabels(const MutableNodePtr &node,
                                  const std::vector<std::string> &labels) {
   CHECK(node != nullptr, common::InvalidArgumentError, "node is null");
+  Node updated = *node;
+  updated.labels.erase(
+      std::remove_if(updated.labels.begin(), updated.labels.end(),
+                     [&labels](const std::string &label) {
+                       return ContainsString(labels, label);
+                     }),
+      updated.labels.end());
+  ValidateNodeUniqueIndexes(updated);
   RemoveNodeFromIndexes(node);
   RemoveNodeFromLabels(node);
-  node->labels.erase(std::remove_if(node->labels.begin(), node->labels.end(),
-                                    [&labels](const std::string &label) {
-                                      return ContainsString(labels, label);
-                                    }),
-                     node->labels.end());
+  node->labels = std::move(updated.labels);
   AddNodeToLabels(node);
   AddNodeToIndexes(node);
 }
 
-void InMemoryGraph::DeleteNode(const NodePtr &node) {
+void InMemoryGraph::DeleteNode(const MutableNodePtr &node) {
   CHECK(node != nullptr, common::InvalidArgumentError, "node is null");
+  const auto outgoing = outgoing_relationships_.find(node->id);
+  const auto incoming = incoming_relationships_.find(node->id);
+  CHECK(
+      (outgoing == outgoing_relationships_.end() || outgoing->second.empty()) &&
+          (incoming == incoming_relationships_.end() ||
+           incoming->second.empty()),
+      common::InvalidArgumentError, "node still has relationships");
   RemoveNodeFromIndexes(node);
   RemoveNodeFromLabels(node);
   nodes_by_id_.erase(node->id);
   nodes_.erase(std::remove(nodes_.begin(), nodes_.end(), node), nodes_.end());
 }
 
-void InMemoryGraph::DeleteRelationship(const RelationshipPtr &relationship) {
+void InMemoryGraph::DeleteRelationship(
+    const MutableRelationshipPtr &relationship) {
   CHECK(relationship != nullptr, common::InvalidArgumentError,
         "relationship is null");
   RemoveRelationshipFromIndexes(relationship);
@@ -755,78 +795,86 @@ void InMemoryGraph::DeleteRelationship(const RelationshipPtr &relationship) {
 
 void InMemoryGraph::SetNodeProperty(int64_t node_id, std::string property_key,
                                     Value value) {
-  SetNodeProperty(NodeById(node_id), std::move(property_key), std::move(value));
+  SetNodeProperty(MutableNodeById(node_id), std::move(property_key),
+                  std::move(value));
 }
 
 void InMemoryGraph::SetRelationshipProperty(int64_t relationship_id,
                                             std::string property_key,
                                             Value value) {
-  SetRelationshipProperty(RelationshipById(relationship_id),
+  SetRelationshipProperty(MutableRelationshipById(relationship_id),
                           std::move(property_key), std::move(value));
 }
 
 void InMemoryGraph::SetNodeProperties(int64_t node_id, Value::Map properties,
                                       bool include_existing) {
-  SetNodeProperties(NodeById(node_id), std::move(properties), include_existing);
+  SetNodeProperties(MutableNodeById(node_id), std::move(properties),
+                    include_existing);
 }
 
 void InMemoryGraph::SetRelationshipProperties(int64_t relationship_id,
                                               Value::Map properties,
                                               bool include_existing) {
-  SetRelationshipProperties(RelationshipById(relationship_id),
+  SetRelationshipProperties(MutableRelationshipById(relationship_id),
                             std::move(properties), include_existing);
 }
 
 void InMemoryGraph::SetLabels(int64_t node_id,
                               std::vector<std::string> labels) {
-  SetLabels(NodeById(node_id), std::move(labels));
+  SetLabels(MutableNodeById(node_id), std::move(labels));
 }
 
 void InMemoryGraph::RemoveNodeProperty(int64_t node_id,
                                        std::string_view property_key) {
-  RemoveNodeProperty(NodeById(node_id), property_key);
+  RemoveNodeProperty(MutableNodeById(node_id), property_key);
 }
 
 void InMemoryGraph::RemoveRelationshipProperty(int64_t relationship_id,
                                                std::string_view property_key) {
-  RemoveRelationshipProperty(RelationshipById(relationship_id), property_key);
+  RemoveRelationshipProperty(MutableRelationshipById(relationship_id),
+                             property_key);
 }
 
 void InMemoryGraph::RemoveLabels(int64_t node_id,
                                  const std::vector<std::string> &labels) {
-  RemoveLabels(NodeById(node_id), labels);
+  RemoveLabels(MutableNodeById(node_id), labels);
 }
 
 void InMemoryGraph::DeleteNode(int64_t node_id) {
-  DeleteNode(NodeById(node_id));
+  DeleteNode(MutableNodeById(node_id));
 }
 
 void InMemoryGraph::DeleteRelationship(int64_t relationship_id) {
-  DeleteRelationship(RelationshipById(relationship_id));
+  DeleteRelationship(MutableRelationshipById(relationship_id));
 }
 
 bool InMemoryGraph::HasRelationship(int64_t id) const noexcept {
   return relationships_by_id_.find(id) != relationships_by_id_.end();
 }
 
-const InMemoryGraph::RelationshipPtr &InMemoryGraph::RelationshipById(
-    int64_t id) const {
+const InMemoryGraph::MutableRelationshipPtr &
+InMemoryGraph::MutableRelationshipById(int64_t id) const {
   const auto found = relationships_by_id_.find(id);
   CHECK(found != relationships_by_id_.end(), common::NotFoundError,
         "relationship does not exist");
   return found->second;
 }
 
+InMemoryGraph::RelationshipPtr InMemoryGraph::RelationshipById(
+    int64_t id) const {
+  return MutableRelationshipById(id);
+}
+
 Value InMemoryGraph::NodeProperty(int64_t node_id,
                                   std::string_view property_key) const {
-  const auto &properties = NodeById(node_id)->properties;
+  const auto &properties = MutableNodeById(node_id)->properties;
   const auto found = properties.find(std::string(property_key));
   return found == properties.end() ? Value::Null() : found->second;
 }
 
 Value InMemoryGraph::RelationshipProperty(int64_t relationship_id,
                                           std::string_view property_key) const {
-  const auto &properties = RelationshipById(relationship_id)->properties;
+  const auto &properties = MutableRelationshipById(relationship_id)->properties;
   const auto found = properties.find(std::string(property_key));
   return found == properties.end() ? Value::Null() : found->second;
 }
@@ -835,11 +883,24 @@ void InMemoryGraph::AddNodeIndex(std::vector<std::string> labels,
                                  std::string_view property_key, bool unique) {
   CHECK(!property_key.empty(), common::InvalidArgumentError,
         "node index property key is empty");
-  std::sort(labels.begin(), labels.end());
-  IndexDescriptor descriptor{.qualifiers = std::move(labels),
-                             .property_key = std::string(property_key),
+  IndexKey key = MakeIndexKey(std::move(labels), property_key);
+  IndexDescriptor descriptor{.qualifiers = key.qualifiers,
+                             .property_key = key.property_key,
                              .unique = unique};
-  const std::string key = IndexKey(descriptor.qualifiers, property_key);
+  if (unique) {
+    std::unordered_set<Value, ValueHash, ValueEqual> values;
+    for (const auto &node : nodes_) {
+      if (!NodeHasLabels(*node, descriptor.qualifiers)) {
+        continue;
+      }
+      const auto property = node->properties.find(descriptor.property_key);
+      if (property != node->properties.end()) {
+        CHECK(values.insert(property->second).second,
+              common::InvalidArgumentError,
+              "duplicate value for unique node index");
+      }
+    }
+  }
   node_indexes_[key] = descriptor;
   node_index_buckets_[key].clear();
   node_range_index_buckets_[key].clear();
@@ -853,11 +914,25 @@ void InMemoryGraph::AddRelationshipIndex(
     bool unique) {
   CHECK(!property_key.empty(), common::InvalidArgumentError,
         "relationship index property key is empty");
-  std::sort(relationship_types.begin(), relationship_types.end());
-  IndexDescriptor descriptor{.qualifiers = std::move(relationship_types),
-                             .property_key = std::string(property_key),
+  IndexKey key = MakeIndexKey(std::move(relationship_types), property_key);
+  IndexDescriptor descriptor{.qualifiers = key.qualifiers,
+                             .property_key = key.property_key,
                              .unique = unique};
-  const std::string key = IndexKey(descriptor.qualifiers, property_key);
+  if (unique) {
+    std::unordered_set<Value, ValueHash, ValueEqual> values;
+    for (const auto &relationship : relationships_) {
+      if (!RelationshipHasAnyType(*relationship, descriptor.qualifiers)) {
+        continue;
+      }
+      const auto property =
+          relationship->properties.find(descriptor.property_key);
+      if (property != relationship->properties.end()) {
+        CHECK(values.insert(property->second).second,
+              common::InvalidArgumentError,
+              "duplicate value for unique relationship index");
+      }
+    }
+  }
   relationship_indexes_[key] = descriptor;
   relationship_index_buckets_[key].clear();
   relationship_range_index_buckets_[key].clear();
@@ -866,11 +941,25 @@ void InMemoryGraph::AddRelationshipIndex(
   }
 }
 
-const InMemoryGraph::NodePtr &InMemoryGraph::NodeById(int64_t id) const {
+const InMemoryGraph::MutableNodePtr &InMemoryGraph::MutableNodeById(
+    int64_t id) const {
   const auto found = nodes_by_id_.find(id);
   CHECK(found != nodes_by_id_.end(), common::NotFoundError,
         "node does not exist");
   return found->second;
+}
+
+InMemoryGraph::NodePtr InMemoryGraph::NodeById(int64_t id) const {
+  return MutableNodeById(id);
+}
+
+std::vector<InMemoryGraph::NodePtr> InMemoryGraph::Nodes() const {
+  return {nodes_.begin(), nodes_.end()};
+}
+
+std::vector<InMemoryGraph::RelationshipPtr> InMemoryGraph::Relationships()
+    const {
+  return {relationships_.begin(), relationships_.end()};
 }
 
 bool InMemoryGraph::HasNode(int64_t id) const noexcept {
@@ -880,7 +969,7 @@ bool InMemoryGraph::HasNode(int64_t id) const noexcept {
 std::optional<ir::NodeIndexDescriptor> InMemoryGraph::FindNodeIndex(
     const std::vector<std::string> &labels,
     std::string_view property_key) const {
-  const auto found = node_indexes_.find(IndexKey(labels, property_key));
+  const auto found = node_indexes_.find(MakeIndexKey(labels, property_key));
   if (found == node_indexes_.end()) {
     return std::nullopt;
   }
@@ -892,8 +981,8 @@ std::optional<ir::RelationshipIndexDescriptor>
 InMemoryGraph::FindRelationshipIndex(
     const std::vector<std::string> &relationship_types,
     std::string_view property_key) const {
-  const auto found =
-      relationship_indexes_.find(IndexKey(relationship_types, property_key));
+  const auto found = relationship_indexes_.find(
+      MakeIndexKey(relationship_types, property_key));
   if (found == relationship_indexes_.end()) {
     return std::nullopt;
   }
@@ -1032,47 +1121,108 @@ double InMemoryGraph::EstimateProcedureRows(std::string_view procedure_name,
                                                       yield_count);
 }
 
-std::string InMemoryGraph::IndexKey(std::vector<std::string> qualifiers,
-                                    std::string_view property_key) {
-  std::sort(qualifiers.begin(), qualifiers.end());
-  std::string key(property_key);
-  key.push_back('\n');
-  for (const auto &qualifier : qualifiers) {
-    key += qualifier;
-    key.push_back('\n');
+std::size_t InMemoryGraph::IndexKeyHash::operator()(
+    const IndexKey &key) const noexcept {
+  std::size_t seed = std::hash<std::string>{}(key.property_key);
+  for (const auto &qualifier : key.qualifiers) {
+    const std::size_t value = std::hash<std::string>{}(qualifier);
+    seed ^= value + 0x9e3779b9U + (seed << 6U) + (seed >> 2U);
   }
-  return key;
+  return seed;
 }
 
-void InMemoryGraph::AddNodeToIndexes(const NodePtr &node) {
+InMemoryGraph::IndexKey InMemoryGraph::MakeIndexKey(
+    std::vector<std::string> qualifiers, std::string_view property_key) {
+  std::sort(qualifiers.begin(), qualifiers.end());
+  qualifiers.erase(std::unique(qualifiers.begin(), qualifiers.end()),
+                   qualifiers.end());
+  return {.qualifiers = std::move(qualifiers),
+          .property_key = std::string(property_key)};
+}
+
+void InMemoryGraph::ValidateNodeUniqueIndexes(const Node &node) const {
+  for (const auto &[index_key, descriptor] : node_indexes_) {
+    if (!descriptor.unique || !NodeHasLabels(node, descriptor.qualifiers)) {
+      continue;
+    }
+    const auto property = node.properties.find(descriptor.property_key);
+    if (property == node.properties.end()) {
+      continue;
+    }
+    const auto indexes = node_index_buckets_.find(index_key);
+    if (indexes == node_index_buckets_.end()) {
+      continue;
+    }
+    const auto bucket = indexes->second.find(property->second);
+    if (bucket == indexes->second.end()) {
+      continue;
+    }
+    for (const auto &existing : bucket->second) {
+      CHECK(existing == nullptr || existing->id == node.id ||
+                !HasNode(existing->id),
+            common::InvalidArgumentError,
+            "duplicate value for unique node index");
+    }
+  }
+}
+
+void InMemoryGraph::ValidateRelationshipUniqueIndexes(
+    const Relationship &relationship) const {
+  for (const auto &[index_key, descriptor] : relationship_indexes_) {
+    if (!descriptor.unique ||
+        !RelationshipHasAnyType(relationship, descriptor.qualifiers)) {
+      continue;
+    }
+    const auto property = relationship.properties.find(descriptor.property_key);
+    if (property == relationship.properties.end()) {
+      continue;
+    }
+    const auto indexes = relationship_index_buckets_.find(index_key);
+    if (indexes == relationship_index_buckets_.end()) {
+      continue;
+    }
+    const auto bucket = indexes->second.find(property->second);
+    if (bucket == indexes->second.end()) {
+      continue;
+    }
+    for (const auto &existing : bucket->second) {
+      CHECK(existing == nullptr || existing->id == relationship.id ||
+                !HasRelationship(existing->id),
+            common::InvalidArgumentError,
+            "duplicate value for unique relationship index");
+    }
+  }
+}
+
+void InMemoryGraph::AddNodeToIndexes(const MutableNodePtr &node) {
   for (const auto &[index_key, descriptor] : node_indexes_) {
     AddNodeToIndex(index_key, descriptor, node);
   }
 }
 
-void InMemoryGraph::RemoveNodeFromIndexes(const NodePtr &node) {
+void InMemoryGraph::RemoveNodeFromIndexes(const MutableNodePtr &node) {
   for (const auto &[index_key, descriptor] : node_indexes_) {
     RemoveNodeFromIndex(index_key, descriptor, node);
   }
 }
 
 void InMemoryGraph::AddRelationshipToIndexes(
-    const RelationshipPtr &relationship) {
+    const MutableRelationshipPtr &relationship) {
   for (const auto &[index_key, descriptor] : relationship_indexes_) {
     AddRelationshipToIndex(index_key, descriptor, relationship);
   }
 }
 
 void InMemoryGraph::RemoveRelationshipFromIndexes(
-    const RelationshipPtr &relationship) {
+    const MutableRelationshipPtr &relationship) {
   for (const auto &[index_key, descriptor] : relationship_indexes_) {
     RemoveRelationshipFromIndex(index_key, descriptor, relationship);
   }
 }
 
-void InMemoryGraph::AddNodeToIndex(const std::string &index_key,
+void InMemoryGraph::AddNodeToIndex(const IndexKey &index_key,
                                    const IndexDescriptor &descriptor,
-                                   const NodePtr &node) {
+                                   const MutableNodePtr &node) {
   CHECK(node != nullptr, common::InvalidArgumentError, "node is null");
   if (!NodeHasLabels(*node, descriptor.qualifiers)) {
     return;
@@ -1081,15 +1231,22 @@ void InMemoryGraph::AddNodeToIndex(const std::string &index_key,
   if (property == node->properties.end()) {
     return;
   }
-  node_index_buckets_[index_key][property->second].push_back(node);
+  auto &bucket = node_index_buckets_[index_key][property->second];
+  if (descriptor.unique) {
+    for (const auto &existing : bucket) {
+      CHECK(existing == nullptr || existing->id == node->id,
+            common::InternalError, "unique node index invariant violated");
+    }
+  }
+  bucket.push_back(node);
   node_range_index_buckets_[index_key][IndexValueGroup(property->second)]
                            [property->second]
                                .push_back(node);
 }
 
-void InMemoryGraph::RemoveNodeFromIndex(const std::string &index_key,
+void InMemoryGraph::RemoveNodeFromIndex(const IndexKey &index_key,
                                         const IndexDescriptor &descriptor,
-                                        const NodePtr &node) {
+                                        const MutableNodePtr &node) {
   CHECK(node != nullptr, common::InvalidArgumentError, "node is null");
   if (!NodeHasLabels(*node, descriptor.qualifiers)) {
     return;
@@ -1115,8 +1272,8 @@ void InMemoryGraph::RemoveNodeFromIndex(const std::string &index_key,
 }
 
 void InMemoryGraph::AddRelationshipToIndex(
-    const std::string &index_key, const IndexDescriptor &descriptor,
-    const RelationshipPtr &relationship) {
+    const IndexKey &index_key, const IndexDescriptor &descriptor,
+    const MutableRelationshipPtr &relationship) {
   CHECK(relationship != nullptr, common::InvalidArgumentError,
         "relationship is null");
   if (!RelationshipHasAnyType(*relationship, descriptor.qualifiers)) {
@@ -1126,16 +1283,23 @@ void InMemoryGraph::AddRelationshipToIndex(
   if (property == relationship->properties.end()) {
     return;
   }
-  relationship_index_buckets_[index_key][property->second].push_back(
-      relationship);
+  auto &bucket = relationship_index_buckets_[index_key][property->second];
+  if (descriptor.unique) {
+    for (const auto &existing : bucket) {
+      CHECK(existing == nullptr || existing->id == relationship->id,
+            common::InternalError,
+            "unique relationship index invariant violated");
+    }
+  }
+  bucket.push_back(relationship);
   relationship_range_index_buckets_[index_key][IndexValueGroup(
       property->second)][property->second]
       .push_back(relationship);
 }
 
 void InMemoryGraph::RemoveRelationshipFromIndex(
-    const std::string &index_key, const IndexDescriptor &descriptor,
-    const RelationshipPtr &relationship) {
+    const IndexKey &index_key, const IndexDescriptor &descriptor,
+    const MutableRelationshipPtr &relationship) {
   CHECK(relationship != nullptr, common::InvalidArgumentError,
         "relationship is null");
   if (!RelationshipHasAnyType(*relationship, descriptor.qualifiers)) {
@@ -1161,7 +1325,7 @@ void InMemoryGraph::RemoveRelationshipFromIndex(
   }
 }
 
-void InMemoryGraph::AddNodeToLabels(const NodePtr &node) {
+void InMemoryGraph::AddNodeToLabels(const MutableNodePtr &node) {
   std::unordered_set<std::string> seen;
   for (const auto &label : node->labels) {
     if (seen.insert(label).second) {
@@ -1170,7 +1334,7 @@ void InMemoryGraph::AddNodeToLabels(const NodePtr &node) {
   }
 }
 
-void InMemoryGraph::RemoveNodeFromLabels(const NodePtr &node) {
+void InMemoryGraph::RemoveNodeFromLabels(const MutableNodePtr &node) {
   for (const auto &label : node->labels) {
     const auto found = nodes_by_label_.find(label);
     if (found != nodes_by_label_.end()) {
@@ -1180,7 +1344,7 @@ void InMemoryGraph::RemoveNodeFromLabels(const NodePtr &node) {
 }
 
 void InMemoryGraph::AddRelationshipToAdjacency(
-    const RelationshipPtr &relationship) {
+    const MutableRelationshipPtr &relationship) {
   CHECK(relationship != nullptr, common::InvalidArgumentError,
         "relationship is null");
   outgoing_relationships_[relationship->start_node_id].push_back(relationship);
@@ -1188,7 +1352,7 @@ void InMemoryGraph::AddRelationshipToAdjacency(
 }
 
 void InMemoryGraph::RemoveRelationshipFromAdjacency(
-    const RelationshipPtr &relationship) {
+    const MutableRelationshipPtr &relationship) {
   CHECK(relationship != nullptr, common::InvalidArgumentError,
         "relationship is null");
   const auto outgoing =

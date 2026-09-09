@@ -150,10 +150,10 @@ class ObservedGraph final : public rg::GraphReader {
   std::size_t RelationshipCount() const override {
     return graph.RelationshipCount();
   }
-  const NodePtr &NodeById(std::int64_t id) const override {
+  NodePtr NodeById(std::int64_t id) const override {
     return graph.NodeById(id);
   }
-  const RelationshipPtr &RelationshipById(std::int64_t id) const override {
+  RelationshipPtr RelationshipById(std::int64_t id) const override {
     return graph.RelationshipById(id);
   }
   rg::Value NodeProperty(std::int64_t id, std::string_view key) const override {
