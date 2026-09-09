@@ -32,27 +32,30 @@ enum class TransactionState {
 class QueryResultCursorImpl final : public QueryResultCursor {
  public:
   QueryResultCursorImpl(const ir::LogicalPlan &logical_plan,
-                        const GraphReader &graph_reader, Storage *storage,
+                        GraphReader &graph_reader, bool allow_writes,
                         const QueryParameters &parameters,
                         QueryExecutionOptions options)
       : physical_plan_(CreatePhysicalPlan(logical_plan)) {
     const bool writes = physical_plan_.Effects().writes;
-    if (writes) {
-      CHECK(storage != nullptr, common::InvalidArgumentError,
-            "write execution requires storage");
-      transaction_ = storage->BeginTransaction();
-      if (transaction_ != nullptr) {
-        transaction_state_ = TransactionState::kActive;
-      }
-    }
-    if (logical_plan.Type() == ir::LogicalPlanNodeType::kProduceResults ||
-        !writes) {
-      columns_ = logical_plan.OutputColumns();
-    }
+    transaction_ = graph_reader.BeginTransaction();
+    CHECK(transaction_ != nullptr, common::InvalidArgumentError,
+          "query execution requires a transaction");
+    transaction_state_ = TransactionState::kActive;
     try {
-      physical_cursor_ =
-          StartPhysicalPlan(physical_plan_, graph_reader, storage, parameters,
-                            columns_, std::move(options));
+      const GraphReader &transaction_reader = transaction_->Reader();
+      Storage *transaction_storage =
+          allow_writes ? transaction_->Writer() : nullptr;
+      if (writes) {
+        CHECK(transaction_storage != nullptr, common::InvalidArgumentError,
+              "write execution requires a writable transaction");
+      }
+      if (logical_plan.Type() == ir::LogicalPlanNodeType::kProduceResults ||
+          !writes) {
+        columns_ = logical_plan.OutputColumns();
+      }
+      physical_cursor_ = StartPhysicalPlan(physical_plan_, transaction_reader,
+                                           transaction_storage, parameters,
+                                           columns_, std::move(options));
     } catch (...) {
       Rollback();
       throw;
@@ -112,6 +115,7 @@ class QueryResultCursorImpl final : public QueryResultCursor {
     if (transaction_ != nullptr) {
       transaction_->Commit();
       transaction_state_ = TransactionState::kCommitted;
+      transaction_.reset();
     }
     closed_ = true;
   }
@@ -125,6 +129,7 @@ class QueryResultCursorImpl final : public QueryResultCursor {
     } catch (...) {
     }
     transaction_state_ = TransactionState::kRolledBack;
+    transaction_.reset();
   }
 
   void ClosePhysicalCursor() noexcept {
@@ -136,8 +141,8 @@ class QueryResultCursorImpl final : public QueryResultCursor {
 
   PhysicalPlan physical_plan_;
   std::vector<std::string> columns_;
-  std::unique_ptr<PhysicalResultCursor> physical_cursor_;
   std::unique_ptr<StorageTransaction> transaction_;
+  std::unique_ptr<PhysicalResultCursor> physical_cursor_;
   std::size_t peak_memory_bytes_ = 0;
   TransactionState transaction_state_ = TransactionState::kNone;
   bool closed_ = false;
@@ -171,11 +176,12 @@ std::unique_ptr<QueryResultCursor> QueryExecutor::ExecuteCursor(
   CHECK(graph_reader_ != nullptr, common::InternalError,
         "graph reader is null");
   return std::make_unique<QueryResultCursorImpl>(
-      plan, *graph_reader_, storage_, parameters, std::move(options));
+      plan, *graph_reader_, storage_ != nullptr, parameters,
+      std::move(options));
 }
 
-QueryResult ExecuteReadQuery(const GraphReader &graph_reader,
-                             std::string_view cypher, QueryOptions options) {
+QueryResult ExecuteReadQuery(GraphReader &graph_reader, std::string_view cypher,
+                             QueryOptions options) {
   return ConsumeCursor(
       ExecuteReadQueryCursor(graph_reader, cypher, std::move(options)));
 }
@@ -191,12 +197,11 @@ void ExecuteWriteQuery(Storage &storage, std::string_view cypher,
 }
 
 std::unique_ptr<QueryResultCursor> ExecuteReadQueryCursor(
-    const GraphReader &graph_reader, std::string_view cypher,
-    QueryOptions options) {
+    GraphReader &graph_reader, std::string_view cypher, QueryOptions options) {
   ir::PlannedQuery planned_query =
       ir::PlanCypher(cypher, PlannerOptionsFor(options));
   return std::make_unique<QueryResultCursorImpl>(
-      planned_query.Plan(), graph_reader, nullptr, options.parameters,
+      planned_query.Plan(), graph_reader, false, options.parameters,
       std::move(options.execution));
 }
 
@@ -206,7 +211,7 @@ std::unique_ptr<QueryResultCursor> ExecuteQueryCursor(Storage &storage,
   ir::PlannedQuery planned_query =
       ir::PlanCypher(cypher, PlannerOptionsFor(options));
   return std::make_unique<QueryResultCursorImpl>(planned_query.Plan(), storage,
-                                                 &storage, options.parameters,
+                                                 true, options.parameters,
                                                  std::move(options.execution));
 }
 

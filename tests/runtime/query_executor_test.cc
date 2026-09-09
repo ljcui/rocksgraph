@@ -66,7 +66,7 @@ ir::PlannedQuery PlannedQueryFor(const rg::InMemoryGraph &graph,
 }
 
 std::unique_ptr<rg::QueryResultCursor> CursorFromTemporaryPlannedQuery(
-    const rg::GraphReader &graph_reader) {
+    rg::GraphReader &graph_reader) {
   ir::PlannedQuery query = ir::PlanCypher("RETURN 1 + 2 AS value");
   return rg::QueryExecutor(graph_reader).ExecuteCursor(query.Plan());
 }
@@ -125,6 +125,51 @@ TEST(QueryExecutorTest, CursorOwnsPlanAfterPlanningArtifactsExpire) {
   ASSERT_EQ(row.size(), 1U);
   EXPECT_EQ(row.front(), rg::Value(3));
   EXPECT_FALSE(cursor->Next(&row));
+}
+
+TEST(QueryExecutorTest, ReadCursorOwnsTransactionUntilItFinishes) {
+  rg::InMemoryGraph graph;
+  std::unique_ptr<rg::QueryResultCursor> cursor =
+      rg::ExecuteReadQueryCursor(graph, "UNWIND [1, 2] AS x RETURN x");
+
+  EXPECT_THROW((void)graph.BeginTransaction(), common::InvalidArgumentError);
+
+  std::vector<rg::Value> row;
+  ASSERT_TRUE(cursor->Next(&row));
+  ASSERT_TRUE(cursor->Next(&row));
+  EXPECT_FALSE(cursor->Next(&row));
+
+  std::unique_ptr<rg::StorageTransaction> next_transaction;
+  EXPECT_NO_THROW(next_transaction = graph.BeginTransaction());
+  ASSERT_NE(next_transaction, nullptr);
+  next_transaction->Rollback();
+}
+
+TEST(QueryExecutorTest, ClosingReadCursorReleasesItsTransaction) {
+  rg::InMemoryGraph graph;
+  std::unique_ptr<rg::QueryResultCursor> cursor =
+      rg::ExecuteReadQueryCursor(graph, "UNWIND [1, 2] AS x RETURN x");
+
+  cursor->Close();
+
+  std::unique_ptr<rg::StorageTransaction> next_transaction;
+  EXPECT_NO_THROW(next_transaction = graph.BeginTransaction());
+  ASSERT_NE(next_transaction, nullptr);
+  next_transaction->Rollback();
+}
+
+TEST(QueryExecutorTest, ReadCursorRollsBackAfterExecutionFailure) {
+  rg::InMemoryGraph graph;
+  std::unique_ptr<rg::QueryResultCursor> cursor =
+      rg::ExecuteReadQueryCursor(graph, "RETURN 1 / 0 AS value");
+
+  std::vector<rg::Value> row;
+  EXPECT_THROW((void)cursor->Next(&row), common::InvalidArgumentError);
+
+  std::unique_ptr<rg::StorageTransaction> next_transaction;
+  EXPECT_NO_THROW(next_transaction = graph.BeginTransaction());
+  ASSERT_NE(next_transaction, nullptr);
+  next_transaction->Rollback();
 }
 
 TEST(QueryExecutorTest, ExecutesGraphEndpointAndListFunctions) {
@@ -1531,7 +1576,7 @@ TEST(QueryExecutorTest, RollsBackExistingEntityMutationsAndIndexes) {
 
 TEST(QueryExecutorTest, ExecuteReadQueryRejectsWritesWithGraphReaderOnly) {
   rg::InMemoryGraph graph;
-  const rg::GraphReader &graph_reader = graph;
+  rg::GraphReader &graph_reader = graph;
 
   EXPECT_THROW((void)rg::ExecuteReadQuery(graph_reader, "CREATE (n) RETURN n"),
                common::InvalidArgumentError);

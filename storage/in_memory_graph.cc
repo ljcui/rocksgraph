@@ -284,6 +284,8 @@ class InMemoryGraph::Transaction final : public StorageTransaction {
   explicit Transaction(InMemoryGraph *graph) : graph_(graph) {
     CHECK(graph_ != nullptr, common::InternalError,
           "transaction graph is null");
+    CHECK(!graph_->transaction_active_, common::InvalidArgumentError,
+          "another transaction is already active");
 
     next_node_id_ = graph_->next_node_id_;
     next_relationship_id_ = graph_->next_relationship_id_;
@@ -311,9 +313,39 @@ class InMemoryGraph::Transaction final : public StorageTransaction {
            .type = relationship->type,
            .properties = relationship->properties});
     }
+    graph_->transaction_active_ = true;
   }
 
-  void Commit() override { finished_ = true; }
+  ~Transaction() override {
+    if (!finished_) {
+      try {
+        Rollback();
+      } catch (...) {
+      }
+    }
+  }
+
+  const GraphReader &Reader() const override {
+    CHECK(graph_ != nullptr, common::InternalError,
+          "transaction graph is null");
+    return *graph_;
+  }
+
+  Storage *Writer() override {
+    CHECK(graph_ != nullptr, common::InternalError,
+          "transaction graph is null");
+    return graph_;
+  }
+
+  void Commit() override {
+    if (finished_) {
+      return;
+    }
+    CHECK(graph_ != nullptr, common::InternalError,
+          "transaction graph is null");
+    graph_->transaction_active_ = false;
+    finished_ = true;
+  }
 
   void Rollback() override {
     if (finished_) {
@@ -365,6 +397,7 @@ class InMemoryGraph::Transaction final : public StorageTransaction {
     for (const auto &relationship : graph_->relationships_) {
       graph_->AddRelationshipToIndexes(relationship);
     }
+    graph_->transaction_active_ = false;
     finished_ = true;
   }
 

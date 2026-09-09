@@ -12,6 +12,24 @@
 
 namespace rg {
 
+class GraphReader;
+class Storage;
+
+class StorageTransaction {
+ public:
+  StorageTransaction() = default;
+  StorageTransaction(const StorageTransaction &) = delete;
+  StorageTransaction &operator=(const StorageTransaction &) = delete;
+  virtual ~StorageTransaction() = default;
+
+  // The reader and optional writer expose the transaction's data view. A
+  // read-only graph may return nullptr from Writer().
+  [[nodiscard]] virtual const GraphReader &Reader() const = 0;
+  [[nodiscard]] virtual Storage *Writer() = 0;
+  virtual void Commit() = 0;
+  virtual void Rollback() = 0;
+};
+
 struct IndexRangeBound {
   Value value;
   bool inclusive = false;
@@ -45,6 +63,11 @@ class GraphReader {
   GraphReader(const GraphReader &) = delete;
   GraphReader &operator=(const GraphReader &) = delete;
   virtual ~GraphReader() = default;
+
+  // Every Cypher execution must run inside one transaction. The transaction
+  // uses this reader's view for both reads and writes where supported.
+  [[nodiscard]] virtual std::unique_ptr<StorageTransaction>
+  BeginTransaction() = 0;
 
   [[nodiscard]] virtual std::unique_ptr<EntityIdCursor> ScanNodeIds() const = 0;
   [[nodiscard]] virtual std::unique_ptr<EntityIdCursor> ScanRelationshipIds()

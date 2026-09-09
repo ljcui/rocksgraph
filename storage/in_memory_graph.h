@@ -262,6 +262,7 @@ class InMemoryGraph final : public Storage,
       outgoing_relationships_;
   std::unordered_map<int64_t, std::vector<MutableRelationshipPtr>>
       incoming_relationships_;
+  bool transaction_active_ = false;
 };
 
 }  // namespace rg

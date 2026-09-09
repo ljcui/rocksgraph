@@ -41,6 +41,38 @@ rg::IndexRange ClosedRange(int lower, int upper) {
 
 }  // namespace
 
+TEST(IndexAccessTest, TransactionExposesOneReadWriteView) {
+  rg::InMemoryGraph graph;
+  auto transaction = graph.BeginTransaction();
+
+  const rg::GraphReader &reader = transaction->Reader();
+  rg::Storage *writer = transaction->Writer();
+  ASSERT_NE(writer, nullptr);
+  auto node = writer->CreateNode({"Person"}, {{"name", rg::Value("Ada")}});
+
+  ASSERT_NE(reader.NodeById(node->id), nullptr);
+  EXPECT_EQ(reader.NodeProperty(node->id, "name"), rg::Value("Ada"));
+
+  transaction->Rollback();
+  EXPECT_TRUE(graph.Nodes().empty());
+}
+
+TEST(IndexAccessTest, TransactionRollsBackOnDestructionAndRejectsOverlap) {
+  rg::InMemoryGraph graph;
+  {
+    auto transaction = graph.BeginTransaction();
+    ASSERT_NE(transaction->Writer(), nullptr);
+    transaction->Writer()->CreateNode({"Temporary"});
+    EXPECT_THROW((void)graph.BeginTransaction(), common::InvalidArgumentError);
+  }
+
+  EXPECT_TRUE(graph.Nodes().empty());
+  std::unique_ptr<rg::StorageTransaction> next_transaction;
+  EXPECT_NO_THROW(next_transaction = graph.BeginTransaction());
+  ASSERT_NE(next_transaction, nullptr);
+  next_transaction->Commit();
+}
+
 TEST(IndexAccessTest, MaintainsLabelsAndTypesAcrossMutationsAndRollback) {
   rg::InMemoryGraph graph;
   auto a = graph.CreateNode({"A", "A", "B"});

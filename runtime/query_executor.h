@@ -53,24 +53,25 @@ class QueryExecutor final {
  public:
   explicit QueryExecutor(Storage &storage)
       : graph_reader_(&storage), storage_(&storage) {}
-  explicit QueryExecutor(const GraphReader &graph_reader)
+  explicit QueryExecutor(GraphReader &graph_reader)
       : graph_reader_(&graph_reader) {}
 
   [[nodiscard]] QueryResult Execute(const ir::LogicalPlan &plan,
                                     const QueryParameters &parameters = {},
                                     QueryExecutionOptions options = {}) const;
   // The plan and its referenced AST expressions only need to remain valid
-  // until this call returns; the cursor owns the resulting physical plan.
+  // until this call returns; the cursor owns the resulting physical plan and
+  // transaction.
   [[nodiscard]] std::unique_ptr<QueryResultCursor> ExecuteCursor(
       const ir::LogicalPlan &plan, const QueryParameters &parameters = {},
       QueryExecutionOptions options = {}) const;
 
  private:
-  const GraphReader *graph_reader_ = nullptr;
+  GraphReader *graph_reader_ = nullptr;
   Storage *storage_ = nullptr;
 };
 
-[[nodiscard]] QueryResult ExecuteReadQuery(const GraphReader &graph_reader,
+[[nodiscard]] QueryResult ExecuteReadQuery(GraphReader &graph_reader,
                                            std::string_view cypher,
                                            QueryOptions options = {});
 [[nodiscard]] QueryResult ExecuteQuery(Storage &storage,
@@ -79,7 +80,7 @@ class QueryExecutor final {
 void ExecuteWriteQuery(Storage &storage, std::string_view cypher,
                        QueryOptions options = {});
 [[nodiscard]] std::unique_ptr<QueryResultCursor> ExecuteReadQueryCursor(
-    const GraphReader &graph_reader, std::string_view cypher,
+    GraphReader &graph_reader, std::string_view cypher,
     QueryOptions options = {});
 [[nodiscard]] std::unique_ptr<QueryResultCursor> ExecuteQueryCursor(
     Storage &storage, std::string_view cypher, QueryOptions options = {});

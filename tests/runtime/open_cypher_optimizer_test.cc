@@ -53,6 +53,26 @@ class ObservedGraph final : public rg::GraphReader {
   mutable std::size_t range_seeks = 0;
   mutable std::size_t candidates = 0;
 
+  class Transaction final : public rg::StorageTransaction {
+   public:
+    Transaction(ObservedGraph *graph,
+                std::unique_ptr<rg::StorageTransaction> delegate)
+        : graph_(graph), delegate_(std::move(delegate)) {}
+
+    const rg::GraphReader &Reader() const override { return *graph_; }
+    rg::Storage *Writer() override { return nullptr; }
+    void Commit() override { delegate_->Commit(); }
+    void Rollback() override { delegate_->Rollback(); }
+
+   private:
+    ObservedGraph *graph_;
+    std::unique_ptr<rg::StorageTransaction> delegate_;
+  };
+
+  std::unique_ptr<rg::StorageTransaction> BeginTransaction() override {
+    return std::make_unique<Transaction>(this, graph.BeginTransaction());
+  }
+
   class CountingCursor final : public rg::EntityIdCursor {
    public:
     CountingCursor(std::unique_ptr<rg::EntityIdCursor> source,
