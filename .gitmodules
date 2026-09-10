@@ -1,3 +1,0 @@
-[submodule "deps/etcd-raft-cpp"]
-	path = deps/etcd-raft-cpp
-	url = https://github.com/TuGraph-family/etcd-raft-cpp.git
