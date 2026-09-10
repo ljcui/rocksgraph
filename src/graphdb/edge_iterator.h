@@ -60,14 +60,14 @@ class ScanEdgeByVidDirectionTypesProperties : public EdgeIterator {
   ScanEdgeByVidDirectionTypesProperties(
       txn::Transaction* txn, int64_t vid, EdgeDirection direction,
       std::unordered_set<uint32_t> types,
-      std::unordered_map<uint32_t, Value> properties);
+      std::unordered_map<uint32_t, rg::Value> properties);
   void Next() override;
   Edge& GetEdge() override { return iter_->GetEdge(); };
 
  private:
   bool MatchProperties();
   std::unique_ptr<ScanEdgeByVidDirectionTypes> iter_;
-  std::unordered_map<uint32_t, Value> properties_;
+  std::unordered_map<uint32_t, rg::Value> properties_;
 };
 
 class ScanEdgeByVidDirectionTypesPropertiesOtherNode : public EdgeIterator {
@@ -75,9 +75,9 @@ class ScanEdgeByVidDirectionTypesPropertiesOtherNode : public EdgeIterator {
   ScanEdgeByVidDirectionTypesPropertiesOtherNode(
       txn::Transaction* txn, int64_t vid, EdgeDirection direction,
       std::unordered_set<uint32_t> types,
-      std::unordered_map<uint32_t, Value> properties,
+      std::unordered_map<uint32_t, rg::Value> properties,
       std::unordered_set<uint32_t> other_node_labels,
-      std::unordered_map<uint32_t, Value> other_node_properties);
+      std::unordered_map<uint32_t, rg::Value> other_node_properties);
   void Next() override;
   Edge& GetEdge() override { return iter_->GetEdge(); };
 
@@ -86,7 +86,7 @@ class ScanEdgeByVidDirectionTypesPropertiesOtherNode : public EdgeIterator {
   int64_t vid_;
   std::unique_ptr<ScanEdgeByVidDirectionTypesProperties> iter_;
   std::unordered_set<uint32_t> other_node_labels_;
-  std::unordered_map<uint32_t, Value> other_node_properties_;
+  std::unordered_map<uint32_t, rg::Value> other_node_properties_;
 };
 
 class ScanEdgeByVidDirectionTypesPropertiesOtherVid : public EdgeIterator {
@@ -94,7 +94,7 @@ class ScanEdgeByVidDirectionTypesPropertiesOtherVid : public EdgeIterator {
   ScanEdgeByVidDirectionTypesPropertiesOtherVid(
       txn::Transaction* txn, int64_t vid, EdgeDirection direction,
       std::unordered_set<uint32_t> types,
-      std::unordered_map<uint32_t, Value> properties, const Vertex& other);
+      std::unordered_map<uint32_t, rg::Value> properties, const Vertex& other);
   void Next() override;
   Edge& GetEdge() override { return iter_->GetEdge(); };
 
@@ -108,7 +108,7 @@ class ScanEdgeByVidDirectionTypePropertiesOtherNode : public EdgeIterator {
  public:
   ScanEdgeByVidDirectionTypePropertiesOtherNode(
       txn::Transaction* txn, int64_t vid, EdgeDirection direction,
-      uint32_t type, std::unordered_map<uint32_t, Value> properties,
+      uint32_t type, std::unordered_map<uint32_t, rg::Value> properties,
       const Vertex& other_node);
   void Next() override;
   Edge& GetEdge() override { return iter_->GetEdge(); };
@@ -116,7 +116,7 @@ class ScanEdgeByVidDirectionTypePropertiesOtherNode : public EdgeIterator {
  private:
   bool MatchProperties();
   int64_t vid_;
-  std::unordered_map<uint32_t, Value> properties_;
+  std::unordered_map<uint32_t, rg::Value> properties_;
   const Vertex& other_node_;
   std::unique_ptr<ScanEdgeByVidDirectionTypes> iter_;
 };

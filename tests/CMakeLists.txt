@@ -46,7 +46,6 @@ add_rocksgraph_test(index_access_test runtime/index_access_test.cc
 
 add_rocksgraph_test(value_test value/value_test.cc rocksgraph_value)
 
-find_package(date REQUIRED)
 find_package(OpenMP REQUIRED)
 add_executable(
   graphdb_test
@@ -57,11 +56,10 @@ add_executable(
   graphdb/test_graph_db.cpp
   graphdb/test_index.cpp
   graphdb/test_kv_engine.cpp
-  graphdb/test_temporal.cpp
   graphdb/test_transaction.cpp
   graphdb/test_value.cpp
   graphdb/test_vector_index.cpp)
-target_link_libraries(graphdb_test PRIVATE GTest::gtest graphdb date::date-tz
+target_link_libraries(graphdb_test PRIVATE GTest::gtest graphdb
                                          OpenMP::OpenMP_CXX)
 set_target_properties(graphdb_test PROPERTIES BUILD_RPATH "/usr/local/lib")
 add_test(NAME graphdb_test COMMAND graphdb_test)

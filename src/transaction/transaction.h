@@ -10,13 +10,13 @@
 #include <unordered_map>
 #include <vector>
 
-#include "common/value.h"
 #include "graphdb/edge_direction.h"
 #include "graphdb/edge_iterator.h"
 #include "graphdb/graph_cf.h"
 #include "graphdb/id_generator.h"
 #include "graphdb/meta_info.h"
 #include "graphdb/vertex_iterator.h"
+#include "value/value.h"
 namespace graphdb {
 class GraphDB;
 }
@@ -35,11 +35,11 @@ class Transaction {
   ~Transaction() { delete txn_; }
   graphdb::Vertex CreateVertex(
       const std::unordered_set<std::string>& labels,
-      const std::unordered_map<std::string, Value>& values);
+      const std::unordered_map<std::string, rg::Value>& values);
   graphdb::Edge CreateEdge(
       const graphdb::Vertex& start, const graphdb::Vertex& end,
       const std::string& type,
-      const std::unordered_map<std::string, Value>& values);
+      const std::unordered_map<std::string, rg::Value>& values);
   graphdb::Vertex GetVertexById(int64_t vid);
   graphdb::Edge GetEdgeById(uint32_t etid, int64_t eid);
   std::unique_ptr<graphdb::VertexIterator> NewVertexIterator();
@@ -47,16 +47,17 @@ class Transaction {
       const std::string& label);
   std::unique_ptr<graphdb::VertexIterator> NewVertexIterator(
       const std::optional<std::string>& label,
-      const std::optional<std::unordered_map<std::string, Value>>& props);
+      const std::optional<std::unordered_map<std::string, rg::Value>>& props);
   // for debug
   std::string GetVertexIteratorInfo(
       const std::optional<std::string>& label,
       const std::optional<std::unordered_set<std::string>>& props);
   std::unique_ptr<graphdb::VertexIterator> QueryVertexByPropertyIndex(
-      const std::string& index_name, const Value& query);
+      const std::string& index_name, const rg::Value& query);
   std::unique_ptr<graphdb::VertexIterator> QueryVertexByPropertyRange(
-      const std::string& index_name, const std::optional<Value>& lower,
-      const std::optional<Value>& upper, bool left_closed, bool right_closed);
+      const std::string& index_name, const std::optional<rg::Value>& lower,
+      const std::optional<rg::Value>& upper, bool left_closed,
+      bool right_closed);
   std::unique_ptr<graphdb::VertexScoreIterator> QueryVertexByFTIndex(
       const std::string& index_name, const std::string& query, size_t top_n);
   std::unique_ptr<graphdb::VertexScoreIterator> QueryVertexByKnnSearch(

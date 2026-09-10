@@ -1,14 +1,76 @@
 #pragma once
 
+#include <cstdint>
+#include <limits>
 #include <nlohmann/json.hpp>
 #include <string>
 
 #include "bolt/graph.h"
 #include "bolt/record.h"
-#include "common/temporal/temporal.h"
+#include "value/temporal.h"
 
 namespace bolt {
 namespace detail {
+
+rg::Date DateFromEpochDays(std::int64_t days) {
+  days += 719468;
+  const std::int64_t era = (days >= 0 ? days : days - 146096) / 146097;
+  const auto day_of_era = static_cast<unsigned>(days - era * 146097);
+  const unsigned year_of_era = (day_of_era - day_of_era / 1460 +
+                                day_of_era / 36524 - day_of_era / 146096) /
+                               365;
+  std::int64_t year = static_cast<std::int64_t>(year_of_era) + era * 400;
+  const unsigned day_of_year =
+      day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+  const unsigned month_part = (5 * day_of_year + 2) / 153;
+  const unsigned day = day_of_year - (153 * month_part + 2) / 5 + 1;
+  const unsigned month = month_part < 10 ? month_part + 3 : month_part - 9;
+  year += month <= 2;
+  if (year < std::numeric_limits<std::int32_t>::min() ||
+      year > std::numeric_limits<std::int32_t>::max()) {
+    throw std::runtime_error("Bolt date is outside the supported year range");
+  }
+  return {static_cast<std::int32_t>(year), static_cast<std::int32_t>(month),
+          static_cast<std::int32_t>(day)};
+}
+
+rg::LocalTime LocalTimeFromNanoseconds(std::int64_t nanoseconds) {
+  constexpr std::int64_t kNanosecondsPerSecond = 1'000'000'000;
+  constexpr std::int64_t kNanosecondsPerDay = 86'400 * kNanosecondsPerSecond;
+  nanoseconds %= kNanosecondsPerDay;
+  if (nanoseconds < 0) {
+    nanoseconds += kNanosecondsPerDay;
+  }
+  const std::int64_t seconds = nanoseconds / kNanosecondsPerSecond;
+  return {.hour = static_cast<std::int32_t>(seconds / 3600),
+          .minute = static_cast<std::int32_t>((seconds / 60) % 60),
+          .second = static_cast<std::int32_t>(seconds % 60),
+          .nanosecond =
+              static_cast<std::int32_t>(nanoseconds % kNanosecondsPerSecond),
+          .has_seconds = true};
+}
+
+rg::LocalDateTime LocalDateTimeFromEpoch(std::int64_t seconds,
+                                         std::int64_t nanoseconds) {
+  constexpr std::int64_t kSecondsPerDay = 86'400;
+  constexpr std::int64_t kNanosecondsPerSecond = 1'000'000'000;
+  seconds += nanoseconds / kNanosecondsPerSecond;
+  nanoseconds %= kNanosecondsPerSecond;
+  if (nanoseconds < 0) {
+    --seconds;
+    nanoseconds += kNanosecondsPerSecond;
+  }
+  std::int64_t days = seconds / kSecondsPerDay;
+  std::int64_t seconds_of_day = seconds % kSecondsPerDay;
+  if (seconds_of_day < 0) {
+    --days;
+    seconds_of_day += kSecondsPerDay;
+  }
+  return {DateFromEpochDays(days),
+          LocalTimeFromNanoseconds(seconds_of_day * kNanosecondsPerSecond +
+                                   nanoseconds)};
+}
+
 nlohmann::json ToJsonObj(const bolt::Node& node);
 nlohmann::json ToJsonObj(const bolt::Relationship& rel);
 nlohmann::json ToJsonObj(const bolt::Path& path);
@@ -39,20 +101,19 @@ nlohmann::json ToJsonObj(const std::any& item) {
     return ToJsonObj(path);
   } else if (item.type() == typeid(bolt::Date)) {
     const auto& date = std::any_cast<const bolt::Date&>(item);
-    common::Date d(date.days);
-    return ToJsonObj(d.ToString());
+    return ToJsonObj(rg::FormatDate(DateFromEpochDays(date.days)));
   } else if (item.type() == typeid(bolt::DateTime)) {
     const auto& dateTime = std::any_cast<const bolt::DateTime&>(item);
-    common::DateTime dt(
-        (dateTime.seconds + dateTime.tz_offset_seconds) * 1000000000 +
-            dateTime.nanoseconds,
-        dateTime.tz_offset_seconds);
-    return ToJsonObj(dt.ToString());
+    rg::DateTime value{
+        LocalDateTimeFromEpoch(dateTime.seconds + dateTime.tz_offset_seconds,
+                               dateTime.nanoseconds),
+        static_cast<std::int32_t>(dateTime.tz_offset_seconds),
+        {}};
+    return ToJsonObj(rg::FormatDateTime(value));
   } else if (item.type() == typeid(bolt::LocalDateTime)) {
     const auto& localDateTime = std::any_cast<const bolt::LocalDateTime&>(item);
-    common::LocalDateTime dateTime(localDateTime.seconds * 1000000000 +
-                                   localDateTime.nanoseconds);
-    return ToJsonObj(dateTime.ToString());
+    return ToJsonObj(rg::FormatLocalDateTime(LocalDateTimeFromEpoch(
+        localDateTime.seconds, localDateTime.nanoseconds)));
   } else if (item.type() == typeid(std::vector<std::any>)) {
     const auto& vector = std::any_cast<const std::vector<std::any>&>(item);
     nlohmann::json ret = nlohmann::json::array();
@@ -70,17 +131,19 @@ nlohmann::json ToJsonObj(const std::any& item) {
     return ret;
   } else if (item.type() == typeid(bolt::LocalTime)) {
     const auto& time = std::any_cast<const bolt::LocalTime&>(item);
-    common::LocalTime d(time.nanoseconds);
-    return ToJsonObj(d.ToString());
+    return ToJsonObj(
+        rg::FormatLocalTime(LocalTimeFromNanoseconds(time.nanoseconds)));
   } else if (item.type() == typeid(bolt::Time)) {
     const auto& time = std::any_cast<const bolt::Time&>(item);
-    common::Time d(time.nanoseconds, time.tz_offset_seconds);
-    return ToJsonObj(d.ToString());
+    rg::Time value{LocalTimeFromNanoseconds(time.nanoseconds),
+                   static_cast<std::int32_t>(time.tz_offset_seconds),
+                   {}};
+    return ToJsonObj(rg::FormatTime(value));
   } else if (item.type() == typeid(bolt::Duration)) {
     const auto& duration = std::any_cast<const bolt::Duration&>(item);
-    common::Duration d(duration.months, duration.days, duration.seconds,
-                       duration.nanos);
-    return ToJsonObj(d.ToString());
+    return ToJsonObj(
+        rg::FormatDuration({duration.months, duration.days, duration.seconds,
+                            static_cast<std::int32_t>(duration.nanos)}));
   } else {
     auto err = std::string("Unsupported type: ") + item.type().name();
     LOG_ERROR(err);

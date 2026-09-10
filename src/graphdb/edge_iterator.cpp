@@ -8,6 +8,7 @@
 
 #include "bolt/connection.h"
 #include "common/byte_utils.h"
+#include "common/exceptions.h"
 #include "common/logger.h"
 #include "graph_db.h"
 #include "transaction/transaction.h"
@@ -121,7 +122,7 @@ bool ScanEdgeByVidDirectionTypesProperties::MatchProperties() {
 ScanEdgeByVidDirectionTypesProperties::ScanEdgeByVidDirectionTypesProperties(
     txn::Transaction *txn, int64_t vid, EdgeDirection direction,
     std::unordered_set<uint32_t> types,
-    std::unordered_map<uint32_t, Value> properties)
+    std::unordered_map<uint32_t, rg::Value> properties)
     : EdgeIterator(txn), properties_(std::move(properties)) {
   for (iter_ = std::make_unique<ScanEdgeByVidDirectionTypes>(
            txn, vid, direction, std::move(types));
@@ -152,7 +153,7 @@ ScanEdgeByVidDirectionTypesPropertiesOtherVid::
     ScanEdgeByVidDirectionTypesPropertiesOtherVid(
         txn::Transaction *txn, int64_t vid, graphdb::EdgeDirection direction,
         std::unordered_set<uint32_t> types,
-        std::unordered_map<uint32_t, Value> properties,
+        std::unordered_map<uint32_t, rg::Value> properties,
         const graphdb::Vertex &other)
     : EdgeIterator(txn), vid_(vid), other_node_(other) {
   for (iter_ = std::make_unique<ScanEdgeByVidDirectionTypesProperties>(
@@ -186,9 +187,9 @@ ScanEdgeByVidDirectionTypesPropertiesOtherNode::
     ScanEdgeByVidDirectionTypesPropertiesOtherNode(
         txn::Transaction *txn, int64_t vid, EdgeDirection direction,
         std::unordered_set<uint32_t> types,
-        std::unordered_map<uint32_t, Value> properties,
+        std::unordered_map<uint32_t, rg::Value> properties,
         std::unordered_set<uint32_t> other_node_labels,
-        std::unordered_map<uint32_t, Value> other_node_properties)
+        std::unordered_map<uint32_t, rg::Value> other_node_properties)
     : EdgeIterator(txn),
       vid_(vid),
       other_node_labels_(std::move(other_node_labels)),
@@ -260,7 +261,7 @@ bool ScanEdgeByVidDirectionTypePropertiesOtherNode::MatchProperties() {
 ScanEdgeByVidDirectionTypePropertiesOtherNode::
     ScanEdgeByVidDirectionTypePropertiesOtherNode(
         txn::Transaction *txn, int64_t vid, EdgeDirection direction,
-        uint32_t type, std::unordered_map<uint32_t, Value> properties,
+        uint32_t type, std::unordered_map<uint32_t, rg::Value> properties,
         const Vertex &other_node)
     : EdgeIterator(txn),
       vid_(vid),

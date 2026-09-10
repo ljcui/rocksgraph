@@ -15,6 +15,7 @@
 #include "common/logger.h"
 #include "graphdb/graph_db.h"
 #include "graphdb/index_error.h"
+#include "graphdb/value_codec.h"
 #include "graphdb/vector_property.h"
 #include "graphdb/vertex_index_updater.h"
 using namespace graphdb;
@@ -23,8 +24,8 @@ using common::AsChars;
 
 namespace {
 
-bool IsRangeComparableValue(const Value& value) {
-  return !value.IsArray() && !value.IsMap();
+bool IsRangeComparableValue(const rg::Value& value) {
+  return !value.IsList() && !value.IsMap();
 }
 
 std::shared_ptr<VertexPropertyIndex> ResolveVertexPropertyIndexOrThrow(
@@ -41,21 +42,21 @@ std::shared_ptr<VertexPropertyIndex> ResolveVertexPropertyIndexOrThrow(
   return index;
 }
 
-std::vector<Value> BuildPropertyIndexQueryValues(
-    const std::shared_ptr<VertexPropertyIndex>& index, const Value& query,
+std::vector<rg::Value> BuildPropertyIndexQueryValues(
+    const std::shared_ptr<VertexPropertyIndex>& index, const rg::Value& query,
     const std::string& arg_name) {
-  std::vector<Value> values;
+  std::vector<rg::Value> values;
   if (index->PropertyCount() == 1) {
     values.emplace_back(query);
     return values;
   }
 
-  if (!query.IsArray()) {
+  if (!query.IsList()) {
     THROW_CODE(ReminderException,
-               "{} type should be Array for composite index {}", arg_name,
+               "{} type should be List for composite index {}", arg_name,
                index->meta().name());
   }
-  const auto& items = query.AsArray();
+  const auto& items = query.AsList();
   if (items.size() != index->PropertyCount()) {
     THROW_CODE(ReminderException,
                "{} element count should be {}, but {} are given", arg_name,
@@ -66,15 +67,15 @@ std::vector<Value> BuildPropertyIndexQueryValues(
 
 std::optional<std::string> BuildPropertyIndexRangeKey(
     const std::shared_ptr<VertexPropertyIndex>& index,
-    const std::optional<Value>& bound, const std::string& arg_name) {
+    const std::optional<rg::Value>& bound, const std::string& arg_name) {
   if (!bound.has_value()) {
     return std::nullopt;
   }
   auto values = BuildPropertyIndexQueryValues(index, *bound, arg_name);
   for (const auto& value : values) {
     if (!IsRangeComparableValue(value)) {
-      THROW_CODE(ReminderException,
-                 "{} does not support ARRAY or MAP component", arg_name);
+      THROW_CODE(ReminderException, "{} does not support LIST or MAP component",
+                 arg_name);
     }
   }
   return index->IndexKey(values);
@@ -103,7 +104,7 @@ bool IsEmptyPropertyIndexRange(const std::optional<std::string>& lower_key,
 namespace txn {
 Vertex Transaction::CreateVertex(
     const std::unordered_set<std::string>& labels,
-    const std::unordered_map<std::string, Value>& values) {
+    const std::unordered_map<std::string, rg::Value>& values) {
   rocksdb::Status s;
   int64_t vid = db_->id_generator().GetNextVid();
   std::unordered_set<uint32_t> lids;
@@ -147,7 +148,7 @@ Vertex Transaction::CreateVertex(
       if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
     }
     if (!is_vector_property) {
-      serialized_values.emplace(pid, value.Serialize());
+      serialized_values.emplace(pid, SerializeValue(value));
     }
   }
   for (const auto& [pid, val] : serialized_values) {
@@ -169,7 +170,7 @@ Vertex Transaction::CreateVertex(
 
 Edge Transaction::CreateEdge(
     const Vertex& start, const Vertex& end, const std::string& type,
-    const std::unordered_map<std::string, Value>& values) {
+    const std::unordered_map<std::string, rg::Value>& values) {
   rocksdb::Status s;
   {
     rocksdb::ReadOptions ro;
@@ -215,7 +216,7 @@ Edge Transaction::CreateEdge(
     key.clear();
     key.append(AsChars(eid), sizeof(eid));
     key.append(AsChars(pid), sizeof(pid));
-    val = value.Serialize();
+    val = SerializeValue(value);
     s = txn_->GetWriteBatch()->Put(db_->graph_cf().edge_property, key, val);
     if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
   }
@@ -284,7 +285,7 @@ std::string Transaction::GetVertexIteratorInfo(
       return "ScanVertexBylabel";
     }
   } else if (!label && props) {
-    std::unordered_map<uint32_t, Value> map;
+    std::unordered_map<uint32_t, rg::Value> map;
     for (auto& name : props.value()) {
       auto pid = db_->id_generator().GetPid(name);
       if (!pid.has_value()) {
@@ -314,7 +315,7 @@ std::string Transaction::GetVertexIteratorInfo(
 
 std::unique_ptr<VertexIterator> Transaction::NewVertexIterator(
     const std::optional<std::string>& label,
-    const std::optional<std::unordered_map<std::string, Value>>& props) {
+    const std::optional<std::unordered_map<std::string, rg::Value>>& props) {
   if (!label && !props) {
     return std::make_unique<ScanAllVertex>(this);
   } else if (label && !props) {
@@ -325,7 +326,7 @@ std::unique_ptr<VertexIterator> Transaction::NewVertexIterator(
       return std::make_unique<ScanVertexBylabel>(this, lid.value());
     }
   } else if (!label && props) {
-    std::unordered_map<uint32_t, Value> map;
+    std::unordered_map<uint32_t, rg::Value> map;
     for (auto& [name, val] : props.value()) {
       auto pid = db_->id_generator().GetPid(name);
       if (!pid.has_value()) {
@@ -340,7 +341,7 @@ std::unique_ptr<VertexIterator> Transaction::NewVertexIterator(
     if (!lid.has_value()) {
       return std::make_unique<NoVertexFound>(this);
     }
-    std::unordered_map<uint32_t, Value> map;
+    std::unordered_map<uint32_t, rg::Value> map;
     for (auto& [name, val] : props.value()) {
       auto pid = db_->id_generator().GetPid(name);
       if (!pid.has_value()) {
@@ -358,7 +359,7 @@ std::unique_ptr<VertexIterator> Transaction::NewVertexIterator(
       return std::make_unique<ScanVertexBylabelProperties>(this, lid.value(),
                                                            std::move(map));
     }
-    std::vector<Value> indexed_values;
+    std::vector<rg::Value> indexed_values;
     indexed_values.reserve(unique_index->PropertyCount());
     for (auto pid : unique_index->pids()) {
       indexed_values.push_back(map.at(pid));
@@ -497,7 +498,7 @@ std::unique_ptr<VertexScoreIterator> Transaction::QueryVertexByFTIndex(
 
 std::unique_ptr<graphdb::VertexIterator>
 Transaction::QueryVertexByPropertyIndex(const std::string& index_name,
-                                        const Value& query) {
+                                        const rg::Value& query) {
   auto index = ResolveVertexPropertyIndexOrThrow(this, index_name);
   auto values = BuildPropertyIndexQueryValues(index, query, "query");
   auto key = index->IndexKey(values);
@@ -507,8 +508,8 @@ Transaction::QueryVertexByPropertyIndex(const std::string& index_name,
 
 std::unique_ptr<graphdb::VertexIterator>
 Transaction::QueryVertexByPropertyRange(const std::string& index_name,
-                                        const std::optional<Value>& lower,
-                                        const std::optional<Value>& upper,
+                                        const std::optional<rg::Value>& lower,
+                                        const std::optional<rg::Value>& upper,
                                         bool left_closed, bool right_closed) {
   auto index = ResolveVertexPropertyIndexOrThrow(this, index_name);
   auto lower_key = BuildPropertyIndexRangeKey(index, lower, "lower");

@@ -11,12 +11,14 @@
 
 #include "common/byte_utils.h"
 #include "common/logger.h"
-#include "common/value.h"
 #include "graphdb/ftindex/include/lib.rs.h"
 #include "graphdb/graph_db.h"
 #include "proto/meta.pb.h"
 #include "test_util.h"
 #include "transaction/transaction.h"
+#include "value/value.h"
+
+using rg::Value;
 using namespace graphdb;
 using common::AsChars;
 namespace fs = std::filesystem;
@@ -274,14 +276,14 @@ TEST(FTIndex, update) {
 }
 
 static std::unordered_map<std::string, Value> properties = {
-    {"property1", Value::Bool(true)},
-    {"property2", Value::Integer(100)},
-    {"property3", Value::String("string")},
-    {"property4", Value::Double(1.1314)},
-    {"property5", Value::BoolArray({true, false})},
-    {"property6", Value::IntegerArray({1, 2, 3})},
-    {"property7", Value::StringArray({"string1", "string2"})},
-    {"property8", Value::DoubleArray({11.11, 22.22})}};
+    {"property1", Value(true)},
+    {"property2", Value(100)},
+    {"property3", Value("string")},
+    {"property4", Value(1.1314)},
+    {"property5", Value(Value::List{Value(true), Value(false)})},
+    {"property6", Value(Value::List{Value(1), Value(2), Value(3)})},
+    {"property7", Value(Value::List{Value("string1"), Value("string2")})},
+    {"property8", Value(Value::List{Value(11.11), Value(22.22)})}};
 
 TEST(FTIndex, indexVertex) {
   fs::remove_all(testdb);
@@ -289,17 +291,15 @@ TEST(FTIndex, indexVertex) {
   graphDB->AddVertexFullTextIndex("ft_index", {"label1"}, {"str"});
   ASSERT_TRUE(WaitUntilFullTextIndexReady(graphDB.get(), "ft_index"));
   auto txn = graphDB->BeginTransaction();
-  txn->CreateVertex({"label1", "label2"},
-                    {{"id", Value::Integer(1)},
-                     {"str", Value::String("string1 string string11")}});
-  txn->CreateVertex({"label1", "label2"},
-                    {{"id", Value::Integer(2)},
-                     {"str", Value::String("string2 string string22")}});
-  txn->CreateVertex({"label3"},
-                    {{"id", Value::Integer(3)},
-                     {"str", Value::String("string3 string string33")}});
-  txn->CreateVertex({"label1"},
-                    {{"id", Value::Integer(4)}, {"str", Value::Integer(4)}});
+  txn->CreateVertex(
+      {"label1", "label2"},
+      {{"id", Value(1)}, {"str", Value("string1 string string11")}});
+  txn->CreateVertex(
+      {"label1", "label2"},
+      {{"id", Value(2)}, {"str", Value("string2 string string22")}});
+  txn->CreateVertex({"label3"}, {{"id", Value(3)},
+                                 {"str", Value("string3 string string33")}});
+  txn->CreateVertex({"label1"}, {{"id", Value(4)}, {"str", Value(4)}});
   txn->Commit();
   for (const auto& index : graphDB->meta_info().GetVertexFullTextIndexes()) {
     index->ApplyWAL();
@@ -308,16 +308,14 @@ TEST(FTIndex, indexVertex) {
   int count = 0;
   for (auto viter = txn->QueryVertexByFTIndex("ft_index", "string1", 10);
        viter->Valid(); viter->Next()) {
-    EXPECT_EQ(viter->GetVertexScore().vertex.GetProperty("id"),
-              Value::Integer(1));
+    EXPECT_EQ(viter->GetVertexScore().vertex.GetProperty("id"), Value(1));
     count++;
   }
   EXPECT_EQ(count, 1);
   count = 0;
   for (auto viter = txn->QueryVertexByFTIndex("ft_index", "string2", 10);
        viter->Valid(); viter->Next()) {
-    EXPECT_EQ(viter->GetVertexScore().vertex.GetProperty("id"),
-              Value::Integer(2));
+    EXPECT_EQ(viter->GetVertexScore().vertex.GetProperty("id"), Value(2));
     count++;
   }
   EXPECT_EQ(count, 1);
@@ -340,8 +338,7 @@ TEST(FTIndex, committedWalIsAppliedByPeriodicTimer) {
 
   auto txn = graphDB->BeginTransaction();
   txn->CreateVertex({"label1"},
-                    {{"id", Value::Integer(1)},
-                     {"str", Value::String("near_real_time_token")}});
+                    {{"id", Value(1)}, {"str", Value("near_real_time_token")}});
   txn->Commit();
 
   EXPECT_TRUE(WaitUntilQueryCount(graphDB.get(), "ft_index",
@@ -350,8 +347,7 @@ TEST(FTIndex, committedWalIsAppliedByPeriodicTimer) {
 
   txn = graphDB->BeginTransaction();
   auto viter = txn->NewVertexIterator(
-      "label1",
-      std::unordered_map<std::string, Value>{{"id", Value::Integer(1)}});
+      "label1", std::unordered_map<std::string, Value>{{"id", Value(1)}});
   ASSERT_TRUE(viter->Valid());
   viter->GetVertex().Delete();
   txn->Commit();
@@ -408,9 +404,8 @@ TEST(FTIndex, periodicTimerSurvivesWalApplyFailure) {
   txn->Commit();
 
   txn = graphDB->BeginTransaction();
-  txn->CreateVertex({"label1"},
-                    {{"id", Value::Integer(1)},
-                     {"str", Value::String("timer_survives_bad_wal")}});
+  txn->CreateVertex(
+      {"label1"}, {{"id", Value(1)}, {"str", Value("timer_survives_bad_wal")}});
   txn->Commit();
 
   EXPECT_TRUE(WaitUntilQueryCount(graphDB.get(), "ft_index",
@@ -429,8 +424,8 @@ TEST(FTIndex, deleteIndexRejectsPendingTransactionCommit) {
   std::string prefix(AsChars(index->index_id()), sizeof(index->index_id()));
 
   auto txn = graphDB->BeginTransaction();
-  txn->CreateVertex({"label1"}, {{"id", Value::Integer(1)},
-                                 {"str", Value::String("should_not_commit")}});
+  txn->CreateVertex({"label1"},
+                    {{"id", Value(1)}, {"str", Value("should_not_commit")}});
 
   graphDB->DeleteVertexFullTextIndex("ft_index");
 
@@ -440,8 +435,7 @@ TEST(FTIndex, deleteIndexRejectsPendingTransactionCommit) {
 
   auto read_txn = graphDB->BeginTransaction();
   auto viter = read_txn->NewVertexIterator(
-      "label1",
-      std::unordered_map<std::string, Value>{{"id", Value::Integer(1)}});
+      "label1", std::unordered_map<std::string, Value>{{"id", Value(1)}});
   EXPECT_FALSE(viter->Valid());
   read_txn->Rollback();
 
@@ -460,21 +454,18 @@ TEST(FTIndex, rollbackDoesNotBreakWalApply) {
   ASSERT_TRUE(WaitUntilFullTextIndexReady(graphDB.get(), "ft_index"));
 
   auto txn = graphDB->BeginTransaction();
-  txn->CreateVertex({"label1"},
-                    {{"id", Value::Integer(1)},
-                     {"str", Value::String("shared_token keep_one")}});
+  txn->CreateVertex(
+      {"label1"}, {{"id", Value(1)}, {"str", Value("shared_token keep_one")}});
   txn->Commit();
 
   txn = graphDB->BeginTransaction();
-  txn->CreateVertex({"label1"},
-                    {{"id", Value::Integer(2)},
-                     {"str", Value::String("shared_token rolled_back")}});
+  txn->CreateVertex({"label1"}, {{"id", Value(2)},
+                                 {"str", Value("shared_token rolled_back")}});
   txn->Rollback();
 
   txn = graphDB->BeginTransaction();
-  txn->CreateVertex({"label1"},
-                    {{"id", Value::Integer(3)},
-                     {"str", Value::String("shared_token keep_three")}});
+  txn->CreateVertex({"label1"}, {{"id", Value(3)},
+                                 {"str", Value("shared_token keep_three")}});
   txn->Commit();
 
   for (const auto& index : graphDB->meta_info().GetVertexFullTextIndexes()) {
@@ -503,8 +494,8 @@ TEST(FTIndex, createVertexWritesSingleAddWal) {
   ASSERT_TRUE(index != nullptr);
 
   auto txn = graphDB->BeginTransaction();
-  txn->CreateVertex({"label1"}, {{"id", Value::Integer(1)},
-                                 {"str", Value::String("written_once")}});
+  txn->CreateVertex({"label1"},
+                    {{"id", Value(1)}, {"str", Value("written_once")}});
   txn->Commit();
 
   auto updates = ReadFullTextWalUpdates(graphDB.get(), index);
@@ -528,9 +519,8 @@ TEST(FTIndex, createVertexAndRewriteInOneTransactionPreservesWalOrder) {
 
   auto txn = graphDB->BeginTransaction();
   auto vertex = txn->CreateVertex(
-      {"label1"},
-      {{"id", Value::Integer(1)}, {"str", Value::String("before_rewrite")}});
-  vertex.SetProperties({{"str", Value::String("after_rewrite")}});
+      {"label1"}, {{"id", Value(1)}, {"str", Value("before_rewrite")}});
+  vertex.SetProperties({{"str", Value("after_rewrite")}});
   txn->Commit();
 
   auto updates = ReadFullTextWalUpdates(graphDB.get(), index);
@@ -555,17 +545,16 @@ TEST(FTIndex, updatingIndexedVertexWritesDeleteThenAddWal) {
   ASSERT_TRUE(index != nullptr);
 
   auto txn = graphDB->BeginTransaction();
-  txn->CreateVertex({"label1"}, {{"id", Value::Integer(1)},
-                                 {"str", Value::String("before_update")}});
+  txn->CreateVertex({"label1"},
+                    {{"id", Value(1)}, {"str", Value("before_update")}});
   txn->Commit();
   index->ApplyWAL();
 
   txn = graphDB->BeginTransaction();
   auto viter = txn->NewVertexIterator(
-      "label1",
-      std::unordered_map<std::string, Value>{{"id", Value::Integer(1)}});
+      "label1", std::unordered_map<std::string, Value>{{"id", Value(1)}});
   ASSERT_TRUE(viter->Valid());
-  viter->GetVertex().SetProperties({{"str", Value::String("after_update")}});
+  viter->GetVertex().SetProperties({{"str", Value("after_update")}});
   txn->Commit();
 
   auto updates = ReadFullTextWalUpdates(graphDB.get(), index);
@@ -586,14 +575,12 @@ TEST(FTIndex, outOfOrderCommitsApplyCleanly) {
   ASSERT_TRUE(WaitUntilFullTextIndexReady(graphDB.get(), "ft_index"));
 
   auto txn1 = graphDB->BeginTransaction();
-  txn1->CreateVertex({"label1"},
-                     {{"id", Value::Integer(1)},
-                      {"str", Value::String("shared_token commit_later")}});
+  txn1->CreateVertex({"label1"}, {{"id", Value(1)},
+                                  {"str", Value("shared_token commit_later")}});
 
   auto txn2 = graphDB->BeginTransaction();
-  txn2->CreateVertex({"label1"},
-                     {{"id", Value::Integer(2)},
-                      {"str", Value::String("shared_token commit_first")}});
+  txn2->CreateVertex({"label1"}, {{"id", Value(2)},
+                                  {"str", Value("shared_token commit_first")}});
 
   txn2->Commit();
   for (const auto& index : graphDB->meta_info().GetVertexFullTextIndexes()) {
@@ -622,11 +609,9 @@ TEST(FTIndex, buildDeduplicatesVerticesWithMultipleMatchedLabels) {
 
   auto txn = graphDB->BeginTransaction();
   txn->CreateVertex({"label1", "label2"},
-                    {{"id", Value::Integer(1)},
-                     {"str", Value::String("retain_me only_once")}});
+                    {{"id", Value(1)}, {"str", Value("retain_me only_once")}});
   txn->CreateVertex({"label1"},
-                    {{"id", Value::Integer(2)},
-                     {"str", Value::String("retain_me second_doc")}});
+                    {{"id", Value(2)}, {"str", Value("retain_me second_doc")}});
   txn->Commit();
 
   graphDB->AddVertexFullTextIndex("ft_index", {"label1", "label2"}, {"str"});
@@ -652,17 +637,15 @@ TEST(FTIndex, deleteVertex) {
   graphDB->AddVertexFullTextIndex("ft_index", {"label1"}, {"str"});
   ASSERT_TRUE(WaitUntilFullTextIndexReady(graphDB.get(), "ft_index"));
   auto txn = graphDB->BeginTransaction();
-  txn->CreateVertex({"label1", "label2"},
-                    {{"id", Value::Integer(1)},
-                     {"str", Value::String("string1 string string11")}});
-  txn->CreateVertex({"label1", "label2"},
-                    {{"id", Value::Integer(2)},
-                     {"str", Value::String("string2 string string22")}});
-  txn->CreateVertex({"label3"},
-                    {{"id", Value::Integer(3)},
-                     {"str", Value::String("string3 string string33")}});
-  txn->CreateVertex({"label1"},
-                    {{"id", Value::Integer(4)}, {"str", Value::Integer(4)}});
+  txn->CreateVertex(
+      {"label1", "label2"},
+      {{"id", Value(1)}, {"str", Value("string1 string string11")}});
+  txn->CreateVertex(
+      {"label1", "label2"},
+      {{"id", Value(2)}, {"str", Value("string2 string string22")}});
+  txn->CreateVertex({"label3"}, {{"id", Value(3)},
+                                 {"str", Value("string3 string string33")}});
+  txn->CreateVertex({"label1"}, {{"id", Value(4)}, {"str", Value(4)}});
   txn->Commit();
   for (const auto& index : graphDB->meta_info().GetVertexFullTextIndexes()) {
     index->ApplyWAL();
@@ -671,8 +654,7 @@ TEST(FTIndex, deleteVertex) {
   int count = 0;
   for (auto viter = txn->QueryVertexByFTIndex("ft_index", "string1", 10);
        viter->Valid(); viter->Next()) {
-    EXPECT_EQ(viter->GetVertexScore().vertex.GetProperty("id"),
-              Value::Integer(1));
+    EXPECT_EQ(viter->GetVertexScore().vertex.GetProperty("id"), Value(1));
     count++;
   }
   EXPECT_EQ(count, 1);
@@ -680,8 +662,7 @@ TEST(FTIndex, deleteVertex) {
   {
     txn = graphDB->BeginTransaction();
     auto viter = txn->NewVertexIterator(
-        "label1",
-        std::unordered_map<std::string, Value>{{"id", Value::Integer(1)}});
+        "label1", std::unordered_map<std::string, Value>{{"id", Value(1)}});
     EXPECT_TRUE(viter->Valid());
     viter->GetVertex().Delete();
     txn->Commit();
@@ -693,16 +674,14 @@ TEST(FTIndex, deleteVertex) {
   count = 0;
   for (auto viter = txn->QueryVertexByFTIndex("ft_index", "string1", 10);
        viter->Valid(); viter->Next()) {
-    EXPECT_EQ(viter->GetVertexScore().vertex.GetProperty("id"),
-              Value::Integer(1));
+    EXPECT_EQ(viter->GetVertexScore().vertex.GetProperty("id"), Value(1));
     count++;
   }
   EXPECT_EQ(count, 0);
   count = 0;
   for (auto viter = txn->QueryVertexByFTIndex("ft_index", "string", 10);
        viter->Valid(); viter->Next()) {
-    EXPECT_EQ(viter->GetVertexScore().vertex.GetProperty("id"),
-              Value::Integer(2));
+    EXPECT_EQ(viter->GetVertexScore().vertex.GetProperty("id"), Value(2));
     count++;
   }
   EXPECT_EQ(count, 1);
@@ -710,8 +689,7 @@ TEST(FTIndex, deleteVertex) {
   {
     txn = graphDB->BeginTransaction();
     auto viter = txn->NewVertexIterator(
-        "label1",
-        std::unordered_map<std::string, Value>{{"id", Value::Integer(2)}});
+        "label1", std::unordered_map<std::string, Value>{{"id", Value(2)}});
     EXPECT_TRUE(viter->Valid());
     viter->GetVertex().RemoveProperty("str");
     txn->Commit();
@@ -741,18 +719,17 @@ TEST(FTIndex, buildDoesNotBlockWrites) {
 
   auto txn = graphDB->BeginTransaction();
   for (int i = 0; i < 20000; ++i) {
-    txn->CreateVertex({"label1"},
-                      {{"id", Value::Integer(i)},
-                       {"str", Value::String("token" + std::to_string(i))}});
+    txn->CreateVertex(
+        {"label1"},
+        {{"id", Value(i)}, {"str", Value("token" + std::to_string(i))}});
   }
   txn->Commit();
 
   graphDB->AddVertexFullTextIndex("ft_index", {"label1"}, {"str"});
 
   auto write_txn = graphDB->BeginTransaction();
-  write_txn->CreateVertex({"label1"},
-                          {{"id", Value::Integer(30000)},
-                           {"str", Value::String("written_during_build")}});
+  write_txn->CreateVertex({"label1"}, {{"id", Value(30000)},
+                                       {"str", Value("written_during_build")}});
   write_txn->Commit();
 
   ASSERT_TRUE(WaitUntilFullTextIndexReady(graphDB.get(), "ft_index",
@@ -762,8 +739,7 @@ TEST(FTIndex, buildDoesNotBlockWrites) {
   int count = 0;
   for (auto viter = txn->QueryVertexByFTIndex("ft_index", "token42", 10);
        viter->Valid(); viter->Next()) {
-    EXPECT_EQ(viter->GetVertexScore().vertex.GetProperty("id"),
-              Value::Integer(42));
+    EXPECT_EQ(viter->GetVertexScore().vertex.GetProperty("id"), Value(42));
     count++;
   }
   EXPECT_EQ(count, 1);
@@ -772,8 +748,7 @@ TEST(FTIndex, buildDoesNotBlockWrites) {
   for (auto viter =
            txn->QueryVertexByFTIndex("ft_index", "written_during_build", 10);
        viter->Valid(); viter->Next()) {
-    EXPECT_EQ(viter->GetVertexScore().vertex.GetProperty("id"),
-              Value::Integer(30000));
+    EXPECT_EQ(viter->GetVertexScore().vertex.GetProperty("id"), Value(30000));
     count++;
   }
   EXPECT_EQ(count, 1);
@@ -786,17 +761,15 @@ TEST(FTIndex, updateVertex) {
   graphDB->AddVertexFullTextIndex("ft_index", {"label1"}, {"str"});
   ASSERT_TRUE(WaitUntilFullTextIndexReady(graphDB.get(), "ft_index"));
   auto txn = graphDB->BeginTransaction();
-  txn->CreateVertex({"label1", "label2"},
-                    {{"id", Value::Integer(1)},
-                     {"str", Value::String("string1 string string11")}});
-  txn->CreateVertex({"label1", "label2"},
-                    {{"id", Value::Integer(2)},
-                     {"str", Value::String("string2 string string22")}});
-  txn->CreateVertex({"label3"},
-                    {{"id", Value::Integer(3)},
-                     {"str", Value::String("string3 string string33")}});
-  txn->CreateVertex({"label1"},
-                    {{"id", Value::Integer(4)}, {"str", Value::Integer(4)}});
+  txn->CreateVertex(
+      {"label1", "label2"},
+      {{"id", Value(1)}, {"str", Value("string1 string string11")}});
+  txn->CreateVertex(
+      {"label1", "label2"},
+      {{"id", Value(2)}, {"str", Value("string2 string string22")}});
+  txn->CreateVertex({"label3"}, {{"id", Value(3)},
+                                 {"str", Value("string3 string string33")}});
+  txn->CreateVertex({"label1"}, {{"id", Value(4)}, {"str", Value(4)}});
   txn->Commit();
   for (const auto& index : graphDB->meta_info().GetVertexFullTextIndexes()) {
     index->ApplyWAL();
@@ -805,9 +778,8 @@ TEST(FTIndex, updateVertex) {
   int count = 0;
   for (auto viter = txn->QueryVertexByFTIndex("ft_index", "string1", 10);
        viter->Valid(); viter->Next()) {
-    EXPECT_EQ(viter->GetVertexScore().vertex.GetProperty("id"),
-              Value::Integer(1));
-    viter->GetVertexScore().vertex.SetProperties({{"str", Value::Integer(10)}});
+    EXPECT_EQ(viter->GetVertexScore().vertex.GetProperty("id"), Value(1));
+    viter->GetVertexScore().vertex.SetProperties({{"str", Value(10)}});
     count++;
   }
   EXPECT_EQ(count, 1);
@@ -824,11 +796,10 @@ TEST(FTIndex, updateVertex) {
   EXPECT_EQ(count, 0);
   {
     auto viter = txn->NewVertexIterator(
-        "label1",
-        std::unordered_map<std::string, Value>{{"id", Value::Integer(1)}});
+        "label1", std::unordered_map<std::string, Value>{{"id", Value(1)}});
     EXPECT_TRUE(viter->Valid());
     viter->GetVertex().SetProperties(
-        {{"str", Value::String("string1 string string11")}});
+        {{"str", Value("string1 string string11")}});
   }
   txn->Commit();
   for (const auto& index : graphDB->meta_info().GetVertexFullTextIndexes()) {
@@ -853,21 +824,20 @@ TEST(FTIndex, repeatedUpdatesInSingleTransactionApplyLatestDocument) {
   ASSERT_TRUE(WaitUntilFullTextIndexReady(graphDB.get(), "ft_index"));
 
   auto txn = graphDB->BeginTransaction();
-  txn->CreateVertex({"label1"}, {{"id", Value::Integer(1)},
-                                 {"str", Value::String("original_token")}});
+  txn->CreateVertex({"label1"},
+                    {{"id", Value(1)}, {"str", Value("original_token")}});
   txn->Commit();
   EXPECT_TRUE(WaitUntilQueryCount(graphDB.get(), "ft_index", "original_token",
                                   1, std::chrono::milliseconds(2500)));
 
   txn = graphDB->BeginTransaction();
   auto viter = txn->NewVertexIterator(
-      "label1",
-      std::unordered_map<std::string, Value>{{"id", Value::Integer(1)}});
+      "label1", std::unordered_map<std::string, Value>{{"id", Value(1)}});
   ASSERT_TRUE(viter->Valid());
   viter->GetVertex().SetProperties(
-      {{"str", Value::String("middle_token temporary_token")}});
+      {{"str", Value("middle_token temporary_token")}});
   viter->GetVertex().SetProperties(
-      {{"str", Value::String("latest_token final_token")}});
+      {{"str", Value("latest_token final_token")}});
   txn->Commit();
 
   EXPECT_TRUE(WaitUntilQueryCount(graphDB.get(), "ft_index", "original_token",
@@ -888,8 +858,7 @@ TEST(FTIndex, deleteOneMatchedLabelKeepsDocumentIndexed) {
 
   auto txn = graphDB->BeginTransaction();
   txn->CreateVertex({"label1", "label2"},
-                    {{"id", Value::Integer(1)},
-                     {"str", Value::String("retain_me only_once")}});
+                    {{"id", Value(1)}, {"str", Value("retain_me only_once")}});
   txn->Commit();
 
   for (const auto& index : graphDB->meta_info().GetVertexFullTextIndexes()) {
@@ -900,8 +869,7 @@ TEST(FTIndex, deleteOneMatchedLabelKeepsDocumentIndexed) {
   int count = 0;
   for (auto viter = txn->QueryVertexByFTIndex("ft_index", "retain_me", 10);
        viter->Valid(); viter->Next()) {
-    EXPECT_EQ(viter->GetVertexScore().vertex.GetProperty("id"),
-              Value::Integer(1));
+    EXPECT_EQ(viter->GetVertexScore().vertex.GetProperty("id"), Value(1));
     count++;
   }
   EXPECT_EQ(count, 1);
@@ -909,8 +877,7 @@ TEST(FTIndex, deleteOneMatchedLabelKeepsDocumentIndexed) {
 
   txn = graphDB->BeginTransaction();
   auto viter = txn->NewVertexIterator(
-      "label1",
-      std::unordered_map<std::string, Value>{{"id", Value::Integer(1)}});
+      "label1", std::unordered_map<std::string, Value>{{"id", Value(1)}});
   EXPECT_TRUE(viter->Valid());
   viter->GetVertex().DeleteLabels({"label1"});
   txn->Commit();
@@ -923,14 +890,12 @@ TEST(FTIndex, deleteOneMatchedLabelKeepsDocumentIndexed) {
   count = 0;
   for (auto result = txn->QueryVertexByFTIndex("ft_index", "retain_me", 10);
        result->Valid(); result->Next()) {
-    EXPECT_EQ(result->GetVertexScore().vertex.GetProperty("id"),
-              Value::Integer(1));
+    EXPECT_EQ(result->GetVertexScore().vertex.GetProperty("id"), Value(1));
     count++;
   }
   EXPECT_EQ(count, 1);
   auto updated = txn->NewVertexIterator(
-      "label2",
-      std::unordered_map<std::string, Value>{{"id", Value::Integer(1)}});
+      "label2", std::unordered_map<std::string, Value>{{"id", Value(1)}});
   EXPECT_TRUE(updated->Valid());
   EXPECT_EQ(updated->GetVertex().GetLabels(),
             (std::unordered_set<std::string>{"label2"}));
@@ -947,9 +912,8 @@ TEST(FTIndex, reopenRecoversPendingWalAndContinuesFromPayload) {
     ASSERT_TRUE(WaitUntilFullTextIndexReady(graphDB.get(), "ft_index"));
 
     auto txn = graphDB->BeginTransaction();
-    txn->CreateVertex({"label1"},
-                      {{"id", Value::Integer(1)},
-                       {"str", Value::String("pending_restart_token")}});
+    txn->CreateVertex({"label1"}, {{"id", Value(1)},
+                                   {"str", Value("pending_restart_token")}});
     txn->Commit();
   }
 
@@ -960,9 +924,8 @@ TEST(FTIndex, reopenRecoversPendingWalAndContinuesFromPayload) {
                                     std::chrono::milliseconds(2500)));
 
     auto txn = graphDB->BeginTransaction();
-    txn->CreateVertex({"label1"},
-                      {{"id", Value::Integer(2)},
-                       {"str", Value::String("before_payload_restart")}});
+    txn->CreateVertex({"label1"}, {{"id", Value(2)},
+                                   {"str", Value("before_payload_restart")}});
     txn->Commit();
 
     for (const auto& index : graphDB->meta_info().GetVertexFullTextIndexes()) {
@@ -973,8 +936,7 @@ TEST(FTIndex, reopenRecoversPendingWalAndContinuesFromPayload) {
     for (auto result = txn->QueryVertexByFTIndex("ft_index",
                                                  "before_payload_restart", 10);
          result->Valid(); result->Next()) {
-      EXPECT_EQ(result->GetVertexScore().vertex.GetProperty("id"),
-                Value::Integer(2));
+      EXPECT_EQ(result->GetVertexScore().vertex.GetProperty("id"), Value(2));
     }
     txn->Commit();
   }
@@ -982,9 +944,8 @@ TEST(FTIndex, reopenRecoversPendingWalAndContinuesFromPayload) {
   {
     auto graphDB = GraphDB::Open(testdb, options);
     auto txn = graphDB->BeginTransaction();
-    txn->CreateVertex({"label1"},
-                      {{"id", Value::Integer(3)},
-                       {"str", Value::String("after_payload_restart")}});
+    txn->CreateVertex({"label1"}, {{"id", Value(3)},
+                                   {"str", Value("after_payload_restart")}});
     txn->Commit();
 
     for (const auto& index : graphDB->meta_info().GetVertexFullTextIndexes()) {
@@ -996,8 +957,7 @@ TEST(FTIndex, reopenRecoversPendingWalAndContinuesFromPayload) {
     for (auto result =
              txn->QueryVertexByFTIndex("ft_index", "after_payload_restart", 10);
          result->Valid(); result->Next()) {
-      EXPECT_EQ(result->GetVertexScore().vertex.GetProperty("id"),
-                Value::Integer(3));
+      EXPECT_EQ(result->GetVertexScore().vertex.GetProperty("id"), Value(3));
       count++;
     }
     EXPECT_EQ(count, 1);
@@ -1049,8 +1009,8 @@ TEST(FTIndex, createIndexClearsStaleArtifactsFromPreviousFailedBuild) {
   ASSERT_TRUE(WaitUntilFullTextIndexReady(graphDB.get(), "ft_index"));
 
   txn = graphDB->BeginTransaction();
-  txn->CreateVertex({"label1"}, {{"id", Value::Integer(1)},
-                                 {"str", Value::String("fresh_token")}});
+  txn->CreateVertex({"label1"},
+                    {{"id", Value(1)}, {"str", Value("fresh_token")}});
   txn->Commit();
 
   auto index = graphDB->meta_info().GetVertexFullTextIndex("ft_index");
@@ -1081,8 +1041,7 @@ TEST(FTIndex, createIndexClearsStaleArtifactsFromPreviousFailedBuild) {
   int fresh_count = 0;
   for (auto result = txn->QueryVertexByFTIndex("ft_index", "fresh_token", 10);
        result->Valid(); result->Next()) {
-    EXPECT_EQ(result->GetVertexScore().vertex.GetProperty("id"),
-              Value::Integer(1));
+    EXPECT_EQ(result->GetVertexScore().vertex.GetProperty("id"), Value(1));
     fresh_count++;
   }
   EXPECT_EQ(fresh_count, 1);
@@ -1101,7 +1060,7 @@ TEST(FTIndex, applyWalDoesNotWriteIndexMarkers) {
   ASSERT_TRUE(index != nullptr);
 
   auto txn = graphDB->BeginTransaction();
-  auto vertex = txn->CreateVertex({"label1"}, {{"id", Value::Integer(1)}});
+  auto vertex = txn->CreateVertex({"label1"}, {{"id", Value(1)}});
   int64_t vid = vertex.GetId();
   txn->Commit();
   std::string prefix(AsChars(index->index_id()), sizeof(index->index_id()));
@@ -1155,8 +1114,8 @@ TEST(FTIndex, buildingSetPropertiesWritesDeleteWalFromPreviousProperties) {
   ASSERT_TRUE(index != nullptr);
 
   auto txn = graphDB->BeginTransaction();
-  txn->CreateVertex({"label1"}, {{"id", Value::Integer(1)},
-                                 {"str", Value::String("before_update")}});
+  txn->CreateVertex({"label1"},
+                    {{"id", Value(1)}, {"str", Value("before_update")}});
   txn->Commit();
 
   index->ApplyWAL();
@@ -1165,10 +1124,9 @@ TEST(FTIndex, buildingSetPropertiesWritesDeleteWalFromPreviousProperties) {
 
   txn = graphDB->BeginTransaction();
   auto viter = txn->NewVertexIterator(
-      "label1",
-      std::unordered_map<std::string, Value>{{"id", Value::Integer(1)}});
+      "label1", std::unordered_map<std::string, Value>{{"id", Value(1)}});
   ASSERT_TRUE(viter->Valid());
-  viter->GetVertex().SetProperties({{"str", Value::Integer(10)}});
+  viter->GetVertex().SetProperties({{"str", Value(10)}});
   txn->Commit();
 
   auto updates = ReadFullTextWalUpdates(graphDB.get(), index);

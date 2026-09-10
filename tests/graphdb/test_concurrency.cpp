@@ -4,23 +4,25 @@
 #include <random>
 
 #include "common/logger.h"
-#include "common/value.h"
 #include "graphdb/graph_db.h"
 #include "test_util.h"
 #include "transaction/transaction.h"
+#include "value/value.h"
+
+using rg::Value;
 namespace fs = std::filesystem;
 using namespace graphdb;
 static std::string testdb = "testdb";
 std::unordered_set<std::string> labels = {"label1", "label2"};
 static std::unordered_map<std::string, Value> properties = {
-    {"property1", Value::Bool(true)},
-    {"property2", Value::Integer(100)},
-    {"property3", Value::String("string")},
-    {"property4", Value::Double(1.1314)},
-    {"property5", Value::BoolArray({true, false})},
-    {"property6", Value::IntegerArray({1, 2, 3})},
-    {"property7", Value::StringArray({"string1", "string2"})},
-    {"property8", Value::DoubleArray({11.11, 22.22})}};
+    {"property1", Value(true)},
+    {"property2", Value(100)},
+    {"property3", Value("string")},
+    {"property4", Value(1.1314)},
+    {"property5", Value(Value::List{Value(true), Value(false)})},
+    {"property6", Value(Value::List{Value(1), Value(2), Value(3)})},
+    {"property7", Value(Value::List{Value("string1"), Value("string2")})},
+    {"property8", Value(Value::List{Value(11.11), Value(22.22)})}};
 
 static void CreateVertex(GraphDB* db) {
   auto txn = db->BeginTransaction();
@@ -61,12 +63,10 @@ static void CreateEdge(GraphDB* db, int index) {
     int start = dis(gen);
     int end = dis(gen);
     auto v1iter = txn->NewVertexIterator(
-        "label1",
-        std::unordered_map<std::string, Value>{{"id", Value::Integer(start)}});
+        "label1", std::unordered_map<std::string, Value>{{"id", Value(start)}});
     EXPECT_TRUE(v1iter->Valid());
     auto v2iter = txn->NewVertexIterator(
-        "label1",
-        std::unordered_map<std::string, Value>{{"id", Value::Integer(end)}});
+        "label1", std::unordered_map<std::string, Value>{{"id", Value(end)}});
     EXPECT_TRUE(v2iter->Valid());
     txn->CreateEdge(v1iter->GetVertex(), v2iter->GetVertex(), "edge1",
                     properties);
@@ -80,8 +80,8 @@ TEST(Concurrency, edge) {
   auto txn = graphDB->BeginTransaction();
   std::unordered_set<std::string> v1_labels = {"label1", "label2"};
   for (auto i = 0; i < 100; i++) {
-    txn->CreateVertex(v1_labels, {{"id", Value::Integer(i)},
-                                  {"str", Value::String(std::to_string(i))}});
+    txn->CreateVertex(v1_labels,
+                      {{"id", Value(i)}, {"str", Value(std::to_string(i))}});
   }
   txn->Commit();
   graphDB->AddVertexPropertyIndex("label1_id", true, "label1", {"id"});
@@ -113,19 +113,17 @@ TEST(Concurrency, vertexConflict) {
   graphDB->AddVertexPropertyIndex("label1_id", true, "label1", {"id"});
   ASSERT_TRUE(WaitUntilPropertyIndexReady(graphDB.get(), "label1_id"));
   auto txn1 = graphDB->BeginTransaction();
-  txn1->CreateVertex({"label1"},
-                     {{"id", Value::Integer(1)}, {"str", Value::String("1")}});
+  txn1->CreateVertex({"label1"}, {{"id", Value(1)}, {"str", Value("1")}});
   auto txn2 = graphDB->BeginTransaction();
   EXPECT_THROW_CODE_MSG(
-      txn2->CreateVertex(
-          {"label1"}, {{"id", Value::Integer(1)}, {"str", Value::String("2")}}),
+      txn2->CreateVertex({"label1"}, {{"id", Value(1)}, {"str", Value("2")}}),
       StorageEngineError, "Timeout waiting to lock key");
   txn2->Rollback();
   txn1->Commit();
   auto txn3 = graphDB->BeginTransaction();
   int count = 0;
   for (auto viter = txn3->NewVertexIterator(); viter->Valid(); viter->Next()) {
-    EXPECT_EQ(viter->GetVertex().GetProperty("str"), Value::String("1"));
+    EXPECT_EQ(viter->GetVertex().GetProperty("str"), Value("1"));
     count++;
   }
   EXPECT_EQ(count, 1);
@@ -138,31 +136,27 @@ TEST(Concurrency, edgeConflict) {
   auto txn = graphDB->BeginTransaction();
   std::unordered_set<std::string> v1_labels = {"label1", "label2"};
   for (auto i = 0; i < 3; i++) {
-    txn->CreateVertex(v1_labels, {{"id", Value::Integer(i)},
-                                  {"str", Value::String(std::to_string(i))}});
+    txn->CreateVertex(v1_labels,
+                      {{"id", Value(i)}, {"str", Value(std::to_string(i))}});
   }
   txn->Commit();
   auto txn1 = graphDB->BeginTransaction();
   {
     auto v1iter = txn1->NewVertexIterator(
-        "label1",
-        std::unordered_map<std::string, Value>{{"id", Value::Integer(0)}});
+        "label1", std::unordered_map<std::string, Value>{{"id", Value(0)}});
     EXPECT_TRUE(v1iter->Valid());
     auto v2iter = txn1->NewVertexIterator(
-        "label1",
-        std::unordered_map<std::string, Value>{{"id", Value::Integer(1)}});
+        "label1", std::unordered_map<std::string, Value>{{"id", Value(1)}});
     EXPECT_TRUE(v2iter->Valid());
     txn1->CreateEdge(v1iter->GetVertex(), v2iter->GetVertex(), "edge", {});
   }
   auto txn2 = graphDB->BeginTransaction();
   {
     auto v1iter = txn1->NewVertexIterator(
-        "label1",
-        std::unordered_map<std::string, Value>{{"id", Value::Integer(1)}});
+        "label1", std::unordered_map<std::string, Value>{{"id", Value(1)}});
     EXPECT_TRUE(v1iter->Valid());
     auto v2iter = txn1->NewVertexIterator(
-        "label1",
-        std::unordered_map<std::string, Value>{{"id", Value::Integer(2)}});
+        "label1", std::unordered_map<std::string, Value>{{"id", Value(2)}});
     EXPECT_TRUE(v2iter->Valid());
     EXPECT_THROW_CODE_MSG(
         txn2->CreateEdge(v1iter->GetVertex(), v2iter->GetVertex(), "edge", {}),
@@ -175,7 +169,7 @@ TEST(Concurrency, edgeConflict) {
     int count = 0;
     for (auto viter = txn1->NewVertexIterator(
              "label1",
-             std::unordered_map<std::string, Value>{{"id", Value::Integer(0)}});
+             std::unordered_map<std::string, Value>{{"id", Value(0)}});
          viter->Valid(); viter->Next()) {
       for (auto eiter = viter->GetVertex().NewEdgeIterator(
                EdgeDirection::OUTGOING, {}, {});
@@ -187,7 +181,7 @@ TEST(Concurrency, edgeConflict) {
     count = 0;
     for (auto viter = txn1->NewVertexIterator(
              "label1",
-             std::unordered_map<std::string, Value>{{"id", Value::Integer(1)}});
+             std::unordered_map<std::string, Value>{{"id", Value(1)}});
          viter->Valid(); viter->Next()) {
       for (auto eiter = viter->GetVertex().NewEdgeIterator(
                EdgeDirection::OUTGOING, {}, {});
@@ -205,20 +199,19 @@ TEST(Concurrency, edgeEntityLockSerializesDifferentPropertyUpdates) {
   auto graphDB = GraphDB::Open(testdb, testutil::NewGraphDBOptions());
 
   auto setup = graphDB->BeginTransaction();
-  auto v1 = setup->CreateVertex({"label1"}, {{"id", Value::Integer(1)}});
-  auto v2 = setup->CreateVertex({"label1"}, {{"id", Value::Integer(2)}});
+  auto v1 = setup->CreateVertex({"label1"}, {{"id", Value(1)}});
+  auto v2 = setup->CreateVertex({"label1"}, {{"id", Value(2)}});
   auto edge = setup->CreateEdge(v1, v2, "edge", {});
   setup->Commit();
 
   auto txn1 = graphDB->BeginTransaction();
   auto edge1 = txn1->GetEdgeById(edge.GetTypeId(), edge.GetId());
-  edge1.SetProperties({{"property_a", Value::Integer(1)}});
+  edge1.SetProperties({{"property_a", Value(1)}});
 
   auto txn2 = graphDB->BeginTransaction();
   auto edge2 = txn2->GetEdgeById(edge.GetTypeId(), edge.GetId());
-  EXPECT_THROW_CODE_MSG(
-      edge2.SetProperties({{"property_b", Value::Integer(2)}}),
-      StorageEngineError, "Timeout waiting to lock key");
+  EXPECT_THROW_CODE_MSG(edge2.SetProperties({{"property_b", Value(2)}}),
+                        StorageEngineError, "Timeout waiting to lock key");
   txn2->Rollback();
 
   txn1->Commit();
@@ -229,7 +222,7 @@ TEST(Concurrency, edgeEntityLockSerializesDifferentPropertyUpdates) {
   EXPECT_EQ(all_properties.size(), 1);
   auto iter = all_properties.find("property_a");
   ASSERT_NE(iter, all_properties.end());
-  EXPECT_EQ(iter->second, Value::Integer(1));
+  EXPECT_EQ(iter->second, Value(1));
   EXPECT_EQ(all_properties.count("property_b"), 0);
   verify->Commit();
 }

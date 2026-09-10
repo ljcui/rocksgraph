@@ -6,10 +6,12 @@
 #include <utility>
 
 #include "common/logger.h"
-#include "common/value.h"
 #include "graphdb/graph_db.h"
 #include "test_util.h"
 #include "transaction/transaction.h"
+#include "value/value.h"
+
+using rg::Value;
 namespace fs = std::filesystem;
 static std::string testdb = "testdb";
 using namespace graphdb;
@@ -73,22 +75,22 @@ class BenchmarkLightningGraph {
   }
   void write_vertex(std::string no, std::string name) {
     auto txn = db.BeginTransaction();
-    auto vid = txn->CreateVertex({"Person"},
-                                 {{"no", Value::String(std::move(no))},
-                                  {"name", Value::String(std::move(name))}});
+    auto vid = txn->CreateVertex(
+        {"Person"},
+        {{"no", Value(std::move(no))}, {"name", Value(std::move(name))}});
     txn->Commit();
   }
   void write_edge(std::string no_from, std::string no_to) {
     auto txn = db.BeginTransaction();
-    auto viter = txn->NewVertexIterator(
-        "Person", std::unordered_map<std::string, Value>{
-                      {"no", Value::String(std::move(no_from))}});
+    auto viter = txn->NewVertexIterator("Person",
+                                        std::unordered_map<std::string, Value>{
+                                            {"no", Value(std::move(no_from))}});
     EXPECT_TRUE(dynamic_cast<GetVertexByUniqueIndex*>(viter.get()));
     EXPECT_TRUE(viter->Valid());
     auto vertex_from = viter->GetVertex();
-    viter = txn->NewVertexIterator(
-        "Person", std::unordered_map<std::string, Value>{
-                      {"no", Value::String(std::move(no_to))}});
+    viter =
+        txn->NewVertexIterator("Person", std::unordered_map<std::string, Value>{
+                                             {"no", Value(std::move(no_to))}});
     EXPECT_TRUE(dynamic_cast<GetVertexByUniqueIndex*>(viter.get()));
     EXPECT_TRUE(viter->Valid());
     auto vertex_to = viter->GetVertex();
@@ -98,8 +100,8 @@ class BenchmarkLightningGraph {
   size_t read_neighbour(std::string no, size_t depth = 1) {
     auto txn = db.BeginTransaction();
     auto viter = txn->NewVertexIterator(
-        "Person", std::unordered_map<std::string, Value>{
-                      {"no", Value::String(std::move(no))}});
+        "Person",
+        std::unordered_map<std::string, Value>{{"no", Value(std::move(no))}});
     std::vector<int64_t> src_vertexs;
     std::vector<int64_t> dst_vertexs;
     src_vertexs.push_back(viter->GetVertex().GetId());

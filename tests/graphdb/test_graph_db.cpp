@@ -7,25 +7,26 @@
 
 #include "common/byte_utils.h"
 #include "common/logger.h"
-#include "common/value.h"
 #include "graphdb/graph_db.h"
 #include "test_util.h"
 #include "transaction/transaction.h"
+#include "value/value.h"
 
+using rg::Value;
 namespace fs = std::filesystem;
 using boost::endian::big_to_native;
 using boost::endian::native_to_big_inplace;
 using namespace graphdb;
 static std::string testdb = "testdb";
 static std::unordered_map<std::string, Value> properties = {
-    {"property1", Value::Bool(true)},
-    {"property2", Value::Integer(100)},
-    {"property3", Value::String("string")},
-    {"property4", Value::Double(1.1314)},
-    {"property5", Value::BoolArray({true, false})},
-    {"property6", Value::IntegerArray({1, 2, 3})},
-    {"property7", Value::StringArray({"string1", "string2"})},
-    {"property8", Value::DoubleArray({11.11, 22.22})}};
+    {"property1", Value(true)},
+    {"property2", Value(100)},
+    {"property3", Value("string")},
+    {"property4", Value(1.1314)},
+    {"property5", Value(Value::List{Value(true), Value(false)})},
+    {"property6", Value(Value::List{Value(1), Value(2), Value(3)})},
+    {"property7", Value(Value::List{Value("string1"), Value("string2")})},
+    {"property8", Value(Value::List{Value(11.11), Value(22.22)})}};
 
 TEST(GraphDB, assistantPoolRequired) {
   fs::remove_all(testdb);
@@ -327,24 +328,28 @@ TEST(GraphDB, updateProperty) {
   txn->CreateEdge(v2, v3, "edge_type23", properties);
   txn->CreateEdge(v3, v4, "edge_type34", properties);
   txn->CreateEdge(v4, v1, "edge_type41", properties);
-  v1.SetProperties({{"property1", Value::Bool(false)}});
-  EXPECT_EQ(v1.GetProperty("property1"), Value::Bool(false));
-  v1.SetProperties({{"property1", Value::String("str1")}});
-  EXPECT_EQ(v1.GetProperty("property1"), Value::String("str1"));
+  v1.SetProperties({{"property1", Value(false)}});
+  EXPECT_EQ(v1.GetProperty("property1"), Value(false));
+  v1.SetProperties({{"property1", Value("str1")}});
+  EXPECT_EQ(v1.GetProperty("property1"), Value("str1"));
   v1.RemoveProperty("property1");
   EXPECT_EQ(v1.GetAllProperty().size(), 7);
-  v1.SetProperties({{"property9", Value::IntegerArray({10, 20, 30})}});
-  EXPECT_EQ(v1.GetProperty("property9"), Value::IntegerArray({10, 20, 30}));
+  v1.SetProperties(
+      {{"property9", Value(Value::List{Value(10), Value(20), Value(30)})}});
+  EXPECT_EQ(v1.GetProperty("property9"),
+            Value(Value::List{Value(10), Value(20), Value(30)}));
   EXPECT_EQ(v1.GetAllProperty().size(), 8);
 
-  e1.SetProperties({{"property1", Value::Bool(false)}});
-  EXPECT_EQ(e1.GetProperty("property1"), Value::Bool(false));
-  e1.SetProperties({{"property1", Value::String("str1")}});
-  EXPECT_EQ(e1.GetProperty("property1"), Value::String("str1"));
+  e1.SetProperties({{"property1", Value(false)}});
+  EXPECT_EQ(e1.GetProperty("property1"), Value(false));
+  e1.SetProperties({{"property1", Value("str1")}});
+  EXPECT_EQ(e1.GetProperty("property1"), Value("str1"));
   e1.RemoveProperty("property1");
   EXPECT_EQ(e1.GetAllProperty().size(), 7);
-  e1.SetProperties({{"property9", Value::IntegerArray({10, 20, 30})}});
-  EXPECT_EQ(e1.GetProperty("property9"), Value::IntegerArray({10, 20, 30}));
+  e1.SetProperties(
+      {{"property9", Value(Value::List{Value(10), Value(20), Value(30)})}});
+  EXPECT_EQ(e1.GetProperty("property9"),
+            Value(Value::List{Value(10), Value(20), Value(30)}));
   EXPECT_EQ(e1.GetAllProperty().size(), 8);
 }
 
@@ -392,9 +397,8 @@ TEST(GraphDB, vertexIterator) {
     std::string label = "label" + std::to_string(i);
     count = 0;
     for (auto viter = txn->NewVertexIterator(
-             label,
-             std::unordered_map<std::string, Value>{
-                 {"property3", Value::String("string")}});
+             label, std::unordered_map<std::string, Value>{{"property3",
+                                                            Value("string")}});
          viter->Valid(); viter->Next()) {
       count++;
     }
@@ -404,9 +408,8 @@ TEST(GraphDB, vertexIterator) {
     std::string label = "label" + std::to_string(i);
     count = 0;
     for (auto viter = txn->NewVertexIterator(
-             label,
-             std::unordered_map<std::string, Value>{
-                 {"property3", Value::String("string")}});
+             label, std::unordered_map<std::string, Value>{{"property3",
+                                                            Value("string")}});
          viter->Valid(); viter->Next()) {
       count++;
     }
@@ -415,10 +418,10 @@ TEST(GraphDB, vertexIterator) {
   for (int i = 1; i <= 8; i++) {
     std::string label = "label" + std::to_string(i);
     count = 0;
-    for (auto viter = txn->NewVertexIterator(
-             label,
-             std::unordered_map<std::string, Value>{
-                 {"property3", Value::String("wrong_string")}});
+    for (auto viter =
+             txn->NewVertexIterator(label,
+                                    std::unordered_map<std::string, Value>{
+                                        {"property3", Value("wrong_string")}});
          viter->Valid(); viter->Next()) {
       count++;
     }
@@ -428,9 +431,8 @@ TEST(GraphDB, vertexIterator) {
     std::string label = "label" + std::to_string(i);
     count = 0;
     for (auto viter = txn->NewVertexIterator(
-             label,
-             std::unordered_map<std::string, Value>{
-                 {"wrong_property", Value::String("string")}});
+             label, std::unordered_map<std::string, Value>{{"wrong_property",
+                                                            Value("string")}});
          viter->Valid(); viter->Next()) {
       count++;
     }
@@ -582,35 +584,35 @@ TEST(GraphDB, edgeIterator) {
   EXPECT_EQ(count, 2);
   count = 0;
   for (auto eiter = v1.NewEdgeIterator(EdgeDirection::OUTGOING, {},
-                                       {{"property2", Value::Integer(100)}});
+                                       {{"property2", Value(100)}});
        eiter->Valid(); eiter->Next()) {
     count++;
   }
   EXPECT_EQ(count, 1);
   count = 0;
   for (auto eiter = v1.NewEdgeIterator(EdgeDirection::BOTH, {},
-                                       {{"property2", Value::Integer(100)}});
+                                       {{"property2", Value(100)}});
        eiter->Valid(); eiter->Next()) {
     count++;
   }
   EXPECT_EQ(count, 2);
   count = 0;
   for (auto eiter = v1.NewEdgeIterator(EdgeDirection::BOTH, {"wrong_edge_type"},
-                                       {{"property2", Value::Integer(100)}});
-       eiter->Valid(); eiter->Next()) {
-    count++;
-  }
-  EXPECT_EQ(count, 0);
-  count = 0;
-  for (auto eiter = v1.NewEdgeIterator(
-           EdgeDirection::BOTH, {}, {{"wrong_property", Value::Integer(100)}});
+                                       {{"property2", Value(100)}});
        eiter->Valid(); eiter->Next()) {
     count++;
   }
   EXPECT_EQ(count, 0);
   count = 0;
   for (auto eiter = v1.NewEdgeIterator(EdgeDirection::BOTH, {},
-                                       {{"property2", Value::Integer(1000)}});
+                                       {{"wrong_property", Value(100)}});
+       eiter->Valid(); eiter->Next()) {
+    count++;
+  }
+  EXPECT_EQ(count, 0);
+  count = 0;
+  for (auto eiter = v1.NewEdgeIterator(EdgeDirection::BOTH, {},
+                                       {{"property2", Value(1000)}});
        eiter->Valid(); eiter->Next()) {
     count++;
   }
@@ -792,12 +794,12 @@ TEST(GraphDB, scanAndUpdate) {
   auto e3 = txn->CreateEdge(v3, v4, "edge_type34", properties);
   auto e4 = txn->CreateEdge(v4, v1, "edge_type41", properties);
   for (auto viter = txn->NewVertexIterator(); viter->Valid(); viter->Next()) {
-    viter->GetVertex().SetProperties({{"property9", Value::Integer(100)}});
-    EXPECT_EQ(viter->GetVertex().GetProperty("property9"), Value::Integer(100));
+    viter->GetVertex().SetProperties({{"property9", Value(100)}});
+    EXPECT_EQ(viter->GetVertex().GetProperty("property9"), Value(100));
     EXPECT_EQ(viter->GetVertex().GetAllProperty().size(), 9);
   }
   for (auto viter = txn->NewVertexIterator(); viter->Valid(); viter->Next()) {
-    EXPECT_EQ(viter->GetVertex().GetProperty("property9"), Value::Integer(100));
+    EXPECT_EQ(viter->GetVertex().GetProperty("property9"), Value(100));
     EXPECT_EQ(viter->GetVertex().GetAllProperty().size(), 9);
   }
   int count = 0;

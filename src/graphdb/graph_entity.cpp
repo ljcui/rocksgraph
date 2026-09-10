@@ -10,6 +10,7 @@
 #include "common/exceptions.h"
 #include "common/logger.h"
 #include "graph_db.h"
+#include "graphdb/value_codec.h"
 #include "graphdb/vector_property.h"
 #include "graphdb/vertex_index_updater.h"
 #include "transaction/transaction.h"
@@ -157,8 +158,8 @@ std::unordered_set<uint32_t> CollectVertexIndexPropertyIds(
 
 std::unique_ptr<EdgeIterator> Vertex::NewEdgeIterator(
     EdgeDirection direction, const std::unordered_set<std::string> &types,
-    const std::unordered_map<std::string, Value> &props) {
-  std::unordered_map<uint32_t, Value> prop_map;
+    const std::unordered_map<std::string, rg::Value> &props) {
+  std::unordered_map<uint32_t, rg::Value> prop_map;
   for (auto &[name, val] : props) {
     auto pid = txn_->db()->id_generator().GetPid(name);
     if (pid) {
@@ -183,10 +184,10 @@ std::unique_ptr<EdgeIterator> Vertex::NewEdgeIterator(
 
 std::unique_ptr<EdgeIterator> Vertex::NewEdgeIterator(
     EdgeDirection direction, const std::unordered_set<std::string> &types,
-    const std::unordered_map<std::string, Value> &props,
+    const std::unordered_map<std::string, rg::Value> &props,
     const std::unordered_set<std::string> &other_node_labels,
-    const std::unordered_map<std::string, Value> &other_node_props) {
-  std::unordered_map<uint32_t, Value> prop_map;
+    const std::unordered_map<std::string, rg::Value> &other_node_props) {
+  std::unordered_map<uint32_t, rg::Value> prop_map;
   if (!props.empty()) {
     for (auto &[name, val] : props) {
       auto pid = txn_->db()->id_generator().GetPid(name);
@@ -221,7 +222,7 @@ std::unique_ptr<EdgeIterator> Vertex::NewEdgeIterator(
       return std::make_unique<NoEdgeFound>(txn_);
     }
   }
-  std::unordered_map<uint32_t, Value> other_node_prop_map;
+  std::unordered_map<uint32_t, rg::Value> other_node_prop_map;
   if (!other_node_props.empty()) {
     for (auto &[name, val] : other_node_props) {
       auto pid = txn_->db()->id_generator().GetPid(name);
@@ -239,9 +240,9 @@ std::unique_ptr<EdgeIterator> Vertex::NewEdgeIterator(
 
 std::unique_ptr<EdgeIterator> Vertex::NewEdgeIterator(
     EdgeDirection direction, const std::unordered_set<std::string> &types,
-    const std::unordered_map<std::string, Value> &props,
+    const std::unordered_map<std::string, rg::Value> &props,
     const Vertex &other_node) {
-  std::unordered_map<uint32_t, Value> prop_map;
+  std::unordered_map<uint32_t, rg::Value> prop_map;
   if (!props.empty()) {
     for (auto &[name, val] : props) {
       auto pid = txn_->db()->id_generator().GetPid(name);
@@ -272,7 +273,7 @@ std::unique_ptr<EdgeIterator> Vertex::NewEdgeIterator(
 
 std::unique_ptr<EdgeIterator> Vertex::NewEdgeIterator(
     EdgeDirection direction, const std::string &type,
-    const std::unordered_map<std::string, Value> &props,
+    const std::unordered_map<std::string, rg::Value> &props,
     const Vertex &other_node) {
   if (direction == EdgeDirection::BOTH) {
     THROW_CODE(InputError, "EdgeDirection can not be BOTH");
@@ -281,7 +282,7 @@ std::unique_ptr<EdgeIterator> Vertex::NewEdgeIterator(
   if (!tid) {
     return std::make_unique<NoEdgeFound>(txn_);
   }
-  std::unordered_map<uint32_t, Value> prop_map;
+  std::unordered_map<uint32_t, rg::Value> prop_map;
   if (!props.empty()) {
     for (auto &[name, val] : props) {
       auto pid = txn_->db()->id_generator().GetPid(name);
@@ -502,8 +503,7 @@ void Vertex::AddLabels(const std::unordered_set<std::string> &labels) {
       auto vector_iter = updated_vector_props.find(pid);
       if (vector_iter == updated_vector_props.end() &&
           prop_iter != props.end()) {
-        Value value;
-        value.Deserialize(prop_iter->second.data(), prop_iter->second.size());
+        rg::Value value = DeserializeValue(prop_iter->second);
         auto vector = ParseVectorValue(value, field->dimensions());
         vector_iter =
             updated_vector_props.emplace(pid, std::move(vector)).first;
@@ -614,7 +614,7 @@ void Vertex::DeleteLabels(const std::unordered_set<std::string> &labels) {
   }
 }
 
-Value Vertex::GetProperty(const std::string &name) {
+rg::Value Vertex::GetProperty(const std::string &name) {
   auto optional = txn_->db()->id_generator().GetPid(name);
   if (!optional.has_value()) {
     return {};
@@ -622,30 +622,29 @@ Value Vertex::GetProperty(const std::string &name) {
   return GetProperty(optional.value());
 }
 
-Value Vertex::GetProperty(uint32_t pid) {
+rg::Value Vertex::GetProperty(uint32_t pid) {
   auto lids = GetLabelIds();
   if (!txn_->db()->meta_info().GetVertexVectorFields(lids, pid).empty()) {
     std::unordered_set<uint32_t> pids{pid};
     auto vector_properties = LoadVertexVectorProperties(txn_, id_, lids, pids);
     auto iter = vector_properties.find(pid);
     if (iter != vector_properties.end()) {
-      return Value(iter->second);
+      return VectorToValue(iter->second);
     }
     return {};
   }
   rocksdb::ReadOptions ro;
   rocksdb::PinnableSlice pval;
-  Value ret;
   std::string pkey(AsChars(id_), sizeof(id_));
   pkey.append(AsChars(pid), sizeof(pid));
   auto s = txn_->dbtxn()->Get(ro, txn_->db()->graph_cf().vertex_property, pkey,
                               &pval);
   if (s.ok()) {
-    ret.Deserialize(pval.data(), pval.size());
+    return DeserializeValue({pval.data(), pval.size()});
   } else if (!s.IsNotFound()) {
     THROW_CODE(StorageEngineError, s.ToString());
   }
-  return ret;
+  return {};
 }
 
 bool Vertex::TryGetVectorPropertyRaw(uint32_t pid, rocksdb::PinnableSlice *out,
@@ -679,10 +678,10 @@ bool Vertex::TryGetVectorPropertyRaw(uint32_t pid, rocksdb::PinnableSlice *out,
   return false;
 }
 
-std::unordered_map<std::string, Value> Vertex::GetAllProperty() {
+std::unordered_map<std::string, rg::Value> Vertex::GetAllProperty() {
   std::string prefix(AsChars(id_), sizeof(id_));
   rocksdb::ReadOptions ro;
-  std::unordered_map<std::string, Value> ret;
+  std::unordered_map<std::string, rg::Value> ret;
   auto lids = GetLabelIds();
   std::unordered_set<uint32_t> vector_pids;
   for (const auto &field :
@@ -703,8 +702,7 @@ std::unordered_map<std::string, Value> Vertex::GetAllProperty() {
     }
     auto optional = txn_->db()->id_generator().GetPropertyName(pid);
     if (optional.has_value()) {
-      Value v;
-      v.Deserialize(value.data(), value.size());
+      rg::Value v = DeserializeValue({value.data(), value.size()});
       ret.emplace(std::move(optional.value()), std::move(v));
     }
   }
@@ -721,14 +719,14 @@ int Vertex::GetDegree(graphdb::EdgeDirection direction) {
 }
 
 void Vertex::SetProperties(
-    const std::unordered_map<std::string, Value> &values) {
+    const std::unordered_map<std::string, rg::Value> &values) {
   if (values.empty()) {
     return;
   }
   VertexSerializedProperties serialized;
   VertexVectorProperties vector_properties;
   std::unordered_set<uint32_t> pids;
-  std::vector<std::pair<uint32_t, const Value *>> property_values;
+  std::vector<std::pair<uint32_t, const rg::Value *>> property_values;
   property_values.reserve(values.size());
   for (const auto &[name, val] : values) {
     auto pid = txn_->db()->id_generator().GetOrCreatePid(name);
@@ -746,7 +744,7 @@ void Vertex::SetProperties(
       vector_properties[pid] = vector;
     }
     if (!is_vector_property) {
-      serialized[pid] = val->Serialize();
+      serialized[pid] = SerializeValue(*val);
     }
   }
   auto required_pids = CollectVertexIndexPropertyIds(txn_, lids, lids, pids);
@@ -960,20 +958,19 @@ std::string Edge::GetType() {
   return ret.value();
 }
 
-Value Edge::GetProperty(uint32_t pid) {
+rg::Value Edge::GetProperty(uint32_t pid) {
   rocksdb::ReadOptions ro;
   rocksdb::PinnableSlice pinnable_val;
-  Value ret;
   std::string pkey(AsChars(id_), sizeof(id_));
   pkey.append(AsChars(pid), sizeof(pid));
   auto s = txn_->dbtxn()->Get(ro, txn_->db()->graph_cf().edge_property, pkey,
                               &pinnable_val);
   if (s.ok()) {
-    ret.Deserialize(pinnable_val.data(), pinnable_val.size());
+    return DeserializeValue({pinnable_val.data(), pinnable_val.size()});
   } else if (!s.IsNotFound()) {
     THROW_CODE(StorageEngineError, s.ToString());
   }
-  return ret;
+  return {};
 }
 
 Vertex Edge::GetOtherEnd(int64_t vid) const {
@@ -989,7 +986,7 @@ Vertex Edge::GetOtherEnd(int64_t vid) const {
   }
 }
 
-Value Edge::GetProperty(const std::string &name) {
+rg::Value Edge::GetProperty(const std::string &name) {
   auto optional = txn_->db()->id_generator().GetPid(name);
   if (!optional.has_value()) {
     return {};
@@ -997,10 +994,10 @@ Value Edge::GetProperty(const std::string &name) {
   return GetProperty(optional.value());
 }
 
-std::unordered_map<std::string, Value> Edge::GetAllProperty() {
+std::unordered_map<std::string, rg::Value> Edge::GetAllProperty() {
   std::string prefix(AsChars(id_), sizeof(id_));
   rocksdb::ReadOptions ro;
-  std::unordered_map<std::string, Value> ret;
+  std::unordered_map<std::string, rg::Value> ret;
   std::unique_ptr<rocksdb::Iterator> p_iter;
   p_iter.reset(
       txn_->dbtxn()->GetIterator(ro, txn_->db()->graph_cf().edge_property));
@@ -1012,8 +1009,7 @@ std::unordered_map<std::string, Value> Edge::GetAllProperty() {
     uint32_t pid = ReadValue<uint32_t>(key.data());
     auto optional = txn_->db()->id_generator().GetPropertyName(pid);
     if (optional.has_value()) {
-      Value v;
-      v.Deserialize(value.data(), value.size());
+      rg::Value v = DeserializeValue({value.data(), value.size()});
       ret.emplace(std::move(optional.value()), std::move(v));
     }
   }
@@ -1021,7 +1017,7 @@ std::unordered_map<std::string, Value> Edge::GetAllProperty() {
 }
 
 void Edge::SetProperties(
-    const std::unordered_map<std::string, Value> &properties) {
+    const std::unordered_map<std::string, rg::Value> &properties) {
   if (properties.empty()) {
     return;
   }
@@ -1031,7 +1027,7 @@ void Edge::SetProperties(
     std::string pkey(AsChars(id_), sizeof(id_));
     pkey.append(AsChars(pid), sizeof(pid));
     auto s = txn_->dbtxn()->GetWriteBatch()->Put(
-        txn_->db()->graph_cf().edge_property, pkey, value.Serialize());
+        txn_->db()->graph_cf().edge_property, pkey, SerializeValue(value));
     if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
   }
 }

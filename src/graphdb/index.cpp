@@ -12,10 +12,12 @@
 #include <unordered_set>
 
 #include "common/byte_utils.h"
+#include "common/exceptions.h"
 #include "common/flags.h"
 #include "common/logger.h"
 #include "ftindex/include/lib.rs.h"
 #include "graphdb/graph_db.h"
+#include "graphdb/value_codec.h"
 #include "graphdb/vector_property.h"
 #include "spdlog/stopwatch.h"
 #include "transaction/transaction.h"
@@ -98,29 +100,52 @@ void AppendEscapedPropertyIndexBytes(std::string& encoded,
   }
 }
 
-template <typename T>
-void AppendEscapedPropertyIndexRaw(std::string& encoded, const T& value) {
-  AppendEscapedPropertyIndexBytes(encoded, common::AsStringView(value));
+void AppendPropertyIndexTerminator(std::string& encoded) {
+  encoded.push_back(0);
+  encoded.push_back(0);
 }
 
-void AppendPropertyIndexValue(std::string& encoded, const Value& value) {
-  encoded.push_back(static_cast<char>(value.type));
-  switch (value.type) {
-    case ValueType::Null: {
+void AppendSortableInteger(std::string& encoded, std::int64_t value) {
+  std::uint64_t sortable = static_cast<std::uint64_t>(value) ^ (1ULL << 63);
+  sortable = native_to_big(sortable);
+  encoded.append(AsChars(sortable), sizeof(sortable));
+}
+
+void AppendSortableInteger(std::string& encoded, std::int32_t value) {
+  std::uint32_t sortable = static_cast<std::uint32_t>(value) ^ (1U << 31);
+  sortable = native_to_big(sortable);
+  encoded.append(AsChars(sortable), sizeof(sortable));
+}
+
+void AppendLocalTime(std::string& encoded, const rg::LocalTime& time) {
+  AppendSortableInteger(encoded, time.hour);
+  AppendSortableInteger(encoded, time.minute);
+  AppendSortableInteger(encoded, time.second);
+  AppendSortableInteger(encoded, time.nanosecond);
+  encoded.push_back(time.has_seconds ? 1 : 0);
+}
+
+void AppendDate(std::string& encoded, const rg::Date& date) {
+  AppendSortableInteger(encoded, date.year);
+  AppendSortableInteger(encoded, date.month);
+  AppendSortableInteger(encoded, date.day);
+}
+
+void AppendPropertyIndexValue(std::string& encoded, const rg::Value& value) {
+  encoded.push_back(static_cast<char>(value.Type()));
+  switch (value.Type()) {
+    case rg::ValueType::kNull: {
       break;
     }
-    case ValueType::BOOL: {
+    case rg::ValueType::kBool: {
       encoded.push_back(value.AsBool() ? 1 : 0);
       break;
     }
-    case ValueType::INTEGER: {
-      uint64_t sortable =
-          static_cast<uint64_t>(value.AsInteger()) ^ (1ULL << 63);
-      sortable = native_to_big(sortable);
-      encoded.append(AsChars(sortable), sizeof(sortable));
+    case rg::ValueType::kInteger: {
+      AppendSortableInteger(encoded, value.AsInteger());
       break;
     }
-    case ValueType::DOUBLE: {
+    case rg::ValueType::kDouble: {
       uint64_t bits = 0;
       auto number = value.AsDouble();
       std::memcpy(&bits, &number, sizeof(bits));
@@ -129,138 +154,73 @@ void AppendPropertyIndexValue(std::string& encoded, const Value& value) {
       encoded.append(AsChars(bits), sizeof(bits));
       break;
     }
-    case ValueType::FLOAT: {
-      uint32_t bits = 0;
-      auto number = value.AsFloat();
-      std::memcpy(&bits, &number, sizeof(bits));
-      bits = (bits & (1U << 31)) ? ~bits : (bits ^ (1U << 31));
-      bits = native_to_big(bits);
-      encoded.append(AsChars(bits), sizeof(bits));
-      break;
-    }
-    case ValueType::STRING: {
+    case rg::ValueType::kString: {
       AppendEscapedPropertyIndexBytes(encoded, value.AsString());
-      encoded.push_back(0);
-      encoded.push_back(0);
+      AppendPropertyIndexTerminator(encoded);
       break;
     }
-    case ValueType::ARRAY: {
-      const auto& array = value.AsArray();
-      if (!array.empty()) {
-        auto t = array[0].type;
-        AppendEscapedPropertyIndexByte(encoded, static_cast<unsigned char>(t));
-        for (const auto& item : array) {
-          if (item.type != t) {
-            THROW_CODE(
-                ValueException,
-                "Array elements must have the same type for serializing, "
-                "error type: " +
-                    ::ToString(item.type));
-          }
-          switch (item.type) {
-            case ValueType::BOOL: {
-              AppendEscapedPropertyIndexByte(
-                  encoded, static_cast<unsigned char>(item.AsBool()));
-              break;
-            }
-            case ValueType::INTEGER: {
-              AppendEscapedPropertyIndexRaw(encoded, item.AsInteger());
-              break;
-            }
-            case ValueType::DOUBLE: {
-              AppendEscapedPropertyIndexRaw(encoded, item.AsDouble());
-              break;
-            }
-            case ValueType::FLOAT: {
-              AppendEscapedPropertyIndexRaw(encoded, item.AsFloat());
-              break;
-            }
-            case ValueType::STRING: {
-              const auto& str = item.AsString();
-              size_t len = str.size();
-              AppendEscapedPropertyIndexRaw(encoded, len);
-              AppendEscapedPropertyIndexBytes(encoded, str);
-              break;
-            }
-            default: {
-              THROW_CODE(ValueException,
-                         "Unsupported data type for serializing array, type: " +
-                             ::ToString(item.type));
-            }
-          }
-        }
-      }
-      encoded.push_back(0);
-      encoded.push_back(0);
+    case rg::ValueType::kList: {
+      AppendEscapedPropertyIndexBytes(encoded, SerializeValue(value));
+      AppendPropertyIndexTerminator(encoded);
       break;
     }
-    case ValueType::DATE: {
-      uint64_t sortable =
-          static_cast<uint64_t>(value.AsDate().GetStorage()) ^ (1ULL << 63);
-      sortable = native_to_big(sortable);
-      encoded.append(AsChars(sortable), sizeof(sortable));
+    case rg::ValueType::kDate: {
+      AppendDate(encoded, value.AsDate());
       break;
     }
-    case ValueType::LOCALDATETIME: {
-      uint64_t sortable =
-          static_cast<uint64_t>(value.AsLocalDateTime().GetStorage()) ^
-          (1ULL << 63);
-      sortable = native_to_big(sortable);
-      encoded.append(AsChars(sortable), sizeof(sortable));
+    case rg::ValueType::kLocalTime: {
+      AppendLocalTime(encoded, value.AsLocalTime());
       break;
     }
-    case ValueType::LOCALTIME: {
-      uint64_t sortable =
-          static_cast<uint64_t>(value.AsLocalTime().GetStorage()) ^
-          (1ULL << 63);
-      sortable = native_to_big(sortable);
-      encoded.append(AsChars(sortable), sizeof(sortable));
+    case rg::ValueType::kTime: {
+      const auto& time = value.AsTime();
+      AppendLocalTime(encoded, time.local_time);
+      AppendSortableInteger(encoded, time.utc_offset_seconds);
+      AppendEscapedPropertyIndexBytes(encoded, time.timezone);
+      AppendPropertyIndexTerminator(encoded);
       break;
     }
-    case ValueType::TIME: {
-      auto storage = value.AsTime().GetStorage();
-      uint64_t sortable =
-          static_cast<uint64_t>(std::get<0>(storage) -
-                                std::get<1>(storage) * NANOS_PER_SECOND) ^
-          (1ULL << 63);
-      sortable = native_to_big(sortable);
-      encoded.append(AsChars(sortable), sizeof(sortable));
+    case rg::ValueType::kLocalDateTime: {
+      const auto& date_time = value.AsLocalDateTime();
+      AppendDate(encoded, date_time.date);
+      AppendLocalTime(encoded, date_time.time);
       break;
     }
-    case ValueType::DATETIME: {
-      auto storage = value.AsDateTime().GetStorage();
-      uint64_t sortable =
-          static_cast<uint64_t>(std::get<0>(storage)) ^ (1ULL << 63);
-      sortable = native_to_big(sortable);
-      encoded.append(AsChars(sortable), sizeof(sortable));
+    case rg::ValueType::kDateTime: {
+      const auto& date_time = value.AsDateTime();
+      AppendDate(encoded, date_time.local_date_time.date);
+      AppendLocalTime(encoded, date_time.local_date_time.time);
+      AppendSortableInteger(encoded, date_time.utc_offset_seconds);
+      AppendEscapedPropertyIndexBytes(encoded, date_time.timezone);
+      AppendPropertyIndexTerminator(encoded);
       break;
     }
-    case ValueType::DURATION: {
-      auto duration = value.AsDuration();
-      uint64_t months =
-          native_to_big(static_cast<uint64_t>(duration.months) ^ (1ULL << 63));
-      uint64_t days =
-          native_to_big(static_cast<uint64_t>(duration.days) ^ (1ULL << 63));
-      uint64_t seconds =
-          native_to_big(static_cast<uint64_t>(duration.seconds) ^ (1ULL << 63));
-      uint64_t nanos =
-          native_to_big(static_cast<uint64_t>(duration.nanos) ^ (1ULL << 63));
-      encoded.append(AsChars(months), sizeof(months));
-      encoded.append(AsChars(days), sizeof(days));
-      encoded.append(AsChars(seconds), sizeof(seconds));
-      encoded.append(AsChars(nanos), sizeof(nanos));
+    case rg::ValueType::kDuration: {
+      const auto& duration = value.AsDuration();
+      AppendSortableInteger(encoded, duration.months);
+      AppendSortableInteger(encoded, duration.days);
+      AppendSortableInteger(encoded, duration.seconds);
+      AppendSortableInteger(encoded, duration.nanoseconds);
       break;
     }
-    case ValueType::MAP:
+    case rg::ValueType::kPoint: {
+      AppendEscapedPropertyIndexBytes(encoded, SerializeValue(value));
+      AppendPropertyIndexTerminator(encoded);
+      break;
+    }
+    case rg::ValueType::kMap:
+    case rg::ValueType::kNode:
+    case rg::ValueType::kRelationship:
+    case rg::ValueType::kPath:
     default: {
       THROW_CODE(ValueException,
                  "Unsupported data type for property index, type: {}",
-                 ::ToString(value.type));
+                 static_cast<int>(value.Type()));
     }
   }
 }
 
-std::string EncodePropertyIndexValues(const std::vector<Value>& values) {
+std::string EncodePropertyIndexValues(const std::vector<rg::Value>& values) {
   std::string encoded;
   for (const auto& value : values) {
     AppendPropertyIndexValue(encoded, value);
@@ -268,13 +228,11 @@ std::string EncodePropertyIndexValues(const std::vector<Value>& values) {
   return encoded;
 }
 
-Value DeserializeStoredPropertyValue(const std::string& value) {
+rg::Value DeserializeStoredPropertyValue(const std::string& value) {
   if (value.empty()) {
     THROW_CODE(InvalidParameter, "Indexed property value is invalid");
   }
-  Value decoded;
-  decoded.Deserialize(value.data(), value.size());
-  return decoded;
+  return DeserializeValue(value);
 }
 
 uint64_t LoadVisibleMaxWalId(rocksdb::TransactionDB* db, GraphCF* graph_cf,
@@ -307,14 +265,14 @@ uint64_t LoadVisibleMaxWalId(rocksdb::TransactionDB* db, GraphCF* graph_cf,
 }  // namespace
 
 void VertexPropertyIndex::AddIndex(Transaction* txn, int64_t vid,
-                                   const std::vector<Value>& values) {
+                                   const std::vector<rg::Value>& values) {
   UpdateIndex(txn, vid, values, std::nullopt);
 }
 
 void VertexPropertyIndex::UpdateIndexDirect(
     Transaction* txn, int64_t vid,
-    const std::optional<std::vector<Value>>& new_values,
-    const std::optional<std::vector<Value>>& old_values) {
+    const std::optional<std::vector<rg::Value>>& new_values,
+    const std::optional<std::vector<rg::Value>>& old_values) {
   if (!new_values && !old_values) {
     return;
   }
@@ -374,22 +332,22 @@ void VertexPropertyIndex::UpdateIndexDirect(
   }
 }
 
-void VertexPropertyIndex::AppendBuildUpdate(txn::Transaction* txn,
-                                            meta::UpdateType type, int64_t vid,
-                                            const std::vector<Value>& values) {
+void VertexPropertyIndex::AppendBuildUpdate(
+    txn::Transaction* txn, meta::UpdateType type, int64_t vid,
+    const std::vector<rg::Value>& values) {
   meta::PropertyIndexUpdate update;
   update.set_type(type);
   update.set_vid(vid);
   for (const auto& value : values) {
-    update.add_values(value.Serialize());
+    update.add_values(SerializeValue(value));
   }
   txn->AppendPropertyIndexWAL(shared_from_this(), update);
 }
 
 void VertexPropertyIndex::UpdateIndex(
     Transaction* txn, int64_t vid,
-    const std::optional<std::vector<Value>>& new_values,
-    const std::optional<std::vector<Value>>& old_values) {
+    const std::optional<std::vector<rg::Value>>& new_values,
+    const std::optional<std::vector<rg::Value>>& old_values) {
   if (!new_values && !old_values) {
     return;
   }
@@ -417,7 +375,7 @@ void VertexPropertyIndex::UpdateIndex(
 
 void VertexPropertyIndex::ApplyBuildUpdate(
     const meta::PropertyIndexUpdate& update) {
-  std::vector<Value> values;
+  std::vector<rg::Value> values;
   values.reserve(update.values_size());
   for (const auto& item : update.values()) {
     values.push_back(DeserializeStoredPropertyValue(item));
@@ -484,7 +442,7 @@ void VertexPropertyIndex::ApplyBuildUpdate(
 
 void VertexPropertyIndex::ApplyCommittedBuildUpdate(
     txn::Transaction* txn, const meta::PropertyIndexUpdate& update) {
-  std::vector<Value> values;
+  std::vector<rg::Value> values;
   values.reserve(update.values_size());
   for (const auto& item : update.values()) {
     values.push_back(DeserializeStoredPropertyValue(item));
@@ -512,7 +470,7 @@ void VertexPropertyIndex::Load(const rocksdb::Snapshot* snapshot,
     auto key = iter->key();
     key.remove_prefix(sizeof(uint32_t));
     int64_t vid = ReadValue<int64_t>(key.data());
-    std::vector<Value> values;
+    std::vector<rg::Value> values;
     values.reserve(pids_.size());
     bool complete = true;
     for (auto pid : pids_) {
@@ -537,7 +495,7 @@ void VertexPropertyIndex::Load(const rocksdb::Snapshot* snapshot,
     add.set_type(meta::UpdateType::Add);
     add.set_vid(vid);
     for (const auto& value : values) {
-      add.add_values(value.Serialize());
+      add.add_values(SerializeValue(value));
     }
     ApplyBuildUpdate(add);
   }
@@ -602,25 +560,25 @@ std::string VertexPropertyIndex::NextWALKey() {
 }
 
 std::string VertexPropertyIndex::IndexKey(
-    const std::vector<Value>& values) const {
+    const std::vector<rg::Value>& values) const {
   std::string index_key(AsChars(index_id_), sizeof(index_id_));
   index_key.append(EncodePropertyIndexValues(values));
   return index_key;
 }
 
-std::string VertexPropertyIndex::EntryKey(const std::vector<Value>& values,
+std::string VertexPropertyIndex::EntryKey(const std::vector<rg::Value>& values,
                                           int64_t vid) const {
   std::string index_key = IndexKey(values);
   index_key.append(AsChars(vid), sizeof(vid));
   return index_key;
 }
 
-std::optional<std::vector<Value>>
+std::optional<std::vector<rg::Value>>
 VertexPropertyIndex::LoadIndexedPropertyValues(
     txn::Transaction* txn, int64_t vid,
     const std::unordered_map<uint32_t, std::string>* overrides,
     const std::unordered_set<uint32_t>* removed) const {
-  std::vector<Value> values;
+  std::vector<rg::Value> values;
   values.reserve(pids_.size());
   rocksdb::ReadOptions ro;
   for (auto pid : pids_) {
@@ -671,7 +629,7 @@ bool VertexPropertyIndex::AllPropertiesPresent(
 }
 
 void VertexPropertyIndex::DeleteIndex(Transaction* txn, int64_t vid,
-                                      const std::vector<Value>& values) {
+                                      const std::vector<rg::Value>& values) {
   UpdateIndex(txn, vid, std::nullopt, values);
 }
 
@@ -930,8 +888,7 @@ void VertexFullTextIndex::Load(const rocksdb::Snapshot* snapshot,
         } else if (!s.ok()) {
           THROW_CODE(StorageEngineError, s.ToString());
         }
-        Value pv;
-        pv.Deserialize(property_val.data(), property_val.size());
+        rg::Value pv = DeserializeValue(property_val);
         if (!pv.IsString()) {
           continue;
         }

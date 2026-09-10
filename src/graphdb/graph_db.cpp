@@ -8,6 +8,7 @@
 #include <string_view>
 
 #include "common/byte_utils.h"
+#include "common/exceptions.h"
 #include "common/logger.h"
 #include "meta_info.h"
 #include "proto/meta.pb.h"

@@ -51,15 +51,16 @@ class ScanVertexBylabel : public VertexIterator {
 
 class ScanVertexBylabelProperties : public VertexIterator {
  public:
-  ScanVertexBylabelProperties(txn::Transaction* txn, uint32_t lid,
-                              std::unordered_map<uint32_t, Value> properties);
+  ScanVertexBylabelProperties(
+      txn::Transaction* txn, uint32_t lid,
+      std::unordered_map<uint32_t, rg::Value> properties);
   void Next() override;
   Vertex& GetVertex() override { return iter_->GetVertex(); }
 
  private:
   bool MatchProperties();
   std::unique_ptr<ScanVertexBylabel> iter_;
-  std::unordered_map<uint32_t, Value> properties_;
+  std::unordered_map<uint32_t, rg::Value> properties_;
 };
 
 class ScanAllVertex : public VertexIterator {
@@ -79,22 +80,22 @@ class ScanAllVertex : public VertexIterator {
 class ScanVertexByProperties : public VertexIterator {
  public:
   ScanVertexByProperties(txn::Transaction* txn,
-                         std::unordered_map<uint32_t, Value> properties);
+                         std::unordered_map<uint32_t, rg::Value> properties);
   void Next() override;
   Vertex& GetVertex() override { return iter_->GetVertex(); }
 
  private:
   bool MatchProperties();
   std::unique_ptr<ScanAllVertex> iter_;
-  std::unordered_map<uint32_t, Value> properties_;
+  std::unordered_map<uint32_t, rg::Value> properties_;
 };
 
 class GetVertexByUniqueIndex : public VertexIterator {
  public:
   GetVertexByUniqueIndex(txn::Transaction* txn,
                          std::shared_ptr<VertexPropertyIndex> index,
-                         std::vector<Value> values,
-                         std::unordered_map<uint32_t, Value> other_props);
+                         std::vector<rg::Value> values,
+                         std::unordered_map<uint32_t, rg::Value> other_props);
   void Next() override { valid_ = false; };
   Vertex& GetVertex() override {
     assert(valid_);

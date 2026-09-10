@@ -52,6 +52,7 @@ add_library(
   id_generator.cpp
   index.cpp
   meta_info.cpp
+  value_codec.cpp
   vector_property.cpp
   vector_store.cpp
   vertex_index_updater.cpp
@@ -70,4 +71,5 @@ target_link_libraries(
          graphdb_ftindex
          proto
          raft_driver
+         rocksgraph_value
          transaction)

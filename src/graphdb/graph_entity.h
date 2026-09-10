@@ -5,11 +5,12 @@
 #pragma once
 #include <boost/endian/conversion.hpp>
 #include <cstddef>
+#include <unordered_map>
 #include <unordered_set>
 
 #include "common/byte_utils.h"
-#include "common/value.h"
 #include "edge_direction.h"
+#include "value/value.h"
 
 namespace rocksdb {
 class PinnableSlice;
@@ -20,11 +21,12 @@ class Transaction;
 namespace graphdb {
 class Property {
  public:
-  virtual Value GetProperty(const std::string&) = 0;
-  virtual Value GetProperty(uint32_t) = 0;
-  virtual std::unordered_map<std::string, Value> GetAllProperty() = 0;
+  virtual rg::Value GetProperty(const std::string&) = 0;
+  virtual rg::Value GetProperty(uint32_t) = 0;
+  virtual std::unordered_map<std::string, rg::Value> GetAllProperty() = 0;
 
-  virtual void SetProperties(const std::unordered_map<std::string, Value>&) = 0;
+  virtual void SetProperties(
+      const std::unordered_map<std::string, rg::Value>&) = 0;
 
   virtual void RemoveProperty(const std::string&) = 0;
   virtual void RemoveAllProperty() = 0;
@@ -50,30 +52,30 @@ class Vertex : Property {
   int Delete();
   std::unique_ptr<EdgeIterator> NewEdgeIterator(
       EdgeDirection direction, const std::unordered_set<std::string>& types,
-      const std::unordered_map<std::string, Value>& props);
+      const std::unordered_map<std::string, rg::Value>& props);
   std::unique_ptr<EdgeIterator> NewEdgeIterator(
       EdgeDirection direction, const std::unordered_set<std::string>& types,
-      const std::unordered_map<std::string, Value>& props,
+      const std::unordered_map<std::string, rg::Value>& props,
       const std::unordered_set<std::string>& other_node_labels,
-      const std::unordered_map<std::string, Value>& other_node_props);
+      const std::unordered_map<std::string, rg::Value>& other_node_props);
   std::unique_ptr<EdgeIterator> NewEdgeIterator(
       EdgeDirection direction, const std::string& type,
-      const std::unordered_map<std::string, Value>& props,
+      const std::unordered_map<std::string, rg::Value>& props,
       const Vertex& other_node);
   std::unique_ptr<EdgeIterator> NewEdgeIterator(
       EdgeDirection direction, const std::unordered_set<std::string>& types,
-      const std::unordered_map<std::string, Value>& props,
+      const std::unordered_map<std::string, rg::Value>& props,
       const Vertex& other_node);
   bool operator==(const Vertex& v) const { return id_ == v.id_; }
 
-  Value GetProperty(const std::string&) override;
-  Value GetProperty(uint32_t) override;
+  rg::Value GetProperty(const std::string&) override;
+  rg::Value GetProperty(uint32_t) override;
   bool TryGetVectorPropertyRaw(uint32_t pid, rocksdb::PinnableSlice* out,
                                size_t* dimensions);
-  std::unordered_map<std::string, Value> GetAllProperty() override;
+  std::unordered_map<std::string, rg::Value> GetAllProperty() override;
   int GetDegree(EdgeDirection direction);
   void SetProperties(
-      const std::unordered_map<std::string, Value>& properties) override;
+      const std::unordered_map<std::string, rg::Value>& properties) override;
   void RemoveProperty(const std::string&) override;
   void RemoveAllProperty() override;
   virtual ~Vertex() = default;
@@ -114,11 +116,11 @@ class Edge : public Property {
            (typeId_ == e.typeId_);
   }
 
-  Value GetProperty(const std::string&) override;
-  Value GetProperty(uint32_t) override;
-  std::unordered_map<std::string, Value> GetAllProperty() override;
+  rg::Value GetProperty(const std::string&) override;
+  rg::Value GetProperty(uint32_t) override;
+  std::unordered_map<std::string, rg::Value> GetAllProperty() override;
   void SetProperties(
-      const std::unordered_map<std::string, Value>& properties) override;
+      const std::unordered_map<std::string, rg::Value>& properties) override;
   void RemoveProperty(const std::string&) override;
   void RemoveAllProperty() override;
   virtual ~Edge() = default;

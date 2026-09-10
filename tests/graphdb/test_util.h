@@ -10,6 +10,7 @@
 #include <string_view>
 #include <thread>
 
+#include "common/exceptions.h"
 #include "graphdb/graph_db.h"
 #include "proto/meta.pb.h"
 #include "raft_driver/raft_driver.h"

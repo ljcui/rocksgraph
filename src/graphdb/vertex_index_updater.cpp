@@ -7,9 +7,10 @@
 #include <optional>
 #include <vector>
 
-#include "common/value.h"
+#include "common/exceptions.h"
 #include "graphdb/graph_db.h"
 #include "graphdb/index.h"
+#include "graphdb/value_codec.h"
 #include "transaction/transaction.h"
 
 namespace graphdb {
@@ -23,10 +24,8 @@ struct FullTextDocument {
   bool Empty() const { return fields.empty(); }
 };
 
-Value DeserializePropertyValue(const std::string& value) {
-  Value ret;
-  ret.Deserialize(value.data(), value.size());
-  return ret;
+rg::Value DeserializePropertyValue(const std::string& value) {
+  return DeserializeValue(value);
 }
 
 std::unordered_set<uint32_t> CollectTouchedPropertyIds(
@@ -48,10 +47,10 @@ std::unordered_set<uint32_t> CollectTouchedPropertyIds(
   return touched_pids;
 }
 
-std::optional<std::vector<Value>> BuildPropertyIndexValues(
+std::optional<std::vector<rg::Value>> BuildPropertyIndexValues(
     const std::shared_ptr<VertexPropertyIndex>& index,
     const VertexSerializedProperties& properties) {
-  std::vector<Value> values;
+  std::vector<rg::Value> values;
   values.reserve(index->PropertyCount());
   for (auto pid : index->pids()) {
     auto iter = properties.find(pid);

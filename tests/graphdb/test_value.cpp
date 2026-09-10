@@ -1,20 +1,56 @@
-#include <date/tz.h>
 #include <gtest/gtest.h>
 
 #include <boost/endian/conversion.hpp>
 
-#include "common/value.h"
+#include "common/exceptions.h"
+#include "graphdb/value_codec.h"
+#include "value/value.h"
+
+using graphdb::DeserializeValue;
+using graphdb::SerializeValue;
+using rg::Value;
 
 TEST(Value, basic) {
-  Value v1(std::unordered_map<std::string, Value>{
-      {"key1", Value::Integer(1)}, {"key2", Value::Double(2.1)}});
-  Value v2(std::unordered_map<std::string, Value>{
-      {"key3", Value::Bool(true)}, {"key4", Value::String("dddd")}});
-  Value v3(
-      std::vector<Value>{Value::Integer(100), Value::String("str"), v1, v2});
+  Value v1(Value::Map{{"key1", Value(1)}, {"key2", Value(2.1)}});
+  Value v2(Value::Map{{"key3", Value(true)}, {"key4", Value("dddd")}});
+  Value v3(Value::List{Value(100), Value("str"), v1, v2});
   EXPECT_EQ(
       v3.ToString(),
-      R"([100, "str", {key2:2.100000, key1:1}, {key4:"dddd", key3:true}])");
+      R"([100, "str", {key1: 1, key2: 2.1}, {key3: true, key4: "dddd"}])");
+}
+
+TEST(Value, storageCodecRoundTrip) {
+  const std::vector<Value> values = {
+      Value::Null(),
+      Value(true),
+      Value(std::int64_t{-42}),
+      Value(3.5),
+      Value("text"),
+      Value(Value::List{Value(1), Value("two"), Value::Null()}),
+      Value(rg::Date{2026, 9, 10}),
+      Value(rg::LocalTime{12, 34, 56, 789, true}),
+      Value(rg::Time{{12, 34, 56, 789, true}, 28'800, "Asia/Shanghai"}),
+      Value(rg::LocalDateTime{{2026, 9, 10}, {12, 34, 56, 789, true}}),
+      Value(rg::DateTime{
+          {{2026, 9, 10}, {12, 34, 56, 789, true}}, 28'800, "Asia/Shanghai"}),
+      Value(rg::Duration{14, 3, 4, 5}),
+      Value(rg::Point{4326, {120.1, 30.2}}),
+  };
+
+  for (const auto& value : values) {
+    EXPECT_EQ(DeserializeValue(SerializeValue(value)), value);
+  }
+}
+
+TEST(Value, storageCodecRejectsInvalidData) {
+  EXPECT_THROW(DeserializeValue({}), LgraphException);
+
+  std::string encoded = SerializeValue(Value(1));
+  encoded.push_back('\0');
+  EXPECT_THROW(DeserializeValue(encoded), LgraphException);
+
+  EXPECT_THROW(SerializeValue(Value(Value::Map{{"key", Value(1)}})),
+               LgraphException);
 }
 
 TEST(Endian, big) {

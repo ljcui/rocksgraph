@@ -3,23 +3,25 @@
 
 #include <filesystem>
 
-#include "common/value.h"
 #include "graphdb/graph_db.h"
 #include "proto/meta.pb.h"
 #include "test_util.h"
 #include "transaction/transaction.h"
+#include "value/value.h"
+
+using rg::Value;
 using namespace graphdb;
 namespace fs = std::filesystem;
 static std::string testdb = "testdb";
 static std::unordered_map<std::string, Value> properties = {
-    {"property1", Value::Bool(true)},
-    {"property2", Value::Integer(100)},
-    {"property3", Value::String("string")},
-    {"property4", Value::Double(1.1314)},
-    {"property5", Value::BoolArray({true, false})},
-    {"property6", Value::IntegerArray({1, 2, 3})},
-    {"property7", Value::StringArray({"string1", "string2"})},
-    {"property8", Value::DoubleArray({11.11, 22.22})}};
+    {"property1", Value(true)},
+    {"property2", Value(100)},
+    {"property3", Value("string")},
+    {"property4", Value(1.1314)},
+    {"property5", Value(Value::List{Value(true), Value(false)})},
+    {"property6", Value(Value::List{Value(1), Value(2), Value(3)})},
+    {"property7", Value(Value::List{Value("string1"), Value("string2")})},
+    {"property8", Value(Value::List{Value(11.11), Value(22.22)})}};
 
 TEST(Transaction, raftRequestCarriesWbData) {
   rocksdb::WriteBatch wb;
@@ -183,13 +185,13 @@ TEST(Transaction, rollbackWithRaftDoesNotAdvanceApplyIndex) {
 
   txn = graphDB->BeginTransaction();
   auto vertex = txn->GetVertexById(v1.GetId());
-  vertex.SetProperties({{"property2", Value::Integer(999)}});
+  vertex.SetProperties({{"property2", Value(999)}});
   txn->Rollback();
 
   EXPECT_EQ(graphDB->GetRaftApplyIndex(), committed_index);
 
   txn = graphDB->BeginTransaction();
   vertex = txn->GetVertexById(v1.GetId());
-  EXPECT_EQ(vertex.GetProperty("property2"), Value::Integer(100));
+  EXPECT_EQ(vertex.GetProperty("property2"), Value(100));
   txn->Commit();
 }

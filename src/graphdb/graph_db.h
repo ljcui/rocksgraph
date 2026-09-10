@@ -13,12 +13,12 @@
 #include <string>
 
 #include "assistant_pool.h"
-#include "common/value.h"
 #include "graph_cf.h"
 #include "id_generator.h"
 #include "meta_info.h"
 #include "proto/meta.pb.h"
 #include "raft_driver/raft_driver.h"
+#include "value/value.h"
 
 namespace txn {
 class Transaction;

@@ -8,6 +8,7 @@
 
 #include "bolt/connection.h"
 #include "common/byte_utils.h"
+#include "common/exceptions.h"
 #include "common/logger.h"
 #include "graph_db.h"
 #include "index_error.h"
@@ -100,7 +101,7 @@ bool ScanVertexBylabelProperties::MatchProperties() {
 
 ScanVertexBylabelProperties::ScanVertexBylabelProperties(
     Transaction *txn, uint32_t lid,
-    std::unordered_map<uint32_t, Value> properties)
+    std::unordered_map<uint32_t, rg::Value> properties)
     : VertexIterator(txn), properties_(std::move(properties)) {
   for (iter_ = std::make_unique<ScanVertexBylabel>(txn, lid); iter_->Valid();
        iter_->Next()) {
@@ -173,7 +174,7 @@ bool ScanVertexByProperties::MatchProperties() {
 }
 
 ScanVertexByProperties::ScanVertexByProperties(
-    Transaction *txn, std::unordered_map<uint32_t, Value> properties)
+    Transaction *txn, std::unordered_map<uint32_t, rg::Value> properties)
     : VertexIterator(txn), properties_(std::move(properties)) {
   for (iter_ = std::make_unique<ScanAllVertex>(txn); iter_->Valid();
        iter_->Next()) {
@@ -201,7 +202,8 @@ void ScanVertexByProperties::Next() {
 
 GetVertexByUniqueIndex::GetVertexByUniqueIndex(
     Transaction *txn, std::shared_ptr<VertexPropertyIndex> index,
-    std::vector<Value> values, std::unordered_map<uint32_t, Value> other_props)
+    std::vector<rg::Value> values,
+    std::unordered_map<uint32_t, rg::Value> other_props)
     : VertexIterator(txn), index_(std::move(index)) {
   if (!index_ || !index_->is_unique()) {
     return;

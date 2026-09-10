@@ -18,12 +18,12 @@
 #include <vector>
 
 #include "common/type_traits.h"
-#include "common/value.h"
 #include "ftindex/include/lib.rs.h"
 #include "graphdb/graph_cf.h"
 #include "graphdb/id_generator.h"
 #include "graphdb/vector_store.h"
 #include "proto/meta.pb.h"
+#include "value/value.h"
 
 namespace txn {
 class Transaction;
@@ -45,20 +45,20 @@ struct VertexPropertyIndex
         pids_(std::move(pids)),
         pid_set_(pids_.begin(), pids_.end()) {}
   void AddIndex(txn::Transaction* txn, int64_t vid,
-                const std::vector<Value>& values);
+                const std::vector<rg::Value>& values);
   void UpdateIndex(txn::Transaction* txn, int64_t vid,
-                   const std::optional<std::vector<Value>>& new_values,
-                   const std::optional<std::vector<Value>>& old_values);
+                   const std::optional<std::vector<rg::Value>>& new_values,
+                   const std::optional<std::vector<rg::Value>>& old_values);
   void DeleteIndex(txn::Transaction* txn, int64_t vid,
-                   const std::vector<Value>& values);
+                   const std::vector<rg::Value>& values);
   void ApplyCommittedBuildUpdate(txn::Transaction* txn,
                                  const meta::PropertyIndexUpdate& update);
   void Load(const rocksdb::Snapshot* snapshot, uint64_t snapshot_wal_id);
   void ApplyWAL();
   std::string NextWALKey();
-  std::string IndexKey(const std::vector<Value>& values) const;
-  std::string EntryKey(const std::vector<Value>& values, int64_t vid) const;
-  std::optional<std::vector<Value>> LoadIndexedPropertyValues(
+  std::string IndexKey(const std::vector<rg::Value>& values) const;
+  std::string EntryKey(const std::vector<rg::Value>& values, int64_t vid) const;
+  std::optional<std::vector<rg::Value>> LoadIndexedPropertyValues(
       txn::Transaction* txn, int64_t vid,
       const std::unordered_map<uint32_t, std::string>* overrides = nullptr,
       const std::unordered_set<uint32_t>* removed = nullptr) const;
@@ -83,11 +83,12 @@ struct VertexPropertyIndex
   void ResetForBuild();
 
  private:
-  void UpdateIndexDirect(txn::Transaction* txn, int64_t vid,
-                         const std::optional<std::vector<Value>>& new_values,
-                         const std::optional<std::vector<Value>>& old_values);
+  void UpdateIndexDirect(
+      txn::Transaction* txn, int64_t vid,
+      const std::optional<std::vector<rg::Value>>& new_values,
+      const std::optional<std::vector<rg::Value>>& old_values);
   void AppendBuildUpdate(txn::Transaction* txn, meta::UpdateType type,
-                         int64_t vid, const std::vector<Value>& values);
+                         int64_t vid, const std::vector<rg::Value>& values);
   void ApplyBuildUpdate(const meta::PropertyIndexUpdate& update);
 
   rocksdb::TransactionDB* db_;
