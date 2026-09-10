@@ -4,7 +4,7 @@ add_library(etcd_raft STATIC raftpb/raft.pb.cc)
 
 target_compile_features(etcd_raft PUBLIC cxx_std_20)
 target_include_directories(
-  etcd_raft PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/.. ${CMAKE_CURRENT_SOURCE_DIR}
+  etcd_raft PUBLIC ${PROJECT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}
                    ${CMAKE_CURRENT_SOURCE_DIR}/raftpb)
 target_link_libraries(etcd_raft PUBLIC protobuf::libprotobuf)
 

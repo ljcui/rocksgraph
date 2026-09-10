@@ -59,7 +59,7 @@ add_library(
   vertex_iterator.cpp)
 
 target_compile_features(graphdb PUBLIC cxx_std_20)
-target_include_directories(graphdb PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
+target_include_directories(graphdb PUBLIC ${PROJECT_SOURCE_DIR})
 target_link_libraries(
   graphdb
   PUBLIC Boost::headers
