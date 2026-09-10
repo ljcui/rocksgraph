@@ -6,7 +6,7 @@
 #include <utility>
 
 #include "common/logger.h"
-#include "raft/raftpb/raft.pb.h"
+#include "etcd_raft/raftpb/raft.pb.h"
 #include "proto/meta.pb.h"
 
 namespace raft {

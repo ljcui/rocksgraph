@@ -4,7 +4,7 @@
 
 #include <boost/noncopyable.hpp>
 
-#include "raft/rawnode.h"
+#include "etcd_raft/rawnode.h"
 namespace raft {
 struct RaftLogStorage : private boost::noncopyable, eraft::Storage {
  public:

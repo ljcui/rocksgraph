@@ -99,7 +99,7 @@ endif()
 
 add_subdirectory(src/common)
 add_subdirectory(src/bolt)
-add_subdirectory(src/raft)
+add_subdirectory(src/etcd_raft)
 add_subdirectory(src/proto)
 add_subdirectory(src/raft_driver)
 add_subdirectory(src/graphdb)

@@ -4,7 +4,7 @@
 #include <cstdio>
 #include <string>
 
-#include "raft/util.h"
+#include "etcd_raft/util.h"
 
 namespace eraft {
 namespace {
