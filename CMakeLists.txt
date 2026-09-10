@@ -98,7 +98,7 @@ else()
 endif()
 
 add_subdirectory(value)
-add_subdirectory(src/common)
+add_subdirectory(common)
 add_subdirectory(src/bolt)
 add_subdirectory(src/etcd_raft)
 add_subdirectory(src/proto)
