@@ -1,0 +1,45 @@
+/**
+ * Copyright 2022 AntGroup CO., Ltd.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ */
+
+/*
+ * written by botu.wzy
+ */
+#pragma once
+#include <atomic>
+#include <thread>
+#include <vector>
+
+#include "common/type_traits.h"
+#include "connection.h"
+#include "io_service.h"
+
+namespace bolt {
+class BoltServer final {
+ public:
+  BoltServer() = default;
+  DISABLE_COPY(BoltServer);
+  DISABLE_MOVE(BoltServer);
+  bool Start(
+      uint32_t port, uint32_t io_thread_num, size_t max_connections,
+      const std::function<void(bolt::BoltConnection& conn, bolt::BoltMsg msg,
+                               std::vector<std::any> fields)>& handler);
+  void Stop();
+  bool Started() const { return started_.load(); }
+  ~BoltServer() { Stop(); }
+
+  std::vector<std::thread> threads_;
+  std::atomic<bool> started_{false};
+  boost::asio::io_service listener_{BOOST_ASIO_CONCURRENCY_HINT_UNSAFE};
+};
+}  // namespace bolt

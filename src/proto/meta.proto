@@ -1,0 +1,167 @@
+/**
+ * Copyright 2024 AntGroup CO., Ltd.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ */
+
+syntax = "proto3";
+package meta;
+
+import "raft.proto";
+
+message VertexPropertyIndex {
+    string name        = 1;
+    bool is_unique     = 2;
+    string label       = 3;
+    uint32 label_id    = 4;
+    repeated string properties   = 5;
+    repeated uint32 property_ids = 6;
+    uint32 index_id    = 7;
+    IndexBuildState state = 8;
+    uint64 build_start_wal_id = 9;
+    uint64 applied_wal_id = 10;
+    string build_error = 11;
+}
+
+message VertexFullTextIndex {
+    string name                  = 1;
+    string path                  = 2;
+    repeated string labels       = 3;
+    repeated string properties   = 4;
+    repeated uint32 label_ids    = 5;
+    repeated uint32 property_ids = 6;
+    uint32 index_id              = 7;
+    IndexBuildState state        = 8;
+    uint64 build_start_wal_id    = 9;
+    uint64 applied_wal_id        = 10;
+    string build_error           = 11;
+}
+
+enum VectorDistanceType {
+    L2 = 0; // Euclidean distance
+    IP = 1; // Inner product
+    COSINE = 2; // Cosine angle, smaller is more similar
+}
+
+enum VectorIndexType {
+    HNSW = 0;       // Hierarchical navigable small world
+    IVF_FLAT = 1;   // InVerted File Flat
+}
+
+enum IndexBuildState {
+    BUILDING = 0;
+    CATCHING_UP = 1;
+    READY = 2;
+    FAILED = 3;
+}
+
+message VertexVectorIndex {
+    string name        = 1;
+    string label       = 2;
+    uint32 label_id    = 3;
+    string property    = 4;
+    uint32 property_id = 5;
+    uint32 dimensions  = 6;
+    VectorIndexType index_type = 7;
+    VectorDistanceType distance_type = 8;
+    uint32 hnsw_m               = 9;
+    uint32 hnsw_ef_construction = 10;
+    uint32 index_id             = 11;
+    string path                 = 12;
+    IndexBuildState state       = 13;
+    uint64 build_start_wal_id   = 14;
+    uint64 applied_wal_id       = 15;
+    string build_error          = 16;
+}
+
+message VertexVectorField {
+    string label       = 1;
+    uint32 label_id    = 2;
+    string property    = 3;
+    uint32 property_id = 4;
+    uint32 dimensions  = 5;
+}
+
+message GraphDBMetaInfo {
+    string graph_name = 1;
+    uint32 graph_id   = 2;
+    bool enable_raft  = 3;
+}
+
+enum UpdateType {
+    Add = 0;
+    Delete = 1;
+};
+
+message FullTextIndexUpdate {
+    UpdateType type         = 1;
+    int64 vid               = 2;
+    repeated string fields = 3;
+    repeated string values = 4;
+}
+
+message VectorIndexUpdate {
+    UpdateType type        = 1;
+    int64 vid              = 2;
+    repeated float vector  = 3;
+}
+
+message PropertyIndexUpdate {
+    UpdateType type         = 1;
+    int64 vid               = 2;
+    repeated bytes values   = 3;
+}
+
+enum WriteBatchKind {
+    UNKNOWN = 0;
+    GRAPH_WRITE = 1;
+    ID_GENERATOR = 2;
+    GRAPH_INDEX_DDL = 3;
+}
+
+message GraphIndexDdlRequest {
+    enum Operation {
+        CREATE_VERTEX_PROPERTY_INDEX = 0;
+        DELETE_VERTEX_PROPERTY_INDEX = 1;
+        CREATE_VERTEX_FULLTEXT_INDEX = 2;
+        DELETE_VERTEX_FULLTEXT_INDEX = 3;
+        CREATE_VERTEX_VECTOR_INDEX = 4;
+        DELETE_VERTEX_VECTOR_INDEX = 5;
+        CREATE_VERTEX_VECTOR_FIELD = 6;
+    }
+    Operation operation = 1;
+    bytes payload = 2;
+}
+
+message RaftRequest {
+    uint64 id = 1;
+    WriteBatchKind wb_kind = 2;
+    bytes wb_data = 3;
+}
+
+message RaftMessage {
+    string graph = 1;
+    raftpb.Message message = 2;
+}
+
+message RaftNodeInfo {
+    uint64 node_id       = 1;
+    string ip            = 2;
+    int32 bolt_port      = 3;
+    int32 raft_poft      = 4;
+    bool is_leader       = 5;
+    bool is_learner      = 6;
+    string graph         = 7;
+}
+
+message RaftNodeInfos {
+    map<uint64, RaftNodeInfo> nodes = 1;
+}
