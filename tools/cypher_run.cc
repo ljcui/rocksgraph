@@ -83,8 +83,7 @@ int main(int argc, char **argv) {
   if (FLAGS_seed_demo_graph) {
     SeedDemoGraph(&graph);
   }
-  const rg::QueryOptions options{.planner_statistics = &graph,
-                                 .planner_catalog = &graph};
+  const rg::QueryOptions options{.planner_catalog = &graph};
 
   auto transaction = graph.BeginTransaction();
   try {

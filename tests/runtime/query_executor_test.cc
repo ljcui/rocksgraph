@@ -5,7 +5,6 @@
 #include <cstdint>
 #include <memory>
 #include <string>
-#include <unordered_set>
 #include <vector>
 
 #include "ast/ast_exception.h"
@@ -29,8 +28,7 @@ void SeedDemoGraph(rg::InMemoryGraph *graph) {
 }
 
 rg::QueryOptions QueryOptionsFor(const rg::InMemoryGraph &graph) {
-  return rg::QueryOptions{.planner_statistics = &graph,
-                          .planner_catalog = &graph};
+  return rg::QueryOptions{.planner_catalog = &graph};
 }
 
 std::vector<std::vector<std::string>> StringRows(
@@ -56,14 +54,6 @@ std::vector<std::int64_t> CursorIds(
   }
   cursor->Close();
   return ids;
-}
-
-ir::PlannedQuery PlannedQueryFor(const rg::InMemoryGraph &graph,
-                                 const std::string &cypher) {
-  return ir::PlanCypher(cypher,
-                        {.max_idp_candidates_per_relationship_count = 128,
-                         .planner_statistics = &graph,
-                         .planner_catalog = &graph});
 }
 
 std::unique_ptr<rg::QueryResultCursor> CursorFromTemporaryPlannedQuery(
@@ -1874,67 +1864,6 @@ TEST(QueryExecutorTest, ExecutesNamedMergePaths) {
             1U);
   EXPECT_EQ(graph.Nodes().size(), 2U);
   EXPECT_EQ(graph.Relationships().size(), 1U);
-}
-
-TEST(QueryExecutorTest,
-     InMemoryGraphEstimatesPlannerStatisticsFromCurrentData) {
-  rg::InMemoryGraph graph;
-  SeedDemoGraph(&graph);
-
-  EXPECT_DOUBLE_EQ(graph.EstimateNodeCount(std::unordered_set<std::string>{}),
-                   3.0);
-  EXPECT_DOUBLE_EQ(
-      graph.EstimateNodeCount(std::unordered_set<std::string>{"Person"}), 2.0);
-  EXPECT_DOUBLE_EQ(graph.EstimateNodeCount(
-                       std::unordered_set<std::string>{"Person", "Language"}),
-                   0.0);
-  EXPECT_DOUBLE_EQ(graph.EstimateRelationshipCount({}), 2.0);
-  EXPECT_DOUBLE_EQ(graph.EstimateRelationshipCount({"KNOWS"}), 1.0);
-  EXPECT_DOUBLE_EQ(graph.EstimateRelationshipCount({"MISSING"}), 0.0);
-
-  EXPECT_DOUBLE_EQ(graph.EstimateExpandFanout({"KNOWS"}), 1.0 / 3.0);
-  EXPECT_DOUBLE_EQ(graph.EstimateExpandIntoSelectivity({}), 2.0 / 9.0);
-  EXPECT_DOUBLE_EQ(graph.EstimateNodeIndexSeekSelectivity(
-                       std::unordered_set<std::string>{"Person"}, "name"),
-                   0.5);
-  EXPECT_DOUBLE_EQ(graph.EstimateNodeIndexRangeSeekSelectivity(
-                       std::unordered_set<std::string>{"Person"}, "age", 2),
-                   0.25);
-  EXPECT_DOUBLE_EQ(graph.EstimateRelationshipIndexSeekSelectivity({}, "since"),
-                   0.5);
-  EXPECT_DOUBLE_EQ(graph.EstimateRelationshipIndexRangeSeekSelectivity(
-                       {"KNOWS"}, "since", 1),
-                   0.5);
-
-  EXPECT_DOUBLE_EQ(graph.EstimateProcedureRows("db.labels", 1), 2.0);
-  EXPECT_DOUBLE_EQ(graph.EstimateProcedureRows("db.relationshipTypes", 1), 2.0);
-  EXPECT_DOUBLE_EQ(graph.EstimateProcedureRows("db.propertyKeys", 1), 3.0);
-  EXPECT_DOUBLE_EQ(graph.EstimateProcedureRows("dbms.procedures", 5), 4.0);
-}
-
-TEST(QueryExecutorTest, LogicalPlanUsesInMemoryGraphStatistics) {
-  rg::InMemoryGraph graph;
-  SeedDemoGraph(&graph);
-
-  ir::PlannedQuery label_scan_plan =
-      PlannedQueryFor(graph, "MATCH (n:Person) RETURN n");
-  const ir::LogicalPlan *label_scan = FindPlanNode(
-      label_scan_plan.Plan(), ir::LogicalPlanNodeType::kNodeByLabelScan);
-  ASSERT_NE(label_scan, nullptr);
-  ASSERT_TRUE(label_scan->EstimatedRows().has_value());
-  EXPECT_EQ(label_scan->EstimatedRows(), 2.0);
-
-  ir::PlannedQuery all_scan_plan = PlannedQueryFor(graph, "MATCH (n) RETURN n");
-  const ir::LogicalPlan *all_scan =
-      FindPlanNode(all_scan_plan.Plan(), ir::LogicalPlanNodeType::kAllNodeScan);
-  ASSERT_NE(all_scan, nullptr);
-  ASSERT_TRUE(all_scan->EstimatedRows().has_value());
-  EXPECT_EQ(all_scan->EstimatedRows(), 3.0);
-
-  ir::PlannedQuery procedure_plan =
-      PlannedQueryFor(graph, "CALL db.propertyKeys()");
-  ASSERT_TRUE(procedure_plan.Plan().EstimatedRows().has_value());
-  EXPECT_EQ(procedure_plan.Plan().EstimatedRows(), 3.0);
 }
 
 TEST(QueryExecutorTest, MaintainsNodeIndexAcrossWrites) {

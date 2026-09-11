@@ -424,7 +424,6 @@ TEST(SlottedRuntimeTest, ValueHashJoinUsesTypedCompositeKeys) {
   graph.CreateNode({"Large"}, {{"second", rg::Value("x")}});
 
   rg::QueryOptions options;
-  options.planner_statistics = &graph;
   options.planner_catalog = &graph;
   const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
@@ -457,7 +456,6 @@ TEST(SlottedRuntimeTest, ValueHashJoinRechecksCandidatePredicates) {
   graph.CreateNode({"Large"}, {{"key", rg::Value(9)}});
 
   rg::QueryOptions options;
-  options.planner_statistics = &graph;
   options.planner_catalog = &graph;
   const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
@@ -476,7 +474,6 @@ TEST(SlottedRuntimeTest, EnforcesValueHashJoinMemoryLimit) {
   graph.CreateNode({"Large"}, {{"key", rg::Value(2)}});
 
   rg::QueryOptions options;
-  options.planner_statistics = &graph;
   options.planner_catalog = &graph;
   options.execution.memory_limit_bytes = 1;
   auto transaction = graph.BeginTransaction();

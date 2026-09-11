@@ -326,8 +326,7 @@ std::vector<Scenario> ExpandScenario(const Scenario &scenario) {
 
 rg::QueryOptions QueryOptionsFor(const rg::InMemoryGraph &graph,
                                  rg::QueryParameters parameters = {}) {
-  return {.planner_statistics = &graph,
-          .planner_catalog = &graph,
+  return {.planner_catalog = &graph,
           .parameters = std::move(parameters)};
 }
 
@@ -564,9 +563,8 @@ void RunScenario(const Scenario &scenario) {
     std::optional<ir::PlannedQuery> planned_query;
     bool compile_failed = false;
     try {
-      planned_query.emplace(ir::PlanCypher(
-          scenario.query,
-          {.planner_statistics = &graph, .planner_catalog = &graph}));
+      planned_query.emplace(
+          ir::PlanCypher(scenario.query, {.planner_catalog = &graph}));
     } catch (const common::Exception &) {
       compile_failed = true;
     }

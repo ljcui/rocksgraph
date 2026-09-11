@@ -8,19 +8,15 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 #include "planner/catalog.h"
-#include "planner/cost_model.h"
 #include "storage/storage.h"
 #include "value/value.h"
 
 namespace rg {
 
-class InMemoryGraph final : public Storage,
-                            public ir::PlannerCatalog,
-                            public ir::PlannerStatistics {
+class InMemoryGraph final : public Storage, public ir::PlannerCatalog {
  public:
   using NodePtr = Value::NodePtr;
   using RelationshipPtr = Value::RelationshipPtr;
@@ -107,32 +103,6 @@ class InMemoryGraph final : public Storage,
   [[nodiscard]] std::optional<ir::RelationshipIndexDescriptor>
   FindRelationshipIndex(const std::vector<std::string> &relationship_types,
                         std::string_view property_key) const override;
-  [[nodiscard]] double EstimateNodeCount(
-      const std::unordered_set<std::string> &labels) const override;
-  [[nodiscard]] double EstimateExpandFanout(
-      const std::vector<std::string> &relationship_types) const override;
-  [[nodiscard]] double EstimateExpandIntoSelectivity(
-      const std::vector<std::string> &relationship_types) const override;
-  [[nodiscard]] double EstimateFilterSelectivity() const override;
-  [[nodiscard]] double EstimateNodeHashJoinSelectivity(
-      std::size_t key_count) const override;
-  [[nodiscard]] double EstimateNodeIndexSeekSelectivity(
-      const std::unordered_set<std::string> &labels,
-      std::string_view property_key) const override;
-  [[nodiscard]] double EstimateNodeIndexRangeSeekSelectivity(
-      const std::unordered_set<std::string> &labels,
-      std::string_view property_key, std::size_t bound_count) const override;
-  [[nodiscard]] double EstimateRelationshipCount(
-      const std::vector<std::string> &relationship_types) const override;
-  [[nodiscard]] double EstimateRelationshipIndexSeekSelectivity(
-      const std::vector<std::string> &relationship_types,
-      std::string_view property_key) const override;
-  [[nodiscard]] double EstimateRelationshipIndexRangeSeekSelectivity(
-      const std::vector<std::string> &relationship_types,
-      std::string_view property_key, std::size_t bound_count) const override;
-  [[nodiscard]] double EstimateProcedureRows(
-      std::string_view procedure_name, std::size_t yield_count) const override;
-
  private:
   class Transaction;
   using MutableNodePtr = std::shared_ptr<Node>;
@@ -178,12 +148,6 @@ class InMemoryGraph final : public Storage,
     bool unique = false;
   };
 
-  struct PropertyDistribution {
-    double total_entities = 0.0;
-    double entities_with_property = 0.0;
-    double distinct_values = 0.0;
-  };
-
   using NodeIndexBuckets =
       std::unordered_map<Value, std::vector<MutableNodePtr>, ValueHash,
                          ValueEqual>;
@@ -226,17 +190,6 @@ class InMemoryGraph final : public Storage,
       const MutableRelationshipPtr &relationship);
   void AddNodeToLabels(const MutableNodePtr &node);
   void RemoveNodeFromLabels(const MutableNodePtr &node);
-  [[nodiscard]] PropertyDistribution NodePropertyDistribution(
-      const std::unordered_set<std::string> &labels,
-      std::string_view property_key) const;
-  [[nodiscard]] PropertyDistribution RelationshipPropertyDistribution(
-      const std::vector<std::string> &relationship_types,
-      std::string_view property_key) const;
-  [[nodiscard]] static double EqualitySelectivity(
-      const PropertyDistribution &distribution);
-  [[nodiscard]] static double RangeSelectivity(
-      const PropertyDistribution &distribution, std::size_t bound_count);
-
   int64_t next_node_id_ = 0;
   int64_t next_relationship_id_ = 0;
   std::vector<MutableNodePtr> nodes_;
