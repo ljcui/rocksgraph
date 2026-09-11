@@ -1,5 +1,4 @@
 #include <iostream>
-#include <memory>
 #include <string>
 #include <vector>
 
@@ -7,11 +6,10 @@
 #include "gflags/gflags.h"
 #include "runtime/query_executor.h"
 #include "spdlog/spdlog.h"
-#include "storage/graph_db_storage.h"
+#include "storage/in_memory_graph.h"
 
-DEFINE_string(db_path, "rocksgraph_data", "Path to the persistent graphdb.");
-DEFINE_bool(seed_demo_graph, false,
-            "Load a small demo graph before executing the query.");
+DEFINE_bool(seed_demo_graph, true,
+            "Load a small in-memory demo graph before executing the query.");
 
 namespace {
 
@@ -26,16 +24,16 @@ std::string JoinArgs(const std::vector<std::string> &parts) {
   return out;
 }
 
-void SeedDemoGraph(rg::Storage *graph) {
+void SeedDemoGraph(rg::InMemoryGraph *graph) {
   auto ada = graph->CreateNode(
       {"Person"}, {{"name", rg::Value("Ada")}, {"age", rg::Value(36)}});
   auto grace = graph->CreateNode(
       {"Person"}, {{"name", rg::Value("Grace")}, {"age", rg::Value(85)}});
   auto cpp = graph->CreateNode({"Language"}, {{"name", rg::Value("C++")}});
-  graph->CreateRelationship(ada->id, grace->id, "KNOWS",
-                            {{"since", rg::Value(2020)}});
-  graph->CreateRelationship(ada->id, cpp->id, "USES",
-                            {{"since", rg::Value(2024)}});
+  graph->CreateRelationship(ada, grace, "KNOWS", {{"since", rg::Value(2020)}});
+  graph->CreateRelationship(ada, cpp, "USES", {{"since", rg::Value(2024)}});
+  graph->AddNodeIndex({"Person"}, "name");
+  graph->AddRelationshipIndex({"KNOWS"}, "since");
 }
 
 void PrintResult(const rg::QueryResult &result) {
@@ -59,16 +57,14 @@ void PrintResult(const rg::QueryResult &result) {
 }
 
 void PrintUsage() {
-  std::cerr << "Usage:\n  cypher_run [--db_path=<path>] "
-               "[--seed_demo_graph] [--] <cypher...>\n";
+  std::cerr << "Usage:\n  cypher_run [--seed_demo_graph] [--] <cypher...>\n";
 }
 
 }  // namespace
 
 int main(int argc, char **argv) {
   gflags::SetUsageMessage(
-      "Usage:\n  cypher_run [--db_path=<path>] [--seed_demo_graph] "
-      "[--] <cypher...>");
+      "Usage:\n  cypher_run [--seed_demo_graph] [--] <cypher...>");
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
   if (argc <= 1) {
@@ -83,28 +79,25 @@ int main(int argc, char **argv) {
     parts.emplace_back(argv[i]);
   }
 
-  std::unique_ptr<rg::GraphDBStorage> graph;
-  std::unique_ptr<rg::StorageTransaction> transaction;
+  rg::InMemoryGraph graph;
+  if (FLAGS_seed_demo_graph) {
+    SeedDemoGraph(&graph);
+  }
+  const rg::QueryOptions options{.planner_statistics = &graph,
+                                 .planner_catalog = &graph};
+
+  auto transaction = graph.BeginTransaction();
   try {
-    graph = rg::GraphDBStorage::Open(FLAGS_db_path);
-    if (FLAGS_seed_demo_graph) {
-      SeedDemoGraph(graph.get());
-    }
-    const rg::QueryOptions options{.planner_statistics = graph.get(),
-                                   .planner_catalog = graph.get()};
-    transaction = graph->BeginTransaction();
     PrintResult(rg::ExecuteQuery(*transaction, JoinArgs(parts), options));
     transaction->Commit();
   } catch (const common::Exception &e) {
-    if (transaction != nullptr &&
-        transaction->GetState() == rg::StorageTransaction::State::kActive) {
+    if (transaction->GetState() == rg::StorageTransaction::State::kActive) {
       transaction->Rollback();
     }
     spdlog::error("Query error: {}", e.Message());
     return 1;
   } catch (const std::exception &e) {
-    if (transaction != nullptr &&
-        transaction->GetState() == rg::StorageTransaction::State::kActive) {
+    if (transaction->GetState() == rg::StorageTransaction::State::kActive) {
       transaction->Rollback();
     }
     spdlog::error("Query error: {}", e.what());

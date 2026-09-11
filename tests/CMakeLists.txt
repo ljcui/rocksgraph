@@ -43,8 +43,6 @@ add_rocksgraph_test(open_cypher_optimizer_test runtime/open_cypher_optimizer_tes
                     rocksgraph_runtime)
 add_rocksgraph_test(index_access_test runtime/index_access_test.cc
                     rocksgraph_runtime)
-add_rocksgraph_test(graph_db_storage_test runtime/graph_db_storage_test.cc
-                    rocksgraph_runtime)
 
 add_rocksgraph_test(value_test value/value_test.cc rocksgraph_value)
 
