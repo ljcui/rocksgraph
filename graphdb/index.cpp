@@ -641,6 +641,330 @@ void VertexPropertyIndex::ResetForBuild() {
   meta_.clear_build_error();
 }
 
+void EdgePropertyIndex::AddIndex(Transaction* txn, int64_t eid,
+                                 const std::vector<rg::Value>& values) {
+  UpdateIndex(txn, eid, values, std::nullopt);
+}
+
+void EdgePropertyIndex::UpdateIndexDirect(
+    Transaction* txn, int64_t eid,
+    const std::optional<std::vector<rg::Value>>& new_values,
+    const std::optional<std::vector<rg::Value>>& old_values) {
+  if (!new_values && !old_values) {
+    return;
+  }
+  std::string new_key;
+  std::string old_key;
+  if (meta_.is_unique()) {
+    rocksdb::ReadOptions ro;
+    bool keep_existing_entry = false;
+    if (new_values) {
+      new_key = IndexKey(*new_values);
+      std::string current_eid;
+      auto s = txn->dbtxn()->GetForUpdate(ro, cf_, new_key, &current_eid);
+      if (s.ok()) {
+        if (current_eid.size() != sizeof(int64_t)) {
+          THROW_CODE(StorageEngineError,
+                     "edge unique index stores invalid eid size");
+        }
+        if (ReadValue<int64_t>(current_eid.data()) != eid) {
+          THROW_CODE(IndexValueAlreadyExist);
+        }
+        keep_existing_entry = true;
+      } else if (!s.IsNotFound()) {
+        THROW_CODE(StorageEngineError, s.ToString());
+      }
+    }
+    if (old_values) {
+      old_key = IndexKey(*old_values);
+    }
+    if (old_values && (!new_values || old_key != new_key)) {
+      auto s = txn->dbtxn()->GetForUpdate(ro, cf_, old_key,
+                                          static_cast<std::string*>(nullptr));
+      if (!s.ok() && !s.IsNotFound()) {
+        THROW_CODE(StorageEngineError, s.ToString());
+      }
+      if (s.ok()) {
+        s = txn->dbtxn()->GetWriteBatch()->SingleDelete(cf_, old_key);
+        if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+      }
+      keep_existing_entry = false;
+    }
+    if (new_values && !keep_existing_entry) {
+      auto s = txn->dbtxn()->GetWriteBatch()->Put(
+          cf_, new_key, rocksdb::Slice(AsChars(eid), sizeof(eid)));
+      if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+    }
+  } else {
+    if (new_values) {
+      new_key = EntryKey(*new_values, eid);
+    }
+    if (old_values) {
+      old_key = EntryKey(*old_values, eid);
+    }
+    if (old_values && (!new_values || old_key != new_key)) {
+      auto s = txn->dbtxn()->GetWriteBatch()->Delete(cf_, old_key);
+      if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+    }
+    if (new_values && (!old_values || old_key != new_key)) {
+      auto s = txn->dbtxn()->GetWriteBatch()->Put(cf_, new_key, {});
+      if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+    }
+  }
+}
+
+void EdgePropertyIndex::AppendBuildUpdate(
+    txn::Transaction* txn, meta::UpdateType type, int64_t eid,
+    const std::vector<rg::Value>& values) {
+  meta::PropertyIndexUpdate update;
+  update.set_type(type);
+  update.set_vid(eid);
+  for (const auto& value : values) {
+    update.add_values(SerializeValue(value));
+  }
+  txn->AppendEdgePropertyIndexWAL(shared_from_this(), update);
+}
+
+void EdgePropertyIndex::UpdateIndex(
+    Transaction* txn, int64_t eid,
+    const std::optional<std::vector<rg::Value>>& new_values,
+    const std::optional<std::vector<rg::Value>>& old_values) {
+  if (!new_values && !old_values) {
+    return;
+  }
+  if (IsReady()) {
+    UpdateIndexDirect(txn, eid, new_values, old_values);
+    return;
+  }
+  std::string new_key;
+  std::string old_key;
+  if (new_values) {
+    new_key =
+        meta_.is_unique() ? IndexKey(*new_values) : EntryKey(*new_values, eid);
+  }
+  if (old_values) {
+    old_key =
+        meta_.is_unique() ? IndexKey(*old_values) : EntryKey(*old_values, eid);
+  }
+  if (old_values && (!new_values || old_key != new_key)) {
+    AppendBuildUpdate(txn, meta::UpdateType::Delete, eid, *old_values);
+  }
+  if (new_values && (!old_values || old_key != new_key)) {
+    AppendBuildUpdate(txn, meta::UpdateType::Add, eid, *new_values);
+  }
+}
+
+void EdgePropertyIndex::ApplyBuildUpdate(
+    const meta::PropertyIndexUpdate& update) {
+  std::vector<rg::Value> values;
+  values.reserve(update.values_size());
+  for (const auto& item : update.values()) {
+    values.push_back(DeserializeStoredPropertyValue(item));
+  }
+  rocksdb::WriteOptions wo;
+  rocksdb::Status s;
+  if (meta_.is_unique()) {
+    rocksdb::ReadOptions ro;
+    auto index_key = IndexKey(values);
+    std::string current_eid;
+    s = db_->Get(ro, cf_, index_key, &current_eid);
+    if (update.type() == meta::UpdateType::Add) {
+      if (s.ok()) {
+        if (current_eid.size() != sizeof(int64_t)) {
+          THROW_CODE(StorageEngineError,
+                     "edge unique index stores invalid eid size");
+        }
+        if (ReadValue<int64_t>(current_eid.data()) != update.vid()) {
+          THROW_CODE(IndexValueAlreadyExist);
+        }
+        return;
+      }
+      if (!s.IsNotFound()) THROW_CODE(StorageEngineError, s.ToString());
+      s = db_->Put(wo, cf_, index_key,
+                   rocksdb::Slice(AsChars(update.vid()), sizeof(update.vid())));
+    } else if (update.type() == meta::UpdateType::Delete) {
+      if (s.IsNotFound()) return;
+      if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+      if (current_eid.size() != sizeof(int64_t)) {
+        THROW_CODE(StorageEngineError,
+                   "edge unique index stores invalid eid size");
+      }
+      if (ReadValue<int64_t>(current_eid.data()) != update.vid()) return;
+      s = db_->Delete(wo, cf_, index_key);
+    } else {
+      THROW_CODE(StorageEngineError,
+                 "edge property index wal has invalid update type: {}",
+                 static_cast<int>(update.type()));
+    }
+  } else {
+    auto entry_key = EntryKey(values, update.vid());
+    if (update.type() == meta::UpdateType::Add) {
+      s = db_->Put(wo, cf_, entry_key, {});
+    } else if (update.type() == meta::UpdateType::Delete) {
+      s = db_->Delete(wo, cf_, entry_key);
+    } else {
+      THROW_CODE(StorageEngineError,
+                 "edge property index wal has invalid update type: {}",
+                 static_cast<int>(update.type()));
+    }
+  }
+  if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+}
+
+void EdgePropertyIndex::ApplyCommittedBuildUpdate(
+    txn::Transaction* txn, const meta::PropertyIndexUpdate& update) {
+  std::vector<rg::Value> values;
+  values.reserve(update.values_size());
+  for (const auto& item : update.values()) {
+    values.push_back(DeserializeStoredPropertyValue(item));
+  }
+  if (update.type() == meta::UpdateType::Add) {
+    UpdateIndexDirect(txn, update.vid(), values, std::nullopt);
+  } else if (update.type() == meta::UpdateType::Delete) {
+    UpdateIndexDirect(txn, update.vid(), std::nullopt, values);
+  } else {
+    THROW_CODE(StorageEngineError,
+               "edge property index wal has invalid update type: {}",
+               static_cast<int>(update.type()));
+  }
+}
+
+void EdgePropertyIndex::Load(const rocksdb::Snapshot* snapshot,
+                             uint64_t snapshot_wal_id) {
+  rocksdb::ReadOptions ro;
+  ro.snapshot = snapshot;
+  std::unique_ptr<rocksdb::Iterator> iter(
+      db_->NewIterator(ro, graph_cf_->edge_type_eid));
+  rocksdb::Slice prefix(AsChars(tid_), sizeof(tid_));
+  for (iter->Seek(prefix); iter->Valid() && iter->key().starts_with(prefix);
+       iter->Next()) {
+    auto key = iter->key();
+    if (key.size() != sizeof(tid_) + sizeof(int64_t)) {
+      THROW_CODE(StorageEngineError, "edge type/eid key has invalid size");
+    }
+    key.remove_prefix(sizeof(tid_));
+    int64_t eid = ReadValue<int64_t>(key.data());
+    std::vector<rg::Value> values;
+    values.reserve(pids_.size());
+    bool complete = true;
+    for (auto pid : pids_) {
+      std::string property_key(AsChars(eid), sizeof(eid));
+      property_key.append(AsChars(pid), sizeof(pid));
+      std::string property_val;
+      auto s =
+          db_->Get(ro, graph_cf_->edge_property, property_key, &property_val);
+      if (s.IsNotFound()) {
+        complete = false;
+        break;
+      }
+      if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+      values.push_back(DeserializeStoredPropertyValue(property_val));
+    }
+    if (!complete) continue;
+    meta::PropertyIndexUpdate add;
+    add.set_type(meta::UpdateType::Add);
+    add.set_vid(eid);
+    for (const auto& value : values) add.add_values(SerializeValue(value));
+    ApplyBuildUpdate(add);
+  }
+  ThrowIfIteratorError(iter.get(), "edge property index load iterator failed");
+  apply_id_ = native_to_big(snapshot_wal_id);
+  meta_.set_applied_wal_id(snapshot_wal_id);
+}
+
+void EdgePropertyIndex::ApplyWAL() {
+  std::string prefix(AsChars(index_id_), sizeof(index_id_));
+  std::string start_key(prefix);
+  uint64_t next = big_to_native(apply_id_) + 1;
+  native_to_big_inplace(next);
+  start_key.append(AsChars(next), sizeof(next));
+  uint64_t consumed_wal_id = 0;
+  rocksdb::WriteBatch delete_batch;
+  rocksdb::ReadOptions ro;
+  std::unique_ptr<rocksdb::Iterator> iter(db_->NewIterator(ro, graph_cf_->wal));
+  for (iter->Seek(start_key); iter->Valid() && iter->key().starts_with(prefix);
+       iter->Next()) {
+    auto key = iter->key();
+    delete_batch.Delete(graph_cf_->wal, key.ToString());
+    key.remove_prefix(sizeof(index_id_));
+    if (key.size() != sizeof(apply_id_)) {
+      THROW_CODE(
+          StorageEngineError,
+          "edge property index wal key has invalid size, expect {}, actual {}",
+          sizeof(apply_id_), key.size());
+    }
+    consumed_wal_id = ReadValue<uint64_t>(key.data());
+    meta::PropertyIndexUpdate update;
+    auto val = iter->value();
+    if (!update.ParseFromArray(val.data(), val.size())) {
+      THROW_CODE(StorageEngineError,
+                 "failed to parse edge property index wal payload");
+    }
+    ApplyBuildUpdate(update);
+  }
+  ThrowIfIteratorError(iter.get(), "edge property index wal iteration failed");
+  if (consumed_wal_id != 0) {
+    rocksdb::WriteOptions wo;
+    rocksdb::TransactionDBWriteOptimizations two;
+    two.skip_concurrency_control = true;
+    two.skip_duplicate_key_check = true;
+    auto s = db_->Write(wo, two, &delete_batch);
+    if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+    apply_id_ = consumed_wal_id;
+    meta_.set_applied_wal_id(big_to_native(consumed_wal_id));
+  }
+}
+
+std::string EdgePropertyIndex::NextWALKey() {
+  std::string ret(AsChars(index_id_), sizeof(index_id_));
+  uint64_t wal_id = native_to_big(next_wal_id_++);
+  ret.append(AsChars(wal_id), sizeof(wal_id));
+  return ret;
+}
+
+std::string EdgePropertyIndex::IndexKey(
+    const std::vector<rg::Value>& values) const {
+  std::string index_key(AsChars(index_id_), sizeof(index_id_));
+  index_key.append(EncodePropertyIndexValues(values));
+  return index_key;
+}
+
+std::string EdgePropertyIndex::EntryKey(const std::vector<rg::Value>& values,
+                                        int64_t eid) const {
+  std::string index_key = IndexKey(values);
+  index_key.append(AsChars(eid), sizeof(eid));
+  return index_key;
+}
+
+bool EdgePropertyIndex::TouchesAnyProperty(
+    const std::unordered_set<uint32_t>& pids) const {
+  for (auto pid : pids) {
+    if (pid_set_.count(pid)) return true;
+  }
+  return false;
+}
+
+bool EdgePropertyIndex::AllPropertiesPresent(
+    const std::unordered_set<uint32_t>& pids) const {
+  for (auto pid : pids_) {
+    if (!pids.count(pid)) return false;
+  }
+  return true;
+}
+
+void EdgePropertyIndex::DeleteIndex(txn::Transaction* txn, int64_t eid,
+                                    const std::vector<rg::Value>& values) {
+  UpdateIndex(txn, eid, std::nullopt, values);
+}
+
+void EdgePropertyIndex::ResetForBuild() {
+  deleted_.store(false);
+  next_wal_id_ = LoadVisibleMaxWalId(db_, graph_cf_, index_id_, nullptr) + 1;
+  apply_id_ = 0;
+  meta_.set_applied_wal_id(0);
+  meta_.clear_build_error();
+}
+
 void VertexFullTextIndex::StartTimer() {
   {
     std::lock_guard<std::mutex> lock(timer_mutex_);

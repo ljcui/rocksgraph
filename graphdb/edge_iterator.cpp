@@ -5,6 +5,7 @@
 #include "edge_iterator.h"
 
 #include <boost/endian/conversion.hpp>
+#include <cstring>
 
 #include "bolt/connection.h"
 #include "common/byte_utils.h"
@@ -15,6 +16,41 @@
 using common::AsChars;
 using common::ReadValue;
 namespace graphdb {
+namespace {
+
+int CompareEdgeIndexKeyWithBoundPrefix(rocksdb::Slice key,
+                                       const std::string &bound) {
+  size_t common_size = std::min(key.size(), bound.size());
+  int cmp = std::memcmp(key.data(), bound.data(), common_size);
+  if (cmp != 0) return cmp < 0 ? -1 : 1;
+  return key.size() < bound.size() ? -1 : 0;
+}
+
+int64_t ReadEdgePropertyIndexEid(
+    const std::shared_ptr<EdgePropertyIndex> &index, rocksdb::Slice key,
+    rocksdb::Slice value) {
+  if (index->is_unique()) {
+    if (value.size() != sizeof(int64_t)) {
+      THROW_CODE(StorageEngineError,
+                 "edge unique index stores invalid eid size");
+    }
+    return ReadValue<int64_t>(value.data());
+  }
+  if (key.size() < sizeof(uint32_t) + sizeof(int64_t)) {
+    THROW_CODE(StorageEngineError,
+               "edge non-unique index stores invalid key size");
+  }
+  return ReadValue<int64_t>(key.data() + key.size() - sizeof(int64_t));
+}
+
+std::unique_ptr<Edge> LoadIndexedEdge(txn::Transaction *txn,
+                                      const EdgePropertyIndex &index,
+                                      int64_t eid) {
+  return std::make_unique<Edge>(txn->GetEdgeById(index.tid(), eid));
+}
+
+}  // namespace
+
 ScanEdgeByVidDirectionTypes::ScanEdgeByVidDirectionTypes(
     txn::Transaction *txn, int64_t vid, EdgeDirection direction,
     std::unordered_set<uint32_t> types)
@@ -292,5 +328,108 @@ void ScanEdgeByVidDirectionTypePropertiesOtherNode::Next() {
       break;
     }
   }
+}
+
+GetEdgeByPropertyIndex::GetEdgeByPropertyIndex(
+    txn::Transaction *txn, std::shared_ptr<EdgePropertyIndex> index,
+    std::string prefix)
+    : EdgeIterator(txn), index_(std::move(index)), prefix_(std::move(prefix)) {
+  rocksdb::ReadOptions ro;
+  if (index_->is_unique()) {
+    std::string index_val;
+    auto s = txn_->dbtxn()->Get(ro, index_->cf(), prefix_, &index_val);
+    if (s.ok()) {
+      ee_ = LoadIndexedEdge(
+          txn_, *index_,
+          ReadEdgePropertyIndexEid(index_, rocksdb::Slice(prefix_), index_val));
+      valid_ = true;
+    } else if (!s.IsNotFound()) {
+      THROW_CODE(StorageEngineError, s.ToString());
+    }
+    return;
+  }
+  iter_.reset(txn_->dbtxn()->GetIterator(ro, index_->cf()));
+  iter_->Seek(prefix_);
+  SeekToNextValid();
+}
+
+void GetEdgeByPropertyIndex::SeekToNextValid() {
+  valid_ = false;
+  if (iter_ && iter_->Valid() && iter_->key().starts_with(prefix_)) {
+    ee_ = LoadIndexedEdge(
+        txn_, *index_,
+        ReadEdgePropertyIndexEid(index_, iter_->key(), iter_->value()));
+    valid_ = true;
+  }
+  if (iter_ && !iter_->status().ok()) {
+    THROW_CODE(StorageEngineError, iter_->status().ToString());
+  }
+}
+
+void GetEdgeByPropertyIndex::Next() {
+  if (txn_->conn() && txn_->conn()->has_closed()) {
+    THROW_CODE(ConnectionDisconnected);
+  }
+  assert(valid_);
+  valid_ = false;
+  if (index_->is_unique()) return;
+  iter_->Next();
+  SeekToNextValid();
+}
+
+GetEdgeByPropertyRange::GetEdgeByPropertyRange(
+    txn::Transaction *txn, std::shared_ptr<EdgePropertyIndex> index,
+    std::optional<std::string> lower_key, std::optional<std::string> upper_key,
+    bool left_closed, bool right_closed)
+    : EdgeIterator(txn),
+      index_(std::move(index)),
+      lower_key_(std::move(lower_key)),
+      upper_key_(std::move(upper_key)),
+      left_closed_(left_closed),
+      right_closed_(right_closed) {
+  index_prefix_.assign(AsChars(index_->index_id()), sizeof(index_->index_id()));
+  rocksdb::ReadOptions ro;
+  iter_.reset(txn_->dbtxn()->GetIterator(ro, index_->cf()));
+  if (lower_key_) {
+    iter_->Seek(*lower_key_);
+  } else {
+    iter_->Seek(index_prefix_);
+  }
+  SeekToNextValid();
+}
+
+void GetEdgeByPropertyRange::SeekToNextValid() {
+  valid_ = false;
+  while (iter_ && iter_->Valid() && iter_->key().starts_with(index_prefix_)) {
+    if (lower_key_) {
+      int cmp = CompareEdgeIndexKeyWithBoundPrefix(iter_->key(), *lower_key_);
+      if (cmp < 0 || (cmp == 0 && !left_closed_)) {
+        iter_->Next();
+        continue;
+      }
+    }
+    if (upper_key_) {
+      int cmp = CompareEdgeIndexKeyWithBoundPrefix(iter_->key(), *upper_key_);
+      if (cmp > 0 || (cmp == 0 && !right_closed_)) break;
+    }
+    ee_ = LoadIndexedEdge(
+        txn_, *index_,
+        ReadEdgePropertyIndexEid(index_, iter_->key(), iter_->value()));
+    valid_ = true;
+    return;
+  }
+  if (iter_ && !iter_->status().ok()) {
+    THROW_CODE(StorageEngineError, iter_->status().ToString());
+  }
+}
+
+void GetEdgeByPropertyRange::Next() {
+  if (txn_->conn() && txn_->conn()->has_closed()) {
+    THROW_CODE(ConnectionDisconnected);
+  }
+  assert(valid_);
+  valid_ = false;
+  iter_->Next();
+  SeekToNextValid();
 }
 }  // namespace graphdb

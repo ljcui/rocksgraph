@@ -30,6 +30,17 @@ std::string BuildVertexPropertyIndexKey(uint32_t lid,
   return key;
 }
 
+std::string BuildEdgePropertyIndexKey(uint32_t tid,
+                                      const std::vector<uint32_t>& pids) {
+  std::vector<uint32_t> sorted_pids = pids;
+  std::sort(sorted_pids.begin(), sorted_pids.end());
+  std::string key(AsChars(tid), sizeof(tid));
+  for (auto pid : sorted_pids) {
+    key.append(AsChars(pid), sizeof(pid));
+  }
+  return key;
+}
+
 template <typename Map>
 void AppendNamedIndexes(const Map& indexes,
                         std::vector<typename Map::mapped_type>* out,
@@ -264,6 +275,127 @@ void MetaInfo::DeleteVertexPropertyIndex(const std::string& index_name) {
   building_vertex_property_indexes_by_schema_.erase(BuildVertexPropertyIndexKey(
       name_iter->second->lid(), name_iter->second->pids()));
   building_vertex_property_indexes_by_name_.erase(name_iter);
+}
+
+std::shared_ptr<EdgePropertyIndex> MetaInfo::GetReadyEdgePropertyIndex(
+    uint32_t tid, uint32_t pid) {
+  return GetReadyEdgePropertyIndex(tid, std::vector<uint32_t>{pid});
+}
+
+std::shared_ptr<EdgePropertyIndex> MetaInfo::GetReadyEdgePropertyIndex(
+    uint32_t tid, const std::vector<uint32_t>& pids) {
+  std::shared_lock lock(mutex_);
+  auto iter = ready_edge_property_indexes_by_schema_.find(
+      BuildEdgePropertyIndexKey(tid, pids));
+  return iter == ready_edge_property_indexes_by_schema_.end() ? nullptr
+                                                              : iter->second;
+}
+
+std::shared_ptr<EdgePropertyIndex> MetaInfo::GetReadyEdgePropertyIndex(
+    const std::string& index_name) {
+  std::shared_lock lock(mutex_);
+  auto iter = ready_edge_property_indexes_by_name_.find(index_name);
+  return iter == ready_edge_property_indexes_by_name_.end() ? nullptr
+                                                            : iter->second;
+}
+
+std::shared_ptr<EdgePropertyIndex> MetaInfo::GetEdgePropertyIndex(
+    uint32_t tid, uint32_t pid) {
+  return GetEdgePropertyIndex(tid, std::vector<uint32_t>{pid});
+}
+
+std::shared_ptr<EdgePropertyIndex> MetaInfo::GetEdgePropertyIndex(
+    uint32_t tid, const std::vector<uint32_t>& pids) {
+  std::shared_lock lock(mutex_);
+  auto schema_key = BuildEdgePropertyIndexKey(tid, pids);
+  auto iter = ready_edge_property_indexes_by_schema_.find(schema_key);
+  if (iter != ready_edge_property_indexes_by_schema_.end()) {
+    return iter->second;
+  }
+  iter = building_edge_property_indexes_by_schema_.find(schema_key);
+  return iter == building_edge_property_indexes_by_schema_.end() ? nullptr
+                                                                 : iter->second;
+}
+
+std::shared_ptr<EdgePropertyIndex> MetaInfo::GetEdgePropertyIndex(
+    const std::string& index_name) {
+  std::shared_lock lock(mutex_);
+  auto iter = ready_edge_property_indexes_by_name_.find(index_name);
+  if (iter != ready_edge_property_indexes_by_name_.end()) {
+    return iter->second;
+  }
+  iter = building_edge_property_indexes_by_name_.find(index_name);
+  return iter == building_edge_property_indexes_by_name_.end() ? nullptr
+                                                               : iter->second;
+}
+
+std::vector<std::shared_ptr<EdgePropertyIndex>>
+MetaInfo::GetEdgePropertyIndexes(bool include_failed) {
+  std::shared_lock lock(mutex_);
+  std::vector<std::shared_ptr<EdgePropertyIndex>> indexes;
+  AppendNamedIndexes(ready_edge_property_indexes_by_name_, &indexes, false);
+  AppendNamedIndexes(building_edge_property_indexes_by_name_, &indexes,
+                     !include_failed);
+  return indexes;
+}
+
+std::vector<std::shared_ptr<EdgePropertyIndex>>
+MetaInfo::GetBuildingEdgePropertyIndexes() {
+  std::shared_lock lock(mutex_);
+  std::vector<std::shared_ptr<EdgePropertyIndex>> indexes;
+  AppendNamedIndexes(building_edge_property_indexes_by_name_, &indexes, true);
+  return indexes;
+}
+
+bool MetaInfo::AddEdgePropertyIndex(std::shared_ptr<EdgePropertyIndex> epi) {
+  auto name = epi->meta().name();
+  auto schema_key = BuildEdgePropertyIndexKey(epi->tid(), epi->pids());
+  std::unique_lock lock(mutex_);
+  if (ready_edge_property_indexes_by_name_.count(name) ||
+      building_edge_property_indexes_by_name_.count(name) ||
+      ready_edge_property_indexes_by_schema_.count(schema_key) ||
+      building_edge_property_indexes_by_schema_.count(schema_key)) {
+    return false;
+  }
+  auto* by_name = epi->IsReady() ? &ready_edge_property_indexes_by_name_
+                                 : &building_edge_property_indexes_by_name_;
+  auto* by_schema = epi->IsReady() ? &ready_edge_property_indexes_by_schema_
+                                   : &building_edge_property_indexes_by_schema_;
+  by_schema->emplace(schema_key, epi);
+  by_name->emplace(std::move(name), std::move(epi));
+  return true;
+}
+
+void MetaInfo::PublishEdgePropertyIndex(const std::string& index_name) {
+  std::unique_lock lock(mutex_);
+  auto name_iter = building_edge_property_indexes_by_name_.find(index_name);
+  if (name_iter == building_edge_property_indexes_by_name_.end()) {
+    return;
+  }
+  auto index = name_iter->second;
+  auto schema_key = BuildEdgePropertyIndexKey(index->tid(), index->pids());
+  building_edge_property_indexes_by_name_.erase(name_iter);
+  building_edge_property_indexes_by_schema_.erase(schema_key);
+  ready_edge_property_indexes_by_schema_.emplace(schema_key, index);
+  ready_edge_property_indexes_by_name_.emplace(index->meta().name(),
+                                               std::move(index));
+}
+
+void MetaInfo::DeleteEdgePropertyIndex(const std::string& index_name) {
+  std::unique_lock lock(mutex_);
+  auto name_iter = ready_edge_property_indexes_by_name_.find(index_name);
+  if (name_iter != ready_edge_property_indexes_by_name_.end()) {
+    ready_edge_property_indexes_by_schema_.erase(BuildEdgePropertyIndexKey(
+        name_iter->second->tid(), name_iter->second->pids()));
+    ready_edge_property_indexes_by_name_.erase(name_iter);
+    return;
+  }
+  name_iter = building_edge_property_indexes_by_name_.find(index_name);
+  if (name_iter != building_edge_property_indexes_by_name_.end()) {
+    building_edge_property_indexes_by_schema_.erase(BuildEdgePropertyIndexKey(
+        name_iter->second->tid(), name_iter->second->pids()));
+    building_edge_property_indexes_by_name_.erase(name_iter);
+  }
 }
 
 std::vector<std::shared_ptr<VertexFullTextIndex>>
@@ -617,6 +749,21 @@ void MetaInfo::Init(rocksdb::TransactionDB* db,
       auto vi = std::make_shared<VertexPropertyIndex>(
           db, graph_cf, meta, graph_cf->index, index_id, lid, std::move(pids));
       AddVertexPropertyIndex(std::move(vi));
+      continue;
+    }
+    if (prefix == MetaDataType::EdgePropertyIndex) {
+      meta::EdgePropertyIndex meta;
+      bool ret = meta.ParseFromString(val.ToString());
+      assert(ret);
+      LOG_INFO("edge property index: [{}]", meta.ShortDebugString());
+      max_index_id = std::max(max_index_id, meta.index_id());
+      std::vector<uint32_t> pids;
+      pids.reserve(meta.property_ids_size());
+      for (auto pid : meta.property_ids()) pids.push_back(native_to_big(pid));
+      auto epi = std::make_shared<EdgePropertyIndex>(
+          db, graph_cf, meta, graph_cf->index, native_to_big(meta.index_id()),
+          native_to_big(meta.edge_type_id()), std::move(pids));
+      AddEdgePropertyIndex(std::move(epi));
       continue;
     }
     if (prefix == MetaDataType::VertexFullTextIndex) {

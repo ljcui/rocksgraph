@@ -122,6 +122,8 @@ message GraphIndexDdlRequest {
         CREATE_VERTEX_VECTOR_INDEX = 4;
         DELETE_VERTEX_VECTOR_INDEX = 5;
         CREATE_VERTEX_VECTOR_FIELD = 6;
+        CREATE_EDGE_PROPERTY_INDEX = 7;
+        DELETE_EDGE_PROPERTY_INDEX = 8;
     }
     Operation operation = 1;
     bytes payload = 2;
@@ -150,4 +152,18 @@ message RaftNodeInfo {
 
 message RaftNodeInfos {
     map<uint64, RaftNodeInfo> nodes = 1;
+}
+
+message EdgePropertyIndex {
+    string name        = 1;
+    bool is_unique     = 2;
+    string edge_type   = 3;
+    uint32 edge_type_id = 4;
+    repeated string properties   = 5;
+    repeated uint32 property_ids = 6;
+    uint32 index_id    = 7;
+    IndexBuildState state = 8;
+    uint64 build_start_wal_id = 9;
+    uint64 applied_wal_id = 10;
+    string build_error = 11;
 }

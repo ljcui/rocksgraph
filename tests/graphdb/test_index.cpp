@@ -51,6 +51,135 @@ std::vector<int64_t> CollectVertexPropertyIndexVids(
   return vids;
 }
 
+bool WaitUntilEdgePropertyIndexReady(
+    GraphDB* graph_db, const std::string& index_name,
+    std::chrono::milliseconds timeout = std::chrono::seconds(5)) {
+  auto deadline = std::chrono::steady_clock::now() + timeout;
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (graph_db->meta_info().GetReadyEdgePropertyIndex(index_name)) {
+      return true;
+    }
+    auto index = graph_db->meta_info().GetEdgePropertyIndex(index_name);
+    if (index && index->state() == meta::IndexBuildState::FAILED) {
+      return false;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  return false;
+}
+
+std::vector<int64_t> CollectEdgeIds(
+    std::unique_ptr<graphdb::EdgeIterator> eiter) {
+  std::vector<int64_t> eids;
+  for (; eiter->Valid(); eiter->Next()) {
+    eids.push_back(eiter->GetEdge().GetId());
+  }
+  std::sort(eids.begin(), eids.end());
+  return eids;
+}
+
+TEST(EdgePropertyIndex, onlineBuildQueryAndMaintain) {
+  fs::remove_all(testdb);
+  auto graph_db = GraphDB::Open(testdb, testutil::NewGraphDBOptions());
+  auto txn = graph_db->BeginTransaction();
+  auto v1 = txn->CreateVertex({"node"}, {{"id", Value(1)}});
+  auto v2 = txn->CreateVertex({"node"}, {{"id", Value(2)}});
+  auto v3 = txn->CreateVertex({"node"}, {{"id", Value(3)}});
+  auto e1 = txn->CreateEdge(v1, v2, "KNOWS", {{"rank", Value(1)}});
+  auto e2 = txn->CreateEdge(v1, v3, "KNOWS", {{"rank", Value(2)}});
+  txn->CreateEdge(v2, v3, "LIKES", {{"rank", Value(2)}});
+  auto v2_id = v2.GetId();
+  txn->Commit();
+
+  graph_db->AddEdgePropertyIndex("knows_rank", false, "KNOWS", {"rank"});
+  ASSERT_TRUE(WaitUntilEdgePropertyIndexReady(graph_db.get(), "knows_rank"));
+
+  txn = graph_db->BeginTransaction();
+  EXPECT_EQ(
+      CollectEdgeIds(txn->QueryEdgeByPropertyIndex("knows_rank", Value(2))),
+      (std::vector<int64_t>{e2.GetId()}));
+  EXPECT_EQ(CollectEdgeIds(txn->QueryEdgeByPropertyRange("knows_rank", Value(1),
+                                                         Value(2), true, true)),
+            (std::vector<int64_t>{e1.GetId(), e2.GetId()}));
+  auto e3 = txn->CreateEdge(txn->GetVertexById(v2_id), v3, "KNOWS",
+                            {{"rank", Value(2)}});
+  auto e3_id = e3.GetId();
+  EXPECT_EQ(
+      CollectEdgeIds(txn->QueryEdgeByPropertyIndex("knows_rank", Value(2))),
+      (std::vector<int64_t>{e2.GetId(), e3_id}));
+  txn->Commit();
+
+  txn = graph_db->BeginTransaction();
+  EXPECT_EQ(
+      CollectEdgeIds(txn->QueryEdgeByPropertyIndex("knows_rank", Value(2))),
+      (std::vector<int64_t>{e2.GetId(), e3_id}));
+  txn->GetEdgeById(e1.GetTypeId(), e1.GetId())
+      .SetProperties({{"rank", Value(2)}});
+  txn->GetEdgeById(e2.GetTypeId(), e2.GetId()).RemoveProperty("rank");
+  txn->GetEdgeById(e3.GetTypeId(), e3_id).Delete();
+  EXPECT_EQ(
+      CollectEdgeIds(txn->QueryEdgeByPropertyIndex("knows_rank", Value(2))),
+      (std::vector<int64_t>{e1.GetId()}));
+  txn->Commit();
+
+  txn = graph_db->BeginTransaction();
+  EXPECT_EQ(
+      CollectEdgeIds(txn->QueryEdgeByPropertyIndex("knows_rank", Value(2))),
+      (std::vector<int64_t>{e1.GetId()}));
+  txn->GetVertexById(v2_id).Delete();
+  txn->Commit();
+
+  txn = graph_db->BeginTransaction();
+  EXPECT_TRUE(
+      CollectEdgeIds(txn->QueryEdgeByPropertyIndex("knows_rank", Value(2)))
+          .empty());
+  txn->Commit();
+}
+
+TEST(EdgePropertyIndex, uniqueConstraintAndPersistence) {
+  fs::remove_all(testdb);
+  int64_t existing_eid = 0;
+  uint32_t edge_type_id = 0;
+  {
+    auto graph_db = GraphDB::Open(testdb, testutil::NewGraphDBOptions());
+    auto txn = graph_db->BeginTransaction();
+    auto v1 = txn->CreateVertex({"node"}, {});
+    auto v2 = txn->CreateVertex({"node"}, {});
+    auto existing = txn->CreateEdge(v1, v2, "OWNS", {{"code", Value("A")}});
+    txn->CreateEdge(v1, v2, "OTHER", {{"code", Value("A")}});
+    existing_eid = existing.GetId();
+    edge_type_id = existing.GetTypeId();
+    txn->Commit();
+
+    graph_db->AddEdgePropertyIndex("owns_code", true, "OWNS", {"code"});
+    ASSERT_TRUE(WaitUntilEdgePropertyIndexReady(graph_db.get(), "owns_code"));
+
+    txn = graph_db->BeginTransaction();
+    EXPECT_THROW_CODE(txn->CreateEdge(v1, v2, "OWNS", {{"code", Value("A")}}),
+                      IndexValueAlreadyExist);
+    txn->Rollback();
+  }
+
+  auto graph_db = GraphDB::Open(testdb, testutil::NewGraphDBOptions());
+  ASSERT_NE(graph_db->meta_info().GetReadyEdgePropertyIndex("owns_code"),
+            nullptr);
+  auto txn = graph_db->BeginTransaction();
+  auto result = txn->QueryEdgeByPropertyIndex("owns_code", Value("A"));
+  ASSERT_TRUE(result->Valid());
+  EXPECT_EQ(result->GetEdge().GetId(), existing_eid);
+  EXPECT_EQ(result->GetEdge().GetTypeId(), edge_type_id);
+  result->Next();
+  EXPECT_FALSE(result->Valid());
+  txn->Commit();
+
+  graph_db->DeleteEdgePropertyIndex("owns_code");
+  EXPECT_EQ(graph_db->meta_info().GetEdgePropertyIndex("owns_code"), nullptr);
+  txn = graph_db->BeginTransaction();
+  EXPECT_THROW_CODE(txn->QueryEdgeByPropertyIndex("owns_code", Value("A")),
+                    EdgePropertyIndexNotFound);
+  txn->Rollback();
+}
+
 std::vector<int64_t> CollectVertexIds(
     std::unique_ptr<graphdb::VertexIterator> viter) {
   std::vector<int64_t> vids;

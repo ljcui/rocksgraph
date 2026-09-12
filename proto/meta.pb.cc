@@ -262,8 +262,32 @@ struct RaftNodeInfosDefaultTypeInternal {
   };
 };
 PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 RaftNodeInfosDefaultTypeInternal _RaftNodeInfos_default_instance_;
+PROTOBUF_CONSTEXPR EdgePropertyIndex::EdgePropertyIndex(
+    ::_pbi::ConstantInitialized): _impl_{
+    /*decltype(_impl_.properties_)*/{}
+  , /*decltype(_impl_.property_ids_)*/{}
+  , /*decltype(_impl_._property_ids_cached_byte_size_)*/{0}
+  , /*decltype(_impl_.name_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
+  , /*decltype(_impl_.edge_type_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
+  , /*decltype(_impl_.build_error_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
+  , /*decltype(_impl_.is_unique_)*/false
+  , /*decltype(_impl_.edge_type_id_)*/0u
+  , /*decltype(_impl_.index_id_)*/0u
+  , /*decltype(_impl_.state_)*/0
+  , /*decltype(_impl_.build_start_wal_id_)*/uint64_t{0u}
+  , /*decltype(_impl_.applied_wal_id_)*/uint64_t{0u}
+  , /*decltype(_impl_._cached_size_)*/{}} {}
+struct EdgePropertyIndexDefaultTypeInternal {
+  PROTOBUF_CONSTEXPR EdgePropertyIndexDefaultTypeInternal()
+      : _instance(::_pbi::ConstantInitialized{}) {}
+  ~EdgePropertyIndexDefaultTypeInternal() {}
+  union {
+    EdgePropertyIndex _instance;
+  };
+};
+PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 EdgePropertyIndexDefaultTypeInternal _EdgePropertyIndex_default_instance_;
 }  // namespace meta
-static ::_pb::Metadata file_level_metadata_meta_2eproto[14];
+static ::_pb::Metadata file_level_metadata_meta_2eproto[15];
 static const ::_pb::EnumDescriptor* file_level_enum_descriptors_meta_2eproto[6];
 static constexpr ::_pb::ServiceDescriptor const** file_level_service_descriptors_meta_2eproto = nullptr;
 
@@ -427,6 +451,23 @@ const uint32_t TableStruct_meta_2eproto::offsets[] PROTOBUF_SECTION_VARIABLE(pro
   ~0u,  // no _weak_field_map_
   ~0u,  // no _inlined_string_donated_
   PROTOBUF_FIELD_OFFSET(::meta::RaftNodeInfos, _impl_.nodes_),
+  ~0u,  // no _has_bits_
+  PROTOBUF_FIELD_OFFSET(::meta::EdgePropertyIndex, _internal_metadata_),
+  ~0u,  // no _extensions_
+  ~0u,  // no _oneof_case_
+  ~0u,  // no _weak_field_map_
+  ~0u,  // no _inlined_string_donated_
+  PROTOBUF_FIELD_OFFSET(::meta::EdgePropertyIndex, _impl_.name_),
+  PROTOBUF_FIELD_OFFSET(::meta::EdgePropertyIndex, _impl_.is_unique_),
+  PROTOBUF_FIELD_OFFSET(::meta::EdgePropertyIndex, _impl_.edge_type_),
+  PROTOBUF_FIELD_OFFSET(::meta::EdgePropertyIndex, _impl_.edge_type_id_),
+  PROTOBUF_FIELD_OFFSET(::meta::EdgePropertyIndex, _impl_.properties_),
+  PROTOBUF_FIELD_OFFSET(::meta::EdgePropertyIndex, _impl_.property_ids_),
+  PROTOBUF_FIELD_OFFSET(::meta::EdgePropertyIndex, _impl_.index_id_),
+  PROTOBUF_FIELD_OFFSET(::meta::EdgePropertyIndex, _impl_.state_),
+  PROTOBUF_FIELD_OFFSET(::meta::EdgePropertyIndex, _impl_.build_start_wal_id_),
+  PROTOBUF_FIELD_OFFSET(::meta::EdgePropertyIndex, _impl_.applied_wal_id_),
+  PROTOBUF_FIELD_OFFSET(::meta::EdgePropertyIndex, _impl_.build_error_),
 };
 static const ::_pbi::MigrationSchema schemas[] PROTOBUF_SECTION_VARIABLE(protodesc_cold) = {
   { 0, -1, -1, sizeof(::meta::VertexPropertyIndex)},
@@ -443,6 +484,7 @@ static const ::_pbi::MigrationSchema schemas[] PROTOBUF_SECTION_VARIABLE(protode
   { 129, -1, -1, sizeof(::meta::RaftNodeInfo)},
   { 142, 150, -1, sizeof(::meta::RaftNodeInfos_NodesEntry_DoNotUse)},
   { 152, -1, -1, sizeof(::meta::RaftNodeInfos)},
+  { 159, -1, -1, sizeof(::meta::EdgePropertyIndex)},
 };
 
 static const ::_pb::Message* const file_default_instances[] = {
@@ -460,6 +502,7 @@ static const ::_pb::Message* const file_default_instances[] = {
   &::meta::_RaftNodeInfo_default_instance_._instance,
   &::meta::_RaftNodeInfos_NodesEntry_DoNotUse_default_instance_._instance,
   &::meta::_RaftNodeInfos_default_instance_._instance,
+  &::meta::_EdgePropertyIndex_default_instance_._instance,
 };
 
 const char descriptor_table_protodef_meta_2eproto[] PROTOBUF_SECTION_VARIABLE(protodesc_cold) =
@@ -498,42 +541,51 @@ const char descriptor_table_protodef_meta_2eproto[] PROTOBUF_SECTION_VARIABLE(pr
   " \001(\0162\020.meta.UpdateType\022\013\n\003vid\030\002 \001(\003\022\016\n\006v"
   "ector\030\003 \003(\002\"R\n\023PropertyIndexUpdate\022\036\n\004ty"
   "pe\030\001 \001(\0162\020.meta.UpdateType\022\013\n\003vid\030\002 \001(\003\022"
-  "\016\n\006values\030\003 \003(\014\"\326\002\n\024GraphIndexDdlRequest"
+  "\016\n\006values\030\003 \003(\014\"\226\003\n\024GraphIndexDdlRequest"
   "\0227\n\toperation\030\001 \001(\0162$.meta.GraphIndexDdl"
-  "Request.Operation\022\017\n\007payload\030\002 \001(\014\"\363\001\n\tO"
+  "Request.Operation\022\017\n\007payload\030\002 \001(\014\"\263\002\n\tO"
   "peration\022 \n\034CREATE_VERTEX_PROPERTY_INDEX"
   "\020\000\022 \n\034DELETE_VERTEX_PROPERTY_INDEX\020\001\022 \n\034"
   "CREATE_VERTEX_FULLTEXT_INDEX\020\002\022 \n\034DELETE"
   "_VERTEX_FULLTEXT_INDEX\020\003\022\036\n\032CREATE_VERTE"
   "X_VECTOR_INDEX\020\004\022\036\n\032DELETE_VERTEX_VECTOR"
   "_INDEX\020\005\022\036\n\032CREATE_VERTEX_VECTOR_FIELD\020\006"
-  "\"Q\n\013RaftRequest\022\n\n\002id\030\001 \001(\004\022%\n\007wb_kind\030\002"
-  " \001(\0162\024.meta.WriteBatchKind\022\017\n\007wb_data\030\003 "
-  "\001(\014\">\n\013RaftMessage\022\r\n\005graph\030\001 \001(\t\022 \n\007mes"
-  "sage\030\002 \001(\0132\017.raftpb.Message\"\207\001\n\014RaftNode"
-  "Info\022\017\n\007node_id\030\001 \001(\004\022\n\n\002ip\030\002 \001(\t\022\021\n\tbol"
-  "t_port\030\003 \001(\005\022\021\n\traft_poft\030\004 \001(\005\022\021\n\tis_le"
-  "ader\030\005 \001(\010\022\022\n\nis_learner\030\006 \001(\010\022\r\n\005graph\030"
-  "\007 \001(\t\"\200\001\n\rRaftNodeInfos\022-\n\005nodes\030\001 \003(\0132\036"
-  ".meta.RaftNodeInfos.NodesEntry\032@\n\nNodesE"
-  "ntry\022\013\n\003key\030\001 \001(\004\022!\n\005value\030\002 \001(\0132\022.meta."
-  "RaftNodeInfo:\0028\001*0\n\022VectorDistanceType\022\006"
-  "\n\002L2\020\000\022\006\n\002IP\020\001\022\n\n\006COSINE\020\002*)\n\017VectorInde"
-  "xType\022\010\n\004HNSW\020\000\022\014\n\010IVF_FLAT\020\001*G\n\017IndexBu"
-  "ildState\022\014\n\010BUILDING\020\000\022\017\n\013CATCHING_UP\020\001\022"
-  "\t\n\005READY\020\002\022\n\n\006FAILED\020\003*!\n\nUpdateType\022\007\n\003"
-  "Add\020\000\022\n\n\006Delete\020\001*U\n\016WriteBatchKind\022\013\n\007U"
-  "NKNOWN\020\000\022\017\n\013GRAPH_WRITE\020\001\022\020\n\014ID_GENERATO"
-  "R\020\002\022\023\n\017GRAPH_INDEX_DDL\020\003b\006proto3"
+  "\022\036\n\032CREATE_EDGE_PROPERTY_INDEX\020\007\022\036\n\032DELE"
+  "TE_EDGE_PROPERTY_INDEX\020\010\"Q\n\013RaftRequest\022"
+  "\n\n\002id\030\001 \001(\004\022%\n\007wb_kind\030\002 \001(\0162\024.meta.Writ"
+  "eBatchKind\022\017\n\007wb_data\030\003 \001(\014\">\n\013RaftMessa"
+  "ge\022\r\n\005graph\030\001 \001(\t\022 \n\007message\030\002 \001(\0132\017.raf"
+  "tpb.Message\"\207\001\n\014RaftNodeInfo\022\017\n\007node_id\030"
+  "\001 \001(\004\022\n\n\002ip\030\002 \001(\t\022\021\n\tbolt_port\030\003 \001(\005\022\021\n\t"
+  "raft_poft\030\004 \001(\005\022\021\n\tis_leader\030\005 \001(\010\022\022\n\nis"
+  "_learner\030\006 \001(\010\022\r\n\005graph\030\007 \001(\t\"\200\001\n\rRaftNo"
+  "deInfos\022-\n\005nodes\030\001 \003(\0132\036.meta.RaftNodeIn"
+  "fos.NodesEntry\032@\n\nNodesEntry\022\013\n\003key\030\001 \001("
+  "\004\022!\n\005value\030\002 \001(\0132\022.meta.RaftNodeInfo:\0028\001"
+  "\"\210\002\n\021EdgePropertyIndex\022\014\n\004name\030\001 \001(\t\022\021\n\t"
+  "is_unique\030\002 \001(\010\022\021\n\tedge_type\030\003 \001(\t\022\024\n\014ed"
+  "ge_type_id\030\004 \001(\r\022\022\n\nproperties\030\005 \003(\t\022\024\n\014"
+  "property_ids\030\006 \003(\r\022\020\n\010index_id\030\007 \001(\r\022$\n\005"
+  "state\030\010 \001(\0162\025.meta.IndexBuildState\022\032\n\022bu"
+  "ild_start_wal_id\030\t \001(\004\022\026\n\016applied_wal_id"
+  "\030\n \001(\004\022\023\n\013build_error\030\013 \001(\t*0\n\022VectorDis"
+  "tanceType\022\006\n\002L2\020\000\022\006\n\002IP\020\001\022\n\n\006COSINE\020\002*)\n"
+  "\017VectorIndexType\022\010\n\004HNSW\020\000\022\014\n\010IVF_FLAT\020\001"
+  "*G\n\017IndexBuildState\022\014\n\010BUILDING\020\000\022\017\n\013CAT"
+  "CHING_UP\020\001\022\t\n\005READY\020\002\022\n\n\006FAILED\020\003*!\n\nUpd"
+  "ateType\022\007\n\003Add\020\000\022\n\n\006Delete\020\001*U\n\016WriteBat"
+  "chKind\022\013\n\007UNKNOWN\020\000\022\017\n\013GRAPH_WRITE\020\001\022\020\n\014"
+  "ID_GENERATOR\020\002\022\023\n\017GRAPH_INDEX_DDL\020\003b\006pro"
+  "to3"
   ;
 static const ::_pbi::DescriptorTable* const descriptor_table_meta_2eproto_deps[1] = {
   &::descriptor_table_raft_2eproto,
 };
 static ::_pbi::once_flag descriptor_table_meta_2eproto_once;
 const ::_pbi::DescriptorTable descriptor_table_meta_2eproto = {
-    false, false, 2472, descriptor_table_protodef_meta_2eproto,
+    false, false, 2803, descriptor_table_protodef_meta_2eproto,
     "meta.proto",
-    &descriptor_table_meta_2eproto_once, descriptor_table_meta_2eproto_deps, 1, 14,
+    &descriptor_table_meta_2eproto_once, descriptor_table_meta_2eproto_deps, 1, 15,
     schemas, file_default_instances, TableStruct_meta_2eproto::offsets,
     file_level_metadata_meta_2eproto, file_level_enum_descriptors_meta_2eproto,
     file_level_service_descriptors_meta_2eproto,
@@ -558,6 +610,8 @@ bool GraphIndexDdlRequest_Operation_IsValid(int value) {
     case 4:
     case 5:
     case 6:
+    case 7:
+    case 8:
       return true;
     default:
       return false;
@@ -572,6 +626,8 @@ constexpr GraphIndexDdlRequest_Operation GraphIndexDdlRequest::DELETE_VERTEX_FUL
 constexpr GraphIndexDdlRequest_Operation GraphIndexDdlRequest::CREATE_VERTEX_VECTOR_INDEX;
 constexpr GraphIndexDdlRequest_Operation GraphIndexDdlRequest::DELETE_VERTEX_VECTOR_INDEX;
 constexpr GraphIndexDdlRequest_Operation GraphIndexDdlRequest::CREATE_VERTEX_VECTOR_FIELD;
+constexpr GraphIndexDdlRequest_Operation GraphIndexDdlRequest::CREATE_EDGE_PROPERTY_INDEX;
+constexpr GraphIndexDdlRequest_Operation GraphIndexDdlRequest::DELETE_EDGE_PROPERTY_INDEX;
 constexpr GraphIndexDdlRequest_Operation GraphIndexDdlRequest::Operation_MIN;
 constexpr GraphIndexDdlRequest_Operation GraphIndexDdlRequest::Operation_MAX;
 constexpr int GraphIndexDdlRequest::Operation_ARRAYSIZE;
@@ -688,7 +744,7 @@ VertexPropertyIndex::VertexPropertyIndex(const VertexPropertyIndex& from)
     _impl_.name_.Set("", GetArenaForAllocation());
   #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
   if (!from._internal_name().empty()) {
-    _this->_impl_.name_.Set(from._internal_name(), 
+    _this->_impl_.name_.Set(from._internal_name(),
       _this->GetArenaForAllocation());
   }
   _impl_.label_.InitDefault();
@@ -696,7 +752,7 @@ VertexPropertyIndex::VertexPropertyIndex(const VertexPropertyIndex& from)
     _impl_.label_.Set("", GetArenaForAllocation());
   #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
   if (!from._internal_label().empty()) {
-    _this->_impl_.label_.Set(from._internal_label(), 
+    _this->_impl_.label_.Set(from._internal_label(),
       _this->GetArenaForAllocation());
   }
   _impl_.build_error_.InitDefault();
@@ -704,7 +760,7 @@ VertexPropertyIndex::VertexPropertyIndex(const VertexPropertyIndex& from)
     _impl_.build_error_.Set("", GetArenaForAllocation());
   #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
   if (!from._internal_build_error().empty()) {
-    _this->_impl_.build_error_.Set(from._internal_build_error(), 
+    _this->_impl_.build_error_.Set(from._internal_build_error(),
       _this->GetArenaForAllocation());
   }
   ::memcpy(&_impl_.is_unique_, &from._impl_.is_unique_,
@@ -1232,7 +1288,7 @@ VertexFullTextIndex::VertexFullTextIndex(const VertexFullTextIndex& from)
     _impl_.name_.Set("", GetArenaForAllocation());
   #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
   if (!from._internal_name().empty()) {
-    _this->_impl_.name_.Set(from._internal_name(), 
+    _this->_impl_.name_.Set(from._internal_name(),
       _this->GetArenaForAllocation());
   }
   _impl_.path_.InitDefault();
@@ -1240,7 +1296,7 @@ VertexFullTextIndex::VertexFullTextIndex(const VertexFullTextIndex& from)
     _impl_.path_.Set("", GetArenaForAllocation());
   #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
   if (!from._internal_path().empty()) {
-    _this->_impl_.path_.Set(from._internal_path(), 
+    _this->_impl_.path_.Set(from._internal_path(),
       _this->GetArenaForAllocation());
   }
   _impl_.build_error_.InitDefault();
@@ -1248,7 +1304,7 @@ VertexFullTextIndex::VertexFullTextIndex(const VertexFullTextIndex& from)
     _impl_.build_error_.Set("", GetArenaForAllocation());
   #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
   if (!from._internal_build_error().empty()) {
-    _this->_impl_.build_error_.Set(from._internal_build_error(), 
+    _this->_impl_.build_error_.Set(from._internal_build_error(),
       _this->GetArenaForAllocation());
   }
   ::memcpy(&_impl_.index_id_, &from._impl_.index_id_,
@@ -1811,7 +1867,7 @@ VertexVectorIndex::VertexVectorIndex(const VertexVectorIndex& from)
     _impl_.name_.Set("", GetArenaForAllocation());
   #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
   if (!from._internal_name().empty()) {
-    _this->_impl_.name_.Set(from._internal_name(), 
+    _this->_impl_.name_.Set(from._internal_name(),
       _this->GetArenaForAllocation());
   }
   _impl_.label_.InitDefault();
@@ -1819,7 +1875,7 @@ VertexVectorIndex::VertexVectorIndex(const VertexVectorIndex& from)
     _impl_.label_.Set("", GetArenaForAllocation());
   #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
   if (!from._internal_label().empty()) {
-    _this->_impl_.label_.Set(from._internal_label(), 
+    _this->_impl_.label_.Set(from._internal_label(),
       _this->GetArenaForAllocation());
   }
   _impl_.property_.InitDefault();
@@ -1827,7 +1883,7 @@ VertexVectorIndex::VertexVectorIndex(const VertexVectorIndex& from)
     _impl_.property_.Set("", GetArenaForAllocation());
   #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
   if (!from._internal_property().empty()) {
-    _this->_impl_.property_.Set(from._internal_property(), 
+    _this->_impl_.property_.Set(from._internal_property(),
       _this->GetArenaForAllocation());
   }
   _impl_.path_.InitDefault();
@@ -1835,7 +1891,7 @@ VertexVectorIndex::VertexVectorIndex(const VertexVectorIndex& from)
     _impl_.path_.Set("", GetArenaForAllocation());
   #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
   if (!from._internal_path().empty()) {
-    _this->_impl_.path_.Set(from._internal_path(), 
+    _this->_impl_.path_.Set(from._internal_path(),
       _this->GetArenaForAllocation());
   }
   _impl_.build_error_.InitDefault();
@@ -1843,7 +1899,7 @@ VertexVectorIndex::VertexVectorIndex(const VertexVectorIndex& from)
     _impl_.build_error_.Set("", GetArenaForAllocation());
   #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
   if (!from._internal_build_error().empty()) {
-    _this->_impl_.build_error_.Set(from._internal_build_error(), 
+    _this->_impl_.build_error_.Set(from._internal_build_error(),
       _this->GetArenaForAllocation());
   }
   ::memcpy(&_impl_.label_id_, &from._impl_.label_id_,
@@ -2488,7 +2544,7 @@ VertexVectorField::VertexVectorField(const VertexVectorField& from)
     _impl_.label_.Set("", GetArenaForAllocation());
   #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
   if (!from._internal_label().empty()) {
-    _this->_impl_.label_.Set(from._internal_label(), 
+    _this->_impl_.label_.Set(from._internal_label(),
       _this->GetArenaForAllocation());
   }
   _impl_.property_.InitDefault();
@@ -2496,7 +2552,7 @@ VertexVectorField::VertexVectorField(const VertexVectorField& from)
     _impl_.property_.Set("", GetArenaForAllocation());
   #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
   if (!from._internal_property().empty()) {
-    _this->_impl_.property_.Set(from._internal_property(), 
+    _this->_impl_.property_.Set(from._internal_property(),
       _this->GetArenaForAllocation());
   }
   ::memcpy(&_impl_.label_id_, &from._impl_.label_id_,
@@ -2823,7 +2879,7 @@ GraphDBMetaInfo::GraphDBMetaInfo(const GraphDBMetaInfo& from)
     _impl_.graph_name_.Set("", GetArenaForAllocation());
   #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
   if (!from._internal_graph_name().empty()) {
-    _this->_impl_.graph_name_.Set(from._internal_graph_name(), 
+    _this->_impl_.graph_name_.Set(from._internal_graph_name(),
       _this->GetArenaForAllocation());
   }
   ::memcpy(&_impl_.graph_id_, &from._impl_.graph_id_,
@@ -3872,7 +3928,7 @@ GraphIndexDdlRequest::GraphIndexDdlRequest(const GraphIndexDdlRequest& from)
     _impl_.payload_.Set("", GetArenaForAllocation());
   #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
   if (!from._internal_payload().empty()) {
-    _this->_impl_.payload_.Set(from._internal_payload(), 
+    _this->_impl_.payload_.Set(from._internal_payload(),
       _this->GetArenaForAllocation());
   }
   _this->_impl_.operation_ = from._impl_.operation_;
@@ -4101,7 +4157,7 @@ RaftRequest::RaftRequest(const RaftRequest& from)
     _impl_.wb_data_.Set("", GetArenaForAllocation());
   #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
   if (!from._internal_wb_data().empty()) {
-    _this->_impl_.wb_data_.Set(from._internal_wb_data(), 
+    _this->_impl_.wb_data_.Set(from._internal_wb_data(),
       _this->GetArenaForAllocation());
   }
   ::memcpy(&_impl_.id_, &from._impl_.id_,
@@ -4372,7 +4428,7 @@ RaftMessage::RaftMessage(const RaftMessage& from)
     _impl_.graph_.Set("", GetArenaForAllocation());
   #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
   if (!from._internal_graph().empty()) {
-    _this->_impl_.graph_.Set(from._internal_graph(), 
+    _this->_impl_.graph_.Set(from._internal_graph(),
       _this->GetArenaForAllocation());
   }
   if (from._internal_has_message()) {
@@ -4617,7 +4673,7 @@ RaftNodeInfo::RaftNodeInfo(const RaftNodeInfo& from)
     _impl_.ip_.Set("", GetArenaForAllocation());
   #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
   if (!from._internal_ip().empty()) {
-    _this->_impl_.ip_.Set(from._internal_ip(), 
+    _this->_impl_.ip_.Set(from._internal_ip(),
       _this->GetArenaForAllocation());
   }
   _impl_.graph_.InitDefault();
@@ -4625,7 +4681,7 @@ RaftNodeInfo::RaftNodeInfo(const RaftNodeInfo& from)
     _impl_.graph_.Set("", GetArenaForAllocation());
   #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
   if (!from._internal_graph().empty()) {
-    _this->_impl_.graph_.Set(from._internal_graph(), 
+    _this->_impl_.graph_.Set(from._internal_graph(),
       _this->GetArenaForAllocation());
   }
   ::memcpy(&_impl_.node_id_, &from._impl_.node_id_,
@@ -5191,6 +5247,549 @@ void RaftNodeInfos::InternalSwap(RaftNodeInfos* other) {
       file_level_metadata_meta_2eproto[13]);
 }
 
+// ===================================================================
+
+class EdgePropertyIndex::_Internal {
+ public:
+};
+
+EdgePropertyIndex::EdgePropertyIndex(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+                         bool is_message_owned)
+  : ::PROTOBUF_NAMESPACE_ID::Message(arena, is_message_owned) {
+  SharedCtor(arena, is_message_owned);
+  // @@protoc_insertion_point(arena_constructor:meta.EdgePropertyIndex)
+}
+EdgePropertyIndex::EdgePropertyIndex(const EdgePropertyIndex& from)
+  : ::PROTOBUF_NAMESPACE_ID::Message() {
+  EdgePropertyIndex* const _this = this; (void)_this;
+  new (&_impl_) Impl_{
+      decltype(_impl_.properties_){from._impl_.properties_}
+    , decltype(_impl_.property_ids_){from._impl_.property_ids_}
+    , /*decltype(_impl_._property_ids_cached_byte_size_)*/{0}
+    , decltype(_impl_.name_){}
+    , decltype(_impl_.edge_type_){}
+    , decltype(_impl_.build_error_){}
+    , decltype(_impl_.is_unique_){}
+    , decltype(_impl_.edge_type_id_){}
+    , decltype(_impl_.index_id_){}
+    , decltype(_impl_.state_){}
+    , decltype(_impl_.build_start_wal_id_){}
+    , decltype(_impl_.applied_wal_id_){}
+    , /*decltype(_impl_._cached_size_)*/{}};
+
+  _internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
+  _impl_.name_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.name_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (!from._internal_name().empty()) {
+    _this->_impl_.name_.Set(from._internal_name(),
+      _this->GetArenaForAllocation());
+  }
+  _impl_.edge_type_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.edge_type_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (!from._internal_edge_type().empty()) {
+    _this->_impl_.edge_type_.Set(from._internal_edge_type(),
+      _this->GetArenaForAllocation());
+  }
+  _impl_.build_error_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.build_error_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (!from._internal_build_error().empty()) {
+    _this->_impl_.build_error_.Set(from._internal_build_error(),
+      _this->GetArenaForAllocation());
+  }
+  ::memcpy(&_impl_.is_unique_, &from._impl_.is_unique_,
+    static_cast<size_t>(reinterpret_cast<char*>(&_impl_.applied_wal_id_) -
+    reinterpret_cast<char*>(&_impl_.is_unique_)) + sizeof(_impl_.applied_wal_id_));
+  // @@protoc_insertion_point(copy_constructor:meta.EdgePropertyIndex)
+}
+
+inline void EdgePropertyIndex::SharedCtor(
+    ::_pb::Arena* arena, bool is_message_owned) {
+  (void)arena;
+  (void)is_message_owned;
+  new (&_impl_) Impl_{
+      decltype(_impl_.properties_){arena}
+    , decltype(_impl_.property_ids_){arena}
+    , /*decltype(_impl_._property_ids_cached_byte_size_)*/{0}
+    , decltype(_impl_.name_){}
+    , decltype(_impl_.edge_type_){}
+    , decltype(_impl_.build_error_){}
+    , decltype(_impl_.is_unique_){false}
+    , decltype(_impl_.edge_type_id_){0u}
+    , decltype(_impl_.index_id_){0u}
+    , decltype(_impl_.state_){0}
+    , decltype(_impl_.build_start_wal_id_){uint64_t{0u}}
+    , decltype(_impl_.applied_wal_id_){uint64_t{0u}}
+    , /*decltype(_impl_._cached_size_)*/{}
+  };
+  _impl_.name_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.name_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  _impl_.edge_type_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.edge_type_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  _impl_.build_error_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.build_error_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+}
+
+EdgePropertyIndex::~EdgePropertyIndex() {
+  // @@protoc_insertion_point(destructor:meta.EdgePropertyIndex)
+  if (auto *arena = _internal_metadata_.DeleteReturnArena<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>()) {
+  (void)arena;
+    return;
+  }
+  SharedDtor();
+}
+
+inline void EdgePropertyIndex::SharedDtor() {
+  GOOGLE_DCHECK(GetArenaForAllocation() == nullptr);
+  _impl_.properties_.~RepeatedPtrField();
+  _impl_.property_ids_.~RepeatedField();
+  _impl_.name_.Destroy();
+  _impl_.edge_type_.Destroy();
+  _impl_.build_error_.Destroy();
+}
+
+void EdgePropertyIndex::SetCachedSize(int size) const {
+  _impl_._cached_size_.Set(size);
+}
+
+void EdgePropertyIndex::Clear() {
+// @@protoc_insertion_point(message_clear_start:meta.EdgePropertyIndex)
+  uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void) cached_has_bits;
+
+  _impl_.properties_.Clear();
+  _impl_.property_ids_.Clear();
+  _impl_.name_.ClearToEmpty();
+  _impl_.edge_type_.ClearToEmpty();
+  _impl_.build_error_.ClearToEmpty();
+  ::memset(&_impl_.is_unique_, 0, static_cast<size_t>(
+      reinterpret_cast<char*>(&_impl_.applied_wal_id_) -
+      reinterpret_cast<char*>(&_impl_.is_unique_)) + sizeof(_impl_.applied_wal_id_));
+  _internal_metadata_.Clear<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>();
+}
+
+const char* EdgePropertyIndex::_InternalParse(const char* ptr, ::_pbi::ParseContext* ctx) {
+#define CHK_(x) if (PROTOBUF_PREDICT_FALSE(!(x))) goto failure
+  while (!ctx->Done(&ptr)) {
+    uint32_t tag;
+    ptr = ::_pbi::ReadTag(ptr, &tag);
+    switch (tag >> 3) {
+      // string name = 1;
+      case 1:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 10)) {
+          auto str = _internal_mutable_name();
+          ptr = ::_pbi::InlineGreedyStringParser(str, ptr, ctx);
+          CHK_(ptr);
+          CHK_(::_pbi::VerifyUTF8(str, "meta.EdgePropertyIndex.name"));
+        } else
+          goto handle_unusual;
+        continue;
+      // bool is_unique = 2;
+      case 2:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 16)) {
+          _impl_.is_unique_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint64(&ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // string edge_type = 3;
+      case 3:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 26)) {
+          auto str = _internal_mutable_edge_type();
+          ptr = ::_pbi::InlineGreedyStringParser(str, ptr, ctx);
+          CHK_(ptr);
+          CHK_(::_pbi::VerifyUTF8(str, "meta.EdgePropertyIndex.edge_type"));
+        } else
+          goto handle_unusual;
+        continue;
+      // uint32 edge_type_id = 4;
+      case 4:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 32)) {
+          _impl_.edge_type_id_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint32(&ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // repeated string properties = 5;
+      case 5:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 42)) {
+          ptr -= 1;
+          do {
+            ptr += 1;
+            auto str = _internal_add_properties();
+            ptr = ::_pbi::InlineGreedyStringParser(str, ptr, ctx);
+            CHK_(ptr);
+            CHK_(::_pbi::VerifyUTF8(str, "meta.EdgePropertyIndex.properties"));
+            if (!ctx->DataAvailable(ptr)) break;
+          } while (::PROTOBUF_NAMESPACE_ID::internal::ExpectTag<42>(ptr));
+        } else
+          goto handle_unusual;
+        continue;
+      // repeated uint32 property_ids = 6;
+      case 6:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 50)) {
+          ptr = ::PROTOBUF_NAMESPACE_ID::internal::PackedUInt32Parser(_internal_mutable_property_ids(), ptr, ctx);
+          CHK_(ptr);
+        } else if (static_cast<uint8_t>(tag) == 48) {
+          _internal_add_property_ids(::PROTOBUF_NAMESPACE_ID::internal::ReadVarint32(&ptr));
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // uint32 index_id = 7;
+      case 7:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 56)) {
+          _impl_.index_id_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint32(&ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // .meta.IndexBuildState state = 8;
+      case 8:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 64)) {
+          uint64_t val = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint64(&ptr);
+          CHK_(ptr);
+          _internal_set_state(static_cast<::meta::IndexBuildState>(val));
+        } else
+          goto handle_unusual;
+        continue;
+      // uint64 build_start_wal_id = 9;
+      case 9:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 72)) {
+          _impl_.build_start_wal_id_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint64(&ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // uint64 applied_wal_id = 10;
+      case 10:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 80)) {
+          _impl_.applied_wal_id_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint64(&ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // string build_error = 11;
+      case 11:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 90)) {
+          auto str = _internal_mutable_build_error();
+          ptr = ::_pbi::InlineGreedyStringParser(str, ptr, ctx);
+          CHK_(ptr);
+          CHK_(::_pbi::VerifyUTF8(str, "meta.EdgePropertyIndex.build_error"));
+        } else
+          goto handle_unusual;
+        continue;
+      default:
+        goto handle_unusual;
+    }  // switch
+  handle_unusual:
+    if ((tag == 0) || ((tag & 7) == 4)) {
+      CHK_(ptr);
+      ctx->SetLastTag(tag);
+      goto message_done;
+    }
+    ptr = UnknownFieldParse(
+        tag,
+        _internal_metadata_.mutable_unknown_fields<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(),
+        ptr, ctx);
+    CHK_(ptr != nullptr);
+  }  // while
+message_done:
+  return ptr;
+failure:
+  ptr = nullptr;
+  goto message_done;
+#undef CHK_
+}
+
+uint8_t* EdgePropertyIndex::_InternalSerialize(
+    uint8_t* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const {
+  // @@protoc_insertion_point(serialize_to_array_start:meta.EdgePropertyIndex)
+  uint32_t cached_has_bits = 0;
+  (void) cached_has_bits;
+
+  // string name = 1;
+  if (!this->_internal_name().empty()) {
+    ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::VerifyUtf8String(
+      this->_internal_name().data(), static_cast<int>(this->_internal_name().length()),
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::SERIALIZE,
+      "meta.EdgePropertyIndex.name");
+    target = stream->WriteStringMaybeAliased(
+        1, this->_internal_name(), target);
+  }
+
+  // bool is_unique = 2;
+  if (this->_internal_is_unique() != 0) {
+    target = stream->EnsureSpace(target);
+    target = ::_pbi::WireFormatLite::WriteBoolToArray(2, this->_internal_is_unique(), target);
+  }
+
+  // string edge_type = 3;
+  if (!this->_internal_edge_type().empty()) {
+    ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::VerifyUtf8String(
+      this->_internal_edge_type().data(), static_cast<int>(this->_internal_edge_type().length()),
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::SERIALIZE,
+      "meta.EdgePropertyIndex.edge_type");
+    target = stream->WriteStringMaybeAliased(
+        3, this->_internal_edge_type(), target);
+  }
+
+  // uint32 edge_type_id = 4;
+  if (this->_internal_edge_type_id() != 0) {
+    target = stream->EnsureSpace(target);
+    target = ::_pbi::WireFormatLite::WriteUInt32ToArray(4, this->_internal_edge_type_id(), target);
+  }
+
+  // repeated string properties = 5;
+  for (int i = 0, n = this->_internal_properties_size(); i < n; i++) {
+    const auto& s = this->_internal_properties(i);
+    ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::VerifyUtf8String(
+      s.data(), static_cast<int>(s.length()),
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::SERIALIZE,
+      "meta.EdgePropertyIndex.properties");
+    target = stream->WriteString(5, s, target);
+  }
+
+  // repeated uint32 property_ids = 6;
+  {
+    int byte_size = _impl_._property_ids_cached_byte_size_.load(std::memory_order_relaxed);
+    if (byte_size > 0) {
+      target = stream->WriteUInt32Packed(
+          6, _internal_property_ids(), byte_size, target);
+    }
+  }
+
+  // uint32 index_id = 7;
+  if (this->_internal_index_id() != 0) {
+    target = stream->EnsureSpace(target);
+    target = ::_pbi::WireFormatLite::WriteUInt32ToArray(7, this->_internal_index_id(), target);
+  }
+
+  // .meta.IndexBuildState state = 8;
+  if (this->_internal_state() != 0) {
+    target = stream->EnsureSpace(target);
+    target = ::_pbi::WireFormatLite::WriteEnumToArray(
+      8, this->_internal_state(), target);
+  }
+
+  // uint64 build_start_wal_id = 9;
+  if (this->_internal_build_start_wal_id() != 0) {
+    target = stream->EnsureSpace(target);
+    target = ::_pbi::WireFormatLite::WriteUInt64ToArray(9, this->_internal_build_start_wal_id(), target);
+  }
+
+  // uint64 applied_wal_id = 10;
+  if (this->_internal_applied_wal_id() != 0) {
+    target = stream->EnsureSpace(target);
+    target = ::_pbi::WireFormatLite::WriteUInt64ToArray(10, this->_internal_applied_wal_id(), target);
+  }
+
+  // string build_error = 11;
+  if (!this->_internal_build_error().empty()) {
+    ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::VerifyUtf8String(
+      this->_internal_build_error().data(), static_cast<int>(this->_internal_build_error().length()),
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::SERIALIZE,
+      "meta.EdgePropertyIndex.build_error");
+    target = stream->WriteStringMaybeAliased(
+        11, this->_internal_build_error(), target);
+  }
+
+  if (PROTOBUF_PREDICT_FALSE(_internal_metadata_.have_unknown_fields())) {
+    target = ::_pbi::WireFormat::InternalSerializeUnknownFieldsToArray(
+        _internal_metadata_.unknown_fields<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(::PROTOBUF_NAMESPACE_ID::UnknownFieldSet::default_instance), target, stream);
+  }
+  // @@protoc_insertion_point(serialize_to_array_end:meta.EdgePropertyIndex)
+  return target;
+}
+
+size_t EdgePropertyIndex::ByteSizeLong() const {
+// @@protoc_insertion_point(message_byte_size_start:meta.EdgePropertyIndex)
+  size_t total_size = 0;
+
+  uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void) cached_has_bits;
+
+  // repeated string properties = 5;
+  total_size += 1 *
+      ::PROTOBUF_NAMESPACE_ID::internal::FromIntSize(_impl_.properties_.size());
+  for (int i = 0, n = _impl_.properties_.size(); i < n; i++) {
+    total_size += ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::StringSize(
+      _impl_.properties_.Get(i));
+  }
+
+  // repeated uint32 property_ids = 6;
+  {
+    size_t data_size = ::_pbi::WireFormatLite::
+      UInt32Size(this->_impl_.property_ids_);
+    if (data_size > 0) {
+      total_size += 1 +
+        ::_pbi::WireFormatLite::Int32Size(static_cast<int32_t>(data_size));
+    }
+    int cached_size = ::_pbi::ToCachedSize(data_size);
+    _impl_._property_ids_cached_byte_size_.store(cached_size,
+                                    std::memory_order_relaxed);
+    total_size += data_size;
+  }
+
+  // string name = 1;
+  if (!this->_internal_name().empty()) {
+    total_size += 1 +
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::StringSize(
+        this->_internal_name());
+  }
+
+  // string edge_type = 3;
+  if (!this->_internal_edge_type().empty()) {
+    total_size += 1 +
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::StringSize(
+        this->_internal_edge_type());
+  }
+
+  // string build_error = 11;
+  if (!this->_internal_build_error().empty()) {
+    total_size += 1 +
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::StringSize(
+        this->_internal_build_error());
+  }
+
+  // bool is_unique = 2;
+  if (this->_internal_is_unique() != 0) {
+    total_size += 1 + 1;
+  }
+
+  // uint32 edge_type_id = 4;
+  if (this->_internal_edge_type_id() != 0) {
+    total_size += ::_pbi::WireFormatLite::UInt32SizePlusOne(this->_internal_edge_type_id());
+  }
+
+  // uint32 index_id = 7;
+  if (this->_internal_index_id() != 0) {
+    total_size += ::_pbi::WireFormatLite::UInt32SizePlusOne(this->_internal_index_id());
+  }
+
+  // .meta.IndexBuildState state = 8;
+  if (this->_internal_state() != 0) {
+    total_size += 1 +
+      ::_pbi::WireFormatLite::EnumSize(this->_internal_state());
+  }
+
+  // uint64 build_start_wal_id = 9;
+  if (this->_internal_build_start_wal_id() != 0) {
+    total_size += ::_pbi::WireFormatLite::UInt64SizePlusOne(this->_internal_build_start_wal_id());
+  }
+
+  // uint64 applied_wal_id = 10;
+  if (this->_internal_applied_wal_id() != 0) {
+    total_size += ::_pbi::WireFormatLite::UInt64SizePlusOne(this->_internal_applied_wal_id());
+  }
+
+  return MaybeComputeUnknownFieldsSize(total_size, &_impl_._cached_size_);
+}
+
+const ::PROTOBUF_NAMESPACE_ID::Message::ClassData EdgePropertyIndex::_class_data_ = {
+    ::PROTOBUF_NAMESPACE_ID::Message::CopyWithSourceCheck,
+    EdgePropertyIndex::MergeImpl
+};
+const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*EdgePropertyIndex::GetClassData() const { return &_class_data_; }
+
+
+void EdgePropertyIndex::MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg) {
+  auto* const _this = static_cast<EdgePropertyIndex*>(&to_msg);
+  auto& from = static_cast<const EdgePropertyIndex&>(from_msg);
+  // @@protoc_insertion_point(class_specific_merge_from_start:meta.EdgePropertyIndex)
+  GOOGLE_DCHECK_NE(&from, _this);
+  uint32_t cached_has_bits = 0;
+  (void) cached_has_bits;
+
+  _this->_impl_.properties_.MergeFrom(from._impl_.properties_);
+  _this->_impl_.property_ids_.MergeFrom(from._impl_.property_ids_);
+  if (!from._internal_name().empty()) {
+    _this->_internal_set_name(from._internal_name());
+  }
+  if (!from._internal_edge_type().empty()) {
+    _this->_internal_set_edge_type(from._internal_edge_type());
+  }
+  if (!from._internal_build_error().empty()) {
+    _this->_internal_set_build_error(from._internal_build_error());
+  }
+  if (from._internal_is_unique() != 0) {
+    _this->_internal_set_is_unique(from._internal_is_unique());
+  }
+  if (from._internal_edge_type_id() != 0) {
+    _this->_internal_set_edge_type_id(from._internal_edge_type_id());
+  }
+  if (from._internal_index_id() != 0) {
+    _this->_internal_set_index_id(from._internal_index_id());
+  }
+  if (from._internal_state() != 0) {
+    _this->_internal_set_state(from._internal_state());
+  }
+  if (from._internal_build_start_wal_id() != 0) {
+    _this->_internal_set_build_start_wal_id(from._internal_build_start_wal_id());
+  }
+  if (from._internal_applied_wal_id() != 0) {
+    _this->_internal_set_applied_wal_id(from._internal_applied_wal_id());
+  }
+  _this->_internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
+}
+
+void EdgePropertyIndex::CopyFrom(const EdgePropertyIndex& from) {
+// @@protoc_insertion_point(class_specific_copy_from_start:meta.EdgePropertyIndex)
+  if (&from == this) return;
+  Clear();
+  MergeFrom(from);
+}
+
+bool EdgePropertyIndex::IsInitialized() const {
+  return true;
+}
+
+void EdgePropertyIndex::InternalSwap(EdgePropertyIndex* other) {
+  using std::swap;
+  auto* lhs_arena = GetArenaForAllocation();
+  auto* rhs_arena = other->GetArenaForAllocation();
+  _internal_metadata_.InternalSwap(&other->_internal_metadata_);
+  _impl_.properties_.InternalSwap(&other->_impl_.properties_);
+  _impl_.property_ids_.InternalSwap(&other->_impl_.property_ids_);
+  ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr::InternalSwap(
+      &_impl_.name_, lhs_arena,
+      &other->_impl_.name_, rhs_arena
+  );
+  ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr::InternalSwap(
+      &_impl_.edge_type_, lhs_arena,
+      &other->_impl_.edge_type_, rhs_arena
+  );
+  ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr::InternalSwap(
+      &_impl_.build_error_, lhs_arena,
+      &other->_impl_.build_error_, rhs_arena
+  );
+  ::PROTOBUF_NAMESPACE_ID::internal::memswap<
+      PROTOBUF_FIELD_OFFSET(EdgePropertyIndex, _impl_.applied_wal_id_)
+      + sizeof(EdgePropertyIndex::_impl_.applied_wal_id_)
+      - PROTOBUF_FIELD_OFFSET(EdgePropertyIndex, _impl_.is_unique_)>(
+          reinterpret_cast<char*>(&_impl_.is_unique_),
+          reinterpret_cast<char*>(&other->_impl_.is_unique_));
+}
+
+::PROTOBUF_NAMESPACE_ID::Metadata EdgePropertyIndex::GetMetadata() const {
+  return ::_pbi::AssignDescriptors(
+      &descriptor_table_meta_2eproto_getter, &descriptor_table_meta_2eproto_once,
+      file_level_metadata_meta_2eproto[14]);
+}
+
 // @@protoc_insertion_point(namespace_scope)
 }  // namespace meta
 PROTOBUF_NAMESPACE_OPEN
@@ -5249,6 +5848,10 @@ Arena::CreateMaybeMessage< ::meta::RaftNodeInfos_NodesEntry_DoNotUse >(Arena* ar
 template<> PROTOBUF_NOINLINE ::meta::RaftNodeInfos*
 Arena::CreateMaybeMessage< ::meta::RaftNodeInfos >(Arena* arena) {
   return Arena::CreateMessageInternal< ::meta::RaftNodeInfos >(arena);
+}
+template<> PROTOBUF_NOINLINE ::meta::EdgePropertyIndex*
+Arena::CreateMaybeMessage< ::meta::EdgePropertyIndex >(Arena* arena) {
+  return Arena::CreateMessageInternal< ::meta::EdgePropertyIndex >(arena);
 }
 PROTOBUF_NAMESPACE_CLOSE
 

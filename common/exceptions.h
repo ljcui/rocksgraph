@@ -26,6 +26,8 @@
   X(FullTextIndexNotFound, "FullText index not found.")                      \
   X(VectorIndexNotFound, "Vector index not found.")                          \
   X(VertexUniqueIndexNotFound, "Vertex unique index not found.")             \
+  X(EdgePropertyIndexAlreadyExist, "Edge property index already exist.")     \
+  X(EdgePropertyIndexNotFound, "Edge property index not found.")             \
   X(BoltDataException, "Bolt data exception.")                               \
   X(ValueException, "Value exception.")                                      \
   X(OutOfRange, "Out of range.")                                             \

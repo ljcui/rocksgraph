@@ -104,6 +104,80 @@ struct VertexPropertyIndex
   std::atomic<bool> deleted_{false};
 };
 
+// Property index over relationships of one edge type.  The on-disk key format
+// is identical to VertexPropertyIndex, except that the indexed entity id is an
+// edge id and the metadata carries an edge type id instead of a label id.
+struct EdgePropertyIndex
+    : public std::enable_shared_from_this<EdgePropertyIndex> {
+ public:
+  EdgePropertyIndex(rocksdb::TransactionDB* db, GraphCF* graph_cf,
+                    meta::EdgePropertyIndex meta,
+                    rocksdb::ColumnFamilyHandle* cf, uint32_t index_id,
+                    uint32_t tid, std::vector<uint32_t> pids)
+      : db_(db),
+        graph_cf_(graph_cf),
+        meta_(std::move(meta)),
+        cf_(cf),
+        index_id_(index_id),
+        tid_(tid),
+        pids_(std::move(pids)),
+        pid_set_(pids_.begin(), pids_.end()) {}
+  void AddIndex(txn::Transaction* txn, int64_t eid,
+                const std::vector<rg::Value>& values);
+  void UpdateIndex(txn::Transaction* txn, int64_t eid,
+                   const std::optional<std::vector<rg::Value>>& new_values,
+                   const std::optional<std::vector<rg::Value>>& old_values);
+  void DeleteIndex(txn::Transaction* txn, int64_t eid,
+                   const std::vector<rg::Value>& values);
+  void ApplyCommittedBuildUpdate(txn::Transaction* txn,
+                                 const meta::PropertyIndexUpdate& update);
+  void Load(const rocksdb::Snapshot* snapshot, uint64_t snapshot_wal_id);
+  void ApplyWAL();
+  std::string NextWALKey();
+  std::string IndexKey(const std::vector<rg::Value>& values) const;
+  std::string EntryKey(const std::vector<rg::Value>& values, int64_t eid) const;
+  bool ContainsProperty(uint32_t pid) const { return pid_set_.count(pid) > 0; }
+  bool TouchesAnyProperty(const std::unordered_set<uint32_t>& pids) const;
+  bool AllPropertiesPresent(const std::unordered_set<uint32_t>& pids) const;
+  bool is_unique() const { return meta_.is_unique(); }
+  bool IsReady() const { return meta_.state() == meta::IndexBuildState::READY; }
+  meta::IndexBuildState state() const { return meta_.state(); }
+  void SetState(meta::IndexBuildState state) { meta_.set_state(state); }
+  void SetBuildError(std::string msg) { meta_.set_build_error(std::move(msg)); }
+  const std::string& Name() const { return meta_.name(); }
+  bool IsDeleted() const { return deleted_.load(); }
+  void MarkDeleted() { deleted_.store(true); }
+  meta::EdgePropertyIndex& meta() { return meta_; }
+  const meta::EdgePropertyIndex& meta() const { return meta_; }
+  rocksdb::ColumnFamilyHandle* cf() { return cf_; }
+  uint32_t tid() const { return tid_; }
+  const std::vector<uint32_t>& pids() const { return pids_; }
+  size_t PropertyCount() const { return pids_.size(); }
+  uint32_t index_id() const { return index_id_; }
+  void ResetForBuild();
+
+ private:
+  void UpdateIndexDirect(
+      txn::Transaction* txn, int64_t eid,
+      const std::optional<std::vector<rg::Value>>& new_values,
+      const std::optional<std::vector<rg::Value>>& old_values);
+  void AppendBuildUpdate(txn::Transaction* txn, meta::UpdateType type,
+                         int64_t eid, const std::vector<rg::Value>& values);
+  void ApplyBuildUpdate(const meta::PropertyIndexUpdate& update);
+
+  rocksdb::TransactionDB* db_;
+  GraphCF* graph_cf_;
+  meta::EdgePropertyIndex meta_;
+  rocksdb::ColumnFamilyHandle* cf_;
+  uint32_t index_id_;
+  uint32_t tid_;
+  std::vector<uint32_t> pids_;
+  std::unordered_set<uint32_t> pid_set_;
+  std::atomic<uint64_t> next_wal_id_ = 1;
+  uint64_t apply_id_ = 0;
+  std::atomic<bool> deleted_{false};
+};
+
 class VertexFullTextIndex
     : public std::enable_shared_from_this<VertexFullTextIndex> {
  public:

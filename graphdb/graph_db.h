@@ -55,6 +55,10 @@ class GraphDB {
                               const std::string& label,
                               const std::vector<std::string>& properties);
   void DeleteVertexPropertyIndex(const std::string& index_name);
+  void AddEdgePropertyIndex(const std::string& index_name, bool unique,
+                            const std::string& edge_type,
+                            const std::vector<std::string>& properties);
+  void DeleteEdgePropertyIndex(const std::string& index_name);
   void AddVertexFullTextIndex(const std::string& index_name,
                               const std::vector<std::string>& labels,
                               const std::vector<std::string>& properties);
@@ -98,6 +102,8 @@ class GraphDB {
   void ResumeBackgroundIndexBuilds();
   void PersistVertexPropertyIndexMeta(
       const std::shared_ptr<VertexPropertyIndex>& index);
+  void PersistEdgePropertyIndexMeta(
+      const std::shared_ptr<EdgePropertyIndex>& index);
   void PersistVertexFullTextIndexMeta(
       const std::shared_ptr<VertexFullTextIndex>& index);
   void PersistVertexVectorIndexMeta(
@@ -112,6 +118,10 @@ class GraphDB {
                                       meta::VertexPropertyIndex meta);
   void ApplyDeleteVertexPropertyIndex(uint64_t apply_index,
                                       const meta::VertexPropertyIndex& meta);
+  void ApplyCreateEdgePropertyIndex(uint64_t apply_index,
+                                    meta::EdgePropertyIndex meta);
+  void ApplyDeleteEdgePropertyIndex(uint64_t apply_index,
+                                    const meta::EdgePropertyIndex& meta);
   void ApplyCreateVertexFullTextIndex(uint64_t apply_index,
                                       meta::VertexFullTextIndex meta);
   void ApplyDeleteVertexFullTextIndex(uint64_t apply_index,
@@ -124,6 +134,8 @@ class GraphDB {
                                     meta::VertexVectorField meta);
   void ScheduleVertexPropertyIndexBuild(
       const std::shared_ptr<VertexPropertyIndex>& index, bool reset_existing);
+  void ScheduleEdgePropertyIndexBuild(
+      const std::shared_ptr<EdgePropertyIndex>& index, bool reset_existing);
   void ScheduleVertexFullTextIndexBuild(
       const std::shared_ptr<VertexFullTextIndex>& index, bool reset_existing);
   void ScheduleVertexVectorIndexBuild(

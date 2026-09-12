@@ -48,6 +48,27 @@ struct MetaInfo {
   void PublishVertexPropertyIndex(const std::string& index_name);
   void DeleteVertexPropertyIndex(const std::string& index_name);
 
+  // edge property index
+  std::shared_ptr<EdgePropertyIndex> GetReadyEdgePropertyIndex(uint32_t tid,
+                                                               uint32_t pid);
+  std::shared_ptr<EdgePropertyIndex> GetReadyEdgePropertyIndex(
+      uint32_t tid, const std::vector<uint32_t>& pids);
+  std::shared_ptr<EdgePropertyIndex> GetReadyEdgePropertyIndex(
+      const std::string& index_name);
+  std::shared_ptr<EdgePropertyIndex> GetEdgePropertyIndex(uint32_t tid,
+                                                          uint32_t pid);
+  std::shared_ptr<EdgePropertyIndex> GetEdgePropertyIndex(
+      uint32_t tid, const std::vector<uint32_t>& pids);
+  std::shared_ptr<EdgePropertyIndex> GetEdgePropertyIndex(
+      const std::string& index_name);
+  std::vector<std::shared_ptr<EdgePropertyIndex>> GetEdgePropertyIndexes(
+      bool include_failed = false);
+  std::vector<std::shared_ptr<EdgePropertyIndex>>
+  GetBuildingEdgePropertyIndexes();
+  bool AddEdgePropertyIndex(std::shared_ptr<EdgePropertyIndex> epi);
+  void PublishEdgePropertyIndex(const std::string& index_name);
+  void DeleteEdgePropertyIndex(const std::string& index_name);
+
   // fulltext index
   std::vector<std::shared_ptr<VertexFullTextIndex>>
   GetReadyVertexFullTextIndexes();
@@ -100,6 +121,14 @@ struct MetaInfo {
       building_vertex_property_indexes_by_name_;
   std::unordered_map<std::string, std::shared_ptr<VertexPropertyIndex>>
       building_vertex_property_indexes_by_schema_;
+  std::unordered_map<std::string, std::shared_ptr<EdgePropertyIndex>>
+      ready_edge_property_indexes_by_name_;
+  std::unordered_map<std::string, std::shared_ptr<EdgePropertyIndex>>
+      ready_edge_property_indexes_by_schema_;
+  std::unordered_map<std::string, std::shared_ptr<EdgePropertyIndex>>
+      building_edge_property_indexes_by_name_;
+  std::unordered_map<std::string, std::shared_ptr<EdgePropertyIndex>>
+      building_edge_property_indexes_by_schema_;
   std::unordered_map<uint64_t, std::shared_ptr<VertexVectorIndex>>
       ready_vertex_vector_indexes_;
   std::unordered_map<uint64_t, std::shared_ptr<VertexVectorIndex>>

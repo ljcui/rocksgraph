@@ -50,6 +50,9 @@ struct TableStruct_meta_2eproto {
 };
 extern const ::PROTOBUF_NAMESPACE_ID::internal::DescriptorTable descriptor_table_meta_2eproto;
 namespace meta {
+class EdgePropertyIndex;
+struct EdgePropertyIndexDefaultTypeInternal;
+extern EdgePropertyIndexDefaultTypeInternal _EdgePropertyIndex_default_instance_;
 class FullTextIndexUpdate;
 struct FullTextIndexUpdateDefaultTypeInternal;
 extern FullTextIndexUpdateDefaultTypeInternal _FullTextIndexUpdate_default_instance_;
@@ -94,6 +97,7 @@ struct VertexVectorIndexDefaultTypeInternal;
 extern VertexVectorIndexDefaultTypeInternal _VertexVectorIndex_default_instance_;
 }  // namespace meta
 PROTOBUF_NAMESPACE_OPEN
+template<> ::meta::EdgePropertyIndex* Arena::CreateMaybeMessage<::meta::EdgePropertyIndex>(Arena*);
 template<> ::meta::FullTextIndexUpdate* Arena::CreateMaybeMessage<::meta::FullTextIndexUpdate>(Arena*);
 template<> ::meta::GraphDBMetaInfo* Arena::CreateMaybeMessage<::meta::GraphDBMetaInfo>(Arena*);
 template<> ::meta::GraphIndexDdlRequest* Arena::CreateMaybeMessage<::meta::GraphIndexDdlRequest>(Arena*);
@@ -119,12 +123,14 @@ enum GraphIndexDdlRequest_Operation : int {
   GraphIndexDdlRequest_Operation_CREATE_VERTEX_VECTOR_INDEX = 4,
   GraphIndexDdlRequest_Operation_DELETE_VERTEX_VECTOR_INDEX = 5,
   GraphIndexDdlRequest_Operation_CREATE_VERTEX_VECTOR_FIELD = 6,
+  GraphIndexDdlRequest_Operation_CREATE_EDGE_PROPERTY_INDEX = 7,
+  GraphIndexDdlRequest_Operation_DELETE_EDGE_PROPERTY_INDEX = 8,
   GraphIndexDdlRequest_Operation_GraphIndexDdlRequest_Operation_INT_MIN_SENTINEL_DO_NOT_USE_ = std::numeric_limits<int32_t>::min(),
   GraphIndexDdlRequest_Operation_GraphIndexDdlRequest_Operation_INT_MAX_SENTINEL_DO_NOT_USE_ = std::numeric_limits<int32_t>::max()
 };
 bool GraphIndexDdlRequest_Operation_IsValid(int value);
 constexpr GraphIndexDdlRequest_Operation GraphIndexDdlRequest_Operation_Operation_MIN = GraphIndexDdlRequest_Operation_CREATE_VERTEX_PROPERTY_INDEX;
-constexpr GraphIndexDdlRequest_Operation GraphIndexDdlRequest_Operation_Operation_MAX = GraphIndexDdlRequest_Operation_CREATE_VERTEX_VECTOR_FIELD;
+constexpr GraphIndexDdlRequest_Operation GraphIndexDdlRequest_Operation_Operation_MAX = GraphIndexDdlRequest_Operation_DELETE_EDGE_PROPERTY_INDEX;
 constexpr int GraphIndexDdlRequest_Operation_Operation_ARRAYSIZE = GraphIndexDdlRequest_Operation_Operation_MAX + 1;
 
 const ::PROTOBUF_NAMESPACE_ID::EnumDescriptor* GraphIndexDdlRequest_Operation_descriptor();
@@ -2333,6 +2339,10 @@ class GraphIndexDdlRequest final :
     GraphIndexDdlRequest_Operation_DELETE_VERTEX_VECTOR_INDEX;
   static constexpr Operation CREATE_VERTEX_VECTOR_FIELD =
     GraphIndexDdlRequest_Operation_CREATE_VERTEX_VECTOR_FIELD;
+  static constexpr Operation CREATE_EDGE_PROPERTY_INDEX =
+    GraphIndexDdlRequest_Operation_CREATE_EDGE_PROPERTY_INDEX;
+  static constexpr Operation DELETE_EDGE_PROPERTY_INDEX =
+    GraphIndexDdlRequest_Operation_DELETE_EDGE_PROPERTY_INDEX;
   static inline bool Operation_IsValid(int value) {
     return GraphIndexDdlRequest_Operation_IsValid(value);
   }
@@ -2976,12 +2986,12 @@ class RaftNodeInfo final :
 };
 // -------------------------------------------------------------------
 
-class RaftNodeInfos_NodesEntry_DoNotUse : public ::PROTOBUF_NAMESPACE_ID::internal::MapEntry<RaftNodeInfos_NodesEntry_DoNotUse, 
+class RaftNodeInfos_NodesEntry_DoNotUse : public ::PROTOBUF_NAMESPACE_ID::internal::MapEntry<RaftNodeInfos_NodesEntry_DoNotUse,
     uint64_t, ::meta::RaftNodeInfo,
     ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::TYPE_UINT64,
     ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::TYPE_MESSAGE> {
 public:
-  typedef ::PROTOBUF_NAMESPACE_ID::internal::MapEntry<RaftNodeInfos_NodesEntry_DoNotUse, 
+  typedef ::PROTOBUF_NAMESPACE_ID::internal::MapEntry<RaftNodeInfos_NodesEntry_DoNotUse,
     uint64_t, ::meta::RaftNodeInfo,
     ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::TYPE_UINT64,
     ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::TYPE_MESSAGE> SuperType;
@@ -3161,6 +3171,308 @@ class RaftNodeInfos final :
   union { Impl_ _impl_; };
   friend struct ::TableStruct_meta_2eproto;
 };
+// -------------------------------------------------------------------
+
+class EdgePropertyIndex final :
+    public ::PROTOBUF_NAMESPACE_ID::Message /* @@protoc_insertion_point(class_definition:meta.EdgePropertyIndex) */ {
+ public:
+  inline EdgePropertyIndex() : EdgePropertyIndex(nullptr) {}
+  ~EdgePropertyIndex() override;
+  explicit PROTOBUF_CONSTEXPR EdgePropertyIndex(::PROTOBUF_NAMESPACE_ID::internal::ConstantInitialized);
+
+  EdgePropertyIndex(const EdgePropertyIndex& from);
+  EdgePropertyIndex(EdgePropertyIndex&& from) noexcept
+    : EdgePropertyIndex() {
+    *this = ::std::move(from);
+  }
+
+  inline EdgePropertyIndex& operator=(const EdgePropertyIndex& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline EdgePropertyIndex& operator=(EdgePropertyIndex&& from) noexcept {
+    if (this == &from) return *this;
+    if (GetOwningArena() == from.GetOwningArena()
+  #ifdef PROTOBUF_FORCE_COPY_IN_MOVE
+        && GetOwningArena() != nullptr
+  #endif  // !PROTOBUF_FORCE_COPY_IN_MOVE
+    ) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* descriptor() {
+    return GetDescriptor();
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* GetDescriptor() {
+    return default_instance().GetMetadata().descriptor;
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Reflection* GetReflection() {
+    return default_instance().GetMetadata().reflection;
+  }
+  static const EdgePropertyIndex& default_instance() {
+    return *internal_default_instance();
+  }
+  static inline const EdgePropertyIndex* internal_default_instance() {
+    return reinterpret_cast<const EdgePropertyIndex*>(
+               &_EdgePropertyIndex_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages =
+    14;
+
+  friend void swap(EdgePropertyIndex& a, EdgePropertyIndex& b) {
+    a.Swap(&b);
+  }
+  inline void Swap(EdgePropertyIndex* other) {
+    if (other == this) return;
+  #ifdef PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() != nullptr &&
+        GetOwningArena() == other->GetOwningArena()) {
+   #else  // PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() == other->GetOwningArena()) {
+  #endif  // !PROTOBUF_FORCE_COPY_IN_SWAP
+      InternalSwap(other);
+    } else {
+      ::PROTOBUF_NAMESPACE_ID::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(EdgePropertyIndex* other) {
+    if (other == this) return;
+    GOOGLE_DCHECK(GetOwningArena() == other->GetOwningArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  EdgePropertyIndex* New(::PROTOBUF_NAMESPACE_ID::Arena* arena = nullptr) const final {
+    return CreateMaybeMessage<EdgePropertyIndex>(arena);
+  }
+  using ::PROTOBUF_NAMESPACE_ID::Message::CopyFrom;
+  void CopyFrom(const EdgePropertyIndex& from);
+  using ::PROTOBUF_NAMESPACE_ID::Message::MergeFrom;
+  void MergeFrom( const EdgePropertyIndex& from) {
+    EdgePropertyIndex::MergeImpl(*this, from);
+  }
+  private:
+  static void MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg);
+  public:
+  PROTOBUF_ATTRIBUTE_REINITIALIZES void Clear() final;
+  bool IsInitialized() const final;
+
+  size_t ByteSizeLong() const final;
+  const char* _InternalParse(const char* ptr, ::PROTOBUF_NAMESPACE_ID::internal::ParseContext* ctx) final;
+  uint8_t* _InternalSerialize(
+      uint8_t* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const final;
+  int GetCachedSize() const final { return _impl_._cached_size_.Get(); }
+
+  private:
+  void SharedCtor(::PROTOBUF_NAMESPACE_ID::Arena* arena, bool is_message_owned);
+  void SharedDtor();
+  void SetCachedSize(int size) const final;
+  void InternalSwap(EdgePropertyIndex* other);
+
+  private:
+  friend class ::PROTOBUF_NAMESPACE_ID::internal::AnyMetadata;
+  static ::PROTOBUF_NAMESPACE_ID::StringPiece FullMessageName() {
+    return "meta.EdgePropertyIndex";
+  }
+  protected:
+  explicit EdgePropertyIndex(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+                       bool is_message_owned = false);
+  public:
+
+  static const ClassData _class_data_;
+  const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*GetClassData() const final;
+
+  ::PROTOBUF_NAMESPACE_ID::Metadata GetMetadata() const final;
+
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+
+  enum : int {
+    kPropertiesFieldNumber = 5,
+    kPropertyIdsFieldNumber = 6,
+    kNameFieldNumber = 1,
+    kEdgeTypeFieldNumber = 3,
+    kBuildErrorFieldNumber = 11,
+    kIsUniqueFieldNumber = 2,
+    kEdgeTypeIdFieldNumber = 4,
+    kIndexIdFieldNumber = 7,
+    kStateFieldNumber = 8,
+    kBuildStartWalIdFieldNumber = 9,
+    kAppliedWalIdFieldNumber = 10,
+  };
+  // repeated string properties = 5;
+  int properties_size() const;
+  private:
+  int _internal_properties_size() const;
+  public:
+  void clear_properties();
+  const std::string& properties(int index) const;
+  std::string* mutable_properties(int index);
+  void set_properties(int index, const std::string& value);
+  void set_properties(int index, std::string&& value);
+  void set_properties(int index, const char* value);
+  void set_properties(int index, const char* value, size_t size);
+  std::string* add_properties();
+  void add_properties(const std::string& value);
+  void add_properties(std::string&& value);
+  void add_properties(const char* value);
+  void add_properties(const char* value, size_t size);
+  const ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField<std::string>& properties() const;
+  ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField<std::string>* mutable_properties();
+  private:
+  const std::string& _internal_properties(int index) const;
+  std::string* _internal_add_properties();
+  public:
+
+  // repeated uint32 property_ids = 6;
+  int property_ids_size() const;
+  private:
+  int _internal_property_ids_size() const;
+  public:
+  void clear_property_ids();
+  private:
+  uint32_t _internal_property_ids(int index) const;
+  const ::PROTOBUF_NAMESPACE_ID::RepeatedField< uint32_t >&
+      _internal_property_ids() const;
+  void _internal_add_property_ids(uint32_t value);
+  ::PROTOBUF_NAMESPACE_ID::RepeatedField< uint32_t >*
+      _internal_mutable_property_ids();
+  public:
+  uint32_t property_ids(int index) const;
+  void set_property_ids(int index, uint32_t value);
+  void add_property_ids(uint32_t value);
+  const ::PROTOBUF_NAMESPACE_ID::RepeatedField< uint32_t >&
+      property_ids() const;
+  ::PROTOBUF_NAMESPACE_ID::RepeatedField< uint32_t >*
+      mutable_property_ids();
+
+  // string name = 1;
+  void clear_name();
+  const std::string& name() const;
+  template <typename ArgT0 = const std::string&, typename... ArgT>
+  void set_name(ArgT0&& arg0, ArgT... args);
+  std::string* mutable_name();
+  PROTOBUF_NODISCARD std::string* release_name();
+  void set_allocated_name(std::string* name);
+  private:
+  const std::string& _internal_name() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_name(const std::string& value);
+  std::string* _internal_mutable_name();
+  public:
+
+  // string edge_type = 3;
+  void clear_edge_type();
+  const std::string& edge_type() const;
+  template <typename ArgT0 = const std::string&, typename... ArgT>
+  void set_edge_type(ArgT0&& arg0, ArgT... args);
+  std::string* mutable_edge_type();
+  PROTOBUF_NODISCARD std::string* release_edge_type();
+  void set_allocated_edge_type(std::string* edge_type);
+  private:
+  const std::string& _internal_edge_type() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_edge_type(const std::string& value);
+  std::string* _internal_mutable_edge_type();
+  public:
+
+  // string build_error = 11;
+  void clear_build_error();
+  const std::string& build_error() const;
+  template <typename ArgT0 = const std::string&, typename... ArgT>
+  void set_build_error(ArgT0&& arg0, ArgT... args);
+  std::string* mutable_build_error();
+  PROTOBUF_NODISCARD std::string* release_build_error();
+  void set_allocated_build_error(std::string* build_error);
+  private:
+  const std::string& _internal_build_error() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_build_error(const std::string& value);
+  std::string* _internal_mutable_build_error();
+  public:
+
+  // bool is_unique = 2;
+  void clear_is_unique();
+  bool is_unique() const;
+  void set_is_unique(bool value);
+  private:
+  bool _internal_is_unique() const;
+  void _internal_set_is_unique(bool value);
+  public:
+
+  // uint32 edge_type_id = 4;
+  void clear_edge_type_id();
+  uint32_t edge_type_id() const;
+  void set_edge_type_id(uint32_t value);
+  private:
+  uint32_t _internal_edge_type_id() const;
+  void _internal_set_edge_type_id(uint32_t value);
+  public:
+
+  // uint32 index_id = 7;
+  void clear_index_id();
+  uint32_t index_id() const;
+  void set_index_id(uint32_t value);
+  private:
+  uint32_t _internal_index_id() const;
+  void _internal_set_index_id(uint32_t value);
+  public:
+
+  // .meta.IndexBuildState state = 8;
+  void clear_state();
+  ::meta::IndexBuildState state() const;
+  void set_state(::meta::IndexBuildState value);
+  private:
+  ::meta::IndexBuildState _internal_state() const;
+  void _internal_set_state(::meta::IndexBuildState value);
+  public:
+
+  // uint64 build_start_wal_id = 9;
+  void clear_build_start_wal_id();
+  uint64_t build_start_wal_id() const;
+  void set_build_start_wal_id(uint64_t value);
+  private:
+  uint64_t _internal_build_start_wal_id() const;
+  void _internal_set_build_start_wal_id(uint64_t value);
+  public:
+
+  // uint64 applied_wal_id = 10;
+  void clear_applied_wal_id();
+  uint64_t applied_wal_id() const;
+  void set_applied_wal_id(uint64_t value);
+  private:
+  uint64_t _internal_applied_wal_id() const;
+  void _internal_set_applied_wal_id(uint64_t value);
+  public:
+
+  // @@protoc_insertion_point(class_scope:meta.EdgePropertyIndex)
+ private:
+  class _Internal;
+
+  template <typename T> friend class ::PROTOBUF_NAMESPACE_ID::Arena::InternalHelper;
+  typedef void InternalArenaConstructable_;
+  typedef void DestructorSkippable_;
+  struct Impl_ {
+    ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField<std::string> properties_;
+    ::PROTOBUF_NAMESPACE_ID::RepeatedField< uint32_t > property_ids_;
+    mutable std::atomic<int> _property_ids_cached_byte_size_;
+    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr name_;
+    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr edge_type_;
+    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr build_error_;
+    bool is_unique_;
+    uint32_t edge_type_id_;
+    uint32_t index_id_;
+    int state_;
+    uint64_t build_start_wal_id_;
+    uint64_t applied_wal_id_;
+    mutable ::PROTOBUF_NAMESPACE_ID::internal::CachedSize _cached_size_;
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_meta_2eproto;
+};
 // ===================================================================
 
 
@@ -3183,7 +3495,7 @@ inline const std::string& VertexPropertyIndex::name() const {
 template <typename ArgT0, typename... ArgT>
 inline PROTOBUF_ALWAYS_INLINE
 void VertexPropertyIndex::set_name(ArgT0&& arg0, ArgT... args) {
- 
+
  _impl_.name_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
   // @@protoc_insertion_point(field_set:meta.VertexPropertyIndex.name)
 }
@@ -3196,11 +3508,11 @@ inline const std::string& VertexPropertyIndex::_internal_name() const {
   return _impl_.name_.Get();
 }
 inline void VertexPropertyIndex::_internal_set_name(const std::string& value) {
-  
+
   _impl_.name_.Set(value, GetArenaForAllocation());
 }
 inline std::string* VertexPropertyIndex::_internal_mutable_name() {
-  
+
   return _impl_.name_.Mutable(GetArenaForAllocation());
 }
 inline std::string* VertexPropertyIndex::release_name() {
@@ -3209,9 +3521,9 @@ inline std::string* VertexPropertyIndex::release_name() {
 }
 inline void VertexPropertyIndex::set_allocated_name(std::string* name) {
   if (name != nullptr) {
-    
+
   } else {
-    
+
   }
   _impl_.name_.SetAllocated(name, GetArenaForAllocation());
 #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
@@ -3234,7 +3546,7 @@ inline bool VertexPropertyIndex::is_unique() const {
   return _internal_is_unique();
 }
 inline void VertexPropertyIndex::_internal_set_is_unique(bool value) {
-  
+
   _impl_.is_unique_ = value;
 }
 inline void VertexPropertyIndex::set_is_unique(bool value) {
@@ -3253,7 +3565,7 @@ inline const std::string& VertexPropertyIndex::label() const {
 template <typename ArgT0, typename... ArgT>
 inline PROTOBUF_ALWAYS_INLINE
 void VertexPropertyIndex::set_label(ArgT0&& arg0, ArgT... args) {
- 
+
  _impl_.label_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
   // @@protoc_insertion_point(field_set:meta.VertexPropertyIndex.label)
 }
@@ -3266,11 +3578,11 @@ inline const std::string& VertexPropertyIndex::_internal_label() const {
   return _impl_.label_.Get();
 }
 inline void VertexPropertyIndex::_internal_set_label(const std::string& value) {
-  
+
   _impl_.label_.Set(value, GetArenaForAllocation());
 }
 inline std::string* VertexPropertyIndex::_internal_mutable_label() {
-  
+
   return _impl_.label_.Mutable(GetArenaForAllocation());
 }
 inline std::string* VertexPropertyIndex::release_label() {
@@ -3279,9 +3591,9 @@ inline std::string* VertexPropertyIndex::release_label() {
 }
 inline void VertexPropertyIndex::set_allocated_label(std::string* label) {
   if (label != nullptr) {
-    
+
   } else {
-    
+
   }
   _impl_.label_.SetAllocated(label, GetArenaForAllocation());
 #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
@@ -3304,7 +3616,7 @@ inline uint32_t VertexPropertyIndex::label_id() const {
   return _internal_label_id();
 }
 inline void VertexPropertyIndex::_internal_set_label_id(uint32_t value) {
-  
+
   _impl_.label_id_ = value;
 }
 inline void VertexPropertyIndex::set_label_id(uint32_t value) {
@@ -3446,7 +3758,7 @@ inline uint32_t VertexPropertyIndex::index_id() const {
   return _internal_index_id();
 }
 inline void VertexPropertyIndex::_internal_set_index_id(uint32_t value) {
-  
+
   _impl_.index_id_ = value;
 }
 inline void VertexPropertyIndex::set_index_id(uint32_t value) {
@@ -3466,7 +3778,7 @@ inline ::meta::IndexBuildState VertexPropertyIndex::state() const {
   return _internal_state();
 }
 inline void VertexPropertyIndex::_internal_set_state(::meta::IndexBuildState value) {
-  
+
   _impl_.state_ = value;
 }
 inline void VertexPropertyIndex::set_state(::meta::IndexBuildState value) {
@@ -3486,7 +3798,7 @@ inline uint64_t VertexPropertyIndex::build_start_wal_id() const {
   return _internal_build_start_wal_id();
 }
 inline void VertexPropertyIndex::_internal_set_build_start_wal_id(uint64_t value) {
-  
+
   _impl_.build_start_wal_id_ = value;
 }
 inline void VertexPropertyIndex::set_build_start_wal_id(uint64_t value) {
@@ -3506,7 +3818,7 @@ inline uint64_t VertexPropertyIndex::applied_wal_id() const {
   return _internal_applied_wal_id();
 }
 inline void VertexPropertyIndex::_internal_set_applied_wal_id(uint64_t value) {
-  
+
   _impl_.applied_wal_id_ = value;
 }
 inline void VertexPropertyIndex::set_applied_wal_id(uint64_t value) {
@@ -3525,7 +3837,7 @@ inline const std::string& VertexPropertyIndex::build_error() const {
 template <typename ArgT0, typename... ArgT>
 inline PROTOBUF_ALWAYS_INLINE
 void VertexPropertyIndex::set_build_error(ArgT0&& arg0, ArgT... args) {
- 
+
  _impl_.build_error_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
   // @@protoc_insertion_point(field_set:meta.VertexPropertyIndex.build_error)
 }
@@ -3538,11 +3850,11 @@ inline const std::string& VertexPropertyIndex::_internal_build_error() const {
   return _impl_.build_error_.Get();
 }
 inline void VertexPropertyIndex::_internal_set_build_error(const std::string& value) {
-  
+
   _impl_.build_error_.Set(value, GetArenaForAllocation());
 }
 inline std::string* VertexPropertyIndex::_internal_mutable_build_error() {
-  
+
   return _impl_.build_error_.Mutable(GetArenaForAllocation());
 }
 inline std::string* VertexPropertyIndex::release_build_error() {
@@ -3551,9 +3863,9 @@ inline std::string* VertexPropertyIndex::release_build_error() {
 }
 inline void VertexPropertyIndex::set_allocated_build_error(std::string* build_error) {
   if (build_error != nullptr) {
-    
+
   } else {
-    
+
   }
   _impl_.build_error_.SetAllocated(build_error, GetArenaForAllocation());
 #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
@@ -3579,7 +3891,7 @@ inline const std::string& VertexFullTextIndex::name() const {
 template <typename ArgT0, typename... ArgT>
 inline PROTOBUF_ALWAYS_INLINE
 void VertexFullTextIndex::set_name(ArgT0&& arg0, ArgT... args) {
- 
+
  _impl_.name_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
   // @@protoc_insertion_point(field_set:meta.VertexFullTextIndex.name)
 }
@@ -3592,11 +3904,11 @@ inline const std::string& VertexFullTextIndex::_internal_name() const {
   return _impl_.name_.Get();
 }
 inline void VertexFullTextIndex::_internal_set_name(const std::string& value) {
-  
+
   _impl_.name_.Set(value, GetArenaForAllocation());
 }
 inline std::string* VertexFullTextIndex::_internal_mutable_name() {
-  
+
   return _impl_.name_.Mutable(GetArenaForAllocation());
 }
 inline std::string* VertexFullTextIndex::release_name() {
@@ -3605,9 +3917,9 @@ inline std::string* VertexFullTextIndex::release_name() {
 }
 inline void VertexFullTextIndex::set_allocated_name(std::string* name) {
   if (name != nullptr) {
-    
+
   } else {
-    
+
   }
   _impl_.name_.SetAllocated(name, GetArenaForAllocation());
 #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
@@ -3629,7 +3941,7 @@ inline const std::string& VertexFullTextIndex::path() const {
 template <typename ArgT0, typename... ArgT>
 inline PROTOBUF_ALWAYS_INLINE
 void VertexFullTextIndex::set_path(ArgT0&& arg0, ArgT... args) {
- 
+
  _impl_.path_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
   // @@protoc_insertion_point(field_set:meta.VertexFullTextIndex.path)
 }
@@ -3642,11 +3954,11 @@ inline const std::string& VertexFullTextIndex::_internal_path() const {
   return _impl_.path_.Get();
 }
 inline void VertexFullTextIndex::_internal_set_path(const std::string& value) {
-  
+
   _impl_.path_.Set(value, GetArenaForAllocation());
 }
 inline std::string* VertexFullTextIndex::_internal_mutable_path() {
-  
+
   return _impl_.path_.Mutable(GetArenaForAllocation());
 }
 inline std::string* VertexFullTextIndex::release_path() {
@@ -3655,9 +3967,9 @@ inline std::string* VertexFullTextIndex::release_path() {
 }
 inline void VertexFullTextIndex::set_allocated_path(std::string* path) {
   if (path != nullptr) {
-    
+
   } else {
-    
+
   }
   _impl_.path_.SetAllocated(path, GetArenaForAllocation());
 #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
@@ -3924,7 +4236,7 @@ inline uint32_t VertexFullTextIndex::index_id() const {
   return _internal_index_id();
 }
 inline void VertexFullTextIndex::_internal_set_index_id(uint32_t value) {
-  
+
   _impl_.index_id_ = value;
 }
 inline void VertexFullTextIndex::set_index_id(uint32_t value) {
@@ -3944,7 +4256,7 @@ inline ::meta::IndexBuildState VertexFullTextIndex::state() const {
   return _internal_state();
 }
 inline void VertexFullTextIndex::_internal_set_state(::meta::IndexBuildState value) {
-  
+
   _impl_.state_ = value;
 }
 inline void VertexFullTextIndex::set_state(::meta::IndexBuildState value) {
@@ -3964,7 +4276,7 @@ inline uint64_t VertexFullTextIndex::build_start_wal_id() const {
   return _internal_build_start_wal_id();
 }
 inline void VertexFullTextIndex::_internal_set_build_start_wal_id(uint64_t value) {
-  
+
   _impl_.build_start_wal_id_ = value;
 }
 inline void VertexFullTextIndex::set_build_start_wal_id(uint64_t value) {
@@ -3984,7 +4296,7 @@ inline uint64_t VertexFullTextIndex::applied_wal_id() const {
   return _internal_applied_wal_id();
 }
 inline void VertexFullTextIndex::_internal_set_applied_wal_id(uint64_t value) {
-  
+
   _impl_.applied_wal_id_ = value;
 }
 inline void VertexFullTextIndex::set_applied_wal_id(uint64_t value) {
@@ -4003,7 +4315,7 @@ inline const std::string& VertexFullTextIndex::build_error() const {
 template <typename ArgT0, typename... ArgT>
 inline PROTOBUF_ALWAYS_INLINE
 void VertexFullTextIndex::set_build_error(ArgT0&& arg0, ArgT... args) {
- 
+
  _impl_.build_error_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
   // @@protoc_insertion_point(field_set:meta.VertexFullTextIndex.build_error)
 }
@@ -4016,11 +4328,11 @@ inline const std::string& VertexFullTextIndex::_internal_build_error() const {
   return _impl_.build_error_.Get();
 }
 inline void VertexFullTextIndex::_internal_set_build_error(const std::string& value) {
-  
+
   _impl_.build_error_.Set(value, GetArenaForAllocation());
 }
 inline std::string* VertexFullTextIndex::_internal_mutable_build_error() {
-  
+
   return _impl_.build_error_.Mutable(GetArenaForAllocation());
 }
 inline std::string* VertexFullTextIndex::release_build_error() {
@@ -4029,9 +4341,9 @@ inline std::string* VertexFullTextIndex::release_build_error() {
 }
 inline void VertexFullTextIndex::set_allocated_build_error(std::string* build_error) {
   if (build_error != nullptr) {
-    
+
   } else {
-    
+
   }
   _impl_.build_error_.SetAllocated(build_error, GetArenaForAllocation());
 #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
@@ -4057,7 +4369,7 @@ inline const std::string& VertexVectorIndex::name() const {
 template <typename ArgT0, typename... ArgT>
 inline PROTOBUF_ALWAYS_INLINE
 void VertexVectorIndex::set_name(ArgT0&& arg0, ArgT... args) {
- 
+
  _impl_.name_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
   // @@protoc_insertion_point(field_set:meta.VertexVectorIndex.name)
 }
@@ -4070,11 +4382,11 @@ inline const std::string& VertexVectorIndex::_internal_name() const {
   return _impl_.name_.Get();
 }
 inline void VertexVectorIndex::_internal_set_name(const std::string& value) {
-  
+
   _impl_.name_.Set(value, GetArenaForAllocation());
 }
 inline std::string* VertexVectorIndex::_internal_mutable_name() {
-  
+
   return _impl_.name_.Mutable(GetArenaForAllocation());
 }
 inline std::string* VertexVectorIndex::release_name() {
@@ -4083,9 +4395,9 @@ inline std::string* VertexVectorIndex::release_name() {
 }
 inline void VertexVectorIndex::set_allocated_name(std::string* name) {
   if (name != nullptr) {
-    
+
   } else {
-    
+
   }
   _impl_.name_.SetAllocated(name, GetArenaForAllocation());
 #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
@@ -4107,7 +4419,7 @@ inline const std::string& VertexVectorIndex::label() const {
 template <typename ArgT0, typename... ArgT>
 inline PROTOBUF_ALWAYS_INLINE
 void VertexVectorIndex::set_label(ArgT0&& arg0, ArgT... args) {
- 
+
  _impl_.label_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
   // @@protoc_insertion_point(field_set:meta.VertexVectorIndex.label)
 }
@@ -4120,11 +4432,11 @@ inline const std::string& VertexVectorIndex::_internal_label() const {
   return _impl_.label_.Get();
 }
 inline void VertexVectorIndex::_internal_set_label(const std::string& value) {
-  
+
   _impl_.label_.Set(value, GetArenaForAllocation());
 }
 inline std::string* VertexVectorIndex::_internal_mutable_label() {
-  
+
   return _impl_.label_.Mutable(GetArenaForAllocation());
 }
 inline std::string* VertexVectorIndex::release_label() {
@@ -4133,9 +4445,9 @@ inline std::string* VertexVectorIndex::release_label() {
 }
 inline void VertexVectorIndex::set_allocated_label(std::string* label) {
   if (label != nullptr) {
-    
+
   } else {
-    
+
   }
   _impl_.label_.SetAllocated(label, GetArenaForAllocation());
 #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
@@ -4158,7 +4470,7 @@ inline uint32_t VertexVectorIndex::label_id() const {
   return _internal_label_id();
 }
 inline void VertexVectorIndex::_internal_set_label_id(uint32_t value) {
-  
+
   _impl_.label_id_ = value;
 }
 inline void VertexVectorIndex::set_label_id(uint32_t value) {
@@ -4177,7 +4489,7 @@ inline const std::string& VertexVectorIndex::property() const {
 template <typename ArgT0, typename... ArgT>
 inline PROTOBUF_ALWAYS_INLINE
 void VertexVectorIndex::set_property(ArgT0&& arg0, ArgT... args) {
- 
+
  _impl_.property_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
   // @@protoc_insertion_point(field_set:meta.VertexVectorIndex.property)
 }
@@ -4190,11 +4502,11 @@ inline const std::string& VertexVectorIndex::_internal_property() const {
   return _impl_.property_.Get();
 }
 inline void VertexVectorIndex::_internal_set_property(const std::string& value) {
-  
+
   _impl_.property_.Set(value, GetArenaForAllocation());
 }
 inline std::string* VertexVectorIndex::_internal_mutable_property() {
-  
+
   return _impl_.property_.Mutable(GetArenaForAllocation());
 }
 inline std::string* VertexVectorIndex::release_property() {
@@ -4203,9 +4515,9 @@ inline std::string* VertexVectorIndex::release_property() {
 }
 inline void VertexVectorIndex::set_allocated_property(std::string* property) {
   if (property != nullptr) {
-    
+
   } else {
-    
+
   }
   _impl_.property_.SetAllocated(property, GetArenaForAllocation());
 #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
@@ -4228,7 +4540,7 @@ inline uint32_t VertexVectorIndex::property_id() const {
   return _internal_property_id();
 }
 inline void VertexVectorIndex::_internal_set_property_id(uint32_t value) {
-  
+
   _impl_.property_id_ = value;
 }
 inline void VertexVectorIndex::set_property_id(uint32_t value) {
@@ -4248,7 +4560,7 @@ inline uint32_t VertexVectorIndex::dimensions() const {
   return _internal_dimensions();
 }
 inline void VertexVectorIndex::_internal_set_dimensions(uint32_t value) {
-  
+
   _impl_.dimensions_ = value;
 }
 inline void VertexVectorIndex::set_dimensions(uint32_t value) {
@@ -4268,7 +4580,7 @@ inline ::meta::VectorIndexType VertexVectorIndex::index_type() const {
   return _internal_index_type();
 }
 inline void VertexVectorIndex::_internal_set_index_type(::meta::VectorIndexType value) {
-  
+
   _impl_.index_type_ = value;
 }
 inline void VertexVectorIndex::set_index_type(::meta::VectorIndexType value) {
@@ -4288,7 +4600,7 @@ inline ::meta::VectorDistanceType VertexVectorIndex::distance_type() const {
   return _internal_distance_type();
 }
 inline void VertexVectorIndex::_internal_set_distance_type(::meta::VectorDistanceType value) {
-  
+
   _impl_.distance_type_ = value;
 }
 inline void VertexVectorIndex::set_distance_type(::meta::VectorDistanceType value) {
@@ -4308,7 +4620,7 @@ inline uint32_t VertexVectorIndex::hnsw_m() const {
   return _internal_hnsw_m();
 }
 inline void VertexVectorIndex::_internal_set_hnsw_m(uint32_t value) {
-  
+
   _impl_.hnsw_m_ = value;
 }
 inline void VertexVectorIndex::set_hnsw_m(uint32_t value) {
@@ -4328,7 +4640,7 @@ inline uint32_t VertexVectorIndex::hnsw_ef_construction() const {
   return _internal_hnsw_ef_construction();
 }
 inline void VertexVectorIndex::_internal_set_hnsw_ef_construction(uint32_t value) {
-  
+
   _impl_.hnsw_ef_construction_ = value;
 }
 inline void VertexVectorIndex::set_hnsw_ef_construction(uint32_t value) {
@@ -4348,7 +4660,7 @@ inline uint32_t VertexVectorIndex::index_id() const {
   return _internal_index_id();
 }
 inline void VertexVectorIndex::_internal_set_index_id(uint32_t value) {
-  
+
   _impl_.index_id_ = value;
 }
 inline void VertexVectorIndex::set_index_id(uint32_t value) {
@@ -4367,7 +4679,7 @@ inline const std::string& VertexVectorIndex::path() const {
 template <typename ArgT0, typename... ArgT>
 inline PROTOBUF_ALWAYS_INLINE
 void VertexVectorIndex::set_path(ArgT0&& arg0, ArgT... args) {
- 
+
  _impl_.path_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
   // @@protoc_insertion_point(field_set:meta.VertexVectorIndex.path)
 }
@@ -4380,11 +4692,11 @@ inline const std::string& VertexVectorIndex::_internal_path() const {
   return _impl_.path_.Get();
 }
 inline void VertexVectorIndex::_internal_set_path(const std::string& value) {
-  
+
   _impl_.path_.Set(value, GetArenaForAllocation());
 }
 inline std::string* VertexVectorIndex::_internal_mutable_path() {
-  
+
   return _impl_.path_.Mutable(GetArenaForAllocation());
 }
 inline std::string* VertexVectorIndex::release_path() {
@@ -4393,9 +4705,9 @@ inline std::string* VertexVectorIndex::release_path() {
 }
 inline void VertexVectorIndex::set_allocated_path(std::string* path) {
   if (path != nullptr) {
-    
+
   } else {
-    
+
   }
   _impl_.path_.SetAllocated(path, GetArenaForAllocation());
 #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
@@ -4418,7 +4730,7 @@ inline ::meta::IndexBuildState VertexVectorIndex::state() const {
   return _internal_state();
 }
 inline void VertexVectorIndex::_internal_set_state(::meta::IndexBuildState value) {
-  
+
   _impl_.state_ = value;
 }
 inline void VertexVectorIndex::set_state(::meta::IndexBuildState value) {
@@ -4438,7 +4750,7 @@ inline uint64_t VertexVectorIndex::build_start_wal_id() const {
   return _internal_build_start_wal_id();
 }
 inline void VertexVectorIndex::_internal_set_build_start_wal_id(uint64_t value) {
-  
+
   _impl_.build_start_wal_id_ = value;
 }
 inline void VertexVectorIndex::set_build_start_wal_id(uint64_t value) {
@@ -4458,7 +4770,7 @@ inline uint64_t VertexVectorIndex::applied_wal_id() const {
   return _internal_applied_wal_id();
 }
 inline void VertexVectorIndex::_internal_set_applied_wal_id(uint64_t value) {
-  
+
   _impl_.applied_wal_id_ = value;
 }
 inline void VertexVectorIndex::set_applied_wal_id(uint64_t value) {
@@ -4477,7 +4789,7 @@ inline const std::string& VertexVectorIndex::build_error() const {
 template <typename ArgT0, typename... ArgT>
 inline PROTOBUF_ALWAYS_INLINE
 void VertexVectorIndex::set_build_error(ArgT0&& arg0, ArgT... args) {
- 
+
  _impl_.build_error_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
   // @@protoc_insertion_point(field_set:meta.VertexVectorIndex.build_error)
 }
@@ -4490,11 +4802,11 @@ inline const std::string& VertexVectorIndex::_internal_build_error() const {
   return _impl_.build_error_.Get();
 }
 inline void VertexVectorIndex::_internal_set_build_error(const std::string& value) {
-  
+
   _impl_.build_error_.Set(value, GetArenaForAllocation());
 }
 inline std::string* VertexVectorIndex::_internal_mutable_build_error() {
-  
+
   return _impl_.build_error_.Mutable(GetArenaForAllocation());
 }
 inline std::string* VertexVectorIndex::release_build_error() {
@@ -4503,9 +4815,9 @@ inline std::string* VertexVectorIndex::release_build_error() {
 }
 inline void VertexVectorIndex::set_allocated_build_error(std::string* build_error) {
   if (build_error != nullptr) {
-    
+
   } else {
-    
+
   }
   _impl_.build_error_.SetAllocated(build_error, GetArenaForAllocation());
 #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
@@ -4531,7 +4843,7 @@ inline const std::string& VertexVectorField::label() const {
 template <typename ArgT0, typename... ArgT>
 inline PROTOBUF_ALWAYS_INLINE
 void VertexVectorField::set_label(ArgT0&& arg0, ArgT... args) {
- 
+
  _impl_.label_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
   // @@protoc_insertion_point(field_set:meta.VertexVectorField.label)
 }
@@ -4544,11 +4856,11 @@ inline const std::string& VertexVectorField::_internal_label() const {
   return _impl_.label_.Get();
 }
 inline void VertexVectorField::_internal_set_label(const std::string& value) {
-  
+
   _impl_.label_.Set(value, GetArenaForAllocation());
 }
 inline std::string* VertexVectorField::_internal_mutable_label() {
-  
+
   return _impl_.label_.Mutable(GetArenaForAllocation());
 }
 inline std::string* VertexVectorField::release_label() {
@@ -4557,9 +4869,9 @@ inline std::string* VertexVectorField::release_label() {
 }
 inline void VertexVectorField::set_allocated_label(std::string* label) {
   if (label != nullptr) {
-    
+
   } else {
-    
+
   }
   _impl_.label_.SetAllocated(label, GetArenaForAllocation());
 #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
@@ -4582,7 +4894,7 @@ inline uint32_t VertexVectorField::label_id() const {
   return _internal_label_id();
 }
 inline void VertexVectorField::_internal_set_label_id(uint32_t value) {
-  
+
   _impl_.label_id_ = value;
 }
 inline void VertexVectorField::set_label_id(uint32_t value) {
@@ -4601,7 +4913,7 @@ inline const std::string& VertexVectorField::property() const {
 template <typename ArgT0, typename... ArgT>
 inline PROTOBUF_ALWAYS_INLINE
 void VertexVectorField::set_property(ArgT0&& arg0, ArgT... args) {
- 
+
  _impl_.property_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
   // @@protoc_insertion_point(field_set:meta.VertexVectorField.property)
 }
@@ -4614,11 +4926,11 @@ inline const std::string& VertexVectorField::_internal_property() const {
   return _impl_.property_.Get();
 }
 inline void VertexVectorField::_internal_set_property(const std::string& value) {
-  
+
   _impl_.property_.Set(value, GetArenaForAllocation());
 }
 inline std::string* VertexVectorField::_internal_mutable_property() {
-  
+
   return _impl_.property_.Mutable(GetArenaForAllocation());
 }
 inline std::string* VertexVectorField::release_property() {
@@ -4627,9 +4939,9 @@ inline std::string* VertexVectorField::release_property() {
 }
 inline void VertexVectorField::set_allocated_property(std::string* property) {
   if (property != nullptr) {
-    
+
   } else {
-    
+
   }
   _impl_.property_.SetAllocated(property, GetArenaForAllocation());
 #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
@@ -4652,7 +4964,7 @@ inline uint32_t VertexVectorField::property_id() const {
   return _internal_property_id();
 }
 inline void VertexVectorField::_internal_set_property_id(uint32_t value) {
-  
+
   _impl_.property_id_ = value;
 }
 inline void VertexVectorField::set_property_id(uint32_t value) {
@@ -4672,7 +4984,7 @@ inline uint32_t VertexVectorField::dimensions() const {
   return _internal_dimensions();
 }
 inline void VertexVectorField::_internal_set_dimensions(uint32_t value) {
-  
+
   _impl_.dimensions_ = value;
 }
 inline void VertexVectorField::set_dimensions(uint32_t value) {
@@ -4695,7 +5007,7 @@ inline const std::string& GraphDBMetaInfo::graph_name() const {
 template <typename ArgT0, typename... ArgT>
 inline PROTOBUF_ALWAYS_INLINE
 void GraphDBMetaInfo::set_graph_name(ArgT0&& arg0, ArgT... args) {
- 
+
  _impl_.graph_name_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
   // @@protoc_insertion_point(field_set:meta.GraphDBMetaInfo.graph_name)
 }
@@ -4708,11 +5020,11 @@ inline const std::string& GraphDBMetaInfo::_internal_graph_name() const {
   return _impl_.graph_name_.Get();
 }
 inline void GraphDBMetaInfo::_internal_set_graph_name(const std::string& value) {
-  
+
   _impl_.graph_name_.Set(value, GetArenaForAllocation());
 }
 inline std::string* GraphDBMetaInfo::_internal_mutable_graph_name() {
-  
+
   return _impl_.graph_name_.Mutable(GetArenaForAllocation());
 }
 inline std::string* GraphDBMetaInfo::release_graph_name() {
@@ -4721,9 +5033,9 @@ inline std::string* GraphDBMetaInfo::release_graph_name() {
 }
 inline void GraphDBMetaInfo::set_allocated_graph_name(std::string* graph_name) {
   if (graph_name != nullptr) {
-    
+
   } else {
-    
+
   }
   _impl_.graph_name_.SetAllocated(graph_name, GetArenaForAllocation());
 #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
@@ -4746,7 +5058,7 @@ inline uint32_t GraphDBMetaInfo::graph_id() const {
   return _internal_graph_id();
 }
 inline void GraphDBMetaInfo::_internal_set_graph_id(uint32_t value) {
-  
+
   _impl_.graph_id_ = value;
 }
 inline void GraphDBMetaInfo::set_graph_id(uint32_t value) {
@@ -4766,7 +5078,7 @@ inline bool GraphDBMetaInfo::enable_raft() const {
   return _internal_enable_raft();
 }
 inline void GraphDBMetaInfo::_internal_set_enable_raft(bool value) {
-  
+
   _impl_.enable_raft_ = value;
 }
 inline void GraphDBMetaInfo::set_enable_raft(bool value) {
@@ -4790,7 +5102,7 @@ inline ::meta::UpdateType FullTextIndexUpdate::type() const {
   return _internal_type();
 }
 inline void FullTextIndexUpdate::_internal_set_type(::meta::UpdateType value) {
-  
+
   _impl_.type_ = value;
 }
 inline void FullTextIndexUpdate::set_type(::meta::UpdateType value) {
@@ -4810,7 +5122,7 @@ inline int64_t FullTextIndexUpdate::vid() const {
   return _internal_vid();
 }
 inline void FullTextIndexUpdate::_internal_set_vid(int64_t value) {
-  
+
   _impl_.vid_ = value;
 }
 inline void FullTextIndexUpdate::set_vid(int64_t value) {
@@ -4984,7 +5296,7 @@ inline ::meta::UpdateType VectorIndexUpdate::type() const {
   return _internal_type();
 }
 inline void VectorIndexUpdate::_internal_set_type(::meta::UpdateType value) {
-  
+
   _impl_.type_ = value;
 }
 inline void VectorIndexUpdate::set_type(::meta::UpdateType value) {
@@ -5004,7 +5316,7 @@ inline int64_t VectorIndexUpdate::vid() const {
   return _internal_vid();
 }
 inline void VectorIndexUpdate::_internal_set_vid(int64_t value) {
-  
+
   _impl_.vid_ = value;
 }
 inline void VectorIndexUpdate::set_vid(int64_t value) {
@@ -5075,7 +5387,7 @@ inline ::meta::UpdateType PropertyIndexUpdate::type() const {
   return _internal_type();
 }
 inline void PropertyIndexUpdate::_internal_set_type(::meta::UpdateType value) {
-  
+
   _impl_.type_ = value;
 }
 inline void PropertyIndexUpdate::set_type(::meta::UpdateType value) {
@@ -5095,7 +5407,7 @@ inline int64_t PropertyIndexUpdate::vid() const {
   return _internal_vid();
 }
 inline void PropertyIndexUpdate::_internal_set_vid(int64_t value) {
-  
+
   _impl_.vid_ = value;
 }
 inline void PropertyIndexUpdate::set_vid(int64_t value) {
@@ -5194,7 +5506,7 @@ inline ::meta::GraphIndexDdlRequest_Operation GraphIndexDdlRequest::operation() 
   return _internal_operation();
 }
 inline void GraphIndexDdlRequest::_internal_set_operation(::meta::GraphIndexDdlRequest_Operation value) {
-  
+
   _impl_.operation_ = value;
 }
 inline void GraphIndexDdlRequest::set_operation(::meta::GraphIndexDdlRequest_Operation value) {
@@ -5213,7 +5525,7 @@ inline const std::string& GraphIndexDdlRequest::payload() const {
 template <typename ArgT0, typename... ArgT>
 inline PROTOBUF_ALWAYS_INLINE
 void GraphIndexDdlRequest::set_payload(ArgT0&& arg0, ArgT... args) {
- 
+
  _impl_.payload_.SetBytes(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
   // @@protoc_insertion_point(field_set:meta.GraphIndexDdlRequest.payload)
 }
@@ -5226,11 +5538,11 @@ inline const std::string& GraphIndexDdlRequest::_internal_payload() const {
   return _impl_.payload_.Get();
 }
 inline void GraphIndexDdlRequest::_internal_set_payload(const std::string& value) {
-  
+
   _impl_.payload_.Set(value, GetArenaForAllocation());
 }
 inline std::string* GraphIndexDdlRequest::_internal_mutable_payload() {
-  
+
   return _impl_.payload_.Mutable(GetArenaForAllocation());
 }
 inline std::string* GraphIndexDdlRequest::release_payload() {
@@ -5239,9 +5551,9 @@ inline std::string* GraphIndexDdlRequest::release_payload() {
 }
 inline void GraphIndexDdlRequest::set_allocated_payload(std::string* payload) {
   if (payload != nullptr) {
-    
+
   } else {
-    
+
   }
   _impl_.payload_.SetAllocated(payload, GetArenaForAllocation());
 #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
@@ -5268,7 +5580,7 @@ inline uint64_t RaftRequest::id() const {
   return _internal_id();
 }
 inline void RaftRequest::_internal_set_id(uint64_t value) {
-  
+
   _impl_.id_ = value;
 }
 inline void RaftRequest::set_id(uint64_t value) {
@@ -5288,7 +5600,7 @@ inline ::meta::WriteBatchKind RaftRequest::wb_kind() const {
   return _internal_wb_kind();
 }
 inline void RaftRequest::_internal_set_wb_kind(::meta::WriteBatchKind value) {
-  
+
   _impl_.wb_kind_ = value;
 }
 inline void RaftRequest::set_wb_kind(::meta::WriteBatchKind value) {
@@ -5307,7 +5619,7 @@ inline const std::string& RaftRequest::wb_data() const {
 template <typename ArgT0, typename... ArgT>
 inline PROTOBUF_ALWAYS_INLINE
 void RaftRequest::set_wb_data(ArgT0&& arg0, ArgT... args) {
- 
+
  _impl_.wb_data_.SetBytes(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
   // @@protoc_insertion_point(field_set:meta.RaftRequest.wb_data)
 }
@@ -5320,11 +5632,11 @@ inline const std::string& RaftRequest::_internal_wb_data() const {
   return _impl_.wb_data_.Get();
 }
 inline void RaftRequest::_internal_set_wb_data(const std::string& value) {
-  
+
   _impl_.wb_data_.Set(value, GetArenaForAllocation());
 }
 inline std::string* RaftRequest::_internal_mutable_wb_data() {
-  
+
   return _impl_.wb_data_.Mutable(GetArenaForAllocation());
 }
 inline std::string* RaftRequest::release_wb_data() {
@@ -5333,9 +5645,9 @@ inline std::string* RaftRequest::release_wb_data() {
 }
 inline void RaftRequest::set_allocated_wb_data(std::string* wb_data) {
   if (wb_data != nullptr) {
-    
+
   } else {
-    
+
   }
   _impl_.wb_data_.SetAllocated(wb_data, GetArenaForAllocation());
 #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
@@ -5361,7 +5673,7 @@ inline const std::string& RaftMessage::graph() const {
 template <typename ArgT0, typename... ArgT>
 inline PROTOBUF_ALWAYS_INLINE
 void RaftMessage::set_graph(ArgT0&& arg0, ArgT... args) {
- 
+
  _impl_.graph_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
   // @@protoc_insertion_point(field_set:meta.RaftMessage.graph)
 }
@@ -5374,11 +5686,11 @@ inline const std::string& RaftMessage::_internal_graph() const {
   return _impl_.graph_.Get();
 }
 inline void RaftMessage::_internal_set_graph(const std::string& value) {
-  
+
   _impl_.graph_.Set(value, GetArenaForAllocation());
 }
 inline std::string* RaftMessage::_internal_mutable_graph() {
-  
+
   return _impl_.graph_.Mutable(GetArenaForAllocation());
 }
 inline std::string* RaftMessage::release_graph() {
@@ -5387,9 +5699,9 @@ inline std::string* RaftMessage::release_graph() {
 }
 inline void RaftMessage::set_allocated_graph(std::string* graph) {
   if (graph != nullptr) {
-    
+
   } else {
-    
+
   }
   _impl_.graph_.SetAllocated(graph, GetArenaForAllocation());
 #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
@@ -5423,14 +5735,14 @@ inline void RaftMessage::unsafe_arena_set_allocated_message(
   }
   _impl_.message_ = message;
   if (message) {
-    
+
   } else {
-    
+
   }
   // @@protoc_insertion_point(field_unsafe_arena_set_allocated:meta.RaftMessage.message)
 }
 inline ::raftpb::Message* RaftMessage::release_message() {
-  
+
   ::raftpb::Message* temp = _impl_.message_;
   _impl_.message_ = nullptr;
 #ifdef PROTOBUF_FORCE_COPY_IN_RELEASE
@@ -5446,13 +5758,13 @@ inline ::raftpb::Message* RaftMessage::release_message() {
 }
 inline ::raftpb::Message* RaftMessage::unsafe_arena_release_message() {
   // @@protoc_insertion_point(field_release:meta.RaftMessage.message)
-  
+
   ::raftpb::Message* temp = _impl_.message_;
   _impl_.message_ = nullptr;
   return temp;
 }
 inline ::raftpb::Message* RaftMessage::_internal_mutable_message() {
-  
+
   if (_impl_.message_ == nullptr) {
     auto* p = CreateMaybeMessage<::raftpb::Message>(GetArenaForAllocation());
     _impl_.message_ = p;
@@ -5477,9 +5789,9 @@ inline void RaftMessage::set_allocated_message(::raftpb::Message* message) {
       message = ::PROTOBUF_NAMESPACE_ID::internal::GetOwnedMessage(
           message_arena, message, submessage_arena);
     }
-    
+
   } else {
-    
+
   }
   _impl_.message_ = message;
   // @@protoc_insertion_point(field_set_allocated:meta.RaftMessage.message)
@@ -5501,7 +5813,7 @@ inline uint64_t RaftNodeInfo::node_id() const {
   return _internal_node_id();
 }
 inline void RaftNodeInfo::_internal_set_node_id(uint64_t value) {
-  
+
   _impl_.node_id_ = value;
 }
 inline void RaftNodeInfo::set_node_id(uint64_t value) {
@@ -5520,7 +5832,7 @@ inline const std::string& RaftNodeInfo::ip() const {
 template <typename ArgT0, typename... ArgT>
 inline PROTOBUF_ALWAYS_INLINE
 void RaftNodeInfo::set_ip(ArgT0&& arg0, ArgT... args) {
- 
+
  _impl_.ip_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
   // @@protoc_insertion_point(field_set:meta.RaftNodeInfo.ip)
 }
@@ -5533,11 +5845,11 @@ inline const std::string& RaftNodeInfo::_internal_ip() const {
   return _impl_.ip_.Get();
 }
 inline void RaftNodeInfo::_internal_set_ip(const std::string& value) {
-  
+
   _impl_.ip_.Set(value, GetArenaForAllocation());
 }
 inline std::string* RaftNodeInfo::_internal_mutable_ip() {
-  
+
   return _impl_.ip_.Mutable(GetArenaForAllocation());
 }
 inline std::string* RaftNodeInfo::release_ip() {
@@ -5546,9 +5858,9 @@ inline std::string* RaftNodeInfo::release_ip() {
 }
 inline void RaftNodeInfo::set_allocated_ip(std::string* ip) {
   if (ip != nullptr) {
-    
+
   } else {
-    
+
   }
   _impl_.ip_.SetAllocated(ip, GetArenaForAllocation());
 #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
@@ -5571,7 +5883,7 @@ inline int32_t RaftNodeInfo::bolt_port() const {
   return _internal_bolt_port();
 }
 inline void RaftNodeInfo::_internal_set_bolt_port(int32_t value) {
-  
+
   _impl_.bolt_port_ = value;
 }
 inline void RaftNodeInfo::set_bolt_port(int32_t value) {
@@ -5591,7 +5903,7 @@ inline int32_t RaftNodeInfo::raft_poft() const {
   return _internal_raft_poft();
 }
 inline void RaftNodeInfo::_internal_set_raft_poft(int32_t value) {
-  
+
   _impl_.raft_poft_ = value;
 }
 inline void RaftNodeInfo::set_raft_poft(int32_t value) {
@@ -5611,7 +5923,7 @@ inline bool RaftNodeInfo::is_leader() const {
   return _internal_is_leader();
 }
 inline void RaftNodeInfo::_internal_set_is_leader(bool value) {
-  
+
   _impl_.is_leader_ = value;
 }
 inline void RaftNodeInfo::set_is_leader(bool value) {
@@ -5631,7 +5943,7 @@ inline bool RaftNodeInfo::is_learner() const {
   return _internal_is_learner();
 }
 inline void RaftNodeInfo::_internal_set_is_learner(bool value) {
-  
+
   _impl_.is_learner_ = value;
 }
 inline void RaftNodeInfo::set_is_learner(bool value) {
@@ -5650,7 +5962,7 @@ inline const std::string& RaftNodeInfo::graph() const {
 template <typename ArgT0, typename... ArgT>
 inline PROTOBUF_ALWAYS_INLINE
 void RaftNodeInfo::set_graph(ArgT0&& arg0, ArgT... args) {
- 
+
  _impl_.graph_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
   // @@protoc_insertion_point(field_set:meta.RaftNodeInfo.graph)
 }
@@ -5663,11 +5975,11 @@ inline const std::string& RaftNodeInfo::_internal_graph() const {
   return _impl_.graph_.Get();
 }
 inline void RaftNodeInfo::_internal_set_graph(const std::string& value) {
-  
+
   _impl_.graph_.Set(value, GetArenaForAllocation());
 }
 inline std::string* RaftNodeInfo::_internal_mutable_graph() {
-  
+
   return _impl_.graph_.Mutable(GetArenaForAllocation());
 }
 inline std::string* RaftNodeInfo::release_graph() {
@@ -5676,9 +5988,9 @@ inline std::string* RaftNodeInfo::release_graph() {
 }
 inline void RaftNodeInfo::set_allocated_graph(std::string* graph) {
   if (graph != nullptr) {
-    
+
   } else {
-    
+
   }
   _impl_.graph_.SetAllocated(graph, GetArenaForAllocation());
 #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
@@ -5724,9 +6036,407 @@ RaftNodeInfos::mutable_nodes() {
   return _internal_mutable_nodes();
 }
 
+// -------------------------------------------------------------------
+
+// EdgePropertyIndex
+
+// string name = 1;
+inline void EdgePropertyIndex::clear_name() {
+  _impl_.name_.ClearToEmpty();
+}
+inline const std::string& EdgePropertyIndex::name() const {
+  // @@protoc_insertion_point(field_get:meta.EdgePropertyIndex.name)
+  return _internal_name();
+}
+template <typename ArgT0, typename... ArgT>
+inline PROTOBUF_ALWAYS_INLINE
+void EdgePropertyIndex::set_name(ArgT0&& arg0, ArgT... args) {
+
+ _impl_.name_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
+  // @@protoc_insertion_point(field_set:meta.EdgePropertyIndex.name)
+}
+inline std::string* EdgePropertyIndex::mutable_name() {
+  std::string* _s = _internal_mutable_name();
+  // @@protoc_insertion_point(field_mutable:meta.EdgePropertyIndex.name)
+  return _s;
+}
+inline const std::string& EdgePropertyIndex::_internal_name() const {
+  return _impl_.name_.Get();
+}
+inline void EdgePropertyIndex::_internal_set_name(const std::string& value) {
+
+  _impl_.name_.Set(value, GetArenaForAllocation());
+}
+inline std::string* EdgePropertyIndex::_internal_mutable_name() {
+
+  return _impl_.name_.Mutable(GetArenaForAllocation());
+}
+inline std::string* EdgePropertyIndex::release_name() {
+  // @@protoc_insertion_point(field_release:meta.EdgePropertyIndex.name)
+  return _impl_.name_.Release();
+}
+inline void EdgePropertyIndex::set_allocated_name(std::string* name) {
+  if (name != nullptr) {
+
+  } else {
+
+  }
+  _impl_.name_.SetAllocated(name, GetArenaForAllocation());
+#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (_impl_.name_.IsDefault()) {
+    _impl_.name_.Set("", GetArenaForAllocation());
+  }
+#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:meta.EdgePropertyIndex.name)
+}
+
+// bool is_unique = 2;
+inline void EdgePropertyIndex::clear_is_unique() {
+  _impl_.is_unique_ = false;
+}
+inline bool EdgePropertyIndex::_internal_is_unique() const {
+  return _impl_.is_unique_;
+}
+inline bool EdgePropertyIndex::is_unique() const {
+  // @@protoc_insertion_point(field_get:meta.EdgePropertyIndex.is_unique)
+  return _internal_is_unique();
+}
+inline void EdgePropertyIndex::_internal_set_is_unique(bool value) {
+
+  _impl_.is_unique_ = value;
+}
+inline void EdgePropertyIndex::set_is_unique(bool value) {
+  _internal_set_is_unique(value);
+  // @@protoc_insertion_point(field_set:meta.EdgePropertyIndex.is_unique)
+}
+
+// string edge_type = 3;
+inline void EdgePropertyIndex::clear_edge_type() {
+  _impl_.edge_type_.ClearToEmpty();
+}
+inline const std::string& EdgePropertyIndex::edge_type() const {
+  // @@protoc_insertion_point(field_get:meta.EdgePropertyIndex.edge_type)
+  return _internal_edge_type();
+}
+template <typename ArgT0, typename... ArgT>
+inline PROTOBUF_ALWAYS_INLINE
+void EdgePropertyIndex::set_edge_type(ArgT0&& arg0, ArgT... args) {
+
+ _impl_.edge_type_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
+  // @@protoc_insertion_point(field_set:meta.EdgePropertyIndex.edge_type)
+}
+inline std::string* EdgePropertyIndex::mutable_edge_type() {
+  std::string* _s = _internal_mutable_edge_type();
+  // @@protoc_insertion_point(field_mutable:meta.EdgePropertyIndex.edge_type)
+  return _s;
+}
+inline const std::string& EdgePropertyIndex::_internal_edge_type() const {
+  return _impl_.edge_type_.Get();
+}
+inline void EdgePropertyIndex::_internal_set_edge_type(const std::string& value) {
+
+  _impl_.edge_type_.Set(value, GetArenaForAllocation());
+}
+inline std::string* EdgePropertyIndex::_internal_mutable_edge_type() {
+
+  return _impl_.edge_type_.Mutable(GetArenaForAllocation());
+}
+inline std::string* EdgePropertyIndex::release_edge_type() {
+  // @@protoc_insertion_point(field_release:meta.EdgePropertyIndex.edge_type)
+  return _impl_.edge_type_.Release();
+}
+inline void EdgePropertyIndex::set_allocated_edge_type(std::string* edge_type) {
+  if (edge_type != nullptr) {
+
+  } else {
+
+  }
+  _impl_.edge_type_.SetAllocated(edge_type, GetArenaForAllocation());
+#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (_impl_.edge_type_.IsDefault()) {
+    _impl_.edge_type_.Set("", GetArenaForAllocation());
+  }
+#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:meta.EdgePropertyIndex.edge_type)
+}
+
+// uint32 edge_type_id = 4;
+inline void EdgePropertyIndex::clear_edge_type_id() {
+  _impl_.edge_type_id_ = 0u;
+}
+inline uint32_t EdgePropertyIndex::_internal_edge_type_id() const {
+  return _impl_.edge_type_id_;
+}
+inline uint32_t EdgePropertyIndex::edge_type_id() const {
+  // @@protoc_insertion_point(field_get:meta.EdgePropertyIndex.edge_type_id)
+  return _internal_edge_type_id();
+}
+inline void EdgePropertyIndex::_internal_set_edge_type_id(uint32_t value) {
+
+  _impl_.edge_type_id_ = value;
+}
+inline void EdgePropertyIndex::set_edge_type_id(uint32_t value) {
+  _internal_set_edge_type_id(value);
+  // @@protoc_insertion_point(field_set:meta.EdgePropertyIndex.edge_type_id)
+}
+
+// repeated string properties = 5;
+inline int EdgePropertyIndex::_internal_properties_size() const {
+  return _impl_.properties_.size();
+}
+inline int EdgePropertyIndex::properties_size() const {
+  return _internal_properties_size();
+}
+inline void EdgePropertyIndex::clear_properties() {
+  _impl_.properties_.Clear();
+}
+inline std::string* EdgePropertyIndex::add_properties() {
+  std::string* _s = _internal_add_properties();
+  // @@protoc_insertion_point(field_add_mutable:meta.EdgePropertyIndex.properties)
+  return _s;
+}
+inline const std::string& EdgePropertyIndex::_internal_properties(int index) const {
+  return _impl_.properties_.Get(index);
+}
+inline const std::string& EdgePropertyIndex::properties(int index) const {
+  // @@protoc_insertion_point(field_get:meta.EdgePropertyIndex.properties)
+  return _internal_properties(index);
+}
+inline std::string* EdgePropertyIndex::mutable_properties(int index) {
+  // @@protoc_insertion_point(field_mutable:meta.EdgePropertyIndex.properties)
+  return _impl_.properties_.Mutable(index);
+}
+inline void EdgePropertyIndex::set_properties(int index, const std::string& value) {
+  _impl_.properties_.Mutable(index)->assign(value);
+  // @@protoc_insertion_point(field_set:meta.EdgePropertyIndex.properties)
+}
+inline void EdgePropertyIndex::set_properties(int index, std::string&& value) {
+  _impl_.properties_.Mutable(index)->assign(std::move(value));
+  // @@protoc_insertion_point(field_set:meta.EdgePropertyIndex.properties)
+}
+inline void EdgePropertyIndex::set_properties(int index, const char* value) {
+  GOOGLE_DCHECK(value != nullptr);
+  _impl_.properties_.Mutable(index)->assign(value);
+  // @@protoc_insertion_point(field_set_char:meta.EdgePropertyIndex.properties)
+}
+inline void EdgePropertyIndex::set_properties(int index, const char* value, size_t size) {
+  _impl_.properties_.Mutable(index)->assign(
+    reinterpret_cast<const char*>(value), size);
+  // @@protoc_insertion_point(field_set_pointer:meta.EdgePropertyIndex.properties)
+}
+inline std::string* EdgePropertyIndex::_internal_add_properties() {
+  return _impl_.properties_.Add();
+}
+inline void EdgePropertyIndex::add_properties(const std::string& value) {
+  _impl_.properties_.Add()->assign(value);
+  // @@protoc_insertion_point(field_add:meta.EdgePropertyIndex.properties)
+}
+inline void EdgePropertyIndex::add_properties(std::string&& value) {
+  _impl_.properties_.Add(std::move(value));
+  // @@protoc_insertion_point(field_add:meta.EdgePropertyIndex.properties)
+}
+inline void EdgePropertyIndex::add_properties(const char* value) {
+  GOOGLE_DCHECK(value != nullptr);
+  _impl_.properties_.Add()->assign(value);
+  // @@protoc_insertion_point(field_add_char:meta.EdgePropertyIndex.properties)
+}
+inline void EdgePropertyIndex::add_properties(const char* value, size_t size) {
+  _impl_.properties_.Add()->assign(reinterpret_cast<const char*>(value), size);
+  // @@protoc_insertion_point(field_add_pointer:meta.EdgePropertyIndex.properties)
+}
+inline const ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField<std::string>&
+EdgePropertyIndex::properties() const {
+  // @@protoc_insertion_point(field_list:meta.EdgePropertyIndex.properties)
+  return _impl_.properties_;
+}
+inline ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField<std::string>*
+EdgePropertyIndex::mutable_properties() {
+  // @@protoc_insertion_point(field_mutable_list:meta.EdgePropertyIndex.properties)
+  return &_impl_.properties_;
+}
+
+// repeated uint32 property_ids = 6;
+inline int EdgePropertyIndex::_internal_property_ids_size() const {
+  return _impl_.property_ids_.size();
+}
+inline int EdgePropertyIndex::property_ids_size() const {
+  return _internal_property_ids_size();
+}
+inline void EdgePropertyIndex::clear_property_ids() {
+  _impl_.property_ids_.Clear();
+}
+inline uint32_t EdgePropertyIndex::_internal_property_ids(int index) const {
+  return _impl_.property_ids_.Get(index);
+}
+inline uint32_t EdgePropertyIndex::property_ids(int index) const {
+  // @@protoc_insertion_point(field_get:meta.EdgePropertyIndex.property_ids)
+  return _internal_property_ids(index);
+}
+inline void EdgePropertyIndex::set_property_ids(int index, uint32_t value) {
+  _impl_.property_ids_.Set(index, value);
+  // @@protoc_insertion_point(field_set:meta.EdgePropertyIndex.property_ids)
+}
+inline void EdgePropertyIndex::_internal_add_property_ids(uint32_t value) {
+  _impl_.property_ids_.Add(value);
+}
+inline void EdgePropertyIndex::add_property_ids(uint32_t value) {
+  _internal_add_property_ids(value);
+  // @@protoc_insertion_point(field_add:meta.EdgePropertyIndex.property_ids)
+}
+inline const ::PROTOBUF_NAMESPACE_ID::RepeatedField< uint32_t >&
+EdgePropertyIndex::_internal_property_ids() const {
+  return _impl_.property_ids_;
+}
+inline const ::PROTOBUF_NAMESPACE_ID::RepeatedField< uint32_t >&
+EdgePropertyIndex::property_ids() const {
+  // @@protoc_insertion_point(field_list:meta.EdgePropertyIndex.property_ids)
+  return _internal_property_ids();
+}
+inline ::PROTOBUF_NAMESPACE_ID::RepeatedField< uint32_t >*
+EdgePropertyIndex::_internal_mutable_property_ids() {
+  return &_impl_.property_ids_;
+}
+inline ::PROTOBUF_NAMESPACE_ID::RepeatedField< uint32_t >*
+EdgePropertyIndex::mutable_property_ids() {
+  // @@protoc_insertion_point(field_mutable_list:meta.EdgePropertyIndex.property_ids)
+  return _internal_mutable_property_ids();
+}
+
+// uint32 index_id = 7;
+inline void EdgePropertyIndex::clear_index_id() {
+  _impl_.index_id_ = 0u;
+}
+inline uint32_t EdgePropertyIndex::_internal_index_id() const {
+  return _impl_.index_id_;
+}
+inline uint32_t EdgePropertyIndex::index_id() const {
+  // @@protoc_insertion_point(field_get:meta.EdgePropertyIndex.index_id)
+  return _internal_index_id();
+}
+inline void EdgePropertyIndex::_internal_set_index_id(uint32_t value) {
+
+  _impl_.index_id_ = value;
+}
+inline void EdgePropertyIndex::set_index_id(uint32_t value) {
+  _internal_set_index_id(value);
+  // @@protoc_insertion_point(field_set:meta.EdgePropertyIndex.index_id)
+}
+
+// .meta.IndexBuildState state = 8;
+inline void EdgePropertyIndex::clear_state() {
+  _impl_.state_ = 0;
+}
+inline ::meta::IndexBuildState EdgePropertyIndex::_internal_state() const {
+  return static_cast< ::meta::IndexBuildState >(_impl_.state_);
+}
+inline ::meta::IndexBuildState EdgePropertyIndex::state() const {
+  // @@protoc_insertion_point(field_get:meta.EdgePropertyIndex.state)
+  return _internal_state();
+}
+inline void EdgePropertyIndex::_internal_set_state(::meta::IndexBuildState value) {
+
+  _impl_.state_ = value;
+}
+inline void EdgePropertyIndex::set_state(::meta::IndexBuildState value) {
+  _internal_set_state(value);
+  // @@protoc_insertion_point(field_set:meta.EdgePropertyIndex.state)
+}
+
+// uint64 build_start_wal_id = 9;
+inline void EdgePropertyIndex::clear_build_start_wal_id() {
+  _impl_.build_start_wal_id_ = uint64_t{0u};
+}
+inline uint64_t EdgePropertyIndex::_internal_build_start_wal_id() const {
+  return _impl_.build_start_wal_id_;
+}
+inline uint64_t EdgePropertyIndex::build_start_wal_id() const {
+  // @@protoc_insertion_point(field_get:meta.EdgePropertyIndex.build_start_wal_id)
+  return _internal_build_start_wal_id();
+}
+inline void EdgePropertyIndex::_internal_set_build_start_wal_id(uint64_t value) {
+
+  _impl_.build_start_wal_id_ = value;
+}
+inline void EdgePropertyIndex::set_build_start_wal_id(uint64_t value) {
+  _internal_set_build_start_wal_id(value);
+  // @@protoc_insertion_point(field_set:meta.EdgePropertyIndex.build_start_wal_id)
+}
+
+// uint64 applied_wal_id = 10;
+inline void EdgePropertyIndex::clear_applied_wal_id() {
+  _impl_.applied_wal_id_ = uint64_t{0u};
+}
+inline uint64_t EdgePropertyIndex::_internal_applied_wal_id() const {
+  return _impl_.applied_wal_id_;
+}
+inline uint64_t EdgePropertyIndex::applied_wal_id() const {
+  // @@protoc_insertion_point(field_get:meta.EdgePropertyIndex.applied_wal_id)
+  return _internal_applied_wal_id();
+}
+inline void EdgePropertyIndex::_internal_set_applied_wal_id(uint64_t value) {
+
+  _impl_.applied_wal_id_ = value;
+}
+inline void EdgePropertyIndex::set_applied_wal_id(uint64_t value) {
+  _internal_set_applied_wal_id(value);
+  // @@protoc_insertion_point(field_set:meta.EdgePropertyIndex.applied_wal_id)
+}
+
+// string build_error = 11;
+inline void EdgePropertyIndex::clear_build_error() {
+  _impl_.build_error_.ClearToEmpty();
+}
+inline const std::string& EdgePropertyIndex::build_error() const {
+  // @@protoc_insertion_point(field_get:meta.EdgePropertyIndex.build_error)
+  return _internal_build_error();
+}
+template <typename ArgT0, typename... ArgT>
+inline PROTOBUF_ALWAYS_INLINE
+void EdgePropertyIndex::set_build_error(ArgT0&& arg0, ArgT... args) {
+
+ _impl_.build_error_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
+  // @@protoc_insertion_point(field_set:meta.EdgePropertyIndex.build_error)
+}
+inline std::string* EdgePropertyIndex::mutable_build_error() {
+  std::string* _s = _internal_mutable_build_error();
+  // @@protoc_insertion_point(field_mutable:meta.EdgePropertyIndex.build_error)
+  return _s;
+}
+inline const std::string& EdgePropertyIndex::_internal_build_error() const {
+  return _impl_.build_error_.Get();
+}
+inline void EdgePropertyIndex::_internal_set_build_error(const std::string& value) {
+
+  _impl_.build_error_.Set(value, GetArenaForAllocation());
+}
+inline std::string* EdgePropertyIndex::_internal_mutable_build_error() {
+
+  return _impl_.build_error_.Mutable(GetArenaForAllocation());
+}
+inline std::string* EdgePropertyIndex::release_build_error() {
+  // @@protoc_insertion_point(field_release:meta.EdgePropertyIndex.build_error)
+  return _impl_.build_error_.Release();
+}
+inline void EdgePropertyIndex::set_allocated_build_error(std::string* build_error) {
+  if (build_error != nullptr) {
+
+  } else {
+
+  }
+  _impl_.build_error_.SetAllocated(build_error, GetArenaForAllocation());
+#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (_impl_.build_error_.IsDefault()) {
+    _impl_.build_error_.Set("", GetArenaForAllocation());
+  }
+#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:meta.EdgePropertyIndex.build_error)
+}
+
 #ifdef __GNUC__
   #pragma GCC diagnostic pop
 #endif  // __GNUC__
+// -------------------------------------------------------------------
+
 // -------------------------------------------------------------------
 
 // -------------------------------------------------------------------

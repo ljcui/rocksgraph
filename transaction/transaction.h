@@ -58,6 +58,12 @@ class Transaction {
       const std::string& index_name, const std::optional<rg::Value>& lower,
       const std::optional<rg::Value>& upper, bool left_closed,
       bool right_closed);
+  std::unique_ptr<graphdb::EdgeIterator> QueryEdgeByPropertyIndex(
+      const std::string& index_name, const rg::Value& query);
+  std::unique_ptr<graphdb::EdgeIterator> QueryEdgeByPropertyRange(
+      const std::string& index_name, const std::optional<rg::Value>& lower,
+      const std::optional<rg::Value>& upper, bool left_closed,
+      bool right_closed);
   std::unique_ptr<graphdb::VertexScoreIterator> QueryVertexByFTIndex(
       const std::string& index_name, const std::string& query, size_t top_n);
   std::unique_ptr<graphdb::VertexScoreIterator> QueryVertexByKnnSearch(
@@ -65,6 +71,9 @@ class Transaction {
       int ef_search);
   void AppendPropertyIndexWAL(
       std::shared_ptr<graphdb::VertexPropertyIndex> index,
+      const meta::PropertyIndexUpdate& update);
+  void AppendEdgePropertyIndexWAL(
+      std::shared_ptr<graphdb::EdgePropertyIndex> index,
       const meta::PropertyIndexUpdate& update);
   void AppendFullTextIndexWAL(
       std::shared_ptr<graphdb::VertexFullTextIndex> index,
@@ -88,6 +97,11 @@ class Transaction {
     meta::PropertyIndexUpdate update;
   };
 
+  struct PendingEdgePropertyWAL {
+    std::shared_ptr<graphdb::EdgePropertyIndex> index;
+    meta::PropertyIndexUpdate update;
+  };
+
   struct PendingFullTextWAL {
     std::shared_ptr<graphdb::VertexFullTextIndex> index;
     meta::FullTextIndexUpdate update;
@@ -102,6 +116,7 @@ class Transaction {
   graphdb::GraphDB* db_;
   std::shared_ptr<bolt::BoltConnection> conn_;
   std::vector<PendingPropertyWAL> pending_property_wals_;
+  std::vector<PendingEdgePropertyWAL> pending_edge_property_wals_;
   std::vector<PendingFullTextWAL> pending_fulltext_wals_;
   std::vector<PendingVectorWAL> pending_vector_wals_;
 };

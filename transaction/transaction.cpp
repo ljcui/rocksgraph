@@ -13,6 +13,7 @@
 #include "common/byte_utils.h"
 #include "common/exceptions.h"
 #include "common/logger.h"
+#include "graphdb/edge_index_updater.h"
 #include "graphdb/graph_db.h"
 #include "graphdb/index_error.h"
 #include "graphdb/value_codec.h"
@@ -42,8 +43,23 @@ std::shared_ptr<VertexPropertyIndex> ResolveVertexPropertyIndexOrThrow(
   return index;
 }
 
+std::shared_ptr<EdgePropertyIndex> ResolveEdgePropertyIndexOrThrow(
+    txn::Transaction* txn, const std::string& index_name) {
+  auto index = txn->db()->meta_info().GetReadyEdgePropertyIndex(index_name);
+  if (!index) {
+    if (auto building_index =
+            txn->db()->meta_info().GetEdgePropertyIndex(index_name)) {
+      ThrowIfIndexUnavailable(building_index, index_name, "Edge");
+    }
+    THROW_CODE(EdgePropertyIndexNotFound, "No such edge property index [{}]",
+               index_name);
+  }
+  return index;
+}
+
+template <typename Index>
 std::vector<rg::Value> BuildPropertyIndexQueryValues(
-    const std::shared_ptr<VertexPropertyIndex>& index, const rg::Value& query,
+    const std::shared_ptr<Index>& index, const rg::Value& query,
     const std::string& arg_name) {
   std::vector<rg::Value> values;
   if (index->PropertyCount() == 1) {
@@ -65,9 +81,10 @@ std::vector<rg::Value> BuildPropertyIndexQueryValues(
   return {items.begin(), items.end()};
 }
 
+template <typename Index>
 std::optional<std::string> BuildPropertyIndexRangeKey(
-    const std::shared_ptr<VertexPropertyIndex>& index,
-    const std::optional<rg::Value>& bound, const std::string& arg_name) {
+    const std::shared_ptr<Index>& index, const std::optional<rg::Value>& bound,
+    const std::string& arg_name) {
   if (!bound.has_value()) {
     return std::nullopt;
   }
@@ -211,15 +228,18 @@ Edge Transaction::CreateEdge(
   s = txn_->GetWriteBatch()->Put(db_->graph_cf().edge_type_eid, key, val);
   if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
   // properties
+  EdgeSerializedProperties serialized_properties;
   for (const auto& [name, value] : values) {
     uint32_t pid = db_->id_generator().GetOrCreatePid(name);
     key.clear();
     key.append(AsChars(eid), sizeof(eid));
     key.append(AsChars(pid), sizeof(pid));
     val = SerializeValue(value);
+    serialized_properties.emplace(pid, val);
     s = txn_->GetWriteBatch()->Put(db_->graph_cf().edge_property, key, val);
     if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
   }
+  UpdateEdgeIndexes(this, eid, tid, {}, serialized_properties);
   return {this, eid, start.GetId(), end.GetId(), tid};
 }
 
@@ -383,6 +403,12 @@ void Transaction::AppendPropertyIndexWAL(
   pending_property_wals_.push_back({std::move(index), update});
 }
 
+void Transaction::AppendEdgePropertyIndexWAL(
+    std::shared_ptr<graphdb::EdgePropertyIndex> index,
+    const meta::PropertyIndexUpdate& update) {
+  pending_edge_property_wals_.push_back({std::move(index), update});
+}
+
 void Transaction::Commit() {
   {
     std::unique_lock<std::mutex> property_commit_lock(
@@ -391,7 +417,8 @@ void Transaction::Commit() {
         db_->fulltext_index_commit_mutex(), std::defer_lock);
     std::unique_lock<std::mutex> vector_commit_lock(
         db_->vector_index_commit_mutex(), std::defer_lock);
-    bool has_property_wals = !pending_property_wals_.empty();
+    bool has_property_wals =
+        !pending_property_wals_.empty() || !pending_edge_property_wals_.empty();
     bool has_fulltext_wals = !pending_fulltext_wals_.empty();
     bool has_vector_wals = !pending_vector_wals_.empty();
     if (has_property_wals && has_fulltext_wals && has_vector_wals) {
@@ -415,6 +442,20 @@ void Transaction::Commit() {
         if (wal.index->IsDeleted()) {
           THROW_CODE(VertexUniqueIndexNotFound,
                      "Vertex index [{}] was deleted during transaction",
+                     wal.index->Name());
+        }
+        if (wal.index->IsReady()) {
+          wal.index->ApplyCommittedBuildUpdate(this, wal.update);
+          continue;
+        }
+        auto s = write_batch->Put(db_->graph_cf().wal, wal.index->NextWALKey(),
+                                  wal.update.SerializeAsString());
+        if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+      }
+      for (const auto& wal : pending_edge_property_wals_) {
+        if (wal.index->IsDeleted()) {
+          THROW_CODE(EdgePropertyIndexNotFound,
+                     "Edge property index [{}] was deleted during transaction",
                      wal.index->Name());
         }
         if (wal.index->IsReady()) {
@@ -477,6 +518,7 @@ void Transaction::Commit() {
       }
     }
     pending_property_wals_.clear();
+    pending_edge_property_wals_.clear();
     pending_fulltext_wals_.clear();
     pending_vector_wals_.clear();
   }
@@ -486,6 +528,7 @@ void Transaction::Rollback() {
   auto s = txn_->Rollback();
   if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
   pending_property_wals_.clear();
+  pending_edge_property_wals_.clear();
   pending_fulltext_wals_.clear();
   pending_vector_wals_.clear();
 }
@@ -504,6 +547,31 @@ Transaction::QueryVertexByPropertyIndex(const std::string& index_name,
   auto key = index->IndexKey(values);
   return std::make_unique<GetVertexByPropertyIndex>(this, std::move(index),
                                                     std::move(key));
+}
+
+std::unique_ptr<graphdb::EdgeIterator> Transaction::QueryEdgeByPropertyIndex(
+    const std::string& index_name, const rg::Value& query) {
+  auto index = ResolveEdgePropertyIndexOrThrow(this, index_name);
+  auto values = BuildPropertyIndexQueryValues(index, query, "query");
+  auto key = index->IndexKey(values);
+  return std::make_unique<GetEdgeByPropertyIndex>(this, std::move(index),
+                                                  std::move(key));
+}
+
+std::unique_ptr<graphdb::EdgeIterator> Transaction::QueryEdgeByPropertyRange(
+    const std::string& index_name, const std::optional<rg::Value>& lower,
+    const std::optional<rg::Value>& upper, bool left_closed,
+    bool right_closed) {
+  auto index = ResolveEdgePropertyIndexOrThrow(this, index_name);
+  auto lower_key = BuildPropertyIndexRangeKey(index, lower, "lower");
+  auto upper_key = BuildPropertyIndexRangeKey(index, upper, "upper");
+  if (IsEmptyPropertyIndexRange(lower_key, upper_key, left_closed,
+                                right_closed)) {
+    return std::make_unique<NoEdgeFound>(this);
+  }
+  return std::make_unique<GetEdgeByPropertyRange>(
+      this, std::move(index), std::move(lower_key), std::move(upper_key),
+      left_closed, right_closed);
 }
 
 std::unique_ptr<graphdb::VertexIterator>

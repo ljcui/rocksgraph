@@ -10,6 +10,7 @@
 #include "common/exceptions.h"
 #include "common/logger.h"
 #include "graph_db.h"
+#include "graphdb/edge_index_updater.h"
 #include "graphdb/value_codec.h"
 #include "graphdb/vector_property.h"
 #include "graphdb/vertex_index_updater.h"
@@ -429,16 +430,22 @@ int Vertex::Delete() {
       // delete edge properties
       std::unique_ptr<rocksdb::Iterator> ep_iter;
       rocksdb::Slice ep_prefix(AsChars(eid), sizeof(eid));
+      EdgeSerializedProperties old_edge_properties;
       ep_iter.reset(
           txn_->dbtxn()->GetIterator(ro, txn_->db()->graph_cf().edge_property));
       for (ep_iter->Seek(ep_prefix);
            ep_iter->Valid() && ep_iter->key().starts_with(ep_prefix);
            ep_iter->Next()) {
         auto prop_key = ep_iter->key().ToString();  // must copy
+        auto prop_slice = ep_iter->key();
+        prop_slice.remove_prefix(sizeof(eid));
+        old_edge_properties.emplace(ReadValue<uint32_t>(prop_slice.data()),
+                                    ep_iter->value().ToString());
         s = txn_->dbtxn()->GetWriteBatch()->Delete(
             txn_->db()->graph_cf().edge_property, prop_key);
         if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
       }
+      UpdateEdgeIndexes(txn_, eid, etid, old_edge_properties, {});
       s = txn_->dbtxn()->GetWriteBatch()->SingleDelete(
           txn_->db()->graph_cf().graph_topology, key);
       if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
@@ -908,6 +915,8 @@ void Vertex::RemoveProperty(const std::string &name) {
 
 void Edge::Delete() {
   Lock();
+  auto old_properties = LoadEdgeSerializedProperties(txn_, id_);
+  UpdateEdgeIndexes(txn_, id_, typeId_, old_properties, {});
   // delete out edge key
   std::string key;
   key.append(AsChars(startId_), sizeof(startId_));
@@ -1022,14 +1031,19 @@ void Edge::SetProperties(
     return;
   }
   Lock();
+  auto old_properties = LoadEdgeSerializedProperties(txn_, id_);
+  auto new_properties = old_properties;
   for (auto &[name, value] : properties) {
     auto pid = txn_->db()->id_generator().GetOrCreatePid(name);
     std::string pkey(AsChars(id_), sizeof(id_));
     pkey.append(AsChars(pid), sizeof(pid));
+    auto serialized_value = SerializeValue(value);
     auto s = txn_->dbtxn()->GetWriteBatch()->Put(
-        txn_->db()->graph_cf().edge_property, pkey, SerializeValue(value));
+        txn_->db()->graph_cf().edge_property, pkey, serialized_value);
     if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+    new_properties[pid] = std::move(serialized_value);
   }
+  UpdateEdgeIndexes(txn_, id_, typeId_, old_properties, new_properties);
 }
 
 void Edge::RemoveProperty(const std::string &name) {
@@ -1038,16 +1052,21 @@ void Edge::RemoveProperty(const std::string &name) {
     return;
   }
   Lock();
+  auto old_properties = LoadEdgeSerializedProperties(txn_, id_);
+  auto new_properties = old_properties;
   auto pid = optional.value();
   std::string pkey(AsChars(id_), sizeof(id_));
   pkey.append(AsChars(pid), sizeof(pid));
   auto s = txn_->dbtxn()->GetWriteBatch()->Delete(
       txn_->db()->graph_cf().edge_property, pkey);
   if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+  new_properties.erase(pid);
+  UpdateEdgeIndexes(txn_, id_, typeId_, old_properties, new_properties);
 }
 
 void Edge::RemoveAllProperty() {
   Lock();
+  auto old_properties = LoadEdgeSerializedProperties(txn_, id_);
   std::vector<std::string> prop_keys;
   std::string prefix(AsChars(id_), sizeof(id_));
   rocksdb::ReadOptions ro;
@@ -1065,6 +1084,7 @@ void Edge::RemoveAllProperty() {
         txn_->db()->graph_cf().edge_property, key);
     if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
   }
+  UpdateEdgeIndexes(txn_, id_, typeId_, old_properties, {});
 }
 
 void Edge::Lock() {

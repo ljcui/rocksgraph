@@ -5,12 +5,15 @@
 #pragma once
 #include <rocksdb/utilities/transaction.h>
 
+#include <memory>
+#include <optional>
 #include <queue>
 
 #include "edge_direction.h"
 #include "graph_entity.h"
 #include "iterator.h"
 namespace graphdb {
+struct EdgePropertyIndex;
 class EdgeIterator : public Iterator {
  public:
   explicit EdgeIterator(txn::Transaction* txn) : Iterator(txn) {}
@@ -119,5 +122,49 @@ class ScanEdgeByVidDirectionTypePropertiesOtherNode : public EdgeIterator {
   std::unordered_map<uint32_t, rg::Value> properties_;
   const Vertex& other_node_;
   std::unique_ptr<ScanEdgeByVidDirectionTypes> iter_;
+};
+
+class GetEdgeByPropertyIndex : public EdgeIterator {
+ public:
+  GetEdgeByPropertyIndex(txn::Transaction* txn,
+                         std::shared_ptr<EdgePropertyIndex> index,
+                         std::string prefix);
+  void Next() override;
+  Edge& GetEdge() override {
+    assert(valid_);
+    return *ee_;
+  }
+
+ private:
+  void SeekToNextValid();
+  std::shared_ptr<EdgePropertyIndex> index_;
+  std::string prefix_;
+  std::unique_ptr<rocksdb::Iterator> iter_;
+  std::unique_ptr<Edge> ee_;
+};
+
+class GetEdgeByPropertyRange : public EdgeIterator {
+ public:
+  GetEdgeByPropertyRange(txn::Transaction* txn,
+                         std::shared_ptr<EdgePropertyIndex> index,
+                         std::optional<std::string> lower_key,
+                         std::optional<std::string> upper_key, bool left_closed,
+                         bool right_closed);
+  void Next() override;
+  Edge& GetEdge() override {
+    assert(valid_);
+    return *ee_;
+  }
+
+ private:
+  void SeekToNextValid();
+  std::shared_ptr<EdgePropertyIndex> index_;
+  std::string index_prefix_;
+  std::optional<std::string> lower_key_;
+  std::optional<std::string> upper_key_;
+  bool left_closed_ = true;
+  bool right_closed_ = true;
+  std::unique_ptr<rocksdb::Iterator> iter_;
+  std::unique_ptr<Edge> ee_;
 };
 }  // namespace graphdb

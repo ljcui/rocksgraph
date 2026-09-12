@@ -45,6 +45,7 @@ add_dependencies(graphdb_ftindex graphdb_ftindex_build)
 add_library(
   graphdb STATIC
   assistant_pool.cpp
+  edge_index_updater.cpp
   edge_iterator.cpp
   graph_db.cpp
   graph_entity.cpp
