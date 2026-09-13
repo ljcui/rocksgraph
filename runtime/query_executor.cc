@@ -8,6 +8,7 @@
 
 #include "common/exception.h"
 #include "planner/planned_query.h"
+#include "runtime/graphdb_planner_catalog.h"
 #include "runtime/physical_plan.h"
 #include "runtime/slotted_executor.h"
 #include "transaction/transaction.h"
@@ -249,6 +250,10 @@ std::unique_ptr<QueryResultCursor> ExecuteQueryCursor(
         common::InvalidArgumentError,
         "query execution requires an active transaction");
   try {
+    GraphDBPlannerCatalog graphdb_catalog(*transaction.db());
+    if (options.planner_catalog == nullptr) {
+      options.planner_catalog = &graphdb_catalog;
+    }
     ir::PlannedQuery planned_query =
         ir::PlanCypher(cypher, PlannerOptionsFor(options));
     return std::make_unique<QueryResultCursorImpl>(

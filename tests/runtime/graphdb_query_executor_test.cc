@@ -8,8 +8,8 @@
 
 #include "graphdb/assistant_pool.h"
 #include "graphdb/graph_db.h"
+#include "runtime/graphdb_planner_catalog.h"
 #include "runtime/query_executor.h"
-#include "tests/planner/assume_all_indexes_catalog.h"
 #include "tests/planner/fake_planner_statistics.h"
 #include "transaction/transaction.h"
 
@@ -133,13 +133,10 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeRelationshipTypeScan) {
 
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeVertexIndexSeek) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryOptions options;
-  options.planner_catalog = &test_support::AssumeAllIndexesCatalog();
   rg::QueryResult result =
       rg::ExecuteQuery(*transaction,
                        "MATCH (n:Person) WHERE n.name = 'Ada' "
-                       "RETURN id(n) AS id, n.name AS name",
-                       options);
+                       "RETURN id(n) AS id, n.name AS name");
 
   ASSERT_EQ(result.rows.size(), 1U);
   EXPECT_EQ(result.rows[0],
@@ -147,15 +144,29 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeVertexIndexSeek) {
   transaction->Commit();
 }
 
+TEST_F(GraphDBQueryExecutorTest, CatalogExposesReadyGraphDBIndexes) {
+  rg::GraphDBPlannerCatalog catalog(*graph_);
+
+  const auto vertex_index = catalog.FindNodeIndex({"Person"}, "name");
+  ASSERT_TRUE(vertex_index.has_value());
+  EXPECT_EQ(vertex_index->property_key, "name");
+  EXPECT_FALSE(vertex_index->unique);
+
+  const auto edge_index = catalog.FindRelationshipIndex({"KNOWS"}, "since");
+  ASSERT_TRUE(edge_index.has_value());
+  EXPECT_EQ(edge_index->property_key, "since");
+  EXPECT_FALSE(edge_index->unique);
+
+  EXPECT_FALSE(catalog.FindNodeIndex({"Person"}, "missing").has_value());
+  EXPECT_FALSE(catalog.FindRelationshipIndex({"KNOWS"}, "missing").has_value());
+}
+
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeVertexIndexRangeSeek) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryOptions options;
-  options.planner_catalog = &test_support::AssumeAllIndexesCatalog();
   rg::QueryResult result =
       rg::ExecuteQuery(*transaction,
                        "MATCH (n:Person) WHERE n.age >= 20 AND n.age < 31 "
-                       "RETURN id(n) AS id, n.age AS age",
-                       options);
+                       "RETURN id(n) AS id, n.age AS age");
 
   ASSERT_EQ(result.rows.size(), 2U);
   EXPECT_EQ(result.rows[0][1], rg::Value(20));
@@ -165,13 +176,10 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeVertexIndexRangeSeek) {
 
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeRelationshipIndexSeek) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryOptions options;
-  options.planner_catalog = &test_support::AssumeAllIndexesCatalog();
   rg::QueryResult result =
       rg::ExecuteQuery(*transaction,
                        "MATCH (a)-[r:KNOWS]->(b) WHERE r.since = 2020 "
-                       "RETURN id(a) AS aid, id(r) AS rid, id(b) AS bid",
-                       options);
+                       "RETURN id(a) AS aid, id(r) AS rid, id(b) AS bid");
 
   ASSERT_EQ(result.rows.size(), 1U);
   EXPECT_EQ(result.rows[0],
@@ -182,13 +190,10 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeRelationshipIndexSeek) {
 
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeRelationshipIndexRangeSeek) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryOptions options;
-  options.planner_catalog = &test_support::AssumeAllIndexesCatalog();
   rg::QueryResult result = rg::ExecuteQuery(
       *transaction,
       "MATCH (a)-[r:KNOWS]->(b) WHERE r.since >= 2020 AND r.since < 2021 "
-      "RETURN id(a) AS aid, id(r) AS rid, id(b) AS bid",
-      options);
+      "RETURN id(a) AS aid, id(r) AS rid, id(b) AS bid");
 
   ASSERT_EQ(result.rows.size(), 1U);
   EXPECT_EQ(result.rows[0],
