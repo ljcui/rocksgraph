@@ -49,6 +49,13 @@ target_link_libraries(graphdb_query_executor_test PRIVATE graphdb)
 
 add_rocksgraph_test(value_test value/value_test.cc rocksgraph_value)
 
+add_test(
+  NAME cypher_run_persistence_test
+  COMMAND
+    ${CMAKE_COMMAND} -DCYPHER_RUN=$<TARGET_FILE:cypher_run>
+    -DTEST_DB=${CMAKE_CURRENT_BINARY_DIR}/cypher_run_persistence_testdb -P
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/cypher_run_persistence_test.cmake)
+
 find_package(OpenMP REQUIRED)
 add_executable(
   graphdb_test

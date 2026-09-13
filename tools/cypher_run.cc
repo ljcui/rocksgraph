@@ -1,15 +1,17 @@
 #include <iostream>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "common/exception.h"
 #include "gflags/gflags.h"
+#include "graphdb/assistant_pool.h"
+#include "graphdb/graph_db.h"
 #include "runtime/query_executor.h"
 #include "spdlog/spdlog.h"
-#include "storage/in_memory_graph.h"
+#include "transaction/transaction.h"
 
-DEFINE_bool(seed_demo_graph, true,
-            "Load a small in-memory demo graph before executing the query.");
+DEFINE_string(db_path, "", "Path to the persistent GraphDB database.");
 
 namespace {
 
@@ -22,18 +24,6 @@ std::string JoinArgs(const std::vector<std::string> &parts) {
     out += parts[i];
   }
   return out;
-}
-
-void SeedDemoGraph(rg::InMemoryGraph *graph) {
-  auto ada = graph->CreateNode(
-      {"Person"}, {{"name", rg::Value("Ada")}, {"age", rg::Value(36)}});
-  auto grace = graph->CreateNode(
-      {"Person"}, {{"name", rg::Value("Grace")}, {"age", rg::Value(85)}});
-  auto cpp = graph->CreateNode({"Language"}, {{"name", rg::Value("C++")}});
-  graph->CreateRelationship(ada, grace, "KNOWS", {{"since", rg::Value(2020)}});
-  graph->CreateRelationship(ada, cpp, "USES", {{"since", rg::Value(2024)}});
-  graph->AddNodeIndex({"Person"}, "name");
-  graph->AddRelationshipIndex({"KNOWS"}, "since");
 }
 
 void PrintResult(const rg::QueryResult &result) {
@@ -57,16 +47,32 @@ void PrintResult(const rg::QueryResult &result) {
 }
 
 void PrintUsage() {
-  std::cerr << "Usage:\n  cypher_run [--seed_demo_graph] [--] <cypher...>\n";
+  std::cerr << "Usage:\n  cypher_run --db_path=<path> [--] <cypher...>\n";
+}
+
+void RollbackIfActive(txn::Transaction *transaction) noexcept {
+  if (transaction == nullptr ||
+      transaction->GetState() != txn::Transaction::State::kActive) {
+    return;
+  }
+  try {
+    transaction->Rollback();
+  } catch (...) {
+  }
 }
 
 }  // namespace
 
 int main(int argc, char **argv) {
   gflags::SetUsageMessage(
-      "Usage:\n  cypher_run [--seed_demo_graph] [--] <cypher...>");
+      "Usage:\n  cypher_run --db_path=<path> [--] <cypher...>");
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
+  if (FLAGS_db_path.empty()) {
+    spdlog::error("Missing required --db_path.");
+    PrintUsage();
+    return 1;
+  }
   if (argc <= 1) {
     spdlog::error("Missing cypher statement.");
     PrintUsage();
@@ -79,26 +85,21 @@ int main(int argc, char **argv) {
     parts.emplace_back(argv[i]);
   }
 
-  rg::InMemoryGraph graph;
-  if (FLAGS_seed_demo_graph) {
-    SeedDemoGraph(&graph);
-  }
-  const rg::QueryOptions options{.planner_catalog = &graph};
-
-  auto transaction = graph.BeginTransaction();
+  std::unique_ptr<graphdb::GraphDB> graph;
+  std::unique_ptr<txn::Transaction> transaction;
   try {
-    PrintResult(rg::ExecuteQuery(*transaction, JoinArgs(parts), options));
+    graphdb::GraphDBOptions options;
+    options.assistant_pool = std::make_shared<graphdb::AssistantPool>(1);
+    graph = graphdb::GraphDB::Open(FLAGS_db_path, options);
+    transaction = graph->BeginTransaction();
+    PrintResult(rg::ExecuteQuery(*transaction, JoinArgs(parts)));
     transaction->Commit();
   } catch (const common::Exception &e) {
-    if (transaction->GetState() == rg::GraphTransaction::State::kActive) {
-      transaction->Rollback();
-    }
+    RollbackIfActive(transaction.get());
     spdlog::error("Query error: {}", e.Message());
     return 1;
   } catch (const std::exception &e) {
-    if (transaction->GetState() == rg::GraphTransaction::State::kActive) {
-      transaction->Rollback();
-    }
+    RollbackIfActive(transaction.get());
     spdlog::error("Query error: {}", e.what());
     return 1;
   }
