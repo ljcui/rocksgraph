@@ -20,7 +20,9 @@
 #include "ast/builtin_procedure.h"
 #include "ast/expression_dependency.h"
 #include "common/exception.h"
+#include "common/exceptions.h"
 #include "graphdb/edge_iterator.h"
+#include "graphdb/graph_db.h"
 #include "graphdb/graph_entity.h"
 #include "graphdb/vertex_iterator.h"
 #include "ir/query_ir_internal.h"
@@ -1880,6 +1882,23 @@ class NodeByIdSeekOperator final : public PullOperator {
       return false;
     }
     while (const std::optional<std::int64_t> id = values_.Next()) {
+      if (state_->UsesGraphDB()) {
+        try {
+          (void)GraphDBVertexById(*state_->transaction, *id);
+        } catch (const LgraphException &error) {
+          if (error.code() == ErrorCode::VertexIdNotFound) {
+            continue;
+          }
+          throw;
+        }
+        SlottedRow output = CopyMappedRow(argument_, node_->output_slots,
+                                          node_->argument_mapping, *state_);
+        if (BindNode(&output, data_->variable, *id, *state_)) {
+          *row = std::move(output);
+          return true;
+        }
+        continue;
+      }
       try {
         (void)state_->graph_reader->NodeById(*id);
       } catch (const common::NotFoundError &) {
@@ -1910,6 +1929,41 @@ class NodeByIdSeekOperator final : public PullOperator {
   IdSeekValues values_;
   bool closed_ = false;
 };
+
+std::optional<RelationshipReference> FindGraphDBRelationshipById(
+    txn::Transaction &transaction,
+    const std::vector<std::string> &relationship_types, std::int64_t id) {
+  if (!relationship_types.empty()) {
+    for (const auto &type : relationship_types) {
+      const auto type_id = transaction.db()->id_generator().GetTid(type);
+      if (!type_id.has_value()) {
+        continue;
+      }
+      try {
+        const RelationshipReference reference{.id = id, .type_id = *type_id};
+        const graphdb::Edge edge = GraphDBEdgeById(transaction, reference);
+        return RelationshipReference{.id = edge.GetNativeId(),
+                                     .type_id = edge.GetTypeId()};
+      } catch (const LgraphException &error) {
+        if (error.code() != ErrorCode::EdgeIdNotFound) {
+          throw;
+        }
+      }
+    }
+    return std::nullopt;
+  }
+
+  auto edges = transaction.NewEdgeIterator();
+  while (edges->Valid()) {
+    const graphdb::Edge &edge = edges->GetEdge();
+    if (edge.GetNativeId() == id) {
+      return RelationshipReference{.id = edge.GetNativeId(),
+                                   .type_id = edge.GetTypeId()};
+    }
+    edges->Next();
+  }
+  return std::nullopt;
+}
 
 bool EmitRelationship(const PhysicalPlanNode &node,
                       const PhysicalRelationshipPattern &pattern,
@@ -2250,6 +2304,30 @@ class RelationshipByIdSeekOperator final : public PullOperator {
     if (closed_) {
       return false;
     }
+    if (state_->UsesGraphDB()) {
+      if (EmitPendingGraphDBRelationship(*node_, data_->pattern, nullptr,
+                                         argument_, &graphdb_pending_reverse_,
+                                         row, *state_)) {
+        return true;
+      }
+      while (const std::optional<std::int64_t> id = values_.Next()) {
+        const auto relationship = FindGraphDBRelationshipById(
+            *state_->transaction, data_->pattern.types, *id);
+        if (!relationship.has_value()) {
+          continue;
+        }
+        if (EmitGraphDBRelationship(*node_, data_->pattern, nullptr, argument_,
+                                    *relationship, false,
+                                    &graphdb_pending_reverse_, row, *state_) ||
+            EmitPendingGraphDBRelationship(*node_, data_->pattern, nullptr,
+                                           argument_, &graphdb_pending_reverse_,
+                                           row, *state_)) {
+          return true;
+        }
+      }
+      Close();
+      return false;
+    }
     if (EmitPendingRelationship(*node_, data_->pattern, nullptr, argument_,
                                 &pending_reverse_, row, *state_)) {
       return true;
@@ -2274,6 +2352,7 @@ class RelationshipByIdSeekOperator final : public PullOperator {
   void Close() noexcept override {
     values_.Close();
     pending_reverse_.reset();
+    graphdb_pending_reverse_.reset();
     closed_ = true;
   }
 
@@ -2284,6 +2363,7 @@ class RelationshipByIdSeekOperator final : public PullOperator {
   SlottedRow argument_;
   IdSeekValues values_;
   std::optional<std::int64_t> pending_reverse_;
+  std::optional<RelationshipReference> graphdb_pending_reverse_;
   bool closed_ = false;
 };
 

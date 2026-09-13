@@ -202,4 +202,120 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeRelationshipIndexRangeSeek) {
   transaction->Commit();
 }
 
+TEST_F(GraphDBQueryExecutorTest, ExecutesNativeNodeIdSeek) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryResult result = rg::ExecuteQuery(
+      *transaction, "MATCH (n) WHERE id(n) = " + std::to_string(ada_) +
+                        " RETURN id(n) AS id, n.name AS name");
+
+  ASSERT_EQ(result.rows.size(), 1U);
+  EXPECT_EQ(result.rows[0],
+            (std::vector<rg::Value>{rg::Value(ada_), rg::Value("Ada")}));
+  transaction->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest, ExecutesNativeNodeIdInSeek) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryResult result = rg::ExecuteQuery(
+      *transaction, "MATCH (n) WHERE id(n) IN [" + std::to_string(ada_) +
+                        ", 999999] "
+                        "RETURN id(n) AS id");
+
+  ASSERT_EQ(result.rows.size(), 1U);
+  EXPECT_EQ(result.rows[0][0], rg::Value(ada_));
+  transaction->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest, ExecutesNativeRelationshipIdSeek) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryResult result = rg::ExecuteQuery(
+      *transaction,
+      "MATCH (a)-[r:KNOWS]->(b) WHERE id(r) = " + std::to_string(knows_) +
+          " RETURN id(a) AS aid, id(r) AS rid, id(b) AS bid, r.since AS since");
+
+  ASSERT_EQ(result.rows.size(), 1U);
+  EXPECT_EQ(result.rows[0],
+            (std::vector<rg::Value>{rg::Value(ada_), rg::Value(knows_),
+                                    rg::Value(grace_), rg::Value(2020)}));
+  transaction->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest, ExecutesNativeRelationshipIdInSeek) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryResult result = rg::ExecuteQuery(
+      *transaction, "MATCH (a)-[r:KNOWS]->(b) WHERE id(r) IN [" +
+                        std::to_string(knows_) +
+                        ", 999999] RETURN id(r) AS id");
+
+  ASSERT_EQ(result.rows.size(), 1U);
+  EXPECT_EQ(result.rows[0][0], rg::Value(knows_));
+  transaction->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest, ExecutesNativeUntypedRelationshipIdSeek) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryResult result = rg::ExecuteQuery(
+      *transaction,
+      "MATCH (a)-[r]->(b) WHERE id(r) = " + std::to_string(rare_) +
+          " RETURN id(a) AS aid, id(r) AS rid, id(b) AS bid, r.weight AS "
+          "weight");
+
+  ASSERT_EQ(result.rows.size(), 1U);
+  EXPECT_EQ(result.rows[0],
+            (std::vector<rg::Value>{rg::Value(grace_), rg::Value(rare_),
+                                    rg::Value(other_), rg::Value(7)}));
+  transaction->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest, ExecutesNativeIncomingRelationshipIdSeek) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryResult result = rg::ExecuteQuery(
+      *transaction,
+      "MATCH (a)<-[r:KNOWS]-(b) WHERE id(r) = " + std::to_string(knows_) +
+          " RETURN id(a) AS aid, id(r) AS rid, id(b) AS bid");
+
+  ASSERT_EQ(result.rows.size(), 1U);
+  EXPECT_EQ(result.rows[0],
+            (std::vector<rg::Value>{rg::Value(grace_), rg::Value(knows_),
+                                    rg::Value(ada_)}));
+  transaction->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest, ExecutesNativeUndirectedRelationshipIdSeek) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryResult result = rg::ExecuteQuery(
+      *transaction,
+      "MATCH (a)-[r:KNOWS]-(b) WHERE id(r) = " + std::to_string(knows_) +
+          " RETURN id(a) AS aid, id(r) AS rid, id(b) AS bid");
+
+  ASSERT_EQ(result.rows.size(), 2U);
+  EXPECT_EQ(result.rows[0],
+            (std::vector<rg::Value>{rg::Value(ada_), rg::Value(knows_),
+                                    rg::Value(grace_)}));
+  EXPECT_EQ(result.rows[1],
+            (std::vector<rg::Value>{rg::Value(grace_), rg::Value(knows_),
+                                    rg::Value(ada_)}));
+  transaction->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest, MissingNativeEntityIdsProduceNoRows) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryResult result = rg::ExecuteQuery(
+      *transaction, "MATCH (n) WHERE id(n) = 999999 RETURN id(n) AS id");
+
+  EXPECT_TRUE(result.rows.empty());
+  transaction->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest, MissingNativeRelationshipIdProducesNoRows) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryResult result =
+      rg::ExecuteQuery(*transaction,
+                       "MATCH (a)-[r:KNOWS]->(b) WHERE id(r) = 999999 "
+                       "RETURN id(r) AS id");
+
+  EXPECT_TRUE(result.rows.empty());
+  transaction->Commit();
+}
+
 }  // namespace
