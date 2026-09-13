@@ -2639,6 +2639,9 @@ class VarExpandOperator final : public PullOperator {
 
   bool Next(SlottedRow *row) override {
     CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    if (state_->UsesGraphDB()) {
+      return NextGraphDB(row);
+    }
     while (!closed_) {
       state_->CheckCancelled();
       if (frames_.empty()) {
@@ -2730,17 +2733,127 @@ class VarExpandOperator final : public PullOperator {
     return false;
   }
 
+  bool NextGraphDB(SlottedRow *row) {
+    while (!closed_) {
+      state_->CheckCancelled();
+      if (frames_.empty()) {
+        input_.reset();
+        SlottedRow input(node_->children[0]->output_slots);
+        if (!source_->Next(&input)) {
+          Close();
+          return false;
+        }
+        const std::int64_t from =
+            NodeId(input, data_->from_node_input_slot, *state_);
+        if (from < 0) {
+          continue;
+        }
+        bound_to_.reset();
+        if (data_->to_node_input_slot.has_value() &&
+            input.IsInitialized(*data_->to_node_input_slot)) {
+          const std::int64_t to =
+              NodeId(input, *data_->to_node_input_slot, *state_);
+          if (to < 0) {
+            continue;
+          }
+          bound_to_ = to;
+        }
+        min_ = static_cast<std::size_t>(data_->length.min.value_or(1));
+        max_ = data_->length.max.has_value()
+                   ? static_cast<std::size_t>(*data_->length.max)
+                   : std::numeric_limits<std::size_t>::max();
+        if (min_ > max_) {
+          continue;
+        }
+        input_.emplace(std::move(input));
+        Push(from);
+      }
+
+      Frame &frame = frames_.back();
+      if (!frame.emitted) {
+        frame.emitted = true;
+        if (path_.size() >= min_ &&
+            (!bound_to_.has_value() || frame.node == *bound_to_)) {
+          Value::List relationships;
+          relationships.reserve(path_references_.size());
+          for (const RelationshipReference relationship : path_references_) {
+            relationships.emplace_back(Value(
+                MaterializeGraphDBEdge(*state_->transaction, relationship)));
+          }
+          auto output = CopyMappedRow(*input_, node_->output_slots,
+                                      node_->child_mappings.front(), *state_);
+          if (TryBindSlot(&output, data_->relationship_output_slot,
+                          Value(std::move(relationships)),
+                          *state_->transaction) &&
+              TryBindEntityId(&output, data_->to_node_output_slot,
+                              SlotKind::kNode, frame.node,
+                              *state_->transaction)) {
+            *row = std::move(output);
+            return true;
+          }
+        }
+      }
+      if (path_.size() == max_) {
+        Pop();
+        continue;
+      }
+      if (frame.graphdb_cursor == nullptr) {
+        auto vertex = GraphDBVertexById(*state_->transaction, frame.node);
+        frame.graphdb_cursor = vertex.NewEdgeIterator(
+            GraphDBDirection(data_->pattern.direction),
+            std::unordered_set<std::string>(data_->pattern.types.begin(),
+                                            data_->pattern.types.end()),
+            {});
+      }
+      bool advanced = false;
+      while (frame.graphdb_cursor->Valid()) {
+        const graphdb::Edge edge = frame.graphdb_cursor->GetEdge();
+        frame.graphdb_cursor->Next();
+        const RelationshipReference relationship{.id = edge.GetNativeId(),
+                                                 .type_id = edge.GetTypeId()};
+        if (used_.contains(relationship.id)) {
+          continue;
+        }
+        const Relationship value{.id = relationship.id,
+                                 .start_node_id = edge.GetNativeStartId(),
+                                 .end_node_id = edge.GetNativeEndId(),
+                                 .type_id = relationship.type_id};
+        const std::optional<std::int64_t> next =
+            NextPhysicalExpandNode(value, frame.node, data_->pattern.direction);
+        if (!next.has_value()) {
+          continue;
+        }
+        Push(*next);
+        used_.insert(relationship.id);
+        path_.push_back(relationship.id);
+        path_references_.push_back(relationship);
+        advanced = true;
+        break;
+      }
+      if (!advanced) {
+        Pop();
+      }
+    }
+    return false;
+  }
+
   void Close() noexcept override {
     if (closed_) {
       return;
     }
-    for (const auto &frame : frames_) {
+    for (auto &frame : frames_) {
       if (frame.cursor != nullptr) {
         state_->ReleaseCursor(frame.cursor);
       }
     }
+    for (auto &frame : frames_) {
+      if (frame.graphdb_cursor != nullptr) {
+        frame.graphdb_cursor.reset();
+      }
+    }
     frames_.clear();
     path_.clear();
+    path_references_.clear();
     used_.clear();
     input_.reset();
     state_->memory_tracker.Release(reserved_bytes_);
@@ -2753,6 +2866,7 @@ class VarExpandOperator final : public PullOperator {
   struct Frame {
     std::int64_t node;
     EntityIdCursor *cursor = nullptr;
+    std::unique_ptr<graphdb::EdgeIterator> graphdb_cursor;
     bool emitted = false;
   };
   static constexpr std::size_t kFrameBytes =
@@ -2772,6 +2886,9 @@ class VarExpandOperator final : public PullOperator {
       used_.erase(path_.back());
       path_.pop_back();
     }
+    if (!path_references_.empty()) {
+      path_references_.pop_back();
+    }
     state_->memory_tracker.Release(kFrameBytes);
     reserved_bytes_ -= kFrameBytes;
   }
@@ -2783,6 +2900,7 @@ class VarExpandOperator final : public PullOperator {
   std::optional<std::int64_t> bound_to_;
   std::vector<Frame> frames_;
   std::vector<std::int64_t> path_;
+  std::vector<RelationshipReference> path_references_;
   std::unordered_set<std::int64_t> used_;
   std::size_t min_ = 1;
   std::size_t max_ = 0;

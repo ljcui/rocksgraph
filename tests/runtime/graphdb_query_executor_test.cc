@@ -319,6 +319,49 @@ TEST_F(GraphDBQueryExecutorTest, MissingNativeRelationshipIdProducesNoRows) {
   transaction->Commit();
 }
 
+TEST_F(GraphDBQueryExecutorTest, ExecutesNativeVariableLengthExpand) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryResult result = rg::ExecuteQuery(
+      *transaction,
+      "MATCH (a:Person {name: 'Ada'})-[r*0..2]->(b) "
+      "RETURN b.name AS name, size(r) AS hops ORDER BY hops, name");
+
+  ASSERT_EQ(result.rows.size(), 3U);
+  EXPECT_EQ(result.rows[0],
+            (std::vector<rg::Value>{rg::Value("Ada"), rg::Value(0)}));
+  EXPECT_EQ(result.rows[1],
+            (std::vector<rg::Value>{rg::Value("Grace"), rg::Value(1)}));
+  EXPECT_EQ(result.rows[2],
+            (std::vector<rg::Value>{rg::Value("Other"), rg::Value(2)}));
+  transaction->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest, ExecutesNativeVariableLengthTypeFilter) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryResult result = rg::ExecuteQuery(
+      *transaction,
+      "MATCH (a:Person {name: 'Ada'})-[r:KNOWS*1..2]->(b) "
+      "RETURN b.name AS name, size(r) AS hops, type(r[0]) AS type");
+
+  ASSERT_EQ(result.rows.size(), 1U);
+  EXPECT_EQ(result.rows[0],
+            (std::vector<rg::Value>{rg::Value("Grace"), rg::Value(1),
+                                    rg::Value("KNOWS")}));
+  transaction->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest, ExecutesNativeVariableLengthBoundEndpoint) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryResult result = rg::ExecuteQuery(
+      *transaction,
+      "MATCH (a:Person {name: 'Ada'}), (b:Person {name: 'Other'}) "
+      "WITH a, b MATCH (a)-[r*1..2]->(b) RETURN size(r) AS hops");
+
+  ASSERT_EQ(result.rows.size(), 1U);
+  EXPECT_EQ(result.rows[0][0], rg::Value(2));
+  transaction->Commit();
+}
+
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeCreateAndSetWrites) {
   auto transaction = graph_->BeginTransaction();
   rg::QueryResult created = rg::ExecuteQuery(
