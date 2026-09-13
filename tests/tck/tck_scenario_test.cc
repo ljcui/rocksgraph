@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <filesystem>
@@ -18,10 +19,15 @@
 #include <vector>
 
 #include "common/exception.h"
+#include "graphdb/assistant_pool.h"
+#include "graphdb/edge_iterator.h"
+#include "graphdb/graph_db.h"
+#include "graphdb/graph_entity.h"
+#include "graphdb/vertex_iterator.h"
 #include "planner/planned_query.h"
+#include "runtime/graphdb_planner_catalog.h"
 #include "runtime/query_executor.h"
-#include "storage/in_memory_graph.h"
-#include "tests/runtime/query_test_utils.h"
+#include "transaction/transaction.h"
 #include "value/value.h"
 
 namespace {
@@ -52,6 +58,36 @@ struct GraphSnapshot {
   std::unordered_set<rg::CompositeValueKey, rg::ValueHash, rg::ValueEqual>
       properties;
   std::set<std::string> labels;
+};
+
+class ScenarioGraph final {
+ public:
+  ScenarioGraph()
+      : path_(NewPath()),
+        assistant_pool_(std::make_shared<graphdb::AssistantPool>(1)) {
+    std::error_code error;
+    std::filesystem::remove_all(path_, error);
+    graphdb::GraphDBOptions options;
+    options.assistant_pool = assistant_pool_;
+    graph_ = graphdb::GraphDB::Open(path_.string(), options);
+    graph_->drop_on_close() = true;
+  }
+
+  [[nodiscard]] graphdb::GraphDB &Graph() { return *graph_; }
+
+ private:
+  static std::filesystem::path NewPath() {
+    static std::size_t sequence = 0;
+    const auto timestamp =
+        std::chrono::steady_clock::now().time_since_epoch().count();
+    return std::filesystem::temp_directory_path() /
+           ("rocksgraph_tck_" + std::to_string(timestamp) + "_" +
+            std::to_string(sequence++));
+  }
+
+  std::filesystem::path path_;
+  std::shared_ptr<graphdb::AssistantPool> assistant_pool_;
+  std::unique_ptr<graphdb::GraphDB> graph_;
 };
 
 std::string Trim(std::string_view text) {
@@ -324,22 +360,57 @@ std::vector<Scenario> ExpandScenario(const Scenario &scenario) {
   return expanded;
 }
 
-rg::QueryOptions QueryOptionsFor(const rg::InMemoryGraph &graph,
-                                 rg::QueryParameters parameters = {}) {
-  return {.planner_catalog = &graph,
-          .parameters = std::move(parameters)};
+void RollbackIfActive(txn::Transaction *transaction) noexcept {
+  if (transaction == nullptr ||
+      transaction->GetState() != txn::Transaction::State::kActive) {
+    return;
+  }
+  try {
+    transaction->Rollback();
+  } catch (...) {
+  }
 }
 
-rg::Value ParseValue(const std::string &text, rg::InMemoryGraph *graph) {
-  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
-      *graph, "RETURN " + text + " AS value", QueryOptionsFor(*graph));
+rg::QueryResult ExecuteQueryAndCommit(graphdb::GraphDB &graph,
+                                      std::string_view cypher,
+                                      rg::QueryOptions options = {}) {
+  auto transaction = graph.BeginTransaction();
+  try {
+    rg::QueryResult result =
+        rg::ExecuteQuery(*transaction, cypher, std::move(options));
+    transaction->Commit();
+    return result;
+  } catch (...) {
+    RollbackIfActive(transaction.get());
+    throw;
+  }
+}
+
+rg::QueryResult ExecutePlanAndCommit(
+    graphdb::GraphDB &graph, const ir::LogicalPlan &plan,
+    const rg::QueryParameters &parameters = {}) {
+  auto transaction = graph.BeginTransaction();
+  try {
+    rg::QueryResult result =
+        rg::QueryExecutor(*transaction).Execute(plan, parameters);
+    transaction->Commit();
+    return result;
+  } catch (...) {
+    RollbackIfActive(transaction.get());
+    throw;
+  }
+}
+
+rg::Value ParseValue(const std::string &text, graphdb::GraphDB *graph) {
+  rg::QueryResult result =
+      ExecuteQueryAndCommit(*graph, "RETURN " + text + " AS value");
   EXPECT_EQ(result.rows.size(), 1U) << text;
   EXPECT_EQ(result.rows[0].size(), 1U) << text;
   return result.rows[0][0];
 }
 
 rg::QueryParameters ParseParameters(const Table &table,
-                                    rg::InMemoryGraph *graph) {
+                                    graphdb::GraphDB *graph) {
   rg::QueryParameters parameters;
   if (table.header.empty()) {
     return parameters;
@@ -494,28 +565,37 @@ std::vector<std::vector<std::string>> FormatRows(
   return rows;
 }
 
-GraphSnapshot Snapshot(const rg::InMemoryGraph &graph) {
+GraphSnapshot Snapshot(graphdb::GraphDB &graph) {
   GraphSnapshot snapshot;
-  for (const auto &node : graph.Nodes()) {
-    const std::string entity = "node:" + std::to_string(node->id);
+  auto transaction = graph.BeginTransaction();
+  auto vertices = transaction->NewVertexIterator();
+  while (vertices->Valid()) {
+    graphdb::Vertex &vertex = vertices->GetVertex();
+    const std::string entity = "node:" + std::to_string(vertex.GetNativeId());
     snapshot.nodes.insert(entity);
-    for (const auto &label : node->labels) {
+    for (const auto &label : vertex.GetLabels()) {
       snapshot.labels.insert(label);
     }
-    for (const auto &[key, value] : node->properties) {
+    for (const auto &[key, value] : vertex.GetAllProperty()) {
       snapshot.properties.insert(rg::CompositeValueKey{
           .values = {rg::Value(entity), rg::Value(key), value}});
     }
+    vertices->Next();
   }
-  for (const auto &relationship : graph.Relationships()) {
+  auto edges = transaction->NewEdgeIterator();
+  while (edges->Valid()) {
+    graphdb::Edge &edge = edges->GetEdge();
     const std::string entity =
-        "relationship:" + std::to_string(relationship->id);
+        "relationship:" + std::to_string(edge.GetTypeId()) + ":" +
+        std::to_string(edge.GetNativeId());
     snapshot.relationships.insert(entity);
-    for (const auto &[key, value] : relationship->properties) {
+    for (const auto &[key, value] : edge.GetAllProperty()) {
       snapshot.properties.insert(rg::CompositeValueKey{
           .values = {rg::Value(entity), rg::Value(key), value}});
     }
+    edges->Next();
   }
+  transaction->Commit();
   return snapshot;
 }
 
@@ -551,9 +631,10 @@ void RunScenario(const Scenario &scenario) {
   SCOPED_TRACE(scenario.name);
   ASSERT_TRUE(scenario.graph == "empty" || scenario.graph == "any")
       << "named graph loading is not implemented: " << scenario.graph;
-  rg::InMemoryGraph graph;
+  ScenarioGraph scenario_graph;
+  graphdb::GraphDB &graph = scenario_graph.Graph();
   for (const auto &setup : scenario.setup_queries) {
-    (void)rg::test::ExecuteQueryAndCommit(graph, setup, QueryOptionsFor(graph));
+    (void)ExecuteQueryAndCommit(graph, setup);
   }
   const rg::QueryParameters parameters =
       ParseParameters(scenario.parameters, &graph);
@@ -563,8 +644,9 @@ void RunScenario(const Scenario &scenario) {
     std::optional<ir::PlannedQuery> planned_query;
     bool compile_failed = false;
     try {
+      rg::GraphDBPlannerCatalog catalog(graph);
       planned_query.emplace(
-          ir::PlanCypher(scenario.query, {.planner_catalog = &graph}));
+          ir::PlanCypher(scenario.query, {.planner_catalog = &catalog}));
     } catch (const common::Exception &) {
       compile_failed = true;
     }
@@ -573,9 +655,9 @@ void RunScenario(const Scenario &scenario) {
     } else {
       ASSERT_FALSE(compile_failed);
       ASSERT_TRUE(planned_query.has_value());
-      EXPECT_THROW((void)rg::test::CommittingQueryExecutor(graph).Execute(
-                       planned_query->Plan(), parameters),
-                   common::Exception);
+      EXPECT_THROW(
+          (void)ExecutePlanAndCommit(graph, planned_query->Plan(), parameters),
+          common::Exception);
     }
     EXPECT_EQ(Snapshot(graph).nodes, before.nodes);
     EXPECT_EQ(Snapshot(graph).relationships, before.relationships);
@@ -583,8 +665,8 @@ void RunScenario(const Scenario &scenario) {
     EXPECT_EQ(Snapshot(graph).labels, before.labels);
     return;
   }
-  rg::QueryResult actual = rg::test::ExecuteQueryAndCommit(
-      graph, scenario.query, QueryOptionsFor(graph, parameters));
+  rg::QueryResult actual =
+      ExecuteQueryAndCommit(graph, scenario.query, {.parameters = parameters});
   EXPECT_EQ(actual.columns, scenario.result.header);
   std::vector<std::vector<std::string>> actual_rows = FormatRows(actual);
   std::vector<std::vector<std::string>> expected_rows = scenario.result.rows;

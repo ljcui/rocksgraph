@@ -76,6 +76,7 @@ add_test(NAME graphdb_test COMMAND graphdb_test)
 
 add_rocksgraph_test(tck_scenario_test tck/tck_scenario_test.cc
                     rocksgraph_runtime)
+target_link_libraries(tck_scenario_test PRIVATE graphdb)
 set_property(
   SOURCE tck/tck_scenario_test.cc APPEND PROPERTY OBJECT_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/tck/tck_scenario_manifest.tsv")
