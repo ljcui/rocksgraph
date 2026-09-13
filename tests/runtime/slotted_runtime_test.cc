@@ -8,30 +8,32 @@
 
 #include "common/exception.h"
 #include "runtime/query_executor.h"
-#include "storage/in_memory_graph.h"
-#include "tests/runtime/query_test_utils.h"
+#include "tests/runtime/graphdb_test_utils.h"
 
 TEST(SlottedRuntimeTest, ExhaustsWritesBelowLimit) {
-  rg::InMemoryGraph graph;
-  graph.CreateNode({"N"});
-  graph.CreateNode({"N"});
-  graph.CreateNode({"N"});
+  rg::test::GraphDBTestDatabase graph;
+  graph.CreateVertex({"N"});
+  graph.CreateVertex({"N"});
+  graph.CreateVertex({"N"});
 
   const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph, "MATCH (n:N) SET n.marked = true RETURN n LIMIT 1");
 
   ASSERT_EQ(result.rows.size(), 1U);
-  ASSERT_EQ(graph.Nodes().size(), 3U);
-  for (const auto &node : graph.Nodes()) {
-    const auto marked = node->properties.find("marked");
-    ASSERT_NE(marked, node->properties.end());
-    EXPECT_TRUE(marked->second.AsBool());
+  ASSERT_EQ(graph.VertexCount(), 3U);
+  const rg::QueryResult marked = graph.ExecuteQueryAndCommit(
+      "MATCH (n:N) RETURN n.marked AS marked ORDER BY id(n)");
+  ASSERT_EQ(marked.rows.size(), 3U);
+  for (const auto &row : marked.rows) {
+    ASSERT_EQ(row.size(), 1U);
+    EXPECT_TRUE(row[0].AsBool());
   }
 }
 
 TEST(SlottedRuntimeTest, KeepsDeletedEntitiesAvailableToResults) {
-  rg::InMemoryGraph graph;
-  auto node = graph.CreateNode({"N"}, {{"name", rg::Value("deleted node")}});
+  rg::test::GraphDBTestDatabase graph;
+  const auto node =
+      graph.CreateVertex({"N"}, {{"name", rg::Value("deleted node")}});
 
   const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph, "MATCH (n:N) DELETE n RETURN n, n.name AS name");
@@ -39,15 +41,15 @@ TEST(SlottedRuntimeTest, KeepsDeletedEntitiesAvailableToResults) {
   ASSERT_EQ(result.rows.size(), 1U);
   ASSERT_EQ(result.rows.front().size(), 2U);
   EXPECT_TRUE(result.rows.front()[0].IsNode());
-  EXPECT_EQ(result.rows.front()[0].AsNode().id, node->id);
+  EXPECT_EQ(result.rows.front()[0].AsNode().id, node);
   EXPECT_EQ(result.rows.front()[1].AsString(), "deleted node");
-  EXPECT_TRUE(graph.Nodes().empty());
+  EXPECT_EQ(graph.VertexCount(), 0U);
 }
 
 TEST(SlottedRuntimeTest, StreamsRowsAndCanCloseEarly) {
-  rg::InMemoryGraph graph;
-  graph.CreateNode({"N"}, {{"value", rg::Value(1)}});
-  graph.CreateNode({"N"}, {{"value", rg::Value(2)}});
+  rg::test::GraphDBTestDatabase graph;
+  graph.CreateVertex({"N"}, {{"value", rg::Value(1)}});
+  graph.CreateVertex({"N"}, {{"value", rg::Value(2)}});
 
   auto transaction = graph.BeginTransaction();
   std::unique_ptr<rg::QueryResultCursor> cursor = rg::ExecuteQueryCursor(
@@ -62,8 +64,8 @@ TEST(SlottedRuntimeTest, StreamsRowsAndCanCloseEarly) {
 }
 
 TEST(SlottedRuntimeTest, ObservesExternalCancellation) {
-  rg::InMemoryGraph graph;
-  graph.CreateNode({"N"});
+  rg::test::GraphDBTestDatabase graph;
+  graph.CreateVertex({"N"});
   rg::QueryOptions options;
   options.execution.cancellation =
       std::make_shared<rg::QueryCancellationToken>();
@@ -77,20 +79,20 @@ TEST(SlottedRuntimeTest, ObservesExternalCancellation) {
 }
 
 TEST(SlottedRuntimeTest, RollsBackWritesWhenCursorClosesEarly) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   auto transaction = graph.BeginTransaction();
   std::unique_ptr<rg::QueryResultCursor> cursor = rg::ExecuteQueryCursor(
       *transaction, "UNWIND [1, 2, 3] AS x CREATE (:N {value: x}) RETURN x");
   std::vector<rg::Value> row;
   ASSERT_TRUE(cursor->Next(&row));
-  ASSERT_EQ(graph.Nodes().size(), 1U);
+  ASSERT_EQ(rg::test::CountVertices(*transaction), 1U);
 
   cursor->Close();
-  EXPECT_TRUE(graph.Nodes().empty());
+  EXPECT_EQ(graph.VertexCount(), 0U);
 }
 
 TEST(SlottedRuntimeTest, EnforcesBlockingOperatorMemoryLimit) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   rg::QueryOptions options;
   options.execution.memory_limit_bytes = 1;
   auto transaction = graph.BeginTransaction();
@@ -103,7 +105,7 @@ TEST(SlottedRuntimeTest, EnforcesBlockingOperatorMemoryLimit) {
 }
 
 TEST(SlottedRuntimeTest, ReportsPeakMemoryForBlockingOperators) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph, "UNWIND [3, 1, 2] AS x RETURN x ORDER BY x");
 
@@ -111,7 +113,7 @@ TEST(SlottedRuntimeTest, ReportsPeakMemoryForBlockingOperators) {
 }
 
 TEST(SlottedRuntimeTest, ExecutesStableMultiKeyTopN) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "UNWIND [{score: 1, bucket: 'a', name: 'first'}, "
@@ -130,7 +132,7 @@ TEST(SlottedRuntimeTest, ExecutesStableMultiKeyTopN) {
 }
 
 TEST(SlottedRuntimeTest, SupportsParameterizedAndZeroTopNLimits) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   rg::QueryOptions options;
   options.parameters = {{"l", rg::Value(2)}};
 
@@ -146,7 +148,7 @@ TEST(SlottedRuntimeTest, SupportsParameterizedAndZeroTopNLimits) {
 }
 
 TEST(SlottedRuntimeTest, ExecutesStableTopOne) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "UNWIND [{score:1,name:'first'}, {score:2,name:'other'}, "
@@ -158,7 +160,7 @@ TEST(SlottedRuntimeTest, ExecutesStableTopOne) {
 }
 
 TEST(SlottedRuntimeTest, ExecutesPartialTopNByOrderingPrefix) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "UNWIND [{a:2,b:0},{a:1,b:3},{a:1,b:1},{a:2,b:2},{a:1,b:2}] AS x "
@@ -177,9 +179,9 @@ TEST(SlottedRuntimeTest, ExecutesPartialTopNByOrderingPrefix) {
 }
 
 TEST(SlottedRuntimeTest, KeepsOnlyTopNRowsInMemory) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   for (std::int64_t value = 1; value <= 256; ++value) {
-    graph.CreateNode({"N"}, {{"value", rg::Value(value)}});
+    graph.CreateVertex({"N"}, {{"value", rg::Value(value)}});
   }
   rg::QueryOptions options;
   options.execution.memory_limit_bytes = 4096;
@@ -197,7 +199,7 @@ TEST(SlottedRuntimeTest, KeepsOnlyTopNRowsInMemory) {
 }
 
 TEST(SlottedRuntimeTest, ExecutesOrderedGroupingAndPartialSort) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
 
   const rg::QueryResult distinct =
       rg::test::ExecuteQueryAndCommit(graph,
@@ -245,9 +247,9 @@ TEST(SlottedRuntimeTest, ExecutesOrderedGroupingAndPartialSort) {
 }
 
 TEST(SlottedRuntimeTest, KeepsBasicAggregationMemoryBounded) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   for (std::int64_t value = 1; value <= 256; ++value) {
-    graph.CreateNode({"N"}, {{"value", rg::Value(value)}});
+    graph.CreateVertex({"N"}, {{"value", rg::Value(value)}});
   }
   rg::QueryOptions options;
   options.execution.memory_limit_bytes = 4096;
@@ -272,10 +274,10 @@ TEST(SlottedRuntimeTest, KeepsBasicAggregationMemoryBounded) {
 }
 
 TEST(SlottedRuntimeTest, TracksOnlyRetainedAggregationValues) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   const std::string large(1024, 'x');
   for (std::int64_t value = 1; value <= 64; ++value) {
-    graph.CreateNode(
+    graph.CreateVertex(
         {"N"}, {{"value", rg::Value(value)}, {"large", rg::Value(large)}});
   }
   rg::QueryOptions options;
@@ -302,30 +304,27 @@ TEST(SlottedRuntimeTest, TracksOnlyRetainedAggregationValues) {
 }
 
 TEST(SlottedRuntimeTest, UsesTypedDistinctAggregationState) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   const double nan = std::numeric_limits<double>::quiet_NaN();
   const rg::Value list(rg::Value::List{rg::Value(1), rg::Value::Null()});
   const rg::Value map(rg::Value::Map{{"number", rg::Value(1)},
                                      {"optional", rg::Value::Null()}});
-  graph.CreateNode({"N"}, {{"key", rg::Value(1)}});
-  graph.CreateNode({"N"}, {{"key", rg::Value(1.0)}});
-  graph.CreateNode({"N"}, {{"key", list}});
-  graph.CreateNode(
-      {"N"},
-      {{"key", rg::Value(rg::Value::List{rg::Value(1.0), rg::Value::Null()})}});
-  graph.CreateNode({"N"}, {{"key", map}});
-  graph.CreateNode(
-      {"N"},
-      {{"key", rg::Value(rg::Value::Map{{"number", rg::Value(1.0)},
-                                        {"optional", rg::Value::Null()}})}});
-  graph.CreateNode({"N"}, {{"key", rg::Value(nan)}});
-  graph.CreateNode({"N"}, {{"key", rg::Value(-nan)}});
-  graph.CreateNode({"N"});
+  rg::QueryOptions options;
+  options.parameters = {{
+      "keys",
+      rg::Value(rg::Value::List{
+          rg::Value(1), rg::Value(1.0), list,
+          rg::Value(rg::Value::List{rg::Value(1.0), rg::Value::Null()}), map,
+          rg::Value(rg::Value::Map{{"number", rg::Value(1.0)},
+                                   {"optional", rg::Value::Null()}}),
+          rg::Value(nan), rg::Value(-nan), rg::Value::Null()}),
+  }};
 
   const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
-      "MATCH (n:N) RETURN count(DISTINCT n.key) AS count, "
-      "collect(DISTINCT n.key) AS values");
+      "UNWIND $keys AS key RETURN count(DISTINCT key) AS count, "
+      "collect(DISTINCT key) AS values",
+      options);
 
   ASSERT_EQ(result.rows.size(), 1U);
   EXPECT_EQ(result.rows[0][0], rg::Value(4));
@@ -338,11 +337,12 @@ TEST(SlottedRuntimeTest, UsesTypedDistinctAggregationState) {
 }
 
 TEST(SlottedRuntimeTest, MaintainsPercentileParameterState) {
-  rg::InMemoryGraph valid;
-  valid.CreateNode({"N"}, {{"value", rg::Value(10)}, {"p", rg::Value(0.5)}});
-  valid.CreateNode({"N"}, {{"value", rg::Value(10.0)}, {"p", rg::Value(0.5)}});
-  valid.CreateNode({"N"}, {{"value", rg::Value(20)}, {"p", rg::Value(0.5)}});
-  valid.CreateNode({"N"}, {{"value", rg::Value(30)}, {"p", rg::Value(0.5)}});
+  rg::test::GraphDBTestDatabase valid;
+  valid.CreateVertex({"N"}, {{"value", rg::Value(10)}, {"p", rg::Value(0.5)}});
+  valid.CreateVertex({"N"},
+                     {{"value", rg::Value(10.0)}, {"p", rg::Value(0.5)}});
+  valid.CreateVertex({"N"}, {{"value", rg::Value(20)}, {"p", rg::Value(0.5)}});
+  valid.CreateVertex({"N"}, {{"value", rg::Value(30)}, {"p", rg::Value(0.5)}});
   const rg::QueryResult valid_result = rg::test::ExecuteQueryAndCommit(
       valid,
       "MATCH (n:N) "
@@ -350,28 +350,30 @@ TEST(SlottedRuntimeTest, MaintainsPercentileParameterState) {
   ASSERT_EQ(valid_result.rows.size(), 1U);
   EXPECT_EQ(valid_result.rows[0][0], rg::Value(20));
 
-  rg::InMemoryGraph varying;
-  varying.CreateNode({"N"}, {{"value", rg::Value(1)}, {"p", rg::Value(0.25)}});
-  varying.CreateNode({"N"}, {{"value", rg::Value(2)}, {"p", rg::Value(0.75)}});
+  rg::test::GraphDBTestDatabase varying;
+  varying.CreateVertex({"N"},
+                       {{"value", rg::Value(1)}, {"p", rg::Value(0.25)}});
+  varying.CreateVertex({"N"},
+                       {{"value", rg::Value(2)}, {"p", rg::Value(0.75)}});
   EXPECT_THROW(
       (void)rg::test::ExecuteQueryAndCommit(
           varying,
           "MATCH (n:N) RETURN percentileDisc(n.value, n.p) AS percentile"),
       common::InvalidArgumentError);
 
-  rg::InMemoryGraph null_parameter;
-  null_parameter.CreateNode(
+  rg::test::GraphDBTestDatabase null_parameter;
+  null_parameter.CreateVertex(
       {"N"}, {{"value", rg::Value(1)}, {"p", rg::Value::Null()}});
-  null_parameter.CreateNode({"N"},
-                            {{"value", rg::Value(2)}, {"p", rg::Value(0.5)}});
+  null_parameter.CreateVertex({"N"},
+                              {{"value", rg::Value(2)}, {"p", rg::Value(0.5)}});
   const rg::QueryResult null_result = rg::test::ExecuteQueryAndCommit(
       null_parameter,
       "MATCH (n:N) RETURN percentileCont(n.value, n.p) AS percentile");
   ASSERT_EQ(null_result.rows.size(), 1U);
   EXPECT_TRUE(null_result.rows[0][0].IsNull());
 
-  rg::InMemoryGraph all_null;
-  all_null.CreateNode({"N"}, {{"p", rg::Value(2.0)}});
+  rg::test::GraphDBTestDatabase all_null;
+  all_null.CreateVertex({"N"}, {{"p", rg::Value(2.0)}});
   const rg::QueryResult all_null_result = rg::test::ExecuteQueryAndCommit(
       all_null,
       "MATCH (n:N) RETURN percentileCont(n.value, n.p) AS percentile");
@@ -380,7 +382,7 @@ TEST(SlottedRuntimeTest, MaintainsPercentileParameterState) {
 }
 
 TEST(SlottedRuntimeTest, UsesTypedKeysAcrossSetOperators) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
 
   const rg::QueryResult distinct = rg::test::ExecuteQueryAndCommit(
       graph, "UNWIND [1, 1.0, 2] AS x RETURN DISTINCT x");
@@ -407,24 +409,23 @@ TEST(SlottedRuntimeTest, UsesTypedKeysAcrossSetOperators) {
 }
 
 TEST(SlottedRuntimeTest, ValueHashJoinUsesTypedCompositeKeys) {
-  rg::InMemoryGraph graph;
-  graph.CreateNode({"Small"}, {{"first", rg::Value(1)},
-                               {"second", rg::Value("x")},
-                               {"name", rg::Value("match")}});
-  graph.CreateNode({"Small"}, {{"second", rg::Value("x")}});
-  graph.CreateNode({"Large"}, {{"first", rg::Value(1.0)},
-                               {"second", rg::Value("x")},
-                               {"name", rg::Value("first")}});
-  graph.CreateNode({"Large"}, {{"first", rg::Value(1)},
-                               {"second", rg::Value("x")},
-                               {"name", rg::Value("second")}});
-  graph.CreateNode({"Large"}, {{"first", rg::Value(1)},
-                               {"second", rg::Value("y")},
-                               {"name", rg::Value("wrong key")}});
-  graph.CreateNode({"Large"}, {{"second", rg::Value("x")}});
+  rg::test::GraphDBTestDatabase graph;
+  graph.CreateVertex({"Small"}, {{"first", rg::Value(1)},
+                                 {"second", rg::Value("x")},
+                                 {"name", rg::Value("match")}});
+  graph.CreateVertex({"Small"}, {{"second", rg::Value("x")}});
+  graph.CreateVertex({"Large"}, {{"first", rg::Value(1.0)},
+                                 {"second", rg::Value("x")},
+                                 {"name", rg::Value("first")}});
+  graph.CreateVertex({"Large"}, {{"first", rg::Value(1)},
+                                 {"second", rg::Value("x")},
+                                 {"name", rg::Value("second")}});
+  graph.CreateVertex({"Large"}, {{"first", rg::Value(1)},
+                                 {"second", rg::Value("y")},
+                                 {"name", rg::Value("wrong key")}});
+  graph.CreateVertex({"Large"}, {{"second", rg::Value("x")}});
 
   rg::QueryOptions options;
-  options.planner_catalog = &graph;
   const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (a:Small), (b:Large) "
@@ -440,23 +441,22 @@ TEST(SlottedRuntimeTest, ValueHashJoinUsesTypedCompositeKeys) {
 }
 
 TEST(SlottedRuntimeTest, ValueHashJoinRechecksCandidatePredicates) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   const double nan = std::numeric_limits<double>::quiet_NaN();
   const rg::Value nested_null(rg::Value::List{rg::Value(1), rg::Value::Null()});
-  graph.CreateNode({"Small"},
-                   {{"key", rg::Value(nan)}, {"name", rg::Value("nan")}});
-  graph.CreateNode({"Small"},
-                   {{"key", nested_null}, {"name", rg::Value("null")}});
-  graph.CreateNode({"Small"},
-                   {{"key", rg::Value(7)}, {"name", rg::Value("valid")}});
-  graph.CreateNode({"Large"}, {{"key", rg::Value(-nan)}});
-  graph.CreateNode({"Large"}, {{"key", nested_null}});
-  graph.CreateNode({"Large"}, {{"key", rg::Value(7.0)}});
-  graph.CreateNode({"Large"}, {{"key", rg::Value(8)}});
-  graph.CreateNode({"Large"}, {{"key", rg::Value(9)}});
+  graph.CreateVertex({"Small"},
+                     {{"key", rg::Value(nan)}, {"name", rg::Value("nan")}});
+  graph.CreateVertex({"Small"},
+                     {{"key", nested_null}, {"name", rg::Value("null")}});
+  graph.CreateVertex({"Small"},
+                     {{"key", rg::Value(7)}, {"name", rg::Value("valid")}});
+  graph.CreateVertex({"Large"}, {{"key", rg::Value(-nan)}});
+  graph.CreateVertex({"Large"}, {{"key", nested_null}});
+  graph.CreateVertex({"Large"}, {{"key", rg::Value(7.0)}});
+  graph.CreateVertex({"Large"}, {{"key", rg::Value(8)}});
+  graph.CreateVertex({"Large"}, {{"key", rg::Value(9)}});
 
   rg::QueryOptions options;
-  options.planner_catalog = &graph;
   const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (a:Small), (b:Large) WHERE a.key = b.key "
@@ -468,13 +468,12 @@ TEST(SlottedRuntimeTest, ValueHashJoinRechecksCandidatePredicates) {
 }
 
 TEST(SlottedRuntimeTest, EnforcesValueHashJoinMemoryLimit) {
-  rg::InMemoryGraph graph;
-  graph.CreateNode({"Small"}, {{"key", rg::Value(1)}});
-  graph.CreateNode({"Large"}, {{"key", rg::Value(1)}});
-  graph.CreateNode({"Large"}, {{"key", rg::Value(2)}});
+  rg::test::GraphDBTestDatabase graph;
+  graph.CreateVertex({"Small"}, {{"key", rg::Value(1)}});
+  graph.CreateVertex({"Large"}, {{"key", rg::Value(1)}});
+  graph.CreateVertex({"Large"}, {{"key", rg::Value(2)}});
 
   rg::QueryOptions options;
-  options.planner_catalog = &graph;
   options.execution.memory_limit_bytes = 1;
   auto transaction = graph.BeginTransaction();
   std::unique_ptr<rg::QueryResultCursor> cursor = rg::ExecuteQueryCursor(

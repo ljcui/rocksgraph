@@ -39,10 +39,10 @@ add_rocksgraph_test(query_executor_test runtime/query_executor_test.cc
 target_link_libraries(query_executor_test PRIVATE rocksgraph_storage)
 add_rocksgraph_test(slotted_row_test runtime/slotted_row_test.cc
                     rocksgraph_runtime)
-target_link_libraries(slotted_row_test PRIVATE rocksgraph_storage)
+target_link_libraries(slotted_row_test PRIVATE graphdb)
 add_rocksgraph_test(slotted_runtime_test runtime/slotted_runtime_test.cc
                     rocksgraph_runtime)
-target_link_libraries(slotted_runtime_test PRIVATE rocksgraph_storage)
+target_link_libraries(slotted_runtime_test PRIVATE graphdb)
 add_rocksgraph_test(open_cypher_optimizer_test runtime/open_cypher_optimizer_test.cc
                     rocksgraph_runtime)
 target_link_libraries(open_cypher_optimizer_test PRIVATE rocksgraph_storage)
