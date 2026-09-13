@@ -563,7 +563,8 @@ TEST(LogicalPlanBuilderTest, UsesRelationshipPropertyIndexRangeSeek) {
       WithAllIndexes());
 }
 
-TEST(LogicalPlanBuilderTest, PushesRelationshipTypePredicateIntoGraphReader) {
+TEST(LogicalPlanBuilderTest,
+     PushesRelationshipTypePredicateIntoRelationshipScan) {
   ExpectLogicalPlanText(
       "MATCH (a)-[r]->(b) WHERE r:KNOWS AND r.since = 2020 RETURN r",
       R"(ProduceResults [r]

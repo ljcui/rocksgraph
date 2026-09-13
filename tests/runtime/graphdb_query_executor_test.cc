@@ -7,6 +7,7 @@
 #include <thread>
 
 #include "common/exception.h"
+#include "common/exceptions.h"
 #include "graphdb/assistant_pool.h"
 #include "graphdb/graph_db.h"
 #include "runtime/graphdb_planner_catalog.h"
@@ -250,6 +251,44 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeRelationshipIdInSeek) {
 
   ASSERT_EQ(result.rows.size(), 1U);
   EXPECT_EQ(result.rows[0][0], rg::Value(knows_));
+  transaction->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest,
+       GetEdgeByIdUsesCompositeTypeAndIdWithoutCreatingEdges) {
+  auto transaction = graph_->BeginTransaction();
+  const auto knows_type = graph_->id_generator().GetTid("KNOWS");
+  const auto rare_type = graph_->id_generator().GetTid("RARE_REL");
+  ASSERT_TRUE(knows_type.has_value());
+  ASSERT_TRUE(rare_type.has_value());
+
+  auto count_edges = [&] {
+    auto edges = transaction->NewEdgeIterator();
+    std::size_t count = 0;
+    while (edges->Valid()) {
+      ++count;
+      edges->Next();
+    }
+    return count;
+  };
+
+  const std::size_t edge_count_before = count_edges();
+  const graphdb::Edge edge = transaction->GetEdgeById(
+      *knows_type, boost::endian::native_to_big(knows_));
+  EXPECT_EQ(edge.GetNativeId(), knows_);
+  EXPECT_EQ(edge.GetTypeId(), *knows_type);
+  EXPECT_EQ(edge.GetNativeStartId(), ada_);
+  EXPECT_EQ(edge.GetNativeEndId(), grace_);
+
+  try {
+    (void)transaction->GetEdgeById(*rare_type,
+                                   boost::endian::native_to_big(knows_));
+    FAIL() << "lookup with a mismatched relationship type should fail";
+  } catch (const LgraphException &error) {
+    EXPECT_EQ(error.code(), ErrorCode::EdgeIdNotFound);
+  }
+
+  EXPECT_EQ(count_edges(), edge_count_before);
   transaction->Commit();
 }
 

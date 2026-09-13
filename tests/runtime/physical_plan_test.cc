@@ -391,11 +391,11 @@ void ExpectSameSlot(const rg::Slot &actual, const rg::Slot &expected) {
 
 namespace rg {
 
-std::unique_ptr<PhysicalResultCursor> StartPhysicalPlan(
-    const PhysicalPlan &plan, test::GraphDBTestDatabase &database, const void *,
+std::unique_ptr<PhysicalResultCursor> StartGraphDBPhysicalPlan(
+    const PhysicalPlan &plan, test::GraphDBTestDatabase &database,
     const QueryParameters &parameters,
     const std::vector<std::string> &result_columns,
-    QueryExecutionOptions options) {
+    QueryExecutionOptions options = {}) {
   auto transaction = database.BeginTransaction();
   try {
     auto cursor = StartPhysicalPlan(plan, *transaction, parameters,
@@ -406,14 +406,6 @@ std::unique_ptr<PhysicalResultCursor> StartPhysicalPlan(
     test::RollbackGraphDBTransaction(transaction.get());
     throw;
   }
-}
-
-std::unique_ptr<PhysicalResultCursor> StartPhysicalPlan(
-    const PhysicalPlan &plan, test::GraphDBTestDatabase &database,
-    const void *writer, const QueryParameters &parameters,
-    const std::vector<std::string> &result_columns) {
-  return StartPhysicalPlan(plan, database, writer, parameters, result_columns,
-                           {});
 }
 
 }  // namespace rg
@@ -527,7 +519,7 @@ TEST(PhysicalPlanTest, UnionOperatorsHandleResourcesAndEarlyClose) {
   rg::PhysicalPlan all = DetachedPhysicalPlan(
       "RETURN 'left' AS value UNION ALL RETURN 'right' AS value");
   std::unique_ptr<rg::PhysicalResultCursor> cursor =
-      rg::StartPhysicalPlan(all, graph, nullptr, {}, {"value"});
+      rg::StartGraphDBPhysicalPlan(all, graph, {}, {"value"});
   std::vector<rg::Value> row;
   ASSERT_TRUE(cursor->Next(&row));
   cursor->Close();
@@ -535,8 +527,8 @@ TEST(PhysicalPlanTest, UnionOperatorsHandleResourcesAndEarlyClose) {
 
   rg::QueryExecutionOptions all_memory_options;
   all_memory_options.memory_limit_bytes = 1;
-  cursor = rg::StartPhysicalPlan(all, graph, nullptr, {}, {"value"},
-                                 all_memory_options);
+  cursor = rg::StartGraphDBPhysicalPlan(all, graph, {}, {"value"},
+                                        all_memory_options);
   EXPECT_TRUE(cursor->Next(&row));
   EXPECT_TRUE(cursor->Next(&row));
   EXPECT_FALSE(cursor->Next(&row));
@@ -545,8 +537,8 @@ TEST(PhysicalPlanTest, UnionOperatorsHandleResourcesAndEarlyClose) {
   rg::QueryExecutionOptions cancellation_options;
   cancellation_options.cancellation =
       std::make_shared<rg::QueryCancellationToken>();
-  cursor = rg::StartPhysicalPlan(all, graph, nullptr, {}, {"value"},
-                                 cancellation_options);
+  cursor = rg::StartGraphDBPhysicalPlan(all, graph, {}, {"value"},
+                                        cancellation_options);
   cancellation_options.cancellation->Cancel();
   EXPECT_THROW((void)cursor->Next(&row), common::QueryCancelledError);
 
@@ -554,8 +546,8 @@ TEST(PhysicalPlanTest, UnionOperatorsHandleResourcesAndEarlyClose) {
       "RETURN 'left' AS value UNION RETURN 'right' AS value");
   rg::QueryExecutionOptions distinct_memory_options;
   distinct_memory_options.memory_limit_bytes = 1;
-  cursor = rg::StartPhysicalPlan(distinct, graph, nullptr, {}, {"value"},
-                                 distinct_memory_options);
+  cursor = rg::StartGraphDBPhysicalPlan(distinct, graph, {}, {"value"},
+                                        distinct_memory_options);
   EXPECT_THROW((void)cursor->Next(&row), common::MemoryLimitExceededError);
 }
 
@@ -674,7 +666,7 @@ TEST(PhysicalPlanTest, ExecutesDetachedExistenceApplyOperators) {
   EXPECT_EQ(FirstColumnIds(select_anti, graph, "id"), expected_select_anti);
 
   std::unique_ptr<rg::PhysicalResultCursor> cursor =
-      rg::StartPhysicalPlan(let, graph, nullptr, {}, {"id", "has"});
+      rg::StartGraphDBPhysicalPlan(let, graph, {}, {"id", "has"});
   std::vector<rg::Value> row;
   ASSERT_TRUE(cursor->Next(&row));
   cursor->Close();
@@ -730,7 +722,7 @@ TEST(PhysicalPlanTest, ExecutesDetachedRollUpApplyAndHandlesResources) {
   }
 
   std::unique_ptr<rg::PhysicalResultCursor> cursor =
-      rg::StartPhysicalPlan(physical, graph, nullptr, {}, {"id", "names"});
+      rg::StartGraphDBPhysicalPlan(physical, graph, {}, {"id", "names"});
   std::vector<rg::Value> row;
   ASSERT_TRUE(cursor->Next(&row));
   cursor->Close();
@@ -739,15 +731,15 @@ TEST(PhysicalPlanTest, ExecutesDetachedRollUpApplyAndHandlesResources) {
   rg::QueryExecutionOptions cancellation_options;
   cancellation_options.cancellation =
       std::make_shared<rg::QueryCancellationToken>();
-  cursor = rg::StartPhysicalPlan(physical, graph, nullptr, {}, {"id", "names"},
-                                 cancellation_options);
+  cursor = rg::StartGraphDBPhysicalPlan(physical, graph, {}, {"id", "names"},
+                                        cancellation_options);
   cancellation_options.cancellation->Cancel();
   EXPECT_THROW((void)cursor->Next(&row), common::QueryCancelledError);
 
   rg::QueryExecutionOptions memory_options;
   memory_options.memory_limit_bytes = 1;
-  cursor = rg::StartPhysicalPlan(physical, graph, nullptr, {}, {"id", "names"},
-                                 memory_options);
+  cursor = rg::StartGraphDBPhysicalPlan(physical, graph, {}, {"id", "names"},
+                                        memory_options);
   EXPECT_THROW((void)cursor->Next(&row), common::MemoryLimitExceededError);
 }
 
@@ -1129,28 +1121,28 @@ TEST(PhysicalPlanTest, RemainingUnaryOperatorsHandleResources) {
   std::vector<rg::Value> row;
 
   std::unique_ptr<rg::PhysicalResultCursor> cursor =
-      rg::StartPhysicalPlan(procedure, graph, nullptr, {}, {"label"});
+      rg::StartGraphDBPhysicalPlan(procedure, graph, {}, {"label"});
   cursor->Close();
   EXPECT_FALSE(cursor->Next(&row));
 
   rg::QueryExecutionOptions cancellation_options;
   cancellation_options.cancellation =
       std::make_shared<rg::QueryCancellationToken>();
-  cursor = rg::StartPhysicalPlan(procedure, graph, nullptr, {}, {"label"},
-                                 cancellation_options);
+  cursor = rg::StartGraphDBPhysicalPlan(procedure, graph, {}, {"label"},
+                                        cancellation_options);
   cancellation_options.cancellation->Cancel();
   EXPECT_THROW((void)cursor->Next(&row), common::QueryCancelledError);
 
   rg::QueryExecutionOptions memory_options;
   memory_options.memory_limit_bytes = 1;
-  cursor = rg::StartPhysicalPlan(procedure, graph, nullptr, {}, {"label"},
-                                 memory_options);
+  cursor = rg::StartGraphDBPhysicalPlan(procedure, graph, {}, {"label"},
+                                        memory_options);
   EXPECT_THROW((void)cursor->Next(&row), common::MemoryLimitExceededError);
 
   rg::PhysicalPlan unwind =
       DetachedPhysicalPlan("UNWIND ['value'] AS x RETURN x");
   cursor =
-      rg::StartPhysicalPlan(unwind, graph, nullptr, {}, {"x"}, memory_options);
+      rg::StartGraphDBPhysicalPlan(unwind, graph, {}, {"x"}, memory_options);
   EXPECT_THROW((void)cursor->Next(&row), common::MemoryLimitExceededError);
 }
 
@@ -1224,7 +1216,7 @@ TEST(PhysicalPlanTest, DeleteOperatorHandlesCloseCancellationAndMemoryLimit) {
   std::vector<rg::Value> row;
 
   std::unique_ptr<rg::PhysicalResultCursor> cursor =
-      rg::StartPhysicalPlan(physical, graph, &graph, {}, {"n"});
+      rg::StartGraphDBPhysicalPlan(physical, graph, {}, {"n"});
   cursor->Close();
   EXPECT_FALSE(cursor->Next(&row));
   EXPECT_EQ(graph.Nodes().size(), 1U);
@@ -1232,8 +1224,8 @@ TEST(PhysicalPlanTest, DeleteOperatorHandlesCloseCancellationAndMemoryLimit) {
   rg::QueryExecutionOptions cancellation_options;
   cancellation_options.cancellation =
       std::make_shared<rg::QueryCancellationToken>();
-  cursor = rg::StartPhysicalPlan(physical, graph, &graph, {}, {"n"},
-                                 cancellation_options);
+  cursor = rg::StartGraphDBPhysicalPlan(physical, graph, {}, {"n"},
+                                        cancellation_options);
   cancellation_options.cancellation->Cancel();
   EXPECT_THROW((void)cursor->Next(&row), common::QueryCancelledError);
   EXPECT_EQ(graph.Nodes().size(), 1U);
@@ -1241,7 +1233,7 @@ TEST(PhysicalPlanTest, DeleteOperatorHandlesCloseCancellationAndMemoryLimit) {
   rg::QueryExecutionOptions memory_options;
   memory_options.memory_limit_bytes = 1;
   cursor =
-      rg::StartPhysicalPlan(physical, graph, &graph, {}, {"n"}, memory_options);
+      rg::StartGraphDBPhysicalPlan(physical, graph, {}, {"n"}, memory_options);
   EXPECT_THROW((void)cursor->Next(&row), common::MemoryLimitExceededError);
   EXPECT_EQ(graph.Nodes().size(), 1U);
 }
@@ -1283,7 +1275,7 @@ TEST(PhysicalPlanTest, ReinstantiatesStatefulApplyRightSideForEachLeftRow) {
             0);
 
   std::unique_ptr<rg::PhysicalResultCursor> cursor =
-      rg::StartPhysicalPlan(physical, graph, nullptr, {}, {"n", "m"});
+      rg::StartGraphDBPhysicalPlan(physical, graph, {}, {"n", "m"});
   std::vector<rg::Value> row;
   ASSERT_TRUE(cursor->Next(&row));
   cursor->Close();
@@ -1292,7 +1284,7 @@ TEST(PhysicalPlanTest, ReinstantiatesStatefulApplyRightSideForEachLeftRow) {
   rg::QueryExecutionOptions options;
   options.cancellation = std::make_shared<rg::QueryCancellationToken>();
   cursor =
-      rg::StartPhysicalPlan(physical, graph, nullptr, {}, {"n", "m"}, options);
+      rg::StartGraphDBPhysicalPlan(physical, graph, {}, {"n", "m"}, options);
   options.cancellation->Cancel();
   EXPECT_THROW((void)cursor->Next(&row), common::QueryCancelledError);
 }
@@ -1400,8 +1392,9 @@ TEST(PhysicalPlanTest, ExecutesMigratedPlanAfterLogicalPlanIsDestroyed) {
   graph.CreateNode({});
   graph.CreateNode({});
 
-  std::unique_ptr<rg::PhysicalResultCursor> cursor = rg::StartPhysicalPlan(
-      physical, graph, nullptr, {}, std::vector<std::string>{"id"});
+  std::unique_ptr<rg::PhysicalResultCursor> cursor =
+      rg::StartGraphDBPhysicalPlan(physical, graph, {},
+                                   std::vector<std::string>{"id"});
   std::vector<rg::Value> row;
   ASSERT_TRUE(cursor->Next(&row));
   ASSERT_EQ(row.size(), 1U);
@@ -1837,7 +1830,7 @@ TEST(PhysicalPlanTest, ClosesFixedExpandCursorEarly) {
   rg::PhysicalPlan physical = DetachedPhysicalPlan(
       "MATCH (a)-[r:R]->(b) RETURN id(r) AS relationship_id");
   std::unique_ptr<rg::PhysicalResultCursor> cursor =
-      rg::StartPhysicalPlan(physical, graph, nullptr, {}, {"relationship_id"});
+      rg::StartGraphDBPhysicalPlan(physical, graph, {}, {"relationship_id"});
   std::vector<rg::Value> row;
   ASSERT_TRUE(cursor->Next(&row));
   cursor->Close();
@@ -1891,7 +1884,7 @@ TEST(PhysicalPlanTest, ClosesVariableExpandCursorEarlyAndEnforcesMemoryLimit) {
       " RETURN id(b) AS b");
 
   std::unique_ptr<rg::PhysicalResultCursor> cursor =
-      rg::StartPhysicalPlan(physical, graph, nullptr, {}, {"b"});
+      rg::StartGraphDBPhysicalPlan(physical, graph, {}, {"b"});
   std::vector<rg::Value> row;
   ASSERT_TRUE(cursor->Next(&row));
   cursor->Close();
@@ -1899,7 +1892,7 @@ TEST(PhysicalPlanTest, ClosesVariableExpandCursorEarlyAndEnforcesMemoryLimit) {
 
   rg::QueryExecutionOptions options;
   options.memory_limit_bytes = 1;
-  cursor = rg::StartPhysicalPlan(physical, graph, nullptr, {}, {"b"}, options);
+  cursor = rg::StartGraphDBPhysicalPlan(physical, graph, {}, {"b"}, options);
   EXPECT_THROW((void)cursor->Next(&row), common::MemoryLimitExceededError);
 }
 
@@ -1990,7 +1983,7 @@ TEST(PhysicalPlanTest, StreamsCartesianProductAfterLogicalPlanIsDestroyed) {
   EXPECT_EQ(pairs.size(), 6U);
 
   std::unique_ptr<rg::PhysicalResultCursor> cursor =
-      rg::StartPhysicalPlan(physical, graph, nullptr, {}, {"a", "b"});
+      rg::StartGraphDBPhysicalPlan(physical, graph, {}, {"a", "b"});
   std::vector<rg::Value> row;
   ASSERT_TRUE(cursor->Next(&row));
   cursor->Close();
@@ -1998,15 +1991,15 @@ TEST(PhysicalPlanTest, StreamsCartesianProductAfterLogicalPlanIsDestroyed) {
 
   rg::QueryExecutionOptions memory_options;
   memory_options.memory_limit_bytes = 1;
-  cursor = rg::StartPhysicalPlan(physical, graph, nullptr, {}, {"a", "b"},
-                                 memory_options);
+  cursor = rg::StartGraphDBPhysicalPlan(physical, graph, {}, {"a", "b"},
+                                        memory_options);
   EXPECT_THROW((void)cursor->Next(&row), common::MemoryLimitExceededError);
 
   rg::QueryExecutionOptions cancellation_options;
   cancellation_options.cancellation =
       std::make_shared<rg::QueryCancellationToken>();
-  cursor = rg::StartPhysicalPlan(physical, graph, nullptr, {}, {"a", "b"},
-                                 cancellation_options);
+  cursor = rg::StartGraphDBPhysicalPlan(physical, graph, {}, {"a", "b"},
+                                        cancellation_options);
   cancellation_options.cancellation->Cancel();
   EXPECT_THROW((void)cursor->Next(&row), common::QueryCancelledError);
 
