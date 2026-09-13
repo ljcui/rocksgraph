@@ -17,7 +17,6 @@
 #include "ast/builtin_function.h"
 #include "common/exception.h"
 #include "runtime/graphdb_access.h"
-#include "storage/graph_reader.h"
 #include "value/temporal.h"
 
 namespace rg {
@@ -110,7 +109,6 @@ double RandomUnitDouble() {
 Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
                               const std::vector<Value> &arguments,
                               ExecutionClock clock,
-                              const GraphReader *graph_reader,
                               txn::Transaction *transaction) {
   const ast::BuiltinFunction *builtin = ast::FindBuiltinFunction(kind);
   CHECK(builtin != nullptr, common::InternalError,
@@ -270,9 +268,6 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
           builtin->kind == ast::BuiltinFunctionKind::kStartNode
               ? relationship.start_node_id
               : relationship.end_node_id;
-      if (graph_reader != nullptr) {
-        return Value(graph_reader->NodeById(node_id));
-      }
       if (transaction != nullptr) {
         return Value(MaterializeGraphDBVertex(*transaction, node_id));
       }
@@ -583,7 +578,7 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
                               const std::vector<Value> &arguments,
                               ExecutionContext context) {
   return EvaluateBuiltinFunction(kind, arguments, context.clock,
-                                 context.graph_reader, context.transaction);
+                                 context.transaction);
 }
 
 }  // namespace rg

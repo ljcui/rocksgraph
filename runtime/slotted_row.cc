@@ -201,27 +201,6 @@ void SlottedRow::SetNull(const Slot &slot) {
 void SlottedRow::SetNull(std::string_view name) { SetNull(slots_->At(name)); }
 
 Value SlottedRow::Get(std::string_view name,
-                      const GraphReader &graph_reader) const {
-  const Slot &slot = slots_->At(name);
-  return Get(slot, graph_reader);
-}
-
-Value SlottedRow::Get(const Slot &slot, const GraphReader &graph_reader) const {
-  CHECK(IsInitialized(slot), common::InvalidArgumentError,
-        "slot is not initialized");
-  if (slot.kind == SlotKind::kReference) {
-    return references_[slot.offset];
-  }
-  const std::int64_t id = entity_ids_[slot.offset];
-  if (id < 0) {
-    return Value::Null();
-  }
-  return slot.kind == SlotKind::kNode
-             ? Value(graph_reader.NodeById(id))
-             : Value(graph_reader.RelationshipById(id));
-}
-
-Value SlottedRow::Get(std::string_view name,
                       txn::Transaction &transaction) const {
   return Get(slots_->At(name), transaction);
 }
@@ -247,8 +226,7 @@ Value SlottedRow::Get(std::string_view name,
 }
 
 Value SlottedRow::Get(const Slot &slot, const ExecutionContext &context) const {
-  return context.UsesGraphDB() ? Get(slot, context.GraphDBTransaction())
-                               : Get(slot, context.LegacyGraphReader());
+  return Get(slot, context.GraphDBTransaction());
 }
 
 std::size_t SlottedRow::EstimatedHeapUsage() const {
@@ -268,14 +246,6 @@ std::size_t SlottedRow::EstimatedHeapUsage() const {
 
 SlottedRow SlottedRow::CopyTo(SlotConfigurationPtr target,
                               const std::vector<SlotMapping> &mappings,
-                              const GraphReader &graph_reader) const {
-  SlottedRow out(std::move(target));
-  CopySlots(*this, &out, mappings, graph_reader);
-  return out;
-}
-
-SlottedRow SlottedRow::CopyTo(SlotConfigurationPtr target,
-                              const std::vector<SlotMapping> &mappings,
                               txn::Transaction &transaction) const {
   SlottedRow out(std::move(target));
   CopySlots(*this, &out, mappings, transaction);
@@ -288,31 +258,6 @@ SlottedRow SlottedRow::CopyTo(SlotConfigurationPtr target,
   SlottedRow out(std::move(target));
   CopySlots(*this, &out, mappings, context);
   return out;
-}
-
-void CopySlots(const SlottedRow &source, SlottedRow *target,
-               const std::vector<SlotMapping> &mappings,
-               const GraphReader &graph_reader) {
-  CHECK(target != nullptr, common::InternalError, "target row is null");
-  for (const auto &mapping : mappings) {
-    if (!source.IsInitialized(mapping.source)) {
-      continue;
-    }
-    if (mapping.source.kind == mapping.target.kind) {
-      if (mapping.source.kind == SlotKind::kReference) {
-        target->SetReference(mapping.target,
-                             source.ReferenceAt(mapping.source));
-      } else if (mapping.source.kind == SlotKind::kRelationship) {
-        target->SetRelationship(mapping.target,
-                                source.RelationshipAt(mapping.source));
-      } else {
-        target->SetEntityId(mapping.target, source.EntityIdAt(mapping.source));
-      }
-      continue;
-    }
-
-    target->Set(mapping.target, source.Get(mapping.source, graph_reader));
-  }
 }
 
 void CopySlots(const SlottedRow &source, SlottedRow *target,
@@ -342,31 +287,7 @@ void CopySlots(const SlottedRow &source, SlottedRow *target,
 void CopySlots(const SlottedRow &source, SlottedRow *target,
                const std::vector<SlotMapping> &mappings,
                const ExecutionContext &context) {
-  if (context.UsesGraphDB()) {
-    CopySlots(source, target, mappings, context.GraphDBTransaction());
-  } else {
-    CopySlots(source, target, mappings, context.LegacyGraphReader());
-  }
-}
-
-bool TryBindSlot(SlottedRow *row, const Slot &slot, Value value,
-                 const GraphReader &graph_reader) {
-  CHECK(row != nullptr, common::InternalError, "query row is null");
-  if (!row->IsInitialized(slot)) {
-    row->Set(slot, std::move(value));
-    return true;
-  }
-  return ValuesEqual(row->Get(slot, graph_reader), value);
-}
-
-bool TryBindSlot(SlottedRow *row, std::string_view name, Value value,
-                 const GraphReader &graph_reader) {
-  CHECK(row != nullptr, common::InternalError, "query row is null");
-  if (name.empty()) {
-    return true;
-  }
-  return TryBindSlot(row, row->Slots()->At(name), std::move(value),
-                     graph_reader);
+  CopySlots(source, target, mappings, context.GraphDBTransaction());
 }
 
 bool TryBindSlot(SlottedRow *row, const Slot &slot, Value value,
@@ -391,10 +312,7 @@ bool TryBindSlot(SlottedRow *row, std::string_view name, Value value,
 
 bool TryBindSlot(SlottedRow *row, const Slot &slot, Value value,
                  const ExecutionContext &context) {
-  return context.UsesGraphDB() ? TryBindSlot(row, slot, std::move(value),
-                                             context.GraphDBTransaction())
-                               : TryBindSlot(row, slot, std::move(value),
-                                             context.LegacyGraphReader());
+  return TryBindSlot(row, slot, std::move(value), context.GraphDBTransaction());
 }
 
 bool TryBindSlot(SlottedRow *row, std::string_view name, Value value,
@@ -403,33 +321,6 @@ bool TryBindSlot(SlottedRow *row, std::string_view name, Value value,
     return true;
   }
   return TryBindSlot(row, row->Slots()->At(name), std::move(value), context);
-}
-
-bool TryBindEntityId(SlottedRow *row, const Slot &slot, SlotKind kind,
-                     std::int64_t id, const GraphReader &graph_reader) {
-  CHECK(row != nullptr, common::InternalError, "query row is null");
-  CHECK(kind == SlotKind::kNode || kind == SlotKind::kRelationship,
-        common::InvalidArgumentError, "entity binding kind is invalid");
-  if (slot.kind == kind) {
-    if (!row->IsInitialized(slot)) {
-      row->SetEntityId(slot, id);
-      return true;
-    }
-    return row->EntityIdAt(slot) == id;
-  }
-  Value value = kind == SlotKind::kNode
-                    ? Value(graph_reader.NodeById(id))
-                    : Value(graph_reader.RelationshipById(id));
-  return TryBindSlot(row, slot, std::move(value), graph_reader);
-}
-
-bool TryBindEntityId(SlottedRow *row, std::string_view name, SlotKind kind,
-                     std::int64_t id, const GraphReader &graph_reader) {
-  CHECK(row != nullptr, common::InternalError, "query row is null");
-  if (name.empty()) {
-    return true;
-  }
-  return TryBindEntityId(row, row->Slots()->At(name), kind, id, graph_reader);
 }
 
 bool TryBindEntityId(SlottedRow *row, const Slot &slot, SlotKind kind,
@@ -459,10 +350,7 @@ bool TryBindEntityId(SlottedRow *row, std::string_view name, SlotKind kind,
 
 bool TryBindEntityId(SlottedRow *row, const Slot &slot, SlotKind kind,
                      std::int64_t id, const ExecutionContext &context) {
-  return context.UsesGraphDB() ? TryBindEntityId(row, slot, kind, id,
-                                                 context.GraphDBTransaction())
-                               : TryBindEntityId(row, slot, kind, id,
-                                                 context.LegacyGraphReader());
+  return TryBindEntityId(row, slot, kind, id, context.GraphDBTransaction());
 }
 
 bool TryBindEntityId(SlottedRow *row, std::string_view name, SlotKind kind,

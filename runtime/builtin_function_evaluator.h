@@ -12,17 +12,13 @@ class Transaction;
 
 namespace rg {
 
-class GraphReader;
-
 [[nodiscard]] Value EvaluateBuiltinFunction(
     ast::BuiltinFunctionKind kind, const std::vector<Value> &arguments,
     ExecutionClock clock = ExecutionClock::Start(),
-    const GraphReader *graph_reader = nullptr,
     txn::Transaction *transaction = nullptr);
 
 // Native query execution passes its complete context so GraphDB transaction
-// access remains the primary path. The pointer-based overload above is kept
-// for standalone built-in function tests and the legacy storage path.
+// access remains available to built-in functions.
 [[nodiscard]] Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
                                             const std::vector<Value> &arguments,
                                             ExecutionContext context);

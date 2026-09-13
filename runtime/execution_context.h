@@ -21,8 +21,6 @@ class Transaction;
 
 namespace rg {
 
-class GraphReader;
-
 using QueryParameters = Value::Map;
 
 class BoundQueryParameters final {
@@ -118,7 +116,6 @@ struct ExecutionClock {
 };
 
 struct ExecutionContext {
-  const GraphReader *graph_reader = nullptr;
   txn::Transaction *transaction = nullptr;
   const QueryParameters *parameters = nullptr;
   const BoundQueryParameters *bound_parameters = nullptr;
@@ -126,22 +123,10 @@ struct ExecutionContext {
   QueryMemoryTracker *memory_tracker = nullptr;
   ExecutionClock clock = ExecutionClock::Start();
 
-  // GraphDB is the native execution backend. The GraphReader pointer is kept
-  // only for the legacy storage path while callers are migrated.
-  [[nodiscard]] bool UsesGraphDB() const noexcept {
-    return transaction != nullptr;
-  }
-
   [[nodiscard]] txn::Transaction &GraphDBTransaction() const {
     CHECK(transaction != nullptr, common::InvalidArgumentError,
           "GraphDB transaction is not available in this execution context");
     return *transaction;
-  }
-
-  [[nodiscard]] const GraphReader &LegacyGraphReader() const {
-    CHECK(graph_reader != nullptr, common::InvalidArgumentError,
-          "legacy graph reader is not available in this execution context");
-    return *graph_reader;
   }
 
   void CheckCancelled() const {

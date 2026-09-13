@@ -12,7 +12,6 @@
 #include "ast/semantic_table.h"
 #include "runtime/execution_context.h"
 #include "runtime/graphdb_access.h"
-#include "storage/graph_reader.h"
 #include "value/value.h"
 
 namespace txn {
@@ -96,10 +95,6 @@ class SlottedRow final {
   void SetNull(std::string_view name);
 
   [[nodiscard]] Value Get(std::string_view name,
-                          const GraphReader &graph_reader) const;
-  [[nodiscard]] Value Get(const Slot &slot,
-                          const GraphReader &graph_reader) const;
-  [[nodiscard]] Value Get(std::string_view name,
                           txn::Transaction &transaction) const;
   [[nodiscard]] Value Get(const Slot &slot,
                           txn::Transaction &transaction) const;
@@ -108,9 +103,6 @@ class SlottedRow final {
   [[nodiscard]] Value Get(const Slot &slot,
                           const ExecutionContext &context) const;
   [[nodiscard]] std::size_t EstimatedHeapUsage() const;
-  [[nodiscard]] SlottedRow CopyTo(SlotConfigurationPtr target,
-                                  const std::vector<SlotMapping> &mappings,
-                                  const GraphReader &graph_reader) const;
   [[nodiscard]] SlottedRow CopyTo(SlotConfigurationPtr target,
                                   const std::vector<SlotMapping> &mappings,
                                   txn::Transaction &transaction) const;
@@ -129,17 +121,10 @@ class SlottedRow final {
 
 void CopySlots(const SlottedRow &source, SlottedRow *target,
                const std::vector<SlotMapping> &mappings,
-               const GraphReader &graph_reader);
-void CopySlots(const SlottedRow &source, SlottedRow *target,
-               const std::vector<SlotMapping> &mappings,
                txn::Transaction &transaction);
 void CopySlots(const SlottedRow &source, SlottedRow *target,
                const std::vector<SlotMapping> &mappings,
                const ExecutionContext &context);
-[[nodiscard]] bool TryBindSlot(SlottedRow *row, const Slot &slot, Value value,
-                               const GraphReader &graph_reader);
-[[nodiscard]] bool TryBindSlot(SlottedRow *row, std::string_view name,
-                               Value value, const GraphReader &graph_reader);
 [[nodiscard]] bool TryBindSlot(SlottedRow *row, const Slot &slot, Value value,
                                txn::Transaction &transaction);
 [[nodiscard]] bool TryBindSlot(SlottedRow *row, std::string_view name,
@@ -148,12 +133,6 @@ void CopySlots(const SlottedRow &source, SlottedRow *target,
                                const ExecutionContext &context);
 [[nodiscard]] bool TryBindSlot(SlottedRow *row, std::string_view name,
                                Value value, const ExecutionContext &context);
-[[nodiscard]] bool TryBindEntityId(SlottedRow *row, const Slot &slot,
-                                   SlotKind kind, std::int64_t id,
-                                   const GraphReader &graph_reader);
-[[nodiscard]] bool TryBindEntityId(SlottedRow *row, std::string_view name,
-                                   SlotKind kind, std::int64_t id,
-                                   const GraphReader &graph_reader);
 [[nodiscard]] bool TryBindEntityId(SlottedRow *row, const Slot &slot,
                                    SlotKind kind, std::int64_t id,
                                    txn::Transaction &transaction);

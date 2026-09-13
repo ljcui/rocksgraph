@@ -7,8 +7,6 @@
 
 #include "runtime/execution_context.h"
 #include "runtime/physical_plan.h"
-#include "storage/graph_reader.h"
-#include "storage/graph_writer.h"
 #include "value/value.h"
 
 namespace txn {
@@ -33,14 +31,6 @@ class PhysicalResultCursor {
 [[nodiscard]] std::unique_ptr<PhysicalResultCursor> StartPhysicalPlan(
     const PhysicalPlan &plan, txn::Transaction &transaction,
     const QueryParameters &parameters,
-    const std::vector<std::string> &result_columns,
-    QueryExecutionOptions options = {});
-
-// Low-level entry point for physical-plan tests and independently supplied
-// reader/writer views.
-[[nodiscard]] std::unique_ptr<PhysicalResultCursor> StartPhysicalPlan(
-    const PhysicalPlan &plan, const GraphReader &graph_reader,
-    GraphWriter *writer, const QueryParameters &parameters,
     const std::vector<std::string> &result_columns,
     QueryExecutionOptions options = {});
 
