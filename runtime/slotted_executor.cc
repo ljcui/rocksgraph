@@ -577,44 +577,85 @@ std::vector<ProcedureRecord> ExecuteProcedure(const ProcedureCallOp &data,
               item.result_field);
   }
   std::set<std::string> values;
-  if (procedure->kind == ast::BuiltinProcedureKind::kLabels ||
-      procedure->kind == ast::BuiltinProcedureKind::kPropertyKeys) {
-    EntityIdCursor *nodes =
-        state->TrackCursor(state->graph_reader->ScanNodeIds());
-    while (nodes->Next()) {
-      state->CheckCancelled();
-      const Node &node = *state->graph_reader->NodeById(nodes->Id());
-      if (procedure->kind == ast::BuiltinProcedureKind::kLabels) {
-        values.insert(node.labels.begin(), node.labels.end());
-      } else {
-        for (const auto &[key, value] : node.properties) {
-          (void)value;
-          values.insert(key);
+  if (state->UsesGraphDB()) {
+    if (procedure->kind == ast::BuiltinProcedureKind::kLabels ||
+        procedure->kind == ast::BuiltinProcedureKind::kPropertyKeys) {
+      auto vertices = state->transaction->NewVertexIterator();
+      while (vertices->Valid()) {
+        state->CheckCancelled();
+        graphdb::Vertex &vertex = vertices->GetVertex();
+        if (procedure->kind == ast::BuiltinProcedureKind::kLabels) {
+          const auto labels = vertex.GetLabels();
+          values.insert(labels.begin(), labels.end());
+        } else {
+          for (const auto &[key, value] : vertex.GetAllProperty()) {
+            (void)value;
+            values.insert(key);
+          }
         }
+        vertices->Next();
       }
     }
-    state->ReleaseCursor(nodes);
-  }
-  if (procedure->kind == ast::BuiltinProcedureKind::kRelationshipTypes ||
-      procedure->kind == ast::BuiltinProcedureKind::kPropertyKeys) {
-    EntityIdCursor *relationships =
-        state->TrackCursor(state->graph_reader->ScanRelationshipIds());
-    while (relationships->Next()) {
-      state->CheckCancelled();
-      const Relationship &relationship =
-          *state->graph_reader->RelationshipById(relationships->Id());
-      if (procedure->kind == ast::BuiltinProcedureKind::kRelationshipTypes) {
-        if (!relationship.type.empty()) {
-          values.insert(relationship.type);
+    if (procedure->kind == ast::BuiltinProcedureKind::kRelationshipTypes ||
+        procedure->kind == ast::BuiltinProcedureKind::kPropertyKeys) {
+      auto edges = state->transaction->NewEdgeIterator();
+      while (edges->Valid()) {
+        state->CheckCancelled();
+        graphdb::Edge &edge = edges->GetEdge();
+        if (procedure->kind == ast::BuiltinProcedureKind::kRelationshipTypes) {
+          const std::string type = edge.GetType();
+          if (!type.empty()) {
+            values.insert(type);
+          }
+        } else {
+          for (const auto &[key, value] : edge.GetAllProperty()) {
+            (void)value;
+            values.insert(key);
+          }
         }
-      } else {
-        for (const auto &[key, value] : relationship.properties) {
-          (void)value;
-          values.insert(key);
-        }
+        edges->Next();
       }
     }
-    state->ReleaseCursor(relationships);
+  } else {
+    if (procedure->kind == ast::BuiltinProcedureKind::kLabels ||
+        procedure->kind == ast::BuiltinProcedureKind::kPropertyKeys) {
+      EntityIdCursor *nodes =
+          state->TrackCursor(state->graph_reader->ScanNodeIds());
+      while (nodes->Next()) {
+        state->CheckCancelled();
+        const Node &node = *state->graph_reader->NodeById(nodes->Id());
+        if (procedure->kind == ast::BuiltinProcedureKind::kLabels) {
+          values.insert(node.labels.begin(), node.labels.end());
+        } else {
+          for (const auto &[key, value] : node.properties) {
+            (void)value;
+            values.insert(key);
+          }
+        }
+      }
+      state->ReleaseCursor(nodes);
+    }
+    if (procedure->kind == ast::BuiltinProcedureKind::kRelationshipTypes ||
+        procedure->kind == ast::BuiltinProcedureKind::kPropertyKeys) {
+      EntityIdCursor *relationships =
+          state->TrackCursor(state->graph_reader->ScanRelationshipIds());
+      while (relationships->Next()) {
+        state->CheckCancelled();
+        const Relationship &relationship =
+            *state->graph_reader->RelationshipById(relationships->Id());
+        if (procedure->kind == ast::BuiltinProcedureKind::kRelationshipTypes) {
+          if (!relationship.type.empty()) {
+            values.insert(relationship.type);
+          }
+        } else {
+          for (const auto &[key, value] : relationship.properties) {
+            (void)value;
+            values.insert(key);
+          }
+        }
+      }
+      state->ReleaseCursor(relationships);
+    }
   }
 
   std::vector<ProcedureRecord> records;

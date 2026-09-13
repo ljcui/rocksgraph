@@ -563,6 +563,70 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativePatternComprehensionWithNodes) {
   transaction->Commit();
 }
 
+TEST_F(GraphDBQueryExecutorTest, ExecutesNativeMetadataProcedures) {
+  auto transaction = graph_->BeginTransaction();
+
+  rg::QueryResult labels = rg::ExecuteQuery(*transaction, "CALL db.labels()");
+  ASSERT_EQ(labels.rows.size(), 1U);
+  EXPECT_EQ(labels.rows[0][0], rg::Value("Person"));
+
+  rg::QueryResult relationship_types =
+      rg::ExecuteQuery(*transaction, "CALL db.relationshipTypes()");
+  EXPECT_EQ(relationship_types.rows,
+            (std::vector<std::vector<rg::Value>>{{rg::Value("KNOWS")},
+                                                 {rg::Value("RARE_REL")}}));
+
+  rg::QueryResult property_keys =
+      rg::ExecuteQuery(*transaction, "CALL db.propertyKeys()");
+  EXPECT_EQ(property_keys.rows,
+            (std::vector<std::vector<rg::Value>>{{rg::Value("age")},
+                                                 {rg::Value("name")},
+                                                 {rg::Value("since")},
+                                                 {rg::Value("weight")}}));
+  transaction->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest, FiltersNativeMetadataProcedureYields) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryResult result =
+      rg::ExecuteQuery(*transaction,
+                       "CALL db.propertyKeys() YIELD propertyKey AS key "
+                       "WHERE key STARTS WITH 's' RETURN key");
+
+  ASSERT_EQ(result.rows.size(), 1U);
+  EXPECT_EQ(result.rows[0][0], rg::Value("since"));
+  transaction->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest, NativeMetadataProceduresSeeUncommittedWrites) {
+  auto transaction = graph_->BeginTransaction();
+  (void)rg::ExecuteQuery(
+      *transaction,
+      "CREATE (:Fresh {freshNode: 1})-[:FRESH_REL {freshEdge: 2}]->(:Person)");
+
+  rg::QueryResult labels = rg::ExecuteQuery(
+      *transaction,
+      "CALL db.labels() YIELD label WHERE label = 'Fresh' RETURN label");
+  ASSERT_EQ(labels.rows.size(), 1U);
+  EXPECT_EQ(labels.rows[0][0], rg::Value("Fresh"));
+
+  rg::QueryResult relationship_types = rg::ExecuteQuery(
+      *transaction,
+      "CALL db.relationshipTypes() YIELD relationshipType AS type "
+      "WHERE type = 'FRESH_REL' RETURN type");
+  ASSERT_EQ(relationship_types.rows.size(), 1U);
+  EXPECT_EQ(relationship_types.rows[0][0], rg::Value("FRESH_REL"));
+
+  rg::QueryResult property_keys =
+      rg::ExecuteQuery(*transaction,
+                       "CALL db.propertyKeys() YIELD propertyKey AS key "
+                       "WHERE key STARTS WITH 'fresh' RETURN key ORDER BY key");
+  EXPECT_EQ(property_keys.rows,
+            (std::vector<std::vector<rg::Value>>{{rg::Value("freshEdge")},
+                                                 {rg::Value("freshNode")}}));
+  transaction->Commit();
+}
+
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeOptionalExpandMatch) {
   auto transaction = graph_->BeginTransaction();
   rg::QueryResult result = rg::ExecuteQuery(
