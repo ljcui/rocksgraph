@@ -491,6 +491,78 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeNamedCreatePath) {
   transaction->Commit();
 }
 
+TEST_F(GraphDBQueryExecutorTest, ExecutesNativeEntityPassthroughAndNodeCheck) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryResult result =
+      rg::ExecuteQuery(*transaction,
+                       "MATCH (n:Person) WITH n, 1 AS keep MATCH (n) "
+                       "RETURN n ORDER BY n.name");
+
+  ASSERT_EQ(result.rows.size(), 3U);
+  ASSERT_TRUE(result.rows[0][0].IsNode());
+  ASSERT_TRUE(result.rows[1][0].IsNode());
+  ASSERT_TRUE(result.rows[2][0].IsNode());
+  EXPECT_EQ(result.rows[0][0].AsNode().id, ada_);
+  EXPECT_EQ(result.rows[1][0].AsNode().id, grace_);
+  EXPECT_EQ(result.rows[2][0].AsNode().id, other_);
+  transaction->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest, ExecutesNativeUnionDistinctWithNodes) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryResult result =
+      rg::ExecuteQuery(*transaction,
+                       "MATCH (n:Person {name: 'Ada'}) RETURN n AS value "
+                       "UNION "
+                       "MATCH (m:Person {name: 'Ada'}) RETURN m AS value");
+
+  ASSERT_EQ(result.rows.size(), 1U);
+  ASSERT_TRUE(result.rows[0][0].IsNode());
+  EXPECT_EQ(result.rows[0][0].AsNode().id, ada_);
+  transaction->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest, ExecutesNativeNodeHashJoin) {
+  auto transaction = graph_->BeginTransaction();
+  (void)rg::ExecuteQuery(*transaction,
+                         "MATCH (b:Person {name: 'Other'}) "
+                         "CREATE (:Person {name: 'Lin'})-[:LINK]->(b)");
+
+  rg::QueryResult result = rg::ExecuteQuery(
+      *transaction,
+      "MATCH (a:Person)-[r1]->(b)<-[r2]-(c:Person) "
+      "RETURN a.name AS left, c.name AS right ORDER BY left, right");
+
+  ASSERT_EQ(result.rows.size(), 2U);
+  EXPECT_EQ(result.rows[0],
+            (std::vector<rg::Value>{rg::Value("Grace"), rg::Value("Lin")}));
+  EXPECT_EQ(result.rows[1],
+            (std::vector<rg::Value>{rg::Value("Lin"), rg::Value("Grace")}));
+  transaction->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest, ExecutesNativePatternComprehensionWithNodes) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryResult result = rg::ExecuteQuery(
+      *transaction,
+      "MATCH (n:Person) "
+      "RETURN n.name AS name, [(n)-[]->(m) | m] AS targets ORDER BY name");
+
+  ASSERT_EQ(result.rows.size(), 3U);
+  EXPECT_EQ(result.rows[0][0], rg::Value("Ada"));
+  ASSERT_TRUE(result.rows[0][1].IsList());
+  ASSERT_EQ(result.rows[0][1].AsList().size(), 1U);
+  EXPECT_EQ(result.rows[0][1].AsList()[0].AsNode().id, grace_);
+  EXPECT_EQ(result.rows[1][0], rg::Value("Grace"));
+  ASSERT_TRUE(result.rows[1][1].IsList());
+  ASSERT_EQ(result.rows[1][1].AsList().size(), 1U);
+  EXPECT_EQ(result.rows[1][1].AsList()[0].AsNode().id, other_);
+  EXPECT_EQ(result.rows[2][0], rg::Value("Other"));
+  ASSERT_TRUE(result.rows[2][1].IsList());
+  EXPECT_TRUE(result.rows[2][1].AsList().empty());
+  transaction->Commit();
+}
+
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeOptionalExpandMatch) {
   auto transaction = graph_->BeginTransaction();
   rg::QueryResult result = rg::ExecuteQuery(

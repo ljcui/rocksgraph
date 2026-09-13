@@ -391,6 +391,13 @@ bool BindRelationship(SlottedRow *row, const Slot &slot,
   return TryBindRelationship(row, slot, relationship, *state.transaction);
 }
 
+bool BindValue(SlottedRow *row, const Slot &slot, Value value,
+               RuntimeState &state) {
+  return state.UsesGraphDB()
+             ? TryBindSlot(row, slot, std::move(value), *state.transaction)
+             : TryBindSlot(row, slot, std::move(value), *state.graph_reader);
+}
+
 bool MergeMappings(const SlottedRow &source, SlottedRow *target,
                    const std::vector<SlotMapping> &mappings,
                    const RuntimeState &state) {
@@ -904,7 +911,7 @@ std::optional<CompositeValueKey> NodeJoinKey(
   CompositeValueKey result;
   result.values.reserve(keys.size());
   for (const auto &key : keys) {
-    Value value = row.Get(key, *state->graph_reader);
+    Value value = ReadRowValue(row, key, *state);
     if (value.IsNull()) {
       return std::nullopt;
     }
@@ -3507,7 +3514,7 @@ class ProjectionOperator final : public PullOperator {
     SlottedRow output(node_->output_slots);
     for (const auto &item : data_->items) {
       Value value = item.passthrough
-                        ? input.Get(item.alias, *state_->graph_reader)
+                        ? ReadRowValue(input, item.alias, *state_)
                         : Evaluate(item.expression, input, *state_);
       output.Set(item.alias, std::move(value));
     }
@@ -3786,9 +3793,8 @@ class PathBuildOperator final : public PullOperator {
         return false;
       }
       SlottedRow output = CopyUnaryOutput(*node_, input, *state_);
-      if (TryBindSlot(&output, data_->path_output_slot,
-                      BuildPathValue(*data_, input, state_),
-                      *state_->graph_reader)) {
+      if (BindValue(&output, data_->path_output_slot,
+                    BuildPathValue(*data_, input, state_), *state_)) {
         *row = std::move(output);
         return true;
       }
@@ -4003,8 +4009,7 @@ class AssertIsNodeOperator final : public PullOperator {
       return false;
     }
     for (const auto &assertion : data_->nodes) {
-      const Value value =
-          input.Get(assertion.input_slot, *state_->graph_reader);
+      const Value value = ReadRowValue(input, assertion.input_slot, *state_);
       CHECK(value.IsNull() || value.IsNode(), common::InvalidArgumentError,
             "expected node value: " + assertion.variable);
     }
@@ -6007,7 +6012,7 @@ class UnionDistinctOperator final : public PullOperator {
       CompositeValueKey key;
       key.values.reserve(data_->key_slots.size());
       for (const Slot &slot : data_->key_slots) {
-        key.values.push_back(input.Get(slot, *state_->graph_reader));
+        key.values.push_back(ReadRowValue(input, slot, *state_));
       }
       auto [seen, inserted] = seen_.insert(std::move(key));
       if (!inserted) {
@@ -6812,7 +6817,7 @@ bool RollUpApplyOperator::Next(SlottedRow *row) {
   try {
     SlottedRow rhs(node_->children[1]->output_slots);
     while (correlated_.NextRight(&rhs)) {
-      Value value = rhs.Get(data_->value_slot, *state_->graph_reader);
+      Value value = ReadRowValue(rhs, data_->value_slot, *state_);
       const std::size_t bytes = EstimatedValueHeapUsage(value);
       state_->memory_tracker.Reserve(bytes);
       reserved_bytes += bytes;
