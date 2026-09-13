@@ -63,10 +63,11 @@ class QueryResultCursorImpl final : public QueryResultCursor {
     CHECK(transaction.GetState() == txn::Transaction::State::kActive,
           common::InvalidArgumentError,
           "query execution requires an active transaction");
-    CHECK(!physical_plan_.Effects().writes, common::InvalidArgumentError,
-          "GraphDB query execution currently supports read plans only");
     try {
-      columns_ = logical_plan.OutputColumns();
+      if (logical_plan.Type() == ir::LogicalPlanNodeType::kProduceResults ||
+          !physical_plan_.Effects().writes) {
+        columns_ = logical_plan.OutputColumns();
+      }
       physical_cursor_ =
           StartPhysicalPlan(physical_plan_, transaction, parameters, columns_,
                             std::move(options));

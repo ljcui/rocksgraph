@@ -6,6 +6,7 @@
 #include <memory>
 #include <thread>
 
+#include "common/exception.h"
 #include "graphdb/assistant_pool.h"
 #include "graphdb/graph_db.h"
 #include "runtime/graphdb_planner_catalog.h"
@@ -316,6 +317,173 @@ TEST_F(GraphDBQueryExecutorTest, MissingNativeRelationshipIdProducesNoRows) {
 
   EXPECT_TRUE(result.rows.empty());
   transaction->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest, ExecutesNativeCreateAndSetWrites) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryResult created = rg::ExecuteQuery(
+      *transaction,
+      "CREATE (a:Writer {name: 'Lin'})-[r:WROTE {year: 2025}]->"
+      "(b:Book {title: 'Storage'}) "
+      "SET a.age = 40, r.weight = 7 "
+      "RETURN id(a) AS aid, id(r) AS rid, type(r) AS type, "
+      "a.age AS age, r.weight AS weight");
+
+  ASSERT_EQ(created.rows.size(), 1U);
+  ASSERT_EQ(created.rows[0].size(), 5U);
+  const std::int64_t author_id = created.rows[0][0].AsInteger();
+  const std::int64_t relationship_id = created.rows[0][1].AsInteger();
+  EXPECT_EQ(created.rows[0][2], rg::Value("WROTE"));
+  EXPECT_EQ(created.rows[0][3], rg::Value(40));
+  EXPECT_EQ(created.rows[0][4], rg::Value(7));
+  transaction->Commit();
+
+  auto verification = graph_->BeginTransaction();
+  rg::QueryResult persisted = rg::ExecuteQuery(
+      *verification,
+      "MATCH (a:Writer)-[r:WROTE]->(b:Book) WHERE id(a) = " +
+          std::to_string(author_id) +
+          " AND id(r) = " + std::to_string(relationship_id) +
+          " RETURN a.name AS author, a.age AS age, r.year AS year, "
+          "r.weight AS weight, b.title AS title");
+
+  ASSERT_EQ(persisted.rows.size(), 1U);
+  EXPECT_EQ(
+      persisted.rows[0],
+      (std::vector<rg::Value>{rg::Value("Lin"), rg::Value(40), rg::Value(2025),
+                              rg::Value(7), rg::Value("Storage")}));
+  verification->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest, ExecutesNativeMapLabelAndRemoveWrites) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryResult updated = rg::ExecuteQuery(
+      *transaction,
+      "MATCH (a:Person)-[r:KNOWS]->() WHERE id(a) = " + std::to_string(ada_) +
+          " SET a = {name: 'Ada Updated', missing: null}, "
+          "a += {score: 7}, a:Engineer, "
+          "r = {since: 2026, note: 'friend'} "
+          "REMOVE r.note, a:Person "
+          "RETURN a.name AS name, a.age AS age, a.score AS score, "
+          "r.since AS since, r.note AS note");
+
+  ASSERT_EQ(updated.rows.size(), 1U);
+  EXPECT_EQ(updated.rows[0],
+            (std::vector<rg::Value>{rg::Value("Ada Updated"), rg::Value::Null(),
+                                    rg::Value(7), rg::Value(2026),
+                                    rg::Value::Null()}));
+  transaction->Commit();
+
+  auto verification = graph_->BeginTransaction();
+  rg::QueryResult persisted =
+      rg::ExecuteQuery(*verification,
+                       "MATCH (a:Engineer)-[r:KNOWS]->() "
+                       "WHERE a.name = 'Ada Updated' AND r.since = 2026 "
+                       "RETURN id(a) AS aid, id(r) AS rid");
+  ASSERT_EQ(persisted.rows.size(), 1U);
+  EXPECT_EQ(persisted.rows[0],
+            (std::vector<rg::Value>{rg::Value(ada_), rg::Value(knows_)}));
+  rg::QueryResult removed_label = rg::ExecuteQuery(
+      *verification, "MATCH (a:Person) WHERE id(a) = " + std::to_string(ada_) +
+                         " RETURN count(a) AS count");
+  ASSERT_EQ(removed_label.rows.size(), 1U);
+  EXPECT_EQ(removed_label.rows[0][0], rg::Value(0));
+  verification->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest, RollsBackNativeWrites) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryResult created = rg::ExecuteQuery(
+      *transaction,
+      "CREATE (n:RolledBack {name: 'temporary'}) RETURN id(n) AS id");
+  ASSERT_EQ(created.rows.size(), 1U);
+  transaction->Rollback();
+
+  auto verification = graph_->BeginTransaction();
+  rg::QueryResult persisted = rg::ExecuteQuery(
+      *verification, "MATCH (n:RolledBack) RETURN count(n) AS count");
+  ASSERT_EQ(persisted.rows.size(), 1U);
+  EXPECT_EQ(persisted.rows[0][0], rg::Value(0));
+  verification->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest, RollsBackNativeWritesAfterExecutionFailure) {
+  auto transaction = graph_->BeginTransaction();
+  EXPECT_THROW(
+      (void)rg::ExecuteQuery(
+          *transaction,
+          "CREATE (n:RolledBack {name: 'temporary'}) SET n.value = 1 / 0 "
+          "RETURN n"),
+      common::InvalidArgumentError);
+  EXPECT_EQ(transaction->GetState(), txn::Transaction::State::kRolledBack);
+
+  auto verification = graph_->BeginTransaction();
+  rg::QueryResult persisted = rg::ExecuteQuery(
+      *verification, "MATCH (n:RolledBack) RETURN count(n) AS count");
+  ASSERT_EQ(persisted.rows.size(), 1U);
+  EXPECT_EQ(persisted.rows[0][0], rg::Value(0));
+  verification->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest, ExecutesNativeMergeActions) {
+  auto create = graph_->BeginTransaction();
+  rg::QueryResult created = rg::ExecuteQuery(
+      *create,
+      "MERGE (n:Person {name: 'Merged'}) "
+      "ON CREATE SET n.created = true RETURN n.created AS created");
+  ASSERT_EQ(created.rows.size(), 1U);
+  EXPECT_EQ(created.rows[0][0], rg::Value(true));
+  create->Commit();
+
+  auto match = graph_->BeginTransaction();
+  rg::QueryResult matched =
+      rg::ExecuteQuery(*match,
+                       "MERGE (n:Person {name: 'Merged'}) "
+                       "ON MATCH SET n.seen = true "
+                       "RETURN n.created AS created, n.seen AS seen");
+  ASSERT_EQ(matched.rows.size(), 1U);
+  EXPECT_EQ(matched.rows[0],
+            (std::vector<rg::Value>{rg::Value(true), rg::Value(true)}));
+  match->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest, ExecutesNativeRelationshipAndNodeDelete) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryResult deleted = rg::ExecuteQuery(
+      *transaction,
+      "MATCH (a:Person)-[r:KNOWS]->(b) WHERE id(a) = " + std::to_string(ada_) +
+          " DELETE r, a RETURN id(b) AS bid");
+  ASSERT_EQ(deleted.rows.size(), 1U);
+  EXPECT_EQ(deleted.rows[0][0], rg::Value(grace_));
+  transaction->Commit();
+
+  auto verification = graph_->BeginTransaction();
+  rg::QueryResult persisted = rg::ExecuteQuery(
+      *verification, "MATCH (n) WHERE id(n) = " + std::to_string(ada_) +
+                         " RETURN count(n) AS nodes");
+  ASSERT_EQ(persisted.rows.size(), 1U);
+  EXPECT_EQ(persisted.rows[0][0], rg::Value(0));
+  rg::QueryResult relationships = rg::ExecuteQuery(
+      *verification, "MATCH ()-[r:KNOWS]->() RETURN count(r) AS relationships");
+  ASSERT_EQ(relationships.rows.size(), 1U);
+  EXPECT_EQ(relationships.rows[0][0], rg::Value(0));
+  verification->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest, ExecutesNativeDetachDelete) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryResult deleted = rg::ExecuteQuery(
+      *transaction,
+      "MATCH (n) WHERE id(n) = " + std::to_string(grace_) + " DETACH DELETE n");
+  EXPECT_TRUE(deleted.rows.empty());
+  transaction->Commit();
+
+  auto verification = graph_->BeginTransaction();
+  rg::QueryResult persisted = rg::ExecuteQuery(
+      *verification, "MATCH ()-[r]->() RETURN count(r) AS relationships");
+  ASSERT_EQ(persisted.rows.size(), 1U);
+  EXPECT_EQ(persisted.rows[0][0], rg::Value(0));
+  verification->Commit();
 }
 
 }  // namespace

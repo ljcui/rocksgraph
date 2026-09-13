@@ -644,10 +644,14 @@ Value::Map EvaluatePropertyMap(const PhysicalPropertyMap &property_map,
 
 void ExecuteStreamingWrite(const CreateNodeOp &data, const SlottedRow &input,
                            SlottedRow *output, RuntimeState *state) {
-  GraphWriter &storage = RequireStorage(state);
-  const Value::NodePtr node = storage.CreateNode(
-      data.labels,
-      EvaluatePropertyMap(data.properties, input, "CREATE node", state));
+  Value::Map properties =
+      EvaluatePropertyMap(data.properties, input, "CREATE node", state);
+  const Value::NodePtr node =
+      state->UsesGraphDB()
+          ? CreateGraphDBVertex(*state->transaction, data.labels,
+                                std::move(properties))
+          : RequireStorage(state).CreateNode(data.labels,
+                                             std::move(properties));
   CHECK(node != nullptr, common::InternalError,
         "storage returned a null created node");
   output->SetEntityId(data.node_slot, node->id);
@@ -656,18 +660,26 @@ void ExecuteStreamingWrite(const CreateNodeOp &data, const SlottedRow &input,
 void ExecuteStreamingWrite(const CreateRelationshipOp &data,
                            const SlottedRow &input, SlottedRow *output,
                            RuntimeState *state) {
-  GraphWriter &storage = RequireStorage(state);
   const std::int64_t left = NodeId(input, data.left_node_slot, *state);
   const std::int64_t right = NodeId(input, data.right_node_slot, *state);
   CHECK(left >= 0 && right >= 0, common::InvalidArgumentError,
         "CREATE relationship endpoints must be nodes");
-  const Value::RelationshipPtr relationship = storage.CreateRelationship(
-      left, right, data.type,
-      EvaluatePropertyMap(data.properties, input, "CREATE relationship",
-                          state));
+  Value::Map properties =
+      EvaluatePropertyMap(data.properties, input, "CREATE relationship", state);
+  const Value::RelationshipPtr relationship =
+      state->UsesGraphDB() ? CreateGraphDBEdge(*state->transaction, left, right,
+                                               data.type, std::move(properties))
+                           : RequireStorage(state).CreateRelationship(
+                                 left, right, data.type, std::move(properties));
   CHECK(relationship != nullptr, common::InternalError,
         "storage returned a null created relationship");
-  output->SetEntityId(data.relationship_slot, relationship->id);
+  if (state->UsesGraphDB()) {
+    output->SetRelationship(
+        data.relationship_slot,
+        {.id = relationship->id, .type_id = relationship->type_id});
+  } else {
+    output->SetEntityId(data.relationship_slot, relationship->id);
+  }
 }
 
 Value::Map EvaluateMergeProperties(const PhysicalPropertyMap &properties,
@@ -686,10 +698,14 @@ Value::Map EvaluateMergeProperties(const PhysicalPropertyMap &properties,
 
 void ExecuteMergeCreate(const CreateNodeOp &data, SlottedRow *row,
                         RuntimeState *state) {
-  GraphWriter &storage = RequireStorage(state);
-  const Value::NodePtr node = storage.CreateNode(
-      data.labels,
-      EvaluateMergeProperties(data.properties, *row, "node", state));
+  Value::Map properties =
+      EvaluateMergeProperties(data.properties, *row, "node", state);
+  const Value::NodePtr node =
+      state->UsesGraphDB()
+          ? CreateGraphDBVertex(*state->transaction, data.labels,
+                                std::move(properties))
+          : RequireStorage(state).CreateNode(data.labels,
+                                             std::move(properties));
   CHECK(node != nullptr, common::InternalError,
         "storage returned a null created node");
   row->SetEntityId(data.node_slot, node->id);
@@ -697,33 +713,53 @@ void ExecuteMergeCreate(const CreateNodeOp &data, SlottedRow *row,
 
 void ExecuteMergeCreate(const CreateRelationshipOp &data, SlottedRow *row,
                         RuntimeState *state) {
-  GraphWriter &storage = RequireStorage(state);
   const std::int64_t left = NodeId(*row, data.left_node_slot, *state);
   const std::int64_t right = NodeId(*row, data.right_node_slot, *state);
   CHECK(left >= 0 && right >= 0, common::InvalidArgumentError,
         "MERGE relationship endpoints must be nodes");
-  const Value::RelationshipPtr relationship = storage.CreateRelationship(
-      left, right, data.type,
-      EvaluateMergeProperties(data.properties, *row, "relationship", state));
+  Value::Map properties =
+      EvaluateMergeProperties(data.properties, *row, "relationship", state);
+  const Value::RelationshipPtr relationship =
+      state->UsesGraphDB() ? CreateGraphDBEdge(*state->transaction, left, right,
+                                               data.type, std::move(properties))
+                           : RequireStorage(state).CreateRelationship(
+                                 left, right, data.type, std::move(properties));
   CHECK(relationship != nullptr, common::InternalError,
         "storage returned a null created relationship");
-  row->SetEntityId(data.relationship_slot, relationship->id);
+  if (state->UsesGraphDB()) {
+    row->SetRelationship(
+        data.relationship_slot,
+        {.id = relationship->id, .type_id = relationship->type_id});
+  } else {
+    row->SetEntityId(data.relationship_slot, relationship->id);
+  }
 }
 
 void ExecuteStreamingWrite(const SetPropertyOp &data, const SlottedRow &,
                            SlottedRow *output, RuntimeState *state) {
-  GraphWriter &storage = RequireStorage(state);
   const Value entity = Evaluate(data.entity, *output, *state);
   if (entity.IsNull()) {
     return;
   }
   Value value = Evaluate(data.value, *output, *state);
   if (entity.IsNode()) {
-    storage.SetNodeProperty(entity.AsNode().id, data.property_key,
-                            std::move(value));
+    if (state->UsesGraphDB()) {
+      SetGraphDBVertexProperty(*state->transaction, entity.AsNode().id,
+                               data.property_key, std::move(value));
+    } else {
+      RequireStorage(state).SetNodeProperty(
+          entity.AsNode().id, data.property_key, std::move(value));
+    }
   } else if (entity.IsRelationship()) {
-    storage.SetRelationshipProperty(entity.AsRelationship().id,
-                                    data.property_key, std::move(value));
+    if (state->UsesGraphDB()) {
+      SetGraphDBEdgeProperty(*state->transaction,
+                             {.id = entity.AsRelationship().id,
+                              .type_id = entity.AsRelationship().type_id},
+                             data.property_key, std::move(value));
+    } else {
+      RequireStorage(state).SetRelationshipProperty(
+          entity.AsRelationship().id, data.property_key, std::move(value));
+    }
   } else {
     THROW(common::InvalidArgumentError, "SET property target is not an entity");
   }
@@ -731,7 +767,6 @@ void ExecuteStreamingWrite(const SetPropertyOp &data, const SlottedRow &,
 
 void ExecuteStreamingWrite(const SetPropertiesOp &data, const SlottedRow &,
                            SlottedRow *output, RuntimeState *state) {
-  GraphWriter &storage = RequireStorage(state);
   const Value entity = Evaluate(data.entity, *output, *state);
   if (entity.IsNull()) {
     return;
@@ -740,12 +775,25 @@ void ExecuteStreamingWrite(const SetPropertiesOp &data, const SlottedRow &,
   CHECK(value.IsMap(), common::InvalidArgumentError,
         "SET properties requires a map value");
   if (entity.IsNode()) {
-    storage.SetNodeProperties(entity.AsNode().id, std::move(value.AsMap()),
-                              data.include_existing);
+    if (state->UsesGraphDB()) {
+      SetGraphDBVertexProperties(*state->transaction, entity.AsNode().id,
+                                 std::move(value.AsMap()),
+                                 data.include_existing);
+    } else {
+      RequireStorage(state).SetNodeProperties(
+          entity.AsNode().id, std::move(value.AsMap()), data.include_existing);
+    }
   } else if (entity.IsRelationship()) {
-    storage.SetRelationshipProperties(entity.AsRelationship().id,
-                                      std::move(value.AsMap()),
-                                      data.include_existing);
+    if (state->UsesGraphDB()) {
+      SetGraphDBEdgeProperties(*state->transaction,
+                               {.id = entity.AsRelationship().id,
+                                .type_id = entity.AsRelationship().type_id},
+                               std::move(value.AsMap()), data.include_existing);
+    } else {
+      RequireStorage(state).SetRelationshipProperties(
+          entity.AsRelationship().id, std::move(value.AsMap()),
+          data.include_existing);
+    }
   } else {
     THROW(common::InvalidArgumentError,
           "SET properties target is not an entity");
@@ -754,14 +802,18 @@ void ExecuteStreamingWrite(const SetPropertiesOp &data, const SlottedRow &,
 
 void ExecuteStreamingWrite(const SetLabelsOp &data, const SlottedRow &,
                            SlottedRow *output, RuntimeState *state) {
-  GraphWriter &storage = RequireStorage(state);
   const Value entity = Evaluate(data.entity, *output, *state);
   if (entity.IsNull()) {
     return;
   }
   CHECK(entity.IsNode(), common::InvalidArgumentError,
         "SET labels target is not a node");
-  storage.SetLabels(entity.AsNode().id, data.labels);
+  if (state->UsesGraphDB()) {
+    AddGraphDBVertexLabels(*state->transaction, entity.AsNode().id,
+                           data.labels);
+  } else {
+    RequireStorage(state).SetLabels(entity.AsNode().id, data.labels);
+  }
 }
 
 void ExecuteMergeActions(const MergeOp &data, bool on_match, SlottedRow *row,
@@ -782,13 +834,25 @@ void ExecuteMergeActions(const MergeOp &data, bool on_match, SlottedRow *row,
 
 void ExecuteStreamingWrite(const RemovePropertyOp &data, const SlottedRow &,
                            SlottedRow *output, RuntimeState *state) {
-  GraphWriter &storage = RequireStorage(state);
   const Value entity = Evaluate(data.entity, *output, *state);
   if (entity.IsNode()) {
-    storage.RemoveNodeProperty(entity.AsNode().id, data.property_key);
+    if (state->UsesGraphDB()) {
+      RemoveGraphDBVertexProperty(*state->transaction, entity.AsNode().id,
+                                  data.property_key);
+    } else {
+      RequireStorage(state).RemoveNodeProperty(entity.AsNode().id,
+                                               data.property_key);
+    }
   } else if (entity.IsRelationship()) {
-    storage.RemoveRelationshipProperty(entity.AsRelationship().id,
-                                       data.property_key);
+    if (state->UsesGraphDB()) {
+      RemoveGraphDBEdgeProperty(*state->transaction,
+                                {.id = entity.AsRelationship().id,
+                                 .type_id = entity.AsRelationship().type_id},
+                                data.property_key);
+    } else {
+      RequireStorage(state).RemoveRelationshipProperty(
+          entity.AsRelationship().id, data.property_key);
+    }
   } else {
     CHECK(entity.IsNull(), common::InvalidArgumentError,
           "REMOVE property target is not an entity");
@@ -797,12 +861,16 @@ void ExecuteStreamingWrite(const RemovePropertyOp &data, const SlottedRow &,
 
 void ExecuteStreamingWrite(const RemoveLabelsOp &data, const SlottedRow &,
                            SlottedRow *output, RuntimeState *state) {
-  GraphWriter &storage = RequireStorage(state);
   const Value entity = Evaluate(data.entity, *output, *state);
   if (!entity.IsNull()) {
     CHECK(entity.IsNode(), common::InvalidArgumentError,
           "REMOVE labels target is not a node");
-    storage.RemoveLabels(entity.AsNode().id, data.labels);
+    if (state->UsesGraphDB()) {
+      RemoveGraphDBVertexLabels(*state->transaction, entity.AsNode().id,
+                                data.labels);
+    } else {
+      RequireStorage(state).RemoveLabels(entity.AsNode().id, data.labels);
+    }
   }
 }
 
@@ -4703,9 +4771,12 @@ class DeleteOperator final : public PullOperator {
 
   void Initialize() {
     initialized_ = true;
-    GraphWriter &storage = RequireStorage(state_);
+    GraphWriter *storage =
+        state_->UsesGraphDB() ? nullptr : &RequireStorage(state_);
     std::set<std::int64_t> node_ids;
     std::set<std::int64_t> relationship_ids;
+    std::unordered_map<std::int64_t, RelationshipReference>
+        graphdb_relationships;
     SlottedRow input(node_->children[0]->output_slots);
     while (source_->Next(&input)) {
       state_->CheckCancelled();
@@ -4721,29 +4792,63 @@ class DeleteOperator final : public PullOperator {
         if (entity.IsNode()) {
           node_ids.insert(entity.AsNode().id);
         } else {
-          relationship_ids.insert(entity.AsRelationship().id);
+          const Relationship &relationship = entity.AsRelationship();
+          relationship_ids.insert(relationship.id);
+          if (state_->UsesGraphDB()) {
+            graphdb_relationships.insert_or_assign(
+                relationship.id,
+                RelationshipReference{.id = relationship.id,
+                                      .type_id = relationship.type_id});
+          }
         }
       }
     }
-    for (std::int64_t node_id : node_ids) {
-      EntityIdCursor *relationships = state_->TrackCursor(
-          state_->graph_reader->RelationshipIdsConnectedTo(node_id));
-      while (relationships->Next()) {
-        if constexpr (Data::kDetach) {
-          relationship_ids.insert(relationships->Id());
-        } else {
-          CHECK(relationship_ids.contains(relationships->Id()),
-                common::InvalidArgumentError,
-                "DELETE node still has relationships");
+    if (state_->UsesGraphDB()) {
+      if constexpr (!Data::kDetach) {
+        for (std::int64_t node_id : node_ids) {
+          graphdb::Vertex vertex =
+              GraphDBVertexById(*state_->transaction, node_id);
+          auto relationships =
+              vertex.NewEdgeIterator(graphdb::EdgeDirection::BOTH, {}, {});
+          while (relationships->Valid()) {
+            CHECK(relationship_ids.contains(
+                      relationships->GetEdge().GetNativeId()),
+                  common::InvalidArgumentError,
+                  "DELETE node still has relationships");
+            relationships->Next();
+          }
         }
       }
-      state_->ReleaseCursor(relationships);
+    } else {
+      for (std::int64_t node_id : node_ids) {
+        EntityIdCursor *relationships = state_->TrackCursor(
+            state_->graph_reader->RelationshipIdsConnectedTo(node_id));
+        while (relationships->Next()) {
+          if constexpr (Data::kDetach) {
+            relationship_ids.insert(relationships->Id());
+          } else {
+            CHECK(relationship_ids.contains(relationships->Id()),
+                  common::InvalidArgumentError,
+                  "DELETE node still has relationships");
+          }
+        }
+        state_->ReleaseCursor(relationships);
+      }
     }
     for (std::int64_t relationship_id : relationship_ids) {
-      storage.DeleteRelationship(relationship_id);
+      if (state_->UsesGraphDB()) {
+        DeleteGraphDBEdge(*state_->transaction,
+                          graphdb_relationships.at(relationship_id));
+      } else {
+        storage->DeleteRelationship(relationship_id);
+      }
     }
     for (std::int64_t node_id : node_ids) {
-      storage.DeleteNode(node_id);
+      if (state_->UsesGraphDB()) {
+        DeleteGraphDBVertex(*state_->transaction, node_id);
+      } else {
+        storage->DeleteNode(node_id);
+      }
     }
   }
 
