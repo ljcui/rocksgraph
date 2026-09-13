@@ -1741,6 +1741,13 @@ class NodeIndexSeekOperator final : public NodeScanOperator {
         data_->labels, data_->property_key, expected);
   }
 
+  [[nodiscard]] std::unique_ptr<graphdb::VertexIterator> OpenGraphDBCursor()
+      override {
+    Value expected = Evaluate(data_->value, Argument(), State());
+    return State().transaction->QueryVertexByPropertyIndex(
+        data_->labels, data_->property_key, expected);
+  }
+
   const NodeIndexSeekOp *data_ = nullptr;
 };
 
@@ -1755,6 +1762,28 @@ class NodeIndexRangeSeekOperator final : public NodeScanOperator {
         data_(&OperatorData<NodeIndexRangeSeekOp>(node)) {}
 
  private:
+  [[nodiscard]] std::unique_ptr<graphdb::VertexIterator> OpenGraphDBCursor()
+      override {
+    const IndexRange range =
+        EvaluateIndexRange(data_->predicates, data_->variable,
+                           data_->property_key, Argument(), State());
+    std::optional<Value> lower;
+    std::optional<Value> upper;
+    bool left_closed = true;
+    bool right_closed = true;
+    if (!range.prefix.has_value() && range.lower_bounds.size() == 1) {
+      lower = range.lower_bounds.front().value;
+      left_closed = range.lower_bounds.front().inclusive;
+    }
+    if (!range.prefix.has_value() && range.upper_bounds.size() == 1) {
+      upper = range.upper_bounds.front().value;
+      right_closed = range.upper_bounds.front().inclusive;
+    }
+    return State().transaction->QueryVertexByPropertyRange(
+        data_->labels, data_->property_key, lower, upper, left_closed,
+        right_closed);
+  }
+
   [[nodiscard]] std::unique_ptr<EntityIdCursor> OpenCursor() override {
     const IndexRange range =
         EvaluateIndexRange(data_->predicates, data_->variable,
@@ -2146,6 +2175,13 @@ class RelationshipIndexSeekOperator final : public RelationshipScanOperator {
         data_->pattern.types, data_->property_key, expected);
   }
 
+  [[nodiscard]] std::unique_ptr<graphdb::EdgeIterator> OpenGraphDBCursor()
+      override {
+    Value expected = Evaluate(data_->value, Argument(), State());
+    return State().transaction->QueryEdgeByPropertyIndex(
+        data_->pattern.types, data_->property_key, expected);
+  }
+
   const RelationshipIndexSeekOp *data_ = nullptr;
 };
 
@@ -2162,6 +2198,28 @@ class RelationshipIndexRangeSeekOperator final
         data_(&OperatorData<RelationshipIndexRangeSeekOp>(node)) {}
 
  private:
+  [[nodiscard]] std::unique_ptr<graphdb::EdgeIterator> OpenGraphDBCursor()
+      override {
+    const IndexRange range =
+        EvaluateIndexRange(data_->predicates, data_->pattern.relationship,
+                           data_->property_key, Argument(), State());
+    std::optional<Value> lower;
+    std::optional<Value> upper;
+    bool left_closed = true;
+    bool right_closed = true;
+    if (!range.prefix.has_value() && range.lower_bounds.size() == 1) {
+      lower = range.lower_bounds.front().value;
+      left_closed = range.lower_bounds.front().inclusive;
+    }
+    if (!range.prefix.has_value() && range.upper_bounds.size() == 1) {
+      upper = range.upper_bounds.front().value;
+      right_closed = range.upper_bounds.front().inclusive;
+    }
+    return State().transaction->QueryEdgeByPropertyRange(
+        data_->pattern.types, data_->property_key, lower, upper, left_closed,
+        right_closed);
+  }
+
   [[nodiscard]] std::unique_ptr<EntityIdCursor> OpenCursor() override {
     const IndexRange range =
         EvaluateIndexRange(data_->predicates, data_->pattern.relationship,

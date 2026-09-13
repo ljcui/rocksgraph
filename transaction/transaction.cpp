@@ -577,6 +577,33 @@ Transaction::QueryVertexByPropertyIndex(const std::string& index_name,
                                                     std::move(key));
 }
 
+std::unique_ptr<graphdb::VertexIterator>
+Transaction::QueryVertexByPropertyIndex(const std::vector<std::string>& labels,
+                                        const std::string& property_key,
+                                        const rg::Value& query) {
+  if (labels.size() != 1) {
+    THROW_CODE(InvalidParameter,
+               "GraphDB vertex property indexes require exactly one label");
+  }
+  auto lid = db_->id_generator().GetLid(labels.front());
+  auto pid = db_->id_generator().GetPid(property_key);
+  if (!lid.has_value() || !pid.has_value()) {
+    return std::make_unique<NoVertexFound>(this);
+  }
+  auto index = db_->meta_info().GetReadyVertexPropertyIndex(*lid, *pid);
+  if (!index) {
+    if (auto unavailable =
+            db_->meta_info().GetVertexPropertyIndex(*lid, *pid)) {
+      ThrowIfIndexUnavailable(unavailable, property_key, "Vertex");
+    }
+    THROW_CODE(
+        VertexUniqueIndexNotFound,
+        "No ready vertex property index for label [{}] and property [{}]",
+        labels.front(), property_key);
+  }
+  return QueryVertexByPropertyIndex(index->Name(), query);
+}
+
 std::unique_ptr<graphdb::EdgeIterator> Transaction::QueryEdgeByPropertyIndex(
     const std::string& index_name, const rg::Value& query) {
   auto index = ResolveEdgePropertyIndexOrThrow(this, index_name);
@@ -584,6 +611,30 @@ std::unique_ptr<graphdb::EdgeIterator> Transaction::QueryEdgeByPropertyIndex(
   auto key = index->IndexKey(values);
   return std::make_unique<GetEdgeByPropertyIndex>(this, std::move(index),
                                                   std::move(key));
+}
+
+std::unique_ptr<graphdb::EdgeIterator> Transaction::QueryEdgeByPropertyIndex(
+    const std::vector<std::string>& types, const std::string& property_key,
+    const rg::Value& query) {
+  if (types.size() != 1) {
+    THROW_CODE(InvalidParameter,
+               "GraphDB edge property indexes require exactly one type");
+  }
+  auto tid = db_->id_generator().GetTid(types.front());
+  auto pid = db_->id_generator().GetPid(property_key);
+  if (!tid.has_value() || !pid.has_value()) {
+    return std::make_unique<NoEdgeFound>(this);
+  }
+  auto index = db_->meta_info().GetReadyEdgePropertyIndex(*tid, *pid);
+  if (!index) {
+    if (auto unavailable = db_->meta_info().GetEdgePropertyIndex(*tid, *pid)) {
+      ThrowIfIndexUnavailable(unavailable, property_key, "Edge");
+    }
+    THROW_CODE(EdgePropertyIndexNotFound,
+               "No ready edge property index for type [{}] and property [{}]",
+               types.front(), property_key);
+  }
+  return QueryEdgeByPropertyIndex(index->Name(), query);
 }
 
 std::unique_ptr<graphdb::EdgeIterator> Transaction::QueryEdgeByPropertyRange(
@@ -602,6 +653,33 @@ std::unique_ptr<graphdb::EdgeIterator> Transaction::QueryEdgeByPropertyRange(
       left_closed, right_closed);
 }
 
+std::unique_ptr<graphdb::EdgeIterator> Transaction::QueryEdgeByPropertyRange(
+    const std::vector<std::string>& types, const std::string& property_key,
+    const std::optional<rg::Value>& lower,
+    const std::optional<rg::Value>& upper, bool left_closed,
+    bool right_closed) {
+  if (types.size() != 1) {
+    THROW_CODE(InvalidParameter,
+               "GraphDB edge property indexes require exactly one type");
+  }
+  auto tid = db_->id_generator().GetTid(types.front());
+  auto pid = db_->id_generator().GetPid(property_key);
+  if (!tid.has_value() || !pid.has_value()) {
+    return std::make_unique<NoEdgeFound>(this);
+  }
+  auto index = db_->meta_info().GetReadyEdgePropertyIndex(*tid, *pid);
+  if (!index) {
+    if (auto unavailable = db_->meta_info().GetEdgePropertyIndex(*tid, *pid)) {
+      ThrowIfIndexUnavailable(unavailable, property_key, "Edge");
+    }
+    THROW_CODE(EdgePropertyIndexNotFound,
+               "No ready edge property index for type [{}] and property [{}]",
+               types.front(), property_key);
+  }
+  return QueryEdgeByPropertyRange(index->Name(), lower, upper, left_closed,
+                                  right_closed);
+}
+
 std::unique_ptr<graphdb::VertexIterator>
 Transaction::QueryVertexByPropertyRange(const std::string& index_name,
                                         const std::optional<rg::Value>& lower,
@@ -617,6 +695,36 @@ Transaction::QueryVertexByPropertyRange(const std::string& index_name,
   return std::make_unique<GetVertexByPropertyRange>(
       this, std::move(index), std::move(lower_key), std::move(upper_key),
       left_closed, right_closed);
+}
+
+std::unique_ptr<graphdb::VertexIterator>
+Transaction::QueryVertexByPropertyRange(const std::vector<std::string>& labels,
+                                        const std::string& property_key,
+                                        const std::optional<rg::Value>& lower,
+                                        const std::optional<rg::Value>& upper,
+                                        bool left_closed, bool right_closed) {
+  if (labels.size() != 1) {
+    THROW_CODE(InvalidParameter,
+               "GraphDB vertex property indexes require exactly one label");
+  }
+  auto lid = db_->id_generator().GetLid(labels.front());
+  auto pid = db_->id_generator().GetPid(property_key);
+  if (!lid.has_value() || !pid.has_value()) {
+    return std::make_unique<NoVertexFound>(this);
+  }
+  auto index = db_->meta_info().GetReadyVertexPropertyIndex(*lid, *pid);
+  if (!index) {
+    if (auto unavailable =
+            db_->meta_info().GetVertexPropertyIndex(*lid, *pid)) {
+      ThrowIfIndexUnavailable(unavailable, property_key, "Vertex");
+    }
+    THROW_CODE(
+        VertexUniqueIndexNotFound,
+        "No ready vertex property index for label [{}] and property [{}]",
+        labels.front(), property_key);
+  }
+  return QueryVertexByPropertyRange(index->Name(), lower, upper, left_closed,
+                                    right_closed);
 }
 
 std::unique_ptr<graphdb::VertexScoreIterator>

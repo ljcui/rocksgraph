@@ -1,16 +1,44 @@
 #include <gtest/gtest.h>
 
 #include <boost/endian/conversion.hpp>
+#include <chrono>
 #include <filesystem>
 #include <memory>
+#include <thread>
 
 #include "graphdb/assistant_pool.h"
 #include "graphdb/graph_db.h"
 #include "runtime/query_executor.h"
+#include "tests/planner/assume_all_indexes_catalog.h"
 #include "tests/planner/fake_planner_statistics.h"
 #include "transaction/transaction.h"
 
 namespace {
+
+bool WaitUntilVertexIndexReady(graphdb::GraphDB *graph,
+                               const std::string &name) {
+  const auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (graph->meta_info().GetReadyVertexPropertyIndex(name)) {
+      return true;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  return false;
+}
+
+bool WaitUntilEdgeIndexReady(graphdb::GraphDB *graph, const std::string &name) {
+  const auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (graph->meta_info().GetReadyEdgePropertyIndex(name)) {
+      return true;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  return false;
+}
 
 class GraphDBQueryExecutorTest : public testing::Test {
  protected:
@@ -23,14 +51,18 @@ class GraphDBQueryExecutorTest : public testing::Test {
     graph_->drop_on_close() = true;
 
     auto transaction = graph_->BeginTransaction();
-    ada_ = transaction->CreateVertex({"Person"}, {{"name", rg::Value("Ada")}})
+    ada_ = transaction
+               ->CreateVertex({"Person"}, {{"name", rg::Value("Ada")},
+                                           {"age", rg::Value(10)}})
                .GetNativeId();
-    grace_ =
-        transaction->CreateVertex({"Person"}, {{"name", rg::Value("Grace")}})
-            .GetNativeId();
-    other_ =
-        transaction->CreateVertex({"Person"}, {{"name", rg::Value("Other")}})
-            .GetNativeId();
+    grace_ = transaction
+                 ->CreateVertex({"Person"}, {{"name", rg::Value("Grace")},
+                                             {"age", rg::Value(20)}})
+                 .GetNativeId();
+    other_ = transaction
+                 ->CreateVertex({"Person"}, {{"name", rg::Value("Other")},
+                                             {"age", rg::Value(30)}})
+                 .GetNativeId();
     auto ada = transaction->GetVertexById(boost::endian::native_to_big(ada_));
     auto grace =
         transaction->GetVertexById(boost::endian::native_to_big(grace_));
@@ -44,6 +76,13 @@ class GraphDBQueryExecutorTest : public testing::Test {
             ->CreateEdge(grace, other, "RARE_REL", {{"weight", rg::Value(7)}})
             .GetNativeId();
     transaction->Commit();
+
+    graph_->AddVertexPropertyIndex("person_name", false, "Person", {"name"});
+    graph_->AddVertexPropertyIndex("person_age", false, "Person", {"age"});
+    graph_->AddEdgePropertyIndex("knows_since", false, "KNOWS", {"since"});
+    ASSERT_TRUE(WaitUntilVertexIndexReady(graph_.get(), "person_name"));
+    ASSERT_TRUE(WaitUntilVertexIndexReady(graph_.get(), "person_age"));
+    ASSERT_TRUE(WaitUntilEdgeIndexReady(graph_.get(), "knows_since"));
   }
 
   static constexpr const char *kPath = "graphdb_runtime_testdb";
@@ -89,6 +128,72 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeRelationshipTypeScan) {
             (std::vector<rg::Value>{rg::Value(grace_), rg::Value(rare_),
                                     rg::Value("RARE_REL"), rg::Value(7),
                                     rg::Value(other_)}));
+  transaction->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest, ExecutesNativeVertexIndexSeek) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryOptions options;
+  options.planner_catalog = &test_support::AssumeAllIndexesCatalog();
+  rg::QueryResult result =
+      rg::ExecuteQuery(*transaction,
+                       "MATCH (n:Person) WHERE n.name = 'Ada' "
+                       "RETURN id(n) AS id, n.name AS name",
+                       options);
+
+  ASSERT_EQ(result.rows.size(), 1U);
+  EXPECT_EQ(result.rows[0],
+            (std::vector<rg::Value>{rg::Value(ada_), rg::Value("Ada")}));
+  transaction->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest, ExecutesNativeVertexIndexRangeSeek) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryOptions options;
+  options.planner_catalog = &test_support::AssumeAllIndexesCatalog();
+  rg::QueryResult result =
+      rg::ExecuteQuery(*transaction,
+                       "MATCH (n:Person) WHERE n.age >= 20 AND n.age < 31 "
+                       "RETURN id(n) AS id, n.age AS age",
+                       options);
+
+  ASSERT_EQ(result.rows.size(), 2U);
+  EXPECT_EQ(result.rows[0][1], rg::Value(20));
+  EXPECT_EQ(result.rows[1][1], rg::Value(30));
+  transaction->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest, ExecutesNativeRelationshipIndexSeek) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryOptions options;
+  options.planner_catalog = &test_support::AssumeAllIndexesCatalog();
+  rg::QueryResult result =
+      rg::ExecuteQuery(*transaction,
+                       "MATCH (a)-[r:KNOWS]->(b) WHERE r.since = 2020 "
+                       "RETURN id(a) AS aid, id(r) AS rid, id(b) AS bid",
+                       options);
+
+  ASSERT_EQ(result.rows.size(), 1U);
+  EXPECT_EQ(result.rows[0],
+            (std::vector<rg::Value>{rg::Value(ada_), rg::Value(knows_),
+                                    rg::Value(grace_)}));
+  transaction->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest, ExecutesNativeRelationshipIndexRangeSeek) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryOptions options;
+  options.planner_catalog = &test_support::AssumeAllIndexesCatalog();
+  rg::QueryResult result = rg::ExecuteQuery(
+      *transaction,
+      "MATCH (a)-[r:KNOWS]->(b) WHERE r.since >= 2020 AND r.since < 2021 "
+      "RETURN id(a) AS aid, id(r) AS rid, id(b) AS bid",
+      options);
+
+  ASSERT_EQ(result.rows.size(), 1U);
+  EXPECT_EQ(result.rows[0],
+            (std::vector<rg::Value>{rg::Value(ada_), rg::Value(knows_),
+                                    rg::Value(grace_)}));
   transaction->Commit();
 }
 

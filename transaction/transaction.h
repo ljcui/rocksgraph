@@ -60,14 +60,30 @@ class Transaction {
       const std::optional<std::unordered_set<std::string>>& props);
   std::unique_ptr<graphdb::VertexIterator> QueryVertexByPropertyIndex(
       const std::string& index_name, const rg::Value& query);
+  std::unique_ptr<graphdb::VertexIterator> QueryVertexByPropertyIndex(
+      const std::vector<std::string>& labels, const std::string& property_key,
+      const rg::Value& query);
   std::unique_ptr<graphdb::VertexIterator> QueryVertexByPropertyRange(
       const std::string& index_name, const std::optional<rg::Value>& lower,
       const std::optional<rg::Value>& upper, bool left_closed,
       bool right_closed);
+  std::unique_ptr<graphdb::VertexIterator> QueryVertexByPropertyRange(
+      const std::vector<std::string>& labels, const std::string& property_key,
+      const std::optional<rg::Value>& lower,
+      const std::optional<rg::Value>& upper, bool left_closed,
+      bool right_closed);
   std::unique_ptr<graphdb::EdgeIterator> QueryEdgeByPropertyIndex(
       const std::string& index_name, const rg::Value& query);
+  std::unique_ptr<graphdb::EdgeIterator> QueryEdgeByPropertyIndex(
+      const std::vector<std::string>& types, const std::string& property_key,
+      const rg::Value& query);
   std::unique_ptr<graphdb::EdgeIterator> QueryEdgeByPropertyRange(
       const std::string& index_name, const std::optional<rg::Value>& lower,
+      const std::optional<rg::Value>& upper, bool left_closed,
+      bool right_closed);
+  std::unique_ptr<graphdb::EdgeIterator> QueryEdgeByPropertyRange(
+      const std::vector<std::string>& types, const std::string& property_key,
+      const std::optional<rg::Value>& lower,
       const std::optional<rg::Value>& upper, bool left_closed,
       bool right_closed);
   std::unique_ptr<graphdb::VertexScoreIterator> QueryVertexByFTIndex(
