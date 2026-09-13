@@ -48,7 +48,7 @@ std::vector<std::vector<std::string>> StringRows(
 std::unique_ptr<rg::QueryResultCursor> CursorFromTemporaryPlannedQuery(
     txn::Transaction &transaction) {
   ir::PlannedQuery query = ir::PlanCypher("RETURN 1 + 2 AS value");
-  return rg::QueryExecutor(transaction).ExecuteCursor(query.Plan());
+  return rg::QueryExecutor(transaction).ExecuteCursor(query.LogicalPlan());
 }
 
 const ir::LogicalPlan *FindPlanNode(const ir::LogicalPlan &plan,
@@ -90,7 +90,7 @@ TEST(QueryExecutorTest, DefaultLogicalPlanDoesNotAssumeIndexes) {
       ir::PlanCypher("MATCH (n:Person) WHERE n.name = 'Ada' RETURN id(n)");
 
   const rg::QueryResult result =
-      rg::test::ExecutePlanAndCommit(graph, query.Plan());
+      rg::test::ExecutePlanAndCommit(graph, query.LogicalPlan());
   ASSERT_EQ(result.rows.size(), 1U);
   ASSERT_EQ(result.rows.front().size(), 1U);
   EXPECT_EQ(result.rows.front().front().AsInteger(), ada->id);

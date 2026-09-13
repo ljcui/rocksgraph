@@ -655,9 +655,9 @@ void RunScenario(const Scenario &scenario) {
     } else {
       ASSERT_FALSE(compile_failed);
       ASSERT_TRUE(planned_query.has_value());
-      EXPECT_THROW(
-          (void)ExecutePlanAndCommit(graph, planned_query->Plan(), parameters),
-          common::Exception);
+      EXPECT_THROW((void)ExecutePlanAndCommit(
+                       graph, planned_query->LogicalPlan(), parameters),
+                   common::Exception);
     }
     EXPECT_EQ(Snapshot(graph).nodes, before.nodes);
     EXPECT_EQ(Snapshot(graph).relationships, before.relationships);

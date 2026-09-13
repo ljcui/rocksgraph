@@ -143,7 +143,7 @@ TEST(OpenCypherOptimizerTest, OptionalExpandKeepsNullsAndDuplicateMatches) {
   EXPECT_EQ(result.rows.size(), 5U);
   ir::PlannedQuery planned =
       ir::PlanCypher("MATCH (a) OPTIONAL MATCH (a)-[r]->(b) RETURN b");
-  EXPECT_NE(Find(planned.Plan(), Type::kOptionalExpand), nullptr);
+  EXPECT_NE(Find(planned.LogicalPlan(), Type::kOptionalExpand), nullptr);
 }
 
 TEST(OpenCypherOptimizerTest, ShortCircuitsExistenceWithoutTraversing) {
@@ -156,9 +156,10 @@ TEST(OpenCypherOptimizerTest, ShortCircuitsExistenceWithoutTraversing) {
     const std::string text =
         std::string("MATCH (a) WHERE ") + predicate + " RETURN a";
     ir::PlannedQuery query = ir::PlanCypher(text);
-    ASSERT_NE(Find(query.Plan(), Type::kSelectOrSemiApply), nullptr);
-    EXPECT_EQ(rg::test::ExecutePlanAndCommit(graph, query.Plan()).rows.size(),
-              2U);
+    ASSERT_NE(Find(query.LogicalPlan(), Type::kSelectOrSemiApply), nullptr);
+    EXPECT_EQ(
+        rg::test::ExecutePlanAndCommit(graph, query.LogicalPlan()).rows.size(),
+        2U);
   }
   EXPECT_EQ(rg::test::ExecuteQueryAndCommit(
                 graph, "MATCH (a) WHERE null OR (a)-[:R]->() RETURN a")
@@ -205,7 +206,7 @@ TEST(OpenCypherOptimizerTest, PruningMatchesTrailEnumerationOnDirectedCycles) {
                                "]->(b) WHERE id(a)=1 RETURN ";
     ir::PlannedQuery pruning = ir::PlanCypher(prefix + "DISTINCT id(b)");
     ir::PlannedQuery enumeration = ir::PlanCypher(prefix + "id(b)");
-    ASSERT_NE(Find(pruning.Plan(), Type::kPruningVarExpand), nullptr);
+    ASSERT_NE(Find(pruning.LogicalPlan(), Type::kPruningVarExpand), nullptr);
     for (unsigned mask = 0; mask < (1U << edges.size()); ++mask) {
       SCOPED_TRACE(mask);
       rg::test::GraphDBTestDatabase graph;
@@ -219,12 +220,12 @@ TEST(OpenCypherOptimizerTest, PruningMatchesTrailEnumerationOnDirectedCycles) {
                                    nodes[edges[i].second], "R");
         }
       }
-      auto expected =
-          Rows(rg::test::ExecutePlanAndCommit(graph, enumeration.Plan()));
+      auto expected = Rows(
+          rg::test::ExecutePlanAndCommit(graph, enumeration.LogicalPlan()));
       const std::set<std::vector<std::string>> unique(expected.begin(),
                                                       expected.end());
       const auto actual =
-          Rows(rg::test::ExecutePlanAndCommit(graph, pruning.Plan()));
+          Rows(rg::test::ExecutePlanAndCommit(graph, pruning.LogicalPlan()));
       EXPECT_EQ(actual, (std::multiset<std::vector<std::string>>(
                             unique.begin(), unique.end())));
     }
@@ -242,7 +243,7 @@ TEST(OpenCypherOptimizerTest, KeepsPathSensitiveQueriesOnRegularExpansion) {
         "MATCH (a)-[r:R*1..3]->(b) RETURN DISTINCT b,rand()"}) {
     SCOPED_TRACE(text);
     ir::PlannedQuery query = ir::PlanCypher(text);
-    EXPECT_EQ(Find(query.Plan(), Type::kPruningVarExpand), nullptr);
+    EXPECT_EQ(Find(query.LogicalPlan(), Type::kPruningVarExpand), nullptr);
   }
 }
 
@@ -251,7 +252,7 @@ TEST(OpenCypherOptimizerTest,
   ir::PlannedQuery query = ir::PlanCypher(
       "MATCH (a),(d) OPTIONAL MATCH (a)-[:R]->(b)-[:S]->(c) RETURN "
       "id(a),id(d),id(c)");
-  ASSERT_NE(Find(query.Plan(), Type::kLeftOuterHashJoin), nullptr);
+  ASSERT_NE(Find(query.LogicalPlan(), Type::kLeftOuterHashJoin), nullptr);
   rg::test::GraphDBTestDatabase graph;
   auto a = graph.CreateNode({});
   auto b = graph.CreateNode({});
@@ -259,7 +260,8 @@ TEST(OpenCypherOptimizerTest,
   graph.CreateRelationship(a, b, "R");
   graph.CreateRelationship(a, b, "R");
   graph.CreateRelationship(b, c, "S");
-  const auto result = rg::test::ExecutePlanAndCommit(graph, query.Plan());
+  const auto result =
+      rg::test::ExecutePlanAndCommit(graph, query.LogicalPlan());
   ASSERT_EQ(result.rows.size(), 12U);
   EXPECT_EQ(std::count_if(result.rows.begin(), result.rows.end(),
                           [](const auto &row) { return row[2].IsNull(); }),
@@ -267,11 +269,12 @@ TEST(OpenCypherOptimizerTest,
   ir::PlannedQuery correlated = ir::PlanCypher(
       "MATCH (a),(d) OPTIONAL MATCH (a)-[:R]->(b)-[:S]->(c) WHERE c.x=d.x "
       "RETURN c");
-  EXPECT_EQ(Find(correlated.Plan(), Type::kLeftOuterHashJoin), nullptr);
+  EXPECT_EQ(Find(correlated.LogicalPlan(), Type::kLeftOuterHashJoin), nullptr);
   ir::PlannedQuery volatile_query = ir::PlanCypher(
       "MATCH (a),(d) OPTIONAL MATCH (a)-[:R]->(b)-[:S]->(c) WHERE rand()>0.5 "
       "RETURN c");
-  EXPECT_EQ(Find(volatile_query.Plan(), Type::kLeftOuterHashJoin), nullptr);
+  EXPECT_EQ(Find(volatile_query.LogicalPlan(), Type::kLeftOuterHashJoin),
+            nullptr);
 }
 
 TEST(OpenCypherOptimizerTest, ClonesNewNodesAndReadsWritesInTheSameQuery) {
@@ -295,8 +298,8 @@ TEST(OpenCypherOptimizerTest, ClonesNewNodesAndReadsWritesInTheSameQuery) {
         "MATCH (a)-[:R*0..2]->(b) RETURN DISTINCT b",
         "MATCH (a),(d) OPTIONAL MATCH (a)-[:R]->(b)-[:R]->(c) RETURN c"}) {
     ir::PlannedQuery query = ir::PlanCypher(text);
-    auto clone = ir::CloneComponentPlan(query.Plan());
-    EXPECT_EQ(Rows(rg::test::ExecutePlanAndCommit(graph, query.Plan())),
+    auto clone = ir::CloneComponentPlan(query.LogicalPlan());
+    EXPECT_EQ(Rows(rg::test::ExecutePlanAndCommit(graph, query.LogicalPlan())),
               Rows(rg::test::ExecutePlanAndCommit(graph, *clone)));
   }
 }
@@ -346,7 +349,8 @@ TEST(OpenCypherOptimizerTest, PreservesUndirectedListOrientationAndEmptyPaths) {
                   .rows.empty());
   ir::PlannedQuery volatile_optional = ir::PlanCypher(
       "MATCH (a) OPTIONAL MATCH (a)-[r]->(b) WHERE rand()>0.5 RETURN b");
-  EXPECT_EQ(Find(volatile_optional.Plan(), Type::kOptionalExpand), nullptr);
+  EXPECT_EQ(Find(volatile_optional.LogicalPlan(), Type::kOptionalExpand),
+            nullptr);
 }
 
 TEST(OpenCypherOptimizerTest, EnforcesMemoryLimitsForNewStatefulOperators) {
@@ -364,9 +368,9 @@ TEST(OpenCypherOptimizerTest, EnforcesMemoryLimitsForNewStatefulOperators) {
         "MATCH (a),(d) OPTIONAL MATCH (a)-[:R]->(b)-[:S]->(c) RETURN c"}) {
     SCOPED_TRACE(text);
     ir::PlannedQuery query = ir::PlanCypher(text);
-    EXPECT_THROW(
-        (void)rg::test::ExecutePlanAndCommit(graph, query.Plan(), {}, options),
-        common::MemoryLimitExceededError);
+    EXPECT_THROW((void)rg::test::ExecutePlanAndCommit(
+                     graph, query.LogicalPlan(), {}, options),
+                 common::MemoryLimitExceededError);
   }
 }
 
@@ -374,15 +378,16 @@ TEST(OpenCypherOptimizerTest, KeepsCorrelatedRelationshipIdSeeksInsideApply) {
   ir::PlannedQuery query = ir::PlanCypher(
       "MATCH (a),(d) OPTIONAL MATCH (a)-[r:R]->(b)-[:S]->(c) "
       "WHERE id(r)=id(a) RETURN id(a),id(d),id(c)");
-  EXPECT_NE(Find(query.Plan(), Type::kRelationshipByIdSeek), nullptr);
-  EXPECT_EQ(Find(query.Plan(), Type::kLeftOuterHashJoin), nullptr);
+  EXPECT_NE(Find(query.LogicalPlan(), Type::kRelationshipByIdSeek), nullptr);
+  EXPECT_EQ(Find(query.LogicalPlan(), Type::kLeftOuterHashJoin), nullptr);
   rg::test::GraphDBTestDatabase graph;
   auto a = graph.CreateNode({});
   auto b = graph.CreateNode({});
   auto c = graph.CreateNode({});
   graph.CreateRelationship(a, b, "R");
   graph.CreateRelationship(b, c, "S");
-  const auto result = rg::test::ExecutePlanAndCommit(graph, query.Plan());
+  const auto result =
+      rg::test::ExecutePlanAndCommit(graph, query.LogicalPlan());
   EXPECT_EQ(result.rows.size(), 9U);
   EXPECT_EQ(std::count_if(result.rows.begin(), result.rows.end(),
                           [](const auto &row) { return row[2].IsNull(); }),
@@ -393,14 +398,14 @@ TEST(OpenCypherOptimizerTest, KeepsRuntimeNodeAssertionsInOptionalMatches) {
   ir::PlannedQuery query = ir::PlanCypher(
       "UNWIND $values AS a MATCH (d) "
       "OPTIONAL MATCH (a)-[:R]->(b)-[:S]->(c) RETURN c");
-  EXPECT_EQ(Find(query.Plan(), Type::kLeftOuterHashJoin), nullptr);
+  EXPECT_EQ(Find(query.LogicalPlan(), Type::kLeftOuterHashJoin), nullptr);
   rg::test::GraphDBTestDatabase graph;
   graph.CreateNode({});
   rg::QueryParameters parameters{
       {"values", rg::Value(rg::Value::List{rg::Value(1)})}};
-  EXPECT_THROW(
-      (void)rg::test::ExecutePlanAndCommit(graph, query.Plan(), parameters),
-      common::InvalidArgumentError);
+  EXPECT_THROW((void)rg::test::ExecutePlanAndCommit(graph, query.LogicalPlan(),
+                                                    parameters),
+               common::InvalidArgumentError);
 }
 
 TEST(OpenCypherOptimizerTest, UsesLabelAndTypeCursorsWithoutFullScans) {
@@ -418,7 +423,7 @@ TEST(OpenCypherOptimizerTest, UsesLabelAndTypeCursorsWithoutFullScans) {
       rg::test::ExecuteQueryAndCommit(graph, "MATCH (n:A:B) RETURN id(n)");
   EXPECT_EQ(Rows(result), (std::multiset<std::vector<std::string>>{{"1"}}));
   ir::PlannedQuery node_scan = ir::PlanCypher("MATCH (n:A:B) RETURN id(n)");
-  EXPECT_NE(Find(node_scan.Plan(), Type::kNodeByLabelScan), nullptr);
+  EXPECT_NE(Find(node_scan.LogicalPlan(), Type::kNodeByLabelScan), nullptr);
   EXPECT_TRUE(
       rg::test::ExecuteQueryAndCommit(graph, "MATCH (n:Missing) RETURN n")
           .rows.empty());
@@ -445,9 +450,10 @@ TEST(OpenCypherOptimizerTest, RangeSeeksOnlyReturnBoundedCandidates) {
         "$upper > n.score AND n.score < 200 RETURN n.score"}) {
     SCOPED_TRACE(query);
     auto planned = PlanWithGraphDBCatalog(query, graph.Graph());
-    EXPECT_TRUE(Find(planned.Plan(), Type::kNodeIndexRangeSeek) != nullptr ||
-                Find(planned.Plan(), Type::kRelationshipIndexRangeSeek) !=
-                    nullptr);
+    EXPECT_TRUE(
+        Find(planned.LogicalPlan(), Type::kNodeIndexRangeSeek) != nullptr ||
+        Find(planned.LogicalPlan(), Type::kRelationshipIndexRangeSeek) !=
+            nullptr);
     const auto result = rg::test::ExecuteQueryAndCommit(graph, query, options);
     EXPECT_EQ(Rows(result), (std::multiset<std::vector<std::string>>{
                                 {"100"}, {"101"}, {"102"}}));
@@ -456,8 +462,9 @@ TEST(OpenCypherOptimizerTest, RangeSeeksOnlyReturnBoundedCandidates) {
       "MATCH ()-[r:R]->() WHERE r.score >= $lower AND r.score < $upper "
       "RETURN r.score",
       graph.Graph());
-  EXPECT_NE(Find(relationship_plan.Plan(), Type::kRelationshipIndexRangeSeek),
-            nullptr);
+  EXPECT_NE(
+      Find(relationship_plan.LogicalPlan(), Type::kRelationshipIndexRangeSeek),
+      nullptr);
 }
 
 TEST(OpenCypherOptimizerTest, PrefixSeeksUseStringIndexIntervals) {
@@ -481,9 +488,10 @@ TEST(OpenCypherOptimizerTest, PrefixSeeksUseStringIndexIntervals) {
       SCOPED_TRACE(prefix.ToString());
       options.parameters = {{"prefix", prefix}};
       auto planned = PlanWithGraphDBCatalog(query, graph.Graph());
-      EXPECT_TRUE(Find(planned.Plan(), Type::kNodeIndexRangeSeek) != nullptr ||
-                  Find(planned.Plan(), Type::kRelationshipIndexRangeSeek) !=
-                      nullptr);
+      EXPECT_TRUE(
+          Find(planned.LogicalPlan(), Type::kNodeIndexRangeSeek) != nullptr ||
+          Find(planned.LogicalPlan(), Type::kRelationshipIndexRangeSeek) !=
+              nullptr);
       const auto result =
           rg::test::ExecuteQueryAndCommit(graph, query, options);
       const std::size_t expected = prefix.IsString()
@@ -503,8 +511,8 @@ TEST(OpenCypherOptimizerTest,
                             "MATCH (n:N) WHERE n.x STARTS WITH n.y RETURN n"}) {
     SCOPED_TRACE(query);
     ir::PlannedQuery plan = ir::PlanCypher(query);
-    EXPECT_EQ(Find(plan.Plan(), Type::kNodeIndexRangeSeek), nullptr);
-    EXPECT_NE(Find(plan.Plan(), Type::kFilter), nullptr);
+    EXPECT_EQ(Find(plan.LogicalPlan(), Type::kNodeIndexRangeSeek), nullptr);
+    EXPECT_NE(Find(plan.LogicalPlan(), Type::kFilter), nullptr);
   }
   rg::test::GraphDBTestDatabase graph;
   graph.CreateNode({"N"}, {{"x", rg::Value(3)}, {"y", rg::Value(2)}});

@@ -24,10 +24,11 @@ TEST(PlannedQueryTest, OwnsExpressionsAcrossMovesAndScopes) {
   assigned = std::move(moved);
 
   EXPECT_EQ(assigned.Ir().Kind(), ir::QueryIRKind::kSingle);
-  EXPECT_NE(ir::LogicalPlanToString(assigned.Plan()).find("Projection [value]"),
+  EXPECT_NE(ir::LogicalPlanToString(assigned.LogicalPlan())
+                .find("Projection [value]"),
             std::string::npos);
   const auto &projection =
-      static_cast<const ir::ProjectionPlan &>(assigned.Plan().Child(0));
+      static_cast<const ir::ProjectionPlan &>(assigned.LogicalPlan().Child(0));
   ASSERT_EQ(projection.Items().size(), 1U);
   ASSERT_NE(projection.Items().front().expression, nullptr);
   EXPECT_EQ(ast::ExpressionToString(*projection.Items().front().expression),

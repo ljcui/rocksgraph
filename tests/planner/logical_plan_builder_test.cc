@@ -175,7 +175,7 @@ TEST(LogicalPlanBuilderTest, UsesNodeLabelPredicateAsLeafScan) {
 
 TEST(LogicalPlanBuilderTest, AnnotatesCostMetadataAndPrintsWhenRequested) {
   ir::PlannedQuery query = PlannedQueryFor("MATCH (n:Person) RETURN n");
-  const ir::LogicalPlan &plan = query.Plan();
+  const ir::LogicalPlan &plan = query.LogicalPlan();
 
   EXPECT_TRUE(plan.EstimatedRows().has_value());
   EXPECT_TRUE(plan.Cost().has_value());
@@ -872,7 +872,7 @@ TEST(LogicalPlanBuilderTest, BuildsDistinctOrderByPlan) {
 TEST(LogicalPlanBuilderTest, AnnotatesOrderingAndDistinctTraits) {
   ir::PlannedQuery query =
       PlannedQueryFor("MATCH (n) RETURN DISTINCT n ORDER BY n");
-  const ir::LogicalPlan &plan = query.Plan();
+  const ir::LogicalPlan &plan = query.LogicalPlan();
 
   EXPECT_TRUE(plan.DistinctTrait());
   ASSERT_EQ(plan.OrderingTrait().size(), 1U);
@@ -929,7 +929,7 @@ TEST(LogicalPlanBuilderTest, BuildsPostAggregationProjectionPlan) {
 TEST(LogicalPlanBuilderTest, DeduplicatesAggregateSubexpressions) {
   ir::PlannedQuery query =
       PlannedQueryFor("MATCH (n) RETURN count(n) + count(n) AS doubled");
-  const ir::LogicalPlan &plan = query.Plan();
+  const ir::LogicalPlan &plan = query.LogicalPlan();
   ASSERT_EQ(plan.Type(), ir::LogicalPlanNodeType::kProduceResults);
   const ir::LogicalPlan &projection = plan.Child(0);
   ASSERT_EQ(projection.Type(), ir::LogicalPlanNodeType::kProjection);
@@ -1127,7 +1127,7 @@ TEST(LogicalPlanBuilderTest, AnnotatesProcedureCallCostMetadata) {
   ir::PlannedQuery query = PlannedQueryFor(
       "CALL db.labels()",
       ir::LogicalPlanBuilderOptions{.planner_statistics = &statistics});
-  const ir::LogicalPlan &plan = query.Plan();
+  const ir::LogicalPlan &plan = query.LogicalPlan();
 
   EXPECT_EQ(plan.Type(), ir::LogicalPlanNodeType::kProcedureCall);
   EXPECT_EQ(plan.EstimatedRows(), 3.0);

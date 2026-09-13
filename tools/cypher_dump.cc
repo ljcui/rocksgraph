@@ -80,11 +80,11 @@ int main(int argc, char **argv) {
         ir::PlannedQuery planned_query = ir::PlanCypher(input);
         if (FLAGS_mode == "logical_plan") {
           ir::PrintLogicalPlan(
-              planned_query.Plan(), std::cout,
+              planned_query.LogicalPlan(), std::cout,
               ir::LogicalPlanPrinterOptions{.include_metadata = true});
         } else {
           rg::PhysicalPlan physical_plan =
-              rg::CreatePhysicalPlan(planned_query.Plan());
+              rg::CreatePhysicalPlan(planned_query.LogicalPlan());
           rg::PrintPhysicalPlan(physical_plan, std::cout);
         }
       } catch (const Exception &e) {

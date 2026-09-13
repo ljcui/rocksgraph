@@ -175,7 +175,7 @@ std::unique_ptr<QueryResultCursor> ExecuteQueryCursor(
   ir::PlannedQuery planned_query =
       ir::PlanCypher(cypher, PlannerOptionsFor(options));
   return std::make_unique<QueryResultCursorImpl>(
-      planned_query.Plan(), transaction, options.parameters,
+      planned_query.LogicalPlan(), transaction, options.parameters,
       std::move(options.execution));
 }
 

@@ -11,7 +11,7 @@ namespace ir {
 
 PlannedQuery::PlannedQuery(std::unique_ptr<ast::Statement> statement,
                            std::unique_ptr<QueryIR> query_ir,
-                           std::unique_ptr<LogicalPlan> logical_plan)
+                           std::unique_ptr<ir::LogicalPlan> logical_plan)
     : statement_(std::move(statement)),
       query_ir_(std::move(query_ir)),
       logical_plan_(std::move(logical_plan)) {
@@ -44,7 +44,7 @@ const ast::Statement &PlannedQuery::Ast() const noexcept { return *statement_; }
 
 const QueryIR &PlannedQuery::Ir() const noexcept { return *query_ir_; }
 
-const LogicalPlan &PlannedQuery::Plan() const noexcept {
+const ir::LogicalPlan &PlannedQuery::LogicalPlan() const noexcept {
   return *logical_plan_;
 }
 
