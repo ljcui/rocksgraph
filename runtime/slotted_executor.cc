@@ -466,7 +466,21 @@ std::unique_ptr<EntityIdCursor> ExpandCursor(const GraphReader &graph_reader,
                                              std::int64_t node_id,
                                              PhysicalExpandDirection direction);
 
-bool CanTraverse(const std::vector<GraphReader::RelationshipPtr> &relationships,
+Value::NodePtr MaterializePathNode(RuntimeState &state, std::int64_t id) {
+  return state.UsesGraphDB() ? MaterializeGraphDBVertex(*state.transaction, id)
+                             : state.graph_reader->NodeById(id);
+}
+
+Value::RelationshipPtr MaterializePathRelationship(
+    RuntimeState &state, const Relationship &relationship) {
+  return state.UsesGraphDB()
+             ? MaterializeGraphDBEdge(
+                   *state.transaction,
+                   {.id = relationship.id, .type_id = relationship.type_id})
+             : state.graph_reader->RelationshipById(relationship.id);
+}
+
+bool CanTraverse(const std::vector<Value::RelationshipPtr> &relationships,
                  std::int64_t from, std::int64_t target) {
   for (const auto &relationship : relationships) {
     if (relationship->start_node_id == from) {
@@ -496,24 +510,24 @@ Value BuildPathValue(const PathBuildOp &data, const SlottedRow &row,
   std::int64_t current = NodeId(row, data.node_input_slots.front(), *state);
   CHECK(current >= 0, common::InvalidArgumentError,
         "path starts with a null node");
-  path->nodes.push_back(state->graph_reader->NodeById(current));
+  path->nodes.push_back(MaterializePathNode(*state, current));
   for (std::size_t index = 0; index < pattern.relationships.size(); ++index) {
     state->CheckCancelled();
     const Value value =
-        row.Get(data.relationship_input_slots[index], *state->graph_reader);
-    std::vector<GraphReader::RelationshipPtr> relationships;
+        ReadRowValue(row, data.relationship_input_slots[index], *state);
+    std::vector<Value::RelationshipPtr> relationships;
     if (value.IsList()) {
       for (const auto &item : value.AsList()) {
         CHECK(item.IsRelationship(), common::InvalidArgumentError,
               "path relationship list contains a non-relationship");
         relationships.push_back(
-            state->graph_reader->RelationshipById(item.AsRelationship().id));
+            MaterializePathRelationship(*state, item.AsRelationship()));
       }
     } else {
       CHECK(value.IsRelationship(), common::InvalidArgumentError,
             "path value is not a relationship");
       relationships.push_back(
-          state->graph_reader->RelationshipById(value.AsRelationship().id));
+          MaterializePathRelationship(*state, value.AsRelationship()));
     }
     const std::int64_t target =
         NodeId(row, data.node_input_slots[index + 1], *state);
@@ -528,7 +542,7 @@ Value BuildPathValue(const PathBuildOp &data, const SlottedRow &row,
       current = relationship->start_node_id == current
                     ? relationship->end_node_id
                     : relationship->start_node_id;
-      path->nodes.push_back(state->graph_reader->NodeById(current));
+      path->nodes.push_back(MaterializePathNode(*state, current));
     }
   }
   return Value(std::move(path));
@@ -3267,10 +3281,8 @@ class ProjectEndpointsOperator final : public PullOperator {
         SlottedRow output =
             CopyMappedRow(*input_, node_->output_slots,
                           node_->child_mappings.front(), *state_);
-        if (TryBindEntityId(&output, data_->from_node_output_slot,
-                            SlotKind::kNode, from, *state_->graph_reader) &&
-            TryBindEntityId(&output, data_->to_node_output_slot,
-                            SlotKind::kNode, to, *state_->graph_reader)) {
+        if (BindNode(&output, data_->from_node_output_slot, from, *state_) &&
+            BindNode(&output, data_->to_node_output_slot, to, *state_)) {
           *row = std::move(output);
           return true;
         }
@@ -3295,7 +3307,7 @@ class ProjectEndpointsOperator final : public PullOperator {
     endpoints_.clear();
     next_endpoint_ = 0;
     const Value value =
-        input_->Get(data_->relationship_input_slot, *state_->graph_reader);
+        ReadRowValue(*input_, data_->relationship_input_slot, *state_);
     if (value.IsNull()) {
       return;
     }
@@ -3325,10 +3337,23 @@ class ProjectEndpointsOperator final : public PullOperator {
     std::unordered_set<std::int64_t> used;
     for (const Relationship *relationship : relationships) {
       state_->CheckCancelled();
-      try {
-        (void)state_->graph_reader->RelationshipById(relationship->id);
-      } catch (const common::NotFoundError &) {
-        return;
+      if (state_->UsesGraphDB()) {
+        try {
+          (void)GraphDBEdgeById(
+              *state_->transaction,
+              {.id = relationship->id, .type_id = relationship->type_id});
+        } catch (const LgraphException &error) {
+          if (error.code() == ErrorCode::EdgeIdNotFound) {
+            return;
+          }
+          throw;
+        }
+      } else {
+        try {
+          (void)state_->graph_reader->RelationshipById(relationship->id);
+        } catch (const common::NotFoundError &) {
+          return;
+        }
       }
       if (!RelationshipHasType(*relationship, data_->pattern.types) ||
           !used.insert(relationship->id).second) {

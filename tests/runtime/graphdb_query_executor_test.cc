@@ -362,6 +362,135 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeVariableLengthBoundEndpoint) {
   transaction->Commit();
 }
 
+TEST_F(GraphDBQueryExecutorTest, ExecutesNativeNamedPathBuiltins) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryResult result = rg::ExecuteQuery(
+      *transaction,
+      "MATCH p = (a:Person {name: 'Ada'})-[r:KNOWS]->(b:Person) "
+      "RETURN length(p) AS length, size(nodes(p)) AS nodes, "
+      "size(relationships(p)) AS relationships, "
+      "nodes(p)[0].name AS first, nodes(p)[1].name AS last, "
+      "relationships(p)[0].since AS since");
+
+  ASSERT_EQ(result.rows.size(), 1U);
+  EXPECT_EQ(result.rows[0],
+            (std::vector<rg::Value>{rg::Value(1), rg::Value(2), rg::Value(1),
+                                    rg::Value("Ada"), rg::Value("Grace"),
+                                    rg::Value(2020)}));
+  transaction->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest, ExecutesNativeVariableLengthNamedPath) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryResult result =
+      rg::ExecuteQuery(*transaction,
+                       "MATCH p = (a:Person {name: 'Ada'})-[r*1..2]->"
+                       "(b:Person {name: 'Other'}) "
+                       "RETURN length(p) AS length, size(nodes(p)) AS nodes, "
+                       "size(relationships(p)) AS relationships, "
+                       "type(relationships(p)[0]) AS first_type, "
+                       "type(relationships(p)[1]) AS second_type");
+
+  ASSERT_EQ(result.rows.size(), 1U);
+  EXPECT_EQ(result.rows[0], (std::vector<rg::Value>{
+                                rg::Value(2), rg::Value(3), rg::Value(2),
+                                rg::Value("KNOWS"), rg::Value("RARE_REL")}));
+  transaction->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest,
+       ExecutesReversePlannedNativeVariableLengthNamedPath) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryResult result = rg::ExecuteQuery(
+      *transaction,
+      "MATCH p = (a)-[r*1..2]->(b:Person {name: 'Other'}) "
+      "RETURN a.name AS source, length(p) AS length ORDER BY length");
+
+  ASSERT_EQ(result.rows.size(), 2U);
+  EXPECT_EQ(result.rows[0],
+            (std::vector<rg::Value>{rg::Value("Grace"), rg::Value(1)}));
+  EXPECT_EQ(result.rows[1],
+            (std::vector<rg::Value>{rg::Value("Ada"), rg::Value(2)}));
+  transaction->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest, ExecutesNativeIncomingNamedPath) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryResult result = rg::ExecuteQuery(
+      *transaction,
+      "MATCH p = (a:Person {name: 'Grace'})<-[r:KNOWS]-(b:Person) "
+      "RETURN nodes(p)[0].name AS first, nodes(p)[1].name AS last, "
+      "type(relationships(p)[0]) AS type");
+
+  ASSERT_EQ(result.rows.size(), 1U);
+  EXPECT_EQ(result.rows[0],
+            (std::vector<rg::Value>{rg::Value("Grace"), rg::Value("Ada"),
+                                    rg::Value("KNOWS")}));
+  transaction->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest, ProjectsNativeRelationshipEndpoints) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryResult result =
+      rg::ExecuteQuery(*transaction,
+                       "MATCH ()-[r:KNOWS]->() WITH r "
+                       "MATCH (a)-[r:KNOWS]->(b) "
+                       "RETURN a.name AS source, b.name AS target");
+
+  ASSERT_EQ(result.rows.size(), 1U);
+  EXPECT_EQ(result.rows[0],
+            (std::vector<rg::Value>{rg::Value("Ada"), rg::Value("Grace")}));
+  transaction->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest, ProjectsNativeVariableLengthEndpoints) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryResult result =
+      rg::ExecuteQuery(*transaction,
+                       "MATCH (x:Person {name: 'Ada'})-[rs*1..2]->"
+                       "(y:Person {name: 'Other'}) WITH rs "
+                       "MATCH (a)-[rs*1..2]->(b) "
+                       "RETURN a.name AS source, b.name AS target");
+
+  ASSERT_EQ(result.rows.size(), 1U);
+  EXPECT_EQ(result.rows[0],
+            (std::vector<rg::Value>{rg::Value("Ada"), rg::Value("Other")}));
+  transaction->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest,
+       ProjectsNativeUndirectedRelationshipEndpoints) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryResult result = rg::ExecuteQuery(
+      *transaction,
+      "MATCH ()-[r:KNOWS]->() WITH r "
+      "MATCH (a)-[r:KNOWS]-(b) "
+      "RETURN a.name AS source, b.name AS target ORDER BY source");
+
+  ASSERT_EQ(result.rows.size(), 2U);
+  EXPECT_EQ(result.rows[0],
+            (std::vector<rg::Value>{rg::Value("Ada"), rg::Value("Grace")}));
+  EXPECT_EQ(result.rows[1],
+            (std::vector<rg::Value>{rg::Value("Grace"), rg::Value("Ada")}));
+  transaction->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest, ExecutesNativeNamedCreatePath) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryResult result = rg::ExecuteQuery(
+      *transaction,
+      "CREATE p = (a:Author {name: 'Lin'})-[r:WROTE]->"
+      "(b:Book {title: 'Storage'}) "
+      "RETURN length(p) AS length, nodes(p)[0].name AS author, "
+      "nodes(p)[1].title AS book, type(relationships(p)[0]) AS type");
+
+  ASSERT_EQ(result.rows.size(), 1U);
+  EXPECT_EQ(result.rows[0],
+            (std::vector<rg::Value>{rg::Value(1), rg::Value("Lin"),
+                                    rg::Value("Storage"), rg::Value("WROTE")}));
+  transaction->Commit();
+}
+
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeOptionalExpandMatch) {
   auto transaction = graph_->BeginTransaction();
   rg::QueryResult result = rg::ExecuteQuery(
