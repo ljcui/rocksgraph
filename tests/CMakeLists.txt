@@ -36,7 +36,7 @@ add_rocksgraph_test(physical_plan_test runtime/physical_plan_test.cc
 target_link_libraries(physical_plan_test PRIVATE rocksgraph_storage)
 add_rocksgraph_test(query_executor_test runtime/query_executor_test.cc
                     rocksgraph_runtime)
-target_link_libraries(query_executor_test PRIVATE rocksgraph_storage)
+target_link_libraries(query_executor_test PRIVATE graphdb)
 add_rocksgraph_test(slotted_row_test runtime/slotted_row_test.cc
                     rocksgraph_runtime)
 target_link_libraries(slotted_row_test PRIVATE graphdb)

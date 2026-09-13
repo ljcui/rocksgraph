@@ -13,8 +13,11 @@
 #include <utility>
 #include <vector>
 
+#include "common/exception.h"
 #include "graphdb/assistant_pool.h"
+#include "graphdb/edge_iterator.h"
 #include "graphdb/graph_db.h"
+#include "runtime/graphdb_access.h"
 #include "runtime/query_executor.h"
 #include "transaction/transaction.h"
 
@@ -60,6 +63,16 @@ inline std::size_t CountVertices(txn::Transaction& transaction) {
   return count;
 }
 
+inline std::size_t CountEdges(txn::Transaction& transaction) {
+  auto edges = transaction.NewEdgeIterator();
+  std::size_t count = 0;
+  while (edges->Valid()) {
+    ++count;
+    edges->Next();
+  }
+  return count;
+}
+
 class GraphDBTestDatabase final {
  public:
   GraphDBTestDatabase()
@@ -77,6 +90,97 @@ class GraphDBTestDatabase final {
 
   [[nodiscard]] std::unique_ptr<txn::Transaction> BeginTransaction() {
     return graph_->BeginTransaction();
+  }
+
+  Value::NodePtr CreateNode(std::vector<std::string> labels = {},
+                            Value::Map properties = {}) {
+    auto transaction = BeginTransaction();
+    try {
+      auto node = CreateGraphDBVertex(*transaction, std::move(labels),
+                                      std::move(properties));
+      transaction->Commit();
+      return node;
+    } catch (...) {
+      RollbackGraphDBTransaction(transaction.get());
+      throw;
+    }
+  }
+
+  Value::NodePtr CreateNode(std::initializer_list<std::string> labels,
+                            Value::Map properties = {}) {
+    return CreateNode(std::vector<std::string>(labels), std::move(properties));
+  }
+
+  Value::RelationshipPtr CreateRelationship(const Value::NodePtr& start,
+                                            const Value::NodePtr& end,
+                                            std::string type,
+                                            Value::Map properties = {}) {
+    auto transaction = BeginTransaction();
+    try {
+      auto relationship =
+          CreateGraphDBEdge(*transaction, start->id, end->id, std::move(type),
+                            std::move(properties));
+      transaction->Commit();
+      return relationship;
+    } catch (...) {
+      RollbackGraphDBTransaction(transaction.get());
+      throw;
+    }
+  }
+
+  void AddNodeIndex(const std::vector<std::string>& labels,
+                    std::string_view property) {
+    CHECK(!labels.empty(), common::InvalidArgumentError,
+          "GraphDB node index requires a label");
+    graph_->AddVertexPropertyIndex(
+        "runtime_node_index_" + std::to_string(index_sequence_++), false,
+        labels.front(), {std::string(property)});
+  }
+
+  void AddRelationshipIndex(const std::vector<std::string>& types,
+                            std::string_view property) {
+    CHECK(!types.empty(), common::InvalidArgumentError,
+          "GraphDB relationship index requires a type");
+    graph_->AddEdgePropertyIndex(
+        "runtime_edge_index_" + std::to_string(index_sequence_++), false,
+        types.front(), {std::string(property)});
+  }
+
+  [[nodiscard]] std::vector<Value::NodePtr> Nodes() {
+    auto transaction = BeginTransaction();
+    try {
+      std::vector<Value::NodePtr> nodes;
+      auto iterator = transaction->NewVertexIterator();
+      while (iterator->Valid()) {
+        nodes.push_back(MaterializeGraphDBVertex(
+            *transaction, iterator->GetVertex().GetNativeId()));
+        iterator->Next();
+      }
+      transaction->Commit();
+      return nodes;
+    } catch (...) {
+      RollbackGraphDBTransaction(transaction.get());
+      throw;
+    }
+  }
+
+  [[nodiscard]] std::vector<Value::RelationshipPtr> Relationships() {
+    auto transaction = BeginTransaction();
+    try {
+      std::vector<Value::RelationshipPtr> relationships;
+      auto iterator = transaction->NewEdgeIterator();
+      while (iterator->Valid()) {
+        const auto& edge = iterator->GetEdge();
+        relationships.push_back(MaterializeGraphDBEdge(
+            *transaction, {edge.GetNativeId(), edge.GetTypeId()}));
+        iterator->Next();
+      }
+      transaction->Commit();
+      return relationships;
+    } catch (...) {
+      RollbackGraphDBTransaction(transaction.get());
+      throw;
+    }
   }
 
   [[nodiscard]] QueryResult ExecuteQueryAndCommit(std::string_view cypher,
@@ -152,12 +256,29 @@ class GraphDBTestDatabase final {
   std::filesystem::path path_;
   std::shared_ptr<graphdb::AssistantPool> assistant_pool_;
   std::unique_ptr<graphdb::GraphDB> graph_;
+  inline static std::size_t index_sequence_ = 0;
 };
 
 inline QueryResult ExecuteQueryAndCommit(GraphDBTestDatabase& database,
                                          std::string_view cypher,
                                          QueryOptions options = {}) {
   return database.ExecuteQueryAndCommit(cypher, std::move(options));
+}
+
+inline QueryResult ExecutePlanAndCommit(GraphDBTestDatabase& database,
+                                        const ir::LogicalPlan& plan,
+                                        const QueryParameters& parameters = {},
+                                        QueryExecutionOptions options = {}) {
+  auto transaction = database.BeginTransaction();
+  try {
+    QueryResult result = QueryExecutor(*transaction)
+                             .Execute(plan, parameters, std::move(options));
+    transaction->Commit();
+    return result;
+  } catch (...) {
+    RollbackGraphDBTransaction(transaction.get());
+    throw;
+  }
 }
 
 }  // namespace rg::test
