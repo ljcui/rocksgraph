@@ -16,16 +16,19 @@
 
 namespace rg {
 
-class InMemoryGraph final : public Storage, public ir::PlannerCatalog {
+class InMemoryGraph final : public Storage,
+                            public GraphReader,
+                            public GraphWriter,
+                            public ir::PlannerCatalog {
  public:
   using NodePtr = Value::NodePtr;
   using RelationshipPtr = Value::RelationshipPtr;
-  using Storage::CreateNode;
-  using Storage::CreateRelationship;
+  using GraphWriter::CreateNode;
+  using GraphWriter::CreateRelationship;
 
   ~InMemoryGraph() override;
 
-  [[nodiscard]] std::unique_ptr<StorageTransaction> BeginTransaction() override;
+  [[nodiscard]] std::unique_ptr<GraphTransaction> BeginTransaction() override;
 
   [[nodiscard]] std::unique_ptr<EntityIdCursor> ScanNodeIds() const override;
   [[nodiscard]] std::unique_ptr<EntityIdCursor> ScanRelationshipIds()
@@ -103,6 +106,7 @@ class InMemoryGraph final : public Storage, public ir::PlannerCatalog {
   [[nodiscard]] std::optional<ir::RelationshipIndexDescriptor>
   FindRelationshipIndex(const std::vector<std::string> &relationship_types,
                         std::string_view property_key) const override;
+
  private:
   class Transaction;
   using MutableNodePtr = std::shared_ptr<Node>;

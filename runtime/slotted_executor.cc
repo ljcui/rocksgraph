@@ -109,7 +109,7 @@ class RuntimeExpressionCompiler final : public ast::ASTConstWalker {
 };
 
 struct RuntimeState {
-  RuntimeState(const GraphReader &reader, Storage *writable_storage,
+  RuntimeState(const GraphReader &reader, GraphWriter *writable_storage,
                const QueryParameters &parameters, QueryExecutionOptions options)
       : graph_reader(&reader),
         storage(writable_storage),
@@ -149,7 +149,7 @@ struct RuntimeState {
   }
 
   const GraphReader *graph_reader;
-  Storage *storage;
+  GraphWriter *storage;
   BoundQueryParameters bound_parameters;
   std::shared_ptr<QueryCancellationToken> cancellation;
   QueryMemoryTracker memory_tracker;
@@ -507,7 +507,7 @@ std::vector<ProcedureRecord> ExecuteProcedure(const ProcedureCallOp &data,
   return records;
 }
 
-Storage &RequireStorage(RuntimeState *state) {
+GraphWriter &RequireStorage(RuntimeState *state) {
   CHECK(state != nullptr && state->storage != nullptr,
         common::InvalidArgumentError, "write execution requires storage");
   return *state->storage;
@@ -532,7 +532,7 @@ Value::Map EvaluatePropertyMap(const PhysicalPropertyMap &property_map,
 
 void ExecuteStreamingWrite(const CreateNodeOp &data, const SlottedRow &input,
                            SlottedRow *output, RuntimeState *state) {
-  Storage &storage = RequireStorage(state);
+  GraphWriter &storage = RequireStorage(state);
   const Value::NodePtr node = storage.CreateNode(
       data.labels,
       EvaluatePropertyMap(data.properties, input, "CREATE node", state));
@@ -544,7 +544,7 @@ void ExecuteStreamingWrite(const CreateNodeOp &data, const SlottedRow &input,
 void ExecuteStreamingWrite(const CreateRelationshipOp &data,
                            const SlottedRow &input, SlottedRow *output,
                            RuntimeState *state) {
-  Storage &storage = RequireStorage(state);
+  GraphWriter &storage = RequireStorage(state);
   const std::int64_t left = NodeId(input, data.left_node_slot, *state);
   const std::int64_t right = NodeId(input, data.right_node_slot, *state);
   CHECK(left >= 0 && right >= 0, common::InvalidArgumentError,
@@ -574,7 +574,7 @@ Value::Map EvaluateMergeProperties(const PhysicalPropertyMap &properties,
 
 void ExecuteMergeCreate(const CreateNodeOp &data, SlottedRow *row,
                         RuntimeState *state) {
-  Storage &storage = RequireStorage(state);
+  GraphWriter &storage = RequireStorage(state);
   const Value::NodePtr node = storage.CreateNode(
       data.labels,
       EvaluateMergeProperties(data.properties, *row, "node", state));
@@ -585,7 +585,7 @@ void ExecuteMergeCreate(const CreateNodeOp &data, SlottedRow *row,
 
 void ExecuteMergeCreate(const CreateRelationshipOp &data, SlottedRow *row,
                         RuntimeState *state) {
-  Storage &storage = RequireStorage(state);
+  GraphWriter &storage = RequireStorage(state);
   const std::int64_t left = NodeId(*row, data.left_node_slot, *state);
   const std::int64_t right = NodeId(*row, data.right_node_slot, *state);
   CHECK(left >= 0 && right >= 0, common::InvalidArgumentError,
@@ -600,7 +600,7 @@ void ExecuteMergeCreate(const CreateRelationshipOp &data, SlottedRow *row,
 
 void ExecuteStreamingWrite(const SetPropertyOp &data, const SlottedRow &,
                            SlottedRow *output, RuntimeState *state) {
-  Storage &storage = RequireStorage(state);
+  GraphWriter &storage = RequireStorage(state);
   const Value entity = Evaluate(data.entity, *output, *state);
   if (entity.IsNull()) {
     return;
@@ -619,7 +619,7 @@ void ExecuteStreamingWrite(const SetPropertyOp &data, const SlottedRow &,
 
 void ExecuteStreamingWrite(const SetPropertiesOp &data, const SlottedRow &,
                            SlottedRow *output, RuntimeState *state) {
-  Storage &storage = RequireStorage(state);
+  GraphWriter &storage = RequireStorage(state);
   const Value entity = Evaluate(data.entity, *output, *state);
   if (entity.IsNull()) {
     return;
@@ -642,7 +642,7 @@ void ExecuteStreamingWrite(const SetPropertiesOp &data, const SlottedRow &,
 
 void ExecuteStreamingWrite(const SetLabelsOp &data, const SlottedRow &,
                            SlottedRow *output, RuntimeState *state) {
-  Storage &storage = RequireStorage(state);
+  GraphWriter &storage = RequireStorage(state);
   const Value entity = Evaluate(data.entity, *output, *state);
   if (entity.IsNull()) {
     return;
@@ -670,7 +670,7 @@ void ExecuteMergeActions(const MergeOp &data, bool on_match, SlottedRow *row,
 
 void ExecuteStreamingWrite(const RemovePropertyOp &data, const SlottedRow &,
                            SlottedRow *output, RuntimeState *state) {
-  Storage &storage = RequireStorage(state);
+  GraphWriter &storage = RequireStorage(state);
   const Value entity = Evaluate(data.entity, *output, *state);
   if (entity.IsNode()) {
     storage.RemoveNodeProperty(entity.AsNode().id, data.property_key);
@@ -685,7 +685,7 @@ void ExecuteStreamingWrite(const RemovePropertyOp &data, const SlottedRow &,
 
 void ExecuteStreamingWrite(const RemoveLabelsOp &data, const SlottedRow &,
                            SlottedRow *output, RuntimeState *state) {
-  Storage &storage = RequireStorage(state);
+  GraphWriter &storage = RequireStorage(state);
   const Value entity = Evaluate(data.entity, *output, *state);
   if (!entity.IsNull()) {
     CHECK(entity.IsNode(), common::InvalidArgumentError,
@@ -4214,7 +4214,7 @@ class DeleteOperator final : public PullOperator {
 
   void Initialize() {
     initialized_ = true;
-    Storage &storage = RequireStorage(state_);
+    GraphWriter &storage = RequireStorage(state_);
     std::set<std::int64_t> node_ids;
     std::set<std::int64_t> relationship_ids;
     SlottedRow input(node_->children[0]->output_slots);
@@ -4237,8 +4237,8 @@ class DeleteOperator final : public PullOperator {
       }
     }
     for (std::int64_t node_id : node_ids) {
-      EntityIdCursor *relationships =
-          state_->TrackCursor(storage.RelationshipIdsConnectedTo(node_id));
+      EntityIdCursor *relationships = state_->TrackCursor(
+          state_->graph_reader->RelationshipIdsConnectedTo(node_id));
       while (relationships->Next()) {
         if constexpr (Data::kDetach) {
           relationship_ids.insert(relationships->Id());
@@ -6078,7 +6078,8 @@ namespace {
 class PhysicalResultCursorImpl final : public PhysicalResultCursor {
  public:
   PhysicalResultCursorImpl(const PhysicalPlan &plan,
-                           const GraphReader &graph_reader, Storage *storage,
+                           const GraphReader &graph_reader,
+                           GraphWriter *storage,
                            const QueryParameters &parameters,
                            std::vector<std::string> result_columns,
                            QueryExecutionOptions options)
@@ -6147,13 +6148,23 @@ class PhysicalResultCursorImpl final : public PhysicalResultCursor {
 }  // namespace
 
 std::unique_ptr<PhysicalResultCursor> StartPhysicalPlan(
-    const PhysicalPlan &plan, const GraphReader &graph_reader, Storage *storage,
-    const QueryParameters &parameters,
+    const PhysicalPlan &plan, const GraphReader &graph_reader,
+    GraphWriter *storage, const QueryParameters &parameters,
     const std::vector<std::string> &result_columns,
     QueryExecutionOptions options) {
   return std::make_unique<PhysicalResultCursorImpl>(plan, graph_reader, storage,
                                                     parameters, result_columns,
                                                     std::move(options));
+}
+
+std::unique_ptr<PhysicalResultCursor> StartPhysicalPlan(
+    const PhysicalPlan &plan, GraphTransaction &transaction,
+    const QueryParameters &parameters,
+    const std::vector<std::string> &result_columns,
+    QueryExecutionOptions options) {
+  GraphWriter *writer = transaction.IsWritable() ? &transaction : nullptr;
+  return StartPhysicalPlan(plan, transaction, writer, parameters,
+                           result_columns, std::move(options));
 }
 
 }  // namespace rg

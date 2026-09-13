@@ -90,13 +90,13 @@ int main(int argc, char **argv) {
     PrintResult(rg::ExecuteQuery(*transaction, JoinArgs(parts), options));
     transaction->Commit();
   } catch (const common::Exception &e) {
-    if (transaction->GetState() == rg::StorageTransaction::State::kActive) {
+    if (transaction->GetState() == rg::GraphTransaction::State::kActive) {
       transaction->Rollback();
     }
     spdlog::error("Query error: {}", e.Message());
     return 1;
   } catch (const std::exception &e) {
-    if (transaction->GetState() == rg::StorageTransaction::State::kActive) {
+    if (transaction->GetState() == rg::GraphTransaction::State::kActive) {
       transaction->Rollback();
     }
     spdlog::error("Query error: {}", e.what());

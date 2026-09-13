@@ -8,7 +8,7 @@
 
 #include "ir/logical_plan.h"
 #include "runtime/execution_context.h"
-#include "storage/storage_transaction.h"
+#include "storage/graph_transaction.h"
 #include "value/value.h"
 
 namespace ir {
@@ -51,7 +51,7 @@ struct QueryOptions {
 
 class QueryExecutor final {
  public:
-  explicit QueryExecutor(StorageTransaction &transaction)
+  explicit QueryExecutor(GraphTransaction &transaction)
       : transaction_(&transaction) {}
 
   // Execution requires an active transaction and never commits it.
@@ -65,16 +65,16 @@ class QueryExecutor final {
       QueryExecutionOptions options = {}) const;
 
  private:
-  StorageTransaction *transaction_ = nullptr;
+  GraphTransaction *transaction_ = nullptr;
 };
 
 // Executes one Cypher statement in an active transaction. The caller owns the
 // transaction boundary and must commit it explicitly.
-[[nodiscard]] QueryResult ExecuteQuery(StorageTransaction &transaction,
+[[nodiscard]] QueryResult ExecuteQuery(GraphTransaction &transaction,
                                        std::string_view cypher,
                                        QueryOptions options = {});
 [[nodiscard]] std::unique_ptr<QueryResultCursor> ExecuteQueryCursor(
-    StorageTransaction &transaction, std::string_view cypher,
+    GraphTransaction &transaction, std::string_view cypher,
     QueryOptions options = {});
 
 }  // namespace rg

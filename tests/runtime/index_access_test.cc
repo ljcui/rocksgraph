@@ -46,10 +46,8 @@ TEST(IndexAccessTest, TransactionExposesOneReadWriteView) {
   rg::InMemoryGraph graph;
   auto transaction = graph.BeginTransaction();
 
-  const rg::GraphReader &reader = transaction->Reader();
-  rg::Storage *writer = transaction->Writer();
-  ASSERT_NE(writer, nullptr);
-  auto node = writer->CreateNode({"Person"}, {{"name", rg::Value("Ada")}});
+  const rg::GraphReader &reader = *transaction;
+  auto node = transaction->CreateNode({"Person"}, {{"name", rg::Value("Ada")}});
 
   ASSERT_NE(reader.NodeById(node->id), nullptr);
   EXPECT_EQ(reader.NodeProperty(node->id, "name"), rg::Value("Ada"));
@@ -62,13 +60,13 @@ TEST(IndexAccessTest, TransactionRollsBackOnDestructionAndRejectsOverlap) {
   rg::InMemoryGraph graph;
   {
     auto transaction = graph.BeginTransaction();
-    ASSERT_NE(transaction->Writer(), nullptr);
-    transaction->Writer()->CreateNode({"Temporary"});
+    EXPECT_TRUE(transaction->IsWritable());
+    transaction->CreateNode({"Temporary"});
     EXPECT_THROW((void)graph.BeginTransaction(), common::InvalidArgumentError);
   }
 
   EXPECT_TRUE(graph.Nodes().empty());
-  std::unique_ptr<rg::StorageTransaction> next_transaction;
+  std::unique_ptr<rg::GraphTransaction> next_transaction;
   EXPECT_NO_THROW(next_transaction = graph.BeginTransaction());
   ASSERT_NE(next_transaction, nullptr);
   next_transaction->Commit();

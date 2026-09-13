@@ -57,7 +57,7 @@ std::vector<std::int64_t> CursorIds(
 }
 
 std::unique_ptr<rg::QueryResultCursor> CursorFromTemporaryPlannedQuery(
-    rg::StorageTransaction &transaction) {
+    rg::GraphTransaction &transaction) {
   ir::PlannedQuery query = ir::PlanCypher("RETURN 1 + 2 AS value");
   return rg::QueryExecutor(transaction).ExecuteCursor(query.Plan());
 }
@@ -133,9 +133,9 @@ TEST(QueryExecutorTest, ExhaustedCursorLeavesTransactionActive) {
   ASSERT_TRUE(cursor->Next(&row));
   EXPECT_FALSE(cursor->Next(&row));
 
-  EXPECT_EQ(transaction->GetState(), rg::StorageTransaction::State::kActive);
+  EXPECT_EQ(transaction->GetState(), rg::GraphTransaction::State::kActive);
   transaction->Commit();
-  std::unique_ptr<rg::StorageTransaction> next_transaction;
+  std::unique_ptr<rg::GraphTransaction> next_transaction;
   EXPECT_NO_THROW(next_transaction = graph.BeginTransaction());
   ASSERT_NE(next_transaction, nullptr);
   next_transaction->Rollback();
@@ -148,10 +148,9 @@ TEST(QueryExecutorTest, ClosingCursorRollsBackItsTransaction) {
       rg::ExecuteQueryCursor(*transaction, "UNWIND [1, 2] AS x RETURN x");
 
   cursor->Close();
-  EXPECT_EQ(transaction->GetState(),
-            rg::StorageTransaction::State::kRolledBack);
+  EXPECT_EQ(transaction->GetState(), rg::GraphTransaction::State::kRolledBack);
 
-  std::unique_ptr<rg::StorageTransaction> next_transaction;
+  std::unique_ptr<rg::GraphTransaction> next_transaction;
   EXPECT_NO_THROW(next_transaction = graph.BeginTransaction());
   ASSERT_NE(next_transaction, nullptr);
   next_transaction->Rollback();
@@ -165,10 +164,9 @@ TEST(QueryExecutorTest, CursorRollsBackAfterExecutionFailure) {
 
   std::vector<rg::Value> row;
   EXPECT_THROW((void)cursor->Next(&row), common::InvalidArgumentError);
-  EXPECT_EQ(transaction->GetState(),
-            rg::StorageTransaction::State::kRolledBack);
+  EXPECT_EQ(transaction->GetState(), rg::GraphTransaction::State::kRolledBack);
 
-  std::unique_ptr<rg::StorageTransaction> next_transaction;
+  std::unique_ptr<rg::GraphTransaction> next_transaction;
   EXPECT_NO_THROW(next_transaction = graph.BeginTransaction());
   ASSERT_NE(next_transaction, nullptr);
   next_transaction->Rollback();
@@ -182,16 +180,16 @@ TEST(QueryExecutorTest, ExecutesReadsAndWritesInOneExplicitTransaction) {
       *transaction, "CREATE (:Person {name: 'Ada'}) RETURN count(*) AS count");
   EXPECT_EQ(StringRows(created),
             (std::vector<std::vector<std::string>>{{"1"}}));
-  EXPECT_EQ(transaction->GetState(), rg::StorageTransaction::State::kActive);
+  EXPECT_EQ(transaction->GetState(), rg::GraphTransaction::State::kActive);
 
   rg::QueryResult read =
       rg::ExecuteQuery(*transaction, "MATCH (n:Person) RETURN n.name AS name");
   EXPECT_EQ(StringRows(read),
             (std::vector<std::vector<std::string>>{{"\"Ada\""}}));
-  EXPECT_EQ(transaction->GetState(), rg::StorageTransaction::State::kActive);
+  EXPECT_EQ(transaction->GetState(), rg::GraphTransaction::State::kActive);
 
   transaction->Commit();
-  EXPECT_EQ(transaction->GetState(), rg::StorageTransaction::State::kCommitted);
+  EXPECT_EQ(transaction->GetState(), rg::GraphTransaction::State::kCommitted);
   rg::QueryResult committed = rg::test::ExecuteQueryAndCommit(
       graph, "MATCH (n:Person) RETURN count(n) AS count");
   EXPECT_EQ(StringRows(committed),
@@ -203,7 +201,7 @@ TEST(QueryExecutorTest, ExecuteQueryDoesNotCommitTransaction) {
   {
     auto transaction = graph.BeginTransaction();
     (void)rg::ExecuteQuery(*transaction, "CREATE (:Temporary)");
-    EXPECT_EQ(transaction->GetState(), rg::StorageTransaction::State::kActive);
+    EXPECT_EQ(transaction->GetState(), rg::GraphTransaction::State::kActive);
     ASSERT_EQ(graph.Nodes().size(), 1U);
   }
 
@@ -222,8 +220,7 @@ TEST(QueryExecutorTest, RollbackUndoesAllStatementsInTransaction) {
   ASSERT_EQ(graph.Nodes().size(), 2U);
 
   transaction->Rollback();
-  EXPECT_EQ(transaction->GetState(),
-            rg::StorageTransaction::State::kRolledBack);
+  EXPECT_EQ(transaction->GetState(), rg::GraphTransaction::State::kRolledBack);
   ASSERT_EQ(graph.Nodes().size(), 1U);
   EXPECT_EQ(graph.Nodes().front(), original);
   EXPECT_EQ(original->properties.at("name"), rg::Value("Original"));
@@ -1538,7 +1535,7 @@ TEST(QueryExecutorTest, CommitsWritesAfterLimitedCursorIsExhausted) {
   EXPECT_EQ(graph.Nodes().size(), 2U);
 
   EXPECT_FALSE(cursor->Next(&row));
-  EXPECT_EQ(transaction->GetState(), rg::StorageTransaction::State::kActive);
+  EXPECT_EQ(transaction->GetState(), rg::GraphTransaction::State::kActive);
   transaction->Commit();
   cursor->Close();
   EXPECT_EQ(graph.Nodes().size(), 2U);
@@ -1656,8 +1653,7 @@ TEST(QueryExecutorTest, ReadOnlyTransactionRejectsWrites) {
     rg::test::ReadOnlyTransaction transaction(graph.BeginTransaction());
     EXPECT_THROW((void)rg::ExecuteQuery(transaction, "CREATE (n) RETURN n"),
                  common::InvalidArgumentError);
-    EXPECT_EQ(transaction.GetState(),
-              rg::StorageTransaction::State::kRolledBack);
+    EXPECT_EQ(transaction.GetState(), rg::GraphTransaction::State::kRolledBack);
   }
   {
     rg::test::ReadOnlyTransaction transaction(graph.BeginTransaction());

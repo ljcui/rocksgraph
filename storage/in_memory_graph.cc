@@ -258,7 +258,7 @@ void ApplyPropertyMap(Value::Map properties, bool include_existing,
 
 }  // namespace
 
-class InMemoryGraph::Transaction final : public StorageTransaction {
+class InMemoryGraph::Transaction final : public GraphTransaction {
  public:
   explicit Transaction(InMemoryGraph *graph) : graph_(graph) {
     CHECK(graph_ != nullptr, common::InternalError,
@@ -304,23 +304,184 @@ class InMemoryGraph::Transaction final : public StorageTransaction {
     }
   }
 
-  const GraphReader &Reader() const override {
-    CHECK(graph_ != nullptr, common::InternalError,
-          "transaction graph is null");
-    CHECK(state_ == State::kActive, common::InvalidArgumentError,
-          "transaction is no longer active");
-    return *graph_;
-  }
-
-  Storage *Writer() override {
-    CHECK(graph_ != nullptr, common::InternalError,
-          "transaction graph is null");
-    CHECK(state_ == State::kActive, common::InvalidArgumentError,
-          "transaction is no longer active");
-    return graph_;
-  }
+  [[nodiscard]] bool IsWritable() const noexcept override { return true; }
 
   [[nodiscard]] State GetState() const noexcept override { return state_; }
+
+  [[nodiscard]] std::unique_ptr<EntityIdCursor> ScanNodeIds() const override {
+    CheckActive();
+    return graph_->ScanNodeIds();
+  }
+
+  [[nodiscard]] std::unique_ptr<EntityIdCursor> ScanRelationshipIds()
+      const override {
+    CheckActive();
+    return graph_->ScanRelationshipIds();
+  }
+
+  [[nodiscard]] std::unique_ptr<EntityIdCursor> ScanNodeIdsByLabels(
+      const std::vector<std::string> &labels) const override {
+    CheckActive();
+    return graph_->ScanNodeIdsByLabels(labels);
+  }
+
+  [[nodiscard]] std::unique_ptr<EntityIdCursor> ScanRelationshipIdsByTypes(
+      const std::vector<std::string> &types) const override {
+    CheckActive();
+    return graph_->ScanRelationshipIdsByTypes(types);
+  }
+
+  [[nodiscard]] std::unique_ptr<EntityIdCursor> RelationshipIdsConnectedTo(
+      std::int64_t node_id) const override {
+    CheckActive();
+    return graph_->RelationshipIdsConnectedTo(node_id);
+  }
+
+  [[nodiscard]] std::unique_ptr<EntityIdCursor> OutgoingRelationshipIds(
+      std::int64_t node_id) const override {
+    CheckActive();
+    return graph_->OutgoingRelationshipIds(node_id);
+  }
+
+  [[nodiscard]] std::unique_ptr<EntityIdCursor> IncomingRelationshipIds(
+      std::int64_t node_id) const override {
+    CheckActive();
+    return graph_->IncomingRelationshipIds(node_id);
+  }
+
+  [[nodiscard]] std::unique_ptr<EntityIdCursor> FindNodeIdsByIndex(
+      const std::vector<std::string> &labels, std::string_view property_key,
+      const Value &value) const override {
+    CheckActive();
+    return graph_->FindNodeIdsByIndex(labels, property_key, value);
+  }
+
+  [[nodiscard]] std::unique_ptr<EntityIdCursor> FindNodeIdsByIndexRange(
+      const std::vector<std::string> &labels, std::string_view property_key,
+      const IndexRange &range) const override {
+    CheckActive();
+    return graph_->FindNodeIdsByIndexRange(labels, property_key, range);
+  }
+
+  [[nodiscard]] std::unique_ptr<EntityIdCursor> FindRelationshipIdsByIndex(
+      const std::vector<std::string> &relationship_types,
+      std::string_view property_key, const Value &value) const override {
+    CheckActive();
+    return graph_->FindRelationshipIdsByIndex(relationship_types, property_key,
+                                              value);
+  }
+
+  [[nodiscard]] std::unique_ptr<EntityIdCursor> FindRelationshipIdsByIndexRange(
+      const std::vector<std::string> &relationship_types,
+      std::string_view property_key, const IndexRange &range) const override {
+    CheckActive();
+    return graph_->FindRelationshipIdsByIndexRange(relationship_types,
+                                                   property_key, range);
+  }
+
+  [[nodiscard]] std::size_t RelationshipCount() const override {
+    CheckActive();
+    return graph_->RelationshipCount();
+  }
+
+  [[nodiscard]] NodePtr NodeById(std::int64_t id) const override {
+    CheckActive();
+    return graph_->NodeById(id);
+  }
+
+  [[nodiscard]] RelationshipPtr RelationshipById(
+      std::int64_t id) const override {
+    CheckActive();
+    return graph_->RelationshipById(id);
+  }
+
+  [[nodiscard]] Value NodeProperty(
+      std::int64_t node_id, std::string_view property_key) const override {
+    CheckActive();
+    return graph_->NodeProperty(node_id, property_key);
+  }
+
+  [[nodiscard]] Value RelationshipProperty(
+      std::int64_t relationship_id,
+      std::string_view property_key) const override {
+    CheckActive();
+    return graph_->RelationshipProperty(relationship_id, property_key);
+  }
+
+  NodePtr CreateNode(std::vector<std::string> labels,
+                     Value::Map properties) override {
+    CheckActive();
+    return graph_->CreateNode(std::move(labels), std::move(properties));
+  }
+
+  RelationshipPtr CreateRelationship(std::int64_t start_node_id,
+                                     std::int64_t end_node_id, std::string type,
+                                     Value::Map properties) override {
+    CheckActive();
+    return graph_->CreateRelationship(start_node_id, end_node_id,
+                                      std::move(type), std::move(properties));
+  }
+
+  void SetNodeProperty(std::int64_t node_id, std::string property_key,
+                       Value value) override {
+    CheckActive();
+    graph_->SetNodeProperty(node_id, std::move(property_key), std::move(value));
+  }
+
+  void SetRelationshipProperty(std::int64_t relationship_id,
+                               std::string property_key, Value value) override {
+    CheckActive();
+    graph_->SetRelationshipProperty(relationship_id, std::move(property_key),
+                                    std::move(value));
+  }
+
+  void SetNodeProperties(std::int64_t node_id, Value::Map properties,
+                         bool include_existing) override {
+    CheckActive();
+    graph_->SetNodeProperties(node_id, std::move(properties), include_existing);
+  }
+
+  void SetRelationshipProperties(std::int64_t relationship_id,
+                                 Value::Map properties,
+                                 bool include_existing) override {
+    CheckActive();
+    graph_->SetRelationshipProperties(relationship_id, std::move(properties),
+                                      include_existing);
+  }
+
+  void SetLabels(std::int64_t node_id,
+                 std::vector<std::string> labels) override {
+    CheckActive();
+    graph_->SetLabels(node_id, std::move(labels));
+  }
+
+  void RemoveNodeProperty(std::int64_t node_id,
+                          std::string_view property_key) override {
+    CheckActive();
+    graph_->RemoveNodeProperty(node_id, property_key);
+  }
+
+  void RemoveRelationshipProperty(std::int64_t relationship_id,
+                                  std::string_view property_key) override {
+    CheckActive();
+    graph_->RemoveRelationshipProperty(relationship_id, property_key);
+  }
+
+  void RemoveLabels(std::int64_t node_id,
+                    const std::vector<std::string> &labels) override {
+    CheckActive();
+    graph_->RemoveLabels(node_id, labels);
+  }
+
+  void DeleteNode(std::int64_t node_id) override {
+    CheckActive();
+    graph_->DeleteNode(node_id);
+  }
+
+  void DeleteRelationship(std::int64_t relationship_id) override {
+    CheckActive();
+    graph_->DeleteRelationship(relationship_id);
+  }
 
   void Commit() override {
     if (state_ == State::kCommitted) {
@@ -391,6 +552,11 @@ class InMemoryGraph::Transaction final : public StorageTransaction {
   }
 
  private:
+  void CheckActive() const {
+    CHECK(state_ == State::kActive, common::InvalidArgumentError,
+          "transaction is no longer active");
+  }
+
   struct NodeState {
     MutableNodePtr node;
     std::vector<std::string> labels;
@@ -615,7 +781,7 @@ std::unique_ptr<EntityIdCursor> InMemoryGraph::FindRelationshipIdsByIndexRange(
       true);
 }
 
-std::unique_ptr<StorageTransaction> InMemoryGraph::BeginTransaction() {
+std::unique_ptr<GraphTransaction> InMemoryGraph::BeginTransaction() {
   return std::make_unique<Transaction>(this);
 }
 

@@ -7,7 +7,7 @@
 
 #include "runtime/execution_context.h"
 #include "runtime/physical_plan.h"
-#include "storage/storage.h"
+#include "storage/graph_transaction.h"
 #include "value/value.h"
 
 namespace rg {
@@ -26,8 +26,16 @@ class PhysicalResultCursor {
 };
 
 [[nodiscard]] std::unique_ptr<PhysicalResultCursor> StartPhysicalPlan(
-    const PhysicalPlan &plan, const GraphReader &graph_reader, Storage *storage,
+    const PhysicalPlan &plan, GraphTransaction &transaction,
     const QueryParameters &parameters,
+    const std::vector<std::string> &result_columns,
+    QueryExecutionOptions options = {});
+
+// Low-level entry point for physical-plan tests and independently supplied
+// reader/writer views.
+[[nodiscard]] std::unique_ptr<PhysicalResultCursor> StartPhysicalPlan(
+    const PhysicalPlan &plan, const GraphReader &graph_reader,
+    GraphWriter *writer, const QueryParameters &parameters,
     const std::vector<std::string> &result_columns,
     QueryExecutionOptions options = {});
 

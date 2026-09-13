@@ -1,0 +1,62 @@
+#pragma once
+
+#include <cstdint>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
+
+#include "value/value.h"
+
+namespace rg {
+
+// Mutating operations exposed by a transaction-scoped graph view.
+class GraphWriter {
+ public:
+  using NodePtr = Value::NodePtr;
+  using RelationshipPtr = Value::RelationshipPtr;
+
+  GraphWriter() = default;
+  GraphWriter(const GraphWriter &) = delete;
+  GraphWriter &operator=(const GraphWriter &) = delete;
+  virtual ~GraphWriter() = default;
+
+  NodePtr CreateNode(std::vector<std::string> labels) {
+    return CreateNode(std::move(labels), {});
+  }
+  virtual NodePtr CreateNode(std::vector<std::string> labels,
+                             Value::Map properties) = 0;
+
+  RelationshipPtr CreateRelationship(std::int64_t start_node_id,
+                                     std::int64_t end_node_id,
+                                     std::string type) {
+    return CreateRelationship(start_node_id, end_node_id, std::move(type), {});
+  }
+  virtual RelationshipPtr CreateRelationship(std::int64_t start_node_id,
+                                             std::int64_t end_node_id,
+                                             std::string type,
+                                             Value::Map properties) = 0;
+
+  virtual void SetNodeProperty(std::int64_t node_id, std::string property_key,
+                               Value value) = 0;
+  virtual void SetRelationshipProperty(std::int64_t relationship_id,
+                                       std::string property_key,
+                                       Value value) = 0;
+  virtual void SetNodeProperties(std::int64_t node_id, Value::Map properties,
+                                 bool include_existing) = 0;
+  virtual void SetRelationshipProperties(std::int64_t relationship_id,
+                                         Value::Map properties,
+                                         bool include_existing) = 0;
+  virtual void SetLabels(std::int64_t node_id,
+                         std::vector<std::string> labels) = 0;
+  virtual void RemoveNodeProperty(std::int64_t node_id,
+                                  std::string_view property_key) = 0;
+  virtual void RemoveRelationshipProperty(std::int64_t relationship_id,
+                                          std::string_view property_key) = 0;
+  virtual void RemoveLabels(std::int64_t node_id,
+                            const std::vector<std::string> &labels) = 0;
+  virtual void DeleteNode(std::int64_t node_id) = 0;
+  virtual void DeleteRelationship(std::int64_t relationship_id) = 0;
+};
+
+}  // namespace rg

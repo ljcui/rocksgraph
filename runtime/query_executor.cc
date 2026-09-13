@@ -25,29 +25,27 @@ ir::LogicalPlanBuilderOptions PlannerOptionsFor(const QueryOptions &options) {
 class QueryResultCursorImpl final : public QueryResultCursor {
  public:
   QueryResultCursorImpl(const ir::LogicalPlan &logical_plan,
-                        StorageTransaction &transaction,
+                        GraphTransaction &transaction,
                         const QueryParameters &parameters,
                         QueryExecutionOptions options)
       : physical_plan_(CreatePhysicalPlan(logical_plan)),
         transaction_(&transaction) {
-    CHECK(transaction.GetState() == StorageTransaction::State::kActive,
+    CHECK(transaction.GetState() == GraphTransaction::State::kActive,
           common::InvalidArgumentError,
           "query execution requires an active transaction");
     const bool writes = physical_plan_.Effects().writes;
     try {
-      const GraphReader &transaction_reader = transaction_->Reader();
-      Storage *transaction_storage = transaction_->Writer();
       if (writes) {
-        CHECK(transaction_storage != nullptr, common::InvalidArgumentError,
+        CHECK(transaction_->IsWritable(), common::InvalidArgumentError,
               "write execution requires a writable transaction");
       }
       if (logical_plan.Type() == ir::LogicalPlanNodeType::kProduceResults ||
           !writes) {
         columns_ = logical_plan.OutputColumns();
       }
-      physical_cursor_ = StartPhysicalPlan(physical_plan_, transaction_reader,
-                                           transaction_storage, parameters,
-                                           columns_, std::move(options));
+      physical_cursor_ =
+          StartPhysicalPlan(physical_plan_, *transaction_, parameters, columns_,
+                            std::move(options));
     } catch (...) {
       Rollback();
       throw;
@@ -67,7 +65,7 @@ class QueryResultCursorImpl final : public QueryResultCursor {
       return false;
     }
     CHECK(transaction_ != nullptr &&
-              transaction_->GetState() == StorageTransaction::State::kActive,
+              transaction_->GetState() == GraphTransaction::State::kActive,
           common::InvalidArgumentError, "transaction is no longer active");
     try {
       if (physical_cursor_->Next(row)) {
@@ -115,7 +113,7 @@ class QueryResultCursorImpl final : public QueryResultCursor {
 
   void Rollback() noexcept {
     if (transaction_ == nullptr ||
-        transaction_->GetState() != StorageTransaction::State::kActive) {
+        transaction_->GetState() != GraphTransaction::State::kActive) {
       return;
     }
     try {
@@ -133,7 +131,7 @@ class QueryResultCursorImpl final : public QueryResultCursor {
 
   PhysicalPlan physical_plan_;
   std::vector<std::string> columns_;
-  StorageTransaction *transaction_ = nullptr;
+  GraphTransaction *transaction_ = nullptr;
   std::unique_ptr<PhysicalResultCursor> physical_cursor_;
   std::size_t peak_memory_bytes_ = 0;
   bool exhausted_ = false;
@@ -170,16 +168,16 @@ std::unique_ptr<QueryResultCursor> QueryExecutor::ExecuteCursor(
       plan, *transaction_, parameters, std::move(options));
 }
 
-QueryResult ExecuteQuery(StorageTransaction &transaction,
-                         std::string_view cypher, QueryOptions options) {
+QueryResult ExecuteQuery(GraphTransaction &transaction, std::string_view cypher,
+                         QueryOptions options) {
   return ConsumeCursor(
       ExecuteQueryCursor(transaction, cypher, std::move(options)));
 }
 
 std::unique_ptr<QueryResultCursor> ExecuteQueryCursor(
-    StorageTransaction &transaction, std::string_view cypher,
+    GraphTransaction &transaction, std::string_view cypher,
     QueryOptions options) {
-  CHECK(transaction.GetState() == StorageTransaction::State::kActive,
+  CHECK(transaction.GetState() == GraphTransaction::State::kActive,
         common::InvalidArgumentError,
         "query execution requires an active transaction");
   try {
@@ -189,7 +187,7 @@ std::unique_ptr<QueryResultCursor> ExecuteQueryCursor(
         planned_query.Plan(), transaction, options.parameters,
         std::move(options.execution));
   } catch (...) {
-    if (transaction.GetState() == StorageTransaction::State::kActive) {
+    if (transaction.GetState() == GraphTransaction::State::kActive) {
       try {
         transaction.Rollback();
       } catch (...) {
