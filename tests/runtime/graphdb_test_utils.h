@@ -129,32 +129,35 @@ class GraphDBTestDatabase final {
     }
   }
 
-  void AddNodeIndex(const std::vector<std::string>& labels,
-                    std::string_view property) {
+  std::string AddNodeIndex(const std::vector<std::string>& labels,
+                           std::string_view property, bool unique = false) {
     CHECK(!labels.empty(), common::InvalidArgumentError,
           "GraphDB node index requires a label");
     const std::string index_name =
         "runtime_node_index_" + std::to_string(index_sequence_++);
-    graph_->AddVertexPropertyIndex(index_name, false, labels.front(),
+    graph_->AddVertexPropertyIndex(index_name, unique, labels.front(),
                                    {std::string(property)});
     WaitForIndexReady([&] {
       const auto index = graph_->meta_info().GetVertexPropertyIndex(index_name);
       return index != nullptr && index->IsReady();
     });
+    return index_name;
   }
 
-  void AddRelationshipIndex(const std::vector<std::string>& types,
-                            std::string_view property) {
+  std::string AddRelationshipIndex(const std::vector<std::string>& types,
+                                   std::string_view property,
+                                   bool unique = false) {
     CHECK(!types.empty(), common::InvalidArgumentError,
           "GraphDB relationship index requires a type");
     const std::string index_name =
         "runtime_edge_index_" + std::to_string(index_sequence_++);
-    graph_->AddEdgePropertyIndex(index_name, false, types.front(),
+    graph_->AddEdgePropertyIndex(index_name, unique, types.front(),
                                  {std::string(property)});
     WaitForIndexReady([&] {
       const auto index = graph_->meta_info().GetEdgePropertyIndex(index_name);
       return index != nullptr && index->IsReady();
     });
+    return index_name;
   }
 
   [[nodiscard]] std::vector<Value::NodePtr> Nodes() {
