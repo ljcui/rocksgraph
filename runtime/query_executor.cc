@@ -44,7 +44,11 @@ class QueryResultCursorImpl final : public QueryResultCursor {
           StartPhysicalPlan(physical_plan_, transaction, parameters, columns_,
                             std::move(options));
     } catch (...) {
-      Rollback();
+      // The transaction is borrowed from the caller.  Runtime execution must
+      // not decide its transaction boundary, including on plan startup
+      // failure.  The caller can inspect the exception and explicitly commit
+      // or roll back the transaction as appropriate.
+      ClosePhysicalCursor();
       throw;
     }
   }
@@ -70,7 +74,6 @@ class QueryResultCursorImpl final : public QueryResultCursor {
       Finish();
       return false;
     } catch (...) {
-      Rollback();
       ClosePhysicalCursor();
       closed_ = true;
       throw;
@@ -89,9 +92,6 @@ class QueryResultCursorImpl final : public QueryResultCursor {
       return;
     }
     ClosePhysicalCursor();
-    if (!exhausted_) {
-      Rollback();
-    }
     closed_ = true;
   }
 
@@ -108,18 +108,7 @@ class QueryResultCursorImpl final : public QueryResultCursor {
 
   void Finish() {
     ClosePhysicalCursor();
-    exhausted_ = true;
     closed_ = true;
-  }
-
-  void Rollback() noexcept {
-    try {
-      if (transaction_ != nullptr &&
-          transaction_->GetState() == txn::Transaction::State::kActive) {
-        transaction_->Rollback();
-      }
-    } catch (...) {
-    }
   }
 
   void ClosePhysicalCursor() noexcept {
@@ -134,7 +123,6 @@ class QueryResultCursorImpl final : public QueryResultCursor {
   txn::Transaction *transaction_ = nullptr;
   std::unique_ptr<PhysicalResultCursor> physical_cursor_;
   std::size_t peak_memory_bytes_ = 0;
-  bool exhausted_ = false;
   bool closed_ = false;
 };
 
@@ -180,25 +168,15 @@ std::unique_ptr<QueryResultCursor> ExecuteQueryCursor(
   CHECK(transaction.GetState() == txn::Transaction::State::kActive,
         common::InvalidArgumentError,
         "query execution requires an active transaction");
-  try {
-    GraphDBPlannerCatalog graphdb_catalog(*transaction.db());
-    if (options.planner_catalog == nullptr) {
-      options.planner_catalog = &graphdb_catalog;
-    }
-    ir::PlannedQuery planned_query =
-        ir::PlanCypher(cypher, PlannerOptionsFor(options));
-    return std::make_unique<QueryResultCursorImpl>(
-        planned_query.Plan(), transaction, options.parameters,
-        std::move(options.execution));
-  } catch (...) {
-    if (transaction.GetState() == txn::Transaction::State::kActive) {
-      try {
-        transaction.Rollback();
-      } catch (...) {
-      }
-    }
-    throw;
+  GraphDBPlannerCatalog graphdb_catalog(*transaction.db());
+  if (options.planner_catalog == nullptr) {
+    options.planner_catalog = &graphdb_catalog;
   }
+  ir::PlannedQuery planned_query =
+      ir::PlanCypher(cypher, PlannerOptionsFor(options));
+  return std::make_unique<QueryResultCursorImpl>(
+      planned_query.Plan(), transaction, options.parameters,
+      std::move(options.execution));
 }
 
 }  // namespace rg

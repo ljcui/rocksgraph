@@ -76,19 +76,24 @@ TEST(SlottedRuntimeTest, ObservesExternalCancellation) {
 
   std::vector<rg::Value> row;
   EXPECT_THROW((void)cursor->Next(&row), common::QueryCancelledError);
+  EXPECT_EQ(transaction->GetState(), txn::Transaction::State::kActive);
+  transaction->Rollback();
 }
 
-TEST(SlottedRuntimeTest, RollsBackWritesWhenCursorClosesEarly) {
+TEST(SlottedRuntimeTest, KeepsWritesWhenCursorClosesEarly) {
   rg::test::GraphDBTestDatabase graph;
   auto transaction = graph.BeginTransaction();
   std::unique_ptr<rg::QueryResultCursor> cursor = rg::ExecuteQueryCursor(
       *transaction, "UNWIND [1, 2, 3] AS x CREATE (:N {value: x}) RETURN x");
   std::vector<rg::Value> row;
   ASSERT_TRUE(cursor->Next(&row));
-  ASSERT_EQ(rg::test::CountVertices(*transaction), 1U);
+  const std::size_t pending_vertices = rg::test::CountVertices(*transaction);
+  ASSERT_EQ(pending_vertices, 1U);
 
   cursor->Close();
-  EXPECT_EQ(graph.VertexCount(), 0U);
+  EXPECT_EQ(transaction->GetState(), txn::Transaction::State::kActive);
+  transaction->Commit();
+  EXPECT_EQ(graph.VertexCount(), pending_vertices);
 }
 
 TEST(SlottedRuntimeTest, EnforcesBlockingOperatorMemoryLimit) {

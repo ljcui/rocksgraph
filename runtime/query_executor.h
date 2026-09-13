@@ -39,6 +39,8 @@ class QueryResultCursor {
   [[nodiscard]] virtual const std::vector<std::string> &Columns()
       const noexcept = 0;
   [[nodiscard]] virtual bool Next(std::vector<Value> *row) = 0;
+  // Stops execution and releases cursor resources. These methods never
+  // commit or roll back the caller-owned transaction.
   virtual void Cancel() noexcept = 0;
   virtual void Close() noexcept = 0;
   [[nodiscard]] virtual std::size_t PeakMemoryBytes() const noexcept = 0;

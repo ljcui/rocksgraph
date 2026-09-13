@@ -128,13 +128,15 @@ TEST(QueryExecutorTest, ExhaustedCursorLeavesTransactionActive) {
   next_transaction->Rollback();
 }
 
-TEST(QueryExecutorTest, ClosingCursorRollsBackItsTransaction) {
+TEST(QueryExecutorTest, ClosingCursorLeavesItsTransactionActive) {
   rg::test::GraphDBTestDatabase graph;
   auto transaction = graph.BeginTransaction();
   std::unique_ptr<rg::QueryResultCursor> cursor =
       rg::ExecuteQueryCursor(*transaction, "UNWIND [1, 2] AS x RETURN x");
 
   cursor->Close();
+  EXPECT_EQ(transaction->GetState(), txn::Transaction::State::kActive);
+  transaction->Rollback();
   EXPECT_EQ(transaction->GetState(), txn::Transaction::State::kRolledBack);
 
   std::unique_ptr<txn::Transaction> next_transaction;
@@ -143,7 +145,7 @@ TEST(QueryExecutorTest, ClosingCursorRollsBackItsTransaction) {
   next_transaction->Rollback();
 }
 
-TEST(QueryExecutorTest, CursorRollsBackAfterExecutionFailure) {
+TEST(QueryExecutorTest, CursorLeavesTransactionActiveAfterExecutionFailure) {
   rg::test::GraphDBTestDatabase graph;
   auto transaction = graph.BeginTransaction();
   std::unique_ptr<rg::QueryResultCursor> cursor =
@@ -151,12 +153,26 @@ TEST(QueryExecutorTest, CursorRollsBackAfterExecutionFailure) {
 
   std::vector<rg::Value> row;
   EXPECT_THROW((void)cursor->Next(&row), common::InvalidArgumentError);
+  EXPECT_EQ(transaction->GetState(), txn::Transaction::State::kActive);
+  transaction->Rollback();
   EXPECT_EQ(transaction->GetState(), txn::Transaction::State::kRolledBack);
 
   std::unique_ptr<txn::Transaction> next_transaction;
   EXPECT_NO_THROW(next_transaction = graph.BeginTransaction());
   ASSERT_NE(next_transaction, nullptr);
   next_transaction->Rollback();
+}
+
+TEST(QueryExecutorTest, PlanningFailureLeavesTransactionActive) {
+  rg::test::GraphDBTestDatabase graph;
+  auto transaction = graph.BeginTransaction();
+
+  EXPECT_THROW(
+      (void)rg::ExecuteQueryCursor(*transaction, "RETURN NOT 1 AS value"),
+      ast::SemanticError);
+  EXPECT_EQ(transaction->GetState(), txn::Transaction::State::kActive);
+  transaction->Rollback();
+  EXPECT_EQ(transaction->GetState(), txn::Transaction::State::kRolledBack);
 }
 
 TEST(QueryExecutorTest, ExecutesReadsAndWritesInOneExplicitTransaction) {
@@ -1541,7 +1557,7 @@ TEST(QueryExecutorTest, CommitsExhaustedWritesUnderZeroLimit) {
   EXPECT_EQ(graph.Nodes().size(), 2U);
 }
 
-TEST(QueryExecutorTest, RollsBackLimitedWritesWhenCursorClosesEarly) {
+TEST(QueryExecutorTest, KeepsLimitedWritesWhenCursorClosesEarly) {
   rg::test::GraphDBTestDatabase graph;
   auto transaction = graph.BeginTransaction();
   std::unique_ptr<rg::QueryResultCursor> cursor = rg::ExecuteQueryCursor(
@@ -1551,14 +1567,17 @@ TEST(QueryExecutorTest, RollsBackLimitedWritesWhenCursorClosesEarly) {
 
   std::vector<rg::Value> row;
   ASSERT_TRUE(cursor->Next(&row));
-  EXPECT_EQ(rg::test::CountVertices(*transaction), 2U);
+  const std::size_t pending_vertices = rg::test::CountVertices(*transaction);
+  EXPECT_EQ(pending_vertices, 2U);
 
   cursor->Close();
-  EXPECT_TRUE(graph.Nodes().empty());
+  EXPECT_EQ(transaction->GetState(), txn::Transaction::State::kActive);
+  transaction->Commit();
+  EXPECT_EQ(graph.Nodes().size(), pending_vertices);
   EXPECT_FALSE(cursor->Next(&row));
 }
 
-TEST(QueryExecutorTest, RollsBackLimitedWritesWhenCursorIsCancelled) {
+TEST(QueryExecutorTest, KeepsLimitedWritesWhenCursorIsCancelled) {
   rg::test::GraphDBTestDatabase graph;
   auto transaction = graph.BeginTransaction();
   std::unique_ptr<rg::QueryResultCursor> cursor = rg::ExecuteQueryCursor(
@@ -1568,10 +1587,13 @@ TEST(QueryExecutorTest, RollsBackLimitedWritesWhenCursorIsCancelled) {
 
   std::vector<rg::Value> row;
   ASSERT_TRUE(cursor->Next(&row));
-  EXPECT_EQ(rg::test::CountVertices(*transaction), 2U);
+  const std::size_t pending_vertices = rg::test::CountVertices(*transaction);
+  EXPECT_EQ(pending_vertices, 2U);
 
   cursor->Cancel();
-  EXPECT_TRUE(graph.Nodes().empty());
+  EXPECT_EQ(transaction->GetState(), txn::Transaction::State::kActive);
+  transaction->Commit();
+  EXPECT_EQ(graph.Nodes().size(), pending_vertices);
   EXPECT_FALSE(cursor->Next(&row));
 }
 
