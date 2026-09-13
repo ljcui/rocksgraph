@@ -150,7 +150,7 @@ struct RuntimeState {
                 .clock = ExecutionClock::Start()} {}
 
   [[nodiscard]] bool UsesGraphDB() const noexcept {
-    return transaction != nullptr;
+    return context.UsesGraphDB();
   }
 
   void CheckCancelled() const { context.CheckCancelled(); }
@@ -341,47 +341,33 @@ SlottedRow EmptyArgument(SlotConfigurationPtr slots) {
 void CopyMappings(const SlottedRow &source, SlottedRow *target,
                   const std::vector<SlotMapping> &mappings,
                   const RuntimeState &state) {
-  if (state.UsesGraphDB()) {
-    CopySlots(source, target, mappings, *state.transaction);
-  } else {
-    CopySlots(source, target, mappings, *state.graph_reader);
-  }
+  CopySlots(source, target, mappings, state.context);
 }
 
 SlottedRow CopyMappedRow(const SlottedRow &source, SlotConfigurationPtr target,
                          const std::vector<SlotMapping> &mappings,
                          const RuntimeState &state) {
-  return state.UsesGraphDB()
-             ? source.CopyTo(std::move(target), mappings, *state.transaction)
-             : source.CopyTo(std::move(target), mappings, *state.graph_reader);
+  return source.CopyTo(std::move(target), mappings, state.context);
 }
 
 Value ReadRowValue(const SlottedRow &row, const Slot &slot,
                    const RuntimeState &state) {
-  return state.UsesGraphDB() ? row.Get(slot, *state.transaction)
-                             : row.Get(slot, *state.graph_reader);
+  return row.Get(slot, state.context);
 }
 
 Value ReadRowValue(const SlottedRow &row, std::string_view name,
                    const RuntimeState &state) {
-  return state.UsesGraphDB() ? row.Get(name, *state.transaction)
-                             : row.Get(name, *state.graph_reader);
+  return row.Get(name, state.context);
 }
 
 bool BindNode(SlottedRow *row, const Slot &slot, std::int64_t id,
               RuntimeState &state) {
-  return state.UsesGraphDB() ? TryBindEntityId(row, slot, SlotKind::kNode, id,
-                                               *state.transaction)
-                             : TryBindEntityId(row, slot, SlotKind::kNode, id,
-                                               *state.graph_reader);
+  return TryBindEntityId(row, slot, SlotKind::kNode, id, state.context);
 }
 
 bool BindNode(SlottedRow *row, std::string_view name, std::int64_t id,
               RuntimeState &state) {
-  return state.UsesGraphDB() ? TryBindEntityId(row, name, SlotKind::kNode, id,
-                                               *state.transaction)
-                             : TryBindEntityId(row, name, SlotKind::kNode, id,
-                                               *state.graph_reader);
+  return TryBindEntityId(row, name, SlotKind::kNode, id, state.context);
 }
 
 bool BindRelationship(SlottedRow *row, const Slot &slot,
@@ -393,9 +379,7 @@ bool BindRelationship(SlottedRow *row, const Slot &slot,
 
 bool BindValue(SlottedRow *row, const Slot &slot, Value value,
                RuntimeState &state) {
-  return state.UsesGraphDB()
-             ? TryBindSlot(row, slot, std::move(value), *state.transaction)
-             : TryBindSlot(row, slot, std::move(value), *state.graph_reader);
+  return TryBindSlot(row, slot, std::move(value), state.context);
 }
 
 bool MergeMappings(const SlottedRow &source, SlottedRow *target,

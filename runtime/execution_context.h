@@ -126,6 +126,24 @@ struct ExecutionContext {
   QueryMemoryTracker *memory_tracker = nullptr;
   ExecutionClock clock = ExecutionClock::Start();
 
+  // GraphDB is the native execution backend. The GraphReader pointer is kept
+  // only for the legacy storage path while callers are migrated.
+  [[nodiscard]] bool UsesGraphDB() const noexcept {
+    return transaction != nullptr;
+  }
+
+  [[nodiscard]] txn::Transaction &GraphDBTransaction() const {
+    CHECK(transaction != nullptr, common::InvalidArgumentError,
+          "GraphDB transaction is not available in this execution context");
+    return *transaction;
+  }
+
+  [[nodiscard]] const GraphReader &LegacyGraphReader() const {
+    CHECK(graph_reader != nullptr, common::InvalidArgumentError,
+          "legacy graph reader is not available in this execution context");
+    return *graph_reader;
+  }
+
   void CheckCancelled() const {
     CHECK(cancellation == nullptr || !cancellation->IsCancelled(),
           common::QueryCancelledError, "query execution was cancelled");

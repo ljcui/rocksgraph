@@ -579,4 +579,11 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
         "built-in function has no scalar implementation: " + builtin->name);
 }
 
+Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
+                              const std::vector<Value> &arguments,
+                              ExecutionContext context) {
+  return EvaluateBuiltinFunction(kind, arguments, context.clock,
+                                 context.graph_reader, context.transaction);
+}
+
 }  // namespace rg

@@ -307,8 +307,7 @@ Value EvaluateFunction(
         EvaluateExpression(*argument, row, precomputed, context));
   }
 
-  return EvaluateBuiltinFunction(builtin->kind, arguments, context.clock,
-                                 context.graph_reader, context.transaction);
+  return EvaluateBuiltinFunction(builtin->kind, arguments, context);
 }
 
 Value EvaluateListIndex(

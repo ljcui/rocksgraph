@@ -241,6 +241,16 @@ Value SlottedRow::Get(const Slot &slot, txn::Transaction &transaction) const {
              : Value(MaterializeGraphDBEdge(transaction, RelationshipAt(slot)));
 }
 
+Value SlottedRow::Get(std::string_view name,
+                      const ExecutionContext &context) const {
+  return Get(slots_->At(name), context);
+}
+
+Value SlottedRow::Get(const Slot &slot, const ExecutionContext &context) const {
+  return context.UsesGraphDB() ? Get(slot, context.GraphDBTransaction())
+                               : Get(slot, context.LegacyGraphReader());
+}
+
 std::size_t SlottedRow::EstimatedHeapUsage() const {
   std::size_t bytes =
       sizeof(SlottedRow) + entity_ids_.capacity() * sizeof(std::int64_t) +
@@ -269,6 +279,14 @@ SlottedRow SlottedRow::CopyTo(SlotConfigurationPtr target,
                               txn::Transaction &transaction) const {
   SlottedRow out(std::move(target));
   CopySlots(*this, &out, mappings, transaction);
+  return out;
+}
+
+SlottedRow SlottedRow::CopyTo(SlotConfigurationPtr target,
+                              const std::vector<SlotMapping> &mappings,
+                              const ExecutionContext &context) const {
+  SlottedRow out(std::move(target));
+  CopySlots(*this, &out, mappings, context);
   return out;
 }
 
@@ -321,6 +339,16 @@ void CopySlots(const SlottedRow &source, SlottedRow *target,
   }
 }
 
+void CopySlots(const SlottedRow &source, SlottedRow *target,
+               const std::vector<SlotMapping> &mappings,
+               const ExecutionContext &context) {
+  if (context.UsesGraphDB()) {
+    CopySlots(source, target, mappings, context.GraphDBTransaction());
+  } else {
+    CopySlots(source, target, mappings, context.LegacyGraphReader());
+  }
+}
+
 bool TryBindSlot(SlottedRow *row, const Slot &slot, Value value,
                  const GraphReader &graph_reader) {
   CHECK(row != nullptr, common::InternalError, "query row is null");
@@ -359,6 +387,22 @@ bool TryBindSlot(SlottedRow *row, std::string_view name, Value value,
   }
   return TryBindSlot(row, row->Slots()->At(name), std::move(value),
                      transaction);
+}
+
+bool TryBindSlot(SlottedRow *row, const Slot &slot, Value value,
+                 const ExecutionContext &context) {
+  return context.UsesGraphDB() ? TryBindSlot(row, slot, std::move(value),
+                                             context.GraphDBTransaction())
+                               : TryBindSlot(row, slot, std::move(value),
+                                             context.LegacyGraphReader());
+}
+
+bool TryBindSlot(SlottedRow *row, std::string_view name, Value value,
+                 const ExecutionContext &context) {
+  if (name.empty()) {
+    return true;
+  }
+  return TryBindSlot(row, row->Slots()->At(name), std::move(value), context);
 }
 
 bool TryBindEntityId(SlottedRow *row, const Slot &slot, SlotKind kind,
@@ -411,6 +455,22 @@ bool TryBindEntityId(SlottedRow *row, std::string_view name, SlotKind kind,
     return true;
   }
   return TryBindEntityId(row, row->Slots()->At(name), kind, id, transaction);
+}
+
+bool TryBindEntityId(SlottedRow *row, const Slot &slot, SlotKind kind,
+                     std::int64_t id, const ExecutionContext &context) {
+  return context.UsesGraphDB() ? TryBindEntityId(row, slot, kind, id,
+                                                 context.GraphDBTransaction())
+                               : TryBindEntityId(row, slot, kind, id,
+                                                 context.LegacyGraphReader());
+}
+
+bool TryBindEntityId(SlottedRow *row, std::string_view name, SlotKind kind,
+                     std::int64_t id, const ExecutionContext &context) {
+  if (name.empty()) {
+    return true;
+  }
+  return TryBindEntityId(row, row->Slots()->At(name), kind, id, context);
 }
 
 bool TryBindRelationship(SlottedRow *row, const Slot &slot,
