@@ -2991,6 +2991,9 @@ class PruningVarExpandOperator final : public PullOperator {
 
   bool Next(SlottedRow *row) override {
     CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    if (state_->UsesGraphDB()) {
+      return NextGraphDB(row);
+    }
     while (!closed_) {
       state_->CheckCancelled();
       if (!input_.has_value()) {
@@ -3064,6 +3067,7 @@ class PruningVarExpandOperator final : public PullOperator {
       state_->ReleaseCursor(cursor_);
       cursor_ = nullptr;
     }
+    graphdb_cursor_.reset();
     ClearInput();
     source_->Close();
     closed_ = true;
@@ -3080,8 +3084,13 @@ class PruningVarExpandOperator final : public PullOperator {
   bool Emit(std::int64_t node, SlottedRow *row) {
     auto output = CopyMappedRow(*input_, node_->output_slots,
                                 node_->child_mappings.front(), *state_);
-    if (!TryBindEntityId(&output, data_->to_node_output_slot, SlotKind::kNode,
-                         node, *state_->graph_reader)) {
+    const bool bound =
+        state_->UsesGraphDB()
+            ? TryBindEntityId(&output, data_->to_node_output_slot,
+                              SlotKind::kNode, node, *state_->transaction)
+            : TryBindEntityId(&output, data_->to_node_output_slot,
+                              SlotKind::kNode, node, *state_->graph_reader);
+    if (!bound) {
       return false;
     }
     *row = std::move(output);
@@ -3095,6 +3104,80 @@ class PruningVarExpandOperator final : public PullOperator {
     state_->memory_tracker.Release(reserved_bytes_);
     reserved_bytes_ = 0;
   }
+
+  bool NextGraphDB(SlottedRow *row) {
+    while (!closed_) {
+      state_->CheckCancelled();
+      if (!input_.has_value()) {
+        SlottedRow input(node_->children[0]->output_slots);
+        if (!source_->Next(&input)) {
+          Close();
+          return false;
+        }
+        start_ = NodeId(input, data_->from_node_input_slot, *state_);
+        if (start_ < 0) {
+          continue;
+        }
+        input_.emplace(std::move(input));
+        max_ = data_->length.max.has_value()
+                   ? static_cast<std::size_t>(*data_->length.max)
+                   : std::numeric_limits<std::size_t>::max();
+        Add(start_, 0);
+        start_emitted_ = data_->length.min.value_or(1) == 0;
+        if (start_emitted_ && Emit(start_, row)) {
+          return true;
+        }
+      }
+      while (head_ < queue_.size()) {
+        const auto [from, depth] = queue_[head_];
+        if (depth == max_) {
+          ++head_;
+          continue;
+        }
+        if (graphdb_cursor_ == nullptr) {
+          auto vertex = GraphDBVertexById(*state_->transaction, from);
+          graphdb_cursor_ = vertex.NewEdgeIterator(
+              GraphDBDirection(data_->pattern.direction),
+              std::unordered_set<std::string>(data_->pattern.types.begin(),
+                                              data_->pattern.types.end()),
+              {});
+        }
+        while (graphdb_cursor_->Valid()) {
+          auto edge = graphdb_cursor_->GetEdge();
+          graphdb_cursor_->Next();
+          const Relationship relationship{
+              .id = edge.GetNativeId(),
+              .start_node_id = edge.GetNativeStartId(),
+              .end_node_id = edge.GetNativeEndId(),
+              .type_id = edge.GetTypeId(),
+              .type = edge.GetType()};
+          if (!RelationshipHasType(relationship, data_->pattern.types)) {
+            continue;
+          }
+          const std::int64_t to =
+              data_->pattern.direction == PhysicalExpandDirection::kIncoming
+                  ? edge.GetNativeStartId()
+                  : edge.GetNativeEndId();
+          if (to == start_ && !start_emitted_) {
+            start_emitted_ = true;
+            if (Emit(to, row)) {
+              return true;
+            }
+          }
+          if (!visited_.contains(to)) {
+            Add(to, depth + 1);
+            if (Emit(to, row)) {
+              return true;
+            }
+          }
+        }
+        graphdb_cursor_.reset();
+        ++head_;
+      }
+      ClearInput();
+    }
+    return false;
+  }
   const PhysicalPlanNode *node_;
   const PruningVarExpandOp *data_;
   RuntimeState *state_;
@@ -3103,6 +3186,7 @@ class PruningVarExpandOperator final : public PullOperator {
   std::vector<std::pair<std::int64_t, std::size_t>> queue_;
   std::unordered_set<std::int64_t> visited_;
   EntityIdCursor *cursor_ = nullptr;
+  std::unique_ptr<graphdb::EdgeIterator> graphdb_cursor_;
   std::int64_t start_ = -1;
   std::size_t head_ = 0;
   std::size_t max_ = 0;

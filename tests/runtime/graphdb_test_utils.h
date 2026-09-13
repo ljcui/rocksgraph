@@ -8,6 +8,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -132,18 +133,28 @@ class GraphDBTestDatabase final {
                     std::string_view property) {
     CHECK(!labels.empty(), common::InvalidArgumentError,
           "GraphDB node index requires a label");
-    graph_->AddVertexPropertyIndex(
-        "runtime_node_index_" + std::to_string(index_sequence_++), false,
-        labels.front(), {std::string(property)});
+    const std::string index_name =
+        "runtime_node_index_" + std::to_string(index_sequence_++);
+    graph_->AddVertexPropertyIndex(index_name, false, labels.front(),
+                                   {std::string(property)});
+    WaitForIndexReady([&] {
+      const auto index = graph_->meta_info().GetVertexPropertyIndex(index_name);
+      return index != nullptr && index->IsReady();
+    });
   }
 
   void AddRelationshipIndex(const std::vector<std::string>& types,
                             std::string_view property) {
     CHECK(!types.empty(), common::InvalidArgumentError,
           "GraphDB relationship index requires a type");
-    graph_->AddEdgePropertyIndex(
-        "runtime_edge_index_" + std::to_string(index_sequence_++), false,
-        types.front(), {std::string(property)});
+    const std::string index_name =
+        "runtime_edge_index_" + std::to_string(index_sequence_++);
+    graph_->AddEdgePropertyIndex(index_name, false, types.front(),
+                                 {std::string(property)});
+    WaitForIndexReady([&] {
+      const auto index = graph_->meta_info().GetEdgePropertyIndex(index_name);
+      return index != nullptr && index->IsReady();
+    });
   }
 
   [[nodiscard]] std::vector<Value::NodePtr> Nodes() {
@@ -244,6 +255,17 @@ class GraphDBTestDatabase final {
   }
 
  private:
+  template <typename Predicate>
+  static void WaitForIndexReady(Predicate predicate) {
+    constexpr auto timeout = std::chrono::seconds(5);
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (!predicate()) {
+      CHECK(std::chrono::steady_clock::now() < deadline,
+            common::InvalidArgumentError, "GraphDB index did not become ready");
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+  }
+
   static std::filesystem::path NewPath() {
     static std::size_t sequence = 0;
     const auto timestamp =

@@ -14,8 +14,8 @@
 #include "planner/planned_query.h"
 #include "runtime/physical_plan_printer.h"
 #include "runtime/slotted_executor.h"
-#include "storage/in_memory_graph.h"
 #include "tests/planner/assume_all_indexes_catalog.h"
+#include "tests/runtime/graphdb_test_utils.h"
 
 namespace {
 
@@ -247,35 +247,51 @@ rg::PhysicalPlan DetachedAssertIsNode() {
 }
 
 std::vector<std::vector<rg::Value>> PhysicalRows(
-    const rg::PhysicalPlan &plan, const rg::GraphReader &graph,
+    const rg::PhysicalPlan &plan, rg::test::GraphDBTestDatabase &graph,
     const std::vector<std::string> &columns,
     const rg::QueryParameters &parameters = {}) {
-  std::unique_ptr<rg::PhysicalResultCursor> cursor =
-      rg::StartPhysicalPlan(plan, graph, nullptr, parameters, columns);
-  std::vector<std::vector<rg::Value>> rows;
-  std::vector<rg::Value> row;
-  while (cursor->Next(&row)) {
-    rows.push_back(row);
+  auto transaction = graph.BeginTransaction();
+  try {
+    std::unique_ptr<rg::PhysicalResultCursor> cursor =
+        rg::StartPhysicalPlan(plan, *transaction, parameters, columns);
+    std::vector<std::vector<rg::Value>> rows;
+    std::vector<rg::Value> row;
+    while (cursor->Next(&row)) {
+      rows.push_back(row);
+    }
+    cursor->Close();
+    transaction->Commit();
+    return rows;
+  } catch (...) {
+    rg::test::RollbackGraphDBTransaction(transaction.get());
+    throw;
   }
-  return rows;
 }
 
 std::vector<std::vector<rg::Value>> PhysicalWriteRows(
-    const rg::PhysicalPlan &plan, rg::InMemoryGraph *graph,
+    const rg::PhysicalPlan &plan, rg::test::GraphDBTestDatabase *graph,
     const std::vector<std::string> &columns,
     const rg::QueryParameters &parameters = {}) {
-  std::unique_ptr<rg::PhysicalResultCursor> cursor =
-      rg::StartPhysicalPlan(plan, *graph, graph, parameters, columns);
-  std::vector<std::vector<rg::Value>> rows;
-  std::vector<rg::Value> row;
-  while (cursor->Next(&row)) {
-    rows.push_back(row);
+  auto transaction = graph->BeginTransaction();
+  try {
+    std::unique_ptr<rg::PhysicalResultCursor> cursor =
+        rg::StartPhysicalPlan(plan, *transaction, parameters, columns);
+    std::vector<std::vector<rg::Value>> rows;
+    std::vector<rg::Value> row;
+    while (cursor->Next(&row)) {
+      rows.push_back(row);
+    }
+    cursor->Close();
+    transaction->Commit();
+    return rows;
+  } catch (...) {
+    rg::test::RollbackGraphDBTransaction(transaction.get());
+    throw;
   }
-  return rows;
 }
 
 std::vector<std::int64_t> FirstColumnIds(
-    const rg::PhysicalPlan &plan, const rg::GraphReader &graph,
+    const rg::PhysicalPlan &plan, rg::test::GraphDBTestDatabase &graph,
     std::string column, const rg::QueryParameters &parameters = {}) {
   std::vector<std::int64_t> ids;
   for (const auto &row :
@@ -296,6 +312,74 @@ std::vector<std::int64_t> FirstColumnIds(
   return ids;
 }
 
+class GraphDBPhysicalResultCursor final : public rg::PhysicalResultCursor {
+ public:
+  GraphDBPhysicalResultCursor(std::unique_ptr<txn::Transaction> transaction,
+                              std::unique_ptr<rg::PhysicalResultCursor> cursor)
+      : transaction_(std::move(transaction)), cursor_(std::move(cursor)) {}
+
+  ~GraphDBPhysicalResultCursor() override { Close(); }
+
+  [[nodiscard]] bool Next(std::vector<rg::Value> *row) override {
+    if (closed_) {
+      return false;
+    }
+    try {
+      if (cursor_->Next(row)) {
+        return true;
+      }
+      exhausted_ = true;
+      Commit();
+      closed_ = true;
+      return false;
+    } catch (...) {
+      Rollback();
+      closed_ = true;
+      throw;
+    }
+  }
+
+  void Cancel() noexcept override { cursor_->Cancel(); }
+
+  void Close() noexcept override {
+    if (closed_) {
+      return;
+    }
+    cursor_->Close();
+    if (exhausted_) {
+      Commit();
+    } else {
+      Rollback();
+    }
+    closed_ = true;
+  }
+
+  [[nodiscard]] std::size_t PeakMemoryBytes() const noexcept override {
+    return cursor_->PeakMemoryBytes();
+  }
+
+ private:
+  void Commit() noexcept {
+    if (transaction_ != nullptr &&
+        transaction_->GetState() == txn::Transaction::State::kActive) {
+      try {
+        transaction_->Commit();
+      } catch (...) {
+        Rollback();
+      }
+    }
+  }
+
+  void Rollback() noexcept {
+    rg::test::RollbackGraphDBTransaction(transaction_.get());
+  }
+
+  std::unique_ptr<txn::Transaction> transaction_;
+  std::unique_ptr<rg::PhysicalResultCursor> cursor_;
+  bool exhausted_ = false;
+  bool closed_ = false;
+};
+
 void ExpectSameSlot(const rg::Slot &actual, const rg::Slot &expected) {
   EXPECT_EQ(actual.offset, expected.offset);
   EXPECT_EQ(actual.kind, expected.kind);
@@ -304,6 +388,35 @@ void ExpectSameSlot(const rg::Slot &actual, const rg::Slot &expected) {
 }
 
 }  // namespace
+
+namespace rg {
+
+std::unique_ptr<PhysicalResultCursor> StartPhysicalPlan(
+    const PhysicalPlan &plan, test::GraphDBTestDatabase &database, const void *,
+    const QueryParameters &parameters,
+    const std::vector<std::string> &result_columns,
+    QueryExecutionOptions options) {
+  auto transaction = database.BeginTransaction();
+  try {
+    auto cursor = StartPhysicalPlan(plan, *transaction, parameters,
+                                    result_columns, std::move(options));
+    return std::make_unique<GraphDBPhysicalResultCursor>(std::move(transaction),
+                                                         std::move(cursor));
+  } catch (...) {
+    test::RollbackGraphDBTransaction(transaction.get());
+    throw;
+  }
+}
+
+std::unique_ptr<PhysicalResultCursor> StartPhysicalPlan(
+    const PhysicalPlan &plan, test::GraphDBTestDatabase &database,
+    const void *writer, const QueryParameters &parameters,
+    const std::vector<std::string> &result_columns) {
+  return StartPhysicalPlan(plan, database, writer, parameters, result_columns,
+                           {});
+}
+
+}  // namespace rg
 
 TEST(PhysicalPlanTest, AllocatesTypedNullableSlotsForOptionalExpand) {
   PlannedQuery query =
@@ -365,7 +478,7 @@ TEST(PhysicalPlanTest, SelectsDedicatedUnionPhysicalAlgorithms) {
 }
 
 TEST(PhysicalPlanTest, ExecutesDetachedUnionAlgorithmsAndMappings) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   rg::PhysicalPlan all = DetachedPhysicalPlan(
       "RETURN 1 AS value UNION ALL RETURN 1.0 AS value "
       "UNION ALL RETURN null AS value");
@@ -410,7 +523,7 @@ TEST(PhysicalPlanTest, ExecutesDetachedUnionAlgorithmsAndMappings) {
 }
 
 TEST(PhysicalPlanTest, UnionOperatorsHandleResourcesAndEarlyClose) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   rg::PhysicalPlan all = DetachedPhysicalPlan(
       "RETURN 'left' AS value UNION ALL RETURN 'right' AS value");
   std::unique_ptr<rg::PhysicalResultCursor> cursor =
@@ -508,7 +621,7 @@ TEST(PhysicalPlanTest, BuildsOwnedExistenceApplyPayloads) {
 }
 
 TEST(PhysicalPlanTest, ExecutesDetachedExistenceApplyOperators) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   const auto matched =
       graph.CreateNode({"Input"}, {{"active", rg::Value(false)}});
   const auto unmatched =
@@ -586,7 +699,7 @@ TEST(PhysicalPlanTest, BuildsOwnedRollUpApplyPayload) {
 }
 
 TEST(PhysicalPlanTest, ExecutesDetachedRollUpApplyAndHandlesResources) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   const auto matched = graph.CreateNode({"Input"});
   const auto unmatched = graph.CreateNode({"Input"});
   const auto first =
@@ -729,7 +842,7 @@ TEST(PhysicalPlanTest, BuildsOwnedStreamingWritePayloads) {
 }
 
 TEST(PhysicalPlanTest, ExecutesDetachedStreamingWriteOperators) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   rg::PhysicalPlan create = DetachedPhysicalPlan(
       "CREATE (a:Made $properties), (b:Made), "
       "(a)-[r:LINK {weight: 2}]->(b) RETURN a, b, r");
@@ -754,28 +867,45 @@ TEST(PhysicalPlanTest, ExecutesDetachedStreamingWriteOperators) {
       "MATCH (n:Target) SET n.changed = 'yes', n += {added: 2}, n:Added "
       "REMOVE n.old, n:Old RETURN n");
   ASSERT_EQ(PhysicalWriteRows(mutations, &graph, {"n"}).size(), 1U);
-  EXPECT_EQ(target->properties.at("changed"), rg::Value("yes"));
-  EXPECT_EQ(target->properties.at("added"), rg::Value(2));
-  EXPECT_EQ(target->properties.at("keep"), rg::Value(1));
-  EXPECT_FALSE(target->properties.contains("old"));
-  EXPECT_NE(std::find(target->labels.begin(), target->labels.end(), "Added"),
-            target->labels.end());
-  EXPECT_EQ(std::find(target->labels.begin(), target->labels.end(), "Old"),
-            target->labels.end());
+  const auto target_after_mutation = graph.Nodes();
+  ASSERT_EQ(target_after_mutation.size(), 3U);
+  const auto target_it = std::find_if(
+      target_after_mutation.begin(), target_after_mutation.end(),
+      [&](const auto &candidate) { return candidate->id == target->id; });
+  ASSERT_NE(target_it, target_after_mutation.end());
+  EXPECT_EQ((*target_it)->properties.at("changed"), rg::Value("yes"));
+  EXPECT_EQ((*target_it)->properties.at("added"), rg::Value(2));
+  EXPECT_EQ((*target_it)->properties.at("keep"), rg::Value(1));
+  EXPECT_FALSE((*target_it)->properties.contains("old"));
+  EXPECT_NE(std::find((*target_it)->labels.begin(), (*target_it)->labels.end(),
+                      "Added"),
+            (*target_it)->labels.end());
+  EXPECT_EQ(std::find((*target_it)->labels.begin(), (*target_it)->labels.end(),
+                      "Old"),
+            (*target_it)->labels.end());
 
   rg::PhysicalPlan exact =
       DetachedPhysicalPlan("MATCH (n:Target) SET n = {only: 9} RETURN n");
   ASSERT_EQ(PhysicalWriteRows(exact, &graph, {"n"}).size(), 1U);
-  EXPECT_EQ(target->properties, (rg::Value::Map{{"only", rg::Value(9)}}));
+  const auto target_after_exact = graph.Nodes();
+  const auto exact_target_it = std::find_if(
+      target_after_exact.begin(), target_after_exact.end(),
+      [&](const auto &candidate) { return candidate->id == target->id; });
+  ASSERT_NE(exact_target_it, target_after_exact.end());
+  EXPECT_EQ((*exact_target_it)->properties,
+            (rg::Value::Map{{"only", rg::Value(9)}}));
 
   rg::PhysicalPlan relationship_mutation = DetachedPhysicalPlan(
       "MATCH ()-[r:LINK]->() SET r.flag = true REMOVE r.weight RETURN r");
   ASSERT_EQ(PhysicalWriteRows(relationship_mutation, &graph, {"r"}).size(), 1U);
   const rg::Relationship &relationship = create_rows[0][2].AsRelationship();
-  EXPECT_EQ(graph.RelationshipById(relationship.id)->properties.at("flag"),
-            rg::Value(true));
-  EXPECT_FALSE(
-      graph.RelationshipById(relationship.id)->properties.contains("weight"));
+  const auto relationships = graph.Relationships();
+  const auto relationship_it = std::find_if(
+      relationships.begin(), relationships.end(),
+      [&](const auto &candidate) { return candidate->id == relationship.id; });
+  ASSERT_NE(relationship_it, relationships.end());
+  EXPECT_EQ((*relationship_it)->properties.at("flag"), rg::Value(true));
+  EXPECT_FALSE((*relationship_it)->properties.contains("weight"));
 }
 
 TEST(PhysicalPlanTest, BuildsOwnedMergePayload) {
@@ -831,7 +961,7 @@ TEST(PhysicalPlanTest, BuildsOwnedMergePayload) {
 }
 
 TEST(PhysicalPlanTest, ExecutesDetachedMergeCreateAndMatchActions) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   rg::PhysicalPlan physical = DetachedPhysicalPlan(
       "MERGE (n:Person) "
       "ON CREATE SET n = {created: true}, n += {extra: 1}, n:Fresh "
@@ -864,7 +994,7 @@ TEST(PhysicalPlanTest, ExecutesDetachedMergeCreateAndMatchActions) {
 }
 
 TEST(PhysicalPlanTest, ExecutesDetachedRelationshipMerge) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   graph.CreateNode({"Source"}, {{"key", rg::Value(7)}});
   rg::PhysicalPlan physical = DetachedPhysicalPlan(
       "MATCH (m:Source) "
@@ -939,7 +1069,7 @@ TEST(PhysicalPlanTest, BuildsOwnedRemainingUnaryPayloads) {
 }
 
 TEST(PhysicalPlanTest, ExecutesDetachedUnwindAndProcedureCall) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   rg::PhysicalPlan unwind =
       DetachedPhysicalPlan("UNWIND $values AS x RETURN x");
 
@@ -974,7 +1104,7 @@ TEST(PhysicalPlanTest, ExecutesDetachedUnwindAndProcedureCall) {
 }
 
 TEST(PhysicalPlanTest, ExecutesDetachedAssertIsNode) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   const auto node = graph.CreateNode({"N"});
   rg::PhysicalPlan assertion = DetachedAssertIsNode();
 
@@ -993,7 +1123,7 @@ TEST(PhysicalPlanTest, ExecutesDetachedAssertIsNode) {
 }
 
 TEST(PhysicalPlanTest, RemainingUnaryOperatorsHandleResources) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   graph.CreateNode({"Label"});
   rg::PhysicalPlan procedure = DetachedPhysicalPlan("CALL db.labels()");
   std::vector<rg::Value> row;
@@ -1047,7 +1177,7 @@ TEST(PhysicalPlanTest, BuildsOwnedDeletePayloads) {
 }
 
 TEST(PhysicalPlanTest, ExecutesDetachedDeleteOperators) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   const auto isolated = graph.CreateNode({"N"});
   rg::PhysicalPlan delete_plan =
       DetachedPhysicalPlan("MATCH (n:N) DELETE n RETURN n");
@@ -1087,7 +1217,7 @@ TEST(PhysicalPlanTest, ExecutesDetachedDeleteOperators) {
 }
 
 TEST(PhysicalPlanTest, DeleteOperatorHandlesCloseCancellationAndMemoryLimit) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   graph.CreateNode({"N"});
   rg::PhysicalPlan physical =
       DetachedPhysicalPlan("MATCH (n:N) DELETE n RETURN n");
@@ -1117,7 +1247,7 @@ TEST(PhysicalPlanTest, DeleteOperatorHandlesCloseCancellationAndMemoryLimit) {
 }
 
 TEST(PhysicalPlanTest, ReinstantiatesStatefulApplyRightSideForEachLeftRow) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   const auto first = graph.CreateNode({"Input"});
   const auto second = graph.CreateNode({"Input"});
   const auto unmatched = graph.CreateNode({"Input"});
@@ -1168,7 +1298,7 @@ TEST(PhysicalPlanTest, ReinstantiatesStatefulApplyRightSideForEachLeftRow) {
 }
 
 TEST(PhysicalPlanTest, OptionalApplyNullExtendsAfterLogicalPlanIsDestroyed) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   const auto matched = graph.CreateNode({"Input"});
   const auto unmatched = graph.CreateNode({"Input"});
   const auto first = graph.CreateNode({});
@@ -1194,7 +1324,7 @@ TEST(PhysicalPlanTest, OptionalApplyNullExtendsAfterLogicalPlanIsDestroyed) {
 }
 
 TEST(PhysicalPlanTest, ApplyRejectsConflictingSharedSlots) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   rg::PhysicalPlan physical = DetachedConflictingApply();
 
   EXPECT_EQ(PhysicalRows(physical, graph, {"shared", "left", "right"},
@@ -1265,7 +1395,7 @@ TEST(PhysicalPlanTest, ExecutesMigratedPlanAfterLogicalPlanIsDestroyed) {
         Plan("MATCH (n) WHERE id(n) > 0 RETURN id(n) AS id SKIP 1 LIMIT 1");
     return rg::CreatePhysicalPlan(query.Plan());
   }();
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   graph.CreateNode({});
   graph.CreateNode({});
   graph.CreateNode({});
@@ -1399,7 +1529,7 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForLeafAccessOperators) {
 }
 
 TEST(PhysicalPlanTest, ExecutesLeafAccessAfterLogicalPlanAndAstAreDestroyed) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   auto first = graph.CreateNode({"N"}, {{"value", rg::Value(10)}});
   auto second = graph.CreateNode({"N"}, {{"value", rg::Value(20)}});
   auto relationship =
@@ -1439,11 +1569,11 @@ TEST(PhysicalPlanTest, ExecutesLeafAccessAfterLogicalPlanAndAstAreDestroyed) {
       (std::vector<std::int64_t>{relationship->id}));
   EXPECT_EQ(FirstColumnIds(
                 DetachedPhysicalPlan(
-                    "MATCH (n) WHERE id(n) IN [0, 0, 99] RETURN id(n) AS id"),
+                    "MATCH (n) WHERE id(n) IN [1, 1, 99] RETURN id(n) AS id"),
                 graph, "id"),
             (std::vector<std::int64_t>{first->id}));
   EXPECT_EQ(FirstColumnIds(DetachedPhysicalPlan(
-                               "MATCH ()-[r]->() WHERE id(r) IN [0, 0, 99] "
+                               "MATCH ()-[r]->() WHERE id(r) IN [1, 1, 99] "
                                "RETURN id(r) AS id"),
                            graph, "id"),
             (std::vector<std::int64_t>{relationship->id}));
@@ -1624,7 +1754,7 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForVariableTraversalOperators) {
 
 TEST(PhysicalPlanTest,
      ExecutesFixedTraversalAfterLogicalPlanAndAstAreDestroyed) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   auto first = graph.CreateNode({});
   auto second = graph.CreateNode({});
   auto third = graph.CreateNode({});
@@ -1690,16 +1820,17 @@ TEST(PhysicalPlanTest,
   EXPECT_EQ(FirstColumnIds(project_variable, graph, "b", variable_parameters),
             (std::vector<std::int64_t>{third->id}));
 
-  EXPECT_EQ(FirstColumnIds(
-                DetachedPhysicalPlan("MATCH (a)-[r:R]-(b) RETURN id(r) AS r"),
-                graph, "r"),
-            (std::vector<std::int64_t>{
-                first_relationship->id, first_relationship->id,
-                second_relationship->id, second_relationship->id, self->id}));
+  EXPECT_EQ(
+      FirstColumnIds(
+          DetachedPhysicalPlan("MATCH (a)-[r:R]-(b) RETURN id(r) AS r"), graph,
+          "r"),
+      (std::vector<std::int64_t>{first_relationship->id, first_relationship->id,
+                                 second_relationship->id,
+                                 second_relationship->id, self->id, self->id}));
 }
 
 TEST(PhysicalPlanTest, ClosesFixedExpandCursorEarly) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   auto first = graph.CreateNode({});
   auto second = graph.CreateNode({});
   graph.CreateRelationship(first, second, "R");
@@ -1715,7 +1846,7 @@ TEST(PhysicalPlanTest, ClosesFixedExpandCursorEarly) {
 
 TEST(PhysicalPlanTest,
      ExecutesVariableTraversalAfterLogicalPlanAndAstAreDestroyed) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   auto first = graph.CreateNode({});
   auto second = graph.CreateNode({});
   auto third = graph.CreateNode({});
@@ -1751,7 +1882,7 @@ TEST(PhysicalPlanTest,
 }
 
 TEST(PhysicalPlanTest, ClosesVariableExpandCursorEarlyAndEnforcesMemoryLimit) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   auto first = graph.CreateNode({});
   auto second = graph.CreateNode({});
   graph.CreateRelationship(first, second, "R");
@@ -1837,7 +1968,7 @@ TEST(PhysicalPlanTest, BuildsTypedNestedLoopBinaryPayloads) {
 }
 
 TEST(PhysicalPlanTest, StreamsCartesianProductAfterLogicalPlanIsDestroyed) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   graph.CreateNode({"Left"});
   graph.CreateNode({"Left"});
   graph.CreateNode({"Right"});
@@ -1879,14 +2010,14 @@ TEST(PhysicalPlanTest, StreamsCartesianProductAfterLogicalPlanIsDestroyed) {
   cancellation_options.cancellation->Cancel();
   EXPECT_THROW((void)cursor->Next(&row), common::QueryCancelledError);
 
-  rg::InMemoryGraph empty_right;
+  rg::test::GraphDBTestDatabase empty_right;
   empty_right.CreateNode({"Left"});
   EXPECT_TRUE(PhysicalRows(physical, empty_right, {"a", "b"}).empty());
 }
 
 TEST(PhysicalPlanTest,
      ExecutesPredicateJoinAfterLogicalPlanAndAstAreDestroyed) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   graph.CreateNode({}, {{"age", rg::Value(3)}, {"name", rg::Value("old")}});
   graph.CreateNode({}, {{"age", rg::Value(2)}, {"name", rg::Value("middle")}});
   graph.CreateNode({}, {{"age", rg::Value(1)}, {"name", rg::Value("young")}});
@@ -1912,7 +2043,7 @@ TEST(PhysicalPlanTest,
 }
 
 TEST(PhysicalPlanTest, CartesianProductRejectsConflictingSharedSlots) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   rg::PhysicalPlan physical = DetachedParameterCartesianProduct();
 
   EXPECT_EQ(PhysicalRows(physical, graph, {"shared", "left", "right"},
@@ -1951,7 +2082,7 @@ TEST(PhysicalPlanTest, BuildsTypedNodeAndLeftOuterHashJoinPayloads) {
 }
 
 TEST(PhysicalPlanTest, ExecutesNodeHashJoinAfterLogicalPlanAndAstAreDestroyed) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   const auto first =
       graph.CreateNode({"Person"}, {{"name", rg::Value("first")}});
   const auto second =
@@ -1983,7 +2114,7 @@ TEST(PhysicalPlanTest, ExecutesNodeHashJoinAfterLogicalPlanAndAstAreDestroyed) {
 }
 
 TEST(PhysicalPlanTest, NodeHashJoinRejectsNullKeysAndConflictingSharedSlots) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   const auto node = graph.CreateNode({});
   rg::PhysicalPlan physical = DetachedParameterNodeHashJoin();
   ASSERT_EQ(physical.Root().kind, rg::PhysicalOperatorKind::kNodeHashJoin);
@@ -2010,7 +2141,7 @@ TEST(PhysicalPlanTest, NodeHashJoinRejectsNullKeysAndConflictingSharedSlots) {
 }
 
 TEST(PhysicalPlanTest, ExecutesLeftOuterHashJoinAfterLogicalPlanIsDestroyed) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   const auto matched = graph.CreateNode({"Input"});
   const auto unmatched = graph.CreateNode({"Input"});
   const auto first = graph.CreateNode({});
@@ -2038,7 +2169,7 @@ TEST(PhysicalPlanTest, ExecutesLeftOuterHashJoinAfterLogicalPlanIsDestroyed) {
 
 TEST(PhysicalPlanTest,
      ExecutesValueHashJoinAfterLogicalPlanAndAstAreDestroyed) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   graph.CreateNode({"Small"}, {{"first", rg::Value(1)},
                                {"second", rg::Value("x")},
                                {"name", rg::Value("match")}});
@@ -2281,7 +2412,7 @@ TEST(PhysicalPlanTest, SelectsPartialTopNForProvidedOrderingPrefix) {
 
 TEST(PhysicalPlanTest,
      ExecutesSortOperatorsAfterLogicalPlanAndAstAreDestroyed) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   graph.CreateNode({"N"}, {{"g", rg::Value(2)}, {"v", rg::Value(2)}});
   graph.CreateNode({"N"}, {{"g", rg::Value(1)}, {"v", rg::Value(2)}});
   graph.CreateNode({"N"}, {{"g", rg::Value(2)}, {"v", rg::Value(1)}});
@@ -2332,7 +2463,7 @@ TEST(PhysicalPlanTest,
 
 TEST(PhysicalPlanTest,
      ExecutesDistinctOperatorsAfterLogicalPlanAndAstAreDestroyed) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   graph.CreateNode({"N"}, {{"value", rg::Value(2)}});
   graph.CreateNode({"N"}, {{"value", rg::Value(1)}});
   graph.CreateNode({"N"}, {{"value", rg::Value(2)}});
@@ -2366,7 +2497,7 @@ TEST(PhysicalPlanTest,
 
 TEST(PhysicalPlanTest,
      ExecutesAggregationOperatorsAfterLogicalPlanAndAstAreDestroyed) {
-  rg::InMemoryGraph graph;
+  rg::test::GraphDBTestDatabase graph;
   graph.CreateNode({"N"}, {{"group", rg::Value(2)}, {"value", rg::Value(20)}});
   graph.CreateNode({"N"}, {{"group", rg::Value(1)}, {"value", rg::Value(10)}});
   graph.CreateNode({"N"},
