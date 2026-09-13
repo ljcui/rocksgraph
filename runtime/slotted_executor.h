@@ -10,6 +10,10 @@
 #include "storage/graph_transaction.h"
 #include "value/value.h"
 
+namespace txn {
+class Transaction;
+}
+
 namespace rg {
 
 class PhysicalResultCursor {
@@ -27,6 +31,12 @@ class PhysicalResultCursor {
 
 [[nodiscard]] std::unique_ptr<PhysicalResultCursor> StartPhysicalPlan(
     const PhysicalPlan &plan, GraphTransaction &transaction,
+    const QueryParameters &parameters,
+    const std::vector<std::string> &result_columns,
+    QueryExecutionOptions options = {});
+
+[[nodiscard]] std::unique_ptr<PhysicalResultCursor> StartPhysicalPlan(
+    const PhysicalPlan &plan, txn::Transaction &transaction,
     const QueryParameters &parameters,
     const std::vector<std::string> &result_columns,
     QueryExecutionOptions options = {});

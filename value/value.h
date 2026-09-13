@@ -171,6 +171,9 @@ struct Relationship {
   int64_t id = 0;
   int64_t start_node_id = 0;
   int64_t end_node_id = 0;
+  // GraphDB locates an edge by (type_id, id). The Cypher-visible identity is
+  // still id; type_id is the storage identity needed to materialize the edge.
+  uint32_t type_id = 0;
   std::string type;
   Value::Map properties;
 };

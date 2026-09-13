@@ -27,6 +27,8 @@ class BoltConnection;
 namespace txn {
 class Transaction {
  public:
+  enum class State { kActive, kCommitted, kRolledBack };
+
   // No copying allowed
   Transaction(const Transaction&) = delete;
   void operator=(const Transaction&) = delete;
@@ -88,6 +90,7 @@ class Transaction {
   }
   void Commit();
   void Rollback();
+  [[nodiscard]] State GetState() const noexcept { return state_; }
   graphdb::GraphDB* db() { return db_; }
   rocksdb::Transaction* dbtxn() { return txn_; };
   void SetConn(const std::shared_ptr<bolt::BoltConnection>& conn) {
@@ -123,6 +126,7 @@ class Transaction {
   std::vector<PendingEdgePropertyWAL> pending_edge_property_wals_;
   std::vector<PendingFullTextWAL> pending_fulltext_wals_;
   std::vector<PendingVectorWAL> pending_vector_wals_;
+  State state_ = State::kActive;
 };
 
 }  // namespace txn

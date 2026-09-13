@@ -308,7 +308,7 @@ Value EvaluateFunction(
   }
 
   return EvaluateBuiltinFunction(builtin->kind, arguments, context.clock,
-                                 context.graph_reader);
+                                 context.graph_reader, context.transaction);
 }
 
 Value EvaluateListIndex(

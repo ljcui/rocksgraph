@@ -20,8 +20,13 @@
 #include "ast/builtin_procedure.h"
 #include "ast/expression_dependency.h"
 #include "common/exception.h"
+#include "graphdb/edge_iterator.h"
+#include "graphdb/graph_entity.h"
+#include "graphdb/vertex_iterator.h"
 #include "ir/query_ir_internal.h"
 #include "runtime/expression_evaluator.h"
+#include "runtime/graphdb_access.h"
+#include "transaction/transaction.h"
 
 namespace rg {
 namespace {
@@ -119,11 +124,32 @@ struct RuntimeState {
                          : std::make_shared<QueryCancellationToken>()),
         memory_tracker(options.memory_limit_bytes),
         context{.graph_reader = &reader,
+                .transaction = nullptr,
                 .parameters = nullptr,
                 .bound_parameters = &bound_parameters,
                 .cancellation = cancellation.get(),
                 .memory_tracker = &memory_tracker,
                 .clock = ExecutionClock::Start()} {}
+
+  RuntimeState(txn::Transaction &graphdb_transaction,
+               const QueryParameters &parameters, QueryExecutionOptions options)
+      : transaction(&graphdb_transaction),
+        bound_parameters(parameters),
+        cancellation(options.cancellation != nullptr
+                         ? std::move(options.cancellation)
+                         : std::make_shared<QueryCancellationToken>()),
+        memory_tracker(options.memory_limit_bytes),
+        context{.graph_reader = nullptr,
+                .transaction = &graphdb_transaction,
+                .parameters = nullptr,
+                .bound_parameters = &bound_parameters,
+                .cancellation = cancellation.get(),
+                .memory_tracker = &memory_tracker,
+                .clock = ExecutionClock::Start()} {}
+
+  [[nodiscard]] bool UsesGraphDB() const noexcept {
+    return transaction != nullptr;
+  }
 
   void CheckCancelled() const { context.CheckCancelled(); }
   [[nodiscard]] EntityIdCursor *TrackCursor(
@@ -148,8 +174,9 @@ struct RuntimeState {
     return expressions.back().program;
   }
 
-  const GraphReader *graph_reader;
-  GraphWriter *storage;
+  const GraphReader *graph_reader = nullptr;
+  GraphWriter *storage = nullptr;
+  txn::Transaction *transaction = nullptr;
   BoundQueryParameters bound_parameters;
   std::shared_ptr<QueryCancellationToken> cancellation;
   QueryMemoryTracker memory_tracker;
@@ -174,8 +201,18 @@ class SlottedExpressionBindings final : public ExpressionBindings {
         parameters_(&parameters),
         program_(&program) {}
 
+  SlottedExpressionBindings(const SlottedRow &row,
+                            txn::Transaction &transaction,
+                            const BoundQueryParameters &parameters,
+                            const RuntimeExpressionProgram &program)
+      : row_(&row),
+        transaction_(&transaction),
+        parameters_(&parameters),
+        program_(&program) {}
+
   [[nodiscard]] Value Lookup(std::string_view name) const override {
-    return row_->Get(name, *graph_reader_);
+    return transaction_ != nullptr ? row_->Get(name, *transaction_)
+                                   : row_->Get(name, *graph_reader_);
   }
 
   [[nodiscard]] Value LookupVariable(
@@ -183,7 +220,9 @@ class SlottedExpressionBindings final : public ExpressionBindings {
     const auto found = program_->variables.find(&variable);
     return found == program_->variables.end()
                ? Lookup(variable.name)
-               : row_->Get(found->second, *graph_reader_);
+               : (transaction_ != nullptr
+                      ? row_->Get(found->second, *transaction_)
+                      : row_->Get(found->second, *graph_reader_));
   }
 
   [[nodiscard]] bool ReadProperty(std::string_view variable,
@@ -197,6 +236,14 @@ class SlottedExpressionBindings final : public ExpressionBindings {
     const std::int64_t id = row_->EntityIdAt(*slot);
     if (id < 0) {
       *value = Value::Null();
+    } else if (transaction_ != nullptr) {
+      if (slot->kind == SlotKind::kNode) {
+        auto vertex = GraphDBVertexById(*transaction_, id);
+        *value = vertex.GetProperty(std::string(property_key));
+      } else {
+        auto edge = GraphDBEdgeById(*transaction_, row_->RelationshipAt(*slot));
+        *value = edge.GetProperty(std::string(property_key));
+      }
     } else if (slot->kind == SlotKind::kNode) {
       *value = graph_reader_->NodeProperty(id, property_key);
     } else {
@@ -217,11 +264,21 @@ class SlottedExpressionBindings final : public ExpressionBindings {
       return false;
     }
     const std::int64_t id = row_->EntityIdAt(slot);
-    *value =
-        id < 0 ? Value::Null()
-               : (slot.kind == SlotKind::kNode
-                      ? graph_reader_->NodeProperty(id, property_key)
-                      : graph_reader_->RelationshipProperty(id, property_key));
+    if (id < 0) {
+      *value = Value::Null();
+    } else if (transaction_ != nullptr) {
+      if (slot.kind == SlotKind::kNode) {
+        auto vertex = GraphDBVertexById(*transaction_, id);
+        *value = vertex.GetProperty(std::string(property_key));
+      } else {
+        auto edge = GraphDBEdgeById(*transaction_, row_->RelationshipAt(slot));
+        *value = edge.GetProperty(std::string(property_key));
+      }
+    } else {
+      *value = slot.kind == SlotKind::kNode
+                   ? graph_reader_->NodeProperty(id, property_key)
+                   : graph_reader_->RelationshipProperty(id, property_key);
+    }
     return true;
   }
 
@@ -238,6 +295,7 @@ class SlottedExpressionBindings final : public ExpressionBindings {
  private:
   const SlottedRow *row_ = nullptr;
   const GraphReader *graph_reader_ = nullptr;
+  txn::Transaction *transaction_ = nullptr;
   const BoundQueryParameters *parameters_ = nullptr;
   const RuntimeExpressionProgram *program_ = nullptr;
 };
@@ -247,6 +305,11 @@ Value Evaluate(const ast::Expression &expression, const SlottedRow &row,
                RuntimeState &state) {
   const RuntimeExpressionProgram &program =
       state.ExpressionProgram(expression, *row.Slots());
+  if (state.UsesGraphDB()) {
+    SlottedExpressionBindings bindings(row, *state.transaction,
+                                       state.bound_parameters, program);
+    return EvaluateExpression(expression, bindings, precomputed, state.context);
+  }
   SlottedExpressionBindings bindings(row, *state.graph_reader,
                                      state.bound_parameters, program);
   return EvaluateExpression(expression, bindings, precomputed, state.context);
@@ -276,13 +339,54 @@ SlottedRow EmptyArgument(SlotConfigurationPtr slots) {
 void CopyMappings(const SlottedRow &source, SlottedRow *target,
                   const std::vector<SlotMapping> &mappings,
                   const RuntimeState &state) {
-  CopySlots(source, target, mappings, *state.graph_reader);
+  if (state.UsesGraphDB()) {
+    CopySlots(source, target, mappings, *state.transaction);
+  } else {
+    CopySlots(source, target, mappings, *state.graph_reader);
+  }
 }
 
 SlottedRow CopyMappedRow(const SlottedRow &source, SlotConfigurationPtr target,
                          const std::vector<SlotMapping> &mappings,
                          const RuntimeState &state) {
-  return source.CopyTo(std::move(target), mappings, *state.graph_reader);
+  return state.UsesGraphDB()
+             ? source.CopyTo(std::move(target), mappings, *state.transaction)
+             : source.CopyTo(std::move(target), mappings, *state.graph_reader);
+}
+
+Value ReadRowValue(const SlottedRow &row, const Slot &slot,
+                   const RuntimeState &state) {
+  return state.UsesGraphDB() ? row.Get(slot, *state.transaction)
+                             : row.Get(slot, *state.graph_reader);
+}
+
+Value ReadRowValue(const SlottedRow &row, std::string_view name,
+                   const RuntimeState &state) {
+  return state.UsesGraphDB() ? row.Get(name, *state.transaction)
+                             : row.Get(name, *state.graph_reader);
+}
+
+bool BindNode(SlottedRow *row, const Slot &slot, std::int64_t id,
+              RuntimeState &state) {
+  return state.UsesGraphDB() ? TryBindEntityId(row, slot, SlotKind::kNode, id,
+                                               *state.transaction)
+                             : TryBindEntityId(row, slot, SlotKind::kNode, id,
+                                               *state.graph_reader);
+}
+
+bool BindNode(SlottedRow *row, std::string_view name, std::int64_t id,
+              RuntimeState &state) {
+  return state.UsesGraphDB() ? TryBindEntityId(row, name, SlotKind::kNode, id,
+                                               *state.transaction)
+                             : TryBindEntityId(row, name, SlotKind::kNode, id,
+                                               *state.graph_reader);
+}
+
+bool BindRelationship(SlottedRow *row, const Slot &slot,
+                      RelationshipReference relationship, RuntimeState &state) {
+  CHECK(state.UsesGraphDB(), common::InternalError,
+        "native relationship binding requires GraphDB");
+  return TryBindRelationship(row, slot, relationship, *state.transaction);
 }
 
 bool MergeMappings(const SlottedRow &source, SlottedRow *target,
@@ -295,14 +399,20 @@ bool MergeMappings(const SlottedRow &source, SlottedRow *target,
     if (!target->IsInitialized(mapping.target)) {
       if (mapping.source.kind == mapping.target.kind &&
           mapping.source.kind != SlotKind::kReference) {
-        target->SetEntityId(mapping.target, source.EntityIdAt(mapping.source));
+        if (mapping.source.kind == SlotKind::kRelationship) {
+          target->SetRelationship(mapping.target,
+                                  source.RelationshipAt(mapping.source));
+        } else {
+          target->SetEntityId(mapping.target,
+                              source.EntityIdAt(mapping.source));
+        }
       } else if (mapping.source.kind == SlotKind::kReference &&
                  mapping.target.kind == SlotKind::kReference) {
         target->SetReference(mapping.target,
                              source.ReferenceAt(mapping.source));
       } else {
         target->Set(mapping.target,
-                    source.Get(mapping.source, *state.graph_reader));
+                    ReadRowValue(source, mapping.source, state));
       }
       continue;
     }
@@ -312,8 +422,8 @@ bool MergeMappings(const SlottedRow &source, SlottedRow *target,
           target->EntityIdAt(mapping.target)) {
         return false;
       }
-    } else if (!ValuesEqual(source.Get(mapping.source, *state.graph_reader),
-                            target->Get(mapping.target, *state.graph_reader))) {
+    } else if (!ValuesEqual(ReadRowValue(source, mapping.source, state),
+                            ReadRowValue(*target, mapping.target, state))) {
       return false;
     }
   }
@@ -325,7 +435,7 @@ std::int64_t NodeId(const SlottedRow &row, const Slot &slot,
   if (slot.kind == SlotKind::kNode) {
     return row.EntityIdAt(slot);
   }
-  const Value value = row.Get(slot, *state.graph_reader);
+  const Value value = ReadRowValue(row, slot, state);
   if (value.IsNull()) {
     return -1;
   }
@@ -1257,6 +1367,16 @@ std::unique_ptr<EntityIdCursor> ExpandCursor(
   return graph_reader.RelationshipIdsConnectedTo(node_id);
 }
 
+graphdb::EdgeDirection GraphDBDirection(PhysicalExpandDirection direction) {
+  if (direction == PhysicalExpandDirection::kOutgoing) {
+    return graphdb::EdgeDirection::OUTGOING;
+  }
+  if (direction == PhysicalExpandDirection::kIncoming) {
+    return graphdb::EdgeDirection::INCOMING;
+  }
+  return graphdb::EdgeDirection::BOTH;
+}
+
 std::optional<std::int64_t> NextPhysicalExpandNode(
     const Relationship &relationship, std::int64_t current_node_id,
     PhysicalExpandDirection direction) {
@@ -1369,6 +1489,23 @@ class AllNodeScanOperator final : public PullOperator {
     if (closed_) {
       return false;
     }
+    if (state_->UsesGraphDB()) {
+      if (graphdb_cursor_ == nullptr) {
+        graphdb_cursor_ = state_->transaction->NewVertexIterator();
+      }
+      while (graphdb_cursor_->Valid()) {
+        const std::int64_t id = graphdb_cursor_->GetVertex().GetNativeId();
+        graphdb_cursor_->Next();
+        SlottedRow output(node_->output_slots);
+        CopyMappings(*argument_, &output, node_->argument_mapping, *state_);
+        if (BindNode(&output, data_->variable, id, *state_)) {
+          *row = std::move(output);
+          return true;
+        }
+      }
+      Close();
+      return false;
+    }
     if (cursor_ == nullptr) {
       cursor_ = state_->TrackCursor(state_->graph_reader->ScanNodeIds());
     }
@@ -1386,6 +1523,7 @@ class AllNodeScanOperator final : public PullOperator {
   }
 
   void Close() noexcept override {
+    graphdb_cursor_.reset();
     if (cursor_ != nullptr) {
       state_->ReleaseCursor(cursor_);
       cursor_ = nullptr;
@@ -1399,6 +1537,7 @@ class AllNodeScanOperator final : public PullOperator {
   RuntimeState *state_ = nullptr;
   std::optional<SlottedRow> argument_;
   EntityIdCursor *cursor_ = nullptr;
+  std::unique_ptr<graphdb::VertexIterator> graphdb_cursor_;
   bool closed_ = false;
 };
 
@@ -1461,6 +1600,41 @@ class NodeScanOperator : public PullOperator {
     if (closed_) {
       return false;
     }
+    if (state_->UsesGraphDB()) {
+      if (graphdb_cursor_ == nullptr) {
+        graphdb_cursor_ = OpenGraphDBCursor();
+      }
+      while (graphdb_cursor_->Valid()) {
+        graphdb::Vertex vertex = graphdb_cursor_->GetVertex();
+        graphdb_cursor_->Next();
+        if (labels_to_verify_ != nullptr) {
+          const auto labels = vertex.GetLabels();
+          if (!std::all_of(labels_to_verify_->begin(), labels_to_verify_->end(),
+                           [&](const std::string &label) {
+                             return labels.contains(label);
+                           })) {
+            continue;
+          }
+        }
+        SlottedRow output = CopyMappedRow(argument_, node_->output_slots,
+                                          node_->argument_mapping, *state_);
+        if (!BindNode(&output, *variable_, vertex.GetNativeId(), *state_)) {
+          continue;
+        }
+        if (predicates_ != nullptr &&
+            !std::all_of(predicates_->begin(), predicates_->end(),
+                         [&](const PhysicalExpression &predicate) {
+                           return PredicateIsTrue(
+                               Evaluate(predicate, output, *state_));
+                         })) {
+          continue;
+        }
+        *row = std::move(output);
+        return true;
+      }
+      Close();
+      return false;
+    }
     if (cursor_ == nullptr) {
       cursor_ = state_->TrackCursor(OpenCursor());
     }
@@ -1493,6 +1667,7 @@ class NodeScanOperator : public PullOperator {
   }
 
   void Close() noexcept override {
+    graphdb_cursor_.reset();
     if (cursor_ != nullptr) {
       state_->ReleaseCursor(cursor_);
       cursor_ = nullptr;
@@ -1502,6 +1677,11 @@ class NodeScanOperator : public PullOperator {
 
  protected:
   [[nodiscard]] virtual std::unique_ptr<EntityIdCursor> OpenCursor() = 0;
+  [[nodiscard]] virtual std::unique_ptr<graphdb::VertexIterator>
+  OpenGraphDBCursor() {
+    THROW(common::InvalidArgumentError,
+          "physical operator is not implemented for GraphDB");
+  }
   [[nodiscard]] const SlottedRow &Argument() const noexcept {
     return argument_;
   }
@@ -1515,6 +1695,7 @@ class NodeScanOperator : public PullOperator {
   const std::vector<std::string> *labels_to_verify_ = nullptr;
   const std::vector<PhysicalExpression> *predicates_ = nullptr;
   EntityIdCursor *cursor_ = nullptr;
+  std::unique_ptr<graphdb::VertexIterator> graphdb_cursor_;
   bool closed_ = false;
 };
 
@@ -1531,6 +1712,14 @@ class NodeByLabelScanOperator final : public NodeScanOperator {
  private:
   [[nodiscard]] std::unique_ptr<EntityIdCursor> OpenCursor() override {
     return State().graph_reader->ScanNodeIdsByLabels(data_->labels);
+  }
+
+  [[nodiscard]] std::unique_ptr<graphdb::VertexIterator> OpenGraphDBCursor()
+      override {
+    if (data_->labels.empty()) {
+      return State().transaction->NewVertexIterator();
+    }
+    return State().transaction->NewVertexIterator(data_->labels.front());
   }
 
   const NodeByLabelScanOp *data_ = nullptr;
@@ -1751,6 +1940,68 @@ bool EmitPendingRelationship(const PhysicalPlanNode &node,
                           pending_reverse, row, state);
 }
 
+bool EmitGraphDBRelationship(
+    const PhysicalPlanNode &node, const PhysicalRelationshipPattern &pattern,
+    const std::vector<PhysicalExpression> *predicates,
+    const SlottedRow &argument, RelationshipReference reference, bool reverse,
+    std::optional<RelationshipReference> *pending_reverse, SlottedRow *row,
+    RuntimeState &state) {
+  graphdb::Edge edge = GraphDBEdgeById(*state.transaction, reference);
+  Relationship relationship{.id = edge.GetNativeId(),
+                            .start_node_id = edge.GetNativeStartId(),
+                            .end_node_id = edge.GetNativeEndId(),
+                            .type_id = edge.GetTypeId(),
+                            .type = edge.GetType()};
+  if (!RelationshipHasType(relationship, pattern.types)) {
+    return false;
+  }
+  if (pattern.direction == PhysicalExpandDirection::kBoth && !reverse &&
+      relationship.start_node_id != relationship.end_node_id) {
+    *pending_reverse = reference;
+  }
+  const std::int64_t from_id =
+      pattern.direction == PhysicalExpandDirection::kIncoming
+          ? relationship.end_node_id
+          : (reverse ? relationship.end_node_id : relationship.start_node_id);
+  const std::int64_t to_id =
+      pattern.direction == PhysicalExpandDirection::kIncoming
+          ? relationship.start_node_id
+          : (reverse ? relationship.start_node_id : relationship.end_node_id);
+  SlottedRow output =
+      CopyMappedRow(argument, node.output_slots, node.argument_mapping, state);
+  if (!BindNode(&output, pattern.from_node, from_id, state) ||
+      !TryBindRelationship(&output, pattern.relationship, reference,
+                           *state.transaction) ||
+      !BindNode(&output, pattern.to_node, to_id, state)) {
+    return false;
+  }
+  if (predicates != nullptr &&
+      !std::all_of(predicates->begin(), predicates->end(),
+                   [&](const PhysicalExpression &predicate) {
+                     return PredicateIsTrue(Evaluate(predicate, output, state));
+                   })) {
+    return false;
+  }
+  *row = std::move(output);
+  return true;
+}
+
+bool EmitPendingGraphDBRelationship(
+    const PhysicalPlanNode &node, const PhysicalRelationshipPattern &pattern,
+    const std::vector<PhysicalExpression> *predicates,
+    const SlottedRow &argument,
+    std::optional<RelationshipReference> *pending_reverse, SlottedRow *row,
+    RuntimeState &state) {
+  if (!pending_reverse->has_value()) {
+    return false;
+  }
+  const RelationshipReference relationship = **pending_reverse;
+  pending_reverse->reset();
+  return EmitGraphDBRelationship(node, pattern, predicates, argument,
+                                 relationship, true, pending_reverse, row,
+                                 state);
+}
+
 class RelationshipScanOperator : public PullOperator {
  public:
   RelationshipScanOperator(const PhysicalPlanNode &node, RuntimeState &state,
@@ -1769,6 +2020,32 @@ class RelationshipScanOperator : public PullOperator {
     CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
     state_->CheckCancelled();
     if (closed_) {
+      return false;
+    }
+    if (state_->UsesGraphDB()) {
+      if (graphdb_cursor_ == nullptr) {
+        graphdb_cursor_ = OpenGraphDBCursor();
+      }
+      if (EmitPendingGraphDBRelationship(*node_, *pattern_, predicates_,
+                                         argument_, &graphdb_pending_reverse_,
+                                         row, *state_)) {
+        return true;
+      }
+      while (graphdb_cursor_->Valid()) {
+        const graphdb::Edge &edge = graphdb_cursor_->GetEdge();
+        const RelationshipReference relationship{.id = edge.GetNativeId(),
+                                                 .type_id = edge.GetTypeId()};
+        graphdb_cursor_->Next();
+        if (EmitGraphDBRelationship(*node_, *pattern_, predicates_, argument_,
+                                    relationship, false,
+                                    &graphdb_pending_reverse_, row, *state_) ||
+            EmitPendingGraphDBRelationship(*node_, *pattern_, predicates_,
+                                           argument_, &graphdb_pending_reverse_,
+                                           row, *state_)) {
+          return true;
+        }
+      }
+      Close();
       return false;
     }
     if (cursor_ == nullptr) {
@@ -1792,16 +2069,23 @@ class RelationshipScanOperator : public PullOperator {
   }
 
   void Close() noexcept override {
+    graphdb_cursor_.reset();
     if (cursor_ != nullptr) {
       state_->ReleaseCursor(cursor_);
       cursor_ = nullptr;
     }
     pending_reverse_.reset();
+    graphdb_pending_reverse_.reset();
     closed_ = true;
   }
 
  protected:
   [[nodiscard]] virtual std::unique_ptr<EntityIdCursor> OpenCursor() = 0;
+  [[nodiscard]] virtual std::unique_ptr<graphdb::EdgeIterator>
+  OpenGraphDBCursor() {
+    THROW(common::InvalidArgumentError,
+          "physical operator is not implemented for GraphDB");
+  }
   [[nodiscard]] const SlottedRow &Argument() const noexcept {
     return argument_;
   }
@@ -1814,7 +2098,9 @@ class RelationshipScanOperator : public PullOperator {
   const PhysicalRelationshipPattern *pattern_ = nullptr;
   const std::vector<PhysicalExpression> *predicates_ = nullptr;
   EntityIdCursor *cursor_ = nullptr;
+  std::unique_ptr<graphdb::EdgeIterator> graphdb_cursor_;
   std::optional<std::int64_t> pending_reverse_;
+  std::optional<RelationshipReference> graphdb_pending_reverse_;
   bool closed_ = false;
 };
 
@@ -1832,6 +2118,12 @@ class RelationshipTypeScanOperator final : public RelationshipScanOperator {
   [[nodiscard]] std::unique_ptr<EntityIdCursor> OpenCursor() override {
     return State().graph_reader->ScanRelationshipIdsByTypes(
         data_->pattern.types);
+  }
+
+  [[nodiscard]] std::unique_ptr<graphdb::EdgeIterator> OpenGraphDBCursor()
+      override {
+    return State().transaction->NewEdgeIterator(std::unordered_set<std::string>(
+        data_->pattern.types.begin(), data_->pattern.types.end()));
   }
 
   const RelationshipTypeScanOp *data_ = nullptr;
@@ -1960,6 +2252,63 @@ class FixedExpandOperatorBase : public PullOperator {
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
     CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    if (state_->UsesGraphDB()) {
+      while (!closed_) {
+        state_->CheckCancelled();
+        if (graphdb_cursor_ != nullptr) {
+          while (graphdb_cursor_->Valid()) {
+            graphdb::Edge edge = graphdb_cursor_->GetEdge();
+            graphdb_cursor_->Next();
+            Relationship relationship{.id = edge.GetNativeId(),
+                                      .start_node_id = edge.GetNativeStartId(),
+                                      .end_node_id = edge.GetNativeEndId(),
+                                      .type_id = edge.GetTypeId()};
+            const std::optional<std::int64_t> to = NextPhysicalExpandNode(
+                relationship, from_id_, pattern_->direction);
+            if (!to.has_value() ||
+                (to_node_input_slot_.has_value() && *to != to_id_)) {
+              continue;
+            }
+            SlottedRow output =
+                CopyMappedRow(*input_, node_->output_slots,
+                              node_->child_mappings.front(), *state_);
+            if (!BindRelationship(
+                    &output, relationship_output_slot_,
+                    {.id = relationship.id, .type_id = relationship.type_id},
+                    *state_) ||
+                (to_node_output_slot_.has_value() &&
+                 !BindNode(&output, *to_node_output_slot_, *to, *state_))) {
+              continue;
+            }
+            *row = std::move(output);
+            return true;
+          }
+          graphdb_cursor_.reset();
+          input_.reset();
+        }
+
+        SlottedRow input(node_->children[0]->output_slots);
+        if (!source_->Next(&input)) {
+          Close();
+          return false;
+        }
+        from_id_ = NodeId(input, from_node_input_slot_, *state_);
+        to_id_ = to_node_input_slot_.has_value()
+                     ? NodeId(input, *to_node_input_slot_, *state_)
+                     : -1;
+        if (from_id_ < 0 || (to_node_input_slot_.has_value() && to_id_ < 0)) {
+          continue;
+        }
+        input_.emplace(std::move(input));
+        auto vertex = GraphDBVertexById(*state_->transaction, from_id_);
+        graphdb_cursor_ = vertex.NewEdgeIterator(
+            GraphDBDirection(pattern_->direction),
+            std::unordered_set<std::string>(pattern_->types.begin(),
+                                            pattern_->types.end()),
+            {});
+      }
+      return false;
+    }
     while (!closed_) {
       state_->CheckCancelled();
       if (cursor_ != nullptr) {
@@ -2020,6 +2369,7 @@ class FixedExpandOperatorBase : public PullOperator {
       state_->ReleaseCursor(cursor_);
       cursor_ = nullptr;
     }
+    graphdb_cursor_.reset();
     input_.reset();
     source_->Close();
     closed_ = true;
@@ -2036,6 +2386,7 @@ class FixedExpandOperatorBase : public PullOperator {
   std::optional<Slot> to_node_output_slot_;
   std::optional<SlottedRow> input_;
   EntityIdCursor *cursor_ = nullptr;
+  std::unique_ptr<graphdb::EdgeIterator> graphdb_cursor_;
   std::int64_t from_id_ = -1;
   std::int64_t to_id_ = -1;
   bool closed_ = false;
@@ -6089,6 +6440,17 @@ class PhysicalResultCursorImpl final : public PhysicalResultCursor {
         output_slots_(plan.Root().output_slots),
         result_columns_(std::move(result_columns)) {}
 
+  PhysicalResultCursorImpl(const PhysicalPlan &plan,
+                           txn::Transaction &transaction,
+                           const QueryParameters &parameters,
+                           std::vector<std::string> result_columns,
+                           QueryExecutionOptions options)
+      : state_(transaction, parameters, std::move(options)),
+        factory_(state_),
+        root_(factory_.Build(plan.Root())),
+        output_slots_(plan.Root().output_slots),
+        result_columns_(std::move(result_columns)) {}
+
   ~PhysicalResultCursorImpl() override { Close(); }
 
   [[nodiscard]] bool Next(std::vector<Value> *row) override {
@@ -6107,7 +6469,7 @@ class PhysicalResultCursorImpl final : public PhysicalResultCursor {
       row->reserve(result_columns_.size());
       for (const auto &column : result_columns_) {
         row->push_back(slotted.IsInitialized(column)
-                           ? slotted.Get(column, *state_.graph_reader)
+                           ? ReadRowValue(slotted, column, state_)
                            : Value::Null());
       }
       return true;
@@ -6165,6 +6527,15 @@ std::unique_ptr<PhysicalResultCursor> StartPhysicalPlan(
   GraphWriter *writer = transaction.IsWritable() ? &transaction : nullptr;
   return StartPhysicalPlan(plan, transaction, writer, parameters,
                            result_columns, std::move(options));
+}
+
+std::unique_ptr<PhysicalResultCursor> StartPhysicalPlan(
+    const PhysicalPlan &plan, txn::Transaction &transaction,
+    const QueryParameters &parameters,
+    const std::vector<std::string> &result_columns,
+    QueryExecutionOptions options) {
+  return std::make_unique<PhysicalResultCursorImpl>(
+      plan, transaction, parameters, result_columns, std::move(options));
 }
 
 }  // namespace rg

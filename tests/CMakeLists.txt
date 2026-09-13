@@ -43,6 +43,9 @@ add_rocksgraph_test(open_cypher_optimizer_test runtime/open_cypher_optimizer_tes
                     rocksgraph_runtime)
 add_rocksgraph_test(index_access_test runtime/index_access_test.cc
                     rocksgraph_runtime)
+add_rocksgraph_test(graphdb_query_executor_test
+                    runtime/graphdb_query_executor_test.cc rocksgraph_runtime)
+target_link_libraries(graphdb_query_executor_test PRIVATE graphdb)
 
 add_rocksgraph_test(value_test value/value_test.cc rocksgraph_value)
 

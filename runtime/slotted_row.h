@@ -10,8 +10,13 @@
 #include <vector>
 
 #include "ast/semantic_table.h"
+#include "runtime/graphdb_access.h"
 #include "storage/graph_reader.h"
 #include "value/value.h"
+
+namespace txn {
+class Transaction;
+}
 
 namespace rg {
 
@@ -78,9 +83,11 @@ class SlottedRow final {
   [[nodiscard]] bool IsInitialized(const Slot &slot) const;
   [[nodiscard]] bool IsInitialized(std::string_view name) const;
   [[nodiscard]] std::int64_t EntityIdAt(const Slot &slot) const;
+  [[nodiscard]] RelationshipReference RelationshipAt(const Slot &slot) const;
   [[nodiscard]] const Value &ReferenceAt(const Slot &slot) const;
 
   void SetEntityId(const Slot &slot, std::int64_t id);
+  void SetRelationship(const Slot &slot, RelationshipReference relationship);
   void SetReference(const Slot &slot, Value value);
   void Set(const Slot &slot, Value value);
   void Set(std::string_view name, Value value);
@@ -91,14 +98,22 @@ class SlottedRow final {
                           const GraphReader &graph_reader) const;
   [[nodiscard]] Value Get(const Slot &slot,
                           const GraphReader &graph_reader) const;
+  [[nodiscard]] Value Get(std::string_view name,
+                          txn::Transaction &transaction) const;
+  [[nodiscard]] Value Get(const Slot &slot,
+                          txn::Transaction &transaction) const;
   [[nodiscard]] std::size_t EstimatedHeapUsage() const;
   [[nodiscard]] SlottedRow CopyTo(SlotConfigurationPtr target,
                                   const std::vector<SlotMapping> &mappings,
                                   const GraphReader &graph_reader) const;
+  [[nodiscard]] SlottedRow CopyTo(SlotConfigurationPtr target,
+                                  const std::vector<SlotMapping> &mappings,
+                                  txn::Transaction &transaction) const;
 
  private:
   SlotConfigurationPtr slots_;
   std::vector<std::int64_t> entity_ids_;
+  std::vector<std::uint32_t> relationship_type_ids_;
   std::vector<Value> references_;
   std::vector<bool> entity_initialized_;
   std::vector<bool> reference_initialized_;
@@ -107,16 +122,35 @@ class SlottedRow final {
 void CopySlots(const SlottedRow &source, SlottedRow *target,
                const std::vector<SlotMapping> &mappings,
                const GraphReader &graph_reader);
+void CopySlots(const SlottedRow &source, SlottedRow *target,
+               const std::vector<SlotMapping> &mappings,
+               txn::Transaction &transaction);
 [[nodiscard]] bool TryBindSlot(SlottedRow *row, const Slot &slot, Value value,
                                const GraphReader &graph_reader);
 [[nodiscard]] bool TryBindSlot(SlottedRow *row, std::string_view name,
                                Value value, const GraphReader &graph_reader);
+[[nodiscard]] bool TryBindSlot(SlottedRow *row, const Slot &slot, Value value,
+                               txn::Transaction &transaction);
+[[nodiscard]] bool TryBindSlot(SlottedRow *row, std::string_view name,
+                               Value value, txn::Transaction &transaction);
 [[nodiscard]] bool TryBindEntityId(SlottedRow *row, const Slot &slot,
                                    SlotKind kind, std::int64_t id,
                                    const GraphReader &graph_reader);
 [[nodiscard]] bool TryBindEntityId(SlottedRow *row, std::string_view name,
                                    SlotKind kind, std::int64_t id,
                                    const GraphReader &graph_reader);
+[[nodiscard]] bool TryBindEntityId(SlottedRow *row, const Slot &slot,
+                                   SlotKind kind, std::int64_t id,
+                                   txn::Transaction &transaction);
+[[nodiscard]] bool TryBindEntityId(SlottedRow *row, std::string_view name,
+                                   SlotKind kind, std::int64_t id,
+                                   txn::Transaction &transaction);
+[[nodiscard]] bool TryBindRelationship(SlottedRow *row, const Slot &slot,
+                                       RelationshipReference relationship,
+                                       txn::Transaction &transaction);
+[[nodiscard]] bool TryBindRelationship(SlottedRow *row, std::string_view name,
+                                       RelationshipReference relationship,
+                                       txn::Transaction &transaction);
 [[nodiscard]] std::size_t EstimatedValueHeapUsage(const Value &value);
 
 }  // namespace rg

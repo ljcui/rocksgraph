@@ -1,7 +1,6 @@
 #pragma once
 #include <gflags/gflags.h>
 
-DECLARE_string(mode);
 DECLARE_string(data_path);
 DECLARE_string(pid_file);
 

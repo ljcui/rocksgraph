@@ -15,6 +15,10 @@
 #include "common/exception.h"
 #include "value/value.h"
 
+namespace txn {
+class Transaction;
+}
+
 namespace rg {
 
 class GraphReader;
@@ -115,6 +119,7 @@ struct ExecutionClock {
 
 struct ExecutionContext {
   const GraphReader *graph_reader = nullptr;
+  txn::Transaction *transaction = nullptr;
   const QueryParameters *parameters = nullptr;
   const BoundQueryParameters *bound_parameters = nullptr;
   QueryCancellationToken *cancellation = nullptr;

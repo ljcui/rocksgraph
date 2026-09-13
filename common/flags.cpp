@@ -1,14 +1,5 @@
 #include "flags.h"
 
-#include <spdlog/fmt/fmt.h>
-
-#include <iostream>
-#include <set>
-
-DEFINE_string(mode, "run",
-              "Mode to run the server in. "
-              "'run' - run the server directly. "
-              "'start/restart/stop' - run the server in daemon mode");
 DEFINE_string(data_path, "data", "Directory where the graph data is stored");
 DEFINE_string(pid_file, "lgraph.pid", "Pid file");
 
@@ -55,14 +46,3 @@ DEFINE_uint64(vt_apply_interval, (uint64_t)1,
               "Vector index WAL auto apply interval, in seconds.");
 DEFINE_uint64(vt_serialize_interval, (uint64_t)10000,
               "Vector index serialize interval.");
-
-bool validate_mode(const char* flagname, const std::string& mode) {
-  std::set<std::string> vals = {"run", "start", "restart", "stop"};
-  if (!vals.count(mode)) {
-    std::cerr << fmt::format("Invalid value for --{}: {}", flagname, mode)
-              << std::endl;
-    return false;
-  }
-  return true;
-}
-DEFINE_validator(mode, &validate_mode);

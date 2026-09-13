@@ -11,6 +11,10 @@
 #include "storage/graph_transaction.h"
 #include "value/value.h"
 
+namespace txn {
+class Transaction;
+}
+
 namespace ir {
 
 class PlannerCatalog;
@@ -53,6 +57,8 @@ class QueryExecutor final {
  public:
   explicit QueryExecutor(GraphTransaction &transaction)
       : transaction_(&transaction) {}
+  explicit QueryExecutor(txn::Transaction &transaction)
+      : graphdb_transaction_(&transaction) {}
 
   // Execution requires an active transaction and never commits it.
   [[nodiscard]] QueryResult Execute(const ir::LogicalPlan &plan,
@@ -66,6 +72,7 @@ class QueryExecutor final {
 
  private:
   GraphTransaction *transaction_ = nullptr;
+  txn::Transaction *graphdb_transaction_ = nullptr;
 };
 
 // Executes one Cypher statement in an active transaction. The caller owns the
@@ -75,6 +82,12 @@ class QueryExecutor final {
                                        QueryOptions options = {});
 [[nodiscard]] std::unique_ptr<QueryResultCursor> ExecuteQueryCursor(
     GraphTransaction &transaction, std::string_view cypher,
+    QueryOptions options = {});
+[[nodiscard]] QueryResult ExecuteQuery(txn::Transaction &transaction,
+                                       std::string_view cypher,
+                                       QueryOptions options = {});
+[[nodiscard]] std::unique_ptr<QueryResultCursor> ExecuteQueryCursor(
+    txn::Transaction &transaction, std::string_view cypher,
     QueryOptions options = {});
 
 }  // namespace rg

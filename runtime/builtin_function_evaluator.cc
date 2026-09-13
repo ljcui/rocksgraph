@@ -16,6 +16,7 @@
 
 #include "ast/builtin_function.h"
 #include "common/exception.h"
+#include "runtime/graphdb_access.h"
 #include "storage/graph_reader.h"
 #include "value/temporal.h"
 
@@ -109,7 +110,8 @@ double RandomUnitDouble() {
 Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
                               const std::vector<Value> &arguments,
                               ExecutionClock clock,
-                              const GraphReader *graph_reader) {
+                              const GraphReader *graph_reader,
+                              txn::Transaction *transaction) {
   const ast::BuiltinFunction *builtin = ast::FindBuiltinFunction(kind);
   CHECK(builtin != nullptr, common::InternalError,
         "unknown built-in function kind");
@@ -270,6 +272,9 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
               : relationship.end_node_id;
       if (graph_reader != nullptr) {
         return Value(graph_reader->NodeById(node_id));
+      }
+      if (transaction != nullptr) {
+        return Value(MaterializeGraphDBVertex(*transaction, node_id));
       }
       auto node = std::make_shared<Node>();
       node->id = node_id;

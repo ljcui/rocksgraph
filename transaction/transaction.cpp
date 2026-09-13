@@ -429,6 +429,9 @@ void Transaction::AppendEdgePropertyIndexWAL(
 }
 
 void Transaction::Commit() {
+  if (state_ != State::kActive) {
+    THROW_CODE(InvalidParameter, "transaction is not active");
+  }
   {
     std::unique_lock<std::mutex> property_commit_lock(
         db_->property_index_commit_mutex(), std::defer_lock);
@@ -526,6 +529,7 @@ void Transaction::Commit() {
                 "transaction rollback after raft commit failure failed: {}",
                 rollback_status.ToString());
           }
+          state_ = State::kRolledBack;
           THROW_CODE(StorageEngineError, apply_result.err.String());
         }
         write_batch_with_index->Clear();
@@ -541,15 +545,20 @@ void Transaction::Commit() {
     pending_fulltext_wals_.clear();
     pending_vector_wals_.clear();
   }
+  state_ = State::kCommitted;
 }
 
 void Transaction::Rollback() {
+  if (state_ != State::kActive) {
+    THROW_CODE(InvalidParameter, "transaction is not active");
+  }
   auto s = txn_->Rollback();
   if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
   pending_property_wals_.clear();
   pending_edge_property_wals_.clear();
   pending_fulltext_wals_.clear();
   pending_vector_wals_.clear();
+  state_ = State::kRolledBack;
 }
 
 std::unique_ptr<VertexScoreIterator> Transaction::QueryVertexByFTIndex(
