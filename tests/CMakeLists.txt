@@ -33,16 +33,22 @@ add_rocksgraph_test(expression_evaluator_test
                     runtime/expression_evaluator_test.cc rocksgraph_runtime)
 add_rocksgraph_test(physical_plan_test runtime/physical_plan_test.cc
                     rocksgraph_runtime)
+target_link_libraries(physical_plan_test PRIVATE rocksgraph_storage)
 add_rocksgraph_test(query_executor_test runtime/query_executor_test.cc
                     rocksgraph_runtime)
+target_link_libraries(query_executor_test PRIVATE rocksgraph_storage)
 add_rocksgraph_test(slotted_row_test runtime/slotted_row_test.cc
                     rocksgraph_runtime)
+target_link_libraries(slotted_row_test PRIVATE rocksgraph_storage)
 add_rocksgraph_test(slotted_runtime_test runtime/slotted_runtime_test.cc
                     rocksgraph_runtime)
+target_link_libraries(slotted_runtime_test PRIVATE rocksgraph_storage)
 add_rocksgraph_test(open_cypher_optimizer_test runtime/open_cypher_optimizer_test.cc
                     rocksgraph_runtime)
+target_link_libraries(open_cypher_optimizer_test PRIVATE rocksgraph_storage)
 add_rocksgraph_test(index_access_test runtime/index_access_test.cc
                     rocksgraph_runtime)
+target_link_libraries(index_access_test PRIVATE rocksgraph_storage)
 add_rocksgraph_test(graphdb_query_executor_test
                     runtime/graphdb_query_executor_test.cc rocksgraph_runtime)
 target_link_libraries(graphdb_query_executor_test PRIVATE graphdb)
