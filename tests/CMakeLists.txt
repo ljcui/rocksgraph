@@ -45,7 +45,7 @@ add_rocksgraph_test(slotted_runtime_test runtime/slotted_runtime_test.cc
 target_link_libraries(slotted_runtime_test PRIVATE graphdb)
 add_rocksgraph_test(open_cypher_optimizer_test runtime/open_cypher_optimizer_test.cc
                     rocksgraph_runtime)
-target_link_libraries(open_cypher_optimizer_test PRIVATE rocksgraph_storage)
+target_link_libraries(open_cypher_optimizer_test PRIVATE graphdb)
 add_rocksgraph_test(index_access_test runtime/index_access_test.cc
                     rocksgraph_runtime)
 target_link_libraries(index_access_test PRIVATE graphdb)
