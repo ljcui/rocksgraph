@@ -7,7 +7,8 @@
 
 #include "runtime/execution_context.h"
 #include "runtime/physical_plan.h"
-#include "storage/graph_transaction.h"
+#include "storage/graph_reader.h"
+#include "storage/graph_writer.h"
 #include "value/value.h"
 
 namespace txn {
@@ -28,12 +29,6 @@ class PhysicalResultCursor {
   virtual void Close() noexcept = 0;
   [[nodiscard]] virtual std::size_t PeakMemoryBytes() const noexcept = 0;
 };
-
-[[nodiscard]] std::unique_ptr<PhysicalResultCursor> StartPhysicalPlan(
-    const PhysicalPlan &plan, GraphTransaction &transaction,
-    const QueryParameters &parameters,
-    const std::vector<std::string> &result_columns,
-    QueryExecutionOptions options = {});
 
 [[nodiscard]] std::unique_ptr<PhysicalResultCursor> StartPhysicalPlan(
     const PhysicalPlan &plan, txn::Transaction &transaction,

@@ -7101,16 +7101,6 @@ std::unique_ptr<PhysicalResultCursor> StartPhysicalPlan(
 }
 
 std::unique_ptr<PhysicalResultCursor> StartPhysicalPlan(
-    const PhysicalPlan &plan, GraphTransaction &transaction,
-    const QueryParameters &parameters,
-    const std::vector<std::string> &result_columns,
-    QueryExecutionOptions options) {
-  GraphWriter *writer = transaction.IsWritable() ? &transaction : nullptr;
-  return StartPhysicalPlan(plan, transaction, writer, parameters,
-                           result_columns, std::move(options));
-}
-
-std::unique_ptr<PhysicalResultCursor> StartPhysicalPlan(
     const PhysicalPlan &plan, txn::Transaction &transaction,
     const QueryParameters &parameters,
     const std::vector<std::string> &result_columns,
