@@ -3062,6 +3062,9 @@ class OptionalExpandOperator final : public PullOperator {
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
     CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    if (state_->UsesGraphDB()) {
+      return NextGraphDB(row);
+    }
     while (!closed_) {
       state_->CheckCancelled();
       if (!input_.has_value()) {
@@ -3132,6 +3135,82 @@ class OptionalExpandOperator final : public PullOperator {
     return false;
   }
 
+  bool NextGraphDB(SlottedRow *row) {
+    while (!closed_) {
+      state_->CheckCancelled();
+      if (!input_.has_value()) {
+        SlottedRow input(node_->children[0]->output_slots);
+        if (!source_->Next(&input)) {
+          Close();
+          return false;
+        }
+        input_.emplace(std::move(input));
+        matched_ = false;
+        from_id_ = NodeId(*input_, data_->from_node_input_slot, *state_);
+        if (from_id_ >= 0) {
+          auto vertex = GraphDBVertexById(*state_->transaction, from_id_);
+          graphdb_cursor_ = vertex.NewEdgeIterator(
+              GraphDBDirection(data_->pattern.direction),
+              std::unordered_set<std::string>(data_->pattern.types.begin(),
+                                              data_->pattern.types.end()),
+              {});
+        }
+      }
+
+      while (graphdb_cursor_ != nullptr && graphdb_cursor_->Valid()) {
+        state_->CheckCancelled();
+        const graphdb::Edge edge = graphdb_cursor_->GetEdge();
+        graphdb_cursor_->Next();
+        const RelationshipReference reference{.id = edge.GetNativeId(),
+                                              .type_id = edge.GetTypeId()};
+        const Relationship relationship{
+            .id = reference.id,
+            .start_node_id = edge.GetNativeStartId(),
+            .end_node_id = edge.GetNativeEndId(),
+            .type_id = reference.type_id};
+        const std::optional<std::int64_t> to = NextPhysicalExpandNode(
+            relationship, from_id_, data_->pattern.direction);
+        if (!to.has_value()) {
+          continue;
+        }
+        SlottedRow output =
+            CopyMappedRow(*input_, node_->output_slots,
+                          node_->child_mappings.front(), *state_);
+        if (!BindRelationship(&output, data_->relationship_output_slot,
+                              reference, *state_) ||
+            !BindNode(&output, data_->to_node_output_slot, *to, *state_)) {
+          continue;
+        }
+        if (!std::all_of(data_->predicates.begin(), data_->predicates.end(),
+                         [&](const PhysicalExpression &predicate) {
+                           return PredicateIsTrue(
+                               Evaluate(predicate, output, *state_));
+                         })) {
+          continue;
+        }
+        matched_ = true;
+        *row = std::move(output);
+        return true;
+      }
+      graphdb_cursor_.reset();
+      if (!matched_) {
+        SlottedRow output =
+            CopyMappedRow(*input_, node_->output_slots,
+                          node_->child_mappings.front(), *state_);
+        for (const Slot &slot : data_->output_slots) {
+          if (!output.IsInitialized(slot)) {
+            output.SetNull(slot);
+          }
+        }
+        input_.reset();
+        *row = std::move(output);
+        return true;
+      }
+      input_.reset();
+    }
+    return false;
+  }
+
   void Close() noexcept override {
     if (closed_) {
       return;
@@ -3140,6 +3219,7 @@ class OptionalExpandOperator final : public PullOperator {
       state_->ReleaseCursor(cursor_);
       cursor_ = nullptr;
     }
+    graphdb_cursor_.reset();
     input_.reset();
     source_->Close();
     closed_ = true;
@@ -3152,6 +3232,7 @@ class OptionalExpandOperator final : public PullOperator {
   std::unique_ptr<PullOperator> source_;
   std::optional<SlottedRow> input_;
   EntityIdCursor *cursor_ = nullptr;
+  std::unique_ptr<graphdb::EdgeIterator> graphdb_cursor_;
   std::int64_t from_id_ = -1;
   bool matched_ = false;
   bool closed_ = false;

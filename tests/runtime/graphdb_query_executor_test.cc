@@ -362,6 +362,78 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeVariableLengthBoundEndpoint) {
   transaction->Commit();
 }
 
+TEST_F(GraphDBQueryExecutorTest, ExecutesNativeOptionalExpandMatch) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryResult result = rg::ExecuteQuery(
+      *transaction,
+      "MATCH (a:Person {name: 'Ada'}) "
+      "OPTIONAL MATCH (a)-[r:KNOWS]->(b) "
+      "RETURN b.name AS name, type(r) AS type, r.since AS since");
+
+  ASSERT_EQ(result.rows.size(), 1U);
+  EXPECT_EQ(result.rows[0],
+            (std::vector<rg::Value>{rg::Value("Grace"), rg::Value("KNOWS"),
+                                    rg::Value(2020)}));
+  transaction->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest, NullExtendsNativeOptionalExpand) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryResult result =
+      rg::ExecuteQuery(*transaction,
+                       "MATCH (a:Person {name: 'Other'}) "
+                       "OPTIONAL MATCH (a)-[r:KNOWS]->(b) "
+                       "RETURN b.name AS name, type(r) AS type");
+
+  ASSERT_EQ(result.rows.size(), 1U);
+  EXPECT_EQ(result.rows[0],
+            (std::vector<rg::Value>{rg::Value::Null(), rg::Value::Null()}));
+  transaction->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest,
+       NullExtendsNativeOptionalExpandAfterPredicateRejectsMatch) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryResult result =
+      rg::ExecuteQuery(*transaction,
+                       "MATCH (a:Person {name: 'Ada'}) "
+                       "OPTIONAL MATCH (a)-[r:KNOWS]->(b) WHERE r.since = 1999 "
+                       "RETURN b.name AS name, type(r) AS type");
+
+  ASSERT_EQ(result.rows.size(), 1U);
+  EXPECT_EQ(result.rows[0],
+            (std::vector<rg::Value>{rg::Value::Null(), rg::Value::Null()}));
+  transaction->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest, ExecutesNativeOptionalIncomingExpand) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryResult result =
+      rg::ExecuteQuery(*transaction,
+                       "MATCH (a:Person {name: 'Grace'}) "
+                       "OPTIONAL MATCH (a)<-[r:KNOWS]-(b) "
+                       "RETURN b.name AS name, id(r) AS rid");
+
+  ASSERT_EQ(result.rows.size(), 1U);
+  EXPECT_EQ(result.rows[0],
+            (std::vector<rg::Value>{rg::Value("Ada"), rg::Value(knows_)}));
+  transaction->Commit();
+}
+
+TEST_F(GraphDBQueryExecutorTest, ExecutesNativeOptionalUndirectedExpand) {
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryResult result =
+      rg::ExecuteQuery(*transaction,
+                       "MATCH (a:Person {name: 'Other'}) "
+                       "OPTIONAL MATCH (a)-[r:RARE_REL]-(b) "
+                       "RETURN b.name AS name, id(r) AS rid");
+
+  ASSERT_EQ(result.rows.size(), 1U);
+  EXPECT_EQ(result.rows[0],
+            (std::vector<rg::Value>{rg::Value("Grace"), rg::Value(rare_)}));
+  transaction->Commit();
+}
+
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeCreateAndSetWrites) {
   auto transaction = graph_->BeginTransaction();
   rg::QueryResult created = rg::ExecuteQuery(
