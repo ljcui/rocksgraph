@@ -109,7 +109,6 @@ add_subdirectory(transaction)
 add_subdirectory(ast)
 add_subdirectory(ir)
 add_subdirectory(planner)
-add_subdirectory(storage)
 add_subdirectory(runtime)
 add_subdirectory(tools)
 
