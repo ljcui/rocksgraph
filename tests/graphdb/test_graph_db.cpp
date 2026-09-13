@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <boost/endian/conversion.hpp>
 #include <filesystem>
+#include <unordered_set>
 #include <vector>
 
 #include "common/byte_utils.h"
@@ -619,6 +620,88 @@ TEST(GraphDB, edgeIterator) {
   EXPECT_EQ(count, 0);
 
   txn->Commit();
+}
+
+TEST(GraphDB, scanEdgesByTypes) {
+  fs::remove_all(testdb);
+  auto graphDB = GraphDB::Open(testdb, testutil::NewGraphDBOptions());
+
+  auto count_edges = [](std::unique_ptr<EdgeIterator> iterator) {
+    size_t count = 0;
+    for (; iterator->Valid(); iterator->Next()) {
+      ++count;
+    }
+    return count;
+  };
+
+  {
+    auto txn = graphDB->BeginTransaction();
+    EXPECT_EQ(count_edges(txn->NewEdgeIterator()), 0);
+    auto from = txn->CreateVertex({}, {});
+    auto to = txn->CreateVertex({}, {});
+    txn->CreateEdge(from, to, "ROLLS_BACK", {});
+    EXPECT_EQ(count_edges(txn->NewEdgeIterator()), 1);
+    txn->Rollback();
+  }
+
+  int64_t first_id;
+  int64_t second_id;
+  int64_t third_id;
+  {
+    auto txn = graphDB->BeginTransaction();
+    EXPECT_EQ(count_edges(txn->NewEdgeIterator()), 0);
+    EXPECT_EQ(count_edges(txn->NewEdgeIterator({"ROLLS_BACK"})), 0);
+    auto first_vertex = txn->CreateVertex({}, {});
+    auto second_vertex = txn->CreateVertex({}, {});
+    auto first = txn->CreateEdge(first_vertex, second_vertex, "KNOWS", {});
+    auto second = txn->CreateEdge(second_vertex, second_vertex, "KNOWS", {});
+    auto third = txn->CreateEdge(second_vertex, first_vertex, "LIKES", {});
+    first_id = first.GetId();
+    second_id = second.GetId();
+    third_id = third.GetId();
+
+    std::unordered_set<int64_t> ids;
+    auto iterator = txn->NewEdgeIterator();
+    for (; iterator->Valid(); iterator->Next()) {
+      const auto& edge = iterator->GetEdge();
+      ids.insert(edge.GetId());
+      if (edge.GetId() == first_id) {
+        EXPECT_EQ(edge, first);
+      } else if (edge.GetId() == second_id) {
+        EXPECT_EQ(edge, second);
+      } else if (edge.GetId() == third_id) {
+        EXPECT_EQ(edge, third);
+      } else {
+        ADD_FAILURE() << "unexpected edge id";
+      }
+    }
+    EXPECT_EQ(ids,
+              (std::unordered_set<int64_t>{first_id, second_id, third_id}));
+    EXPECT_EQ(count_edges(txn->NewEdgeIterator({"KNOWS"})), 2);
+    EXPECT_EQ(count_edges(txn->NewEdgeIterator({"KNOWS", "MISSING"})), 2);
+    EXPECT_EQ(count_edges(txn->NewEdgeIterator({"LIKES"})), 1);
+    EXPECT_EQ(count_edges(txn->NewEdgeIterator({"MISSING"})), 0);
+    txn->Commit();
+  }
+
+  graphDB.reset();
+  graphDB = GraphDB::Open(testdb, testutil::NewGraphDBOptions());
+  {
+    auto txn = graphDB->BeginTransaction();
+    EXPECT_EQ(count_edges(txn->NewEdgeIterator()), 3);
+    EXPECT_EQ(count_edges(txn->NewEdgeIterator({"KNOWS"})), 2);
+
+    auto iterator = txn->NewEdgeIterator({"LIKES"});
+    ASSERT_TRUE(iterator->Valid());
+    EXPECT_EQ(iterator->GetEdge().GetId(), third_id);
+    EXPECT_EQ(iterator->GetEdge().GetType(), "LIKES");
+    auto edge = iterator->GetEdge();
+    iterator.reset();
+    edge.Delete();
+    EXPECT_EQ(count_edges(txn->NewEdgeIterator()), 2);
+    EXPECT_EQ(count_edges(txn->NewEdgeIterator({"LIKES"})), 0);
+    txn->Commit();
+  }
 }
 
 TEST(GraphDB, deleteVertex) {

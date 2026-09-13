@@ -51,6 +51,98 @@ std::unique_ptr<Edge> LoadIndexedEdge(txn::Transaction *txn,
 
 }  // namespace
 
+ScanEdgeByTypes::ScanEdgeByTypes(txn::Transaction *txn,
+                                 std::unordered_set<uint32_t> types)
+    : EdgeIterator(txn), scan_all_(types.empty()) {
+  rocksdb::ReadOptions ro;
+  iter_.reset(
+      txn_->dbtxn()->GetIterator(ro, txn_->db()->graph_cf().edge_type_eid));
+  if (scan_all_) {
+    iter_->SeekToFirst();
+    if (iter_->Valid()) {
+      valid_ = true;
+      Load();
+    } else {
+      CheckIteratorStatus();
+    }
+    return;
+  }
+  for (uint32_t type : types) {
+    prefixes_.emplace(AsChars(type), sizeof(type));
+  }
+  SeekToNextPrefix();
+}
+
+void ScanEdgeByTypes::Load() {
+  const rocksdb::Slice key = iter_->key();
+  const rocksdb::Slice value = iter_->value();
+  if (key.size() != sizeof(uint32_t) + sizeof(int64_t)) {
+    THROW_CODE(StorageEngineError,
+               "edge type/eid key has invalid size, expect {}, actual {}",
+               sizeof(uint32_t) + sizeof(int64_t), key.size());
+  }
+  if (value.size() != 2 * sizeof(int64_t)) {
+    THROW_CODE(StorageEngineError,
+               "edge type/eid value has invalid size, expect {}, actual {}",
+               2 * sizeof(int64_t), value.size());
+  }
+
+  const char *key_data = key.data();
+  const uint32_t type = ReadValue<uint32_t>(key_data);
+  const int64_t eid = ReadValue<int64_t>(key_data + sizeof(type));
+  const char *value_data = value.data();
+  const int64_t start_id = ReadValue<int64_t>(value_data);
+  const int64_t end_id = ReadValue<int64_t>(value_data + sizeof(start_id));
+  ee_ = std::make_unique<Edge>(txn_, eid, start_id, end_id, type);
+}
+
+void ScanEdgeByTypes::SeekToNextPrefix() {
+  valid_ = false;
+  while (!prefixes_.empty()) {
+    prefix_ = std::move(prefixes_.front());
+    prefixes_.pop();
+    iter_->Seek(prefix_);
+    if (iter_->Valid() && iter_->key().starts_with(prefix_)) {
+      valid_ = true;
+      Load();
+      return;
+    }
+    CheckIteratorStatus();
+  }
+}
+
+void ScanEdgeByTypes::CheckIteratorStatus() const {
+  if (!iter_->status().ok()) {
+    THROW_CODE(StorageEngineError, "edge scan iterator failed: {}",
+               iter_->status().ToString());
+  }
+}
+
+void ScanEdgeByTypes::Next() {
+  if (txn_->conn() && txn_->conn()->has_closed()) {
+    THROW_CODE(ConnectionDisconnected);
+  }
+  assert(valid_);
+  valid_ = false;
+  iter_->Next();
+  if (scan_all_) {
+    if (iter_->Valid()) {
+      valid_ = true;
+      Load();
+    } else {
+      CheckIteratorStatus();
+    }
+    return;
+  }
+  if (iter_->Valid() && iter_->key().starts_with(prefix_)) {
+    valid_ = true;
+    Load();
+    return;
+  }
+  CheckIteratorStatus();
+  SeekToNextPrefix();
+}
+
 ScanEdgeByVidDirectionTypes::ScanEdgeByVidDirectionTypes(
     txn::Transaction *txn, int64_t vid, EdgeDirection direction,
     std::unordered_set<uint32_t> types)

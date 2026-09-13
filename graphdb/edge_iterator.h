@@ -8,6 +8,7 @@
 #include <memory>
 #include <optional>
 #include <queue>
+#include <unordered_set>
 
 #include "edge_direction.h"
 #include "graph_entity.h"
@@ -32,6 +33,27 @@ class NoEdgeFound : public EdgeIterator {
   };
 
  private:
+  std::unique_ptr<Edge> ee_;
+};
+
+class ScanEdgeByTypes : public EdgeIterator {
+ public:
+  ScanEdgeByTypes(txn::Transaction* txn, std::unordered_set<uint32_t> types);
+  void Next() override;
+  Edge& GetEdge() override {
+    assert(valid_);
+    return *ee_;
+  }
+
+ private:
+  void Load();
+  void SeekToNextPrefix();
+  void CheckIteratorStatus() const;
+
+  bool scan_all_ = false;
+  std::unique_ptr<rocksdb::Iterator> iter_;
+  std::queue<std::string> prefixes_;
+  std::string prefix_;
   std::unique_ptr<Edge> ee_;
 };
 

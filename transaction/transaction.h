@@ -8,6 +8,7 @@
 #include <optional>
 #include <set>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "graphdb/edge_direction.h"
@@ -48,6 +49,9 @@ class Transaction {
   std::unique_ptr<graphdb::VertexIterator> NewVertexIterator(
       const std::optional<std::string>& label,
       const std::optional<std::unordered_map<std::string, rg::Value>>& props);
+  std::unique_ptr<graphdb::EdgeIterator> NewEdgeIterator();
+  std::unique_ptr<graphdb::EdgeIterator> NewEdgeIterator(
+      const std::unordered_set<std::string>& types);
   // for debug
   std::string GetVertexIteratorInfo(
       const std::optional<std::string>& label,

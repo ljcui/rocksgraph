@@ -292,6 +292,25 @@ std::unique_ptr<VertexIterator> Transaction::NewVertexIterator(
   }
 }
 
+std::unique_ptr<EdgeIterator> Transaction::NewEdgeIterator() {
+  return std::make_unique<ScanEdgeByTypes>(this,
+                                           std::unordered_set<uint32_t>{});
+}
+
+std::unique_ptr<EdgeIterator> Transaction::NewEdgeIterator(
+    const std::unordered_set<std::string>& types) {
+  std::unordered_set<uint32_t> type_ids;
+  for (const auto& type : types) {
+    if (auto type_id = db_->id_generator().GetTid(type); type_id.has_value()) {
+      type_ids.insert(*type_id);
+    }
+  }
+  if (!types.empty() && type_ids.empty()) {
+    return std::make_unique<NoEdgeFound>(this);
+  }
+  return std::make_unique<ScanEdgeByTypes>(this, std::move(type_ids));
+}
+
 std::string Transaction::GetVertexIteratorInfo(
     const std::optional<std::string>& label,
     const std::optional<std::unordered_set<std::string>>& props) {
