@@ -31,8 +31,10 @@ struct RelationshipReference {
                                             RelationshipReference relationship);
 [[nodiscard]] Value::NodePtr MaterializeGraphDBVertex(
     txn::Transaction &transaction, std::int64_t id);
+[[nodiscard]] Value::NodePtr MaterializeGraphDBVertex(graphdb::Vertex vertex);
 [[nodiscard]] Value::RelationshipPtr MaterializeGraphDBEdge(
     txn::Transaction &transaction, RelationshipReference relationship);
+[[nodiscard]] Value::RelationshipPtr MaterializeGraphDBEdge(graphdb::Edge edge);
 
 [[nodiscard]] Value::NodePtr CreateGraphDBVertex(
     txn::Transaction &transaction, std::vector<std::string> labels,

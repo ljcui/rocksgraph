@@ -128,24 +128,19 @@ struct RuntimeState {
 class SlottedExpressionBindings final : public ExpressionBindings {
  public:
   SlottedExpressionBindings(const SlottedRow &row,
-                            txn::Transaction &transaction,
                             const BoundQueryParameters &parameters,
                             const RuntimeExpressionProgram &program)
-      : row_(&row),
-        transaction_(&transaction),
-        parameters_(&parameters),
-        program_(&program) {}
+      : row_(&row), parameters_(&parameters), program_(&program) {}
 
   [[nodiscard]] Value Lookup(std::string_view name) const override {
-    return row_->Get(name, *transaction_);
+    return row_->Get(name);
   }
 
   [[nodiscard]] Value LookupVariable(
       const ast::Variable &variable) const override {
     const auto found = program_->variables.find(&variable);
-    return found == program_->variables.end()
-               ? Lookup(variable.name)
-               : row_->Get(found->second, *transaction_);
+    return found == program_->variables.end() ? Lookup(variable.name)
+                                              : row_->Get(found->second);
   }
 
   [[nodiscard]] bool ReadProperty(std::string_view variable,
@@ -156,15 +151,14 @@ class SlottedExpressionBindings final : public ExpressionBindings {
     if (slot == nullptr || slot->kind == SlotKind::kReference) {
       return false;
     }
-    const std::int64_t id = row_->EntityIdAt(*slot);
-    if (id < 0) {
+    if (row_->EntityIdAt(*slot) < 0) {
       *value = Value::Null();
     } else {
       if (slot->kind == SlotKind::kNode) {
-        auto vertex = GraphDBVertexById(*transaction_, id);
+        auto vertex = row_->VertexAt(*slot);
         *value = vertex.GetProperty(std::string(property_key));
       } else {
-        auto edge = GraphDBEdgeById(*transaction_, row_->RelationshipAt(*slot));
+        auto edge = row_->EdgeAt(*slot);
         *value = edge.GetProperty(std::string(property_key));
       }
     }
@@ -182,15 +176,14 @@ class SlottedExpressionBindings final : public ExpressionBindings {
     if (slot.kind == SlotKind::kReference) {
       return false;
     }
-    const std::int64_t id = row_->EntityIdAt(slot);
-    if (id < 0) {
+    if (row_->EntityIdAt(slot) < 0) {
       *value = Value::Null();
     } else {
       if (slot.kind == SlotKind::kNode) {
-        auto vertex = GraphDBVertexById(*transaction_, id);
+        auto vertex = row_->VertexAt(slot);
         *value = vertex.GetProperty(std::string(property_key));
       } else {
-        auto edge = GraphDBEdgeById(*transaction_, row_->RelationshipAt(slot));
+        auto edge = row_->EdgeAt(slot);
         *value = edge.GetProperty(std::string(property_key));
       }
     }
@@ -209,7 +202,6 @@ class SlottedExpressionBindings final : public ExpressionBindings {
 
  private:
   const SlottedRow *row_ = nullptr;
-  txn::Transaction *transaction_ = nullptr;
   const BoundQueryParameters *parameters_ = nullptr;
   const RuntimeExpressionProgram *program_ = nullptr;
 };
@@ -219,8 +211,7 @@ Value Evaluate(const ast::Expression &expression, const SlottedRow &row,
                RuntimeState &state) {
   const RuntimeExpressionProgram &program =
       state.ExpressionProgram(expression, *row.Slots());
-  SlottedExpressionBindings bindings(row, *state.transaction,
-                                     state.bound_parameters, program);
+  SlottedExpressionBindings bindings(row, state.bound_parameters, program);
   return EvaluateExpression(expression, bindings, precomputed, state.context);
 }
 
@@ -248,43 +239,67 @@ SlottedRow EmptyArgument(SlotConfigurationPtr slots) {
 void CopyMappings(const SlottedRow &source, SlottedRow *target,
                   const std::vector<SlotMapping> &mappings,
                   const RuntimeState &state) {
-  CopySlots(source, target, mappings, state.context);
+  CopySlots(source, target, mappings, *state.transaction);
 }
 
 SlottedRow CopyMappedRow(const SlottedRow &source, SlotConfigurationPtr target,
                          const std::vector<SlotMapping> &mappings,
                          const RuntimeState &state) {
-  return source.CopyTo(std::move(target), mappings, state.context);
+  return source.CopyTo(std::move(target), mappings, *state.transaction);
 }
 
-Value ReadRowValue(const SlottedRow &row, const Slot &slot,
-                   const RuntimeState &state) {
-  return row.Get(slot, state.context);
+Value ReadRowValue(const SlottedRow &row, const Slot &slot) {
+  return row.Get(slot);
 }
 
-Value ReadRowValue(const SlottedRow &row, std::string_view name,
-                   const RuntimeState &state) {
-  return row.Get(name, state.context);
+Value ReadRowValue(const SlottedRow &row, std::string_view name) {
+  return row.Get(name);
 }
 
 bool BindNode(SlottedRow *row, const Slot &slot, std::int64_t id,
               RuntimeState &state) {
-  return TryBindEntityId(row, slot, SlotKind::kNode, id, state.context);
+  if (id < 0) {
+    return TryBindSlot(row, slot, Value::Null(), *state.transaction);
+  }
+  return TryBindVertex(row, slot, GraphDBVertexById(*state.transaction, id),
+                       *state.transaction);
 }
 
 bool BindNode(SlottedRow *row, std::string_view name, std::int64_t id,
               RuntimeState &state) {
-  return TryBindEntityId(row, name, SlotKind::kNode, id, state.context);
+  if (name.empty()) {
+    return true;
+  }
+  return BindNode(row, row->Slots()->At(name), id, state);
 }
 
-bool BindRelationship(SlottedRow *row, const Slot &slot,
-                      RelationshipReference relationship, RuntimeState &state) {
-  return TryBindRelationship(row, slot, relationship, *state.transaction);
+bool BindNode(SlottedRow *row, const Slot &slot, graphdb::Vertex vertex,
+              RuntimeState &state) {
+  return TryBindVertex(row, slot, std::move(vertex), *state.transaction);
+}
+
+bool BindNode(SlottedRow *row, std::string_view name, graphdb::Vertex vertex,
+              RuntimeState &state) {
+  return TryBindVertex(row, name, std::move(vertex), *state.transaction);
+}
+
+bool BindRelationship(SlottedRow *row, const Slot &slot, graphdb::Edge edge,
+                      RuntimeState &state) {
+  return TryBindEdge(row, slot, std::move(edge), *state.transaction);
+}
+
+graphdb::Vertex Endpoint(const graphdb::Edge &edge, std::int64_t id) {
+  if (edge.GetNativeStartId() == id) {
+    return edge.GetStart();
+  }
+  CHECK(edge.GetNativeEndId() == id, common::InternalError,
+        "node is not an endpoint of the relationship");
+  return edge.GetEnd();
 }
 
 bool BindValue(SlottedRow *row, const Slot &slot, Value value,
                RuntimeState &state) {
-  return TryBindSlot(row, slot, std::move(value), state.context);
+  return TryBindSlot(row, slot, std::move(value), *state.transaction);
 }
 
 bool MergeMappings(const SlottedRow &source, SlottedRow *target,
@@ -295,22 +310,11 @@ bool MergeMappings(const SlottedRow &source, SlottedRow *target,
       continue;
     }
     if (!target->IsInitialized(mapping.target)) {
-      if (mapping.source.kind == mapping.target.kind &&
-          mapping.source.kind != SlotKind::kReference) {
-        if (mapping.source.kind == SlotKind::kRelationship) {
-          target->SetRelationship(mapping.target,
-                                  source.RelationshipAt(mapping.source));
-        } else {
-          target->SetEntityId(mapping.target,
-                              source.EntityIdAt(mapping.source));
-        }
-      } else if (mapping.source.kind == SlotKind::kReference &&
-                 mapping.target.kind == SlotKind::kReference) {
-        target->SetReference(mapping.target,
-                             source.ReferenceAt(mapping.source));
+      if (mapping.source.kind == mapping.target.kind) {
+        target->CopySlotFrom(source, mapping.source, mapping.target);
       } else {
-        target->Set(mapping.target,
-                    ReadRowValue(source, mapping.source, state));
+        target->Set(mapping.target, ReadRowValue(source, mapping.source),
+                    *state.transaction);
       }
       continue;
     }
@@ -320,8 +324,8 @@ bool MergeMappings(const SlottedRow &source, SlottedRow *target,
           target->EntityIdAt(mapping.target)) {
         return false;
       }
-    } else if (!ValuesEqual(ReadRowValue(source, mapping.source, state),
-                            ReadRowValue(*target, mapping.target, state))) {
+    } else if (!ValuesEqual(ReadRowValue(source, mapping.source),
+                            ReadRowValue(*target, mapping.target))) {
       return false;
     }
   }
@@ -333,7 +337,7 @@ std::int64_t NodeId(const SlottedRow &row, const Slot &slot,
   if (slot.kind == SlotKind::kNode) {
     return row.EntityIdAt(slot);
   }
-  const Value value = ReadRowValue(row, slot, state);
+  const Value value = ReadRowValue(row, slot);
   if (value.IsNull()) {
     return -1;
   }
@@ -402,8 +406,7 @@ Value BuildPathValue(const PathBuildOp &data, const SlottedRow &row,
   path->nodes.push_back(MaterializePathNode(*state, current));
   for (std::size_t index = 0; index < pattern.relationships.size(); ++index) {
     state->CheckCancelled();
-    const Value value =
-        ReadRowValue(row, data.relationship_input_slots[index], *state);
+    const Value value = ReadRowValue(row, data.relationship_input_slots[index]);
     std::vector<Value::RelationshipPtr> relationships;
     if (value.IsList()) {
       for (const auto &item : value.AsList()) {
@@ -546,7 +549,7 @@ void ExecuteStreamingWrite(const CreateNodeOp &data, const SlottedRow &input,
       *state->transaction, data.labels, std::move(properties));
   CHECK(node != nullptr, common::InternalError,
         "storage returned a null created node");
-  output->SetEntityId(data.node_slot, node->id);
+  output->Set(data.node_slot, Value(node), *state->transaction);
 }
 
 void ExecuteStreamingWrite(const CreateRelationshipOp &data,
@@ -562,9 +565,7 @@ void ExecuteStreamingWrite(const CreateRelationshipOp &data,
       *state->transaction, left, right, data.type, std::move(properties));
   CHECK(relationship != nullptr, common::InternalError,
         "storage returned a null created relationship");
-  output->SetRelationship(
-      data.relationship_slot,
-      {.id = relationship->id, .type_id = relationship->type_id});
+  output->Set(data.relationship_slot, Value(relationship), *state->transaction);
 }
 
 Value::Map EvaluateMergeProperties(const PhysicalPropertyMap &properties,
@@ -589,7 +590,7 @@ void ExecuteMergeCreate(const CreateNodeOp &data, SlottedRow *row,
       *state->transaction, data.labels, std::move(properties));
   CHECK(node != nullptr, common::InternalError,
         "storage returned a null created node");
-  row->SetEntityId(data.node_slot, node->id);
+  row->Set(data.node_slot, Value(node), *state->transaction);
 }
 
 void ExecuteMergeCreate(const CreateRelationshipOp &data, SlottedRow *row,
@@ -604,9 +605,7 @@ void ExecuteMergeCreate(const CreateRelationshipOp &data, SlottedRow *row,
       *state->transaction, left, right, data.type, std::move(properties));
   CHECK(relationship != nullptr, common::InternalError,
         "storage returned a null created relationship");
-  row->SetRelationship(
-      data.relationship_slot,
-      {.id = relationship->id, .type_id = relationship->type_id});
+  row->Set(data.relationship_slot, Value(relationship), *state->transaction);
 }
 
 void ExecuteStreamingWrite(const SetPropertyOp &data, const SlottedRow &,
@@ -723,7 +722,7 @@ std::optional<CompositeValueKey> NodeJoinKey(
   CompositeValueKey result;
   result.values.reserve(keys.size());
   for (const auto &key : keys) {
-    Value value = ReadRowValue(row, key, *state);
+    Value value = ReadRowValue(row, key);
     if (value.IsNull()) {
       return std::nullopt;
     }
@@ -1395,11 +1394,11 @@ class AllNodeScanOperator final : public PullOperator {
       graphdb_cursor_ = state_->transaction->NewVertexIterator();
     }
     while (graphdb_cursor_->Valid()) {
-      const std::int64_t id = graphdb_cursor_->GetVertex().GetNativeId();
+      graphdb::Vertex vertex = graphdb_cursor_->GetVertex();
       graphdb_cursor_->Next();
       SlottedRow output(node_->output_slots);
       CopyMappings(*argument_, &output, node_->argument_mapping, *state_);
-      if (BindNode(&output, data_->variable, id, *state_)) {
+      if (BindNode(&output, data_->variable, std::move(vertex), *state_)) {
         *row = std::move(output);
         return true;
       }
@@ -1498,7 +1497,7 @@ class NodeScanOperator : public PullOperator {
       }
       SlottedRow output = CopyMappedRow(argument_, node_->output_slots,
                                         node_->argument_mapping, *state_);
-      if (!BindNode(&output, *variable_, vertex.GetNativeId(), *state_)) {
+      if (!BindNode(&output, *variable_, std::move(vertex), *state_)) {
         continue;
       }
       if (predicates_ != nullptr &&
@@ -1704,18 +1703,18 @@ class NodeByIdSeekOperator final : public PullOperator {
     }
     while (const std::optional<std::int64_t> id = values_.Next()) {
       try {
-        (void)GraphDBVertexById(*state_->transaction, *id);
+        graphdb::Vertex vertex = GraphDBVertexById(*state_->transaction, *id);
+        SlottedRow output = CopyMappedRow(argument_, node_->output_slots,
+                                          node_->argument_mapping, *state_);
+        if (BindNode(&output, data_->variable, std::move(vertex), *state_)) {
+          *row = std::move(output);
+          return true;
+        }
       } catch (const LgraphException &error) {
         if (error.code() == ErrorCode::VertexIdNotFound) {
           continue;
         }
         throw;
-      }
-      SlottedRow output = CopyMappedRow(argument_, node_->output_slots,
-                                        node_->argument_mapping, *state_);
-      if (BindNode(&output, data_->variable, *id, *state_)) {
-        *row = std::move(output);
-        return true;
       }
     }
     Close();
@@ -1736,7 +1735,7 @@ class NodeByIdSeekOperator final : public PullOperator {
   bool closed_ = false;
 };
 
-std::optional<RelationshipReference> FindGraphDBRelationshipById(
+std::optional<graphdb::Edge> FindGraphDBRelationshipById(
     txn::Transaction &transaction,
     const std::vector<std::string> &relationship_types, std::int64_t id) {
   if (!relationship_types.empty()) {
@@ -1747,9 +1746,7 @@ std::optional<RelationshipReference> FindGraphDBRelationshipById(
       }
       try {
         const RelationshipReference reference{.id = id, .type_id = *type_id};
-        const graphdb::Edge edge = GraphDBEdgeById(transaction, reference);
-        return RelationshipReference{.id = edge.GetNativeId(),
-                                     .type_id = edge.GetTypeId()};
+        return GraphDBEdgeById(transaction, reference);
       } catch (const LgraphException &error) {
         if (error.code() != ErrorCode::EdgeIdNotFound) {
           throw;
@@ -1763,21 +1760,20 @@ std::optional<RelationshipReference> FindGraphDBRelationshipById(
   while (edges->Valid()) {
     const graphdb::Edge &edge = edges->GetEdge();
     if (edge.GetNativeId() == id) {
-      return RelationshipReference{.id = edge.GetNativeId(),
-                                   .type_id = edge.GetTypeId()};
+      return edge;
     }
     edges->Next();
   }
   return std::nullopt;
 }
 
-bool EmitGraphDBRelationship(
-    const PhysicalPlanNode &node, const PhysicalRelationshipPattern &pattern,
-    const std::vector<PhysicalExpression> *predicates,
-    const SlottedRow &argument, RelationshipReference reference, bool reverse,
-    std::optional<RelationshipReference> *pending_reverse, SlottedRow *row,
-    RuntimeState &state) {
-  graphdb::Edge edge = GraphDBEdgeById(*state.transaction, reference);
+bool EmitGraphDBRelationship(const PhysicalPlanNode &node,
+                             const PhysicalRelationshipPattern &pattern,
+                             const std::vector<PhysicalExpression> *predicates,
+                             const SlottedRow &argument, graphdb::Edge edge,
+                             bool reverse,
+                             std::optional<graphdb::Edge> *pending_reverse,
+                             SlottedRow *row, RuntimeState &state) {
   Relationship relationship{.id = edge.GetNativeId(),
                             .start_node_id = edge.GetNativeStartId(),
                             .end_node_id = edge.GetNativeEndId(),
@@ -1788,7 +1784,7 @@ bool EmitGraphDBRelationship(
   }
   if (pattern.direction == PhysicalExpandDirection::kBoth && !reverse &&
       relationship.start_node_id != relationship.end_node_id) {
-    *pending_reverse = reference;
+    *pending_reverse = edge;
   }
   const std::int64_t from_id =
       pattern.direction == PhysicalExpandDirection::kIncoming
@@ -1798,12 +1794,14 @@ bool EmitGraphDBRelationship(
       pattern.direction == PhysicalExpandDirection::kIncoming
           ? relationship.start_node_id
           : (reverse ? relationship.start_node_id : relationship.end_node_id);
+  graphdb::Vertex from = Endpoint(edge, from_id);
+  graphdb::Vertex to = Endpoint(edge, to_id);
   SlottedRow output =
       CopyMappedRow(argument, node.output_slots, node.argument_mapping, state);
-  if (!BindNode(&output, pattern.from_node, from_id, state) ||
-      !TryBindRelationship(&output, pattern.relationship, reference,
-                           *state.transaction) ||
-      !BindNode(&output, pattern.to_node, to_id, state)) {
+  if (!BindNode(&output, pattern.from_node, std::move(from), state) ||
+      !TryBindEdge(&output, pattern.relationship, std::move(edge),
+                   *state.transaction) ||
+      !BindNode(&output, pattern.to_node, std::move(to), state)) {
     return false;
   }
   if (predicates != nullptr &&
@@ -1820,16 +1818,15 @@ bool EmitGraphDBRelationship(
 bool EmitPendingGraphDBRelationship(
     const PhysicalPlanNode &node, const PhysicalRelationshipPattern &pattern,
     const std::vector<PhysicalExpression> *predicates,
-    const SlottedRow &argument,
-    std::optional<RelationshipReference> *pending_reverse, SlottedRow *row,
-    RuntimeState &state) {
+    const SlottedRow &argument, std::optional<graphdb::Edge> *pending_reverse,
+    SlottedRow *row, RuntimeState &state) {
   if (!pending_reverse->has_value()) {
     return false;
   }
-  const RelationshipReference relationship = **pending_reverse;
+  graphdb::Edge edge = std::move(**pending_reverse);
   pending_reverse->reset();
   return EmitGraphDBRelationship(node, pattern, predicates, argument,
-                                 relationship, true, pending_reverse, row,
+                                 std::move(edge), true, pending_reverse, row,
                                  state);
 }
 
@@ -1862,12 +1859,10 @@ class RelationshipScanOperator : public PullOperator {
       return true;
     }
     while (graphdb_cursor_->Valid()) {
-      const graphdb::Edge &edge = graphdb_cursor_->GetEdge();
-      const RelationshipReference relationship{.id = edge.GetNativeId(),
-                                               .type_id = edge.GetTypeId()};
+      graphdb::Edge edge = graphdb_cursor_->GetEdge();
       graphdb_cursor_->Next();
       if (EmitGraphDBRelationship(*node_, *pattern_, predicates_, argument_,
-                                  relationship, false,
+                                  std::move(edge), false,
                                   &graphdb_pending_reverse_, row, *state_) ||
           EmitPendingGraphDBRelationship(*node_, *pattern_, predicates_,
                                          argument_, &graphdb_pending_reverse_,
@@ -1900,7 +1895,7 @@ class RelationshipScanOperator : public PullOperator {
   const PhysicalRelationshipPattern *pattern_ = nullptr;
   const std::vector<PhysicalExpression> *predicates_ = nullptr;
   std::unique_ptr<graphdb::EdgeIterator> graphdb_cursor_;
-  std::optional<RelationshipReference> graphdb_pending_reverse_;
+  std::optional<graphdb::Edge> graphdb_pending_reverse_;
   bool closed_ = false;
 };
 
@@ -2014,7 +2009,7 @@ class RelationshipByIdSeekOperator final : public PullOperator {
         continue;
       }
       if (EmitGraphDBRelationship(*node_, data_->pattern, nullptr, argument_,
-                                  *relationship, false,
+                                  std::move(*relationship), false,
                                   &graphdb_pending_reverse_, row, *state_) ||
           EmitPendingGraphDBRelationship(*node_, data_->pattern, nullptr,
                                          argument_, &graphdb_pending_reverse_,
@@ -2038,7 +2033,7 @@ class RelationshipByIdSeekOperator final : public PullOperator {
   RuntimeState *state_ = nullptr;
   SlottedRow argument_;
   IdSeekValues values_;
-  std::optional<RelationshipReference> graphdb_pending_reverse_;
+  std::optional<graphdb::Edge> graphdb_pending_reverse_;
   bool closed_ = false;
 };
 
@@ -2084,12 +2079,12 @@ class FixedExpandOperatorBase : public PullOperator {
           SlottedRow output =
               CopyMappedRow(*input_, node_->output_slots,
                             node_->child_mappings.front(), *state_);
-          if (!BindRelationship(
-                  &output, relationship_output_slot_,
-                  {.id = relationship.id, .type_id = relationship.type_id},
-                  *state_) ||
+          graphdb::Vertex to_vertex = Endpoint(edge, *to);
+          if (!BindRelationship(&output, relationship_output_slot_,
+                                std::move(edge), *state_) ||
               (to_node_output_slot_.has_value() &&
-               !BindNode(&output, *to_node_output_slot_, *to, *state_))) {
+               !BindNode(&output, *to_node_output_slot_, std::move(to_vertex),
+                         *state_))) {
             continue;
           }
           *row = std::move(output);
@@ -2244,9 +2239,8 @@ class VarExpandOperator final : public PullOperator {
           if (TryBindSlot(&output, data_->relationship_output_slot,
                           Value(std::move(relationships)),
                           *state_->transaction) &&
-              TryBindEntityId(&output, data_->to_node_output_slot,
-                              SlotKind::kNode, frame.node,
-                              *state_->transaction)) {
+              BindNode(&output, data_->to_node_output_slot, frame.node,
+                       *state_)) {
             *row = std::move(output);
             return true;
           }
@@ -2403,8 +2397,7 @@ class PruningVarExpandOperator final : public PullOperator {
   bool Emit(std::int64_t node, SlottedRow *row) {
     auto output = CopyMappedRow(*input_, node_->output_slots,
                                 node_->child_mappings.front(), *state_);
-    if (!TryBindEntityId(&output, data_->to_node_output_slot, SlotKind::kNode,
-                         node, *state_->transaction)) {
+    if (!BindNode(&output, data_->to_node_output_slot, node, *state_)) {
       return false;
     }
     *row = std::move(output);
@@ -2565,9 +2558,11 @@ class OptionalExpandOperator final : public PullOperator {
         SlottedRow output =
             CopyMappedRow(*input_, node_->output_slots,
                           node_->child_mappings.front(), *state_);
+        graphdb::Vertex to_vertex = Endpoint(edge, *to);
         if (!BindRelationship(&output, data_->relationship_output_slot,
-                              reference, *state_) ||
-            !BindNode(&output, data_->to_node_output_slot, *to, *state_)) {
+                              std::move(edge), *state_) ||
+            !BindNode(&output, data_->to_node_output_slot, std::move(to_vertex),
+                      *state_)) {
           continue;
         }
         if (!std::all_of(data_->predicates.begin(), data_->predicates.end(),
@@ -2676,8 +2671,7 @@ class ProjectEndpointsOperator final : public PullOperator {
   void PrepareEndpoints() {
     endpoints_.clear();
     next_endpoint_ = 0;
-    const Value value =
-        ReadRowValue(*input_, data_->relationship_input_slot, *state_);
+    const Value value = ReadRowValue(*input_, data_->relationship_input_slot);
     if (value.IsNull()) {
       return;
     }
@@ -2807,18 +2801,7 @@ void CopySlotDirect(const SlottedRow &source, SlottedRow *target,
   }
   CHECK(source_slot.kind == target_slot.kind, common::InternalError,
         "direct slot copy requires matching slot kinds");
-  switch (source_slot.kind) {
-    case SlotKind::kNode:
-      target->SetEntityId(target_slot, source.EntityIdAt(source_slot));
-      return;
-    case SlotKind::kRelationship:
-      target->SetRelationship(target_slot, source.RelationshipAt(source_slot));
-      return;
-    case SlotKind::kReference:
-      target->SetReference(target_slot, source.ReferenceAt(source_slot));
-      return;
-  }
-  THROW(common::InternalError, "unknown slot kind");
+  target->CopySlotFrom(source, source_slot, target_slot);
 }
 
 std::int64_t EvaluatePaginationCount(const PhysicalExpression &expression,
@@ -2925,9 +2908,9 @@ class ProjectionOperator final : public PullOperator {
         CopySlotDirect(input, &output, *item.source_slot, target_slot);
       } else {
         Value value = item.passthrough
-                          ? ReadRowValue(input, item.alias, *state_)
+                          ? ReadRowValue(input, item.alias)
                           : Evaluate(item.expression, input, *state_);
-        output.Set(target_slot, std::move(value));
+        output.Set(target_slot, std::move(value), *state_->transaction);
       }
     }
     *row = std::move(output);
@@ -3450,7 +3433,7 @@ class AssertIsNodeOperator final : public PullOperator {
       return false;
     }
     for (const auto &assertion : data_->nodes) {
-      const Value value = ReadRowValue(*input, assertion.input_slot, *state_);
+      const Value value = ReadRowValue(*input, assertion.input_slot);
       CHECK(value.IsNull() || value.IsNode(), common::InvalidArgumentError,
             "expected node value: " + assertion.variable);
     }
@@ -3552,8 +3535,8 @@ class OrderedDistinctOperator final : public PullOperator {
 
       SlottedRow output(node_->output_slots);
       for (std::size_t index = 0; index < values.size(); ++index) {
-        output.Set(data_->grouping_items[index].alias,
-                   std::move(values[index]));
+        output.Set(data_->grouping_items[index].alias, std::move(values[index]),
+                   *state_->transaction);
       }
       *row = std::move(output);
       return true;
@@ -3660,8 +3643,8 @@ class HashDistinctOperator final : public PullOperator {
       reserved_bytes_ += key_bytes;
       SlottedRow output(node_->output_slots);
       for (std::size_t index = 0; index < values.size(); ++index) {
-        output.Set(data_->grouping_items[index].alias,
-                   std::move(values[index]));
+        output.Set(data_->grouping_items[index].alias, std::move(values[index]),
+                   *state_->transaction);
       }
       BufferRow(std::move(output));
     }
@@ -3751,7 +3734,7 @@ class HashAggregationOperator final : public PullOperator {
         SlottedRow projected(node_->output_slots);
         for (std::size_t index = 0; index < values.size(); ++index) {
           projected.Set(data_->grouping_items[index].alias,
-                        std::move(values[index]));
+                        std::move(values[index]), *state_->transaction);
         }
         groups.push_back(std::make_unique<Group>(std::move(projected),
                                                  accumulator_templates));
@@ -3775,7 +3758,8 @@ class HashAggregationOperator final : public PullOperator {
       for (auto &accumulator : group->accumulators) {
         group->output.Set(accumulator.item->alias,
                           FinalizeAggregateAccumulator(&accumulator, state_,
-                                                       &reserved_bytes_));
+                                                       &reserved_bytes_),
+                          *state_->transaction);
       }
       BufferRow(std::move(group->output));
     }
@@ -3826,7 +3810,8 @@ class OrderedAggregationOperator final : public PullOperator {
 
     SlottedRow output(node_->output_slots);
     for (std::size_t index = 0; index < key.values.size(); ++index) {
-      output.Set(data_->grouping_items[index].alias, key.values[index]);
+      output.Set(data_->grouping_items[index].alias, key.values[index],
+                 *state_->transaction);
     }
 
     while (true) {
@@ -3853,7 +3838,8 @@ class OrderedAggregationOperator final : public PullOperator {
     for (auto &accumulator : accumulators) {
       output.Set(
           accumulator.item->alias,
-          FinalizeAggregateAccumulator(&accumulator, state_, &reserved_bytes_));
+          FinalizeAggregateAccumulator(&accumulator, state_, &reserved_bytes_),
+          *state_->transaction);
     }
     state_->memory_tracker.Release(key_bytes);
     reserved_bytes_ -= key_bytes;
@@ -5424,7 +5410,7 @@ class UnionDistinctOperator final : public PullOperator {
       CompositeValueKey key;
       key.values.reserve(data_->key_slots.size());
       for (const Slot &slot : data_->key_slots) {
-        key.values.push_back(ReadRowValue(input, slot, *state_));
+        key.values.push_back(ReadRowValue(input, slot));
       }
       auto [seen, inserted] = seen_.insert(std::move(key));
       if (!inserted) {
@@ -6229,7 +6215,7 @@ bool RollUpApplyOperator::Next(SlottedRow *row) {
   try {
     SlottedRow rhs(node_->children[1]->output_slots);
     while (correlated_.NextRight(&rhs)) {
-      Value value = ReadRowValue(rhs, data_->value_slot, *state_);
+      Value value = ReadRowValue(rhs, data_->value_slot);
       const std::size_t bytes = EstimatedValueHeapUsage(value);
       state_->memory_tracker.Reserve(bytes);
       reserved_bytes += bytes;
@@ -6341,7 +6327,7 @@ class PhysicalResultCursorImpl final : public PhysicalResultCursor {
       row->reserve(result_columns_.size());
       for (const auto &column : result_columns_) {
         row->push_back(slotted.IsInitialized(column)
-                           ? ReadRowValue(slotted, column, state_)
+                           ? ReadRowValue(slotted, column)
                            : Value::Null());
       }
       return true;

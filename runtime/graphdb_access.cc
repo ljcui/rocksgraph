@@ -61,9 +61,12 @@ graphdb::Edge GraphDBEdgeById(txn::Transaction &transaction,
 
 Value::NodePtr MaterializeGraphDBVertex(txn::Transaction &transaction,
                                         std::int64_t id) {
-  graphdb::Vertex vertex = GraphDBVertexById(transaction, id);
+  return MaterializeGraphDBVertex(GraphDBVertexById(transaction, id));
+}
+
+Value::NodePtr MaterializeGraphDBVertex(graphdb::Vertex vertex) {
   auto node = std::make_shared<Node>();
-  node->id = id;
+  node->id = vertex.GetNativeId();
   const auto labels = vertex.GetLabels();
   node->labels.assign(labels.begin(), labels.end());
   std::sort(node->labels.begin(), node->labels.end());
@@ -74,9 +77,12 @@ Value::NodePtr MaterializeGraphDBVertex(txn::Transaction &transaction,
 
 Value::RelationshipPtr MaterializeGraphDBEdge(
     txn::Transaction &transaction, RelationshipReference relationship) {
-  graphdb::Edge edge = GraphDBEdgeById(transaction, relationship);
+  return MaterializeGraphDBEdge(GraphDBEdgeById(transaction, relationship));
+}
+
+Value::RelationshipPtr MaterializeGraphDBEdge(graphdb::Edge edge) {
   auto value = std::make_shared<Relationship>();
-  value->id = relationship.id;
+  value->id = edge.GetNativeId();
   value->start_node_id = edge.GetNativeStartId();
   value->end_node_id = edge.GetNativeEndId();
   value->type_id = edge.GetTypeId();

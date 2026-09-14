@@ -124,8 +124,7 @@ std::vector<SlotMapping> ComputeSlotMappings(const SlotConfiguration &source,
 bool SameSlotLayout(const SlotConfiguration &left,
                     const SlotConfiguration &right) {
   if (left.Columns() != right.Columns() ||
-      left.EntitySlotCount() != right.EntitySlotCount() ||
-      left.ReferenceSlotCount() != right.ReferenceSlotCount()) {
+      left.SlotCount() != right.SlotCount()) {
     return false;
   }
   for (const auto &column : left.Columns()) {

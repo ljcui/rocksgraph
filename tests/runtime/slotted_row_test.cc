@@ -8,7 +8,7 @@
 #include "graphdb/graph_entity.h"
 #include "tests/runtime/graphdb_test_utils.h"
 
-TEST(SlottedRowTest, StoresEntitiesAsIdsAndReferences) {
+TEST(SlottedRowTest, StoresGraphDBEntitiesAndReferences) {
   rg::test::GraphDBTestDatabase database;
   auto transaction = database.BeginTransaction();
   const auto node_vertex =
@@ -16,11 +16,6 @@ TEST(SlottedRowTest, StoresEntitiesAsIdsAndReferences) {
   const auto other_vertex = transaction->CreateVertex({}, {});
   const auto relationship_edge =
       transaction->CreateEdge(node_vertex, other_vertex, "KNOWS", {});
-  const auto node =
-      rg::MaterializeGraphDBVertex(*transaction, node_vertex.GetNativeId());
-  const auto relationship = rg::MaterializeGraphDBEdge(
-      *transaction, {.id = relationship_edge.GetNativeId(),
-                     .type_id = relationship_edge.GetTypeId()});
   auto slots = std::make_shared<const rg::SlotConfiguration>(
       std::vector<rg::SlotDefinition>{
           {.name = "n",
@@ -34,15 +29,37 @@ TEST(SlottedRowTest, StoresEntitiesAsIdsAndReferences) {
            .nullable = false}});
 
   rg::SlottedRow row(slots);
-  row.Set("n", rg::Value(node));
-  row.Set("r", rg::Value(relationship));
-  row.Set("value", rg::Value(42));
+  EXPECT_EQ(slots->At("n").offset, 0);
+  EXPECT_EQ(slots->At("r").offset, 1);
+  EXPECT_EQ(slots->At("value").offset, 2);
+  row.SetVertex(slots->At("n"), node_vertex);
+  row.SetEdge(slots->At("r"), relationship_edge);
+  row.SetReference(slots->At("value"), rg::Value(42));
 
-  EXPECT_EQ(row.EntityIdAt(slots->At("n")), node->id);
-  EXPECT_EQ(row.EntityIdAt(slots->At("r")), relationship->id);
+  EXPECT_EQ(row.VertexAt(slots->At("n")).GetNativeId(),
+            node_vertex.GetNativeId());
+  EXPECT_EQ(row.EdgeAt(slots->At("r")).GetNativeId(),
+            relationship_edge.GetNativeId());
   EXPECT_EQ(row.ReferenceAt(slots->At("value")).AsInteger(), 42);
-  EXPECT_EQ(row.Get("n", *transaction).AsNode().id, node->id);
-  EXPECT_EQ(row.Get("r", *transaction).AsRelationship().id, relationship->id);
+  EXPECT_EQ(row.Get("n").AsNode().id, node_vertex.GetNativeId());
+  EXPECT_EQ(row.Get("r").AsRelationship().id, relationship_edge.GetNativeId());
+  transaction->Rollback();
+}
+
+TEST(SlottedRowTest, DistinguishesUninitializedSlotsFromNull) {
+  rg::test::GraphDBTestDatabase database;
+  auto transaction = database.BeginTransaction();
+  auto slots = std::make_shared<const rg::SlotConfiguration>(
+      std::vector<rg::SlotDefinition>{{.name = "n",
+                                       .type = ast::SemanticVariableType::kNode,
+                                       .nullable = true}});
+
+  rg::SlottedRow row(slots);
+  EXPECT_FALSE(row.IsInitialized("n"));
+
+  row.SetNull("n");
+  EXPECT_TRUE(row.IsInitialized("n"));
+  EXPECT_TRUE(row.Get("n").IsNull());
   transaction->Rollback();
 }
 
@@ -50,8 +67,6 @@ TEST(SlottedRowTest, CopiesBetweenLayoutsAndConvertsEntityRepresentations) {
   rg::test::GraphDBTestDatabase database;
   auto transaction = database.BeginTransaction();
   const auto vertex = transaction->CreateVertex({}, {});
-  const auto node =
-      rg::MaterializeGraphDBVertex(*transaction, vertex.GetNativeId());
   auto entity_slots = std::make_shared<const rg::SlotConfiguration>(
       std::vector<rg::SlotDefinition>{{.name = "x",
                                        .type = ast::SemanticVariableType::kNode,
@@ -63,7 +78,7 @@ TEST(SlottedRowTest, CopiesBetweenLayoutsAndConvertsEntityRepresentations) {
            .nullable = true}});
 
   rg::SlottedRow source(entity_slots);
-  source.Set("x", rg::Value(node));
+  source.SetVertex(entity_slots->At("x"), vertex);
   const std::vector<rg::SlotMapping> mappings{
       {.source_name = "x",
        .target_name = "x",
@@ -73,8 +88,18 @@ TEST(SlottedRowTest, CopiesBetweenLayoutsAndConvertsEntityRepresentations) {
       source.CopyTo(reference_slots, mappings, *transaction);
 
   EXPECT_EQ(copied.Slots()->At("x").kind, rg::SlotKind::kReference);
-  EXPECT_TRUE(copied.Get("x", *transaction).IsNode());
-  EXPECT_EQ(copied.Get("x", *transaction).AsNode().id, node->id);
+  EXPECT_TRUE(copied.Get("x").IsNode());
+  EXPECT_EQ(copied.Get("x").AsNode().id, vertex.GetNativeId());
+
+  const std::vector<rg::SlotMapping> reverse_mappings{
+      {.source_name = "x",
+       .target_name = "x",
+       .source = reference_slots->At("x"),
+       .target = entity_slots->At("x")}};
+  rg::SlottedRow copied_back =
+      copied.CopyTo(entity_slots, reverse_mappings, *transaction);
+  EXPECT_EQ(copied_back.VertexAt(entity_slots->At("x")).GetNativeId(),
+            vertex.GetNativeId());
   transaction->Rollback();
 }
 
