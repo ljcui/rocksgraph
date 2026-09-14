@@ -54,9 +54,6 @@ std::string FormatSlots(const SlotConfiguration &slots) {
     const std::string &column = slots.Columns()[index];
     const Slot &slot = slots.At(column);
     out << column << ':' << SlotKindName(slot.kind) << '@' << slot.offset;
-    if (slot.nullable) {
-      out << '?';
-    }
   }
   return out.str();
 }

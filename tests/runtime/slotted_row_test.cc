@@ -18,15 +18,9 @@ TEST(SlottedRowTest, StoresGraphDBEntitiesAndReferences) {
       transaction->CreateEdge(node_vertex, other_vertex, "KNOWS", {});
   auto slots = std::make_shared<const rg::SlotConfiguration>(
       std::vector<rg::SlotDefinition>{
-          {.name = "n",
-           .type = ast::SemanticVariableType::kNode,
-           .nullable = false},
-          {.name = "r",
-           .type = ast::SemanticVariableType::kRelationship,
-           .nullable = true},
-          {.name = "value",
-           .type = ast::SemanticVariableType::kScalar,
-           .nullable = false}});
+          {.name = "n", .type = ast::SemanticVariableType::kNode},
+          {.name = "r", .type = ast::SemanticVariableType::kRelationship},
+          {.name = "value", .type = ast::SemanticVariableType::kScalar}});
 
   rg::SlottedRow row(slots);
   EXPECT_EQ(slots->At("n").offset, 0);
@@ -50,9 +44,8 @@ TEST(SlottedRowTest, DistinguishesUninitializedSlotsFromNull) {
   rg::test::GraphDBTestDatabase database;
   auto transaction = database.BeginTransaction();
   auto slots = std::make_shared<const rg::SlotConfiguration>(
-      std::vector<rg::SlotDefinition>{{.name = "n",
-                                       .type = ast::SemanticVariableType::kNode,
-                                       .nullable = true}});
+      std::vector<rg::SlotDefinition>{
+          {.name = "n", .type = ast::SemanticVariableType::kNode}});
 
   rg::SlottedRow row(slots);
   EXPECT_FALSE(row.IsInitialized("n"));
@@ -68,14 +61,11 @@ TEST(SlottedRowTest, CopiesBetweenLayoutsAndConvertsEntityRepresentations) {
   auto transaction = database.BeginTransaction();
   const auto vertex = transaction->CreateVertex({}, {});
   auto entity_slots = std::make_shared<const rg::SlotConfiguration>(
-      std::vector<rg::SlotDefinition>{{.name = "x",
-                                       .type = ast::SemanticVariableType::kNode,
-                                       .nullable = false}});
+      std::vector<rg::SlotDefinition>{
+          {.name = "x", .type = ast::SemanticVariableType::kNode}});
   auto reference_slots = std::make_shared<const rg::SlotConfiguration>(
       std::vector<rg::SlotDefinition>{
-          {.name = "x",
-           .type = ast::SemanticVariableType::kUnknown,
-           .nullable = true}});
+          {.name = "x", .type = ast::SemanticVariableType::kUnknown}});
 
   rg::SlottedRow source(entity_slots);
   source.SetVertex(entity_slots->At("x"), vertex);

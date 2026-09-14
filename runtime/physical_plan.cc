@@ -40,7 +40,6 @@ using SemanticType = ast::SemanticVariableType;
 
 struct TypeInfo {
   SemanticType type = SemanticType::kUnknown;
-  bool nullable = true;
   std::optional<SlotKind> storage_kind;
 };
 
@@ -132,8 +131,7 @@ bool SameSlotLayout(const SlotConfiguration &left,
     const Slot &right_slot = right.At(column);
     if (left_slot.offset != right_slot.offset ||
         left_slot.kind != right_slot.kind ||
-        left_slot.type != right_slot.type ||
-        left_slot.nullable != right_slot.nullable) {
+        left_slot.type != right_slot.type) {
       return false;
     }
   }
@@ -245,29 +243,18 @@ std::vector<std::string> AppendUnique(std::vector<std::string> columns,
 }
 
 TypeInfo InfoForSlot(const Slot &slot) {
-  return {
-      .type = slot.type, .nullable = slot.nullable, .storage_kind = slot.kind};
+  return {.type = slot.type, .storage_kind = slot.kind};
 }
 
 TypeInfo MergeInfo(TypeInfo left, TypeInfo right) {
-  const bool nullable = left.nullable || right.nullable;
   if (left.type == right.type) {
     return {
         .type = left.type,
-        .nullable = nullable,
         .storage_kind = left.storage_kind == right.storage_kind
                             ? left.storage_kind
                             : std::optional<SlotKind>(SlotKind::kReference)};
   }
-  if (left.type == SemanticType::kUnknown ||
-      right.type == SemanticType::kUnknown) {
-    return {.type = SemanticType::kUnknown,
-            .nullable = nullable,
-            .storage_kind = SlotKind::kReference};
-  }
-  return {.type = SemanticType::kUnknown,
-          .nullable = nullable,
-          .storage_kind = SlotKind::kReference};
+  return {.type = SemanticType::kUnknown, .storage_kind = SlotKind::kReference};
 }
 
 std::optional<TypeInfo> FindInfo(
@@ -301,29 +288,28 @@ TypeInfo InferExpression(const ast::Expression *expression,
     case ast::ASTNodeType::kIntegerLiteral:
     case ast::ASTNodeType::kDoubleLiteral:
     case ast::ASTNodeType::kStringLiteral:
-      return {.type = SemanticType::kScalar, .nullable = false};
+      return {.type = SemanticType::kScalar};
     case ast::ASTNodeType::kNullLiteral:
-      return {.type = SemanticType::kUnknown, .nullable = true};
+      return {};
     case ast::ASTNodeType::kListLiteral:
     case ast::ASTNodeType::kListComprehension:
     case ast::ASTNodeType::kPatternComprehension:
-      return {.type = SemanticType::kList, .nullable = false};
+      return {.type = SemanticType::kList};
     case ast::ASTNodeType::kMapLiteral:
-      return {.type = SemanticType::kMap, .nullable = false};
+      return {.type = SemanticType::kMap};
     case ast::ASTNodeType::kFunctionInvocation: {
       const auto &function = ast::CastAst<ast::FunctionInvocation>(*expression);
       const ast::BuiltinFunction *builtin =
           ast::FindBuiltinFunction(function.function_name);
-      return builtin == nullptr
-                 ? TypeInfo{}
-                 : TypeInfo{.type = builtin->result_type, .nullable = true};
+      return builtin == nullptr ? TypeInfo{}
+                                : TypeInfo{.type = builtin->result_type};
     }
     case ast::ASTNodeType::kParenthesizedExpression:
       return InferExpression(
           ast::CastAst<ast::ParenthesizedExpression>(*expression).expr.get(),
           sources);
     default:
-      return {.type = SemanticType::kScalar, .nullable = true};
+      return {.type = SemanticType::kScalar};
   }
 }
 
@@ -345,9 +331,9 @@ TypeInfo ProjectionInfo(const ir::LogicalProjectionItem &item,
 }
 
 void SetOverride(TypeOverrides *overrides, std::string_view name,
-                 SemanticType type, bool nullable) {
+                 SemanticType type) {
   if (!name.empty()) {
-    (*overrides)[std::string(name)] = {.type = type, .nullable = nullable};
+    (*overrides)[std::string(name)] = {.type = type};
   }
 }
 
@@ -359,7 +345,7 @@ TypeOverrides OutputOverrides(
     case ir::LogicalPlanNodeType::kNodeByIdSeek:
       SetOverride(&overrides,
                   static_cast<const ir::NodeByIdSeekPlan &>(plan).Variable(),
-                  SemanticType::kNode, false);
+                  SemanticType::kNode);
       break;
     case ir::LogicalPlanNodeType::kRelationshipByIdSeek:
     case ir::LogicalPlanNodeType::kProjectEndpoints:
@@ -378,105 +364,88 @@ TypeOverrides OutputOverrides(
         pattern =
             &static_cast<const ir::PruningVarExpandPlan &>(plan).Pattern();
       }
-      const bool optional =
-          plan.Type() == ir::LogicalPlanNodeType::kOptionalExpand;
       for (const auto &name : {pattern->left_node, pattern->right_node}) {
-        const auto existing = FindInfo(name, sources);
-        SetOverride(&overrides, name, SemanticType::kNode,
-                    existing.has_value() ? existing->nullable : optional);
+        SetOverride(&overrides, name, SemanticType::kNode);
       }
       if (plan.Type() != ir::LogicalPlanNodeType::kPruningVarExpand) {
         SetOverride(&overrides, pattern->variable,
                     pattern->length.variable ? SemanticType::kList
-                                             : SemanticType::kRelationship,
-                    optional);
+                                             : SemanticType::kRelationship);
       }
       break;
     }
     case ir::LogicalPlanNodeType::kAllNodeScan:
       SetOverride(&overrides,
                   static_cast<const ir::AllNodeScanPlan &>(plan).Variable(),
-                  SemanticType::kNode, false);
+                  SemanticType::kNode);
       break;
     case ir::LogicalPlanNodeType::kNodeByLabelScan:
       SetOverride(&overrides,
                   static_cast<const ir::NodeByLabelScanPlan &>(plan).Variable(),
-                  SemanticType::kNode, false);
+                  SemanticType::kNode);
       break;
     case ir::LogicalPlanNodeType::kNodeIndexSeek:
       SetOverride(&overrides,
                   static_cast<const ir::NodeIndexSeekPlan &>(plan).Variable(),
-                  SemanticType::kNode, false);
+                  SemanticType::kNode);
       break;
     case ir::LogicalPlanNodeType::kNodeIndexRangeSeek:
       SetOverride(
           &overrides,
           static_cast<const ir::NodeIndexRangeSeekPlan &>(plan).Variable(),
-          SemanticType::kNode, false);
+          SemanticType::kNode);
       break;
     case ir::LogicalPlanNodeType::kRelationshipTypeScan: {
       const auto &scan =
           static_cast<const ir::RelationshipTypeScanPlan &>(plan);
-      SetOverride(&overrides, scan.FromNode(), SemanticType::kNode, false);
-      SetOverride(&overrides, scan.Relationship(), SemanticType::kRelationship,
-                  false);
-      SetOverride(&overrides, scan.ToNode(), SemanticType::kNode, false);
+      SetOverride(&overrides, scan.FromNode(), SemanticType::kNode);
+      SetOverride(&overrides, scan.Relationship(), SemanticType::kRelationship);
+      SetOverride(&overrides, scan.ToNode(), SemanticType::kNode);
       break;
     }
     case ir::LogicalPlanNodeType::kRelationshipIndexSeek: {
       const auto &scan =
           static_cast<const ir::RelationshipIndexSeekPlan &>(plan);
-      SetOverride(&overrides, scan.FromNode(), SemanticType::kNode, false);
-      SetOverride(&overrides, scan.Relationship(), SemanticType::kRelationship,
-                  false);
-      SetOverride(&overrides, scan.ToNode(), SemanticType::kNode, false);
+      SetOverride(&overrides, scan.FromNode(), SemanticType::kNode);
+      SetOverride(&overrides, scan.Relationship(), SemanticType::kRelationship);
+      SetOverride(&overrides, scan.ToNode(), SemanticType::kNode);
       break;
     }
     case ir::LogicalPlanNodeType::kRelationshipIndexRangeSeek: {
       const auto &scan =
           static_cast<const ir::RelationshipIndexRangeSeekPlan &>(plan);
-      SetOverride(&overrides, scan.FromNode(), SemanticType::kNode, false);
-      SetOverride(&overrides, scan.Relationship(), SemanticType::kRelationship,
-                  false);
-      SetOverride(&overrides, scan.ToNode(), SemanticType::kNode, false);
+      SetOverride(&overrides, scan.FromNode(), SemanticType::kNode);
+      SetOverride(&overrides, scan.Relationship(), SemanticType::kRelationship);
+      SetOverride(&overrides, scan.ToNode(), SemanticType::kNode);
       break;
     }
     case ir::LogicalPlanNodeType::kExpand: {
       const auto &expand = static_cast<const ir::ExpandPlan &>(plan);
-      SetOverride(
-          &overrides, expand.FromNode(), SemanticType::kNode,
-          FindInfo(expand.FromNode(), sources).value_or(TypeInfo{}).nullable);
+      SetOverride(&overrides, expand.FromNode(), SemanticType::kNode);
       SetOverride(&overrides, expand.Relationship(),
-                  SemanticType::kRelationship, false);
-      SetOverride(&overrides, expand.ToNode(), SemanticType::kNode, false);
+                  SemanticType::kRelationship);
+      SetOverride(&overrides, expand.ToNode(), SemanticType::kNode);
       break;
     }
     case ir::LogicalPlanNodeType::kExpandInto: {
       const auto &expand = static_cast<const ir::ExpandIntoPlan &>(plan);
-      SetOverride(
-          &overrides, expand.FromNode(), SemanticType::kNode,
-          FindInfo(expand.FromNode(), sources).value_or(TypeInfo{}).nullable);
+      SetOverride(&overrides, expand.FromNode(), SemanticType::kNode);
       SetOverride(&overrides, expand.Relationship(),
-                  SemanticType::kRelationship, false);
-      SetOverride(
-          &overrides, expand.ToNode(), SemanticType::kNode,
-          FindInfo(expand.ToNode(), sources).value_or(TypeInfo{}).nullable);
+                  SemanticType::kRelationship);
+      SetOverride(&overrides, expand.ToNode(), SemanticType::kNode);
       break;
     }
     case ir::LogicalPlanNodeType::kVarExpand: {
       const auto &expand = static_cast<const ir::VarExpandPlan &>(plan);
-      SetOverride(
-          &overrides, expand.FromNode(), SemanticType::kNode,
-          FindInfo(expand.FromNode(), sources).value_or(TypeInfo{}).nullable);
-      SetOverride(&overrides, expand.Relationship(), SemanticType::kList,
-                  false);
-      SetOverride(&overrides, expand.ToNode(), SemanticType::kNode, false);
+      SetOverride(&overrides, expand.FromNode(), SemanticType::kNode);
+      SetOverride(&overrides, expand.Relationship(), SemanticType::kList);
+      SetOverride(&overrides, expand.ToNode(), SemanticType::kNode);
       break;
     }
     case ir::LogicalPlanNodeType::kPathBuild:
       SetOverride(&overrides,
                   static_cast<const ir::PathBuildPlan &>(plan).PathVariable(),
-                  SemanticType::kPath, false);
+                  SemanticType::kPath);
       break;
     case ir::LogicalPlanNodeType::kProjection: {
       const auto &projection = static_cast<const ir::ProjectionPlan &>(plan);
@@ -506,50 +475,45 @@ TypeOverrides OutputOverrides(
       SetOverride(
           &overrides,
           static_cast<const ir::LetSemiApplyPlan &>(plan).ValueVariable(),
-          SemanticType::kScalar, false);
+          SemanticType::kScalar);
       break;
     case ir::LogicalPlanNodeType::kRollUpApply:
       SetOverride(
           &overrides,
           static_cast<const ir::RollUpApplyPlan &>(plan).CollectionVariable(),
-          SemanticType::kList, false);
+          SemanticType::kList);
       break;
     case ir::LogicalPlanNodeType::kAssertIsNode:
       for (const auto &variable :
            static_cast<const ir::AssertIsNodePlan &>(plan).Variables()) {
-        SetOverride(&overrides, variable, SemanticType::kNode,
-                    FindInfo(variable, sources).value_or(TypeInfo{}).nullable);
+        SetOverride(&overrides, variable, SemanticType::kNode);
       }
       break;
     case ir::LogicalPlanNodeType::kCreateNode:
       SetOverride(&overrides,
                   static_cast<const ir::CreateNodePlan &>(plan).Node().variable,
-                  SemanticType::kNode, false);
+                  SemanticType::kNode);
       break;
     case ir::LogicalPlanNodeType::kCreateRelationship: {
       const auto &relationship =
           static_cast<const ir::CreateRelationshipPlan &>(plan).Relationship();
-      SetOverride(&overrides, relationship.left_node, SemanticType::kNode,
-                  false);
+      SetOverride(&overrides, relationship.left_node, SemanticType::kNode);
       SetOverride(&overrides, relationship.variable,
-                  SemanticType::kRelationship, false);
-      SetOverride(&overrides, relationship.right_node, SemanticType::kNode,
-                  false);
+                  SemanticType::kRelationship);
+      SetOverride(&overrides, relationship.right_node, SemanticType::kNode);
       break;
     }
     case ir::LogicalPlanNodeType::kMerge: {
       const auto &pattern =
           static_cast<const ir::MergePlan &>(plan).Merge().create_pattern;
       for (const auto &node : pattern.nodes) {
-        SetOverride(&overrides, node.variable, SemanticType::kNode, false);
+        SetOverride(&overrides, node.variable, SemanticType::kNode);
       }
       for (const auto &relationship : pattern.relationships) {
-        SetOverride(&overrides, relationship.left_node, SemanticType::kNode,
-                    false);
+        SetOverride(&overrides, relationship.left_node, SemanticType::kNode);
         SetOverride(&overrides, relationship.variable,
-                    SemanticType::kRelationship, false);
-        SetOverride(&overrides, relationship.right_node, SemanticType::kNode,
-                    false);
+                    SemanticType::kRelationship);
+        SetOverride(&overrides, relationship.right_node, SemanticType::kNode);
       }
       break;
     }
@@ -560,7 +524,6 @@ TypeOverrides OutputOverrides(
           const Slot &slot = sources.front()->At(column);
           if (slot.kind != SlotKind::kReference) {
             overrides[column] = {.type = slot.type,
-                                 .nullable = slot.nullable,
                                  .storage_kind = SlotKind::kReference};
           }
         }
@@ -568,7 +531,7 @@ TypeOverrides OutputOverrides(
       break;
     case ir::LogicalPlanNodeType::kUnwind:
       SetOverride(&overrides, static_cast<const ir::UnwindPlan &>(plan).Alias(),
-                  SemanticType::kUnknown, true);
+                  SemanticType::kUnknown);
       break;
     case ir::LogicalPlanNodeType::kProcedureCall: {
       const auto &call = static_cast<const ir::ProcedureCallPlan &>(plan);
@@ -582,8 +545,7 @@ TypeOverrides OutputOverrides(
                 ? nullptr
                 : ast::FindBuiltinProcedureYield(*procedure, field);
         SetOverride(&overrides, item.variable,
-                    yield == nullptr ? SemanticType::kUnknown : yield->type,
-                    true);
+                    yield == nullptr ? SemanticType::kUnknown : yield->type);
       }
       break;
     }
@@ -596,8 +558,7 @@ TypeOverrides OutputOverrides(
 SlotConfigurationPtr MakeLayout(
     const std::vector<std::string> &columns,
     const std::vector<SlotConfigurationPtr> &sources,
-    const TypeOverrides &overrides = {},
-    const std::unordered_set<std::string> &force_nullable = {}) {
+    const TypeOverrides &overrides = {}) {
   std::vector<SlotDefinition> definitions;
   definitions.reserve(columns.size());
   for (const auto &column : columns) {
@@ -606,13 +567,8 @@ SlotConfigurationPtr MakeLayout(
     if (override != overrides.end()) {
       info = override->second;
     }
-    if (force_nullable.contains(column)) {
-      info.nullable = true;
-    }
-    definitions.push_back({.name = column,
-                           .type = info.type,
-                           .nullable = info.nullable,
-                           .storage_kind = info.storage_kind});
+    definitions.push_back(
+        {.name = column, .type = info.type, .storage_kind = info.storage_kind});
   }
   return std::make_shared<const SlotConfiguration>(std::move(definitions));
 }
@@ -996,20 +952,8 @@ class PhysicalPlanBuilder final {
           plan.Type() != ir::LogicalPlanNodeType::kArgument) {
         columns = AppendUnique(node->argument_slots->Columns(), columns);
       }
-      std::unordered_set<std::string> force_nullable;
-      if (plan.Type() == ir::LogicalPlanNodeType::kOptionalApply ||
-          plan.Type() == ir::LogicalPlanNodeType::kLeftOuterHashJoin) {
-        const auto &lhs_columns = node->children[0]->output_slots->Columns();
-        const std::unordered_set<std::string> lhs(lhs_columns.begin(),
-                                                  lhs_columns.end());
-        for (const auto &column : node->children[1]->output_slots->Columns()) {
-          if (!lhs.contains(column)) {
-            force_nullable.insert(column);
-          }
-        }
-      }
-      node->output_slots = MakeLayout(
-          columns, sources, OutputOverrides(plan, sources), force_nullable);
+      node->output_slots =
+          MakeLayout(columns, sources, OutputOverrides(plan, sources));
       // Slot configurations are immutable. Reuse an identical unary child
       // layout so compatible operators can forward rows without allocating a
       // second set of slot vectors.

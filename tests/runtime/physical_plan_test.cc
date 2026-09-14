@@ -384,7 +384,6 @@ void ExpectSameSlot(const rg::Slot &actual, const rg::Slot &expected) {
   EXPECT_EQ(actual.offset, expected.offset);
   EXPECT_EQ(actual.kind, expected.kind);
   EXPECT_EQ(actual.type, expected.type);
-  EXPECT_EQ(actual.nullable, expected.nullable);
 }
 
 }  // namespace
@@ -473,7 +472,7 @@ TEST(PhysicalPlanTest, ResolvesPassthroughSlotsWithoutEntityConversion) {
   EXPECT_EQ(rows[0][0].AsRelationship().type_id, relationship->type_id);
 }
 
-TEST(PhysicalPlanTest, AllocatesTypedNullableSlotsForOptionalExpand) {
+TEST(PhysicalPlanTest, AllocatesTypedSlotsForOptionalExpand) {
   PlannedQuery query =
       Plan("MATCH (n) OPTIONAL MATCH (n)-[r]->(m) RETURN n, r, m");
   rg::PhysicalPlan physical = rg::CreatePhysicalPlan(query.LogicalPlan());
@@ -482,11 +481,8 @@ TEST(PhysicalPlanTest, AllocatesTypedNullableSlotsForOptionalExpand) {
   const rg::Slot &r = physical.Root().output_slots->At("r");
   const rg::Slot &m = physical.Root().output_slots->At("m");
   EXPECT_EQ(n.kind, rg::SlotKind::kNode);
-  EXPECT_FALSE(n.nullable);
   EXPECT_EQ(r.kind, rg::SlotKind::kRelationship);
-  EXPECT_TRUE(r.nullable);
   EXPECT_EQ(m.kind, rg::SlotKind::kNode);
-  EXPECT_TRUE(m.nullable);
 
   const rg::PhysicalPlanNode *expand_node = FindPhysicalPlan(
       physical.Root(), rg::PhysicalOperatorKind::kOptionalExpand);
@@ -503,7 +499,6 @@ TEST(PhysicalPlanTest, UnifiesIncompatibleUnionSlotsAsReferences) {
 
   const rg::Slot &value = physical.Root().output_slots->At("value");
   EXPECT_EQ(value.kind, rg::SlotKind::kReference);
-  EXPECT_FALSE(value.nullable);
   const rg::PhysicalPlanNode *union_node =
       FindPhysicalPlan(physical.Root(), rg::PhysicalOperatorKind::kUnionAll);
   ASSERT_NE(union_node, nullptr);
@@ -525,7 +520,6 @@ TEST(PhysicalPlanTest, SelectsDedicatedUnionPhysicalAlgorithms) {
   EXPECT_EQ(data.key_slots.front().offset, output_slot.offset);
   EXPECT_EQ(data.key_slots.front().kind, output_slot.kind);
   EXPECT_EQ(data.key_slots.front().type, output_slot.type);
-  EXPECT_EQ(data.key_slots.front().nullable, output_slot.nullable);
 
   const std::string printed = rg::PhysicalPlanToString(physical);
   EXPECT_NE(printed.find("UnionDistinct"), std::string::npos);
@@ -547,7 +541,6 @@ TEST(PhysicalPlanTest, ExecutesDetachedUnionAlgorithmsAndMappings) {
   EXPECT_TRUE(all_rows[0][0].IsInteger());
   EXPECT_TRUE(all_rows[1][0].IsDouble());
   EXPECT_TRUE(all_rows[2][0].IsNull());
-  EXPECT_TRUE(all.Root().output_slots->At("value").nullable);
 
   rg::PhysicalPlan distinct = DetachedPhysicalPlan(
       "RETURN 1 AS value UNION RETURN 1.0 AS value "
@@ -627,8 +620,6 @@ TEST(PhysicalPlanTest, BuildsTypedApplyAndOptionalApplyPayloads) {
   EXPECT_EQ(optional.Root().kind, rg::PhysicalOperatorKind::kOptionalApply);
   EXPECT_TRUE(
       std::holds_alternative<rg::OptionalApplyOp>(optional.Root().data));
-  EXPECT_TRUE(optional.Root().output_slots->At("r").nullable);
-  EXPECT_TRUE(optional.Root().output_slots->At("m").nullable);
 }
 
 TEST(PhysicalPlanTest, BuildsOwnedExistenceApplyPayloads) {
@@ -655,7 +646,6 @@ TEST(PhysicalPlanTest, BuildsOwnedExistenceApplyPayloads) {
   const auto &let_data = std::get<rg::LetSemiApplyOp>(let_node->data);
   EXPECT_EQ(let_data.value_slot.kind, rg::SlotKind::kReference);
   EXPECT_EQ(let_data.value_slot.type, ast::SemanticVariableType::kScalar);
-  EXPECT_FALSE(let_data.value_slot.nullable);
 
   rg::PhysicalPlan select =
       DetachedPhysicalPlan("MATCH (n) WHERE n.active OR (n)-[:R]->() RETURN n");
@@ -746,7 +736,6 @@ TEST(PhysicalPlanTest, BuildsOwnedRollUpApplyPayload) {
   const auto &data = std::get<rg::RollUpApplyOp>(roll_up->data);
   EXPECT_EQ(data.collection_slot.kind, rg::SlotKind::kReference);
   EXPECT_EQ(data.collection_slot.type, ast::SemanticVariableType::kList);
-  EXPECT_FALSE(data.collection_slot.nullable);
   EXPECT_EQ(data.value_slot.kind, rg::SlotKind::kReference);
   EXPECT_EQ(data.value_slot.type, ast::SemanticVariableType::kScalar);
   EXPECT_NE(rg::PhysicalPlanToString(physical).find("RollUpApply"),
@@ -2621,5 +2610,5 @@ TEST(PhysicalPlanTest, PrintsOwnedOrderingAfterLogicalPlanAndAstAreDestroyed) {
   EXPECT_EQ(printed.find("exec="), std::string::npos);
   EXPECT_NE(printed.find("order=[a ASC, b ASC]"), std::string::npos);
   EXPECT_NE(printed.find("prefix=1"), std::string::npos);
-  EXPECT_NE(printed.find("slots=[a:reference@0?"), std::string::npos);
+  EXPECT_NE(printed.find("slots=[a:reference@0"), std::string::npos);
 }

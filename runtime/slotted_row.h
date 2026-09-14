@@ -30,13 +30,11 @@ struct Slot {
   std::size_t offset = 0;
   SlotKind kind = SlotKind::kReference;
   ast::SemanticVariableType type = ast::SemanticVariableType::kUnknown;
-  bool nullable = true;
 };
 
 struct SlotDefinition {
   std::string name;
   ast::SemanticVariableType type = ast::SemanticVariableType::kUnknown;
-  bool nullable = true;
   std::optional<SlotKind> storage_kind;
 };
 

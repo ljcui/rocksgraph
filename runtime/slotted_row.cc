@@ -54,8 +54,7 @@ SlotConfiguration::SlotConfiguration(std::vector<SlotDefinition> definitions) {
     }
     Slot slot{
         .kind = definition.storage_kind.value_or(KindFor(definition.type)),
-        .type = definition.type,
-        .nullable = definition.nullable};
+        .type = definition.type};
     slot.offset = slot_count_++;
     columns_.push_back(definition.name);
     slots_.emplace(std::move(definition.name), slot);
@@ -156,8 +155,6 @@ void SlottedRow::SetEdge(const Slot &slot, graphdb::Edge edge) {
 void SlottedRow::SetReference(const Slot &slot, Value value) {
   CHECK(slot.kind == SlotKind::kReference, common::InvalidArgumentError,
         "slot is not a reference slot");
-  CHECK(!value.IsNull() || slot.nullable, common::InvalidArgumentError,
-        "null assigned to non-nullable reference slot");
   values_[slot.offset] = std::move(value);
 }
 
@@ -198,8 +195,6 @@ void SlottedRow::Set(std::string_view name, Value value,
 }
 
 void SlottedRow::SetNull(const Slot &slot) {
-  CHECK(slot.nullable, common::InvalidArgumentError,
-        "null assigned to non-nullable slot");
   values_[slot.offset] = Value::Null();
 }
 
@@ -212,11 +207,6 @@ void SlottedRow::CopySlotFrom(const SlottedRow &source, const Slot &source_slot,
   CHECK(source.IsInitialized(source_slot), common::InvalidArgumentError,
         "source slot is not initialized");
   const SlotValue &value = source.values_[source_slot.offset];
-  if (const auto *reference = std::get_if<Value>(&value)) {
-    CHECK(!reference->IsNull() || target_slot.nullable,
-          common::InvalidArgumentError,
-          "null assigned to non-nullable target slot");
-  }
   values_[target_slot.offset] = value;
 }
 
