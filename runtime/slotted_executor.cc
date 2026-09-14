@@ -2786,6 +2786,41 @@ SlottedRow CopyUnaryOutput(const PhysicalPlanNode &node,
   return CopyChildOutput(node, 0, input, state);
 }
 
+SlottedRow ForwardUnaryOutput(const PhysicalPlanNode &node, SlottedRow input,
+                              const RuntimeState &state) {
+  if (input.Slots() == node.output_slots) {
+    return input;
+  }
+  return CopyUnaryOutput(node, input, state);
+}
+
+bool HasSharedUnaryLayout(const PhysicalPlanNode &node) {
+  return node.children.size() == 1 &&
+         node.children.front()->output_slots == node.output_slots;
+}
+
+void CopySlotDirect(const SlottedRow &source, SlottedRow *target,
+                    const Slot &source_slot, const Slot &target_slot) {
+  CHECK(target != nullptr, common::InternalError, "target row is null");
+  if (!source.IsInitialized(source_slot)) {
+    return;
+  }
+  CHECK(source_slot.kind == target_slot.kind, common::InternalError,
+        "direct slot copy requires matching slot kinds");
+  switch (source_slot.kind) {
+    case SlotKind::kNode:
+      target->SetEntityId(target_slot, source.EntityIdAt(source_slot));
+      return;
+    case SlotKind::kRelationship:
+      target->SetRelationship(target_slot, source.RelationshipAt(source_slot));
+      return;
+    case SlotKind::kReference:
+      target->SetReference(target_slot, source.ReferenceAt(source_slot));
+      return;
+  }
+  THROW(common::InternalError, "unknown slot kind");
+}
+
 std::int64_t EvaluatePaginationCount(const PhysicalExpression &expression,
                                      const SlottedRow *row, RuntimeState *state,
                                      std::string_view name) {
@@ -2816,13 +2851,22 @@ class FilterOperator final : public PullOperator {
     if (closed_) {
       return false;
     }
-    SlottedRow input(node_->children[0]->output_slots);
-    while (source_->Next(&input)) {
-      if (PredicateIsTrue(Evaluate(data_->predicate, input, *state_))) {
-        *row = CopyUnaryOutput(*node_, input, *state_);
-        return true;
+    if (HasSharedUnaryLayout(*node_)) {
+      while (source_->Next(row)) {
+        if (PredicateIsTrue(Evaluate(data_->predicate, *row, *state_))) {
+          return true;
+        }
+        state_->CheckCancelled();
       }
-      state_->CheckCancelled();
+    } else {
+      SlottedRow input(node_->children[0]->output_slots);
+      while (source_->Next(&input)) {
+        if (PredicateIsTrue(Evaluate(data_->predicate, input, *state_))) {
+          *row = ForwardUnaryOutput(*node_, std::move(input), *state_);
+          return true;
+        }
+        state_->CheckCancelled();
+      }
     }
     Close();
     return false;
@@ -2861,6 +2905,13 @@ class ProjectionOperator final : public PullOperator {
     if (closed_) {
       return false;
     }
+    if (passthrough_only_ && HasSharedUnaryLayout(*node_)) {
+      if (!source_->Next(row)) {
+        Close();
+        return false;
+      }
+      return true;
+    }
     SlottedRow input(node_->children[0]->output_slots);
     if (!source_->Next(&input)) {
       Close();
@@ -2868,10 +2919,16 @@ class ProjectionOperator final : public PullOperator {
     }
     SlottedRow output(node_->output_slots);
     for (const auto &item : data_->items) {
-      Value value = item.passthrough
-                        ? ReadRowValue(input, item.alias, *state_)
-                        : Evaluate(item.expression, input, *state_);
-      output.Set(item.alias, std::move(value));
+      const Slot &target_slot = node_->output_slots->At(item.alias);
+      if (item.passthrough && item.source_slot.has_value() &&
+          item.source_slot->kind == target_slot.kind) {
+        CopySlotDirect(input, &output, *item.source_slot, target_slot);
+      } else {
+        Value value = item.passthrough
+                          ? ReadRowValue(input, item.alias, *state_)
+                          : Evaluate(item.expression, input, *state_);
+        output.Set(target_slot, std::move(value));
+      }
     }
     *row = std::move(output);
     return true;
@@ -2890,6 +2947,9 @@ class ProjectionOperator final : public PullOperator {
   const ProjectionOp *data_ = nullptr;
   RuntimeState *state_ = nullptr;
   std::unique_ptr<PullOperator> source_;
+  bool passthrough_only_ = std::all_of(
+      data_->items.begin(), data_->items.end(),
+      [](const PhysicalProjectionItem &item) { return item.passthrough; });
   bool closed_ = false;
 };
 
@@ -2925,15 +2985,22 @@ class SkipOperator final : public PullOperator {
       }
       ++seen_;
     }
-    SlottedRow input(node_->children[0]->output_slots);
     if (pending_.has_value()) {
-      input = std::move(*pending_);
+      *row = ForwardUnaryOutput(*node_, std::move(*pending_), *state_);
       pending_.reset();
-    } else if (!source_->Next(&input)) {
-      Close();
-      return false;
+    } else if (HasSharedUnaryLayout(*node_)) {
+      if (!source_->Next(row)) {
+        Close();
+        return false;
+      }
+    } else {
+      SlottedRow input(node_->children[0]->output_slots);
+      if (!source_->Next(&input)) {
+        Close();
+        return false;
+      }
+      *row = ForwardUnaryOutput(*node_, std::move(input), *state_);
     }
-    *row = CopyUnaryOutput(*node_, input, *state_);
     return true;
   }
 
@@ -3008,16 +3075,23 @@ class LimitOperator final : public PullOperator {
       return true;
     }
 
-    SlottedRow input(node_->children[0]->output_slots);
     if (pending_.has_value()) {
-      input = std::move(*pending_);
+      *row = ForwardUnaryOutput(*node_, std::move(*pending_), *state_);
       pending_.reset();
-    } else if (!source_->Next(&input)) {
-      Close();
-      return false;
+    } else if (HasSharedUnaryLayout(*node_)) {
+      if (!source_->Next(row)) {
+        Close();
+        return false;
+      }
+    } else {
+      SlottedRow input(node_->children[0]->output_slots);
+      if (!source_->Next(&input)) {
+        Close();
+        return false;
+      }
+      *row = ForwardUnaryOutput(*node_, std::move(input), *state_);
     }
     ++emitted_;
-    *row = CopyUnaryOutput(*node_, input, *state_);
     return true;
   }
 
@@ -3101,13 +3175,20 @@ class ProduceResultsOperator final : public PullOperator {
     if (closed_) {
       return false;
     }
+    (void)data_;
+    if (HasSharedUnaryLayout(*node_)) {
+      if (!source_->Next(row)) {
+        Close();
+        return false;
+      }
+      return true;
+    }
     SlottedRow input(node_->children[0]->output_slots);
     if (!source_->Next(&input)) {
       Close();
       return false;
     }
-    (void)data_;
-    *row = CopyUnaryOutput(*node_, input, *state_);
+    *row = ForwardUnaryOutput(*node_, std::move(input), *state_);
     return true;
   }
 
@@ -3358,19 +3439,24 @@ class AssertIsNodeOperator final : public PullOperator {
     if (closed_) {
       return false;
     }
-    SlottedRow input(node_->children[0]->output_slots);
-    if (!source_->Next(&input)) {
+    std::optional<SlottedRow> local_input;
+    SlottedRow *input = row;
+    if (!HasSharedUnaryLayout(*node_)) {
+      local_input.emplace(node_->children[0]->output_slots);
+      input = &*local_input;
+    }
+    if (!source_->Next(input)) {
       Close();
       return false;
     }
     for (const auto &assertion : data_->nodes) {
-      const Value value = ReadRowValue(input, assertion.input_slot, *state_);
+      const Value value = ReadRowValue(*input, assertion.input_slot, *state_);
       CHECK(value.IsNull() || value.IsNode(), common::InvalidArgumentError,
             "expected node value: " + assertion.variable);
     }
-    SlottedRow output(node_->output_slots);
-    CopyMappings(input, &output, node_->child_mappings[0], *state_);
-    *row = std::move(output);
+    if (local_input.has_value()) {
+      *row = ForwardUnaryOutput(*node_, std::move(*local_input), *state_);
+    }
     return true;
   }
 

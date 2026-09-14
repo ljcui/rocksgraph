@@ -410,6 +410,69 @@ std::unique_ptr<PhysicalResultCursor> StartGraphDBPhysicalPlan(
 
 }  // namespace rg
 
+TEST(PhysicalPlanTest, ReusesIdenticalUnarySlotLayouts) {
+  PlannedQuery query =
+      Plan("MATCH (n) WHERE id(n) > 0 RETURN n SKIP 1 LIMIT 2");
+  rg::PhysicalPlan physical = rg::CreatePhysicalPlan(query.LogicalPlan());
+
+  const rg::PhysicalPlanNode *filter =
+      FindPhysicalPlan(physical.Root(), rg::PhysicalOperatorKind::kFilter);
+  const rg::PhysicalPlanNode *projection =
+      FindPhysicalPlan(physical.Root(), rg::PhysicalOperatorKind::kProjection);
+  const rg::PhysicalPlanNode *skip =
+      FindPhysicalPlan(physical.Root(), rg::PhysicalOperatorKind::kSkip);
+  const rg::PhysicalPlanNode *limit =
+      FindPhysicalPlan(physical.Root(), rg::PhysicalOperatorKind::kLimit);
+  ASSERT_NE(filter, nullptr);
+  ASSERT_NE(projection, nullptr);
+  ASSERT_NE(skip, nullptr);
+  ASSERT_NE(limit, nullptr);
+  ASSERT_EQ(filter->children.size(), 1U);
+  ASSERT_EQ(projection->children.size(), 1U);
+  ASSERT_EQ(skip->children.size(), 1U);
+  ASSERT_EQ(limit->children.size(), 1U);
+  ASSERT_EQ(physical.Root().children.size(), 1U);
+
+  EXPECT_EQ(filter->output_slots, filter->children[0]->output_slots);
+  EXPECT_EQ(projection->output_slots, projection->children[0]->output_slots);
+  EXPECT_EQ(skip->output_slots, skip->children[0]->output_slots);
+  EXPECT_EQ(limit->output_slots, limit->children[0]->output_slots);
+  EXPECT_EQ(physical.Root().output_slots,
+            physical.Root().children[0]->output_slots);
+}
+
+TEST(PhysicalPlanTest, ResolvesPassthroughSlotsWithoutEntityConversion) {
+  auto source = std::make_unique<ir::RelationshipTypeScanPlan>(
+      "a", "r", "b", ir::ExpandDirection::kOutgoing,
+      std::vector<std::string>{"R"});
+  ir::ProjectionPlan logical(std::move(source),
+                             std::vector<ir::LogicalProjectionItem>{
+                                 {.alias = "r", .passthrough = true}});
+  rg::PhysicalPlan physical = rg::CreatePhysicalPlan(logical);
+
+  ASSERT_EQ(physical.Root().kind, rg::PhysicalOperatorKind::kProjection);
+  ASSERT_EQ(physical.Root().children.size(), 1U);
+  EXPECT_NE(physical.Root().output_slots,
+            physical.Root().children[0]->output_slots);
+  const auto &data = std::get<rg::ProjectionOp>(physical.Root().data);
+  ASSERT_EQ(data.items.size(), 1U);
+  ASSERT_TRUE(data.items[0].source_slot.has_value());
+  EXPECT_EQ(data.items[0].source_slot->kind, rg::SlotKind::kRelationship);
+  EXPECT_EQ(data.items[0].source_slot->offset,
+            physical.Root().children[0]->output_slots->At("r").offset);
+
+  rg::test::GraphDBTestDatabase graph;
+  const auto first = graph.CreateNode({});
+  const auto second = graph.CreateNode({});
+  const auto relationship = graph.CreateRelationship(first, second, "R");
+  const auto rows = PhysicalRows(physical, graph, {"r"});
+  ASSERT_EQ(rows.size(), 1U);
+  ASSERT_EQ(rows[0].size(), 1U);
+  ASSERT_TRUE(rows[0][0].IsRelationship());
+  EXPECT_EQ(rows[0][0].AsRelationship().id, relationship->id);
+  EXPECT_EQ(rows[0][0].AsRelationship().type_id, relationship->type_id);
+}
+
 TEST(PhysicalPlanTest, AllocatesTypedNullableSlotsForOptionalExpand) {
   PlannedQuery query =
       Plan("MATCH (n) OPTIONAL MATCH (n)-[r]->(m) RETURN n, r, m");

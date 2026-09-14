@@ -263,6 +263,10 @@ struct PhysicalProjectionItem {
   std::string alias;
   PhysicalExpression expression;
   bool passthrough = false;
+  // Resolved during physical-plan construction for passthrough projections.
+  // This lets the runtime copy the slot representation directly instead of
+  // materializing an entity into Value and immediately extracting its id.
+  std::optional<Slot> source_slot;
 };
 
 struct ProjectionOp {

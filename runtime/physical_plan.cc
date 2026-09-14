@@ -121,6 +121,26 @@ std::vector<SlotMapping> ComputeSlotMappings(const SlotConfiguration &source,
   return mappings;
 }
 
+bool SameSlotLayout(const SlotConfiguration &left,
+                    const SlotConfiguration &right) {
+  if (left.Columns() != right.Columns() ||
+      left.EntitySlotCount() != right.EntitySlotCount() ||
+      left.ReferenceSlotCount() != right.ReferenceSlotCount()) {
+    return false;
+  }
+  for (const auto &column : left.Columns()) {
+    const Slot &left_slot = left.At(column);
+    const Slot &right_slot = right.At(column);
+    if (left_slot.offset != right_slot.offset ||
+        left_slot.kind != right_slot.kind ||
+        left_slot.type != right_slot.type ||
+        left_slot.nullable != right_slot.nullable) {
+      return false;
+    }
+  }
+  return true;
+}
+
 std::size_t CommonOrderingPrefix(const PhysicalOrdering &provided,
                                  const PhysicalOrdering &required) {
   const std::size_t limit = std::min(provided.size(), required.size());
@@ -991,6 +1011,14 @@ class PhysicalPlanBuilder final {
       }
       node->output_slots = MakeLayout(
           columns, sources, OutputOverrides(plan, sources), force_nullable);
+      // Slot configurations are immutable. Reuse an identical unary child
+      // layout so compatible operators can forward rows without allocating a
+      // second set of slot vectors.
+      if (node->children.size() == 1 &&
+          SameSlotLayout(*node->children.front()->output_slots,
+                         *node->output_slots)) {
+        node->output_slots = node->children.front()->output_slots;
+      }
       for (const auto &child : node->children) {
         node->child_mappings.push_back(
             ComputeSlotMappings(*child->output_slots, *node->output_slots));
@@ -1346,6 +1374,13 @@ class PhysicalPlanBuilder final {
         for (const auto &item : projection.Items()) {
           PhysicalProjectionItem physical_item{.alias = item.alias,
                                                .passthrough = item.passthrough};
+          if (item.passthrough && node->children.size() == 1) {
+            if (const Slot *source_slot =
+                    node->children.front()->output_slots->Find(item.alias);
+                source_slot != nullptr) {
+              physical_item.source_slot = *source_slot;
+            }
+          }
           if (!item.passthrough) {
             physical_item.expression = CopyPhysicalExpression(
                 item.expression, item.precomputed_expressions);
