@@ -283,6 +283,15 @@ bool BindNode(SlottedRow *row, std::string_view name, graphdb::Vertex vertex) {
   return TryBindVertex(row, name, std::move(vertex));
 }
 
+void SetScannedNode(SlottedRow *row, std::string_view name,
+                    graphdb::Vertex vertex) {
+  CHECK(row != nullptr, common::InternalError, "query row is null");
+  const std::size_t offset = row->Slots()->At(name);
+  CHECK(!row->IsInitialized(offset), common::InternalError,
+        "node scan variable is already initialized: " + std::string(name));
+  row->SetVertex(offset, std::move(vertex));
+}
+
 bool BindRelationship(SlottedRow *row, std::size_t offset, graphdb::Edge edge) {
   return TryBindEdge(row, offset, std::move(edge));
 }
@@ -1388,10 +1397,9 @@ class AllNodeScanOperator final : public PullOperator {
       graphdb_cursor_->Next();
       SlottedRow output(node_->output_slots);
       CopyMappings(*argument_, &output, node_->argument_mapping);
-      if (BindNode(&output, data_->variable, std::move(vertex))) {
-        *row = std::move(output);
-        return true;
-      }
+      SetScannedNode(&output, data_->variable, std::move(vertex));
+      *row = std::move(output);
+      return true;
     }
     Close();
     return false;
@@ -1487,9 +1495,7 @@ class NodeScanOperator : public PullOperator {
       }
       SlottedRow output = CopyMappedRow(argument_, node_->output_slots,
                                         node_->argument_mapping);
-      if (!BindNode(&output, *variable_, std::move(vertex))) {
-        continue;
-      }
+      SetScannedNode(&output, *variable_, std::move(vertex));
       if (predicates_ != nullptr &&
           !std::all_of(predicates_->begin(), predicates_->end(),
                        [&](const PhysicalExpression &predicate) {
