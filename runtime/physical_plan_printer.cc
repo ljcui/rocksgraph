@@ -33,18 +33,6 @@ std::string FormatOrdering(const PhysicalOrdering &items) {
   return out.str();
 }
 
-std::string_view SlotKindName(SlotKind kind) {
-  switch (kind) {
-    case SlotKind::kNode:
-      return "node";
-    case SlotKind::kRelationship:
-      return "relationship";
-    case SlotKind::kReference:
-      return "reference";
-  }
-  THROW(common::InternalError, "unknown slot kind");
-}
-
 std::string FormatSlots(const SlotConfiguration &slots) {
   std::ostringstream out;
   for (std::size_t index = 0; index < slots.Columns().size(); ++index) {
@@ -53,7 +41,7 @@ std::string FormatSlots(const SlotConfiguration &slots) {
     }
     const std::string &column = slots.Columns()[index];
     const Slot &slot = slots.At(column);
-    out << column << ':' << SlotKindName(slot.kind) << '@' << slot.offset;
+    out << column << ':' << ast::ToString(slot.type) << '@' << slot.offset;
   }
   return out.str();
 }

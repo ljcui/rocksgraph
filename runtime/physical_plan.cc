@@ -40,7 +40,6 @@ using SemanticType = ast::SemanticVariableType;
 
 struct TypeInfo {
   SemanticType type = SemanticType::kUnknown;
-  std::optional<SlotKind> storage_kind;
 };
 
 using TypeOverrides = std::unordered_map<std::string, TypeInfo>;
@@ -130,7 +129,6 @@ bool SameSlotLayout(const SlotConfiguration &left,
     const Slot &left_slot = left.At(column);
     const Slot &right_slot = right.At(column);
     if (left_slot.offset != right_slot.offset ||
-        left_slot.kind != right_slot.kind ||
         left_slot.type != right_slot.type) {
       return false;
     }
@@ -242,19 +240,13 @@ std::vector<std::string> AppendUnique(std::vector<std::string> columns,
   return columns;
 }
 
-TypeInfo InfoForSlot(const Slot &slot) {
-  return {.type = slot.type, .storage_kind = slot.kind};
-}
+TypeInfo InfoForSlot(const Slot &slot) { return {.type = slot.type}; }
 
 TypeInfo MergeInfo(TypeInfo left, TypeInfo right) {
   if (left.type == right.type) {
-    return {
-        .type = left.type,
-        .storage_kind = left.storage_kind == right.storage_kind
-                            ? left.storage_kind
-                            : std::optional<SlotKind>(SlotKind::kReference)};
+    return {.type = left.type};
   }
-  return {.type = SemanticType::kUnknown, .storage_kind = SlotKind::kReference};
+  return {};
 }
 
 std::optional<TypeInfo> FindInfo(
@@ -323,10 +315,6 @@ TypeInfo ProjectionInfo(const ir::LogicalProjectionItem &item,
     return info;
   }
   info.type = item.semantic_type;
-  if (item.expression == nullptr ||
-      !item.expression->Is(ast::ASTNodeType::kVariable)) {
-    info.storage_kind.reset();
-  }
   return info;
 }
 
@@ -517,18 +505,6 @@ TypeOverrides OutputOverrides(
       }
       break;
     }
-    case ir::LogicalPlanNodeType::kDelete:
-    case ir::LogicalPlanNodeType::kDetachDelete:
-      if (!sources.empty()) {
-        for (const auto &column : sources.front()->Columns()) {
-          const Slot &slot = sources.front()->At(column);
-          if (slot.kind != SlotKind::kReference) {
-            overrides[column] = {.type = slot.type,
-                                 .storage_kind = SlotKind::kReference};
-          }
-        }
-      }
-      break;
     case ir::LogicalPlanNodeType::kUnwind:
       SetOverride(&overrides, static_cast<const ir::UnwindPlan &>(plan).Alias(),
                   SemanticType::kUnknown);
@@ -567,8 +543,7 @@ SlotConfigurationPtr MakeLayout(
     if (override != overrides.end()) {
       info = override->second;
     }
-    definitions.push_back(
-        {.name = column, .type = info.type, .storage_kind = info.storage_kind});
+    definitions.push_back({.name = column, .type = info.type});
   }
   return std::make_shared<const SlotConfiguration>(std::move(definitions));
 }

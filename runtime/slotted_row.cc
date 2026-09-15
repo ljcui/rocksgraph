@@ -28,33 +28,13 @@ std::size_t EstimatedValueHeapUsage(const Value &value) {
   return sizeof(Value);
 }
 
-namespace {
-
-SlotKind KindFor(ast::SemanticVariableType type) {
-  if (type == ast::SemanticVariableType::kNode) {
-    return SlotKind::kNode;
-  }
-  if (type == ast::SemanticVariableType::kRelationship) {
-    return SlotKind::kRelationship;
-  }
-  return SlotKind::kReference;
-}
-
-bool IsEntitySlot(const Slot &slot) {
-  return slot.kind == SlotKind::kNode || slot.kind == SlotKind::kRelationship;
-}
-
-}  // namespace
-
 SlotConfiguration::SlotConfiguration(std::vector<SlotDefinition> definitions) {
   columns_.reserve(definitions.size());
   for (auto &definition : definitions) {
     if (definition.name.empty() || slots_.contains(definition.name)) {
       continue;
     }
-    Slot slot{
-        .kind = definition.storage_kind.value_or(KindFor(definition.type)),
-        .type = definition.type};
+    Slot slot{.type = definition.type};
     slot.offset = slot_count_++;
     columns_.push_back(definition.name);
     slots_.emplace(std::move(definition.name), slot);
@@ -95,22 +75,31 @@ bool SlottedRow::IsInitialized(std::string_view name) const {
 }
 
 std::int64_t SlottedRow::EntityIdAt(const Slot &slot) const {
-  CHECK(IsEntitySlot(slot), common::InvalidArgumentError,
-        "slot does not contain an entity id");
   CHECK(IsInitialized(slot), common::InvalidArgumentError,
         "entity slot is not initialized");
-  if (const auto *value = std::get_if<Value>(&values_[slot.offset])) {
-    CHECK(value->IsNull(), common::InternalError,
-          "entity slot contains an invalid value");
+  const SlotValue &stored = values_[slot.offset];
+  if (const auto *vertex = std::get_if<graphdb::Vertex>(&stored)) {
+    return vertex->GetNativeId();
+  }
+  if (const auto *edge = std::get_if<graphdb::Edge>(&stored)) {
+    return edge->GetNativeId();
+  }
+  const auto *value = std::get_if<Value>(&stored);
+  CHECK(value != nullptr, common::InternalError,
+        "initialized slot contains no value");
+  if (value->IsNull()) {
     return -1;
   }
-  return slot.kind == SlotKind::kNode ? VertexAt(slot).GetNativeId()
-                                      : EdgeAt(slot).GetNativeId();
+  if (value->IsNode()) {
+    return value->AsNode().id;
+  }
+  if (value->IsRelationship()) {
+    return value->AsRelationship().id;
+  }
+  THROW(common::InvalidArgumentError, "slot does not contain a graph entity");
 }
 
 const graphdb::Vertex &SlottedRow::VertexAt(const Slot &slot) const {
-  CHECK(slot.kind == SlotKind::kNode, common::InvalidArgumentError,
-        "slot does not contain a vertex");
   CHECK(IsInitialized(slot), common::InvalidArgumentError,
         "node slot is not initialized");
   const auto *vertex = std::get_if<graphdb::Vertex>(&values_[slot.offset]);
@@ -119,8 +108,6 @@ const graphdb::Vertex &SlottedRow::VertexAt(const Slot &slot) const {
 }
 
 const graphdb::Edge &SlottedRow::EdgeAt(const Slot &slot) const {
-  CHECK(slot.kind == SlotKind::kRelationship, common::InvalidArgumentError,
-        "slot does not contain an edge");
   CHECK(IsInitialized(slot), common::InvalidArgumentError,
         "relationship slot is not initialized");
   const auto *edge = std::get_if<graphdb::Edge>(&values_[slot.offset]);
@@ -129,69 +116,48 @@ const graphdb::Edge &SlottedRow::EdgeAt(const Slot &slot) const {
   return *edge;
 }
 
-const Value &SlottedRow::ReferenceAt(const Slot &slot) const {
-  CHECK(slot.kind == SlotKind::kReference, common::InvalidArgumentError,
-        "slot is not a reference slot");
+const Value &SlottedRow::ValueAt(const Slot &slot) const {
   CHECK(IsInitialized(slot), common::InvalidArgumentError,
-        "reference slot is not initialized");
+        "value slot is not initialized");
   const auto *value = std::get_if<Value>(&values_[slot.offset]);
   CHECK(value != nullptr, common::InternalError,
-        "reference slot contains an invalid value");
+        "slot does not contain a Value");
   return *value;
 }
 
+bool SlottedRow::ReadProperty(const Slot &slot, std::string_view property_key,
+                              Value *value) const {
+  CHECK(value != nullptr, common::InternalError, "property output is null");
+  CHECK(IsInitialized(slot), common::InvalidArgumentError,
+        "slot is not initialized");
+  const SlotValue &stored = values_[slot.offset];
+  if (const auto *vertex = std::get_if<graphdb::Vertex>(&stored)) {
+    auto copy = *vertex;
+    *value = copy.GetProperty(std::string(property_key));
+    return true;
+  }
+  if (const auto *edge = std::get_if<graphdb::Edge>(&stored)) {
+    auto copy = *edge;
+    *value = copy.GetProperty(std::string(property_key));
+    return true;
+  }
+  return false;
+}
+
 void SlottedRow::SetVertex(const Slot &slot, graphdb::Vertex vertex) {
-  CHECK(slot.kind == SlotKind::kNode, common::InvalidArgumentError,
-        "slot is not a node slot");
   values_[slot.offset] = std::move(vertex);
 }
 
 void SlottedRow::SetEdge(const Slot &slot, graphdb::Edge edge) {
-  CHECK(slot.kind == SlotKind::kRelationship, common::InvalidArgumentError,
-        "slot is not a relationship slot");
   values_[slot.offset] = std::move(edge);
 }
 
-void SlottedRow::SetReference(const Slot &slot, Value value) {
-  CHECK(slot.kind == SlotKind::kReference, common::InvalidArgumentError,
-        "slot is not a reference slot");
+void SlottedRow::Set(const Slot &slot, Value value) {
   values_[slot.offset] = std::move(value);
 }
 
-void SlottedRow::Set(const Slot &slot, Value value,
-                     txn::Transaction &transaction) {
-  switch (slot.kind) {
-    case SlotKind::kNode:
-      CHECK(value.IsNull() || value.IsNode(), common::InvalidArgumentError,
-            "node slot received a non-node value");
-      if (value.IsNull()) {
-        SetNull(slot);
-      } else {
-        SetVertex(slot, GraphDBVertexById(transaction, value.AsNode().id));
-      }
-      return;
-    case SlotKind::kRelationship:
-      CHECK(value.IsNull() || value.IsRelationship(),
-            common::InvalidArgumentError,
-            "relationship slot received a non-relationship value");
-      if (value.IsNull()) {
-        SetNull(slot);
-      } else {
-        SetEdge(slot,
-                GraphDBEdgeById(transaction,
-                                {.id = value.AsRelationship().id,
-                                 .type_id = value.AsRelationship().type_id}));
-      }
-      return;
-    case SlotKind::kReference:
-      SetReference(slot, std::move(value));
-      return;
-  }
-}
-
-void SlottedRow::Set(std::string_view name, Value value,
-                     txn::Transaction &transaction) {
-  Set(slots_->At(name), std::move(value), transaction);
+void SlottedRow::Set(std::string_view name, Value value) {
+  Set(slots_->At(name), std::move(value));
 }
 
 void SlottedRow::SetNull(const Slot &slot) {
@@ -202,12 +168,19 @@ void SlottedRow::SetNull(std::string_view name) { SetNull(slots_->At(name)); }
 
 void SlottedRow::CopySlotFrom(const SlottedRow &source, const Slot &source_slot,
                               const Slot &target_slot) {
-  CHECK(source_slot.kind == target_slot.kind, common::InvalidArgumentError,
-        "slot copy requires matching slot kinds");
   CHECK(source.IsInitialized(source_slot), common::InvalidArgumentError,
         "source slot is not initialized");
-  const SlotValue &value = source.values_[source_slot.offset];
-  values_[target_slot.offset] = value;
+  values_[target_slot.offset] = source.values_[source_slot.offset];
+}
+
+void SlottedRow::MaterializeGraphEntities() {
+  for (SlotValue &stored : values_) {
+    if (const auto *vertex = std::get_if<graphdb::Vertex>(&stored)) {
+      stored = Value(MaterializeGraphDBVertex(*vertex));
+    } else if (const auto *edge = std::get_if<graphdb::Edge>(&stored)) {
+      stored = Value(MaterializeGraphDBEdge(*edge));
+    }
+  }
 }
 
 Value SlottedRow::Get(std::string_view name) const {
@@ -217,15 +190,17 @@ Value SlottedRow::Get(std::string_view name) const {
 Value SlottedRow::Get(const Slot &slot) const {
   CHECK(IsInitialized(slot), common::InvalidArgumentError,
         "slot is not initialized");
-  if (slot.kind == SlotKind::kReference) {
-    return ReferenceAt(slot);
+  const SlotValue &stored = values_[slot.offset];
+  if (const auto *value = std::get_if<Value>(&stored)) {
+    return *value;
   }
-  if (std::holds_alternative<Value>(values_[slot.offset])) {
-    return Value::Null();
+  if (const auto *vertex = std::get_if<graphdb::Vertex>(&stored)) {
+    return Value(MaterializeGraphDBVertex(*vertex));
   }
-  return slot.kind == SlotKind::kNode
-             ? Value(MaterializeGraphDBVertex(VertexAt(slot)))
-             : Value(MaterializeGraphDBEdge(EdgeAt(slot)));
+  const auto *edge = std::get_if<graphdb::Edge>(&stored);
+  CHECK(edge != nullptr, common::InternalError,
+        "initialized slot contains no value");
+  return Value(MaterializeGraphDBEdge(*edge));
 }
 
 std::size_t SlottedRow::EstimatedHeapUsage() const {
@@ -240,100 +215,77 @@ std::size_t SlottedRow::EstimatedHeapUsage() const {
 }
 
 SlottedRow SlottedRow::CopyTo(SlotConfigurationPtr target,
-                              const std::vector<SlotMapping> &mappings,
-                              txn::Transaction &transaction) const {
+                              const std::vector<SlotMapping> &mappings) const {
   SlottedRow out(std::move(target));
-  CopySlots(*this, &out, mappings, transaction);
+  CopySlots(*this, &out, mappings);
   return out;
 }
 
 void CopySlots(const SlottedRow &source, SlottedRow *target,
-               const std::vector<SlotMapping> &mappings,
-               txn::Transaction &transaction) {
+               const std::vector<SlotMapping> &mappings) {
   CHECK(target != nullptr, common::InternalError, "target row is null");
   for (const auto &mapping : mappings) {
     if (!source.IsInitialized(mapping.source)) {
       continue;
     }
-    if (mapping.source.kind == mapping.target.kind) {
-      target->CopySlotFrom(source, mapping.source, mapping.target);
-      continue;
-    }
-    target->Set(mapping.target, source.Get(mapping.source), transaction);
+    target->CopySlotFrom(source, mapping.source, mapping.target);
   }
 }
 
-bool TryBindSlot(SlottedRow *row, const Slot &slot, Value value,
-                 txn::Transaction &transaction) {
+bool TryBindSlot(SlottedRow *row, const Slot &slot, Value value) {
   CHECK(row != nullptr, common::InternalError, "query row is null");
   if (!row->IsInitialized(slot)) {
-    row->Set(slot, std::move(value), transaction);
+    row->Set(slot, std::move(value));
     return true;
   }
   return ValuesEqual(row->Get(slot), value);
 }
 
-bool TryBindSlot(SlottedRow *row, std::string_view name, Value value,
-                 txn::Transaction &transaction) {
+bool TryBindSlot(SlottedRow *row, std::string_view name, Value value) {
   CHECK(row != nullptr, common::InternalError, "query row is null");
   if (name.empty()) {
     return true;
   }
-  return TryBindSlot(row, row->Slots()->At(name), std::move(value),
-                     transaction);
+  return TryBindSlot(row, row->Slots()->At(name), std::move(value));
 }
 
-bool TryBindVertex(SlottedRow *row, const Slot &slot, graphdb::Vertex vertex,
-                   txn::Transaction &transaction) {
+bool TryBindVertex(SlottedRow *row, const Slot &slot, graphdb::Vertex vertex) {
   CHECK(row != nullptr, common::InternalError, "query row is null");
-  if (slot.kind == SlotKind::kNode) {
-    if (!row->IsInitialized(slot)) {
-      row->SetVertex(slot, std::move(vertex));
-      return true;
-    }
-    return row->EntityIdAt(slot) == vertex.GetNativeId();
+  if (!row->IsInitialized(slot)) {
+    row->SetVertex(slot, std::move(vertex));
+    return true;
   }
-  return TryBindSlot(row, slot,
-                     Value(MaterializeGraphDBVertex(std::move(vertex))),
-                     transaction);
+  const Value existing = row->Get(slot);
+  return existing.IsNode() && existing.AsNode().id == vertex.GetNativeId();
 }
 
 bool TryBindVertex(SlottedRow *row, std::string_view name,
-                   graphdb::Vertex vertex, txn::Transaction &transaction) {
+                   graphdb::Vertex vertex) {
   CHECK(row != nullptr, common::InternalError, "query row is null");
   if (name.empty()) {
     return true;
   }
-  return TryBindVertex(row, row->Slots()->At(name), std::move(vertex),
-                       transaction);
+  return TryBindVertex(row, row->Slots()->At(name), std::move(vertex));
 }
 
-bool TryBindEdge(SlottedRow *row, const Slot &slot, graphdb::Edge edge,
-                 txn::Transaction &transaction) {
+bool TryBindEdge(SlottedRow *row, const Slot &slot, graphdb::Edge edge) {
   CHECK(row != nullptr, common::InternalError, "query row is null");
-  if (slot.kind == SlotKind::kRelationship) {
-    if (!row->IsInitialized(slot)) {
-      row->SetEdge(slot, std::move(edge));
-      return true;
-    }
-    if (row->EntityIdAt(slot) < 0) {
-      return false;
-    }
-    const graphdb::Edge &bound = row->EdgeAt(slot);
-    return bound.GetNativeId() == edge.GetNativeId() &&
-           bound.GetTypeId() == edge.GetTypeId();
+  if (!row->IsInitialized(slot)) {
+    row->SetEdge(slot, std::move(edge));
+    return true;
   }
-  return TryBindSlot(row, slot, Value(MaterializeGraphDBEdge(std::move(edge))),
-                     transaction);
+  const Value existing = row->Get(slot);
+  return existing.IsRelationship() &&
+         existing.AsRelationship().id == edge.GetNativeId() &&
+         existing.AsRelationship().type_id == edge.GetTypeId();
 }
 
-bool TryBindEdge(SlottedRow *row, std::string_view name, graphdb::Edge edge,
-                 txn::Transaction &transaction) {
+bool TryBindEdge(SlottedRow *row, std::string_view name, graphdb::Edge edge) {
   CHECK(row != nullptr, common::InternalError, "query row is null");
   if (name.empty()) {
     return true;
   }
-  return TryBindEdge(row, row->Slots()->At(name), std::move(edge), transaction);
+  return TryBindEdge(row, row->Slots()->At(name), std::move(edge));
 }
 
 }  // namespace rg

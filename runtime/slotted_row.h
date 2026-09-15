@@ -3,7 +3,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -14,28 +13,16 @@
 #include "graphdb/graph_entity.h"
 #include "value/value.h"
 
-namespace txn {
-class Transaction;
-}
-
 namespace rg {
-
-enum class SlotKind {
-  kNode,
-  kRelationship,
-  kReference,
-};
 
 struct Slot {
   std::size_t offset = 0;
-  SlotKind kind = SlotKind::kReference;
   ast::SemanticVariableType type = ast::SemanticVariableType::kUnknown;
 };
 
 struct SlotDefinition {
   std::string name;
   ast::SemanticVariableType type = ast::SemanticVariableType::kUnknown;
-  std::optional<SlotKind> storage_kind;
 };
 
 class SlotConfiguration final {
@@ -77,24 +64,27 @@ class SlottedRow final {
   [[nodiscard]] std::int64_t EntityIdAt(const Slot &slot) const;
   [[nodiscard]] const graphdb::Vertex &VertexAt(const Slot &slot) const;
   [[nodiscard]] const graphdb::Edge &EdgeAt(const Slot &slot) const;
-  [[nodiscard]] const Value &ReferenceAt(const Slot &slot) const;
+  [[nodiscard]] const Value &ValueAt(const Slot &slot) const;
+  [[nodiscard]] bool ReadProperty(const Slot &slot,
+                                  std::string_view property_key,
+                                  Value *value) const;
 
   void SetVertex(const Slot &slot, graphdb::Vertex vertex);
   void SetEdge(const Slot &slot, graphdb::Edge edge);
-  void SetReference(const Slot &slot, Value value);
-  void Set(const Slot &slot, Value value, txn::Transaction &transaction);
-  void Set(std::string_view name, Value value, txn::Transaction &transaction);
+  void Set(const Slot &slot, Value value);
+  void Set(std::string_view name, Value value);
   void SetNull(const Slot &slot);
   void SetNull(std::string_view name);
   void CopySlotFrom(const SlottedRow &source, const Slot &source_slot,
                     const Slot &target_slot);
+  void MaterializeGraphEntities();
 
   [[nodiscard]] Value Get(std::string_view name) const;
   [[nodiscard]] Value Get(const Slot &slot) const;
   [[nodiscard]] std::size_t EstimatedHeapUsage() const;
-  [[nodiscard]] SlottedRow CopyTo(SlotConfigurationPtr target,
-                                  const std::vector<SlotMapping> &mappings,
-                                  txn::Transaction &transaction) const;
+  [[nodiscard]] SlottedRow CopyTo(
+      SlotConfigurationPtr target,
+      const std::vector<SlotMapping> &mappings) const;
 
  private:
   struct UninitializedSlot {};
@@ -106,24 +96,18 @@ class SlottedRow final {
 };
 
 void CopySlots(const SlottedRow &source, SlottedRow *target,
-               const std::vector<SlotMapping> &mappings,
-               txn::Transaction &transaction);
-[[nodiscard]] bool TryBindSlot(SlottedRow *row, const Slot &slot, Value value,
-                               txn::Transaction &transaction);
+               const std::vector<SlotMapping> &mappings);
+[[nodiscard]] bool TryBindSlot(SlottedRow *row, const Slot &slot, Value value);
 [[nodiscard]] bool TryBindSlot(SlottedRow *row, std::string_view name,
-                               Value value, txn::Transaction &transaction);
+                               Value value);
 [[nodiscard]] bool TryBindVertex(SlottedRow *row, const Slot &slot,
-                                 graphdb::Vertex vertex,
-                                 txn::Transaction &transaction);
+                                 graphdb::Vertex vertex);
 [[nodiscard]] bool TryBindVertex(SlottedRow *row, std::string_view name,
-                                 graphdb::Vertex vertex,
-                                 txn::Transaction &transaction);
+                                 graphdb::Vertex vertex);
 [[nodiscard]] bool TryBindEdge(SlottedRow *row, const Slot &slot,
-                               graphdb::Edge edge,
-                               txn::Transaction &transaction);
+                               graphdb::Edge edge);
 [[nodiscard]] bool TryBindEdge(SlottedRow *row, std::string_view name,
-                               graphdb::Edge edge,
-                               txn::Transaction &transaction);
+                               graphdb::Edge edge);
 [[nodiscard]] std::size_t EstimatedValueHeapUsage(const Value &value);
 
 }  // namespace rg

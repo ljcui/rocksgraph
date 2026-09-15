@@ -382,7 +382,6 @@ class GraphDBPhysicalResultCursor final : public rg::PhysicalResultCursor {
 
 void ExpectSameSlot(const rg::Slot &actual, const rg::Slot &expected) {
   EXPECT_EQ(actual.offset, expected.offset);
-  EXPECT_EQ(actual.kind, expected.kind);
   EXPECT_EQ(actual.type, expected.type);
 }
 
@@ -456,7 +455,8 @@ TEST(PhysicalPlanTest, ResolvesPassthroughSlotsWithoutEntityConversion) {
   const auto &data = std::get<rg::ProjectionOp>(physical.Root().data);
   ASSERT_EQ(data.items.size(), 1U);
   ASSERT_TRUE(data.items[0].source_slot.has_value());
-  EXPECT_EQ(data.items[0].source_slot->kind, rg::SlotKind::kRelationship);
+  EXPECT_EQ(data.items[0].source_slot->type,
+            ast::SemanticVariableType::kRelationship);
   EXPECT_EQ(data.items[0].source_slot->offset,
             physical.Root().children[0]->output_slots->At("r").offset);
 
@@ -480,25 +480,25 @@ TEST(PhysicalPlanTest, AllocatesTypedSlotsForOptionalExpand) {
   const rg::Slot &n = physical.Root().output_slots->At("n");
   const rg::Slot &r = physical.Root().output_slots->At("r");
   const rg::Slot &m = physical.Root().output_slots->At("m");
-  EXPECT_EQ(n.kind, rg::SlotKind::kNode);
-  EXPECT_EQ(r.kind, rg::SlotKind::kRelationship);
-  EXPECT_EQ(m.kind, rg::SlotKind::kNode);
+  EXPECT_EQ(n.type, ast::SemanticVariableType::kNode);
+  EXPECT_EQ(r.type, ast::SemanticVariableType::kRelationship);
+  EXPECT_EQ(m.type, ast::SemanticVariableType::kNode);
 
   const rg::PhysicalPlanNode *expand_node = FindPhysicalPlan(
       physical.Root(), rg::PhysicalOperatorKind::kOptionalExpand);
   ASSERT_NE(expand_node, nullptr);
   ASSERT_EQ(expand_node->children.size(), 1U);
-  EXPECT_EQ(expand_node->children[0]->output_slots->At("n").kind,
-            rg::SlotKind::kNode);
+  EXPECT_EQ(expand_node->children[0]->output_slots->At("n").type,
+            ast::SemanticVariableType::kNode);
 }
 
-TEST(PhysicalPlanTest, UnifiesIncompatibleUnionSlotsAsReferences) {
+TEST(PhysicalPlanTest, UnifiesIncompatibleUnionSlotTypesAsUnknown) {
   PlannedQuery query =
       Plan("MATCH (n) RETURN n AS value UNION ALL RETURN 1 AS value");
   rg::PhysicalPlan physical = rg::CreatePhysicalPlan(query.LogicalPlan());
 
   const rg::Slot &value = physical.Root().output_slots->At("value");
-  EXPECT_EQ(value.kind, rg::SlotKind::kReference);
+  EXPECT_EQ(value.type, ast::SemanticVariableType::kUnknown);
   const rg::PhysicalPlanNode *union_node =
       FindPhysicalPlan(physical.Root(), rg::PhysicalOperatorKind::kUnionAll);
   ASSERT_NE(union_node, nullptr);
@@ -518,7 +518,6 @@ TEST(PhysicalPlanTest, SelectsDedicatedUnionPhysicalAlgorithms) {
   ASSERT_EQ(data.key_slots.size(), 1U);
   const rg::Slot &output_slot = union_node->output_slots->At("value");
   EXPECT_EQ(data.key_slots.front().offset, output_slot.offset);
-  EXPECT_EQ(data.key_slots.front().kind, output_slot.kind);
   EXPECT_EQ(data.key_slots.front().type, output_slot.type);
 
   const std::string printed = rg::PhysicalPlanToString(physical);
@@ -566,8 +565,8 @@ TEST(PhysicalPlanTest, ExecutesDetachedUnionAlgorithmsAndMappings) {
   ASSERT_EQ(mapped_rows.size(), 2U);
   EXPECT_EQ(mapped_rows[0][0], rg::Value(node));
   EXPECT_EQ(mapped_rows[1][0], rg::Value(1));
-  EXPECT_EQ(merged_layout.Root().output_slots->At("value").kind,
-            rg::SlotKind::kReference);
+  EXPECT_EQ(merged_layout.Root().output_slots->At("value").type,
+            ast::SemanticVariableType::kUnknown);
 }
 
 TEST(PhysicalPlanTest, UnionOperatorsHandleResourcesAndEarlyClose) {
@@ -644,7 +643,6 @@ TEST(PhysicalPlanTest, BuildsOwnedExistenceApplyPayloads) {
       FindPhysicalPlan(let.Root(), rg::PhysicalOperatorKind::kLetSemiApply);
   ASSERT_NE(let_node, nullptr);
   const auto &let_data = std::get<rg::LetSemiApplyOp>(let_node->data);
-  EXPECT_EQ(let_data.value_slot.kind, rg::SlotKind::kReference);
   EXPECT_EQ(let_data.value_slot.type, ast::SemanticVariableType::kScalar);
 
   rg::PhysicalPlan select =
@@ -734,9 +732,7 @@ TEST(PhysicalPlanTest, BuildsOwnedRollUpApplyPayload) {
       FindPhysicalPlan(physical.Root(), rg::PhysicalOperatorKind::kRollUpApply);
   ASSERT_NE(roll_up, nullptr);
   const auto &data = std::get<rg::RollUpApplyOp>(roll_up->data);
-  EXPECT_EQ(data.collection_slot.kind, rg::SlotKind::kReference);
   EXPECT_EQ(data.collection_slot.type, ast::SemanticVariableType::kList);
-  EXPECT_EQ(data.value_slot.kind, rg::SlotKind::kReference);
   EXPECT_EQ(data.value_slot.type, ast::SemanticVariableType::kScalar);
   EXPECT_NE(rg::PhysicalPlanToString(physical).find("RollUpApply"),
             std::string::npos);
@@ -806,7 +802,7 @@ TEST(PhysicalPlanTest, BuildsOwnedStreamingWritePayloads) {
   EXPECT_TRUE(create_node->traits.writes);
   EXPECT_FALSE(create_node->traits.write_barrier);
   const auto &create_node_data = std::get<rg::CreateNodeOp>(create_node->data);
-  EXPECT_EQ(create_node_data.node_slot.kind, rg::SlotKind::kNode);
+  EXPECT_EQ(create_node_data.node_slot.type, ast::SemanticVariableType::kNode);
   EXPECT_EQ(create_node_data.labels, std::vector<std::string>{"Made"});
   ASSERT_TRUE(create_node_data.properties.parameter.has_value());
   EXPECT_NE(create_node_data.properties.parameter->Expression(), nullptr);
@@ -829,10 +825,12 @@ TEST(PhysicalPlanTest, BuildsOwnedStreamingWritePayloads) {
   EXPECT_TRUE(create_relationship->traits.writes);
   const auto &relationship_data =
       std::get<rg::CreateRelationshipOp>(create_relationship->data);
-  EXPECT_EQ(relationship_data.relationship_slot.kind,
-            rg::SlotKind::kRelationship);
-  EXPECT_EQ(relationship_data.left_node_slot.kind, rg::SlotKind::kNode);
-  EXPECT_EQ(relationship_data.right_node_slot.kind, rg::SlotKind::kNode);
+  EXPECT_EQ(relationship_data.relationship_slot.type,
+            ast::SemanticVariableType::kRelationship);
+  EXPECT_EQ(relationship_data.left_node_slot.type,
+            ast::SemanticVariableType::kNode);
+  EXPECT_EQ(relationship_data.right_node_slot.type,
+            ast::SemanticVariableType::kNode);
   EXPECT_EQ(relationship_data.type, "LINK");
   ASSERT_EQ(relationship_data.properties.entries.size(), 1U);
   EXPECT_NE(relationship_data.properties.entries[0].value.Expression(),
@@ -976,7 +974,7 @@ TEST(PhysicalPlanTest, BuildsOwnedMergePayload) {
   const auto &data = std::get<rg::MergeOp>(merge->data);
   ASSERT_EQ(data.create_commands.size(), 1U);
   const auto &create = std::get<rg::CreateNodeOp>(data.create_commands.front());
-  EXPECT_EQ(create.node_slot.kind, rg::SlotKind::kNode);
+  EXPECT_EQ(create.node_slot.type, ast::SemanticVariableType::kNode);
   EXPECT_EQ(create.labels, std::vector<std::string>{"Person"});
   ASSERT_EQ(create.properties.entries.size(), 1U);
   EXPECT_NE(create.properties.entries.front().value.Expression(),
@@ -1074,7 +1072,7 @@ TEST(PhysicalPlanTest, BuildsOwnedRemainingUnaryPayloads) {
   ASSERT_NE(unwind_node, nullptr);
   const auto &unwind_data = std::get<rg::UnwindOp>(unwind_node->data);
   EXPECT_NE(unwind_data.expression.Expression(), logical_expression);
-  EXPECT_EQ(unwind_data.value_slot.kind, rg::SlotKind::kReference);
+  EXPECT_EQ(unwind_data.value_slot.type, ast::SemanticVariableType::kUnknown);
 
   std::unique_ptr<ast::Parameter> argument = Parameter("argument");
   ir::ProcedureCallPlan logical_procedure(
@@ -1089,8 +1087,8 @@ TEST(PhysicalPlanTest, BuildsOwnedRemainingUnaryPayloads) {
   EXPECT_NE(procedure_data.arguments.front().Expression(), argument.get());
   ASSERT_EQ(procedure_data.yields.size(), 1U);
   EXPECT_EQ(procedure_data.yields.front().result_field, "label");
-  EXPECT_EQ(procedure_data.yields.front().output_slot.kind,
-            rg::SlotKind::kReference);
+  EXPECT_EQ(procedure_data.yields.front().output_slot.type,
+            ast::SemanticVariableType::kScalar);
   EXPECT_TRUE(procedure_data.read_only);
   EXPECT_FALSE(procedure.Effects().writes);
 
@@ -1108,8 +1106,8 @@ TEST(PhysicalPlanTest, BuildsOwnedRemainingUnaryPayloads) {
       std::get<rg::AssertIsNodeOp>(assertion.Root().data);
   ASSERT_EQ(assertion_data.nodes.size(), 1U);
   EXPECT_EQ(assertion_data.nodes.front().variable, "n");
-  EXPECT_EQ(assertion_data.nodes.front().input_slot.kind,
-            rg::SlotKind::kReference);
+  EXPECT_EQ(assertion_data.nodes.front().input_slot.type,
+            ast::SemanticVariableType::kScalar);
 }
 
 TEST(PhysicalPlanTest, ExecutesDetachedUnwindAndProcedureCall) {
@@ -1392,7 +1390,6 @@ TEST(PhysicalPlanTest, PreservesScopedSemanticTypesForExpressions) {
 
   const rg::Slot &x = physical.Root().output_slots->At("x");
   EXPECT_EQ(x.type, ast::SemanticVariableType::kNode);
-  EXPECT_EQ(x.kind, rg::SlotKind::kNode);
 }
 
 TEST(PhysicalPlanTest, BuildsOwnedPayloadsForMigratedOperators) {
@@ -2610,5 +2607,5 @@ TEST(PhysicalPlanTest, PrintsOwnedOrderingAfterLogicalPlanAndAstAreDestroyed) {
   EXPECT_EQ(printed.find("exec="), std::string::npos);
   EXPECT_NE(printed.find("order=[a ASC, b ASC]"), std::string::npos);
   EXPECT_NE(printed.find("prefix=1"), std::string::npos);
-  EXPECT_NE(printed.find("slots=[a:reference@0"), std::string::npos);
+  EXPECT_NE(printed.find("slots=[a:Scalar@0"), std::string::npos);
 }
