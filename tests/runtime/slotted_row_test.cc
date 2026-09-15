@@ -44,11 +44,11 @@ TEST(SlottedRowTest, DistinguishesUninitializedSlotsFromNull) {
       std::vector<std::string>{"n"});
 
   rg::SlottedRow row(slots);
-  EXPECT_FALSE(row.IsInitialized("n"));
+  EXPECT_FALSE(row.IsInitialized(slots->At("n")));
 
-  row.SetNull("n");
-  EXPECT_TRUE(row.IsInitialized("n"));
-  EXPECT_TRUE(row.Get("n").IsNull());
+  row.SetNull(slots->At("n"));
+  EXPECT_TRUE(row.IsInitialized(slots->At("n")));
+  EXPECT_TRUE(row.Get(slots->At("n")).IsNull());
   transaction->Rollback();
 }
 

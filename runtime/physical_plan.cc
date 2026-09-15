@@ -229,8 +229,8 @@ std::vector<SlotMapping> NamedMappings(
     const std::optional<std::size_t> source_offset = source.Find(source_name);
     const std::optional<std::size_t> target_offset = target.Find(target_name);
     if (source_offset.has_value() && target_offset.has_value()) {
-      mappings.push_back({.source_offset = *source_offset,
-                          .target_offset = *target_offset});
+      mappings.push_back(
+          {.source_offset = *source_offset, .target_offset = *target_offset});
     }
   }
   return mappings;
@@ -239,6 +239,45 @@ std::vector<SlotMapping> NamedMappings(
 std::optional<std::size_t> FindSlot(const SlotConfiguration &slots,
                                     std::string_view name) {
   return slots.Find(name);
+}
+
+std::optional<std::size_t> OptionalOutputSlot(const SlotConfiguration &slots,
+                                              std::string_view name) {
+  if (name.empty()) {
+    return std::nullopt;
+  }
+  return slots.At(name);
+}
+
+PhysicalRelationshipSlots ResolveRelationshipOutputSlots(
+    const PhysicalRelationshipPattern &pattern,
+    const SlotConfiguration &output_slots) {
+  return {
+      .from_node_output_slot =
+          OptionalOutputSlot(output_slots, pattern.from_node),
+      .relationship_output_slot =
+          OptionalOutputSlot(output_slots, pattern.relationship),
+      .to_node_output_slot = OptionalOutputSlot(output_slots, pattern.to_node),
+  };
+}
+
+std::vector<std::size_t> ResolveSlots(const SlotConfiguration &slots,
+                                      const std::vector<std::string> &names) {
+  std::vector<std::size_t> offsets;
+  offsets.reserve(names.size());
+  for (const auto &name : names) {
+    offsets.push_back(slots.At(name));
+  }
+  return offsets;
+}
+
+std::vector<std::size_t> AllSlots(const SlotConfiguration &slots) {
+  std::vector<std::size_t> offsets;
+  offsets.reserve(slots.SlotCount());
+  for (std::size_t offset = 0; offset < slots.SlotCount(); ++offset) {
+    offsets.push_back(offset);
+  }
+  return offsets;
 }
 
 PhysicalExpression CopyPhysicalExpression(
@@ -397,11 +436,13 @@ std::vector<PhysicalSortItem> CopyPhysicalSortItems(
 }
 
 std::vector<PhysicalGroupingItem> CopyPhysicalGroupingItems(
-    const std::vector<ir::LogicalProjectionItem> &items) {
+    const std::vector<ir::LogicalProjectionItem> &items,
+    const SlotConfiguration &output_slots) {
   std::vector<PhysicalGroupingItem> copied;
   copied.reserve(items.size());
   for (const auto &item : items) {
     copied.push_back({.alias = item.alias,
+                      .output_slot = output_slots.At(item.alias),
                       .expression = CopyPhysicalExpression(
                           item.expression, item.precomputed_expressions)});
   }
@@ -409,11 +450,13 @@ std::vector<PhysicalGroupingItem> CopyPhysicalGroupingItems(
 }
 
 std::vector<PhysicalAggregationItem> CopyPhysicalAggregationItems(
-    const std::vector<ir::LogicalProjectionItem> &items) {
+    const std::vector<ir::LogicalProjectionItem> &items,
+    const SlotConfiguration &output_slots) {
   std::vector<PhysicalAggregationItem> copied;
   copied.reserve(items.size());
   for (const auto &item : items) {
     copied.push_back({.alias = item.alias,
+                      .output_slot = output_slots.At(item.alias),
                       .expression = CopyPhysicalExpression(
                           item.expression, item.precomputed_expressions)});
   }
@@ -711,19 +754,24 @@ class PhysicalPlanBuilder final {
         return;
       case PhysicalOperatorKind::kAllNodeScan: {
         const auto &scan = static_cast<const ir::AllNodeScanPlan &>(plan);
-        node->data = AllNodeScanOp{.variable = scan.Variable()};
+        node->data = AllNodeScanOp{
+            .variable = scan.Variable(),
+            .output_slot = node->output_slots->At(scan.Variable())};
         return;
       }
       case PhysicalOperatorKind::kNodeByLabelScan: {
         const auto &scan = static_cast<const ir::NodeByLabelScanPlan &>(plan);
-        node->data = NodeByLabelScanOp{.variable = scan.Variable(),
-                                       .labels = scan.Labels()};
+        node->data = NodeByLabelScanOp{
+            .variable = scan.Variable(),
+            .output_slot = node->output_slots->At(scan.Variable()),
+            .labels = scan.Labels()};
         return;
       }
       case PhysicalOperatorKind::kNodeIndexSeek: {
         const auto &seek = static_cast<const ir::NodeIndexSeekPlan &>(plan);
         node->data = NodeIndexSeekOp{
             .variable = seek.Variable(),
+            .output_slot = node->output_slots->At(seek.Variable()),
             .labels = seek.Labels(),
             .property_key = seek.PropertyKey(),
             .value = CopyPhysicalExpression(seek.ValueExpression(), {}),
@@ -735,6 +783,7 @@ class PhysicalPlanBuilder final {
             static_cast<const ir::NodeIndexRangeSeekPlan &>(plan);
         node->data = NodeIndexRangeSeekOp{
             .variable = seek.Variable(),
+            .output_slot = node->output_slots->At(seek.Variable()),
             .labels = seek.Labels(),
             .property_key = seek.PropertyKey(),
             .predicates = CopyPhysicalExpressions(seek.Predicates())};
@@ -743,25 +792,31 @@ class PhysicalPlanBuilder final {
       case PhysicalOperatorKind::kRelationshipTypeScan: {
         const auto &scan =
             static_cast<const ir::RelationshipTypeScanPlan &>(plan);
-        node->data = RelationshipTypeScanOp{
-            .pattern = {
-                .from_node = scan.FromNode(),
-                .relationship = scan.Relationship(),
-                .to_node = scan.ToNode(),
-                .direction = ToPhysicalExpandDirection(scan.Direction()),
-                .types = scan.Types()}};
+        PhysicalRelationshipPattern pattern{
+            .from_node = scan.FromNode(),
+            .relationship = scan.Relationship(),
+            .to_node = scan.ToNode(),
+            .direction = ToPhysicalExpandDirection(scan.Direction()),
+            .types = scan.Types()};
+        node->data =
+            RelationshipTypeScanOp{.pattern = pattern,
+                                   .slots = ResolveRelationshipOutputSlots(
+                                       pattern, *node->output_slots)};
         return;
       }
       case PhysicalOperatorKind::kRelationshipIndexSeek: {
         const auto &seek =
             static_cast<const ir::RelationshipIndexSeekPlan &>(plan);
+        PhysicalRelationshipPattern pattern{
+            .from_node = seek.FromNode(),
+            .relationship = seek.Relationship(),
+            .to_node = seek.ToNode(),
+            .direction = ToPhysicalExpandDirection(seek.Direction()),
+            .types = seek.Types()};
         node->data = RelationshipIndexSeekOp{
-            .pattern = {.from_node = seek.FromNode(),
-                        .relationship = seek.Relationship(),
-                        .to_node = seek.ToNode(),
-                        .direction =
-                            ToPhysicalExpandDirection(seek.Direction()),
-                        .types = seek.Types()},
+            .pattern = pattern,
+            .slots =
+                ResolveRelationshipOutputSlots(pattern, *node->output_slots),
             .property_key = seek.PropertyKey(),
             .value = CopyPhysicalExpression(seek.ValueExpression(), {}),
             .unique = seek.Unique()};
@@ -770,30 +825,38 @@ class PhysicalPlanBuilder final {
       case PhysicalOperatorKind::kRelationshipIndexRangeSeek: {
         const auto &seek =
             static_cast<const ir::RelationshipIndexRangeSeekPlan &>(plan);
+        PhysicalRelationshipPattern pattern{
+            .from_node = seek.FromNode(),
+            .relationship = seek.Relationship(),
+            .to_node = seek.ToNode(),
+            .direction = ToPhysicalExpandDirection(seek.Direction()),
+            .types = seek.Types()};
         node->data = RelationshipIndexRangeSeekOp{
-            .pattern = {.from_node = seek.FromNode(),
-                        .relationship = seek.Relationship(),
-                        .to_node = seek.ToNode(),
-                        .direction =
-                            ToPhysicalExpandDirection(seek.Direction()),
-                        .types = seek.Types()},
+            .pattern = pattern,
+            .slots =
+                ResolveRelationshipOutputSlots(pattern, *node->output_slots),
             .property_key = seek.PropertyKey(),
             .predicates = CopyPhysicalExpressions(seek.Predicates())};
         return;
       }
       case PhysicalOperatorKind::kNodeByIdSeek: {
         const auto &seek = static_cast<const ir::NodeByIdSeekPlan &>(plan);
-        node->data =
-            NodeByIdSeekOp{.variable = seek.Variable(),
-                           .ids = CopyPhysicalExpression(seek.Ids(), {}),
-                           .many = seek.Many()};
+        node->data = NodeByIdSeekOp{
+            .variable = seek.Variable(),
+            .output_slot = node->output_slots->At(seek.Variable()),
+            .ids = CopyPhysicalExpression(seek.Ids(), {}),
+            .many = seek.Many()};
         return;
       }
       case PhysicalOperatorKind::kRelationshipByIdSeek: {
         const auto &seek =
             static_cast<const ir::RelationshipByIdSeekPlan &>(plan);
+        PhysicalRelationshipPattern pattern =
+            CopyPhysicalRelationshipPattern(seek.Pattern());
         node->data = RelationshipByIdSeekOp{
-            .pattern = CopyPhysicalRelationshipPattern(seek.Pattern()),
+            .pattern = pattern,
+            .slots =
+                ResolveRelationshipOutputSlots(pattern, *node->output_slots),
             .ids = CopyPhysicalExpression(seek.Ids(), {}),
             .many = seek.Many()};
         return;
@@ -950,14 +1013,18 @@ class PhysicalPlanBuilder final {
         ProjectionOp data;
         data.items.reserve(projection.Items().size());
         for (const auto &item : projection.Items()) {
-          PhysicalProjectionItem physical_item{.alias = item.alias,
-                                               .passthrough = item.passthrough};
-          if (item.passthrough && node->children.size() == 1) {
-            if (const std::optional<std::size_t> source_offset =
-                    node->children.front()->output_slots->Find(item.alias);
-                source_offset.has_value()) {
-              physical_item.source_slot = *source_offset;
-            }
+          PhysicalProjectionItem physical_item{
+              .alias = item.alias,
+              .output_slot = node->output_slots->At(item.alias),
+              .passthrough = item.passthrough};
+          if (item.passthrough) {
+            CHECK(node->children.size() == 1, common::InternalError,
+                  "passthrough projection must have one child");
+            physical_item.source_slot =
+                node->children.front()->output_slots->Find(item.alias);
+            CHECK(
+                physical_item.source_slot.has_value(), common::InternalError,
+                "passthrough projection source slot is missing: " + item.alias);
           }
           if (!item.passthrough) {
             physical_item.expression = CopyPhysicalExpression(
@@ -970,35 +1037,36 @@ class PhysicalPlanBuilder final {
       }
       case PhysicalOperatorKind::kHashDistinct: {
         const auto &distinct = static_cast<const ir::DistinctPlan &>(plan);
-        node->data = HashDistinctOp{.grouping_items = CopyPhysicalGroupingItems(
-                                        distinct.GroupingItems())};
+        node->data =
+            HashDistinctOp{.grouping_items = CopyPhysicalGroupingItems(
+                               distinct.GroupingItems(), *node->output_slots)};
         return;
       }
       case PhysicalOperatorKind::kOrderedDistinct: {
         const auto &distinct = static_cast<const ir::DistinctPlan &>(plan);
-        node->data =
-            OrderedDistinctOp{.grouping_items = CopyPhysicalGroupingItems(
-                                  distinct.GroupingItems())};
+        node->data = OrderedDistinctOp{
+            .grouping_items = CopyPhysicalGroupingItems(
+                distinct.GroupingItems(), *node->output_slots)};
         return;
       }
       case PhysicalOperatorKind::kHashAggregation: {
         const auto &aggregation =
             static_cast<const ir::AggregationPlan &>(plan);
         node->data = HashAggregationOp{
-            .grouping_items =
-                CopyPhysicalGroupingItems(aggregation.GroupingItems()),
-            .aggregation_items =
-                CopyPhysicalAggregationItems(aggregation.AggregationItems())};
+            .grouping_items = CopyPhysicalGroupingItems(
+                aggregation.GroupingItems(), *node->output_slots),
+            .aggregation_items = CopyPhysicalAggregationItems(
+                aggregation.AggregationItems(), *node->output_slots)};
         return;
       }
       case PhysicalOperatorKind::kOrderedAggregation: {
         const auto &aggregation =
             static_cast<const ir::AggregationPlan &>(plan);
         node->data = OrderedAggregationOp{
-            .grouping_items =
-                CopyPhysicalGroupingItems(aggregation.GroupingItems()),
-            .aggregation_items =
-                CopyPhysicalAggregationItems(aggregation.AggregationItems())};
+            .grouping_items = CopyPhysicalGroupingItems(
+                aggregation.GroupingItems(), *node->output_slots),
+            .aggregation_items = CopyPhysicalAggregationItems(
+                aggregation.AggregationItems(), *node->output_slots)};
         return;
       }
       case PhysicalOperatorKind::kFullSort: {
@@ -1047,9 +1115,13 @@ class PhysicalPlanBuilder final {
                     .exhaust_child = node->children[0]->subtree_effects.writes};
         return;
       }
-      case PhysicalOperatorKind::kProduceResults:
-        node->data = ProduceResultsOp{.columns = plan.OutputColumns()};
+      case PhysicalOperatorKind::kProduceResults: {
+        std::vector<std::string> columns = plan.OutputColumns();
+        node->data = ProduceResultsOp{
+            .columns = columns,
+            .output_slots = ResolveSlots(*node->output_slots, columns)};
         return;
+      }
       case PhysicalOperatorKind::kAssertIsNode: {
         const auto &assertion = static_cast<const ir::AssertIsNodePlan &>(plan);
         CHECK(node->children.size() == 1, common::InternalError,
@@ -1093,7 +1165,14 @@ class PhysicalPlanBuilder final {
         return;
       case PhysicalOperatorKind::kNodeHashJoin: {
         const auto &join = static_cast<const ir::NodeHashJoinPlan &>(plan);
-        NodeHashJoinOp data{.join_keys = join.JoinKeys()};
+        CHECK(node->children.size() == 2, common::InternalError,
+              "node hash join physical node must have two children");
+        NodeHashJoinOp data{
+            .join_keys = join.JoinKeys(),
+            .left_key_slots =
+                ResolveSlots(*node->children[0]->output_slots, join.JoinKeys()),
+            .right_key_slots = ResolveSlots(*node->children[1]->output_slots,
+                                            join.JoinKeys())};
         const auto &left_rows = plan.Child(0).EstimatedRows();
         const auto &right_rows = plan.Child(1).EstimatedRows();
         if (left_rows.has_value() && right_rows.has_value() &&
@@ -1129,7 +1208,15 @@ class PhysicalPlanBuilder final {
       }
       case PhysicalOperatorKind::kLeftOuterHashJoin: {
         const auto &join = static_cast<const ir::LeftOuterHashJoinPlan &>(plan);
-        node->data = LeftOuterHashJoinOp{.join_keys = join.JoinKeys()};
+        CHECK(node->children.size() == 2, common::InternalError,
+              "left outer hash join physical node must have two children");
+        node->data = LeftOuterHashJoinOp{
+            .join_keys = join.JoinKeys(),
+            .left_key_slots =
+                ResolveSlots(*node->children[0]->output_slots, join.JoinKeys()),
+            .right_key_slots =
+                ResolveSlots(*node->children[1]->output_slots, join.JoinKeys()),
+            .nullable_output_slots = AllSlots(*node->output_slots)};
         return;
       }
       case PhysicalOperatorKind::kUnionAll:
@@ -1148,7 +1235,8 @@ class PhysicalPlanBuilder final {
         node->data = ApplyOp{};
         return;
       case PhysicalOperatorKind::kOptionalApply:
-        node->data = OptionalApplyOp{};
+        node->data = OptionalApplyOp{.nullable_output_slots =
+                                         AllSlots(*node->output_slots)};
         return;
       case PhysicalOperatorKind::kSemiApply:
         node->data = SemiApplyOp{};

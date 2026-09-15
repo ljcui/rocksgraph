@@ -159,15 +159,9 @@ void SlottedRow::Set(std::size_t offset, Value value) {
   values_[offset] = std::move(value);
 }
 
-void SlottedRow::Set(std::string_view name, Value value) {
-  Set(slots_->At(name), std::move(value));
-}
-
 void SlottedRow::SetNull(std::size_t offset) {
   values_[offset] = Value::Null();
 }
-
-void SlottedRow::SetNull(std::string_view name) { SetNull(slots_->At(name)); }
 
 void SlottedRow::CopySlotFrom(const SlottedRow &source,
                               std::size_t source_offset,
@@ -232,8 +226,7 @@ void CopySlots(const SlottedRow &source, SlottedRow *target,
     if (!source.IsInitialized(mapping.source_offset)) {
       continue;
     }
-    target->CopySlotFrom(source, mapping.source_offset,
-                         mapping.target_offset);
+    target->CopySlotFrom(source, mapping.source_offset, mapping.target_offset);
   }
 }
 
@@ -246,14 +239,6 @@ bool TryBindSlot(SlottedRow *row, std::size_t offset, Value value) {
   return ValuesEqual(row->Get(offset), value);
 }
 
-bool TryBindSlot(SlottedRow *row, std::string_view name, Value value) {
-  CHECK(row != nullptr, common::InternalError, "query row is null");
-  if (name.empty()) {
-    return true;
-  }
-  return TryBindSlot(row, row->Slots()->At(name), std::move(value));
-}
-
 bool TryBindEdge(SlottedRow *row, std::size_t offset, graphdb::Edge edge) {
   CHECK(row != nullptr, common::InternalError, "query row is null");
   if (!row->IsInitialized(offset)) {
@@ -264,14 +249,6 @@ bool TryBindEdge(SlottedRow *row, std::size_t offset, graphdb::Edge edge) {
   return existing.IsRelationship() &&
          existing.AsRelationship().id == edge.GetNativeId() &&
          existing.AsRelationship().type_id == edge.GetTypeId();
-}
-
-bool TryBindEdge(SlottedRow *row, std::string_view name, graphdb::Edge edge) {
-  CHECK(row != nullptr, common::InternalError, "query row is null");
-  if (name.empty()) {
-    return true;
-  }
-  return TryBindEdge(row, row->Slots()->At(name), std::move(edge));
 }
 
 }  // namespace rg

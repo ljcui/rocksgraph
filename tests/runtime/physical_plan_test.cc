@@ -1378,7 +1378,9 @@ TEST(PhysicalPlanTest, BuildsOwnedPayloadsForMigratedOperators) {
   const rg::PhysicalPlanNode *scan_node =
       FindPhysicalPlan(physical.Root(), rg::PhysicalOperatorKind::kAllNodeScan);
   ASSERT_NE(scan_node, nullptr);
-  EXPECT_EQ(std::get<rg::AllNodeScanOp>(scan_node->data).variable, "n");
+  const auto &scan_data = std::get<rg::AllNodeScanOp>(scan_node->data);
+  EXPECT_EQ(scan_data.variable, "n");
+  EXPECT_EQ(scan_data.output_slot, scan_node->output_slots->At("n"));
 
   const rg::PhysicalPlanNode *filter_node =
       FindPhysicalPlan(physical.Root(), rg::PhysicalOperatorKind::kFilter);
@@ -1394,6 +1396,8 @@ TEST(PhysicalPlanTest, BuildsOwnedPayloadsForMigratedOperators) {
       std::get<rg::ProjectionOp>(projection_node->data);
   ASSERT_EQ(projection_data.items.size(), 1U);
   EXPECT_EQ(projection_data.items.front().alias, "node");
+  EXPECT_EQ(projection_data.items.front().output_slot,
+            projection_node->output_slots->At("node"));
 
   EXPECT_NE(FindPhysicalPlan(physical.Root(), rg::PhysicalOperatorKind::kSkip),
             nullptr);
@@ -1440,6 +1444,7 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForLeafAccessOperators) {
     ASSERT_NE(node, nullptr);
     const auto &data = std::get<rg::NodeByLabelScanOp>(node->data);
     EXPECT_EQ(data.variable, "n");
+    EXPECT_EQ(data.output_slot, node->output_slots->At("n"));
     EXPECT_EQ(data.labels, (std::vector<std::string>{"N"}));
   }
   {
@@ -1453,6 +1458,7 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForLeafAccessOperators) {
         physical.Root(), rg::PhysicalOperatorKind::kNodeIndexSeek);
     ASSERT_NE(node, nullptr);
     const auto &data = std::get<rg::NodeIndexSeekOp>(node->data);
+    EXPECT_EQ(data.output_slot, node->output_slots->At("n"));
     EXPECT_EQ(data.property_key, "value");
     EXPECT_NE(data.value.Expression(), logical->ValueExpression());
   }
@@ -1468,6 +1474,7 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForLeafAccessOperators) {
         physical.Root(), rg::PhysicalOperatorKind::kNodeIndexRangeSeek);
     ASSERT_NE(node, nullptr);
     const auto &data = std::get<rg::NodeIndexRangeSeekOp>(node->data);
+    EXPECT_EQ(data.output_slot, node->output_slots->At("n"));
     ASSERT_EQ(data.predicates.size(), logical->Predicates().size());
     EXPECT_NE(data.predicates.front().Expression(),
               logical->Predicates().front());
@@ -1480,6 +1487,12 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForLeafAccessOperators) {
         std::get<rg::RelationshipTypeScanOp>(physical.Root().data);
     EXPECT_EQ(data.pattern.relationship, "r");
     EXPECT_EQ(data.pattern.types, (std::vector<std::string>{"R"}));
+    EXPECT_EQ(data.slots.from_node_output_slot,
+              physical.Root().output_slots->Find("a"));
+    EXPECT_EQ(data.slots.relationship_output_slot,
+              physical.Root().output_slots->Find("r"));
+    EXPECT_EQ(data.slots.to_node_output_slot,
+              physical.Root().output_slots->Find("b"));
   }
   {
     PlannedQuery query =
@@ -1494,6 +1507,8 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForLeafAccessOperators) {
     ASSERT_NE(node, nullptr);
     const auto &data = std::get<rg::RelationshipIndexSeekOp>(node->data);
     EXPECT_EQ(data.pattern.relationship, "r");
+    EXPECT_EQ(data.slots.relationship_output_slot,
+              node->output_slots->Find("r"));
     EXPECT_NE(data.value.Expression(), logical->ValueExpression());
   }
   {
@@ -1510,6 +1525,8 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForLeafAccessOperators) {
     ASSERT_NE(node, nullptr);
     const auto &data = std::get<rg::RelationshipIndexRangeSeekOp>(node->data);
     ASSERT_EQ(data.predicates.size(), logical->Predicates().size());
+    EXPECT_EQ(data.slots.relationship_output_slot,
+              node->output_slots->Find("r"));
     EXPECT_NE(data.predicates.front().Expression(),
               logical->Predicates().front());
   }
@@ -1525,6 +1542,7 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForLeafAccessOperators) {
     ASSERT_NE(node, nullptr);
     const auto &data = std::get<rg::NodeByIdSeekOp>(node->data);
     EXPECT_TRUE(data.many);
+    EXPECT_EQ(data.output_slot, node->output_slots->At("n"));
     EXPECT_NE(data.ids.Expression(), logical->Ids());
   }
   {
@@ -1540,6 +1558,8 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForLeafAccessOperators) {
     ASSERT_NE(node, nullptr);
     const auto &data = std::get<rg::RelationshipByIdSeekOp>(node->data);
     EXPECT_TRUE(data.many);
+    EXPECT_EQ(data.slots.relationship_output_slot,
+              node->output_slots->Find("r"));
     EXPECT_NE(data.ids.Expression(), logical->Ids());
   }
 }
@@ -2093,6 +2113,12 @@ TEST(PhysicalPlanTest, BuildsTypedNodeAndLeftOuterHashJoinPayloads) {
   rg::PhysicalPlan node_join = rg::CreatePhysicalPlan(logical);
   const auto &node_data = std::get<rg::NodeHashJoinOp>(node_join.Root().data);
   EXPECT_EQ(node_data.join_keys, (std::vector<std::string>{"n"}));
+  EXPECT_EQ(node_data.left_key_slots,
+            std::vector<std::size_t>{
+                node_join.Root().children[0]->output_slots->At("n")});
+  EXPECT_EQ(node_data.right_key_slots,
+            std::vector<std::size_t>{
+                node_join.Root().children[1]->output_slots->At("n")});
   EXPECT_EQ(node_data.build_child, 0U);
   EXPECT_NE(rg::PhysicalPlanToString(node_join).find("build=left"),
             std::string::npos);
@@ -2101,6 +2127,10 @@ TEST(PhysicalPlanTest, BuildsTypedNodeAndLeftOuterHashJoinPayloads) {
   const auto &outer_data =
       std::get<rg::LeftOuterHashJoinOp>(outer_join.Root().data);
   EXPECT_EQ(outer_data.join_keys, (std::vector<std::string>{"a"}));
+  EXPECT_EQ(outer_data.left_key_slots.size(), 1U);
+  EXPECT_EQ(outer_data.right_key_slots.size(), 1U);
+  EXPECT_EQ(outer_data.nullable_output_slots.size(),
+            outer_join.Root().output_slots->SlotCount());
 }
 
 TEST(PhysicalPlanTest, ExecutesNodeHashJoinAfterLogicalPlanAndAstAreDestroyed) {
@@ -2291,6 +2321,8 @@ TEST(PhysicalPlanTest, SelectsOrderedGroupingAlgorithms) {
       std::get<rg::OrderedDistinctOp>(distinct_node->data);
   ASSERT_EQ(distinct_data.grouping_items.size(), 1U);
   EXPECT_EQ(distinct_data.grouping_items.front().alias, "x");
+  EXPECT_EQ(distinct_data.grouping_items.front().output_slot,
+            distinct_node->output_slots->At("x"));
   EXPECT_NE(distinct_data.grouping_items.front().expression.Expression(),
             static_cast<const ir::DistinctPlan &>(*distinct)
                 .GroupingItems()
@@ -2316,6 +2348,10 @@ TEST(PhysicalPlanTest, SelectsOrderedGroupingAlgorithms) {
   ASSERT_EQ(aggregation_data.aggregation_items.size(), 1U);
   EXPECT_EQ(aggregation_data.grouping_items.front().alias, "x");
   EXPECT_EQ(aggregation_data.aggregation_items.front().alias, "count");
+  EXPECT_EQ(aggregation_data.grouping_items.front().output_slot,
+            aggregation_node->output_slots->At("x"));
+  EXPECT_EQ(aggregation_data.aggregation_items.front().output_slot,
+            aggregation_node->output_slots->At("count"));
   const auto &logical_aggregation =
       static_cast<const ir::AggregationPlan &>(*aggregation);
   EXPECT_NE(aggregation_data.grouping_items.front().expression.Expression(),

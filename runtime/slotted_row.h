@@ -61,9 +61,7 @@ class SlottedRow final {
   void SetVertex(std::size_t offset, graphdb::Vertex vertex);
   void SetEdge(std::size_t offset, graphdb::Edge edge);
   void Set(std::size_t offset, Value value);
-  void Set(std::string_view name, Value value);
   void SetNull(std::size_t offset);
-  void SetNull(std::string_view name);
   void CopySlotFrom(const SlottedRow &source, std::size_t source_offset,
                     std::size_t target_offset);
   void MaterializeGraphEntities();
@@ -88,11 +86,7 @@ void CopySlots(const SlottedRow &source, SlottedRow *target,
                const std::vector<SlotMapping> &mappings);
 [[nodiscard]] bool TryBindSlot(SlottedRow *row, std::size_t offset,
                                Value value);
-[[nodiscard]] bool TryBindSlot(SlottedRow *row, std::string_view name,
-                               Value value);
 [[nodiscard]] bool TryBindEdge(SlottedRow *row, std::size_t offset,
-                               graphdb::Edge edge);
-[[nodiscard]] bool TryBindEdge(SlottedRow *row, std::string_view name,
                                graphdb::Edge edge);
 [[nodiscard]] std::size_t EstimatedValueHeapUsage(const Value &value);
 

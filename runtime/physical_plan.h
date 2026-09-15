@@ -126,17 +126,20 @@ class PhysicalExpression final {
 
 struct AllNodeScanOp {
   std::string variable;
+  std::size_t output_slot = 0;
 };
 
 struct ArgumentOp {};
 
 struct NodeByLabelScanOp {
   std::string variable;
+  std::size_t output_slot = 0;
   std::vector<std::string> labels;
 };
 
 struct NodeIndexSeekOp {
   std::string variable;
+  std::size_t output_slot = 0;
   std::vector<std::string> labels;
   std::string property_key;
   PhysicalExpression value;
@@ -145,6 +148,7 @@ struct NodeIndexSeekOp {
 
 struct NodeIndexRangeSeekOp {
   std::string variable;
+  std::size_t output_slot = 0;
   std::vector<std::string> labels;
   std::string property_key;
   std::vector<PhysicalExpression> predicates;
@@ -158,6 +162,12 @@ struct PhysicalRelationshipPattern {
   std::vector<std::string> types;
 };
 
+struct PhysicalRelationshipSlots {
+  std::optional<std::size_t> from_node_output_slot;
+  std::optional<std::size_t> relationship_output_slot;
+  std::optional<std::size_t> to_node_output_slot;
+};
+
 struct PhysicalRelationshipLength {
   bool variable = false;
   std::optional<int> min;
@@ -166,10 +176,12 @@ struct PhysicalRelationshipLength {
 
 struct RelationshipTypeScanOp {
   PhysicalRelationshipPattern pattern;
+  PhysicalRelationshipSlots slots;
 };
 
 struct RelationshipIndexSeekOp {
   PhysicalRelationshipPattern pattern;
+  PhysicalRelationshipSlots slots;
   std::string property_key;
   PhysicalExpression value;
   bool unique = false;
@@ -177,18 +189,21 @@ struct RelationshipIndexSeekOp {
 
 struct RelationshipIndexRangeSeekOp {
   PhysicalRelationshipPattern pattern;
+  PhysicalRelationshipSlots slots;
   std::string property_key;
   std::vector<PhysicalExpression> predicates;
 };
 
 struct NodeByIdSeekOp {
   std::string variable;
+  std::size_t output_slot = 0;
   PhysicalExpression ids;
   bool many = false;
 };
 
 struct RelationshipByIdSeekOp {
   PhysicalRelationshipPattern pattern;
+  PhysicalRelationshipSlots slots;
   PhysicalExpression ids;
   bool many = false;
 };
@@ -261,6 +276,7 @@ struct FilterOp {
 
 struct PhysicalProjectionItem {
   std::string alias;
+  std::size_t output_slot = 0;
   PhysicalExpression expression;
   bool passthrough = false;
   // Resolved during physical-plan construction for passthrough projections.
@@ -275,6 +291,7 @@ struct ProjectionOp {
 
 struct PhysicalGroupingItem {
   std::string alias;
+  std::size_t output_slot = 0;
   PhysicalExpression expression;
 };
 
@@ -288,6 +305,7 @@ struct OrderedDistinctOp {
 
 struct PhysicalAggregationItem {
   std::string alias;
+  std::size_t output_slot = 0;
   PhysicalExpression expression;
 };
 
@@ -361,6 +379,7 @@ struct LimitOp {
 
 struct ProduceResultsOp {
   std::vector<std::string> columns;
+  std::vector<std::size_t> output_slots;
 };
 
 struct PhysicalAssertedNode {
@@ -402,11 +421,16 @@ struct ValueHashJoinOp {
 
 struct NodeHashJoinOp {
   std::vector<std::string> join_keys;
+  std::vector<std::size_t> left_key_slots;
+  std::vector<std::size_t> right_key_slots;
   std::size_t build_child = 1;
 };
 
 struct LeftOuterHashJoinOp {
   std::vector<std::string> join_keys;
+  std::vector<std::size_t> left_key_slots;
+  std::vector<std::size_t> right_key_slots;
+  std::vector<std::size_t> nullable_output_slots;
 };
 
 struct CartesianProductOp {
@@ -426,7 +450,9 @@ struct UnionDistinctOp {
 
 struct ApplyOp {};
 
-struct OptionalApplyOp {};
+struct OptionalApplyOp {
+  std::vector<std::size_t> nullable_output_slots;
+};
 
 struct SemiApplyOp {};
 
