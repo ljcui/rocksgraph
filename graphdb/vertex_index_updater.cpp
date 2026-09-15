@@ -10,8 +10,8 @@
 #include "common/exceptions.h"
 #include "graphdb/graph_db.h"
 #include "graphdb/index.h"
+#include "graphdb/transaction.h"
 #include "graphdb/value_codec.h"
-#include "transaction/transaction.h"
 
 namespace graphdb {
 
@@ -63,7 +63,7 @@ std::optional<std::vector<rg::Value>> BuildPropertyIndexValues(
 }
 
 FullTextDocument BuildFullTextDocument(
-    txn::Transaction* txn, const std::shared_ptr<VertexFullTextIndex>& index,
+    Transaction* txn, const std::shared_ptr<VertexFullTextIndex>& index,
     const std::unordered_set<uint32_t>& lids,
     const VertexSerializedProperties& properties) {
   FullTextDocument document;
@@ -146,7 +146,7 @@ bool IsSameVectorValues(const std::optional<std::vector<float>>& lhs,
   return *lhs == *rhs;
 }
 
-void UpdatePropertyIndexes(txn::Transaction* txn, int64_t vid,
+void UpdatePropertyIndexes(Transaction* txn, int64_t vid,
                            const std::unordered_set<uint32_t>& old_lids,
                            const std::unordered_set<uint32_t>& new_lids,
                            const VertexSerializedProperties& old_properties,
@@ -172,7 +172,7 @@ void UpdatePropertyIndexes(txn::Transaction* txn, int64_t vid,
   }
 }
 
-void UpdateFullTextIndexes(txn::Transaction* txn, int64_t vid,
+void UpdateFullTextIndexes(Transaction* txn, int64_t vid,
                            const std::unordered_set<uint32_t>& old_lids,
                            const std::unordered_set<uint32_t>& new_lids,
                            const VertexSerializedProperties& old_properties,
@@ -206,7 +206,7 @@ void UpdateFullTextIndexes(txn::Transaction* txn, int64_t vid,
   }
 }
 
-void UpdateVectorIndexes(txn::Transaction* txn, int64_t vid,
+void UpdateVectorIndexes(Transaction* txn, int64_t vid,
                          const std::unordered_set<uint32_t>& old_lids,
                          const std::unordered_set<uint32_t>& new_lids,
                          const VertexVectorProperties& old_vector_properties,
@@ -239,7 +239,7 @@ void UpdateVectorIndexes(txn::Transaction* txn, int64_t vid,
 
 }  // namespace
 
-void UpdateVertexIndexes(txn::Transaction* txn, int64_t vid,
+void UpdateVertexIndexes(Transaction* txn, int64_t vid,
                          const std::unordered_set<uint32_t>& old_lids,
                          const std::unordered_set<uint32_t>& new_lids,
                          const VertexSerializedProperties& old_properties,

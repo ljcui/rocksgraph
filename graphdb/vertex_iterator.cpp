@@ -6,14 +6,12 @@
 
 #include <boost/endian/conversion.hpp>
 
-#include "bolt/connection.h"
 #include "common/byte_utils.h"
 #include "common/exceptions.h"
 #include "common/logger.h"
 #include "graph_db.h"
+#include "graphdb/transaction.h"
 #include "index_error.h"
-#include "transaction/transaction.h"
-using namespace txn;
 using common::AsChars;
 using common::ReadValue;
 namespace graphdb {
@@ -70,9 +68,6 @@ ScanVertexBylabel::ScanVertexBylabel(Transaction *txn, uint32_t lid)
 }
 
 void ScanVertexBylabel::Next() {
-  if (txn_->conn() && txn_->conn()->has_closed()) {
-    THROW_CODE(ConnectionDisconnected);
-  }
   assert(valid_);
   valid_ = false;
   if (iter_->Valid()) {
@@ -143,9 +138,6 @@ ScanAllVertex::ScanAllVertex(Transaction *txn) : VertexIterator(txn) {
 }
 
 void ScanAllVertex::Next() {
-  if (txn_->conn() && txn_->conn()->has_closed()) {
-    THROW_CODE(ConnectionDisconnected);
-  }
   assert(valid_);
   valid_ = false;
   if (!iter_) {
@@ -228,7 +220,7 @@ GetVertexByUniqueIndex::GetVertexByUniqueIndex(
 }
 
 GetVertexByPropertyIndex::GetVertexByPropertyIndex(
-    txn::Transaction *txn, std::shared_ptr<VertexPropertyIndex> index,
+    Transaction *txn, std::shared_ptr<VertexPropertyIndex> index,
     std::string prefix)
     : VertexIterator(txn),
       index_(std::move(index)),
@@ -266,9 +258,6 @@ void GetVertexByPropertyIndex::SeekToNextValid() {
 }
 
 void GetVertexByPropertyIndex::Next() {
-  if (txn_->conn() && txn_->conn()->has_closed()) {
-    THROW_CODE(ConnectionDisconnected);
-  }
   assert(valid_);
   valid_ = false;
   if (index_->is_unique()) {
@@ -279,7 +268,7 @@ void GetVertexByPropertyIndex::Next() {
 }
 
 GetVertexByPropertyRange::GetVertexByPropertyRange(
-    txn::Transaction *txn, std::shared_ptr<VertexPropertyIndex> index,
+    Transaction *txn, std::shared_ptr<VertexPropertyIndex> index,
     std::optional<std::string> lower_key, std::optional<std::string> upper_key,
     bool left_closed, bool right_closed)
     : VertexIterator(txn),
@@ -326,9 +315,6 @@ void GetVertexByPropertyRange::SeekToNextValid() {
 }
 
 void GetVertexByPropertyRange::Next() {
-  if (txn_->conn() && txn_->conn()->has_closed()) {
-    THROW_CODE(ConnectionDisconnected);
-  }
   assert(valid_);
   valid_ = false;
   iter_->Next();
@@ -367,7 +353,7 @@ void GetVertexByFullTextIndex::Next() {
   }
 }
 
-GetVertexByKnnSearch::GetVertexByKnnSearch(txn::Transaction *txn,
+GetVertexByKnnSearch::GetVertexByKnnSearch(Transaction *txn,
                                            const std::string &vector_index,
                                            const std::vector<float> &query,
                                            int top_k, int ef_search)

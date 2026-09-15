@@ -16,4 +16,4 @@ add_library(
   slotted_row.cc)
 
 target_include_directories(rocksgraph_runtime PUBLIC ${PROJECT_SOURCE_DIR})
-target_link_libraries(rocksgraph_runtime PUBLIC rocksgraph_planner transaction)
+target_link_libraries(rocksgraph_runtime PUBLIC graphdb rocksgraph_planner)

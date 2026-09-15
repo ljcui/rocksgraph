@@ -50,7 +50,7 @@ class RuntimeExpressionCompiler final : public ast::ASTConstWalker {
   RuntimeExpressionProgram program_;
 };
 
-RuntimeState::RuntimeState(txn::Transaction &graphdb_transaction,
+RuntimeState::RuntimeState(graphdb::Transaction &graphdb_transaction,
                            const QueryParameters &parameters,
                            QueryExecutionOptions options)
     : transaction(&graphdb_transaction),

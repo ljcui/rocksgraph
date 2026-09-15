@@ -7,12 +7,11 @@
 #include <boost/endian/conversion.hpp>
 #include <cstring>
 
-#include "bolt/connection.h"
 #include "common/byte_utils.h"
 #include "common/exceptions.h"
 #include "common/logger.h"
 #include "graph_db.h"
-#include "transaction/transaction.h"
+#include "graphdb/transaction.h"
 using common::AsChars;
 using common::ReadValue;
 namespace graphdb {
@@ -43,7 +42,7 @@ int64_t ReadEdgePropertyIndexEid(
   return ReadValue<int64_t>(key.data() + key.size() - sizeof(int64_t));
 }
 
-std::unique_ptr<Edge> LoadIndexedEdge(txn::Transaction *txn,
+std::unique_ptr<Edge> LoadIndexedEdge(Transaction *txn,
                                       const EdgePropertyIndex &index,
                                       int64_t eid) {
   return std::make_unique<Edge>(txn->GetEdgeById(index.tid(), eid));
@@ -51,7 +50,7 @@ std::unique_ptr<Edge> LoadIndexedEdge(txn::Transaction *txn,
 
 }  // namespace
 
-ScanEdgeByTypes::ScanEdgeByTypes(txn::Transaction *txn,
+ScanEdgeByTypes::ScanEdgeByTypes(Transaction *txn,
                                  std::unordered_set<uint32_t> types)
     : EdgeIterator(txn), scan_all_(types.empty()) {
   rocksdb::ReadOptions ro;
@@ -119,9 +118,6 @@ void ScanEdgeByTypes::CheckIteratorStatus() const {
 }
 
 void ScanEdgeByTypes::Next() {
-  if (txn_->conn() && txn_->conn()->has_closed()) {
-    THROW_CODE(ConnectionDisconnected);
-  }
   assert(valid_);
   valid_ = false;
   iter_->Next();
@@ -144,7 +140,7 @@ void ScanEdgeByTypes::Next() {
 }
 
 ScanEdgeByVidDirectionTypes::ScanEdgeByVidDirectionTypes(
-    txn::Transaction *txn, int64_t vid, EdgeDirection direction,
+    Transaction *txn, int64_t vid, EdgeDirection direction,
     std::unordered_set<uint32_t> types)
     : EdgeIterator(txn),
       vid_(vid),
@@ -219,9 +215,6 @@ void ScanEdgeByVidDirectionTypes::SeekToNextPrefix() {
 }
 
 void ScanEdgeByVidDirectionTypes::Next() {
-  if (txn_->conn() && txn_->conn()->has_closed()) {
-    THROW_CODE(ConnectionDisconnected);
-  }
   assert(valid_);
   valid_ = false;
   iter_->Next();
@@ -248,7 +241,7 @@ bool ScanEdgeByVidDirectionTypesProperties::MatchProperties() {
 }
 
 ScanEdgeByVidDirectionTypesProperties::ScanEdgeByVidDirectionTypesProperties(
-    txn::Transaction *txn, int64_t vid, EdgeDirection direction,
+    Transaction *txn, int64_t vid, EdgeDirection direction,
     std::unordered_set<uint32_t> types,
     std::unordered_map<uint32_t, rg::Value> properties)
     : EdgeIterator(txn), properties_(std::move(properties)) {
@@ -279,7 +272,7 @@ void ScanEdgeByVidDirectionTypesProperties::Next() {
 
 ScanEdgeByVidDirectionTypesPropertiesOtherVid::
     ScanEdgeByVidDirectionTypesPropertiesOtherVid(
-        txn::Transaction *txn, int64_t vid, graphdb::EdgeDirection direction,
+        Transaction *txn, int64_t vid, graphdb::EdgeDirection direction,
         std::unordered_set<uint32_t> types,
         std::unordered_map<uint32_t, rg::Value> properties,
         const graphdb::Vertex &other)
@@ -313,7 +306,7 @@ void ScanEdgeByVidDirectionTypesPropertiesOtherVid::Next() {
 
 ScanEdgeByVidDirectionTypesPropertiesOtherNode::
     ScanEdgeByVidDirectionTypesPropertiesOtherNode(
-        txn::Transaction *txn, int64_t vid, EdgeDirection direction,
+        Transaction *txn, int64_t vid, EdgeDirection direction,
         std::unordered_set<uint32_t> types,
         std::unordered_map<uint32_t, rg::Value> properties,
         std::unordered_set<uint32_t> other_node_labels,
@@ -388,8 +381,8 @@ bool ScanEdgeByVidDirectionTypePropertiesOtherNode::MatchProperties() {
 
 ScanEdgeByVidDirectionTypePropertiesOtherNode::
     ScanEdgeByVidDirectionTypePropertiesOtherNode(
-        txn::Transaction *txn, int64_t vid, EdgeDirection direction,
-        uint32_t type, std::unordered_map<uint32_t, rg::Value> properties,
+        Transaction *txn, int64_t vid, EdgeDirection direction, uint32_t type,
+        std::unordered_map<uint32_t, rg::Value> properties,
         const Vertex &other_node)
     : EdgeIterator(txn),
       vid_(vid),
@@ -423,7 +416,7 @@ void ScanEdgeByVidDirectionTypePropertiesOtherNode::Next() {
 }
 
 GetEdgeByPropertyIndex::GetEdgeByPropertyIndex(
-    txn::Transaction *txn, std::shared_ptr<EdgePropertyIndex> index,
+    Transaction *txn, std::shared_ptr<EdgePropertyIndex> index,
     std::string prefix)
     : EdgeIterator(txn), index_(std::move(index)), prefix_(std::move(prefix)) {
   rocksdb::ReadOptions ro;
@@ -459,9 +452,6 @@ void GetEdgeByPropertyIndex::SeekToNextValid() {
 }
 
 void GetEdgeByPropertyIndex::Next() {
-  if (txn_->conn() && txn_->conn()->has_closed()) {
-    THROW_CODE(ConnectionDisconnected);
-  }
   assert(valid_);
   valid_ = false;
   if (index_->is_unique()) return;
@@ -470,7 +460,7 @@ void GetEdgeByPropertyIndex::Next() {
 }
 
 GetEdgeByPropertyRange::GetEdgeByPropertyRange(
-    txn::Transaction *txn, std::shared_ptr<EdgePropertyIndex> index,
+    Transaction *txn, std::shared_ptr<EdgePropertyIndex> index,
     std::optional<std::string> lower_key, std::optional<std::string> upper_key,
     bool left_closed, bool right_closed)
     : EdgeIterator(txn),
@@ -516,9 +506,6 @@ void GetEdgeByPropertyRange::SeekToNextValid() {
 }
 
 void GetEdgeByPropertyRange::Next() {
-  if (txn_->conn() && txn_->conn()->has_closed()) {
-    THROW_CODE(ConnectionDisconnected);
-  }
   assert(valid_);
   valid_ = false;
   iter_->Next();

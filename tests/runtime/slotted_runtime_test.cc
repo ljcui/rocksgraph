@@ -76,7 +76,7 @@ TEST(SlottedRuntimeTest, ObservesExternalCancellation) {
 
   std::vector<rg::Value> row;
   EXPECT_THROW((void)cursor->Next(&row), common::QueryCancelledError);
-  EXPECT_EQ(transaction->GetState(), txn::Transaction::State::kActive);
+  EXPECT_EQ(transaction->GetState(), graphdb::Transaction::State::kActive);
   transaction->Rollback();
 }
 
@@ -91,7 +91,7 @@ TEST(SlottedRuntimeTest, KeepsWritesWhenCursorClosesEarly) {
   ASSERT_EQ(pending_vertices, 1U);
 
   cursor->Close();
-  EXPECT_EQ(transaction->GetState(), txn::Transaction::State::kActive);
+  EXPECT_EQ(transaction->GetState(), graphdb::Transaction::State::kActive);
   transaction->Commit();
   EXPECT_EQ(graph.VertexCount(), pending_vertices);
 }

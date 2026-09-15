@@ -23,11 +23,11 @@
 #include "graphdb/edge_iterator.h"
 #include "graphdb/graph_db.h"
 #include "graphdb/graph_entity.h"
+#include "graphdb/transaction.h"
 #include "graphdb/vertex_iterator.h"
 #include "planner/planned_query.h"
 #include "runtime/graphdb_planner_catalog.h"
 #include "runtime/query_executor.h"
-#include "transaction/transaction.h"
 #include "value/value.h"
 
 namespace {
@@ -360,9 +360,9 @@ std::vector<Scenario> ExpandScenario(const Scenario &scenario) {
   return expanded;
 }
 
-void RollbackIfActive(txn::Transaction *transaction) noexcept {
+void RollbackIfActive(graphdb::Transaction *transaction) noexcept {
   if (transaction == nullptr ||
-      transaction->GetState() != txn::Transaction::State::kActive) {
+      transaction->GetState() != graphdb::Transaction::State::kActive) {
     return;
   }
   try {

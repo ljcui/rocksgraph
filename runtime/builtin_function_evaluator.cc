@@ -109,7 +109,7 @@ double RandomUnitDouble() {
 Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
                               const std::vector<Value> &arguments,
                               ExecutionClock clock,
-                              txn::Transaction *transaction) {
+                              graphdb::Transaction *transaction) {
   const ast::BuiltinFunction *builtin = ast::FindBuiltinFunction(kind);
   CHECK(builtin != nullptr, common::InternalError,
         "unknown built-in function kind");

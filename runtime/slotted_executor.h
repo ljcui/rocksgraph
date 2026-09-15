@@ -9,7 +9,7 @@
 #include "runtime/physical_plan.h"
 #include "value/value.h"
 
-namespace txn {
+namespace graphdb {
 class Transaction;
 }
 
@@ -29,7 +29,7 @@ class PhysicalResultCursor {
 };
 
 [[nodiscard]] std::unique_ptr<PhysicalResultCursor> StartPhysicalPlan(
-    const PhysicalPlan &plan, txn::Transaction &transaction,
+    const PhysicalPlan &plan, graphdb::Transaction &transaction,
     const QueryParameters &parameters,
     const std::vector<std::string> &result_columns,
     QueryExecutionOptions options = {});

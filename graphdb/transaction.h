@@ -5,10 +5,14 @@
 #pragma once
 #include <rocksdb/utilities/transaction_db.h>
 
+#include <cstddef>
+#include <cstdint>
+#include <memory>
 #include <optional>
-#include <set>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "graphdb/edge_direction.h"
@@ -20,11 +24,7 @@
 #include "value/value.h"
 namespace graphdb {
 class GraphDB;
-}
-namespace bolt {
-class BoltConnection;
-}
-namespace txn {
+
 class Transaction {
  public:
   enum class State { kActive, kCommitted, kRolledBack };
@@ -33,111 +33,100 @@ class Transaction {
   Transaction(const Transaction&) = delete;
   void operator=(const Transaction&) = delete;
 
-  Transaction(rocksdb::Transaction* txn, graphdb::GraphDB* graph_db)
+  Transaction(rocksdb::Transaction* txn, GraphDB* graph_db)
       : txn_(txn), db_(graph_db) {}
   ~Transaction() { delete txn_; }
-  graphdb::Vertex CreateVertex(
-      const std::unordered_set<std::string>& labels,
-      const std::unordered_map<std::string, rg::Value>& values);
-  graphdb::Edge CreateEdge(
-      const graphdb::Vertex& start, const graphdb::Vertex& end,
-      const std::string& type,
-      const std::unordered_map<std::string, rg::Value>& values);
-  graphdb::Vertex GetVertexById(int64_t vid);
-  graphdb::Edge GetEdgeById(uint32_t etid, int64_t eid);
-  std::unique_ptr<graphdb::VertexIterator> NewVertexIterator();
-  std::unique_ptr<graphdb::VertexIterator> NewVertexIterator(
-      const std::string& label);
-  std::unique_ptr<graphdb::VertexIterator> NewVertexIterator(
+  Vertex CreateVertex(const std::unordered_set<std::string>& labels,
+                      const std::unordered_map<std::string, rg::Value>& values);
+  Edge CreateEdge(const Vertex& start, const Vertex& end,
+                  const std::string& type,
+                  const std::unordered_map<std::string, rg::Value>& values);
+  Vertex GetVertexById(int64_t vid);
+  Edge GetEdgeById(uint32_t etid, int64_t eid);
+  std::unique_ptr<VertexIterator> NewVertexIterator();
+  std::unique_ptr<VertexIterator> NewVertexIterator(const std::string& label);
+  std::unique_ptr<VertexIterator> NewVertexIterator(
       const std::optional<std::string>& label,
       const std::optional<std::unordered_map<std::string, rg::Value>>& props);
-  std::unique_ptr<graphdb::EdgeIterator> NewEdgeIterator();
-  std::unique_ptr<graphdb::EdgeIterator> NewEdgeIterator(
+  std::unique_ptr<EdgeIterator> NewEdgeIterator();
+  std::unique_ptr<EdgeIterator> NewEdgeIterator(
       const std::unordered_set<std::string>& types);
   // for debug
   std::string GetVertexIteratorInfo(
       const std::optional<std::string>& label,
       const std::optional<std::unordered_set<std::string>>& props);
-  std::unique_ptr<graphdb::VertexIterator> QueryVertexByPropertyIndex(
+  std::unique_ptr<VertexIterator> QueryVertexByPropertyIndex(
       const std::string& index_name, const rg::Value& query);
-  std::unique_ptr<graphdb::VertexIterator> QueryVertexByPropertyIndex(
+  std::unique_ptr<VertexIterator> QueryVertexByPropertyIndex(
       const std::vector<std::string>& labels, const std::string& property_key,
       const rg::Value& query);
-  std::unique_ptr<graphdb::VertexIterator> QueryVertexByPropertyRange(
+  std::unique_ptr<VertexIterator> QueryVertexByPropertyRange(
       const std::string& index_name, const std::optional<rg::Value>& lower,
       const std::optional<rg::Value>& upper, bool left_closed,
       bool right_closed);
-  std::unique_ptr<graphdb::VertexIterator> QueryVertexByPropertyRange(
+  std::unique_ptr<VertexIterator> QueryVertexByPropertyRange(
       const std::vector<std::string>& labels, const std::string& property_key,
       const std::optional<rg::Value>& lower,
       const std::optional<rg::Value>& upper, bool left_closed,
       bool right_closed);
-  std::unique_ptr<graphdb::EdgeIterator> QueryEdgeByPropertyIndex(
+  std::unique_ptr<EdgeIterator> QueryEdgeByPropertyIndex(
       const std::string& index_name, const rg::Value& query);
-  std::unique_ptr<graphdb::EdgeIterator> QueryEdgeByPropertyIndex(
+  std::unique_ptr<EdgeIterator> QueryEdgeByPropertyIndex(
       const std::vector<std::string>& types, const std::string& property_key,
       const rg::Value& query);
-  std::unique_ptr<graphdb::EdgeIterator> QueryEdgeByPropertyRange(
+  std::unique_ptr<EdgeIterator> QueryEdgeByPropertyRange(
       const std::string& index_name, const std::optional<rg::Value>& lower,
       const std::optional<rg::Value>& upper, bool left_closed,
       bool right_closed);
-  std::unique_ptr<graphdb::EdgeIterator> QueryEdgeByPropertyRange(
+  std::unique_ptr<EdgeIterator> QueryEdgeByPropertyRange(
       const std::vector<std::string>& types, const std::string& property_key,
       const std::optional<rg::Value>& lower,
       const std::optional<rg::Value>& upper, bool left_closed,
       bool right_closed);
-  std::unique_ptr<graphdb::VertexScoreIterator> QueryVertexByFTIndex(
+  std::unique_ptr<VertexScoreIterator> QueryVertexByFTIndex(
       const std::string& index_name, const std::string& query, size_t top_n);
-  std::unique_ptr<graphdb::VertexScoreIterator> QueryVertexByKnnSearch(
+  std::unique_ptr<VertexScoreIterator> QueryVertexByKnnSearch(
       const std::string& index_name, const std::vector<float>& query, int top_k,
       int ef_search);
-  void AppendPropertyIndexWAL(
-      std::shared_ptr<graphdb::VertexPropertyIndex> index,
-      const meta::PropertyIndexUpdate& update);
-  void AppendEdgePropertyIndexWAL(
-      std::shared_ptr<graphdb::EdgePropertyIndex> index,
-      const meta::PropertyIndexUpdate& update);
-  void AppendFullTextIndexWAL(
-      std::shared_ptr<graphdb::VertexFullTextIndex> index,
-      const meta::FullTextIndexUpdate& update);
-  void AppendVectorIndexWAL(std::shared_ptr<graphdb::VertexVectorIndex> index,
+  void AppendPropertyIndexWAL(std::shared_ptr<VertexPropertyIndex> index,
+                              const meta::PropertyIndexUpdate& update);
+  void AppendEdgePropertyIndexWAL(std::shared_ptr<EdgePropertyIndex> index,
+                                  const meta::PropertyIndexUpdate& update);
+  void AppendFullTextIndexWAL(std::shared_ptr<VertexFullTextIndex> index,
+                              const meta::FullTextIndexUpdate& update);
+  void AppendVectorIndexWAL(std::shared_ptr<VertexVectorIndex> index,
                             const meta::VectorIndexUpdate& update) {
     pending_vector_wals_.push_back({std::move(index), update});
   }
   void Commit();
   void Rollback();
   [[nodiscard]] State GetState() const noexcept { return state_; }
-  graphdb::GraphDB* db() { return db_; }
+  GraphDB* db() { return db_; }
   rocksdb::Transaction* dbtxn() { return txn_; };
-  void SetConn(const std::shared_ptr<bolt::BoltConnection>& conn) {
-    conn_ = conn;
-  }
-  std::shared_ptr<bolt::BoltConnection>& conn() { return conn_; }
 
  private:
   struct PendingPropertyWAL {
-    std::shared_ptr<graphdb::VertexPropertyIndex> index;
+    std::shared_ptr<VertexPropertyIndex> index;
     meta::PropertyIndexUpdate update;
   };
 
   struct PendingEdgePropertyWAL {
-    std::shared_ptr<graphdb::EdgePropertyIndex> index;
+    std::shared_ptr<EdgePropertyIndex> index;
     meta::PropertyIndexUpdate update;
   };
 
   struct PendingFullTextWAL {
-    std::shared_ptr<graphdb::VertexFullTextIndex> index;
+    std::shared_ptr<VertexFullTextIndex> index;
     meta::FullTextIndexUpdate update;
   };
 
   struct PendingVectorWAL {
-    std::shared_ptr<graphdb::VertexVectorIndex> index;
+    std::shared_ptr<VertexVectorIndex> index;
     meta::VectorIndexUpdate update;
   };
 
   rocksdb::Transaction* txn_;
-  graphdb::GraphDB* db_;
-  std::shared_ptr<bolt::BoltConnection> conn_;
+  GraphDB* db_;
   std::vector<PendingPropertyWAL> pending_property_wals_;
   std::vector<PendingEdgePropertyWAL> pending_edge_property_wals_;
   std::vector<PendingFullTextWAL> pending_fulltext_wals_;
@@ -145,4 +134,4 @@ class Transaction {
   State state_ = State::kActive;
 };
 
-}  // namespace txn
+}  // namespace graphdb

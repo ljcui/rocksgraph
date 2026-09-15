@@ -53,6 +53,7 @@ add_library(
   id_generator.cpp
   index.cpp
   meta_info.cpp
+  transaction.cpp
   value_codec.cpp
   vector_property.cpp
   vector_store.cpp
@@ -66,11 +67,9 @@ target_link_libraries(
   PUBLIC Boost::headers
          RocksDB::rocksdb
          Threads::Threads
-         bolt
          common
          graphdb_faiss
          graphdb_ftindex
          proto
          raft_driver
-         rocksgraph_value
-         transaction)
+         rocksgraph_value)

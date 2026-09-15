@@ -2,7 +2,7 @@
 // Created by botu.wzy
 //
 
-#include "transaction/transaction.h"
+#include "graphdb/transaction.h"
 
 #include <rocksdb/utilities/write_batch_with_index.h>
 
@@ -30,7 +30,7 @@ bool IsRangeComparableValue(const rg::Value& value) {
 }
 
 std::shared_ptr<VertexPropertyIndex> ResolveVertexPropertyIndexOrThrow(
-    txn::Transaction* txn, const std::string& index_name) {
+    Transaction* txn, const std::string& index_name) {
   auto index = txn->db()->meta_info().GetReadyVertexPropertyIndex(index_name);
   if (!index) {
     if (auto building_index =
@@ -44,7 +44,7 @@ std::shared_ptr<VertexPropertyIndex> ResolveVertexPropertyIndexOrThrow(
 }
 
 std::shared_ptr<EdgePropertyIndex> ResolveEdgePropertyIndexOrThrow(
-    txn::Transaction* txn, const std::string& index_name) {
+    Transaction* txn, const std::string& index_name) {
   auto index = txn->db()->meta_info().GetReadyEdgePropertyIndex(index_name);
   if (!index) {
     if (auto building_index =
@@ -118,7 +118,7 @@ bool IsEmptyPropertyIndexRange(const std::optional<std::string>& lower_key,
 
 }  // namespace
 
-namespace txn {
+namespace graphdb {
 Vertex Transaction::CreateVertex(
     const std::unordered_set<std::string>& labels,
     const std::unordered_map<std::string, rg::Value>& values) {
@@ -735,4 +735,4 @@ Transaction::QueryVertexByKnnSearch(const std::string& index_name,
                                                 ef_search);
 }
 
-}  // namespace txn
+}  // namespace graphdb

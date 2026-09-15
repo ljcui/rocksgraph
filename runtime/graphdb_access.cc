@@ -7,7 +7,7 @@
 
 #include "common/exception.h"
 #include "graphdb/graph_entity.h"
-#include "transaction/transaction.h"
+#include "graphdb/transaction.h"
 
 namespace rg {
 
@@ -48,18 +48,18 @@ void ApplyGraphDBProperties(Entity *entity, Value::Map properties,
 
 }  // namespace
 
-graphdb::Vertex GraphDBVertexById(txn::Transaction &transaction,
+graphdb::Vertex GraphDBVertexById(graphdb::Transaction &transaction,
                                   std::int64_t id) {
   return transaction.GetVertexById(boost::endian::native_to_big(id));
 }
 
-graphdb::Edge GraphDBEdgeById(txn::Transaction &transaction,
+graphdb::Edge GraphDBEdgeById(graphdb::Transaction &transaction,
                               RelationshipReference relationship) {
   return transaction.GetEdgeById(relationship.type_id,
                                  boost::endian::native_to_big(relationship.id));
 }
 
-Value::NodePtr MaterializeGraphDBVertex(txn::Transaction &transaction,
+Value::NodePtr MaterializeGraphDBVertex(graphdb::Transaction &transaction,
                                         std::int64_t id) {
   return MaterializeGraphDBVertex(GraphDBVertexById(transaction, id));
 }
@@ -76,7 +76,7 @@ Value::NodePtr MaterializeGraphDBVertex(graphdb::Vertex vertex) {
 }
 
 Value::RelationshipPtr MaterializeGraphDBEdge(
-    txn::Transaction &transaction, RelationshipReference relationship) {
+    graphdb::Transaction &transaction, RelationshipReference relationship) {
   return MaterializeGraphDBEdge(GraphDBEdgeById(transaction, relationship));
 }
 
@@ -92,7 +92,7 @@ Value::RelationshipPtr MaterializeGraphDBEdge(graphdb::Edge edge) {
   return value;
 }
 
-Value::NodePtr CreateGraphDBVertex(txn::Transaction &transaction,
+Value::NodePtr CreateGraphDBVertex(graphdb::Transaction &transaction,
                                    std::vector<std::string> labels,
                                    Value::Map properties) {
   std::unordered_set<std::string> graphdb_labels(labels.begin(), labels.end());
@@ -101,7 +101,7 @@ Value::NodePtr CreateGraphDBVertex(txn::Transaction &transaction,
   return MaterializeGraphDBVertex(transaction, vertex.GetNativeId());
 }
 
-Value::RelationshipPtr CreateGraphDBEdge(txn::Transaction &transaction,
+Value::RelationshipPtr CreateGraphDBEdge(graphdb::Transaction &transaction,
                                          std::int64_t start_node_id,
                                          std::int64_t end_node_id,
                                          std::string type,
@@ -114,7 +114,7 @@ Value::RelationshipPtr CreateGraphDBEdge(txn::Transaction &transaction,
                                 {edge.GetNativeId(), edge.GetTypeId()});
 }
 
-void SetGraphDBVertexProperty(txn::Transaction &transaction,
+void SetGraphDBVertexProperty(graphdb::Transaction &transaction,
                               std::int64_t node_id, std::string property_key,
                               Value value) {
   graphdb::Vertex vertex = GraphDBVertexById(transaction, node_id);
@@ -125,7 +125,7 @@ void SetGraphDBVertexProperty(txn::Transaction &transaction,
   }
 }
 
-void SetGraphDBEdgeProperty(txn::Transaction &transaction,
+void SetGraphDBEdgeProperty(graphdb::Transaction &transaction,
                             RelationshipReference relationship,
                             std::string property_key, Value value) {
   graphdb::Edge edge = GraphDBEdgeById(transaction, relationship);
@@ -136,53 +136,55 @@ void SetGraphDBEdgeProperty(txn::Transaction &transaction,
   }
 }
 
-void SetGraphDBVertexProperties(txn::Transaction &transaction,
+void SetGraphDBVertexProperties(graphdb::Transaction &transaction,
                                 std::int64_t node_id, Value::Map properties,
                                 bool include_existing) {
   graphdb::Vertex vertex = GraphDBVertexById(transaction, node_id);
   ApplyGraphDBProperties(&vertex, std::move(properties), include_existing);
 }
 
-void SetGraphDBEdgeProperties(txn::Transaction &transaction,
+void SetGraphDBEdgeProperties(graphdb::Transaction &transaction,
                               RelationshipReference relationship,
                               Value::Map properties, bool include_existing) {
   graphdb::Edge edge = GraphDBEdgeById(transaction, relationship);
   ApplyGraphDBProperties(&edge, std::move(properties), include_existing);
 }
 
-void AddGraphDBVertexLabels(txn::Transaction &transaction, std::int64_t node_id,
+void AddGraphDBVertexLabels(graphdb::Transaction &transaction,
+                            std::int64_t node_id,
                             std::vector<std::string> labels) {
   graphdb::Vertex vertex = GraphDBVertexById(transaction, node_id);
   vertex.AddLabels({labels.begin(), labels.end()});
 }
 
-void RemoveGraphDBVertexProperty(txn::Transaction &transaction,
+void RemoveGraphDBVertexProperty(graphdb::Transaction &transaction,
                                  std::int64_t node_id,
                                  std::string_view property_key) {
   graphdb::Vertex vertex = GraphDBVertexById(transaction, node_id);
   vertex.RemoveProperty(std::string(property_key));
 }
 
-void RemoveGraphDBEdgeProperty(txn::Transaction &transaction,
+void RemoveGraphDBEdgeProperty(graphdb::Transaction &transaction,
                                RelationshipReference relationship,
                                std::string_view property_key) {
   graphdb::Edge edge = GraphDBEdgeById(transaction, relationship);
   edge.RemoveProperty(std::string(property_key));
 }
 
-void RemoveGraphDBVertexLabels(txn::Transaction &transaction,
+void RemoveGraphDBVertexLabels(graphdb::Transaction &transaction,
                                std::int64_t node_id,
                                const std::vector<std::string> &labels) {
   graphdb::Vertex vertex = GraphDBVertexById(transaction, node_id);
   vertex.DeleteLabels({labels.begin(), labels.end()});
 }
 
-void DeleteGraphDBVertex(txn::Transaction &transaction, std::int64_t node_id) {
+void DeleteGraphDBVertex(graphdb::Transaction &transaction,
+                         std::int64_t node_id) {
   graphdb::Vertex vertex = GraphDBVertexById(transaction, node_id);
   (void)vertex.Delete();
 }
 
-void DeleteGraphDBEdge(txn::Transaction &transaction,
+void DeleteGraphDBEdge(graphdb::Transaction &transaction,
                        RelationshipReference relationship) {
   GraphDBEdgeById(transaction, relationship).Delete();
 }

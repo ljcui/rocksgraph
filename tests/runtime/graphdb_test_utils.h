@@ -18,9 +18,9 @@
 #include "graphdb/assistant_pool.h"
 #include "graphdb/edge_iterator.h"
 #include "graphdb/graph_db.h"
+#include "graphdb/transaction.h"
 #include "runtime/graphdb_access.h"
 #include "runtime/query_executor.h"
-#include "transaction/transaction.h"
 
 namespace rg::test {
 
@@ -29,9 +29,10 @@ inline std::unordered_map<std::string, Value> ToGraphDBProperties(
   return {properties.begin(), properties.end()};
 }
 
-inline void RollbackGraphDBTransaction(txn::Transaction* transaction) noexcept {
+inline void RollbackGraphDBTransaction(
+    graphdb::Transaction* transaction) noexcept {
   if (transaction == nullptr ||
-      transaction->GetState() != txn::Transaction::State::kActive) {
+      transaction->GetState() != graphdb::Transaction::State::kActive) {
     return;
   }
   try {
@@ -54,7 +55,7 @@ inline QueryResult ExecuteGraphDBQueryAndCommit(graphdb::GraphDB& graph,
   }
 }
 
-inline std::size_t CountVertices(txn::Transaction& transaction) {
+inline std::size_t CountVertices(graphdb::Transaction& transaction) {
   auto vertices = transaction.NewVertexIterator();
   std::size_t count = 0;
   while (vertices->Valid()) {
@@ -64,7 +65,7 @@ inline std::size_t CountVertices(txn::Transaction& transaction) {
   return count;
 }
 
-inline std::size_t CountEdges(txn::Transaction& transaction) {
+inline std::size_t CountEdges(graphdb::Transaction& transaction) {
   auto edges = transaction.NewEdgeIterator();
   std::size_t count = 0;
   while (edges->Valid()) {
@@ -89,7 +90,7 @@ class GraphDBTestDatabase final {
 
   [[nodiscard]] graphdb::GraphDB& Graph() noexcept { return *graph_; }
 
-  [[nodiscard]] std::unique_ptr<txn::Transaction> BeginTransaction() {
+  [[nodiscard]] std::unique_ptr<graphdb::Transaction> BeginTransaction() {
     return graph_->BeginTransaction();
   }
 

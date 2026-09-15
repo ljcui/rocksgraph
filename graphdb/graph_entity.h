@@ -15,10 +15,9 @@
 namespace rocksdb {
 class PinnableSlice;
 }
-namespace txn {
-class Transaction;
-}
 namespace graphdb {
+class Transaction;
+
 class Property {
  public:
   virtual rg::Value GetProperty(const std::string&) = 0;
@@ -36,7 +35,7 @@ class EdgeIterator;
 
 class Vertex : Property {
  public:
-  Vertex(txn::Transaction* txn, int64_t id) : txn_(txn), id_(id) {}
+  Vertex(Transaction* txn, int64_t id) : txn_(txn), id_(id) {}
   [[nodiscard]] int64_t GetId() const { return id_; };
   [[nodiscard]] int64_t GetNativeId() const {
     return boost::endian::big_to_native(id_);
@@ -82,13 +81,13 @@ class Vertex : Property {
 
  private:
   void Lock();
-  txn::Transaction* txn_ = nullptr;
+  Transaction* txn_ = nullptr;
   int64_t id_;
 };
 
 class Edge : public Property {
  public:
-  Edge(txn::Transaction* txn, int64_t id, int64_t startId, int64_t endId,
+  Edge(Transaction* txn, int64_t id, int64_t startId, int64_t endId,
        uint32_t typeId)
       : txn_(txn), id_(id), startId_(startId), endId_(endId), typeId_(typeId) {}
 
@@ -127,7 +126,7 @@ class Edge : public Property {
 
  private:
   void Lock();
-  txn::Transaction* txn_ = nullptr;
+  Transaction* txn_ = nullptr;
   int64_t id_;
   int64_t startId_;
   int64_t endId_;

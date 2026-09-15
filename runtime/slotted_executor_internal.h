@@ -12,8 +12,8 @@
 #include "ast/ast_node.h"
 #include "common/exception.h"
 #include "graphdb/graph_entity.h"
+#include "graphdb/transaction.h"
 #include "runtime/slotted_executor.h"
-#include "transaction/transaction.h"
 
 namespace rg::slotted {
 
@@ -35,7 +35,7 @@ struct RuntimeExpressionProgram {
 };
 
 struct RuntimeState {
-  RuntimeState(txn::Transaction &graphdb_transaction,
+  RuntimeState(graphdb::Transaction &graphdb_transaction,
                const QueryParameters &parameters,
                QueryExecutionOptions options);
 
@@ -43,7 +43,7 @@ struct RuntimeState {
   [[nodiscard]] const RuntimeExpressionProgram &ExpressionProgram(
       const ast::Expression &expression, const SlotConfiguration &slots);
 
-  txn::Transaction *transaction = nullptr;
+  graphdb::Transaction *transaction = nullptr;
   BoundQueryParameters bound_parameters;
   std::shared_ptr<QueryCancellationToken> cancellation;
   QueryMemoryTracker memory_tracker;

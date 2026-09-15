@@ -8,8 +8,8 @@
 
 #include "common/byte_utils.h"
 #include "graphdb/graph_db.h"
+#include "graphdb/transaction.h"
 #include "test_util.h"
-#include "transaction/transaction.h"
 #include "value/value.h"
 
 using rg::Value;
@@ -20,7 +20,8 @@ using namespace graphdb;
 namespace {
 
 std::vector<int64_t> CollectVertexPropertyIndexVids(
-    txn::Transaction* txn, const std::shared_ptr<VertexPropertyIndex>& index,
+    graphdb::Transaction* txn,
+    const std::shared_ptr<VertexPropertyIndex>& index,
     const std::vector<Value>& values) {
   rocksdb::ReadOptions ro;
   std::vector<int64_t> vids;

@@ -46,7 +46,7 @@ std::vector<std::vector<std::string>> StringRows(
 }
 
 std::unique_ptr<rg::QueryResultCursor> CursorFromTemporaryPlannedQuery(
-    txn::Transaction &transaction) {
+    graphdb::Transaction &transaction) {
   ir::PlannedQuery query = ir::PlanCypher("RETURN 1 + 2 AS value");
   return rg::QueryExecutor(transaction).ExecuteCursor(query.LogicalPlan());
 }
@@ -120,9 +120,9 @@ TEST(QueryExecutorTest, ExhaustedCursorLeavesTransactionActive) {
   ASSERT_TRUE(cursor->Next(&row));
   EXPECT_FALSE(cursor->Next(&row));
 
-  EXPECT_EQ(transaction->GetState(), txn::Transaction::State::kActive);
+  EXPECT_EQ(transaction->GetState(), graphdb::Transaction::State::kActive);
   transaction->Commit();
-  std::unique_ptr<txn::Transaction> next_transaction;
+  std::unique_ptr<graphdb::Transaction> next_transaction;
   EXPECT_NO_THROW(next_transaction = graph.BeginTransaction());
   ASSERT_NE(next_transaction, nullptr);
   next_transaction->Rollback();
@@ -135,11 +135,11 @@ TEST(QueryExecutorTest, ClosingCursorLeavesItsTransactionActive) {
       rg::ExecuteQueryCursor(*transaction, "UNWIND [1, 2] AS x RETURN x");
 
   cursor->Close();
-  EXPECT_EQ(transaction->GetState(), txn::Transaction::State::kActive);
+  EXPECT_EQ(transaction->GetState(), graphdb::Transaction::State::kActive);
   transaction->Rollback();
-  EXPECT_EQ(transaction->GetState(), txn::Transaction::State::kRolledBack);
+  EXPECT_EQ(transaction->GetState(), graphdb::Transaction::State::kRolledBack);
 
-  std::unique_ptr<txn::Transaction> next_transaction;
+  std::unique_ptr<graphdb::Transaction> next_transaction;
   EXPECT_NO_THROW(next_transaction = graph.BeginTransaction());
   ASSERT_NE(next_transaction, nullptr);
   next_transaction->Rollback();
@@ -153,11 +153,11 @@ TEST(QueryExecutorTest, CursorLeavesTransactionActiveAfterExecutionFailure) {
 
   std::vector<rg::Value> row;
   EXPECT_THROW((void)cursor->Next(&row), common::InvalidArgumentError);
-  EXPECT_EQ(transaction->GetState(), txn::Transaction::State::kActive);
+  EXPECT_EQ(transaction->GetState(), graphdb::Transaction::State::kActive);
   transaction->Rollback();
-  EXPECT_EQ(transaction->GetState(), txn::Transaction::State::kRolledBack);
+  EXPECT_EQ(transaction->GetState(), graphdb::Transaction::State::kRolledBack);
 
-  std::unique_ptr<txn::Transaction> next_transaction;
+  std::unique_ptr<graphdb::Transaction> next_transaction;
   EXPECT_NO_THROW(next_transaction = graph.BeginTransaction());
   ASSERT_NE(next_transaction, nullptr);
   next_transaction->Rollback();
@@ -170,9 +170,9 @@ TEST(QueryExecutorTest, PlanningFailureLeavesTransactionActive) {
   EXPECT_THROW(
       (void)rg::ExecuteQueryCursor(*transaction, "RETURN NOT 1 AS value"),
       ast::SemanticError);
-  EXPECT_EQ(transaction->GetState(), txn::Transaction::State::kActive);
+  EXPECT_EQ(transaction->GetState(), graphdb::Transaction::State::kActive);
   transaction->Rollback();
-  EXPECT_EQ(transaction->GetState(), txn::Transaction::State::kRolledBack);
+  EXPECT_EQ(transaction->GetState(), graphdb::Transaction::State::kRolledBack);
 }
 
 TEST(QueryExecutorTest, ExecutesReadsAndWritesInOneExplicitTransaction) {
@@ -183,16 +183,16 @@ TEST(QueryExecutorTest, ExecutesReadsAndWritesInOneExplicitTransaction) {
       *transaction, "CREATE (:Person {name: 'Ada'}) RETURN count(*) AS count");
   EXPECT_EQ(StringRows(created),
             (std::vector<std::vector<std::string>>{{"1"}}));
-  EXPECT_EQ(transaction->GetState(), txn::Transaction::State::kActive);
+  EXPECT_EQ(transaction->GetState(), graphdb::Transaction::State::kActive);
 
   rg::QueryResult read =
       rg::ExecuteQuery(*transaction, "MATCH (n:Person) RETURN n.name AS name");
   EXPECT_EQ(StringRows(read),
             (std::vector<std::vector<std::string>>{{"\"Ada\""}}));
-  EXPECT_EQ(transaction->GetState(), txn::Transaction::State::kActive);
+  EXPECT_EQ(transaction->GetState(), graphdb::Transaction::State::kActive);
 
   transaction->Commit();
-  EXPECT_EQ(transaction->GetState(), txn::Transaction::State::kCommitted);
+  EXPECT_EQ(transaction->GetState(), graphdb::Transaction::State::kCommitted);
   rg::QueryResult committed = rg::test::ExecuteQueryAndCommit(
       graph, "MATCH (n:Person) RETURN count(n) AS count");
   EXPECT_EQ(StringRows(committed),
@@ -204,7 +204,7 @@ TEST(QueryExecutorTest, ExecuteQueryDoesNotCommitTransaction) {
   {
     auto transaction = graph.BeginTransaction();
     (void)rg::ExecuteQuery(*transaction, "CREATE (:Temporary)");
-    EXPECT_EQ(transaction->GetState(), txn::Transaction::State::kActive);
+    EXPECT_EQ(transaction->GetState(), graphdb::Transaction::State::kActive);
     ASSERT_EQ(rg::test::CountVertices(*transaction), 1U);
   }
 
@@ -223,7 +223,7 @@ TEST(QueryExecutorTest, RollbackUndoesAllStatementsInTransaction) {
   ASSERT_EQ(rg::test::CountVertices(*transaction), 2U);
 
   transaction->Rollback();
-  EXPECT_EQ(transaction->GetState(), txn::Transaction::State::kRolledBack);
+  EXPECT_EQ(transaction->GetState(), graphdb::Transaction::State::kRolledBack);
   ASSERT_EQ(graph.Nodes().size(), 1U);
   EXPECT_EQ(graph.Nodes().front()->id, original->id);
   EXPECT_EQ(graph.Nodes().front()->properties.at("name"),
@@ -1537,7 +1537,7 @@ TEST(QueryExecutorTest, CommitsWritesAfterLimitedCursorIsExhausted) {
   EXPECT_EQ(rg::test::CountVertices(*transaction), 2U);
 
   EXPECT_FALSE(cursor->Next(&row));
-  EXPECT_EQ(transaction->GetState(), txn::Transaction::State::kActive);
+  EXPECT_EQ(transaction->GetState(), graphdb::Transaction::State::kActive);
   transaction->Commit();
   cursor->Close();
   EXPECT_EQ(graph.Nodes().size(), 2U);
@@ -1571,7 +1571,7 @@ TEST(QueryExecutorTest, KeepsLimitedWritesWhenCursorClosesEarly) {
   EXPECT_EQ(pending_vertices, 2U);
 
   cursor->Close();
-  EXPECT_EQ(transaction->GetState(), txn::Transaction::State::kActive);
+  EXPECT_EQ(transaction->GetState(), graphdb::Transaction::State::kActive);
   transaction->Commit();
   EXPECT_EQ(graph.Nodes().size(), pending_vertices);
   EXPECT_FALSE(cursor->Next(&row));
@@ -1591,7 +1591,7 @@ TEST(QueryExecutorTest, KeepsLimitedWritesWhenCursorIsCancelled) {
   EXPECT_EQ(pending_vertices, 2U);
 
   cursor->Cancel();
-  EXPECT_EQ(transaction->GetState(), txn::Transaction::State::kActive);
+  EXPECT_EQ(transaction->GetState(), graphdb::Transaction::State::kActive);
   transaction->Commit();
   EXPECT_EQ(graph.Nodes().size(), pending_vertices);
   EXPECT_FALSE(cursor->Next(&row));

@@ -7,9 +7,9 @@
 #include "gflags/gflags.h"
 #include "graphdb/assistant_pool.h"
 #include "graphdb/graph_db.h"
+#include "graphdb/transaction.h"
 #include "runtime/query_executor.h"
 #include "spdlog/spdlog.h"
-#include "transaction/transaction.h"
 
 DEFINE_string(db_path, "", "Path to the persistent GraphDB database.");
 
@@ -50,9 +50,9 @@ void PrintUsage() {
   std::cerr << "Usage:\n  cypher_run --db_path=<path> [--] <cypher...>\n";
 }
 
-void RollbackIfActive(txn::Transaction *transaction) noexcept {
+void RollbackIfActive(graphdb::Transaction *transaction) noexcept {
   if (transaction == nullptr ||
-      transaction->GetState() != txn::Transaction::State::kActive) {
+      transaction->GetState() != graphdb::Transaction::State::kActive) {
     return;
   }
   try {
@@ -86,7 +86,7 @@ int main(int argc, char **argv) {
   }
 
   std::unique_ptr<graphdb::GraphDB> graph;
-  std::unique_ptr<txn::Transaction> transaction;
+  std::unique_ptr<graphdb::Transaction> transaction;
   try {
     graphdb::GraphDBOptions options;
     options.assistant_pool = std::make_shared<graphdb::AssistantPool>(1);

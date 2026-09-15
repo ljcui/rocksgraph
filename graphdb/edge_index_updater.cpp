@@ -4,12 +4,12 @@
 #include "common/exceptions.h"
 #include "graphdb/graph_db.h"
 #include "graphdb/index.h"
+#include "graphdb/transaction.h"
 #include "graphdb/value_codec.h"
-#include "transaction/transaction.h"
 
 namespace graphdb {
 
-EdgeSerializedProperties LoadEdgeSerializedProperties(txn::Transaction* txn,
+EdgeSerializedProperties LoadEdgeSerializedProperties(Transaction* txn,
                                                       int64_t eid) {
   EdgeSerializedProperties properties;
   rocksdb::ReadOptions ro;
@@ -48,7 +48,7 @@ std::optional<std::vector<rg::Value>> BuildIndexValues(
 
 }  // namespace
 
-void UpdateEdgeIndexes(txn::Transaction* txn, int64_t eid, uint32_t tid,
+void UpdateEdgeIndexes(Transaction* txn, int64_t eid, uint32_t tid,
                        const EdgeSerializedProperties& old_properties,
                        const EdgeSerializedProperties& new_properties) {
   for (const auto& index : txn->db()->meta_info().GetEdgePropertyIndexes()) {

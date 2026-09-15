@@ -10,9 +10,9 @@
 #include "common/byte_utils.h"
 #include "common/exceptions.h"
 #include "common/logger.h"
+#include "graphdb/transaction.h"
 #include "meta_info.h"
 #include "proto/meta.pb.h"
-#include "transaction/transaction.h"
 namespace fs = std::filesystem;
 using namespace boost::endian;
 using common::AsChars;
@@ -389,11 +389,11 @@ GraphDB::~GraphDB() {
   }
 }
 
-std::unique_ptr<txn::Transaction> GraphDB::BeginTransaction() {
+std::unique_ptr<Transaction> GraphDB::BeginTransaction() {
   rocksdb::WriteOptions wo;
   rocksdb::TransactionOptions to;
   rocksdb::Transaction* txn = db_->BeginTransaction(wo, to);
-  return std::make_unique<txn::Transaction>(txn, this);
+  return std::make_unique<Transaction>(txn, this);
 }
 
 raft::RaftDriver* GraphDB::raft_driver() const {

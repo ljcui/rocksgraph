@@ -17,13 +17,13 @@ namespace graphdb {
 struct EdgePropertyIndex;
 class EdgeIterator : public Iterator {
  public:
-  explicit EdgeIterator(txn::Transaction* txn) : Iterator(txn) {}
+  explicit EdgeIterator(Transaction* txn) : Iterator(txn) {}
   virtual Edge& GetEdge() = 0;
 };
 
 class NoEdgeFound : public EdgeIterator {
  public:
-  explicit NoEdgeFound(txn::Transaction* txn) : EdgeIterator(txn) {
+  explicit NoEdgeFound(Transaction* txn) : EdgeIterator(txn) {
     valid_ = false;  // always false
   }
   void Next() override {}
@@ -38,7 +38,7 @@ class NoEdgeFound : public EdgeIterator {
 
 class ScanEdgeByTypes : public EdgeIterator {
  public:
-  ScanEdgeByTypes(txn::Transaction* txn, std::unordered_set<uint32_t> types);
+  ScanEdgeByTypes(Transaction* txn, std::unordered_set<uint32_t> types);
   void Next() override;
   Edge& GetEdge() override {
     assert(valid_);
@@ -59,7 +59,7 @@ class ScanEdgeByTypes : public EdgeIterator {
 
 class ScanEdgeByVidDirectionTypes : public EdgeIterator {
  public:
-  ScanEdgeByVidDirectionTypes(txn::Transaction* txn, int64_t vid,
+  ScanEdgeByVidDirectionTypes(Transaction* txn, int64_t vid,
                               EdgeDirection direction,
                               std::unordered_set<uint32_t> types);
   void Next() override;
@@ -83,7 +83,7 @@ class ScanEdgeByVidDirectionTypes : public EdgeIterator {
 class ScanEdgeByVidDirectionTypesProperties : public EdgeIterator {
  public:
   ScanEdgeByVidDirectionTypesProperties(
-      txn::Transaction* txn, int64_t vid, EdgeDirection direction,
+      Transaction* txn, int64_t vid, EdgeDirection direction,
       std::unordered_set<uint32_t> types,
       std::unordered_map<uint32_t, rg::Value> properties);
   void Next() override;
@@ -98,7 +98,7 @@ class ScanEdgeByVidDirectionTypesProperties : public EdgeIterator {
 class ScanEdgeByVidDirectionTypesPropertiesOtherNode : public EdgeIterator {
  public:
   ScanEdgeByVidDirectionTypesPropertiesOtherNode(
-      txn::Transaction* txn, int64_t vid, EdgeDirection direction,
+      Transaction* txn, int64_t vid, EdgeDirection direction,
       std::unordered_set<uint32_t> types,
       std::unordered_map<uint32_t, rg::Value> properties,
       std::unordered_set<uint32_t> other_node_labels,
@@ -117,7 +117,7 @@ class ScanEdgeByVidDirectionTypesPropertiesOtherNode : public EdgeIterator {
 class ScanEdgeByVidDirectionTypesPropertiesOtherVid : public EdgeIterator {
  public:
   ScanEdgeByVidDirectionTypesPropertiesOtherVid(
-      txn::Transaction* txn, int64_t vid, EdgeDirection direction,
+      Transaction* txn, int64_t vid, EdgeDirection direction,
       std::unordered_set<uint32_t> types,
       std::unordered_map<uint32_t, rg::Value> properties, const Vertex& other);
   void Next() override;
@@ -132,8 +132,8 @@ class ScanEdgeByVidDirectionTypesPropertiesOtherVid : public EdgeIterator {
 class ScanEdgeByVidDirectionTypePropertiesOtherNode : public EdgeIterator {
  public:
   ScanEdgeByVidDirectionTypePropertiesOtherNode(
-      txn::Transaction* txn, int64_t vid, EdgeDirection direction,
-      uint32_t type, std::unordered_map<uint32_t, rg::Value> properties,
+      Transaction* txn, int64_t vid, EdgeDirection direction, uint32_t type,
+      std::unordered_map<uint32_t, rg::Value> properties,
       const Vertex& other_node);
   void Next() override;
   Edge& GetEdge() override { return iter_->GetEdge(); };
@@ -148,7 +148,7 @@ class ScanEdgeByVidDirectionTypePropertiesOtherNode : public EdgeIterator {
 
 class GetEdgeByPropertyIndex : public EdgeIterator {
  public:
-  GetEdgeByPropertyIndex(txn::Transaction* txn,
+  GetEdgeByPropertyIndex(Transaction* txn,
                          std::shared_ptr<EdgePropertyIndex> index,
                          std::string prefix);
   void Next() override;
@@ -167,7 +167,7 @@ class GetEdgeByPropertyIndex : public EdgeIterator {
 
 class GetEdgeByPropertyRange : public EdgeIterator {
  public:
-  GetEdgeByPropertyRange(txn::Transaction* txn,
+  GetEdgeByPropertyRange(Transaction* txn,
                          std::shared_ptr<EdgePropertyIndex> index,
                          std::optional<std::string> lower_key,
                          std::optional<std::string> upper_key, bool left_closed,

@@ -104,7 +104,6 @@ add_subdirectory(etcd_raft)
 add_subdirectory(proto)
 add_subdirectory(raft_driver)
 add_subdirectory(graphdb)
-add_subdirectory(transaction)
 
 add_subdirectory(ast)
 add_subdirectory(ir)

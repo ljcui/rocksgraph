@@ -11,10 +11,10 @@
 #include "common/logger.h"
 #include "graph_db.h"
 #include "graphdb/edge_index_updater.h"
+#include "graphdb/transaction.h"
 #include "graphdb/value_codec.h"
 #include "graphdb/vector_property.h"
 #include "graphdb/vertex_index_updater.h"
-#include "transaction/transaction.h"
 using namespace boost::endian;
 using common::AsChars;
 using common::ReadValue;
@@ -36,8 +36,7 @@ std::string VertexPropertyKey(int64_t vid, uint32_t pid) {
 }
 
 VertexSerializedProperties LoadVertexSerializedProperties(
-    txn::Transaction *txn, int64_t vid,
-    const std::unordered_set<uint32_t> &pids) {
+    Transaction *txn, int64_t vid, const std::unordered_set<uint32_t> &pids) {
   VertexSerializedProperties props;
   rocksdb::ReadOptions ro;
   for (auto pid : pids) {
@@ -55,8 +54,7 @@ VertexSerializedProperties LoadVertexSerializedProperties(
 }
 
 VertexVectorProperties LoadVertexVectorProperties(
-    txn::Transaction *txn, int64_t vid,
-    const std::unordered_set<uint32_t> &lids,
+    Transaction *txn, int64_t vid, const std::unordered_set<uint32_t> &lids,
     const std::unordered_set<uint32_t> &pids) {
   VertexVectorProperties props;
   rocksdb::ReadOptions ro;
@@ -79,8 +77,7 @@ VertexVectorProperties LoadVertexVectorProperties(
 }
 
 VertexVectorProperties LoadAllVertexVectorProperties(
-    txn::Transaction *txn, int64_t vid,
-    const std::unordered_set<uint32_t> &lids,
+    Transaction *txn, int64_t vid, const std::unordered_set<uint32_t> &lids,
     std::unordered_set<uint32_t> *pids, std::vector<std::string> *keys) {
   VertexVectorProperties props;
   rocksdb::ReadOptions ro;
@@ -107,7 +104,7 @@ VertexVectorProperties LoadAllVertexVectorProperties(
 }
 
 std::unordered_set<uint32_t> CollectVertexIndexPropertyIds(
-    txn::Transaction *txn, const std::unordered_set<uint32_t> &old_lids,
+    Transaction *txn, const std::unordered_set<uint32_t> &old_lids,
     const std::unordered_set<uint32_t> &new_lids,
     const std::unordered_set<uint32_t> &touched_pids) {
   std::unordered_set<uint32_t> required_pids;

@@ -10,7 +10,7 @@
 #include "runtime/execution_context.h"
 #include "value/value.h"
 
-namespace txn {
+namespace graphdb {
 class Transaction;
 }
 
@@ -56,7 +56,7 @@ struct QueryOptions {
 
 class QueryExecutor final {
  public:
-  explicit QueryExecutor(txn::Transaction &transaction)
+  explicit QueryExecutor(graphdb::Transaction &transaction)
       : transaction_(&transaction) {}
 
   // Execution requires an active transaction and never commits it.
@@ -70,16 +70,16 @@ class QueryExecutor final {
       QueryExecutionOptions options = {}) const;
 
  private:
-  txn::Transaction *transaction_ = nullptr;
+  graphdb::Transaction *transaction_ = nullptr;
 };
 
 // Executes one Cypher statement in an active transaction. The caller owns the
 // transaction boundary and must commit it explicitly.
-[[nodiscard]] QueryResult ExecuteQuery(txn::Transaction &transaction,
+[[nodiscard]] QueryResult ExecuteQuery(graphdb::Transaction &transaction,
                                        std::string_view cypher,
                                        QueryOptions options = {});
 [[nodiscard]] std::unique_ptr<QueryResultCursor> ExecuteQueryCursor(
-    txn::Transaction &transaction, std::string_view cypher,
+    graphdb::Transaction &transaction, std::string_view cypher,
     QueryOptions options = {});
 
 }  // namespace rg

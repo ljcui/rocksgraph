@@ -20,7 +20,7 @@
 #include "raft_driver/raft_driver.h"
 #include "value/value.h"
 
-namespace txn {
+namespace graphdb {
 class Transaction;
 }
 namespace server {
@@ -49,7 +49,7 @@ class GraphDB {
 
   static std::unique_ptr<GraphDB> Open(const std::string& path,
                                        const GraphDBOptions& options);
-  std::unique_ptr<txn::Transaction> BeginTransaction();
+  std::unique_ptr<Transaction> BeginTransaction();
   void ClearData();
   void AddVertexPropertyIndex(const std::string& index_name, bool,
                               const std::string& label,

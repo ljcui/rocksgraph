@@ -15,7 +15,7 @@ namespace {
 class PhysicalResultCursorImpl final : public PhysicalResultCursor {
  public:
   PhysicalResultCursorImpl(const PhysicalPlan &plan,
-                           txn::Transaction &transaction,
+                           graphdb::Transaction &transaction,
                            const QueryParameters &parameters,
                            std::vector<std::string> result_columns,
                            QueryExecutionOptions options)
@@ -89,7 +89,7 @@ class PhysicalResultCursorImpl final : public PhysicalResultCursor {
 }  // namespace
 
 std::unique_ptr<PhysicalResultCursor> StartPhysicalPlan(
-    const PhysicalPlan &plan, txn::Transaction &transaction,
+    const PhysicalPlan &plan, graphdb::Transaction &transaction,
     const QueryParameters &parameters,
     const std::vector<std::string> &result_columns,
     QueryExecutionOptions options) {

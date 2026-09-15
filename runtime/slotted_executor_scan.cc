@@ -485,7 +485,7 @@ class NodeByIdSeekOperator final : public PullOperator {
 };
 
 std::optional<graphdb::Edge> FindGraphDBRelationshipById(
-    txn::Transaction &transaction,
+    graphdb::Transaction &transaction,
     const std::vector<std::string> &relationship_types, std::int64_t id) {
   if (!relationship_types.empty()) {
     for (const auto &type : relationship_types) {

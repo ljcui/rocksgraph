@@ -12,11 +12,11 @@
 #include "common/flags.h"
 #include "common/logger.h"
 #include "graphdb/graph_db.h"
+#include "graphdb/transaction.h"
 #include "graphdb/value_codec.h"
 #include "graphdb/vector_property.h"
 #include "graphdb/vector_store.h"
 #include "test_util.h"
-#include "transaction/transaction.h"
 #include "value/value.h"
 
 using rg::Value;

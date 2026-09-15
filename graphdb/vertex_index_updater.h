@@ -10,16 +10,13 @@
 #include <unordered_set>
 #include <vector>
 
-namespace txn {
-class Transaction;
-}
-
 namespace graphdb {
+class Transaction;
 
 using VertexSerializedProperties = std::unordered_map<uint32_t, std::string>;
 using VertexVectorProperties = std::unordered_map<uint32_t, std::vector<float>>;
 
-void UpdateVertexIndexes(txn::Transaction* txn, int64_t vid,
+void UpdateVertexIndexes(Transaction* txn, int64_t vid,
                          const std::unordered_set<uint32_t>& old_lids,
                          const std::unordered_set<uint32_t>& new_lids,
                          const VertexSerializedProperties& old_properties,

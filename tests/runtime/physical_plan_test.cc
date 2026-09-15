@@ -314,7 +314,7 @@ std::vector<std::int64_t> FirstColumnIds(
 
 class GraphDBPhysicalResultCursor final : public rg::PhysicalResultCursor {
  public:
-  GraphDBPhysicalResultCursor(std::unique_ptr<txn::Transaction> transaction,
+  GraphDBPhysicalResultCursor(std::unique_ptr<graphdb::Transaction> transaction,
                               std::unique_ptr<rg::PhysicalResultCursor> cursor)
       : transaction_(std::move(transaction)), cursor_(std::move(cursor)) {}
 
@@ -361,7 +361,7 @@ class GraphDBPhysicalResultCursor final : public rg::PhysicalResultCursor {
  private:
   void Commit() noexcept {
     if (transaction_ != nullptr &&
-        transaction_->GetState() == txn::Transaction::State::kActive) {
+        transaction_->GetState() == graphdb::Transaction::State::kActive) {
       try {
         transaction_->Commit();
       } catch (...) {
@@ -374,7 +374,7 @@ class GraphDBPhysicalResultCursor final : public rg::PhysicalResultCursor {
     rg::test::RollbackGraphDBTransaction(transaction_.get());
   }
 
-  std::unique_ptr<txn::Transaction> transaction_;
+  std::unique_ptr<graphdb::Transaction> transaction_;
   std::unique_ptr<rg::PhysicalResultCursor> cursor_;
   bool exhausted_ = false;
   bool closed_ = false;

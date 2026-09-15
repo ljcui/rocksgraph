@@ -7,11 +7,11 @@
 #include <vector>
 
 #include "common/exception.h"
+#include "graphdb/transaction.h"
 #include "planner/planned_query.h"
 #include "runtime/graphdb_planner_catalog.h"
 #include "runtime/physical_plan.h"
 #include "runtime/slotted_executor.h"
-#include "transaction/transaction.h"
 
 namespace rg {
 namespace {
@@ -27,9 +27,9 @@ ir::LogicalPlanBuilderOptions PlannerOptionsFor(const QueryOptions &options) {
 class QueryResultCursorImpl final : public QueryResultCursor {
  public:
   [[nodiscard]] static std::unique_ptr<QueryResultCursorImpl> Create(
-      const ir::LogicalPlan &logical_plan, txn::Transaction &transaction,
+      const ir::LogicalPlan &logical_plan, graphdb::Transaction &transaction,
       const QueryParameters &parameters, QueryExecutionOptions options) {
-    CHECK(transaction.GetState() == txn::Transaction::State::kActive,
+    CHECK(transaction.GetState() == graphdb::Transaction::State::kActive,
           common::InvalidArgumentError,
           "query execution requires an active transaction");
     auto cursor =
@@ -90,12 +90,12 @@ class QueryResultCursorImpl final : public QueryResultCursor {
 
  private:
   QueryResultCursorImpl(PhysicalPlan physical_plan,
-                        txn::Transaction &transaction)
+                        graphdb::Transaction &transaction)
       : physical_plan_(std::move(physical_plan)), transaction_(&transaction) {}
 
   [[nodiscard]] bool IsActive() const noexcept {
     return transaction_ != nullptr &&
-           transaction_->GetState() == txn::Transaction::State::kActive;
+           transaction_->GetState() == graphdb::Transaction::State::kActive;
   }
 
   void Finish() {
@@ -111,7 +111,7 @@ class QueryResultCursorImpl final : public QueryResultCursor {
   }
 
   PhysicalPlan physical_plan_;
-  txn::Transaction *transaction_ = nullptr;
+  graphdb::Transaction *transaction_ = nullptr;
   std::unique_ptr<PhysicalResultCursor> physical_cursor_;
   std::size_t peak_memory_bytes_ = 0;
   bool closed_ = false;
@@ -147,16 +147,16 @@ std::unique_ptr<QueryResultCursor> QueryExecutor::ExecuteCursor(
                                        std::move(options));
 }
 
-QueryResult ExecuteQuery(txn::Transaction &transaction, std::string_view cypher,
-                         QueryOptions options) {
+QueryResult ExecuteQuery(graphdb::Transaction &transaction,
+                         std::string_view cypher, QueryOptions options) {
   return ConsumeCursor(
       ExecuteQueryCursor(transaction, cypher, std::move(options)));
 }
 
 std::unique_ptr<QueryResultCursor> ExecuteQueryCursor(
-    txn::Transaction &transaction, std::string_view cypher,
+    graphdb::Transaction &transaction, std::string_view cypher,
     QueryOptions options) {
-  CHECK(transaction.GetState() == txn::Transaction::State::kActive,
+  CHECK(transaction.GetState() == graphdb::Transaction::State::kActive,
         common::InvalidArgumentError,
         "query execution requires an active transaction");
   GraphDBPlannerCatalog graphdb_catalog(*transaction.db());

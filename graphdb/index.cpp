@@ -17,12 +17,11 @@
 #include "common/logger.h"
 #include "ftindex/include/lib.rs.h"
 #include "graphdb/graph_db.h"
+#include "graphdb/transaction.h"
 #include "graphdb/value_codec.h"
 #include "graphdb/vector_property.h"
 #include "spdlog/stopwatch.h"
-#include "transaction/transaction.h"
 
-using namespace txn;
 using namespace boost::endian;
 using common::AsChars;
 using common::ReadValue;
@@ -333,7 +332,7 @@ void VertexPropertyIndex::UpdateIndexDirect(
 }
 
 void VertexPropertyIndex::AppendBuildUpdate(
-    txn::Transaction* txn, meta::UpdateType type, int64_t vid,
+    Transaction* txn, meta::UpdateType type, int64_t vid,
     const std::vector<rg::Value>& values) {
   meta::PropertyIndexUpdate update;
   update.set_type(type);
@@ -441,7 +440,7 @@ void VertexPropertyIndex::ApplyBuildUpdate(
 }
 
 void VertexPropertyIndex::ApplyCommittedBuildUpdate(
-    txn::Transaction* txn, const meta::PropertyIndexUpdate& update) {
+    Transaction* txn, const meta::PropertyIndexUpdate& update) {
   std::vector<rg::Value> values;
   values.reserve(update.values_size());
   for (const auto& item : update.values()) {
@@ -575,7 +574,7 @@ std::string VertexPropertyIndex::EntryKey(const std::vector<rg::Value>& values,
 
 std::optional<std::vector<rg::Value>>
 VertexPropertyIndex::LoadIndexedPropertyValues(
-    txn::Transaction* txn, int64_t vid,
+    Transaction* txn, int64_t vid,
     const std::unordered_map<uint32_t, std::string>* overrides,
     const std::unordered_set<uint32_t>* removed) const {
   std::vector<rg::Value> values;
@@ -714,7 +713,7 @@ void EdgePropertyIndex::UpdateIndexDirect(
 }
 
 void EdgePropertyIndex::AppendBuildUpdate(
-    txn::Transaction* txn, meta::UpdateType type, int64_t eid,
+    Transaction* txn, meta::UpdateType type, int64_t eid,
     const std::vector<rg::Value>& values) {
   meta::PropertyIndexUpdate update;
   update.set_type(type);
@@ -812,7 +811,7 @@ void EdgePropertyIndex::ApplyBuildUpdate(
 }
 
 void EdgePropertyIndex::ApplyCommittedBuildUpdate(
-    txn::Transaction* txn, const meta::PropertyIndexUpdate& update) {
+    Transaction* txn, const meta::PropertyIndexUpdate& update) {
   std::vector<rg::Value> values;
   values.reserve(update.values_size());
   for (const auto& item : update.values()) {
@@ -952,7 +951,7 @@ bool EdgePropertyIndex::AllPropertiesPresent(
   return true;
 }
 
-void EdgePropertyIndex::DeleteIndex(txn::Transaction* txn, int64_t eid,
+void EdgePropertyIndex::DeleteIndex(Transaction* txn, int64_t eid,
                                     const std::vector<rg::Value>& values) {
   UpdateIndex(txn, eid, std::nullopt, values);
 }
@@ -1143,13 +1142,13 @@ VertexFullTextIndex::VertexFullTextIndex(
   next_wal_id_ = std::max(next_wal_id_.load(), big_to_native(apply_id_) + 1);
 }
 
-void VertexFullTextIndex::AddIndex(txn::Transaction* txn, int64_t vid,
+void VertexFullTextIndex::AddIndex(Transaction* txn, int64_t vid,
                                    const meta::FullTextIndexUpdate& wal) {
   (void)vid;
   txn->AppendFullTextIndexWAL(shared_from_this(), wal);
 }
 
-void VertexFullTextIndex::DeleteIndex(txn::Transaction* txn, int64_t vid,
+void VertexFullTextIndex::DeleteIndex(Transaction* txn, int64_t vid,
                                       const meta::FullTextIndexUpdate& wal) {
   (void)vid;
   txn->AppendFullTextIndexWAL(shared_from_this(), wal);
@@ -1578,7 +1577,7 @@ std::vector<std::pair<int64_t, float>> VertexVectorIndex::KnnSearch(
   return vector_store_->KnnSearch(query, top_k, ef_search);
 }
 
-void VertexVectorIndex::DeleteIfPresent(txn::Transaction* txn, int64_t vid) {
+void VertexVectorIndex::DeleteIfPresent(Transaction* txn, int64_t vid) {
   meta::VectorIndexUpdate wal;
   wal.set_type(meta::UpdateType::Delete);
   wal.set_vid(vid);
@@ -1696,7 +1695,7 @@ void VertexVectorIndex::ApplyWAL() {
   }
 }
 
-void VertexVectorIndex::AddIndex(txn::Transaction* txn, int64_t vid,
+void VertexVectorIndex::AddIndex(Transaction* txn, int64_t vid,
                                  meta::VectorIndexUpdate& wal) {
   wal.set_vid(vid);
   txn->AppendVectorIndexWAL(shared_from_this(), wal);

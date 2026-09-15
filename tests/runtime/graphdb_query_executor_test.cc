@@ -10,10 +10,10 @@
 #include "common/exceptions.h"
 #include "graphdb/assistant_pool.h"
 #include "graphdb/graph_db.h"
+#include "graphdb/transaction.h"
 #include "runtime/graphdb_planner_catalog.h"
 #include "runtime/query_executor.h"
 #include "tests/planner/fake_planner_statistics.h"
-#include "transaction/transaction.h"
 
 namespace {
 
@@ -826,7 +826,7 @@ TEST_F(GraphDBQueryExecutorTest, RollsBackNativeWrites) {
   verification->Commit();
 }
 
-TEST_F(GraphDBQueryExecutorTest, RollsBackNativeWritesAfterExecutionFailure) {
+TEST_F(GraphDBQueryExecutorTest, LeavesRollbackAfterExecutionFailureToCaller) {
   auto transaction = graph_->BeginTransaction();
   EXPECT_THROW(
       (void)rg::ExecuteQuery(
@@ -834,7 +834,9 @@ TEST_F(GraphDBQueryExecutorTest, RollsBackNativeWritesAfterExecutionFailure) {
           "CREATE (n:RolledBack {name: 'temporary'}) SET n.value = 1 / 0 "
           "RETURN n"),
       common::InvalidArgumentError);
-  EXPECT_EQ(transaction->GetState(), txn::Transaction::State::kRolledBack);
+  EXPECT_EQ(transaction->GetState(), graphdb::Transaction::State::kActive);
+  transaction->Rollback();
+  EXPECT_EQ(transaction->GetState(), graphdb::Transaction::State::kRolledBack);
 
   auto verification = graph_->BeginTransaction();
   rg::QueryResult persisted = rg::ExecuteQuery(

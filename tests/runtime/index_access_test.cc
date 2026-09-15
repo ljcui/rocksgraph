@@ -43,7 +43,7 @@ std::vector<std::int64_t> EdgeIds(
 }
 
 std::vector<std::int64_t> VertexIdsByLabels(
-    txn::Transaction& transaction,
+    graphdb::Transaction& transaction,
     const std::unordered_set<std::string>& required_labels) {
   std::vector<std::int64_t> ids;
   auto iterator = transaction.NewVertexIterator();

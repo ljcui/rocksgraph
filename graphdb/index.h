@@ -25,10 +25,9 @@
 #include "proto/meta.pb.h"
 #include "value/value.h"
 
-namespace txn {
-class Transaction;
-}
 namespace graphdb {
+class Transaction;
+
 struct VertexPropertyIndex
     : public std::enable_shared_from_this<VertexPropertyIndex> {
  public:
@@ -44,14 +43,14 @@ struct VertexPropertyIndex
         lid_(lid),
         pids_(std::move(pids)),
         pid_set_(pids_.begin(), pids_.end()) {}
-  void AddIndex(txn::Transaction* txn, int64_t vid,
+  void AddIndex(Transaction* txn, int64_t vid,
                 const std::vector<rg::Value>& values);
-  void UpdateIndex(txn::Transaction* txn, int64_t vid,
+  void UpdateIndex(Transaction* txn, int64_t vid,
                    const std::optional<std::vector<rg::Value>>& new_values,
                    const std::optional<std::vector<rg::Value>>& old_values);
-  void DeleteIndex(txn::Transaction* txn, int64_t vid,
+  void DeleteIndex(Transaction* txn, int64_t vid,
                    const std::vector<rg::Value>& values);
-  void ApplyCommittedBuildUpdate(txn::Transaction* txn,
+  void ApplyCommittedBuildUpdate(Transaction* txn,
                                  const meta::PropertyIndexUpdate& update);
   void Load(const rocksdb::Snapshot* snapshot, uint64_t snapshot_wal_id);
   void ApplyWAL();
@@ -59,7 +58,7 @@ struct VertexPropertyIndex
   std::string IndexKey(const std::vector<rg::Value>& values) const;
   std::string EntryKey(const std::vector<rg::Value>& values, int64_t vid) const;
   std::optional<std::vector<rg::Value>> LoadIndexedPropertyValues(
-      txn::Transaction* txn, int64_t vid,
+      Transaction* txn, int64_t vid,
       const std::unordered_map<uint32_t, std::string>* overrides = nullptr,
       const std::unordered_set<uint32_t>* removed = nullptr) const;
   bool ContainsProperty(uint32_t pid) const { return pid_set_.count(pid) > 0; }
@@ -84,11 +83,11 @@ struct VertexPropertyIndex
 
  private:
   void UpdateIndexDirect(
-      txn::Transaction* txn, int64_t vid,
+      Transaction* txn, int64_t vid,
       const std::optional<std::vector<rg::Value>>& new_values,
       const std::optional<std::vector<rg::Value>>& old_values);
-  void AppendBuildUpdate(txn::Transaction* txn, meta::UpdateType type,
-                         int64_t vid, const std::vector<rg::Value>& values);
+  void AppendBuildUpdate(Transaction* txn, meta::UpdateType type, int64_t vid,
+                         const std::vector<rg::Value>& values);
   void ApplyBuildUpdate(const meta::PropertyIndexUpdate& update);
 
   rocksdb::TransactionDB* db_;
@@ -122,14 +121,14 @@ struct EdgePropertyIndex
         tid_(tid),
         pids_(std::move(pids)),
         pid_set_(pids_.begin(), pids_.end()) {}
-  void AddIndex(txn::Transaction* txn, int64_t eid,
+  void AddIndex(Transaction* txn, int64_t eid,
                 const std::vector<rg::Value>& values);
-  void UpdateIndex(txn::Transaction* txn, int64_t eid,
+  void UpdateIndex(Transaction* txn, int64_t eid,
                    const std::optional<std::vector<rg::Value>>& new_values,
                    const std::optional<std::vector<rg::Value>>& old_values);
-  void DeleteIndex(txn::Transaction* txn, int64_t eid,
+  void DeleteIndex(Transaction* txn, int64_t eid,
                    const std::vector<rg::Value>& values);
-  void ApplyCommittedBuildUpdate(txn::Transaction* txn,
+  void ApplyCommittedBuildUpdate(Transaction* txn,
                                  const meta::PropertyIndexUpdate& update);
   void Load(const rocksdb::Snapshot* snapshot, uint64_t snapshot_wal_id);
   void ApplyWAL();
@@ -158,11 +157,11 @@ struct EdgePropertyIndex
 
  private:
   void UpdateIndexDirect(
-      txn::Transaction* txn, int64_t eid,
+      Transaction* txn, int64_t eid,
       const std::optional<std::vector<rg::Value>>& new_values,
       const std::optional<std::vector<rg::Value>>& old_values);
-  void AppendBuildUpdate(txn::Transaction* txn, meta::UpdateType type,
-                         int64_t eid, const std::vector<rg::Value>& values);
+  void AppendBuildUpdate(Transaction* txn, meta::UpdateType type, int64_t eid,
+                         const std::vector<rg::Value>& values);
   void ApplyBuildUpdate(const meta::PropertyIndexUpdate& update);
 
   rocksdb::TransactionDB* db_;
@@ -223,9 +222,9 @@ class VertexFullTextIndex
   void Load(const rocksdb::Snapshot* snapshot = nullptr,
             uint64_t snapshot_wal_id = 0);
   std::string NextWALKey();
-  void AddIndex(txn::Transaction* txn, int64_t vid,
+  void AddIndex(Transaction* txn, int64_t vid,
                 const meta::FullTextIndexUpdate& wal);
-  void DeleteIndex(txn::Transaction* txn, int64_t vid,
+  void DeleteIndex(Transaction* txn, int64_t vid,
                    const meta::FullTextIndexUpdate& wal);
   void ResetForClear();
 
@@ -293,10 +292,9 @@ class VertexVectorIndex
   void ReleaseResources();
   void Load(const rocksdb::Snapshot* snapshot = nullptr,
             uint64_t snapshot_wal_id = 0);
-  void DeleteIfPresent(txn::Transaction* txn, int64_t vid);
+  void DeleteIfPresent(Transaction* txn, int64_t vid);
   std::string NextWALKey();
-  void AddIndex(txn::Transaction* txn, int64_t vid,
-                meta::VectorIndexUpdate& wal);
+  void AddIndex(Transaction* txn, int64_t vid, meta::VectorIndexUpdate& wal);
   void ApplyWAL();
   void ResetForClear();
 

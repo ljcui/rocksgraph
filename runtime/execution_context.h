@@ -17,7 +17,7 @@
 #include "common/string_view_hash.h"
 #include "value/value.h"
 
-namespace txn {
+namespace graphdb {
 class Transaction;
 }
 
@@ -119,14 +119,14 @@ struct ExecutionClock {
 };
 
 struct ExecutionContext {
-  txn::Transaction *transaction = nullptr;
+  graphdb::Transaction *transaction = nullptr;
   const QueryParameters *parameters = nullptr;
   const BoundQueryParameters *bound_parameters = nullptr;
   QueryCancellationToken *cancellation = nullptr;
   QueryMemoryTracker *memory_tracker = nullptr;
   ExecutionClock clock = ExecutionClock::Start();
 
-  [[nodiscard]] txn::Transaction &GraphDBTransaction() const {
+  [[nodiscard]] graphdb::Transaction &GraphDBTransaction() const {
     CHECK(transaction != nullptr, common::InvalidArgumentError,
           "GraphDB transaction is not available in this execution context");
     return *transaction;

@@ -15,13 +15,13 @@ struct VertexPropertyIndex;
 
 class VertexIterator : public Iterator {
  public:
-  explicit VertexIterator(txn::Transaction* txn) : Iterator(txn) {}
+  explicit VertexIterator(Transaction* txn) : Iterator(txn) {}
   virtual Vertex& GetVertex() = 0;
 };
 
 class NoVertexFound : public VertexIterator {
  public:
-  explicit NoVertexFound(txn::Transaction* txn) : VertexIterator(txn) {
+  explicit NoVertexFound(Transaction* txn) : VertexIterator(txn) {
     valid_ = false;  // always false
   }
   Vertex& GetVertex() override {
@@ -36,7 +36,7 @@ class NoVertexFound : public VertexIterator {
 
 class ScanVertexBylabel : public VertexIterator {
  public:
-  ScanVertexBylabel(txn::Transaction* txn, uint32_t lid);
+  ScanVertexBylabel(Transaction* txn, uint32_t lid);
   void Next() override;
   Vertex& GetVertex() override {
     assert(valid_);
@@ -52,7 +52,7 @@ class ScanVertexBylabel : public VertexIterator {
 class ScanVertexBylabelProperties : public VertexIterator {
  public:
   ScanVertexBylabelProperties(
-      txn::Transaction* txn, uint32_t lid,
+      Transaction* txn, uint32_t lid,
       std::unordered_map<uint32_t, rg::Value> properties);
   void Next() override;
   Vertex& GetVertex() override { return iter_->GetVertex(); }
@@ -65,7 +65,7 @@ class ScanVertexBylabelProperties : public VertexIterator {
 
 class ScanAllVertex : public VertexIterator {
  public:
-  explicit ScanAllVertex(txn::Transaction* txn);
+  explicit ScanAllVertex(Transaction* txn);
   void Next() override;
   Vertex& GetVertex() override {
     assert(valid_);
@@ -79,7 +79,7 @@ class ScanAllVertex : public VertexIterator {
 
 class ScanVertexByProperties : public VertexIterator {
  public:
-  ScanVertexByProperties(txn::Transaction* txn,
+  ScanVertexByProperties(Transaction* txn,
                          std::unordered_map<uint32_t, rg::Value> properties);
   void Next() override;
   Vertex& GetVertex() override { return iter_->GetVertex(); }
@@ -92,7 +92,7 @@ class ScanVertexByProperties : public VertexIterator {
 
 class GetVertexByUniqueIndex : public VertexIterator {
  public:
-  GetVertexByUniqueIndex(txn::Transaction* txn,
+  GetVertexByUniqueIndex(Transaction* txn,
                          std::shared_ptr<VertexPropertyIndex> index,
                          std::vector<rg::Value> values,
                          std::unordered_map<uint32_t, rg::Value> other_props);
@@ -109,7 +109,7 @@ class GetVertexByUniqueIndex : public VertexIterator {
 
 class GetVertexByPropertyIndex : public VertexIterator {
  public:
-  GetVertexByPropertyIndex(txn::Transaction* txn,
+  GetVertexByPropertyIndex(Transaction* txn,
                            std::shared_ptr<VertexPropertyIndex> index,
                            std::string prefix);
   void Next() override;
@@ -129,7 +129,7 @@ class GetVertexByPropertyIndex : public VertexIterator {
 
 class GetVertexByPropertyRange : public VertexIterator {
  public:
-  GetVertexByPropertyRange(txn::Transaction* txn,
+  GetVertexByPropertyRange(Transaction* txn,
                            std::shared_ptr<VertexPropertyIndex> index,
                            std::optional<std::string> lower_key,
                            std::optional<std::string> upper_key,
@@ -161,14 +161,13 @@ struct VertexScore {
 
 class VertexScoreIterator : public Iterator {
  public:
-  explicit VertexScoreIterator(txn::Transaction* txn) : Iterator(txn) {}
+  explicit VertexScoreIterator(Transaction* txn) : Iterator(txn) {}
   virtual VertexScore& GetVertexScore() = 0;
 };
 
 class GetVertexByFullTextIndex : public VertexScoreIterator {
  public:
-  GetVertexByFullTextIndex(txn::Transaction* txn,
-                           const std::string& ft_index_name,
+  GetVertexByFullTextIndex(Transaction* txn, const std::string& ft_index_name,
                            const std::string& query, size_t top_n);
   void Next() override;
   VertexScore& GetVertexScore() override {
@@ -184,7 +183,7 @@ class GetVertexByFullTextIndex : public VertexScoreIterator {
 
 class GetVertexByKnnSearch : public VertexScoreIterator {
  public:
-  GetVertexByKnnSearch(txn::Transaction* txn, const std::string& vector_index,
+  GetVertexByKnnSearch(Transaction* txn, const std::string& vector_index,
                        const std::vector<float>& query, int top_k,
                        int ef_search);
   void Next() override;

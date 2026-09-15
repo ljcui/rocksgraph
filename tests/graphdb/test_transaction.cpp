@@ -4,9 +4,9 @@
 #include <filesystem>
 
 #include "graphdb/graph_db.h"
+#include "graphdb/transaction.h"
 #include "proto/meta.pb.h"
 #include "test_util.h"
-#include "transaction/transaction.h"
 #include "value/value.h"
 
 using rg::Value;

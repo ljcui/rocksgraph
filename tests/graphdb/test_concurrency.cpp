@@ -5,8 +5,8 @@
 
 #include "common/logger.h"
 #include "graphdb/graph_db.h"
+#include "graphdb/transaction.h"
 #include "test_util.h"
-#include "transaction/transaction.h"
 #include "value/value.h"
 
 using rg::Value;
