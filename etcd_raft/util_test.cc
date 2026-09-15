@@ -9,6 +9,10 @@ auto testFormatter = [](const std::string& data) {
   return str;
 };
 
+TEST(util, TestFormatWithoutArguments) {
+  EXPECT_EQ(format("literal 100% value"), "literal 100% value");
+}
+
 TEST(util, TestDescribeEntry) {
   raftpb::Entry entry;
   entry.set_term(1);

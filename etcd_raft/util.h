@@ -1,8 +1,10 @@
 #pragma once
 #include <google/protobuf/util/message_differencer.h>
 
+#include <algorithm>
 #include <cstdarg>
 #include <cstring>
+#include <ctime>
 #include <functional>
 #include <iomanip>
 #include <memory>
@@ -41,25 +43,33 @@ const char *const log_level_to_str[] = {"FATAL", "ERROR", "WARN", "INFO",
                                         "DEBUG"};
 inline void logger(LOG_LEVEL log_level, const char *file, int line,
                    const char *pattern, va_list args) {
-  char time[20] = {0};
+  char timestamp[64] = {0};
   char final_content[1024] = {0};
 
   struct timespec ts {};
   struct tm now {};
   clock_gettime(CLOCK_REALTIME, &ts);
   localtime_r(&ts.tv_sec, &now);
-  std::snprintf(time, sizeof(time), "%.4d%.2d%.2d %.2d:%.2d:%.2d %.3ld",
-                now.tm_year + 1900, now.tm_mon + 1, now.tm_mday, now.tm_hour,
-                now.tm_min, now.tm_sec, ts.tv_nsec / 1000000);
+  size_t timestamp_size =
+      std::strftime(timestamp, sizeof(timestamp), "%Y%m%d %H:%M:%S", &now);
+  if (timestamp_size != 0) {
+    std::snprintf(timestamp + timestamp_size,
+                  sizeof(timestamp) - timestamp_size, " %03ld",
+                  ts.tv_nsec / 1000000);
+  }
 
   const char *fn = std::strrchr(file, '/');
   fn = fn ? fn + 1 : file;
 
-  uint32_t out_end = std::snprintf(
-      final_content, sizeof(final_content), "%s [%s] %s:%u ", time,
+  int prefix_size = std::snprintf(
+      final_content, sizeof(final_content), "%s [%s] %s:%d ", timestamp,
       log_level_to_str[static_cast<uint64_t>(log_level)], fn, line);
-  vsnprintf(final_content + out_end, sizeof(final_content) - out_end - 1,
-            pattern, args);
+  if (prefix_size >= 0) {
+    size_t out_end =
+        std::min(static_cast<size_t>(prefix_size), sizeof(final_content) - 1);
+    vsnprintf(final_content + out_end, sizeof(final_content) - out_end, pattern,
+              args);
+  }
 
   std::cout << final_content << std::endl;
   if (log_level == LOG_LEVEL::FATAL) {
@@ -98,7 +108,10 @@ inline void log_fatal(const char *file, int line, const char *pattern, ...) {
 }
 #endif
 
+inline std::string format(const std::string &format) { return format; }
+
 template <typename... Args>
+  requires(sizeof...(Args) > 0)
 inline std::string format(const std::string &format, Args... args) {
   int size_s = std::snprintf(nullptr, 0, format.c_str(), args...) +
                1;  // Extra space for '\0'
