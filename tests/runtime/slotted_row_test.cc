@@ -17,10 +17,7 @@ TEST(SlottedRowTest, StoresGraphDBEntitiesAndValues) {
   const auto relationship_edge =
       transaction->CreateEdge(node_vertex, other_vertex, "KNOWS", {});
   auto slots = std::make_shared<const rg::SlotConfiguration>(
-      std::vector<rg::SlotDefinition>{
-          {.name = "n", .type = ast::SemanticVariableType::kNode},
-          {.name = "r", .type = ast::SemanticVariableType::kRelationship},
-          {.name = "value", .type = ast::SemanticVariableType::kScalar}});
+      std::vector<std::string>{"n", "r", "value"});
 
   rg::SlottedRow row(slots);
   EXPECT_EQ(slots->At("n").offset, 0);
@@ -44,8 +41,7 @@ TEST(SlottedRowTest, DistinguishesUninitializedSlotsFromNull) {
   rg::test::GraphDBTestDatabase database;
   auto transaction = database.BeginTransaction();
   auto slots = std::make_shared<const rg::SlotConfiguration>(
-      std::vector<rg::SlotDefinition>{
-          {.name = "n", .type = ast::SemanticVariableType::kNode}});
+      std::vector<std::string>{"n"});
 
   rg::SlottedRow row(slots);
   EXPECT_FALSE(row.IsInitialized("n"));
@@ -61,11 +57,9 @@ TEST(SlottedRowTest, CopiesBetweenLayoutsWithoutChangingStoredValues) {
   auto transaction = database.BeginTransaction();
   const auto vertex = transaction->CreateVertex({}, {});
   auto entity_slots = std::make_shared<const rg::SlotConfiguration>(
-      std::vector<rg::SlotDefinition>{
-          {.name = "x", .type = ast::SemanticVariableType::kNode}});
+      std::vector<std::string>{"x"});
   auto target_slots = std::make_shared<const rg::SlotConfiguration>(
-      std::vector<rg::SlotDefinition>{
-          {.name = "x", .type = ast::SemanticVariableType::kUnknown}});
+      std::vector<std::string>{"x"});
 
   rg::SlottedRow source(entity_slots);
   source.SetVertex(entity_slots->At("x"), vertex);

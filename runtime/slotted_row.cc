@@ -28,16 +28,15 @@ std::size_t EstimatedValueHeapUsage(const Value &value) {
   return sizeof(Value);
 }
 
-SlotConfiguration::SlotConfiguration(std::vector<SlotDefinition> definitions) {
-  columns_.reserve(definitions.size());
-  for (auto &definition : definitions) {
-    if (definition.name.empty() || slots_.contains(definition.name)) {
+SlotConfiguration::SlotConfiguration(std::vector<std::string> columns) {
+  columns_.reserve(columns.size());
+  for (auto &column : columns) {
+    if (column.empty() || slots_.contains(column)) {
       continue;
     }
-    Slot slot{.type = definition.type};
-    slot.offset = slot_count_++;
-    columns_.push_back(definition.name);
-    slots_.emplace(std::move(definition.name), slot);
+    Slot slot{.offset = slot_count_++};
+    columns_.push_back(column);
+    slots_.emplace(std::move(column), slot);
   }
 }
 

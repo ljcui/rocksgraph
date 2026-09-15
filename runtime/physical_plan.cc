@@ -4,15 +4,12 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
 #include "ast/ast_clone.h"
 #include "ast/ast_equal.h"
 #include "ast/ast_node.h"
-#include "ast/builtin_function.h"
-#include "ast/builtin_procedure.h"
 #include "ast/expression_dependency.h"
 #include "common/exception.h"
 #include "ir/logical_plan.h"
@@ -35,14 +32,6 @@ PhysicalExpression::PhysicalExpression(
 }
 
 namespace {
-
-using SemanticType = ast::SemanticVariableType;
-
-struct TypeInfo {
-  SemanticType type = SemanticType::kUnknown;
-};
-
-using TypeOverrides = std::unordered_map<std::string, TypeInfo>;
 
 PhysicalSortDirection ToPhysicalSortDirection(
     ir::LogicalOrderDirection direction) {
@@ -121,19 +110,8 @@ std::vector<SlotMapping> ComputeSlotMappings(const SlotConfiguration &source,
 
 bool SameSlotLayout(const SlotConfiguration &left,
                     const SlotConfiguration &right) {
-  if (left.Columns() != right.Columns() ||
-      left.SlotCount() != right.SlotCount()) {
-    return false;
-  }
-  for (const auto &column : left.Columns()) {
-    const Slot &left_slot = left.At(column);
-    const Slot &right_slot = right.At(column);
-    if (left_slot.offset != right_slot.offset ||
-        left_slot.type != right_slot.type) {
-      return false;
-    }
-  }
-  return true;
+  return left.Columns() == right.Columns() &&
+         left.SlotCount() == right.SlotCount();
 }
 
 std::size_t CommonOrderingPrefix(const PhysicalOrdering &provided,
@@ -240,312 +218,8 @@ std::vector<std::string> AppendUnique(std::vector<std::string> columns,
   return columns;
 }
 
-TypeInfo InfoForSlot(const Slot &slot) { return {.type = slot.type}; }
-
-TypeInfo MergeInfo(TypeInfo left, TypeInfo right) {
-  if (left.type == right.type) {
-    return {.type = left.type};
-  }
-  return {};
-}
-
-std::optional<TypeInfo> FindInfo(
-    std::string_view name, const std::vector<SlotConfigurationPtr> &sources) {
-  std::optional<TypeInfo> result;
-  for (const auto &source : sources) {
-    if (source == nullptr) {
-      continue;
-    }
-    const Slot *slot = source->Find(name);
-    if (slot == nullptr) {
-      continue;
-    }
-    result = result.has_value() ? MergeInfo(*result, InfoForSlot(*slot))
-                                : InfoForSlot(*slot);
-  }
-  return result;
-}
-
-TypeInfo InferExpression(const ast::Expression *expression,
-                         const std::vector<SlotConfigurationPtr> &sources) {
-  if (expression == nullptr) {
-    return {};
-  }
-  switch (expression->node_type) {
-    case ast::ASTNodeType::kVariable: {
-      const auto &variable = ast::CastAst<ast::Variable>(*expression);
-      return FindInfo(variable.name, sources).value_or(TypeInfo{});
-    }
-    case ast::ASTNodeType::kBooleanLiteral:
-    case ast::ASTNodeType::kIntegerLiteral:
-    case ast::ASTNodeType::kDoubleLiteral:
-    case ast::ASTNodeType::kStringLiteral:
-      return {.type = SemanticType::kScalar};
-    case ast::ASTNodeType::kNullLiteral:
-      return {};
-    case ast::ASTNodeType::kListLiteral:
-    case ast::ASTNodeType::kListComprehension:
-    case ast::ASTNodeType::kPatternComprehension:
-      return {.type = SemanticType::kList};
-    case ast::ASTNodeType::kMapLiteral:
-      return {.type = SemanticType::kMap};
-    case ast::ASTNodeType::kFunctionInvocation: {
-      const auto &function = ast::CastAst<ast::FunctionInvocation>(*expression);
-      const ast::BuiltinFunction *builtin =
-          ast::FindBuiltinFunction(function.function_name);
-      return builtin == nullptr ? TypeInfo{}
-                                : TypeInfo{.type = builtin->result_type};
-    }
-    case ast::ASTNodeType::kParenthesizedExpression:
-      return InferExpression(
-          ast::CastAst<ast::ParenthesizedExpression>(*expression).expr.get(),
-          sources);
-    default:
-      return {.type = SemanticType::kScalar};
-  }
-}
-
-TypeInfo ProjectionInfo(const ir::LogicalProjectionItem &item,
-                        const std::vector<SlotConfigurationPtr> &sources) {
-  if (item.passthrough) {
-    return FindInfo(item.alias, sources).value_or(TypeInfo{});
-  }
-  TypeInfo info = InferExpression(item.expression, sources);
-  if (item.semantic_type == SemanticType::kUnknown) {
-    return info;
-  }
-  info.type = item.semantic_type;
-  return info;
-}
-
-void SetOverride(TypeOverrides *overrides, std::string_view name,
-                 SemanticType type) {
-  if (!name.empty()) {
-    (*overrides)[std::string(name)] = {.type = type};
-  }
-}
-
-TypeOverrides OutputOverrides(
-    const ir::LogicalPlan &plan,
-    const std::vector<SlotConfigurationPtr> &sources) {
-  TypeOverrides overrides;
-  switch (plan.Type()) {
-    case ir::LogicalPlanNodeType::kNodeByIdSeek:
-      SetOverride(&overrides,
-                  static_cast<const ir::NodeByIdSeekPlan &>(plan).Variable(),
-                  SemanticType::kNode);
-      break;
-    case ir::LogicalPlanNodeType::kRelationshipByIdSeek:
-    case ir::LogicalPlanNodeType::kProjectEndpoints:
-    case ir::LogicalPlanNodeType::kOptionalExpand:
-    case ir::LogicalPlanNodeType::kPruningVarExpand: {
-      const ir::PatternRelationship *pattern = nullptr;
-      if (plan.Type() == ir::LogicalPlanNodeType::kRelationshipByIdSeek) {
-        pattern =
-            &static_cast<const ir::RelationshipByIdSeekPlan &>(plan).Pattern();
-      } else if (plan.Type() == ir::LogicalPlanNodeType::kProjectEndpoints) {
-        pattern =
-            &static_cast<const ir::ProjectEndpointsPlan &>(plan).Pattern();
-      } else if (plan.Type() == ir::LogicalPlanNodeType::kOptionalExpand) {
-        pattern = &static_cast<const ir::OptionalExpandPlan &>(plan).Pattern();
-      } else {
-        pattern =
-            &static_cast<const ir::PruningVarExpandPlan &>(plan).Pattern();
-      }
-      for (const auto &name : {pattern->left_node, pattern->right_node}) {
-        SetOverride(&overrides, name, SemanticType::kNode);
-      }
-      if (plan.Type() != ir::LogicalPlanNodeType::kPruningVarExpand) {
-        SetOverride(&overrides, pattern->variable,
-                    pattern->length.variable ? SemanticType::kList
-                                             : SemanticType::kRelationship);
-      }
-      break;
-    }
-    case ir::LogicalPlanNodeType::kAllNodeScan:
-      SetOverride(&overrides,
-                  static_cast<const ir::AllNodeScanPlan &>(plan).Variable(),
-                  SemanticType::kNode);
-      break;
-    case ir::LogicalPlanNodeType::kNodeByLabelScan:
-      SetOverride(&overrides,
-                  static_cast<const ir::NodeByLabelScanPlan &>(plan).Variable(),
-                  SemanticType::kNode);
-      break;
-    case ir::LogicalPlanNodeType::kNodeIndexSeek:
-      SetOverride(&overrides,
-                  static_cast<const ir::NodeIndexSeekPlan &>(plan).Variable(),
-                  SemanticType::kNode);
-      break;
-    case ir::LogicalPlanNodeType::kNodeIndexRangeSeek:
-      SetOverride(
-          &overrides,
-          static_cast<const ir::NodeIndexRangeSeekPlan &>(plan).Variable(),
-          SemanticType::kNode);
-      break;
-    case ir::LogicalPlanNodeType::kRelationshipTypeScan: {
-      const auto &scan =
-          static_cast<const ir::RelationshipTypeScanPlan &>(plan);
-      SetOverride(&overrides, scan.FromNode(), SemanticType::kNode);
-      SetOverride(&overrides, scan.Relationship(), SemanticType::kRelationship);
-      SetOverride(&overrides, scan.ToNode(), SemanticType::kNode);
-      break;
-    }
-    case ir::LogicalPlanNodeType::kRelationshipIndexSeek: {
-      const auto &scan =
-          static_cast<const ir::RelationshipIndexSeekPlan &>(plan);
-      SetOverride(&overrides, scan.FromNode(), SemanticType::kNode);
-      SetOverride(&overrides, scan.Relationship(), SemanticType::kRelationship);
-      SetOverride(&overrides, scan.ToNode(), SemanticType::kNode);
-      break;
-    }
-    case ir::LogicalPlanNodeType::kRelationshipIndexRangeSeek: {
-      const auto &scan =
-          static_cast<const ir::RelationshipIndexRangeSeekPlan &>(plan);
-      SetOverride(&overrides, scan.FromNode(), SemanticType::kNode);
-      SetOverride(&overrides, scan.Relationship(), SemanticType::kRelationship);
-      SetOverride(&overrides, scan.ToNode(), SemanticType::kNode);
-      break;
-    }
-    case ir::LogicalPlanNodeType::kExpand: {
-      const auto &expand = static_cast<const ir::ExpandPlan &>(plan);
-      SetOverride(&overrides, expand.FromNode(), SemanticType::kNode);
-      SetOverride(&overrides, expand.Relationship(),
-                  SemanticType::kRelationship);
-      SetOverride(&overrides, expand.ToNode(), SemanticType::kNode);
-      break;
-    }
-    case ir::LogicalPlanNodeType::kExpandInto: {
-      const auto &expand = static_cast<const ir::ExpandIntoPlan &>(plan);
-      SetOverride(&overrides, expand.FromNode(), SemanticType::kNode);
-      SetOverride(&overrides, expand.Relationship(),
-                  SemanticType::kRelationship);
-      SetOverride(&overrides, expand.ToNode(), SemanticType::kNode);
-      break;
-    }
-    case ir::LogicalPlanNodeType::kVarExpand: {
-      const auto &expand = static_cast<const ir::VarExpandPlan &>(plan);
-      SetOverride(&overrides, expand.FromNode(), SemanticType::kNode);
-      SetOverride(&overrides, expand.Relationship(), SemanticType::kList);
-      SetOverride(&overrides, expand.ToNode(), SemanticType::kNode);
-      break;
-    }
-    case ir::LogicalPlanNodeType::kPathBuild:
-      SetOverride(&overrides,
-                  static_cast<const ir::PathBuildPlan &>(plan).PathVariable(),
-                  SemanticType::kPath);
-      break;
-    case ir::LogicalPlanNodeType::kProjection: {
-      const auto &projection = static_cast<const ir::ProjectionPlan &>(plan);
-      for (const auto &item : projection.Items()) {
-        overrides[item.alias] = ProjectionInfo(item, sources);
-      }
-      break;
-    }
-    case ir::LogicalPlanNodeType::kDistinct: {
-      const auto &distinct = static_cast<const ir::DistinctPlan &>(plan);
-      for (const auto &item : distinct.GroupingItems()) {
-        overrides[item.alias] = ProjectionInfo(item, sources);
-      }
-      break;
-    }
-    case ir::LogicalPlanNodeType::kAggregation: {
-      const auto &aggregation = static_cast<const ir::AggregationPlan &>(plan);
-      for (const auto &item : aggregation.GroupingItems()) {
-        overrides[item.alias] = ProjectionInfo(item, sources);
-      }
-      for (const auto &item : aggregation.AggregationItems()) {
-        overrides[item.alias] = ProjectionInfo(item, sources);
-      }
-      break;
-    }
-    case ir::LogicalPlanNodeType::kLetSemiApply:
-      SetOverride(
-          &overrides,
-          static_cast<const ir::LetSemiApplyPlan &>(plan).ValueVariable(),
-          SemanticType::kScalar);
-      break;
-    case ir::LogicalPlanNodeType::kRollUpApply:
-      SetOverride(
-          &overrides,
-          static_cast<const ir::RollUpApplyPlan &>(plan).CollectionVariable(),
-          SemanticType::kList);
-      break;
-    case ir::LogicalPlanNodeType::kAssertIsNode:
-      for (const auto &variable :
-           static_cast<const ir::AssertIsNodePlan &>(plan).Variables()) {
-        SetOverride(&overrides, variable, SemanticType::kNode);
-      }
-      break;
-    case ir::LogicalPlanNodeType::kCreateNode:
-      SetOverride(&overrides,
-                  static_cast<const ir::CreateNodePlan &>(plan).Node().variable,
-                  SemanticType::kNode);
-      break;
-    case ir::LogicalPlanNodeType::kCreateRelationship: {
-      const auto &relationship =
-          static_cast<const ir::CreateRelationshipPlan &>(plan).Relationship();
-      SetOverride(&overrides, relationship.left_node, SemanticType::kNode);
-      SetOverride(&overrides, relationship.variable,
-                  SemanticType::kRelationship);
-      SetOverride(&overrides, relationship.right_node, SemanticType::kNode);
-      break;
-    }
-    case ir::LogicalPlanNodeType::kMerge: {
-      const auto &pattern =
-          static_cast<const ir::MergePlan &>(plan).Merge().create_pattern;
-      for (const auto &node : pattern.nodes) {
-        SetOverride(&overrides, node.variable, SemanticType::kNode);
-      }
-      for (const auto &relationship : pattern.relationships) {
-        SetOverride(&overrides, relationship.left_node, SemanticType::kNode);
-        SetOverride(&overrides, relationship.variable,
-                    SemanticType::kRelationship);
-        SetOverride(&overrides, relationship.right_node, SemanticType::kNode);
-      }
-      break;
-    }
-    case ir::LogicalPlanNodeType::kUnwind:
-      SetOverride(&overrides, static_cast<const ir::UnwindPlan &>(plan).Alias(),
-                  SemanticType::kUnknown);
-      break;
-    case ir::LogicalPlanNodeType::kProcedureCall: {
-      const auto &call = static_cast<const ir::ProcedureCallPlan &>(plan);
-      const ast::BuiltinProcedure *procedure =
-          ast::FindBuiltinProcedure(call.ProcedureName());
-      for (const auto &item : call.YieldItems()) {
-        const std::string &field =
-            item.result_field.has_value() ? *item.result_field : item.variable;
-        const ast::BuiltinProcedureYield *yield =
-            procedure == nullptr
-                ? nullptr
-                : ast::FindBuiltinProcedureYield(*procedure, field);
-        SetOverride(&overrides, item.variable,
-                    yield == nullptr ? SemanticType::kUnknown : yield->type);
-      }
-      break;
-    }
-    default:
-      break;
-  }
-  return overrides;
-}
-
-SlotConfigurationPtr MakeLayout(
-    const std::vector<std::string> &columns,
-    const std::vector<SlotConfigurationPtr> &sources,
-    const TypeOverrides &overrides = {}) {
-  std::vector<SlotDefinition> definitions;
-  definitions.reserve(columns.size());
-  for (const auto &column : columns) {
-    TypeInfo info = FindInfo(column, sources).value_or(TypeInfo{});
-    const auto override = overrides.find(column);
-    if (override != overrides.end()) {
-      info = override->second;
-    }
-    definitions.push_back({.name = column, .type = info.type});
-  }
-  return std::make_shared<const SlotConfiguration>(std::move(definitions));
+SlotConfigurationPtr MakeLayout(std::vector<std::string> columns) {
+  return std::make_shared<const SlotConfiguration>(std::move(columns));
 }
 
 std::vector<SlotMapping> NamedMappings(
@@ -763,7 +437,7 @@ PhysicalRelationshipPattern CopyPhysicalRelationshipPattern(
 class PhysicalPlanBuilder final {
  public:
   PhysicalPlan Build(const ir::LogicalPlan &plan) {
-    empty_slots_ = MakeLayout({}, {});
+    empty_slots_ = MakeLayout({});
     return PhysicalPlan(BuildNode(plan, empty_slots_));
   }
 
@@ -911,14 +585,6 @@ class PhysicalPlanBuilder final {
                                               : node->argument_slots));
     }
 
-    std::vector<SlotConfigurationPtr> sources;
-    for (const auto &child : node->children) {
-      sources.push_back(child->output_slots);
-    }
-    if (plan.ChildCount() == 0) {
-      sources.push_back(node->argument_slots);
-    }
-
     if (plan.Type() == ir::LogicalPlanNodeType::kUnion) {
       BuildUnionLayout(static_cast<const ir::UnionPlan &>(plan), node.get());
     } else {
@@ -927,8 +593,7 @@ class PhysicalPlanBuilder final {
           plan.Type() != ir::LogicalPlanNodeType::kArgument) {
         columns = AppendUnique(node->argument_slots->Columns(), columns);
       }
-      node->output_slots =
-          MakeLayout(columns, sources, OutputOverrides(plan, sources));
+      node->output_slots = MakeLayout(std::move(columns));
       // Slot configurations are immutable. Reuse an identical unary child
       // layout so compatible operators can forward rows without allocating a
       // second set of slot vectors.
@@ -1613,20 +1278,13 @@ class PhysicalPlanBuilder final {
   void BuildUnionLayout(const ir::UnionPlan &plan, PhysicalPlanNode *node) {
     CHECK(node != nullptr && node->children.size() == 2, common::InternalError,
           "union physical node is incomplete");
-    TypeOverrides overrides;
     std::vector<std::pair<std::string, std::string>> left_names;
     std::vector<std::pair<std::string, std::string>> right_names;
     for (const auto &mapping : plan.Mappings()) {
-      const Slot &left =
-          node->children[0]->output_slots->At(mapping.lhs_variable);
-      const Slot &right =
-          node->children[1]->output_slots->At(mapping.rhs_variable);
-      overrides[mapping.output_variable] =
-          MergeInfo(InfoForSlot(left), InfoForSlot(right));
       left_names.emplace_back(mapping.lhs_variable, mapping.output_variable);
       right_names.emplace_back(mapping.rhs_variable, mapping.output_variable);
     }
-    node->output_slots = MakeLayout(plan.OutputColumns(), {}, overrides);
+    node->output_slots = MakeLayout(plan.OutputColumns());
     node->child_mappings.push_back(NamedMappings(
         *node->children[0]->output_slots, *node->output_slots, left_names));
     node->child_mappings.push_back(NamedMappings(

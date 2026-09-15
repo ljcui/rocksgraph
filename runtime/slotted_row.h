@@ -9,7 +9,6 @@
 #include <variant>
 #include <vector>
 
-#include "ast/semantic_table.h"
 #include "graphdb/graph_entity.h"
 #include "value/value.h"
 
@@ -17,17 +16,11 @@ namespace rg {
 
 struct Slot {
   std::size_t offset = 0;
-  ast::SemanticVariableType type = ast::SemanticVariableType::kUnknown;
-};
-
-struct SlotDefinition {
-  std::string name;
-  ast::SemanticVariableType type = ast::SemanticVariableType::kUnknown;
 };
 
 class SlotConfiguration final {
  public:
-  explicit SlotConfiguration(std::vector<SlotDefinition> definitions = {});
+  explicit SlotConfiguration(std::vector<std::string> columns = {});
 
   [[nodiscard]] const Slot *Find(std::string_view name) const;
   [[nodiscard]] const Slot &At(std::string_view name) const;
