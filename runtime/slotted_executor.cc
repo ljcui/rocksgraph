@@ -259,28 +259,39 @@ void StoreEvaluatedValue(SlottedRow *row, std::string_view name, Value value,
   StoreEvaluatedValue(row, row->Slots()->At(name), std::move(value), state);
 }
 
-bool BindNode(SlottedRow *row, std::size_t offset, std::int64_t id,
-              RuntimeState &state) {
-  if (id < 0) {
-    return TryBindSlot(row, offset, Value::Null());
+bool TryBindNode(SlottedRow *row, std::size_t offset, graphdb::Vertex vertex) {
+  CHECK(row != nullptr, common::InternalError, "query row is null");
+  if (!row->IsInitialized(offset)) {
+    row->SetVertex(offset, std::move(vertex));
+    return true;
   }
-  return TryBindVertex(row, offset, GraphDBVertexById(*state.transaction, id));
+  const Value existing = row->Get(offset);
+  return existing.IsNode() && existing.AsNode().id == vertex.GetNativeId();
 }
 
-bool BindNode(SlottedRow *row, std::string_view name, std::int64_t id,
-              RuntimeState &state) {
+bool TryBindNode(SlottedRow *row, std::string_view name,
+                 graphdb::Vertex vertex) {
+  CHECK(row != nullptr, common::InternalError, "query row is null");
   if (name.empty()) {
     return true;
   }
-  return BindNode(row, row->Slots()->At(name), id, state);
+  return TryBindNode(row, row->Slots()->At(name), std::move(vertex));
 }
 
-bool BindNode(SlottedRow *row, std::size_t offset, graphdb::Vertex vertex) {
-  return TryBindVertex(row, offset, std::move(vertex));
+bool TryBindNode(SlottedRow *row, std::size_t offset, std::int64_t id,
+                 RuntimeState &state) {
+  if (id < 0) {
+    return TryBindSlot(row, offset, Value::Null());
+  }
+  return TryBindNode(row, offset, GraphDBVertexById(*state.transaction, id));
 }
 
-bool BindNode(SlottedRow *row, std::string_view name, graphdb::Vertex vertex) {
-  return TryBindVertex(row, name, std::move(vertex));
+bool TryBindNode(SlottedRow *row, std::string_view name, std::int64_t id,
+                 RuntimeState &state) {
+  if (name.empty()) {
+    return true;
+  }
+  return TryBindNode(row, row->Slots()->At(name), id, state);
 }
 
 void SetScannedNode(SlottedRow *row, std::string_view name,
@@ -292,10 +303,6 @@ void SetScannedNode(SlottedRow *row, std::string_view name,
   row->SetVertex(offset, std::move(vertex));
 }
 
-bool BindRelationship(SlottedRow *row, std::size_t offset, graphdb::Edge edge) {
-  return TryBindEdge(row, offset, std::move(edge));
-}
-
 graphdb::Vertex Endpoint(const graphdb::Edge &edge, std::int64_t id) {
   if (edge.GetNativeStartId() == id) {
     return edge.GetStart();
@@ -303,10 +310,6 @@ graphdb::Vertex Endpoint(const graphdb::Edge &edge, std::int64_t id) {
   CHECK(edge.GetNativeEndId() == id, common::InternalError,
         "node is not an endpoint of the relationship");
   return edge.GetEnd();
-}
-
-bool BindValue(SlottedRow *row, std::size_t offset, Value value) {
-  return TryBindSlot(row, offset, std::move(value));
 }
 
 bool MergeMappings(const SlottedRow &source, SlottedRow *target,
@@ -1702,7 +1705,7 @@ class NodeByIdSeekOperator final : public PullOperator {
         graphdb::Vertex vertex = GraphDBVertexById(*state_->transaction, *id);
         SlottedRow output = CopyMappedRow(argument_, node_->output_slots,
                                           node_->argument_mapping);
-        if (BindNode(&output, data_->variable, std::move(vertex))) {
+        if (TryBindNode(&output, data_->variable, std::move(vertex))) {
           *row = std::move(output);
           return true;
         }
@@ -1794,9 +1797,9 @@ bool EmitGraphDBRelationship(const PhysicalPlanNode &node,
   graphdb::Vertex to = Endpoint(edge, to_id);
   SlottedRow output =
       CopyMappedRow(argument, node.output_slots, node.argument_mapping);
-  if (!BindNode(&output, pattern.from_node, std::move(from)) ||
+  if (!TryBindNode(&output, pattern.from_node, std::move(from)) ||
       !TryBindEdge(&output, pattern.relationship, std::move(edge)) ||
-      !BindNode(&output, pattern.to_node, std::move(to))) {
+      !TryBindNode(&output, pattern.to_node, std::move(to))) {
     return false;
   }
   if (predicates != nullptr &&
@@ -2074,11 +2077,11 @@ class FixedExpandOperatorBase : public PullOperator {
           SlottedRow output = CopyMappedRow(*input_, node_->output_slots,
                                             node_->child_mappings.front());
           graphdb::Vertex to_vertex = Endpoint(edge, *to);
-          if (!BindRelationship(&output, relationship_output_slot_,
-                                std::move(edge)) ||
+          if (!TryBindEdge(&output, relationship_output_slot_,
+                           std::move(edge)) ||
               (to_node_output_slot_.has_value() &&
-               !BindNode(&output, *to_node_output_slot_,
-                         std::move(to_vertex)))) {
+               !TryBindNode(&output, *to_node_output_slot_,
+                            std::move(to_vertex)))) {
             continue;
           }
           *row = std::move(output);
@@ -2230,8 +2233,8 @@ class VarExpandOperator final : public PullOperator {
                                       node_->child_mappings.front());
           if (TryBindSlot(&output, data_->relationship_output_slot,
                           Value(std::move(relationships))) &&
-              BindNode(&output, data_->to_node_output_slot, frame.node,
-                       *state_)) {
+              TryBindNode(&output, data_->to_node_output_slot, frame.node,
+                          *state_)) {
             *row = std::move(output);
             return true;
           }
@@ -2388,7 +2391,7 @@ class PruningVarExpandOperator final : public PullOperator {
   bool Emit(std::int64_t node, SlottedRow *row) {
     auto output = CopyMappedRow(*input_, node_->output_slots,
                                 node_->child_mappings.front());
-    if (!BindNode(&output, data_->to_node_output_slot, node, *state_)) {
+    if (!TryBindNode(&output, data_->to_node_output_slot, node, *state_)) {
       return false;
     }
     *row = std::move(output);
@@ -2549,10 +2552,10 @@ class OptionalExpandOperator final : public PullOperator {
         SlottedRow output = CopyMappedRow(*input_, node_->output_slots,
                                           node_->child_mappings.front());
         graphdb::Vertex to_vertex = Endpoint(edge, *to);
-        if (!BindRelationship(&output, data_->relationship_output_slot,
-                              std::move(edge)) ||
-            !BindNode(&output, data_->to_node_output_slot,
-                      std::move(to_vertex))) {
+        if (!TryBindEdge(&output, data_->relationship_output_slot,
+                         std::move(edge)) ||
+            !TryBindNode(&output, data_->to_node_output_slot,
+                         std::move(to_vertex))) {
           continue;
         }
         if (!std::all_of(data_->predicates.begin(), data_->predicates.end(),
@@ -2634,8 +2637,8 @@ class ProjectEndpointsOperator final : public PullOperator {
         const auto [from, to] = endpoints_[next_endpoint_++];
         SlottedRow output = CopyMappedRow(*input_, node_->output_slots,
                                           node_->child_mappings.front());
-        if (BindNode(&output, data_->from_node_output_slot, from, *state_) &&
-            BindNode(&output, data_->to_node_output_slot, to, *state_)) {
+        if (TryBindNode(&output, data_->from_node_output_slot, from, *state_) &&
+            TryBindNode(&output, data_->to_node_output_slot, to, *state_)) {
           *row = std::move(output);
           return true;
         }
@@ -3195,8 +3198,8 @@ class PathBuildOperator final : public PullOperator {
         return false;
       }
       SlottedRow output = CopyUnaryOutput(*node_, input);
-      if (BindValue(&output, data_->path_output_slot,
-                    BuildPathValue(*data_, input, state_))) {
+      if (TryBindSlot(&output, data_->path_output_slot,
+                      BuildPathValue(*data_, input, state_))) {
         *row = std::move(output);
         return true;
       }

@@ -254,26 +254,6 @@ bool TryBindSlot(SlottedRow *row, std::string_view name, Value value) {
   return TryBindSlot(row, row->Slots()->At(name), std::move(value));
 }
 
-bool TryBindVertex(SlottedRow *row, std::size_t offset,
-                   graphdb::Vertex vertex) {
-  CHECK(row != nullptr, common::InternalError, "query row is null");
-  if (!row->IsInitialized(offset)) {
-    row->SetVertex(offset, std::move(vertex));
-    return true;
-  }
-  const Value existing = row->Get(offset);
-  return existing.IsNode() && existing.AsNode().id == vertex.GetNativeId();
-}
-
-bool TryBindVertex(SlottedRow *row, std::string_view name,
-                   graphdb::Vertex vertex) {
-  CHECK(row != nullptr, common::InternalError, "query row is null");
-  if (name.empty()) {
-    return true;
-  }
-  return TryBindVertex(row, row->Slots()->At(name), std::move(vertex));
-}
-
 bool TryBindEdge(SlottedRow *row, std::size_t offset, graphdb::Edge edge) {
   CHECK(row != nullptr, common::InternalError, "query row is null");
   if (!row->IsInitialized(offset)) {

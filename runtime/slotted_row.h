@@ -90,10 +90,6 @@ void CopySlots(const SlottedRow &source, SlottedRow *target,
                                Value value);
 [[nodiscard]] bool TryBindSlot(SlottedRow *row, std::string_view name,
                                Value value);
-[[nodiscard]] bool TryBindVertex(SlottedRow *row, std::size_t offset,
-                                 graphdb::Vertex vertex);
-[[nodiscard]] bool TryBindVertex(SlottedRow *row, std::string_view name,
-                                 graphdb::Vertex vertex);
 [[nodiscard]] bool TryBindEdge(SlottedRow *row, std::size_t offset,
                                graphdb::Edge edge);
 [[nodiscard]] bool TryBindEdge(SlottedRow *row, std::string_view name,
