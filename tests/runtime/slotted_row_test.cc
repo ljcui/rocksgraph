@@ -5,6 +5,7 @@
 #include <memory>
 #include <vector>
 
+#include "common/exception.h"
 #include "graphdb/graph_entity.h"
 #include "tests/runtime/graphdb_test_utils.h"
 
@@ -23,8 +24,8 @@ TEST(SlottedRowTest, StoresGraphDBEntitiesAndValues) {
   EXPECT_EQ(slots->At("n"), 0);
   EXPECT_EQ(slots->At("r"), 1);
   EXPECT_EQ(slots->At("value"), 2);
-  row.SetVertex(slots->At("n"), node_vertex);
-  row.SetEdge(slots->At("r"), relationship_edge);
+  row.Set(slots->At("n"), node_vertex);
+  row.Set(slots->At("r"), relationship_edge);
   row.Set(slots->At("value"), rg::Value(42));
 
   EXPECT_EQ(row.VertexAt(slots->At("n")).GetNativeId(),
@@ -53,6 +54,16 @@ TEST(SlottedRowTest, DistinguishesUninitializedSlotsFromNull) {
   transaction->Rollback();
 }
 
+TEST(SlottedRowTest, RejectsOutOfRangeWrites) {
+  auto slots = std::make_shared<const rg::SlotConfiguration>(
+      std::vector<std::string>{"value"});
+  rg::SlottedRow row(slots);
+
+  EXPECT_THROW(row.Set(slots->SlotCount(), rg::Value(42)),
+               common::InternalError);
+  EXPECT_THROW(row.SetNull(slots->SlotCount()), common::InternalError);
+}
+
 TEST(SlottedRowTest, ResetsRowsWithoutChangingCompatibleStorage) {
   auto slots = std::make_shared<const rg::SlotConfiguration>(
       std::vector<std::string>{"value"});
@@ -76,7 +87,7 @@ TEST(SlottedRowTest, CopiesBetweenLayoutsWithoutChangingStoredValues) {
       std::vector<std::string>{"x"});
 
   rg::SlottedRow source(entity_slots);
-  source.SetVertex(entity_slots->At("x"), vertex);
+  source.Set(entity_slots->At("x"), vertex);
   const std::vector<rg::SlotMapping> mappings{
       {.source_offset = entity_slots->At("x"),
        .target_offset = target_slots->At("x")}};

@@ -257,12 +257,12 @@ void StoreEvaluatedValue(SlottedRow *row, std::size_t offset, Value value,
   CHECK(row != nullptr, common::InternalError, "query row is null");
   try {
     if (value.IsNode()) {
-      row->SetVertex(offset,
-                     GraphDBVertexById(*state.transaction, value.AsNode().id));
+      row->Set(offset,
+               GraphDBVertexById(*state.transaction, value.AsNode().id));
       return;
     }
     if (value.IsRelationship()) {
-      row->SetEdge(
+      row->Set(
           offset, GraphDBEdgeById(*state.transaction,
                                   {.id = value.AsRelationship().id,
                                    .type_id = value.AsRelationship().type_id}));
@@ -282,7 +282,7 @@ void StoreEvaluatedValue(SlottedRow *row, std::size_t offset, Value value,
 bool TryBindNode(SlottedRow *row, std::size_t offset, graphdb::Vertex vertex) {
   CHECK(row != nullptr, common::InternalError, "query row is null");
   if (!row->IsInitialized(offset)) {
-    row->SetVertex(offset, std::move(vertex));
+    row->Set(offset, std::move(vertex));
     return true;
   }
   const Value existing = row->Get(offset);
@@ -326,7 +326,7 @@ void SetScannedNode(SlottedRow *row, std::size_t offset,
   CHECK(row != nullptr, common::InternalError, "query row is null");
   CHECK(!row->IsInitialized(offset), common::InternalError,
         "node scan slot is already initialized");
-  row->SetVertex(offset, std::move(vertex));
+  row->Set(offset, std::move(vertex));
 }
 
 graphdb::Vertex Endpoint(const graphdb::Edge &edge, std::int64_t id) {
@@ -569,8 +569,8 @@ void ExecuteStreamingWrite(const CreateNodeOp &data, const SlottedRow &input,
       *state->transaction, data.labels, std::move(properties));
   CHECK(node != nullptr, common::InternalError,
         "storage returned a null created node");
-  output->SetVertex(data.node_slot,
-                    GraphDBVertexById(*state->transaction, node->id));
+  output->Set(data.node_slot,
+              GraphDBVertexById(*state->transaction, node->id));
 }
 
 void ExecuteStreamingWrite(const CreateRelationshipOp &data,
@@ -586,7 +586,7 @@ void ExecuteStreamingWrite(const CreateRelationshipOp &data,
       *state->transaction, left, right, data.type, std::move(properties));
   CHECK(relationship != nullptr, common::InternalError,
         "storage returned a null created relationship");
-  output->SetEdge(
+  output->Set(
       data.relationship_slot,
       GraphDBEdgeById(*state->transaction, {.id = relationship->id,
                                             .type_id = relationship->type_id}));
@@ -614,8 +614,8 @@ void ExecuteMergeCreate(const CreateNodeOp &data, SlottedRow *row,
       *state->transaction, data.labels, std::move(properties));
   CHECK(node != nullptr, common::InternalError,
         "storage returned a null created node");
-  row->SetVertex(data.node_slot,
-                 GraphDBVertexById(*state->transaction, node->id));
+  row->Set(data.node_slot,
+           GraphDBVertexById(*state->transaction, node->id));
 }
 
 void ExecuteMergeCreate(const CreateRelationshipOp &data, SlottedRow *row,
@@ -630,7 +630,7 @@ void ExecuteMergeCreate(const CreateRelationshipOp &data, SlottedRow *row,
       *state->transaction, left, right, data.type, std::move(properties));
   CHECK(relationship != nullptr, common::InternalError,
         "storage returned a null created relationship");
-  row->SetEdge(
+  row->Set(
       data.relationship_slot,
       GraphDBEdgeById(*state->transaction, {.id = relationship->id,
                                             .type_id = relationship->type_id}));

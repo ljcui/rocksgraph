@@ -160,20 +160,26 @@ bool SlottedRow::ReadProperty(std::size_t offset, std::string_view property_key,
   return false;
 }
 
-void SlottedRow::SetVertex(std::size_t offset, graphdb::Vertex vertex) {
-  values_[offset] = std::move(vertex);
+void SlottedRow::Set(std::size_t offset, graphdb::Vertex vertex) {
+  SetSlotValue(offset, std::move(vertex));
 }
 
-void SlottedRow::SetEdge(std::size_t offset, graphdb::Edge edge) {
-  values_[offset] = std::move(edge);
+void SlottedRow::Set(std::size_t offset, graphdb::Edge edge) {
+  SetSlotValue(offset, std::move(edge));
 }
 
 void SlottedRow::Set(std::size_t offset, Value value) {
+  SetSlotValue(offset, std::move(value));
+}
+
+void SlottedRow::SetSlotValue(std::size_t offset, SlotValue value) {
+  CHECK(offset < values_.size(), common::InternalError,
+        "slot offset is out of range");
   values_[offset] = std::move(value);
 }
 
 void SlottedRow::SetNull(std::size_t offset) {
-  values_[offset] = Value::Null();
+  Set(offset, Value::Null());
 }
 
 void SlottedRow::CopySlotFrom(const SlottedRow &source,
@@ -251,7 +257,7 @@ bool TryBindSlot(SlottedRow *row, std::size_t offset, Value value) {
 bool TryBindEdge(SlottedRow *row, std::size_t offset, graphdb::Edge edge) {
   CHECK(row != nullptr, common::InternalError, "query row is null");
   if (!row->IsInitialized(offset)) {
-    row->SetEdge(offset, std::move(edge));
+    row->Set(offset, std::move(edge));
     return true;
   }
   const Value existing = row->Get(offset);

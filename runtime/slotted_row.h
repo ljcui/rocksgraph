@@ -65,8 +65,8 @@ class SlottedRow final {
                                   std::string_view property_key,
                                   Value *value) const;
 
-  void SetVertex(std::size_t offset, graphdb::Vertex vertex);
-  void SetEdge(std::size_t offset, graphdb::Edge edge);
+  void Set(std::size_t offset, graphdb::Vertex vertex);
+  void Set(std::size_t offset, graphdb::Edge edge);
   void Set(std::size_t offset, Value value);
   void SetNull(std::size_t offset);
   void CopySlotFrom(const SlottedRow &source, std::size_t source_offset,
@@ -83,6 +83,8 @@ class SlottedRow final {
   struct UninitializedSlot {};
   using SlotValue =
       std::variant<UninitializedSlot, graphdb::Vertex, graphdb::Edge, Value>;
+
+  void SetSlotValue(std::size_t offset, SlotValue value);
 
   SlotConfigurationPtr slots_;
   std::vector<SlotValue> values_;
