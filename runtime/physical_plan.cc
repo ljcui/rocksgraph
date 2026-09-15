@@ -476,7 +476,13 @@ class PhysicalPlanBuilder final {
  public:
   PhysicalPlan Build(const ir::LogicalPlan &plan) {
     empty_slots_ = MakeLayout({});
-    return PhysicalPlan(BuildNode(plan, empty_slots_));
+    std::unique_ptr<PhysicalPlanNode> root = BuildNode(plan, empty_slots_);
+    std::vector<std::string> result_columns;
+    if (plan.Type() == ir::LogicalPlanNodeType::kProduceResults ||
+        !root->subtree_effects.writes) {
+      result_columns = plan.OutputColumns();
+    }
+    return PhysicalPlan(std::move(root), std::move(result_columns));
   }
 
  private:
@@ -1512,8 +1518,9 @@ std::string_view ToString(PhysicalSortDirection direction) {
   THROW(common::InternalError, "unknown physical sort direction");
 }
 
-PhysicalPlan::PhysicalPlan(std::unique_ptr<PhysicalPlanNode> root)
-    : root_(std::move(root)) {
+PhysicalPlan::PhysicalPlan(std::unique_ptr<PhysicalPlanNode> root,
+                           std::vector<std::string> result_columns)
+    : root_(std::move(root)), result_columns_(std::move(result_columns)) {
   CHECK(root_ != nullptr, common::InvalidArgumentError,
         "physical plan root is null");
 }
@@ -1522,6 +1529,10 @@ const PhysicalPlanNode &PhysicalPlan::Root() const { return *root_; }
 
 const PhysicalPlanEffects &PhysicalPlan::Effects() const noexcept {
   return root_->subtree_effects;
+}
+
+const std::vector<std::string> &PhysicalPlan::ResultColumns() const noexcept {
+  return result_columns_;
 }
 
 PhysicalPlan CreatePhysicalPlan(const ir::LogicalPlan &plan) {

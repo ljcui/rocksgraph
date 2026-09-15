@@ -438,6 +438,19 @@ TEST(PhysicalPlanTest, ReusesIdenticalUnarySlotLayouts) {
             physical.Root().children[0]->output_slots);
 }
 
+TEST(PhysicalPlanTest, CapturesExternallyVisibleResultColumns) {
+  ir::AllNodeScanPlan read_plan("n");
+  rg::PhysicalPlan read_physical = rg::CreatePhysicalPlan(read_plan);
+  EXPECT_EQ(read_physical.ResultColumns(), (std::vector<std::string>{"n"}));
+
+  rg::PhysicalPlan returning_write =
+      DetachedPhysicalPlan("CREATE (n:Made) RETURN n");
+  EXPECT_EQ(returning_write.ResultColumns(), (std::vector<std::string>{"n"}));
+
+  rg::PhysicalPlan silent_write = DetachedPhysicalPlan("CREATE (:Made)");
+  EXPECT_TRUE(silent_write.ResultColumns().empty());
+}
+
 TEST(PhysicalPlanTest, ResolvesPassthroughSlotsWithoutEntityConversion) {
   auto source = std::make_unique<ir::RelationshipTypeScanPlan>(
       "a", "r", "b", ir::ExpandDirection::kOutgoing,

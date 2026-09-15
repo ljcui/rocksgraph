@@ -586,13 +586,16 @@ struct PhysicalPlanNode {
 
 class PhysicalPlan final {
  public:
-  explicit PhysicalPlan(std::unique_ptr<PhysicalPlanNode> root);
+  PhysicalPlan(std::unique_ptr<PhysicalPlanNode> root,
+               std::vector<std::string> result_columns);
 
   [[nodiscard]] const PhysicalPlanNode &Root() const;
   [[nodiscard]] const PhysicalPlanEffects &Effects() const noexcept;
+  [[nodiscard]] const std::vector<std::string> &ResultColumns() const noexcept;
 
  private:
   std::unique_ptr<PhysicalPlanNode> root_;
+  std::vector<std::string> result_columns_;
 };
 
 [[nodiscard]] PhysicalPlan CreatePhysicalPlan(const ir::LogicalPlan &plan);

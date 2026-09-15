@@ -26,38 +26,26 @@ ir::LogicalPlanBuilderOptions PlannerOptionsFor(const QueryOptions &options) {
 
 class QueryResultCursorImpl final : public QueryResultCursor {
  public:
-  QueryResultCursorImpl(const ir::LogicalPlan &logical_plan,
-                        txn::Transaction &transaction,
-                        const QueryParameters &parameters,
-                        QueryExecutionOptions options)
-      : physical_plan_(CreatePhysicalPlan(logical_plan)),
-        transaction_(&transaction) {
+  [[nodiscard]] static std::unique_ptr<QueryResultCursorImpl> Create(
+      const ir::LogicalPlan &logical_plan, txn::Transaction &transaction,
+      const QueryParameters &parameters, QueryExecutionOptions options) {
     CHECK(transaction.GetState() == txn::Transaction::State::kActive,
           common::InvalidArgumentError,
           "query execution requires an active transaction");
-    try {
-      if (logical_plan.Type() == ir::LogicalPlanNodeType::kProduceResults ||
-          !physical_plan_.Effects().writes) {
-        columns_ = logical_plan.OutputColumns();
-      }
-      physical_cursor_ =
-          StartPhysicalPlan(physical_plan_, transaction, parameters, columns_,
-                            std::move(options));
-    } catch (...) {
-      // The transaction is borrowed from the caller.  Runtime execution must
-      // not decide its transaction boundary, including on plan startup
-      // failure.  The caller can inspect the exception and explicitly commit
-      // or roll back the transaction as appropriate.
-      ClosePhysicalCursor();
-      throw;
-    }
+    auto cursor =
+        std::unique_ptr<QueryResultCursorImpl>(new QueryResultCursorImpl(
+            CreatePhysicalPlan(logical_plan), transaction));
+    cursor->physical_cursor_ = StartPhysicalPlan(
+        cursor->physical_plan_, transaction, parameters,
+        cursor->physical_plan_.ResultColumns(), std::move(options));
+    return cursor;
   }
 
   ~QueryResultCursorImpl() override { Close(); }
 
   [[nodiscard]] const std::vector<std::string> &Columns()
       const noexcept override {
-    return columns_;
+    return physical_plan_.ResultColumns();
   }
 
   [[nodiscard]] bool Next(std::vector<Value> *row) override {
@@ -101,6 +89,10 @@ class QueryResultCursorImpl final : public QueryResultCursor {
   }
 
  private:
+  QueryResultCursorImpl(PhysicalPlan physical_plan,
+                        txn::Transaction &transaction)
+      : physical_plan_(std::move(physical_plan)), transaction_(&transaction) {}
+
   [[nodiscard]] bool IsActive() const noexcept {
     return transaction_ != nullptr &&
            transaction_->GetState() == txn::Transaction::State::kActive;
@@ -119,7 +111,6 @@ class QueryResultCursorImpl final : public QueryResultCursor {
   }
 
   PhysicalPlan physical_plan_;
-  std::vector<std::string> columns_;
   txn::Transaction *transaction_ = nullptr;
   std::unique_ptr<PhysicalResultCursor> physical_cursor_;
   std::size_t peak_memory_bytes_ = 0;
@@ -152,8 +143,8 @@ std::unique_ptr<QueryResultCursor> QueryExecutor::ExecuteCursor(
     const ir::LogicalPlan &plan, const QueryParameters &parameters,
     QueryExecutionOptions options) const {
   CHECK(transaction_ != nullptr, common::InternalError, "transaction is null");
-  return std::make_unique<QueryResultCursorImpl>(
-      plan, *transaction_, parameters, std::move(options));
+  return QueryResultCursorImpl::Create(plan, *transaction_, parameters,
+                                       std::move(options));
 }
 
 QueryResult ExecuteQuery(txn::Transaction &transaction, std::string_view cypher,
@@ -174,9 +165,9 @@ std::unique_ptr<QueryResultCursor> ExecuteQueryCursor(
   }
   ir::PlannedQuery planned_query =
       ir::PlanCypher(cypher, PlannerOptionsFor(options));
-  return std::make_unique<QueryResultCursorImpl>(
-      planned_query.LogicalPlan(), transaction, options.parameters,
-      std::move(options.execution));
+  return QueryResultCursorImpl::Create(planned_query.LogicalPlan(), transaction,
+                                       options.parameters,
+                                       std::move(options.execution));
 }
 
 }  // namespace rg
