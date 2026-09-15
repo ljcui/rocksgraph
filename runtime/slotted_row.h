@@ -10,6 +10,7 @@
 #include <variant>
 #include <vector>
 
+#include "common/string_view_hash.h"
 #include "graphdb/graph_entity.h"
 #include "value/value.h"
 
@@ -31,7 +32,9 @@ class SlotConfiguration final {
 
  private:
   std::vector<std::string> columns_;
-  std::unordered_map<std::string, std::size_t> offsets_;
+  std::unordered_map<std::string, std::size_t, common::StringViewHash,
+                     std::equal_to<>>
+      offsets_;
 };
 
 using SlotConfigurationPtr = std::shared_ptr<const SlotConfiguration>;

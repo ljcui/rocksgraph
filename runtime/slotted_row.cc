@@ -42,7 +42,7 @@ SlotConfiguration::SlotConfiguration(std::vector<std::string> columns) {
 
 std::optional<std::size_t> SlotConfiguration::Find(
     std::string_view name) const {
-  const auto found = offsets_.find(std::string(name));
+  const auto found = offsets_.find(name);
   if (found == offsets_.end()) {
     return std::nullopt;
   }

@@ -9,10 +9,12 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
 #include "common/exception.h"
+#include "common/string_view_hash.h"
 #include "value/value.h"
 
 namespace txn {
@@ -33,12 +35,11 @@ class BoundQueryParameters final {
     }
   }
 
-  [[nodiscard]] const Value *Find(const std::string &name) const {
+  [[nodiscard]] const Value *Find(std::string_view name) const {
     const auto found = offsets_.find(name);
     return found == offsets_.end() ? nullptr : &values_[found->second];
   }
-  [[nodiscard]] std::optional<std::size_t> Offset(
-      const std::string &name) const {
+  [[nodiscard]] std::optional<std::size_t> Offset(std::string_view name) const {
     const auto found = offsets_.find(name);
     return found == offsets_.end() ? std::nullopt
                                    : std::optional<std::size_t>(found->second);
@@ -50,7 +51,9 @@ class BoundQueryParameters final {
   }
 
  private:
-  std::unordered_map<std::string, std::size_t> offsets_;
+  std::unordered_map<std::string, std::size_t, common::StringViewHash,
+                     std::equal_to<>>
+      offsets_;
   std::vector<Value> values_;
 };
 
@@ -134,14 +137,14 @@ struct ExecutionContext {
           common::QueryCancelledError, "query execution was cancelled");
   }
 
-  [[nodiscard]] const Value *FindParameter(const std::string &name) const {
+  [[nodiscard]] const Value *FindParameter(std::string_view name) const {
     if (bound_parameters != nullptr) {
       return bound_parameters->Find(name);
     }
     if (parameters == nullptr) {
       return nullptr;
     }
-    const auto found = parameters->find(name);
+    const auto found = parameters->find(std::string(name));
     return found == parameters->end() ? nullptr : &found->second;
   }
 };
