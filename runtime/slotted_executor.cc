@@ -45,8 +45,9 @@ class PullOperator {
 };
 
 struct RuntimeExpressionProgram {
-  std::unordered_map<const ast::Variable *, std::size_t> variables;
-  std::unordered_map<const ast::Parameter *, std::size_t> parameters;
+  std::vector<std::pair<const ast::Variable *, std::size_t>> variables;
+  std::vector<std::pair<const ast::Parameter *, std::size_t>> parameters;
+  std::vector<std::pair<std::string_view, std::size_t>> named_variables;
 };
 
 class RuntimeExpressionCompiler final : public ast::ASTConstWalker {
@@ -56,6 +57,10 @@ class RuntimeExpressionCompiler final : public ast::ASTConstWalker {
       : slots_(&slots), parameters_(&parameters) {}
 
   RuntimeExpressionProgram Compile(const ast::Expression &expression) {
+    program_.named_variables.reserve(slots_->SlotCount());
+    for (std::size_t offset = 0; offset < slots_->SlotCount(); ++offset) {
+      program_.named_variables.emplace_back(slots_->Columns()[offset], offset);
+    }
     Walk(expression);
     return std::move(program_);
   }
@@ -64,14 +69,14 @@ class RuntimeExpressionCompiler final : public ast::ASTConstWalker {
   void Visit(const ast::Variable &variable) override {
     if (const std::optional<std::size_t> offset = slots_->Find(variable.name);
         offset.has_value()) {
-      program_.variables.emplace(&variable, *offset);
+      program_.variables.emplace_back(&variable, *offset);
     }
   }
 
   void Visit(const ast::Parameter &parameter) override {
     if (std::optional<std::size_t> offset = parameters_->Offset(parameter.name);
         offset.has_value()) {
-      program_.parameters.emplace(&parameter, *offset);
+      program_.parameters.emplace_back(&parameter, *offset);
     }
   }
 
@@ -100,8 +105,15 @@ struct RuntimeState {
   void CheckCancelled() const { context.CheckCancelled(); }
   [[nodiscard]] const RuntimeExpressionProgram &ExpressionProgram(
       const ast::Expression &expression, const SlotConfiguration &slots) {
+    if (last_expression_index_.has_value()) {
+      const auto &cached = expressions[*last_expression_index_];
+      if (cached.expression == &expression && cached.slots == &slots) {
+        return cached.program;
+      }
+    }
     for (const auto &cached : expressions) {
       if (cached.expression == &expression && cached.slots == &slots) {
+        last_expression_index_ = &cached - expressions.data();
         return cached.program;
       }
     }
@@ -110,6 +122,7 @@ struct RuntimeState {
          .slots = &slots,
          .program = RuntimeExpressionCompiler(slots, bound_parameters)
                         .Compile(expression)});
+    last_expression_index_ = expressions.size() - 1;
     return expressions.back().program;
   }
 
@@ -124,6 +137,7 @@ struct RuntimeState {
     RuntimeExpressionProgram program;
   };
   std::vector<CachedExpression> expressions;
+  std::optional<std::size_t> last_expression_index_;
 };
 
 class SlottedExpressionBindings final : public ExpressionBindings {
@@ -134,12 +148,20 @@ class SlottedExpressionBindings final : public ExpressionBindings {
       : row_(&row), parameters_(&parameters), program_(&program) {}
 
   [[nodiscard]] Value Lookup(std::string_view name) const override {
-    return row_->Get(name);
+    const auto found = std::find_if(
+        program_->named_variables.begin(), program_->named_variables.end(),
+        [name](const auto &entry) { return entry.first == name; });
+    if (found != program_->named_variables.end()) {
+      return row_->Get(found->second);
+    }
+    return ExpressionBindings::Lookup(name);
   }
 
   [[nodiscard]] Value LookupVariable(
       const ast::Variable &variable) const override {
-    const auto found = program_->variables.find(&variable);
+    const auto found = std::find_if(
+        program_->variables.begin(), program_->variables.end(),
+        [&variable](const auto &entry) { return entry.first == &variable; });
     return found == program_->variables.end() ? Lookup(variable.name)
                                               : row_->Get(found->second);
   }
@@ -147,15 +169,21 @@ class SlottedExpressionBindings final : public ExpressionBindings {
   [[nodiscard]] bool ReadProperty(std::string_view variable,
                                   std::string_view property_key,
                                   Value *value) const override {
-    const std::optional<std::size_t> offset = row_->Slots()->Find(variable);
-    return offset.has_value() &&
-           row_->ReadProperty(*offset, property_key, value);
+    // Every row variable in a physical expression is compiled into the
+    // pointer-keyed program below. Unbound/scoped variables are handled by
+    // the generic expression fallback after this fast path returns false.
+    (void)variable;
+    (void)property_key;
+    (void)value;
+    return false;
   }
 
   [[nodiscard]] bool ReadVariableProperty(const ast::Variable &variable,
                                           std::string_view property_key,
                                           Value *value) const override {
-    const auto found = program_->variables.find(&variable);
+    const auto found = std::find_if(
+        program_->variables.begin(), program_->variables.end(),
+        [&variable](const auto &entry) { return entry.first == &variable; });
     if (found == program_->variables.end()) {
       return ReadProperty(variable.name, property_key, value);
     }
@@ -164,7 +192,9 @@ class SlottedExpressionBindings final : public ExpressionBindings {
 
   [[nodiscard]] bool ReadParameter(const ast::Parameter &parameter,
                                    Value *value) const override {
-    const auto found = program_->parameters.find(&parameter);
+    const auto found = std::find_if(
+        program_->parameters.begin(), program_->parameters.end(),
+        [&parameter](const auto &entry) { return entry.first == &parameter; });
     if (found == program_->parameters.end()) {
       return false;
     }
@@ -220,10 +250,6 @@ SlottedRow CopyMappedRow(const SlottedRow &source, SlotConfigurationPtr target,
 
 Value ReadRowValue(const SlottedRow &row, std::size_t offset) {
   return row.Get(offset);
-}
-
-Value ReadRowValue(const SlottedRow &row, std::string_view name) {
-  return row.Get(name);
 }
 
 void StoreEvaluatedValue(SlottedRow *row, std::size_t offset, Value value,

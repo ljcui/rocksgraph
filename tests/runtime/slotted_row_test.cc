@@ -32,8 +32,9 @@ TEST(SlottedRowTest, StoresGraphDBEntitiesAndValues) {
   EXPECT_EQ(row.EdgeAt(slots->At("r")).GetNativeId(),
             relationship_edge.GetNativeId());
   EXPECT_EQ(row.ValueAt(slots->At("value")).AsInteger(), 42);
-  EXPECT_EQ(row.Get("n").AsNode().id, node_vertex.GetNativeId());
-  EXPECT_EQ(row.Get("r").AsRelationship().id, relationship_edge.GetNativeId());
+  EXPECT_EQ(row.Get(slots->At("n")).AsNode().id, node_vertex.GetNativeId());
+  EXPECT_EQ(row.Get(slots->At("r")).AsRelationship().id,
+            relationship_edge.GetNativeId());
   transaction->Rollback();
 }
 
@@ -83,8 +84,9 @@ TEST(SlottedRowTest, CopiesBetweenLayoutsWithoutChangingStoredValues) {
 
   EXPECT_EQ(copied.VertexAt(target_slots->At("x")).GetNativeId(),
             vertex.GetNativeId());
-  EXPECT_TRUE(copied.Get("x").IsNode());
-  EXPECT_EQ(copied.Get("x").AsNode().id, vertex.GetNativeId());
+  EXPECT_TRUE(copied.Get(target_slots->At("x")).IsNode());
+  EXPECT_EQ(copied.Get(target_slots->At("x")).AsNode().id,
+            vertex.GetNativeId());
 
   const std::vector<rg::SlotMapping> reverse_mappings{
       {.source_offset = target_slots->At("x"),

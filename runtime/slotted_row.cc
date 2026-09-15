@@ -90,11 +90,6 @@ bool SlottedRow::IsInitialized(std::size_t offset) const {
   return !std::holds_alternative<UninitializedSlot>(values_[offset]);
 }
 
-bool SlottedRow::IsInitialized(std::string_view name) const {
-  const std::optional<std::size_t> offset = slots_->Find(name);
-  return offset.has_value() && IsInitialized(*offset);
-}
-
 std::int64_t SlottedRow::EntityIdAt(std::size_t offset) const {
   CHECK(IsInitialized(offset), common::InvalidArgumentError,
         "entity slot is not initialized");
@@ -197,10 +192,6 @@ void SlottedRow::MaterializeGraphEntities() {
       stored = Value(MaterializeGraphDBEdge(*edge));
     }
   }
-}
-
-Value SlottedRow::Get(std::string_view name) const {
-  return Get(slots_->At(name));
 }
 
 Value SlottedRow::Get(std::size_t offset) const {

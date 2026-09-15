@@ -54,7 +54,6 @@ class SlottedRow final {
     return slots_;
   }
   [[nodiscard]] bool IsInitialized(std::size_t offset) const;
-  [[nodiscard]] bool IsInitialized(std::string_view name) const;
   [[nodiscard]] std::int64_t EntityIdAt(std::size_t offset) const;
   [[nodiscard]] const graphdb::Vertex &VertexAt(std::size_t offset) const;
   [[nodiscard]] const graphdb::Edge &EdgeAt(std::size_t offset) const;
@@ -71,7 +70,6 @@ class SlottedRow final {
                     std::size_t target_offset);
   void MaterializeGraphEntities();
 
-  [[nodiscard]] Value Get(std::string_view name) const;
   [[nodiscard]] Value Get(std::size_t offset) const;
   [[nodiscard]] std::size_t EstimatedHeapUsage() const;
   [[nodiscard]] SlottedRow CopyTo(
