@@ -45,7 +45,7 @@ class PullOperator {
 };
 
 struct RuntimeExpressionProgram {
-  std::unordered_map<const ast::Variable *, Slot> variables;
+  std::unordered_map<const ast::Variable *, std::size_t> variables;
   std::unordered_map<const ast::Parameter *, std::size_t> parameters;
 };
 
@@ -62,8 +62,9 @@ class RuntimeExpressionCompiler final : public ast::ASTConstWalker {
 
  protected:
   void Visit(const ast::Variable &variable) override {
-    if (const Slot *slot = slots_->Find(variable.name); slot != nullptr) {
-      program_.variables.emplace(&variable, *slot);
+    if (const std::optional<std::size_t> offset = slots_->Find(variable.name);
+        offset.has_value()) {
+      program_.variables.emplace(&variable, *offset);
     }
   }
 
@@ -146,8 +147,9 @@ class SlottedExpressionBindings final : public ExpressionBindings {
   [[nodiscard]] bool ReadProperty(std::string_view variable,
                                   std::string_view property_key,
                                   Value *value) const override {
-    const Slot *slot = row_->Slots()->Find(variable);
-    return slot != nullptr && row_->ReadProperty(*slot, property_key, value);
+    const std::optional<std::size_t> offset = row_->Slots()->Find(variable);
+    return offset.has_value() &&
+           row_->ReadProperty(*offset, property_key, value);
   }
 
   [[nodiscard]] bool ReadVariableProperty(const ast::Variable &variable,
@@ -216,28 +218,28 @@ SlottedRow CopyMappedRow(const SlottedRow &source, SlotConfigurationPtr target,
   return source.CopyTo(std::move(target), mappings);
 }
 
-Value ReadRowValue(const SlottedRow &row, const Slot &slot) {
-  return row.Get(slot);
+Value ReadRowValue(const SlottedRow &row, std::size_t offset) {
+  return row.Get(offset);
 }
 
 Value ReadRowValue(const SlottedRow &row, std::string_view name) {
   return row.Get(name);
 }
 
-void StoreEvaluatedValue(SlottedRow *row, const Slot &slot, Value value,
+void StoreEvaluatedValue(SlottedRow *row, std::size_t offset, Value value,
                          RuntimeState &state) {
   CHECK(row != nullptr, common::InternalError, "query row is null");
   try {
     if (value.IsNode()) {
-      row->SetVertex(slot,
+      row->SetVertex(offset,
                      GraphDBVertexById(*state.transaction, value.AsNode().id));
       return;
     }
     if (value.IsRelationship()) {
       row->SetEdge(
-          slot, GraphDBEdgeById(*state.transaction,
-                                {.id = value.AsRelationship().id,
-                                 .type_id = value.AsRelationship().type_id}));
+          offset, GraphDBEdgeById(*state.transaction,
+                                  {.id = value.AsRelationship().id,
+                                   .type_id = value.AsRelationship().type_id}));
       return;
     }
   } catch (const LgraphException &error) {
@@ -248,7 +250,7 @@ void StoreEvaluatedValue(SlottedRow *row, const Slot &slot, Value value,
       throw;
     }
   }
-  row->Set(slot, std::move(value));
+  row->Set(offset, std::move(value));
 }
 
 void StoreEvaluatedValue(SlottedRow *row, std::string_view name, Value value,
@@ -257,12 +259,12 @@ void StoreEvaluatedValue(SlottedRow *row, std::string_view name, Value value,
   StoreEvaluatedValue(row, row->Slots()->At(name), std::move(value), state);
 }
 
-bool BindNode(SlottedRow *row, const Slot &slot, std::int64_t id,
+bool BindNode(SlottedRow *row, std::size_t offset, std::int64_t id,
               RuntimeState &state) {
   if (id < 0) {
-    return TryBindSlot(row, slot, Value::Null());
+    return TryBindSlot(row, offset, Value::Null());
   }
-  return TryBindVertex(row, slot, GraphDBVertexById(*state.transaction, id));
+  return TryBindVertex(row, offset, GraphDBVertexById(*state.transaction, id));
 }
 
 bool BindNode(SlottedRow *row, std::string_view name, std::int64_t id,
@@ -273,16 +275,16 @@ bool BindNode(SlottedRow *row, std::string_view name, std::int64_t id,
   return BindNode(row, row->Slots()->At(name), id, state);
 }
 
-bool BindNode(SlottedRow *row, const Slot &slot, graphdb::Vertex vertex) {
-  return TryBindVertex(row, slot, std::move(vertex));
+bool BindNode(SlottedRow *row, std::size_t offset, graphdb::Vertex vertex) {
+  return TryBindVertex(row, offset, std::move(vertex));
 }
 
 bool BindNode(SlottedRow *row, std::string_view name, graphdb::Vertex vertex) {
   return TryBindVertex(row, name, std::move(vertex));
 }
 
-bool BindRelationship(SlottedRow *row, const Slot &slot, graphdb::Edge edge) {
-  return TryBindEdge(row, slot, std::move(edge));
+bool BindRelationship(SlottedRow *row, std::size_t offset, graphdb::Edge edge) {
+  return TryBindEdge(row, offset, std::move(edge));
 }
 
 graphdb::Vertex Endpoint(const graphdb::Edge &edge, std::int64_t id) {
@@ -294,8 +296,8 @@ graphdb::Vertex Endpoint(const graphdb::Edge &edge, std::int64_t id) {
   return edge.GetEnd();
 }
 
-bool BindValue(SlottedRow *row, const Slot &slot, Value value) {
-  return TryBindSlot(row, slot, std::move(value));
+bool BindValue(SlottedRow *row, std::size_t offset, Value value) {
+  return TryBindSlot(row, offset, std::move(value));
 }
 
 bool MergeMappings(const SlottedRow &source, SlottedRow *target,
@@ -316,8 +318,8 @@ bool MergeMappings(const SlottedRow &source, SlottedRow *target,
   return true;
 }
 
-std::int64_t NodeId(const SlottedRow &row, const Slot &slot) {
-  const Value value = ReadRowValue(row, slot);
+std::int64_t NodeId(const SlottedRow &row, std::size_t offset) {
+  const Value value = ReadRowValue(row, offset);
   if (value.IsNull()) {
     return -1;
   }
@@ -2028,10 +2030,10 @@ class FixedExpandOperatorBase : public PullOperator {
   FixedExpandOperatorBase(const PhysicalPlanNode &node, RuntimeState &state,
                           std::unique_ptr<PullOperator> source,
                           const PhysicalRelationshipPattern &pattern,
-                          Slot from_node_input_slot,
-                          std::optional<Slot> to_node_input_slot,
-                          Slot relationship_output_slot,
-                          std::optional<Slot> to_node_output_slot)
+                          std::size_t from_node_input_slot,
+                          std::optional<std::size_t> to_node_input_slot,
+                          std::size_t relationship_output_slot,
+                          std::optional<std::size_t> to_node_output_slot)
       : node_(&node),
         state_(&state),
         source_(std::move(source)),
@@ -2117,10 +2119,10 @@ class FixedExpandOperatorBase : public PullOperator {
   RuntimeState *state_ = nullptr;
   std::unique_ptr<PullOperator> source_;
   const PhysicalRelationshipPattern *pattern_ = nullptr;
-  Slot from_node_input_slot_;
-  std::optional<Slot> to_node_input_slot_;
-  Slot relationship_output_slot_;
-  std::optional<Slot> to_node_output_slot_;
+  std::size_t from_node_input_slot_ = 0;
+  std::optional<std::size_t> to_node_input_slot_;
+  std::size_t relationship_output_slot_ = 0;
+  std::optional<std::size_t> to_node_output_slot_;
   std::optional<SlottedRow> input_;
   std::unique_ptr<graphdb::EdgeIterator> graphdb_cursor_;
   std::int64_t from_id_ = -1;
@@ -2561,9 +2563,9 @@ class OptionalExpandOperator final : public PullOperator {
       if (!matched_) {
         SlottedRow output = CopyMappedRow(*input_, node_->output_slots,
                                           node_->child_mappings.front());
-        for (const Slot &slot : data_->output_slots) {
-          if (!output.IsInitialized(slot)) {
-            output.SetNull(slot);
+        for (const std::size_t offset : data_->output_slots) {
+          if (!output.IsInitialized(offset)) {
+            output.SetNull(offset);
           }
         }
         input_.reset();
@@ -2697,10 +2699,10 @@ class ProjectEndpointsOperator final : public PullOperator {
     }
 
     if (relationships.empty()) {
-      for (const std::optional<Slot> &slot :
+      for (const std::optional<std::size_t> &offset :
            {data_->from_node_input_slot, data_->to_node_input_slot}) {
-        if (slot.has_value() && input_->IsInitialized(*slot)) {
-          const std::int64_t id = NodeId(*input_, *slot);
+        if (offset.has_value() && input_->IsInitialized(*offset)) {
+          const std::int64_t id = NodeId(*input_, *offset);
           if (id >= 0) {
             endpoints_.emplace_back(id, id);
           }
@@ -2771,12 +2773,12 @@ bool HasSharedUnaryLayout(const PhysicalPlanNode &node) {
 }
 
 void CopySlotDirect(const SlottedRow &source, SlottedRow *target,
-                    const Slot &source_slot, const Slot &target_slot) {
+                    std::size_t source_offset, std::size_t target_offset) {
   CHECK(target != nullptr, common::InternalError, "target row is null");
-  if (!source.IsInitialized(source_slot)) {
+  if (!source.IsInitialized(source_offset)) {
     return;
   }
-  target->CopySlotFrom(source, source_slot, target_slot);
+  target->CopySlotFrom(source, source_offset, target_offset);
 }
 
 std::int64_t EvaluatePaginationCount(const PhysicalExpression &expression,
@@ -2877,14 +2879,14 @@ class ProjectionOperator final : public PullOperator {
     }
     SlottedRow output(node_->output_slots);
     for (const auto &item : data_->items) {
-      const Slot &target_slot = node_->output_slots->At(item.alias);
+      const std::size_t target_offset = node_->output_slots->At(item.alias);
       if (item.passthrough && item.source_slot.has_value()) {
-        CopySlotDirect(input, &output, *item.source_slot, target_slot);
+        CopySlotDirect(input, &output, *item.source_slot, target_offset);
       } else {
         Value value = item.passthrough
                           ? ReadRowValue(input, item.alias)
                           : Evaluate(item.expression, input, *state_);
-        StoreEvaluatedValue(&output, target_slot, std::move(value), *state_);
+        StoreEvaluatedValue(&output, target_offset, std::move(value), *state_);
       }
     }
     *row = std::move(output);
@@ -5381,8 +5383,8 @@ class UnionDistinctOperator final : public PullOperator {
     while (input_.Next(&input)) {
       CompositeValueKey key;
       key.values.reserve(data_->key_slots.size());
-      for (const Slot &slot : data_->key_slots) {
-        key.values.push_back(ReadRowValue(input, slot));
+      for (const std::size_t offset : data_->key_slots) {
+        key.values.push_back(ReadRowValue(input, offset));
       }
       auto [seen, inserted] = seen_.insert(std::move(key));
       if (!inserted) {

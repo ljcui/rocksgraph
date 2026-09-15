@@ -195,41 +195,41 @@ struct RelationshipByIdSeekOp {
 
 struct ExpandOp {
   PhysicalRelationshipPattern pattern;
-  Slot from_node_input_slot;
-  Slot relationship_output_slot;
-  Slot to_node_output_slot;
+  std::size_t from_node_input_slot = 0;
+  std::size_t relationship_output_slot = 0;
+  std::size_t to_node_output_slot = 0;
 };
 
 struct ExpandIntoOp {
   PhysicalRelationshipPattern pattern;
-  Slot from_node_input_slot;
-  Slot to_node_input_slot;
-  Slot relationship_output_slot;
+  std::size_t from_node_input_slot = 0;
+  std::size_t to_node_input_slot = 0;
+  std::size_t relationship_output_slot = 0;
 };
 
 struct VarExpandOp {
   PhysicalRelationshipPattern pattern;
   PhysicalRelationshipLength length;
-  Slot from_node_input_slot;
-  std::optional<Slot> to_node_input_slot;
-  Slot relationship_output_slot;
-  Slot to_node_output_slot;
+  std::size_t from_node_input_slot = 0;
+  std::optional<std::size_t> to_node_input_slot;
+  std::size_t relationship_output_slot = 0;
+  std::size_t to_node_output_slot = 0;
 };
 
 struct PruningVarExpandOp {
   PhysicalRelationshipPattern pattern;
   PhysicalRelationshipLength length;
-  Slot from_node_input_slot;
-  Slot to_node_output_slot;
+  std::size_t from_node_input_slot = 0;
+  std::size_t to_node_output_slot = 0;
 };
 
 struct OptionalExpandOp {
   PhysicalRelationshipPattern pattern;
   std::vector<PhysicalExpression> predicates;
-  Slot from_node_input_slot;
-  Slot relationship_output_slot;
-  Slot to_node_output_slot;
-  std::vector<Slot> output_slots;
+  std::size_t from_node_input_slot = 0;
+  std::size_t relationship_output_slot = 0;
+  std::size_t to_node_output_slot = 0;
+  std::vector<std::size_t> output_slots;
 };
 
 struct PhysicalPathPattern {
@@ -240,19 +240,19 @@ struct PhysicalPathPattern {
 
 struct PathBuildOp {
   PhysicalPathPattern path;
-  std::vector<Slot> node_input_slots;
-  std::vector<Slot> relationship_input_slots;
-  Slot path_output_slot;
+  std::vector<std::size_t> node_input_slots;
+  std::vector<std::size_t> relationship_input_slots;
+  std::size_t path_output_slot = 0;
 };
 
 struct ProjectEndpointsOp {
   PhysicalRelationshipPattern pattern;
   PhysicalRelationshipLength length;
-  Slot relationship_input_slot;
-  std::optional<Slot> from_node_input_slot;
-  std::optional<Slot> to_node_input_slot;
-  Slot from_node_output_slot;
-  Slot to_node_output_slot;
+  std::size_t relationship_input_slot = 0;
+  std::optional<std::size_t> from_node_input_slot;
+  std::optional<std::size_t> to_node_input_slot;
+  std::size_t from_node_output_slot = 0;
+  std::size_t to_node_output_slot = 0;
 };
 
 struct FilterOp {
@@ -266,7 +266,7 @@ struct PhysicalProjectionItem {
   // Resolved during physical-plan construction for passthrough projections.
   // This lets the runtime copy the slot representation directly instead of
   // materializing an entity into Value and immediately extracting its id.
-  std::optional<Slot> source_slot;
+  std::optional<std::size_t> source_slot;
 };
 
 struct ProjectionOp {
@@ -365,7 +365,7 @@ struct ProduceResultsOp {
 
 struct PhysicalAssertedNode {
   std::string variable;
-  Slot input_slot;
+  std::size_t input_slot = 0;
 };
 
 struct AssertIsNodeOp {
@@ -374,12 +374,12 @@ struct AssertIsNodeOp {
 
 struct UnwindOp {
   PhysicalExpression expression;
-  Slot value_slot;
+  std::size_t value_slot = 0;
 };
 
 struct PhysicalProcedureYield {
   std::string result_field;
-  Slot output_slot;
+  std::size_t output_slot = 0;
 };
 
 struct ProcedureCallOp {
@@ -421,7 +421,7 @@ struct PredicateJoinOp {
 struct UnionAllOp {};
 
 struct UnionDistinctOp {
-  std::vector<Slot> key_slots;
+  std::vector<std::size_t> key_slots;
 };
 
 struct ApplyOp {};
@@ -433,7 +433,7 @@ struct SemiApplyOp {};
 struct AntiSemiApplyOp {};
 
 struct LetSemiApplyOp {
-  Slot value_slot;
+  std::size_t value_slot = 0;
 };
 
 struct SelectOrSemiApplyOp {
@@ -442,8 +442,8 @@ struct SelectOrSemiApplyOp {
 };
 
 struct RollUpApplyOp {
-  Slot collection_slot;
-  Slot value_slot;
+  std::size_t collection_slot = 0;
+  std::size_t value_slot = 0;
 };
 
 struct PhysicalPropertyMapEntry {
@@ -459,15 +459,15 @@ struct PhysicalPropertyMap {
 struct WriteBarrierOp {};
 
 struct CreateNodeOp {
-  Slot node_slot;
+  std::size_t node_slot = 0;
   std::vector<std::string> labels;
   PhysicalPropertyMap properties;
 };
 
 struct CreateRelationshipOp {
-  Slot relationship_slot;
-  Slot left_node_slot;
-  Slot right_node_slot;
+  std::size_t relationship_slot = 0;
+  std::size_t left_node_slot = 0;
+  std::size_t right_node_slot = 0;
   std::string type;
   PhysicalPropertyMap properties;
 };

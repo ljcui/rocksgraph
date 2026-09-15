@@ -97,11 +97,11 @@ std::vector<SlotMapping> ComputeSlotMappings(const SlotConfiguration &source,
                                              const SlotConfiguration &target) {
   std::vector<SlotMapping> mappings;
   for (const auto &column : target.Columns()) {
-    const Slot *source_slot = source.Find(column);
-    if (source_slot != nullptr) {
+    const std::optional<std::size_t> source_offset = source.Find(column);
+    if (source_offset.has_value()) {
       mappings.push_back({.source_name = column,
                           .target_name = column,
-                          .source = *source_slot,
+                          .source = *source_offset,
                           .target = target.At(column)});
     }
   }
@@ -228,22 +228,21 @@ std::vector<SlotMapping> NamedMappings(
   std::vector<SlotMapping> mappings;
   mappings.reserve(names.size());
   for (const auto &[source_name, target_name] : names) {
-    const Slot *source_slot = source.Find(source_name);
-    const Slot *target_slot = target.Find(target_name);
-    if (source_slot != nullptr && target_slot != nullptr) {
+    const std::optional<std::size_t> source_offset = source.Find(source_name);
+    const std::optional<std::size_t> target_offset = target.Find(target_name);
+    if (source_offset.has_value() && target_offset.has_value()) {
       mappings.push_back({.source_name = source_name,
                           .target_name = target_name,
-                          .source = *source_slot,
-                          .target = *target_slot});
+                          .source = *source_offset,
+                          .target = *target_offset});
     }
   }
   return mappings;
 }
 
-std::optional<Slot> FindSlot(const SlotConfiguration &slots,
-                             std::string_view name) {
-  const Slot *slot = slots.Find(name);
-  return slot == nullptr ? std::nullopt : std::optional<Slot>(*slot);
+std::optional<std::size_t> FindSlot(const SlotConfiguration &slots,
+                                    std::string_view name) {
+  return slots.Find(name);
 }
 
 PhysicalExpression CopyPhysicalExpression(
@@ -958,10 +957,10 @@ class PhysicalPlanBuilder final {
           PhysicalProjectionItem physical_item{.alias = item.alias,
                                                .passthrough = item.passthrough};
           if (item.passthrough && node->children.size() == 1) {
-            if (const Slot *source_slot =
+            if (const std::optional<std::size_t> source_offset =
                     node->children.front()->output_slots->Find(item.alias);
-                source_slot != nullptr) {
-              physical_item.source_slot = *source_slot;
+                source_offset.has_value()) {
+              physical_item.source_slot = *source_offset;
             }
           }
           if (!item.passthrough) {

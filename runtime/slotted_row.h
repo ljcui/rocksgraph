@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -14,26 +15,23 @@
 
 namespace rg {
 
-struct Slot {
-  std::size_t offset = 0;
-};
-
 class SlotConfiguration final {
  public:
   explicit SlotConfiguration(std::vector<std::string> columns = {});
 
-  [[nodiscard]] const Slot *Find(std::string_view name) const;
-  [[nodiscard]] const Slot &At(std::string_view name) const;
+  [[nodiscard]] std::optional<std::size_t> Find(std::string_view name) const;
+  [[nodiscard]] std::size_t At(std::string_view name) const;
   [[nodiscard]] bool Contains(std::string_view name) const;
   [[nodiscard]] const std::vector<std::string> &Columns() const noexcept {
     return columns_;
   }
-  [[nodiscard]] std::size_t SlotCount() const noexcept { return slot_count_; }
+  [[nodiscard]] std::size_t SlotCount() const noexcept {
+    return columns_.size();
+  }
 
  private:
   std::vector<std::string> columns_;
-  std::unordered_map<std::string, Slot> slots_;
-  std::size_t slot_count_ = 0;
+  std::unordered_map<std::string, std::size_t> offsets_;
 };
 
 using SlotConfigurationPtr = std::shared_ptr<const SlotConfiguration>;
@@ -41,8 +39,8 @@ using SlotConfigurationPtr = std::shared_ptr<const SlotConfiguration>;
 struct SlotMapping {
   std::string source_name;
   std::string target_name;
-  Slot source;
-  Slot target;
+  std::size_t source = 0;
+  std::size_t target = 0;
 };
 
 class SlottedRow final {
@@ -52,28 +50,28 @@ class SlottedRow final {
   [[nodiscard]] const SlotConfigurationPtr &Slots() const noexcept {
     return slots_;
   }
-  [[nodiscard]] bool IsInitialized(const Slot &slot) const;
+  [[nodiscard]] bool IsInitialized(std::size_t offset) const;
   [[nodiscard]] bool IsInitialized(std::string_view name) const;
-  [[nodiscard]] std::int64_t EntityIdAt(const Slot &slot) const;
-  [[nodiscard]] const graphdb::Vertex &VertexAt(const Slot &slot) const;
-  [[nodiscard]] const graphdb::Edge &EdgeAt(const Slot &slot) const;
-  [[nodiscard]] const Value &ValueAt(const Slot &slot) const;
-  [[nodiscard]] bool ReadProperty(const Slot &slot,
+  [[nodiscard]] std::int64_t EntityIdAt(std::size_t offset) const;
+  [[nodiscard]] const graphdb::Vertex &VertexAt(std::size_t offset) const;
+  [[nodiscard]] const graphdb::Edge &EdgeAt(std::size_t offset) const;
+  [[nodiscard]] const Value &ValueAt(std::size_t offset) const;
+  [[nodiscard]] bool ReadProperty(std::size_t offset,
                                   std::string_view property_key,
                                   Value *value) const;
 
-  void SetVertex(const Slot &slot, graphdb::Vertex vertex);
-  void SetEdge(const Slot &slot, graphdb::Edge edge);
-  void Set(const Slot &slot, Value value);
+  void SetVertex(std::size_t offset, graphdb::Vertex vertex);
+  void SetEdge(std::size_t offset, graphdb::Edge edge);
+  void Set(std::size_t offset, Value value);
   void Set(std::string_view name, Value value);
-  void SetNull(const Slot &slot);
+  void SetNull(std::size_t offset);
   void SetNull(std::string_view name);
-  void CopySlotFrom(const SlottedRow &source, const Slot &source_slot,
-                    const Slot &target_slot);
+  void CopySlotFrom(const SlottedRow &source, std::size_t source_offset,
+                    std::size_t target_offset);
   void MaterializeGraphEntities();
 
   [[nodiscard]] Value Get(std::string_view name) const;
-  [[nodiscard]] Value Get(const Slot &slot) const;
+  [[nodiscard]] Value Get(std::size_t offset) const;
   [[nodiscard]] std::size_t EstimatedHeapUsage() const;
   [[nodiscard]] SlottedRow CopyTo(
       SlotConfigurationPtr target,
@@ -90,14 +88,15 @@ class SlottedRow final {
 
 void CopySlots(const SlottedRow &source, SlottedRow *target,
                const std::vector<SlotMapping> &mappings);
-[[nodiscard]] bool TryBindSlot(SlottedRow *row, const Slot &slot, Value value);
+[[nodiscard]] bool TryBindSlot(SlottedRow *row, std::size_t offset,
+                               Value value);
 [[nodiscard]] bool TryBindSlot(SlottedRow *row, std::string_view name,
                                Value value);
-[[nodiscard]] bool TryBindVertex(SlottedRow *row, const Slot &slot,
+[[nodiscard]] bool TryBindVertex(SlottedRow *row, std::size_t offset,
                                  graphdb::Vertex vertex);
 [[nodiscard]] bool TryBindVertex(SlottedRow *row, std::string_view name,
                                  graphdb::Vertex vertex);
-[[nodiscard]] bool TryBindEdge(SlottedRow *row, const Slot &slot,
+[[nodiscard]] bool TryBindEdge(SlottedRow *row, std::size_t offset,
                                graphdb::Edge edge);
 [[nodiscard]] bool TryBindEdge(SlottedRow *row, std::string_view name,
                                graphdb::Edge edge);

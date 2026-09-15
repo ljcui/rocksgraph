@@ -20,9 +20,9 @@ TEST(SlottedRowTest, StoresGraphDBEntitiesAndValues) {
       std::vector<std::string>{"n", "r", "value"});
 
   rg::SlottedRow row(slots);
-  EXPECT_EQ(slots->At("n").offset, 0);
-  EXPECT_EQ(slots->At("r").offset, 1);
-  EXPECT_EQ(slots->At("value").offset, 2);
+  EXPECT_EQ(slots->At("n"), 0);
+  EXPECT_EQ(slots->At("r"), 1);
+  EXPECT_EQ(slots->At("value"), 2);
   row.SetVertex(slots->At("n"), node_vertex);
   row.SetEdge(slots->At("r"), relationship_edge);
   row.Set(slots->At("value"), rg::Value(42));

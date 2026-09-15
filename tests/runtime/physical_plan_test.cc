@@ -380,8 +380,8 @@ class GraphDBPhysicalResultCursor final : public rg::PhysicalResultCursor {
   bool closed_ = false;
 };
 
-void ExpectSameSlot(const rg::Slot &actual, const rg::Slot &expected) {
-  EXPECT_EQ(actual.offset, expected.offset);
+void ExpectSameOffset(std::size_t actual, std::size_t expected) {
+  EXPECT_EQ(actual, expected);
 }
 
 }  // namespace
@@ -454,8 +454,8 @@ TEST(PhysicalPlanTest, ResolvesPassthroughSlotsWithoutEntityConversion) {
   const auto &data = std::get<rg::ProjectionOp>(physical.Root().data);
   ASSERT_EQ(data.items.size(), 1U);
   ASSERT_TRUE(data.items[0].source_slot.has_value());
-  EXPECT_EQ(data.items[0].source_slot->offset,
-            physical.Root().children[0]->output_slots->At("r").offset);
+  EXPECT_EQ(*data.items[0].source_slot,
+            physical.Root().children[0]->output_slots->At("r"));
 
   rg::test::GraphDBTestDatabase graph;
   const auto first = graph.CreateNode({});
@@ -507,8 +507,8 @@ TEST(PhysicalPlanTest, SelectsDedicatedUnionPhysicalAlgorithms) {
   ASSERT_NE(union_node, nullptr);
   const auto &data = std::get<rg::UnionDistinctOp>(union_node->data);
   ASSERT_EQ(data.key_slots.size(), 1U);
-  const rg::Slot &output_slot = union_node->output_slots->At("value");
-  EXPECT_EQ(data.key_slots.front().offset, output_slot.offset);
+  const std::size_t output_offset = union_node->output_slots->At("value");
+  EXPECT_EQ(data.key_slots.front(), output_offset);
 
   const std::string printed = rg::PhysicalPlanToString(physical);
   EXPECT_NE(printed.find("UnionDistinct"), std::string::npos);
@@ -992,11 +992,12 @@ TEST(PhysicalPlanTest, ExecutesDetachedMergeCreateAndMatchActions) {
   ASSERT_EQ(created.front().size(), 2U);
   EXPECT_EQ(created.front()[0], rg::Value(true));
   EXPECT_TRUE(created.front()[1].IsNull());
-  ASSERT_EQ(graph.Nodes().size(), 1U);
-  EXPECT_EQ(graph.Nodes().front()->properties.at("extra"), rg::Value(1));
-  EXPECT_NE(std::find(graph.Nodes().front()->labels.begin(),
-                      graph.Nodes().front()->labels.end(), "Fresh"),
-            graph.Nodes().front()->labels.end());
+  const auto nodes = graph.Nodes();
+  ASSERT_EQ(nodes.size(), 1U);
+  EXPECT_EQ(nodes.front()->properties.at("extra"), rg::Value(1));
+  EXPECT_NE(std::find(nodes.front()->labels.begin(),
+                      nodes.front()->labels.end(), "Fresh"),
+            nodes.front()->labels.end());
 
   const auto matched = PhysicalWriteRows(physical, &graph, {"created", "seen"});
   ASSERT_EQ(matched.size(), 1U);
@@ -1611,10 +1612,11 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForFixedTraversalOperators) {
     EXPECT_EQ(data.pattern.to_node, "b");
     EXPECT_EQ(data.pattern.direction, rg::PhysicalExpandDirection::kOutgoing);
     EXPECT_EQ(data.pattern.types, (std::vector<std::string>{"R"}));
-    ExpectSameSlot(data.from_node_input_slot,
-                   node->children[0]->output_slots->At("a"));
-    ExpectSameSlot(data.relationship_output_slot, node->output_slots->At("r"));
-    ExpectSameSlot(data.to_node_output_slot, node->output_slots->At("b"));
+    ExpectSameOffset(data.from_node_input_slot,
+                     node->children[0]->output_slots->At("a"));
+    ExpectSameOffset(data.relationship_output_slot,
+                     node->output_slots->At("r"));
+    ExpectSameOffset(data.to_node_output_slot, node->output_slots->At("b"));
   }
   {
     PlannedQuery query =
@@ -1630,11 +1632,12 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForFixedTraversalOperators) {
     EXPECT_EQ(data.pattern.from_node, "a");
     EXPECT_EQ(data.pattern.to_node, "b");
     EXPECT_EQ(data.pattern.direction, rg::PhysicalExpandDirection::kOutgoing);
-    ExpectSameSlot(data.from_node_input_slot,
-                   node->children[0]->output_slots->At("a"));
-    ExpectSameSlot(data.to_node_input_slot,
-                   node->children[0]->output_slots->At("b"));
-    ExpectSameSlot(data.relationship_output_slot, node->output_slots->At("r"));
+    ExpectSameOffset(data.from_node_input_slot,
+                     node->children[0]->output_slots->At("a"));
+    ExpectSameOffset(data.to_node_input_slot,
+                     node->children[0]->output_slots->At("b"));
+    ExpectSameOffset(data.relationship_output_slot,
+                     node->output_slots->At("r"));
   }
   {
     PlannedQuery query = Plan(
@@ -1651,10 +1654,11 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForFixedTraversalOperators) {
     ASSERT_EQ(data.predicates.size(), logical->Predicates().size());
     EXPECT_NE(data.predicates.front().Expression(),
               logical->Predicates().front());
-    ExpectSameSlot(data.from_node_input_slot,
-                   node->children[0]->output_slots->At("a"));
-    ExpectSameSlot(data.relationship_output_slot, node->output_slots->At("r"));
-    ExpectSameSlot(data.to_node_output_slot, node->output_slots->At("b"));
+    ExpectSameOffset(data.from_node_input_slot,
+                     node->children[0]->output_slots->At("a"));
+    ExpectSameOffset(data.relationship_output_slot,
+                     node->output_slots->At("r"));
+    ExpectSameOffset(data.to_node_output_slot, node->output_slots->At("b"));
     EXPECT_EQ(data.output_slots.size(), node->output_slots->Columns().size());
   }
   {
@@ -1676,14 +1680,14 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForFixedTraversalOperators) {
     EXPECT_TRUE(data.length.variable);
     EXPECT_EQ(data.length.min, 2);
     EXPECT_EQ(data.length.max, 3);
-    ExpectSameSlot(data.relationship_input_slot,
-                   physical.Root().children[0]->output_slots->At("rs"));
+    ExpectSameOffset(data.relationship_input_slot,
+                     physical.Root().children[0]->output_slots->At("rs"));
     EXPECT_FALSE(data.from_node_input_slot.has_value());
     EXPECT_FALSE(data.to_node_input_slot.has_value());
-    ExpectSameSlot(data.from_node_output_slot,
-                   physical.Root().output_slots->At("a"));
-    ExpectSameSlot(data.to_node_output_slot,
-                   physical.Root().output_slots->At("b"));
+    ExpectSameOffset(data.from_node_output_slot,
+                     physical.Root().output_slots->At("a"));
+    ExpectSameOffset(data.to_node_output_slot,
+                     physical.Root().output_slots->At("b"));
   }
 }
 
@@ -1707,11 +1711,12 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForVariableTraversalOperators) {
     EXPECT_TRUE(data.length.variable);
     EXPECT_EQ(data.length.min, 0);
     EXPECT_EQ(data.length.max, 3);
-    ExpectSameSlot(data.from_node_input_slot,
-                   node->children[0]->output_slots->At("a"));
+    ExpectSameOffset(data.from_node_input_slot,
+                     node->children[0]->output_slots->At("a"));
     EXPECT_FALSE(data.to_node_input_slot.has_value());
-    ExpectSameSlot(data.relationship_output_slot, node->output_slots->At("rs"));
-    ExpectSameSlot(data.to_node_output_slot, node->output_slots->At("b"));
+    ExpectSameOffset(data.relationship_output_slot,
+                     node->output_slots->At("rs"));
+    ExpectSameOffset(data.to_node_output_slot, node->output_slots->At("b"));
   }
   {
     rg::PhysicalPlan physical = DetachedPruningVarExpand();
@@ -1725,10 +1730,10 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForVariableTraversalOperators) {
     EXPECT_TRUE(data.length.variable);
     EXPECT_EQ(data.length.min, 0);
     EXPECT_EQ(data.length.max, 2);
-    ExpectSameSlot(data.from_node_input_slot,
-                   physical.Root().children[0]->output_slots->At("a"));
-    ExpectSameSlot(data.to_node_output_slot,
-                   physical.Root().output_slots->At("b"));
+    ExpectSameOffset(data.from_node_input_slot,
+                     physical.Root().children[0]->output_slots->At("a"));
+    ExpectSameOffset(data.to_node_output_slot,
+                     physical.Root().output_slots->At("b"));
   }
   {
     PlannedQuery query = Plan("MATCH p = (a)-[rs:R*1..2]->(b) RETURN p");
@@ -1745,13 +1750,13 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForVariableTraversalOperators) {
     EXPECT_EQ(data.path.relationships, (std::vector<std::string>{"rs"}));
     ASSERT_EQ(data.node_input_slots.size(), 2U);
     ASSERT_EQ(data.relationship_input_slots.size(), 1U);
-    ExpectSameSlot(data.node_input_slots[0],
-                   node->children[0]->output_slots->At("a"));
-    ExpectSameSlot(data.node_input_slots[1],
-                   node->children[0]->output_slots->At("b"));
-    ExpectSameSlot(data.relationship_input_slots[0],
-                   node->children[0]->output_slots->At("rs"));
-    ExpectSameSlot(data.path_output_slot, node->output_slots->At("p"));
+    ExpectSameOffset(data.node_input_slots[0],
+                     node->children[0]->output_slots->At("a"));
+    ExpectSameOffset(data.node_input_slots[1],
+                     node->children[0]->output_slots->At("b"));
+    ExpectSameOffset(data.relationship_input_slots[0],
+                     node->children[0]->output_slots->At("rs"));
+    ExpectSameOffset(data.path_output_slot, node->output_slots->At("p"));
   }
 
   {
@@ -1762,8 +1767,8 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForVariableTraversalOperators) {
     rg::PhysicalPlan physical = rg::CreatePhysicalPlan(logical);
     const auto &data = std::get<rg::VarExpandOp>(physical.Root().data);
     ASSERT_TRUE(data.to_node_input_slot.has_value());
-    ExpectSameSlot(*data.to_node_input_slot,
-                   physical.Root().children[0]->output_slots->At("b"));
+    ExpectSameOffset(*data.to_node_input_slot,
+                     physical.Root().children[0]->output_slots->At("b"));
   }
 }
 

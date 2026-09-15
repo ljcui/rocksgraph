@@ -40,8 +40,7 @@ std::string FormatSlots(const SlotConfiguration &slots) {
       out << ", ";
     }
     const std::string &column = slots.Columns()[index];
-    const Slot &slot = slots.At(column);
-    out << column << '@' << slot.offset;
+    out << column << '@' << slots.At(column);
   }
   return out.str();
 }
