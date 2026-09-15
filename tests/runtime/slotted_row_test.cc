@@ -52,6 +52,19 @@ TEST(SlottedRowTest, DistinguishesUninitializedSlotsFromNull) {
   transaction->Rollback();
 }
 
+TEST(SlottedRowTest, ResetsRowsWithoutChangingCompatibleStorage) {
+  auto slots = std::make_shared<const rg::SlotConfiguration>(
+      std::vector<std::string>{"value"});
+  rg::SlottedRow row(slots);
+  row.Set(slots->At("value"), rg::Value(42));
+  row.Reset();
+  EXPECT_FALSE(row.IsInitialized(slots->At("value")));
+
+  row.Set(slots->At("value"), rg::Value(7));
+  row.Reset(slots);
+  EXPECT_FALSE(row.IsInitialized(slots->At("value")));
+}
+
 TEST(SlottedRowTest, CopiesBetweenLayoutsWithoutChangingStoredValues) {
   rg::test::GraphDBTestDatabase database;
   auto transaction = database.BeginTransaction();

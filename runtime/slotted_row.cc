@@ -66,6 +66,24 @@ SlottedRow::SlottedRow(SlotConfigurationPtr slots) : slots_(std::move(slots)) {
   values_.resize(slots_->SlotCount());
 }
 
+void SlottedRow::Reset() {
+  for (auto &value : values_) {
+    value = UninitializedSlot{};
+  }
+}
+
+void SlottedRow::Reset(SlotConfigurationPtr slots) {
+  CHECK(slots != nullptr, common::InvalidArgumentError,
+        "slot configuration is null");
+  if (slots_ != slots) {
+    slots_ = std::move(slots);
+    values_.clear();
+    values_.resize(slots_->SlotCount());
+    return;
+  }
+  Reset();
+}
+
 bool SlottedRow::IsInitialized(std::size_t offset) const {
   CHECK(offset < values_.size(), common::InternalError,
         "slot offset is out of range");

@@ -1396,10 +1396,9 @@ class AllNodeScanOperator final : public PullOperator {
     while (graphdb_cursor_->Valid()) {
       graphdb::Vertex vertex = graphdb_cursor_->GetVertex();
       graphdb_cursor_->Next();
-      SlottedRow output(node_->output_slots);
-      CopyMappings(*argument_, &output, node_->argument_mapping);
-      SetScannedNode(&output, data_->output_slot, std::move(vertex));
-      *row = std::move(output);
+      row->Reset(node_->output_slots);
+      CopyMappings(*argument_, row, node_->argument_mapping);
+      SetScannedNode(row, data_->output_slot, std::move(vertex));
       return true;
     }
     Close();
@@ -1493,18 +1492,17 @@ class NodeScanOperator : public PullOperator {
           continue;
         }
       }
-      SlottedRow output = CopyMappedRow(argument_, node_->output_slots,
-                                        node_->argument_mapping);
-      SetScannedNode(&output, output_slot_, std::move(vertex));
+      row->Reset(node_->output_slots);
+      CopyMappings(argument_, row, node_->argument_mapping);
+      SetScannedNode(row, output_slot_, std::move(vertex));
       if (predicates_ != nullptr &&
           !std::all_of(predicates_->begin(), predicates_->end(),
                        [&](const PhysicalExpression &predicate) {
                          return PredicateIsTrue(
-                             Evaluate(predicate, output, *state_));
+                             Evaluate(predicate, *row, *state_));
                        })) {
         continue;
       }
-      *row = std::move(output);
       return true;
     }
     Close();
@@ -1793,22 +1791,21 @@ bool EmitGraphDBRelationship(const PhysicalPlanNode &node,
           : (reverse ? relationship.start_node_id : relationship.end_node_id);
   graphdb::Vertex from = Endpoint(edge, from_id);
   graphdb::Vertex to = Endpoint(edge, to_id);
-  SlottedRow output =
-      CopyMappedRow(argument, node.output_slots, node.argument_mapping);
-  if (!TryBindNode(&output, slots.from_node_output_slot, std::move(from)) ||
-      !TryBindOptionalEdge(&output, slots.relationship_output_slot,
+  row->Reset(node.output_slots);
+  CopyMappings(argument, row, node.argument_mapping);
+  if (!TryBindNode(row, slots.from_node_output_slot, std::move(from)) ||
+      !TryBindOptionalEdge(row, slots.relationship_output_slot,
                            std::move(edge)) ||
-      !TryBindNode(&output, slots.to_node_output_slot, std::move(to))) {
+      !TryBindNode(row, slots.to_node_output_slot, std::move(to))) {
     return false;
   }
   if (predicates != nullptr &&
       !std::all_of(predicates->begin(), predicates->end(),
                    [&](const PhysicalExpression &predicate) {
-                     return PredicateIsTrue(Evaluate(predicate, output, state));
+                     return PredicateIsTrue(Evaluate(predicate, *row, state));
                    })) {
     return false;
   }
-  *row = std::move(output);
   return true;
 }
 
@@ -6298,7 +6295,8 @@ class PhysicalResultCursorImpl final : public PhysicalResultCursor {
       : state_(transaction, parameters, std::move(options)),
         factory_(state_),
         root_(factory_.Build(plan.Root())),
-        output_slots_(plan.Root().output_slots) {
+        output_slots_(plan.Root().output_slots),
+        slotted_(output_slots_) {
     result_slots_.reserve(result_columns.size());
     for (const auto &column : result_columns) {
       result_slots_.push_back(output_slots_->At(column));
@@ -6314,16 +6312,17 @@ class PhysicalResultCursorImpl final : public PhysicalResultCursor {
     }
     try {
       state_.CheckCancelled();
-      SlottedRow slotted(output_slots_);
-      if (!root_->Next(&slotted)) {
+      slotted_.Reset();
+      if (!root_->Next(&slotted_)) {
         Close();
         return false;
       }
       row->clear();
       row->reserve(result_slots_.size());
       for (const std::size_t slot : result_slots_) {
-        row->push_back(slotted.IsInitialized(slot) ? ReadRowValue(slotted, slot)
-                                                   : Value::Null());
+        row->push_back(slotted_.IsInitialized(slot)
+                           ? ReadRowValue(slotted_, slot)
+                           : Value::Null());
       }
       return true;
     } catch (...) {
@@ -6354,6 +6353,7 @@ class PhysicalResultCursorImpl final : public PhysicalResultCursor {
   OperatorFactory factory_;
   std::unique_ptr<PullOperator> root_;
   SlotConfigurationPtr output_slots_;
+  SlottedRow slotted_;
   std::vector<std::size_t> result_slots_;
   std::size_t peak_memory_bytes_ = 0;
   bool closed_ = false;

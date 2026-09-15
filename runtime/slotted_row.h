@@ -45,6 +45,11 @@ class SlottedRow final {
  public:
   explicit SlottedRow(SlotConfigurationPtr slots);
 
+  // Reuse the row's storage for another logical row. If the layout is
+  // unchanged this only resets the variant tags and does not allocate.
+  void Reset();
+  void Reset(SlotConfigurationPtr slots);
+
   [[nodiscard]] const SlotConfigurationPtr &Slots() const noexcept {
     return slots_;
   }
