@@ -99,10 +99,8 @@ std::vector<SlotMapping> ComputeSlotMappings(const SlotConfiguration &source,
   for (const auto &column : target.Columns()) {
     const std::optional<std::size_t> source_offset = source.Find(column);
     if (source_offset.has_value()) {
-      mappings.push_back({.source_name = column,
-                          .target_name = column,
-                          .source = *source_offset,
-                          .target = target.At(column)});
+      mappings.push_back({.source_offset = *source_offset,
+                          .target_offset = target.At(column)});
     }
   }
   return mappings;
@@ -231,10 +229,8 @@ std::vector<SlotMapping> NamedMappings(
     const std::optional<std::size_t> source_offset = source.Find(source_name);
     const std::optional<std::size_t> target_offset = target.Find(target_name);
     if (source_offset.has_value() && target_offset.has_value()) {
-      mappings.push_back({.source_name = source_name,
-                          .target_name = target_name,
-                          .source = *source_offset,
-                          .target = *target_offset});
+      mappings.push_back({.source_offset = *source_offset,
+                          .target_offset = *target_offset});
     }
   }
   return mappings;

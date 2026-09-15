@@ -303,15 +303,16 @@ bool BindValue(SlottedRow *row, std::size_t offset, Value value) {
 bool MergeMappings(const SlottedRow &source, SlottedRow *target,
                    const std::vector<SlotMapping> &mappings) {
   for (const auto &mapping : mappings) {
-    if (!source.IsInitialized(mapping.source)) {
+    if (!source.IsInitialized(mapping.source_offset)) {
       continue;
     }
-    if (!target->IsInitialized(mapping.target)) {
-      target->CopySlotFrom(source, mapping.source, mapping.target);
+    if (!target->IsInitialized(mapping.target_offset)) {
+      target->CopySlotFrom(source, mapping.source_offset,
+                           mapping.target_offset);
       continue;
     }
-    if (!ValuesEqual(ReadRowValue(source, mapping.source),
-                     ReadRowValue(*target, mapping.target))) {
+    if (!ValuesEqual(ReadRowValue(source, mapping.source_offset),
+                     ReadRowValue(*target, mapping.target_offset))) {
       return false;
     }
   }

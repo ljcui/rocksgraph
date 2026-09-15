@@ -37,10 +37,8 @@ class SlotConfiguration final {
 using SlotConfigurationPtr = std::shared_ptr<const SlotConfiguration>;
 
 struct SlotMapping {
-  std::string source_name;
-  std::string target_name;
-  std::size_t source = 0;
-  std::size_t target = 0;
+  std::size_t source_offset = 0;
+  std::size_t target_offset = 0;
 };
 
 class SlottedRow final {

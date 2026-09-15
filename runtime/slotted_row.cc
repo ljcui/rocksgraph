@@ -229,10 +229,11 @@ void CopySlots(const SlottedRow &source, SlottedRow *target,
                const std::vector<SlotMapping> &mappings) {
   CHECK(target != nullptr, common::InternalError, "target row is null");
   for (const auto &mapping : mappings) {
-    if (!source.IsInitialized(mapping.source)) {
+    if (!source.IsInitialized(mapping.source_offset)) {
       continue;
     }
-    target->CopySlotFrom(source, mapping.source, mapping.target);
+    target->CopySlotFrom(source, mapping.source_offset,
+                         mapping.target_offset);
   }
 }
 

@@ -64,10 +64,8 @@ TEST(SlottedRowTest, CopiesBetweenLayoutsWithoutChangingStoredValues) {
   rg::SlottedRow source(entity_slots);
   source.SetVertex(entity_slots->At("x"), vertex);
   const std::vector<rg::SlotMapping> mappings{
-      {.source_name = "x",
-       .target_name = "x",
-       .source = entity_slots->At("x"),
-       .target = target_slots->At("x")}};
+      {.source_offset = entity_slots->At("x"),
+       .target_offset = target_slots->At("x")}};
   rg::SlottedRow copied = source.CopyTo(target_slots, mappings);
 
   EXPECT_EQ(copied.VertexAt(target_slots->At("x")).GetNativeId(),
@@ -76,10 +74,8 @@ TEST(SlottedRowTest, CopiesBetweenLayoutsWithoutChangingStoredValues) {
   EXPECT_EQ(copied.Get("x").AsNode().id, vertex.GetNativeId());
 
   const std::vector<rg::SlotMapping> reverse_mappings{
-      {.source_name = "x",
-       .target_name = "x",
-       .source = target_slots->At("x"),
-       .target = entity_slots->At("x")}};
+      {.source_offset = target_slots->At("x"),
+       .target_offset = entity_slots->At("x")}};
   rg::SlottedRow copied_back = copied.CopyTo(entity_slots, reverse_mappings);
   EXPECT_EQ(copied_back.VertexAt(entity_slots->At("x")).GetNativeId(),
             vertex.GetNativeId());
