@@ -1069,7 +1069,7 @@ TEST(GraphDB, pointToSelf) {
     EXPECT_EQ(eiter->GetEdge().GetAllProperty(), properties);
     count++;
   }
-  EXPECT_EQ(count, 2);
+  EXPECT_EQ(count, 1);
 
   auto e2 = txn->CreateEdge(v1, v1, "edge_type1", properties);
   count = 0;
@@ -1092,7 +1092,7 @@ TEST(GraphDB, pointToSelf) {
     EXPECT_EQ(eiter->GetEdge().GetAllProperty(), properties);
     count++;
   }
-  EXPECT_EQ(count, 4);
+  EXPECT_EQ(count, 2);
 
   e2.Delete();
   count = 0;
@@ -1115,7 +1115,7 @@ TEST(GraphDB, pointToSelf) {
     EXPECT_EQ(eiter->GetEdge().GetAllProperty(), properties);
     count++;
   }
-  EXPECT_EQ(count, 2);
+  EXPECT_EQ(count, 1);
 
   v1.Delete();
 

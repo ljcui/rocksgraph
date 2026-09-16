@@ -74,6 +74,7 @@ class Vertex : public Property {
   bool TryGetVectorPropertyRaw(uint32_t pid, rocksdb::PinnableSlice* out,
                                size_t* dimensions);
   std::unordered_map<std::string, rg::Value> GetAllProperty() override;
+  // Counts incident edges. A self-loop counts once for EdgeDirection::BOTH.
   int GetDegree(EdgeDirection direction);
   void SetProperties(
       const std::unordered_map<std::string, rg::Value>& properties) override;
