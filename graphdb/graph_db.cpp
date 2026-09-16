@@ -29,7 +29,7 @@ std::string BuildFullTextIndexPath(const std::string& graph_path,
          std::to_string(big_to_native(index_id));
 }
 
-std::string BuildMetaKey(MetaDataType type, const std::string& name) {
+std::string BuildMetaKey(MetadataType type, const std::string& name) {
   std::string key;
   key.append(1, static_cast<char>(type));
   key.append(name);
@@ -45,7 +45,7 @@ std::string BuildVectorFieldMetaKey(const std::string& label,
 }
 
 const std::string kRaftApplyIndexKey(
-    1, static_cast<char>(MetaDataType::RaftApplyIndex));
+    1, static_cast<char>(MetadataType::RaftApplyIndex));
 
 class IdGeneratorMetaBatchHandler : public rocksdb::WriteBatch::Handler {
  public:
@@ -58,7 +58,7 @@ class IdGeneratorMetaBatchHandler : public rocksdb::WriteBatch::Handler {
     if (column_family_id != meta_info_cf_id_ || key.empty()) {
       return rocksdb::Status::OK();
     }
-    auto type = static_cast<MetaDataType>(key.data()[0]);
+    auto type = static_cast<MetadataType>(key.data()[0]);
     rocksdb::Slice key_suffix(key.data() + 1, key.size() - 1);
     id_generator_.ApplyMetaRecord(type, key_suffix, value);
     return rocksdb::Status::OK();
@@ -660,7 +660,7 @@ void GraphDB::PersistVertexPropertyIndexMeta(
     const std::shared_ptr<VertexPropertyIndex>& index) {
   auto s = db_->Put(
       {}, graph_cf_.meta_info,
-      BuildMetaKey(MetaDataType::VertexPropertyIndex, index->meta().name()),
+      BuildMetaKey(MetadataType::VertexPropertyIndex, index->meta().name()),
       index->meta().SerializeAsString());
   if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
 }
@@ -669,7 +669,7 @@ void GraphDB::PersistEdgePropertyIndexMeta(
     const std::shared_ptr<EdgePropertyIndex>& index) {
   auto s = db_->Put(
       {}, graph_cf_.meta_info,
-      BuildMetaKey(MetaDataType::EdgePropertyIndex, index->meta().name()),
+      BuildMetaKey(MetadataType::EdgePropertyIndex, index->meta().name()),
       index->meta().SerializeAsString());
   if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
 }
@@ -678,7 +678,7 @@ void GraphDB::PersistVertexFullTextIndexMeta(
     const std::shared_ptr<VertexFullTextIndex>& index) {
   auto s = db_->Put(
       {}, graph_cf_.meta_info,
-      BuildMetaKey(MetaDataType::VertexFullTextIndex, index->meta().name()),
+      BuildMetaKey(MetadataType::VertexFullTextIndex, index->meta().name()),
       index->meta().SerializeAsString());
   if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
 }
@@ -687,7 +687,7 @@ void GraphDB::PersistVertexVectorIndexMeta(
     const std::shared_ptr<VertexVectorIndex>& index) {
   auto s = db_->Put(
       {}, graph_cf_.meta_info,
-      BuildMetaKey(MetaDataType::VertexVectorIndex, index->meta().name()),
+      BuildMetaKey(MetadataType::VertexVectorIndex, index->meta().name()),
       index->meta().SerializeAsString());
   if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
 }
@@ -1220,7 +1220,7 @@ void GraphDB::ApplyCreateVertexPropertyIndex(
   rocksdb::WriteBatch wb;
   auto s = wb.Put(
       graph_cf_.meta_info,
-      BuildMetaKey(MetaDataType::VertexPropertyIndex, vpi->meta().name()),
+      BuildMetaKey(MetadataType::VertexPropertyIndex, vpi->meta().name()),
       vpi->meta().SerializeAsString());
   if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
   if (apply_index > 0) {
@@ -1285,7 +1285,7 @@ void GraphDB::ApplyDeleteVertexPropertyIndex(
 
   rocksdb::WriteBatch wb;
   wb.Delete(graph_cf_.meta_info,
-            BuildMetaKey(MetaDataType::VertexPropertyIndex, index_name));
+            BuildMetaKey(MetadataType::VertexPropertyIndex, index_name));
   std::string start_key(AsChars(index_id), sizeof(index_id));
   std::string end_key(AsChars(index_id), sizeof(index_id));
   end_key.append(128, static_cast<char>(0xFF));
@@ -1408,7 +1408,7 @@ void GraphDB::ApplyCreateEdgePropertyIndex(uint64_t apply_index,
   rocksdb::WriteBatch wb;
   auto s =
       wb.Put(graph_cf_.meta_info,
-             BuildMetaKey(MetaDataType::EdgePropertyIndex, epi->meta().name()),
+             BuildMetaKey(MetadataType::EdgePropertyIndex, epi->meta().name()),
              epi->meta().SerializeAsString());
   if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
   if (apply_index > 0) {
@@ -1472,7 +1472,7 @@ void GraphDB::ApplyDeleteEdgePropertyIndex(
 
   rocksdb::WriteBatch wb;
   wb.Delete(graph_cf_.meta_info,
-            BuildMetaKey(MetaDataType::EdgePropertyIndex, index_name));
+            BuildMetaKey(MetadataType::EdgePropertyIndex, index_name));
   std::string start_key(AsChars(index_id), sizeof(index_id));
   std::string end_key(AsChars(index_id), sizeof(index_id));
   end_key.append(128, static_cast<char>(0xFF));
@@ -1595,7 +1595,7 @@ void GraphDB::ApplyCreateVertexFullTextIndex(uint64_t apply_index,
       options_.ft_apply_interval_);
   rocksdb::WriteBatch wb;
   auto s = wb.Put(graph_cf_.meta_info,
-                  BuildMetaKey(MetaDataType::VertexFullTextIndex, meta.name()),
+                  BuildMetaKey(MetadataType::VertexFullTextIndex, meta.name()),
                   meta.SerializeAsString());
   if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
   if (apply_index > 0) {
@@ -1660,7 +1660,7 @@ void GraphDB::ApplyDeleteVertexFullTextIndex(
 
   rocksdb::WriteBatch wb;
   wb.Delete(graph_cf_.meta_info,
-            BuildMetaKey(MetaDataType::VertexFullTextIndex, index_name));
+            BuildMetaKey(MetadataType::VertexFullTextIndex, index_name));
 
   std::string start_key(AsChars(index_id), sizeof(index_id));
   start_key.append(sizeof(int64_t), static_cast<char>(0x00));
@@ -1849,7 +1849,7 @@ void GraphDB::ApplyCreateVertexVectorField(uint64_t apply_index,
   rocksdb::WriteBatch wb;
   auto s =
       wb.Put(graph_cf_.meta_info,
-             BuildMetaKey(MetaDataType::VertexVectorField,
+             BuildMetaKey(MetadataType::VertexVectorField,
                           BuildVectorFieldMetaKey(vector_field->label(),
                                                   vector_field->property())),
              vector_field->SerializeAsString());
@@ -1920,7 +1920,7 @@ void GraphDB::ApplyCreateVertexVectorIndex(uint64_t apply_index,
       index_id, lid, pid, meta, options_.vt_apply_interval_);
   rocksdb::WriteBatch wb;
   auto s = wb.Put(graph_cf_.meta_info,
-                  BuildMetaKey(MetaDataType::VertexVectorIndex, meta.name()),
+                  BuildMetaKey(MetadataType::VertexVectorIndex, meta.name()),
                   meta.SerializeAsString());
   if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
   if (apply_index > 0) {
@@ -1983,7 +1983,7 @@ void GraphDB::ApplyDeleteVertexVectorIndex(
   meta_info_.DeleteVertexVectorIndex(index_name);
   rocksdb::WriteBatch wb;
   wb.Delete(graph_cf_.meta_info,
-            BuildMetaKey(MetaDataType::VertexVectorIndex, index_name));
+            BuildMetaKey(MetadataType::VertexVectorIndex, index_name));
 
   std::string wal_start(AsChars(index_id), sizeof(index_id));
   std::string wal_end(AsChars(index_id), sizeof(index_id));

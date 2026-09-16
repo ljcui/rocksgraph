@@ -51,7 +51,7 @@ int64_t ReadPropertyIndexVid(const std::shared_ptr<VertexPropertyIndex> &index,
 
 }  // namespace
 
-ScanVertexBylabel::ScanVertexBylabel(Transaction *txn, uint32_t lid)
+ScanVertexByLabel::ScanVertexByLabel(Transaction *txn, uint32_t lid)
     : VertexIterator(txn), lid_(lid) {
   rocksdb::ReadOptions ro;
   iter_.reset(
@@ -67,7 +67,7 @@ ScanVertexBylabel::ScanVertexBylabel(Transaction *txn, uint32_t lid)
   }
 }
 
-void ScanVertexBylabel::Next() {
+void ScanVertexByLabel::Next() {
   assert(valid_);
   valid_ = false;
   if (iter_->Valid()) {
@@ -83,7 +83,7 @@ void ScanVertexBylabel::Next() {
   }
 }
 
-bool ScanVertexBylabelProperties::MatchProperties() {
+bool ScanVertexByLabelProperties::MatchProperties() {
   bool match = true;
   for (auto &pair : properties_) {
     if (pair.second != iter_->GetVertex().GetProperty(pair.first)) {
@@ -94,11 +94,11 @@ bool ScanVertexBylabelProperties::MatchProperties() {
   return match;
 }
 
-ScanVertexBylabelProperties::ScanVertexBylabelProperties(
+ScanVertexByLabelProperties::ScanVertexByLabelProperties(
     Transaction *txn, uint32_t lid,
     std::unordered_map<uint32_t, rg::Value> properties)
     : VertexIterator(txn), properties_(std::move(properties)) {
-  for (iter_ = std::make_unique<ScanVertexBylabel>(txn, lid); iter_->Valid();
+  for (iter_ = std::make_unique<ScanVertexByLabel>(txn, lid); iter_->Valid();
        iter_->Next()) {
     if (MatchProperties()) {
       valid_ = true;
@@ -107,7 +107,7 @@ ScanVertexBylabelProperties::ScanVertexBylabelProperties(
   }
 }
 
-void ScanVertexBylabelProperties::Next() {
+void ScanVertexByLabelProperties::Next() {
   assert(valid_);
   valid_ = false;
   while (iter_->Valid()) {

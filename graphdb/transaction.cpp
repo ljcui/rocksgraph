@@ -286,7 +286,7 @@ std::unique_ptr<VertexIterator> Transaction::NewVertexIterator(
     const std::string& label) {
   auto lid = db_->id_generator().GetLid(label);
   if (lid.has_value()) {
-    return std::make_unique<ScanVertexBylabel>(this, lid.value());
+    return std::make_unique<ScanVertexByLabel>(this, lid.value());
   } else {
     return std::make_unique<NoVertexFound>(this);
   }
@@ -321,7 +321,7 @@ std::string Transaction::GetVertexIteratorInfo(
     if (!lid.has_value()) {
       return "NoVertexFound";
     } else {
-      return "ScanVertexBylabel";
+      return "ScanVertexByLabel";
     }
   } else if (!label && props) {
     std::unordered_map<uint32_t, rg::Value> map;
@@ -348,7 +348,7 @@ std::string Transaction::GetVertexIteratorInfo(
     if (db_->meta_info().GetBestVertexPropertyUniqueIndex(lid.value(), pids)) {
       return "GetVertexByUniqueIndex";
     }
-    return "ScanVertexBylabelProperties";
+    return "ScanVertexByLabelProperties";
   }
 }
 
@@ -362,7 +362,7 @@ std::unique_ptr<VertexIterator> Transaction::NewVertexIterator(
     if (!lid.has_value()) {
       return std::make_unique<NoVertexFound>(this);
     } else {
-      return std::make_unique<ScanVertexBylabel>(this, lid.value());
+      return std::make_unique<ScanVertexByLabel>(this, lid.value());
     }
   } else if (!label && props) {
     std::unordered_map<uint32_t, rg::Value> map;
@@ -395,7 +395,7 @@ std::unique_ptr<VertexIterator> Transaction::NewVertexIterator(
     auto unique_index =
         db_->meta_info().GetBestVertexPropertyUniqueIndex(lid.value(), pids);
     if (!unique_index) {
-      return std::make_unique<ScanVertexBylabelProperties>(this, lid.value(),
+      return std::make_unique<ScanVertexByLabelProperties>(this, lid.value(),
                                                            std::move(map));
     }
     std::vector<rg::Value> indexed_values;

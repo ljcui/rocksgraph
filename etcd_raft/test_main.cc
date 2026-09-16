@@ -4,7 +4,7 @@
 
 #include "confchange/confchange.h"
 #include "confchange/restore.h"
-#include "describle.h"
+#include "describe.h"
 #include "log.h"
 #include "log_unstable.h"
 #include "quorum/joint.h"

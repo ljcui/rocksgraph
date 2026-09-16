@@ -58,11 +58,16 @@ if(CLANG_FORMAT_BIN OR CMAKE_FORMAT_BIN)
 
   if(CLANG_FORMAT_BIN)
     file(GLOB_RECURSE ROCKSGRAPH_FORMAT_FILES CONFIGURE_DEPENDS
-         ${CMAKE_SOURCE_DIR}/*.h ${CMAKE_SOURCE_DIR}/*.cc)
+         ${CMAKE_SOURCE_DIR}/*.h ${CMAKE_SOURCE_DIR}/*.cc
+         ${CMAKE_SOURCE_DIR}/*.cpp)
     list(FILTER ROCKSGRAPH_FORMAT_FILES EXCLUDE REGEX
          "^${CMAKE_SOURCE_DIR}/(build|cmake-build-debug)/")
     list(FILTER ROCKSGRAPH_FORMAT_FILES EXCLUDE REGEX
          "^${CMAKE_SOURCE_DIR}/ast/cypher/Cypher.*\\.(cc|h)$")
+    list(FILTER ROCKSGRAPH_FORMAT_FILES EXCLUDE REGEX
+         "^${CMAKE_SOURCE_DIR}/(proto|etcd_raft/raftpb)/.*\\.pb\\.(cc|h)$")
+    list(FILTER ROCKSGRAPH_FORMAT_FILES EXCLUDE REGEX
+         "^${CMAKE_SOURCE_DIR}/graphdb/ftindex/include/lib\\.rs\\.h$")
     add_custom_command(
       TARGET format
       COMMAND ${CLANG_FORMAT_BIN} -i -style=file ${ROCKSGRAPH_FORMAT_FILES}

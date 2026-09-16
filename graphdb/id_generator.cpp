@@ -17,14 +17,14 @@ using common::ReadValue;
 namespace graphdb {
 namespace {
 
-std::string TokenKey(MetaDataType type, const std::string &name) {
+std::string TokenKey(MetadataType type, const std::string &name) {
   std::string key;
   key.append(1, static_cast<char>(type));
   key.append(name);
   return key;
 }
 
-std::string EntityIdKey(MetaDataType type) {
+std::string EntityIdKey(MetadataType type) {
   return std::string(1, static_cast<char>(type));
 }
 
@@ -46,15 +46,15 @@ void IdGenerator::SetRaftDriver(raft::RaftDriver *raft_driver) {
   raft_driver_ = raft_driver;
 }
 
-void IdGenerator::LoadToken(MetaDataType type, const std::string &name,
+void IdGenerator::LoadToken(MetadataType type, const std::string &name,
                             uint32_t id) {
-  if (type == MetaDataType::VertexLabel) {
+  if (type == MetadataType::VertexLabel) {
     vertex_labels_name_to_id_[name] = id;
     vertex_labels_id_to_name_[id] = name;
-  } else if (type == MetaDataType::EdgeType) {
+  } else if (type == MetadataType::EdgeType) {
     edge_types_name_to_id_[name] = id;
     edge_types_id_to_name_[id] = name;
-  } else if (type == MetaDataType::Property) {
+  } else if (type == MetadataType::Property) {
     properties_name_to_id_[name] = id;
     properties_id_to_name_[id] = name;
   } else {
@@ -63,11 +63,11 @@ void IdGenerator::LoadToken(MetaDataType type, const std::string &name,
   }
 }
 
-void IdGenerator::ApplyMetaRecord(MetaDataType type,
+void IdGenerator::ApplyMetaRecord(MetadataType type,
                                   const rocksdb::Slice &key_suffix,
                                   const rocksdb::Slice &value) {
   switch (type) {
-    case MetaDataType::VertexLabel: {
+    case MetadataType::VertexLabel: {
       if (value.size() != sizeof(uint32_t)) {
         THROW_CODE(StorageEngineError,
                    "vertex label metadata has invalid size, expect {}, actual "
@@ -83,7 +83,7 @@ void IdGenerator::ApplyMetaRecord(MetaDataType type,
       StoreMax(&label_next_lid_, native_id + 1);
       return;
     }
-    case MetaDataType::EdgeType: {
+    case MetadataType::EdgeType: {
       if (value.size() != sizeof(uint32_t)) {
         THROW_CODE(StorageEngineError,
                    "edge type metadata has invalid size, expect {}, actual {}",
@@ -98,7 +98,7 @@ void IdGenerator::ApplyMetaRecord(MetaDataType type,
       StoreMax(&label_next_tid_, native_id + 1);
       return;
     }
-    case MetaDataType::Property: {
+    case MetadataType::Property: {
       if (value.size() != sizeof(uint32_t)) {
         THROW_CODE(StorageEngineError,
                    "property metadata has invalid size, expect {}, actual {}",
@@ -113,7 +113,7 @@ void IdGenerator::ApplyMetaRecord(MetaDataType type,
       StoreMax(&label_next_pid_, native_id + 1);
       return;
     }
-    case MetaDataType::NextVertexId: {
+    case MetadataType::NextVertexId: {
       if (value.size() != sizeof(int64_t)) {
         THROW_CODE(StorageEngineError,
                    "next vertex id metadata has invalid size, expect {}, "
@@ -130,7 +130,7 @@ void IdGenerator::ApplyMetaRecord(MetaDataType type,
       StoreMax(&vid_range_end_, next_vid);
       return;
     }
-    case MetaDataType::NextEdgeId: {
+    case MetadataType::NextEdgeId: {
       if (value.size() != sizeof(int64_t)) {
         THROW_CODE(StorageEngineError,
                    "next edge id metadata has invalid size, expect {}, actual "
@@ -178,7 +178,7 @@ int64_t IdGenerator::GetNextEntityId(std::atomic<int64_t> *next_id,
                                      std::atomic<int64_t> *range_end,
                                      std::atomic<int64_t> *persisted_next_id,
                                      std::mutex *refill_mutex,
-                                     MetaDataType meta_type) {
+                                     MetadataType meta_type) {
   for (;;) {
     int64_t candidate = next_id->load();
     int64_t limit = range_end->load();
@@ -223,7 +223,7 @@ void IdGenerator::ProposeAndApply(rocksdb::WriteBatch *wb) {
   }
 }
 
-void IdGenerator::PersistEntityId(MetaDataType meta_type, int64_t next_id) {
+void IdGenerator::PersistEntityId(MetadataType meta_type, int64_t next_id) {
   int64_t bigendian_next_id = native_to_big(next_id);
   rocksdb::WriteBatch wb;
   auto s = wb.Put(
@@ -233,7 +233,7 @@ void IdGenerator::PersistEntityId(MetaDataType meta_type, int64_t next_id) {
   ProposeAndApply(&wb);
 }
 
-void IdGenerator::PersistToken(MetaDataType type, const std::string &name,
+void IdGenerator::PersistToken(MetadataType type, const std::string &name,
                                uint32_t id) {
   std::string key = TokenKey(type, name);
   std::string val;
@@ -246,12 +246,12 @@ void IdGenerator::PersistToken(MetaDataType type, const std::string &name,
 
 int64_t IdGenerator::GetNextVid() {
   return GetNextEntityId(&next_vid_, &vid_range_end_, &persisted_next_vid_,
-                         &vid_refill_mutex_, MetaDataType::NextVertexId);
+                         &vid_refill_mutex_, MetadataType::NextVertexId);
 }
 
 int64_t IdGenerator::GetNextEid() {
   return GetNextEntityId(&next_eid_, &eid_range_end_, &persisted_next_eid_,
-                         &eid_refill_mutex_, MetaDataType::NextEdgeId);
+                         &eid_refill_mutex_, MetadataType::NextEdgeId);
 }
 
 uint32_t IdGenerator::GetNextIndexId() {
@@ -351,7 +351,7 @@ uint32_t IdGenerator::GetOrCreateLid(const std::string &name) {
     }
   }
   uint32_t bigendian_lid = native_to_big(label_next_lid_++);
-  PersistToken(MetaDataType::VertexLabel, name, bigendian_lid);
+  PersistToken(MetadataType::VertexLabel, name, bigendian_lid);
   {
     std::unique_lock write_lock(vertex_labels_mutex_);
     vertex_labels_name_to_id_[name] = bigendian_lid;
@@ -380,7 +380,7 @@ uint32_t IdGenerator::GetOrCreateTid(const std::string &name) {
     }
   }
   uint32_t bigendian_tid = native_to_big(label_next_tid_++);
-  PersistToken(MetaDataType::EdgeType, name, bigendian_tid);
+  PersistToken(MetadataType::EdgeType, name, bigendian_tid);
   {
     std::unique_lock write_lock(edge_types_mutex_);
     edge_types_name_to_id_[name] = bigendian_tid;
@@ -409,7 +409,7 @@ uint32_t IdGenerator::GetOrCreatePid(const std::string &name) {
     }
   }
   uint32_t bigendian_pid = native_to_big(label_next_pid_++);
-  PersistToken(MetaDataType::Property, name, bigendian_pid);
+  PersistToken(MetadataType::Property, name, bigendian_pid);
   {
     std::unique_lock write_lock(properties_mutex_);
     properties_name_to_id_[name] = bigendian_pid;

@@ -699,9 +699,9 @@ void MetaInfo::Init(rocksdb::TransactionDB* db,
       continue;
     }
     auto val = iter->value();
-    auto prefix = static_cast<MetaDataType>(key.data()[0]);
-    if (prefix == MetaDataType::NextVertexId ||
-        prefix == MetaDataType::NextEdgeId) {
+    auto prefix = static_cast<MetadataType>(key.data()[0]);
+    if (prefix == MetadataType::NextVertexId ||
+        prefix == MetadataType::NextEdgeId) {
       if (val.size() != sizeof(int64_t)) {
         THROW_CODE(StorageEngineError,
                    "entity id metadata has invalid size, expect {}, actual {}",
@@ -711,29 +711,29 @@ void MetaInfo::Init(rocksdb::TransactionDB* db,
       if (next_id < 1) {
         THROW_CODE(StorageEngineError, "entity id metadata must be positive");
       }
-      if (prefix == MetaDataType::NextVertexId) {
+      if (prefix == MetadataType::NextVertexId) {
         next_vid = next_id;
       } else {
         next_eid = next_id;
       }
       continue;
     }
-    if (prefix == MetaDataType::VertexLabel ||
-        prefix == MetaDataType::EdgeType || prefix == MetaDataType::Property) {
+    if (prefix == MetadataType::VertexLabel ||
+        prefix == MetadataType::EdgeType || prefix == MetadataType::Property) {
       std::string name(key.data() + 1, key.size() - 1);
       uint32_t id = ReadValue<uint32_t>(val.data());
       id_generator_.LoadToken(prefix, name, id);
       uint32_t native_id = big_to_native(id);
-      if (prefix == MetaDataType::VertexLabel) {
+      if (prefix == MetadataType::VertexLabel) {
         max_lid = std::max(max_lid, native_id);
-      } else if (prefix == MetaDataType::EdgeType) {
+      } else if (prefix == MetadataType::EdgeType) {
         max_tid = std::max(max_tid, native_id);
       } else {
         max_pid = std::max(max_pid, native_id);
       }
       continue;
     }
-    if (prefix == MetaDataType::VertexPropertyIndex) {
+    if (prefix == MetadataType::VertexPropertyIndex) {
       meta::VertexPropertyIndex meta;
       bool ret = meta.ParseFromString(val.ToString());
       assert(ret);
@@ -751,7 +751,7 @@ void MetaInfo::Init(rocksdb::TransactionDB* db,
       AddVertexPropertyIndex(std::move(vi));
       continue;
     }
-    if (prefix == MetaDataType::EdgePropertyIndex) {
+    if (prefix == MetadataType::EdgePropertyIndex) {
       meta::EdgePropertyIndex meta;
       bool ret = meta.ParseFromString(val.ToString());
       assert(ret);
@@ -766,7 +766,7 @@ void MetaInfo::Init(rocksdb::TransactionDB* db,
       AddEdgePropertyIndex(std::move(epi));
       continue;
     }
-    if (prefix == MetaDataType::VertexFullTextIndex) {
+    if (prefix == MetadataType::VertexFullTextIndex) {
       meta::VertexFullTextIndex meta;
       bool ret = meta.ParseFromString(val.ToString());
       assert(ret);
@@ -789,7 +789,7 @@ void MetaInfo::Init(rocksdb::TransactionDB* db,
       }
       continue;
     }
-    if (prefix == MetaDataType::VertexVectorField) {
+    if (prefix == MetadataType::VertexVectorField) {
       auto field = std::make_shared<meta::VertexVectorField>();
       bool ret = field->ParseFromString(val.ToString());
       assert(ret);
@@ -797,7 +797,7 @@ void MetaInfo::Init(rocksdb::TransactionDB* db,
       AddVertexVectorField(field);
       continue;
     }
-    if (prefix == MetaDataType::VertexVectorIndex) {
+    if (prefix == MetadataType::VertexVectorIndex) {
       meta::VertexVectorIndex meta;
       bool ret = meta.ParseFromString(val.ToString());
       assert(ret);

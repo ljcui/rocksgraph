@@ -222,14 +222,14 @@ TEST(VertexUniqueIndex, basic) {
   for (auto i = 0; i < 100; i++) {
     auto viter = txn->NewVertexIterator(
         "label2", std::unordered_map<std::string, Value>{{"id", Value(i)}});
-    EXPECT_TRUE(dynamic_cast<ScanVertexBylabelProperties*>(viter.get()));
+    EXPECT_TRUE(dynamic_cast<ScanVertexByLabelProperties*>(viter.get()));
     EXPECT_TRUE(viter->Valid());
   }
   for (auto i = 0; i < 100; i++) {
     auto viter = txn->NewVertexIterator("label1",
                                         std::unordered_map<std::string, Value>{
                                             {"str", Value(std::to_string(i))}});
-    EXPECT_TRUE(dynamic_cast<ScanVertexBylabelProperties*>(viter.get()));
+    EXPECT_TRUE(dynamic_cast<ScanVertexByLabelProperties*>(viter.get()));
     EXPECT_TRUE(viter->Valid());
   }
   txn->Commit();
@@ -799,7 +799,7 @@ TEST(VertexUniqueIndex, compositeLookupAndConflict) {
             "GetVertexByUniqueIndex");
   EXPECT_EQ(txn->GetVertexIteratorInfo("label1",
                                        std::unordered_set<std::string>{"id"}),
-            "ScanVertexBylabelProperties");
+            "ScanVertexByLabelProperties");
   auto viter = txn->NewVertexIterator(
       "label1", std::unordered_map<std::string, Value>{
                     {"id", Value(1)}, {"country", Value("cn")}});

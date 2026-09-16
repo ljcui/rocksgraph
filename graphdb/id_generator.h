@@ -23,7 +23,7 @@ class RaftDriver;
 }
 
 namespace graphdb {
-enum class MetaDataType : char {
+enum class MetadataType : char {
   VertexLabel = 0,
   EdgeType = 1,
   Property = 2,
@@ -46,8 +46,8 @@ class IdGenerator {
 
   void Bind(rocksdb::TransactionDB* db, GraphCF* graph_cf);
   void SetRaftDriver(raft::RaftDriver* raft_driver);
-  void LoadToken(MetaDataType type, const std::string& name, uint32_t id);
-  void ApplyMetaRecord(MetaDataType type, const rocksdb::Slice& key_suffix,
+  void LoadToken(MetadataType type, const std::string& name, uint32_t id);
+  void ApplyMetaRecord(MetadataType type, const rocksdb::Slice& key_suffix,
                        const rocksdb::Slice& value);
   void SetMaxIds(uint32_t max_lid, uint32_t max_pid, uint32_t max_tid,
                  uint32_t max_index_id);
@@ -75,10 +75,10 @@ class IdGenerator {
   int64_t GetNextEntityId(std::atomic<int64_t>* next_id,
                           std::atomic<int64_t>* range_end,
                           std::atomic<int64_t>* persisted_next_id,
-                          std::mutex* refill_mutex, MetaDataType meta_type);
+                          std::mutex* refill_mutex, MetadataType meta_type);
   void ProposeAndApply(rocksdb::WriteBatch* wb);
-  void PersistEntityId(MetaDataType meta_type, int64_t next_id);
-  void PersistToken(MetaDataType type, const std::string& name, uint32_t id);
+  void PersistEntityId(MetadataType meta_type, int64_t next_id);
+  void PersistToken(MetadataType type, const std::string& name, uint32_t id);
 
   std::atomic<int64_t> next_vid_{1};
   std::atomic<int64_t> vid_range_end_{1};

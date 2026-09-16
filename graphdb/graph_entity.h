@@ -20,6 +20,8 @@ class Transaction;
 
 class Property {
  public:
+  virtual ~Property() = default;
+
   virtual rg::Value GetProperty(const std::string&) = 0;
   virtual rg::Value GetProperty(uint32_t) = 0;
   virtual std::unordered_map<std::string, rg::Value> GetAllProperty() = 0;
@@ -33,7 +35,7 @@ class Property {
 
 class EdgeIterator;
 
-class Vertex : Property {
+class Vertex : public Property {
  public:
   Vertex(Transaction* txn, int64_t id) : txn_(txn), id_(id) {}
   [[nodiscard]] int64_t GetId() const { return id_; };
@@ -77,7 +79,7 @@ class Vertex : Property {
       const std::unordered_map<std::string, rg::Value>& properties) override;
   void RemoveProperty(const std::string&) override;
   void RemoveAllProperty() override;
-  virtual ~Vertex() = default;
+  ~Vertex() override = default;
 
  private:
   void Lock();
@@ -122,7 +124,7 @@ class Edge : public Property {
       const std::unordered_map<std::string, rg::Value>& properties) override;
   void RemoveProperty(const std::string&) override;
   void RemoveAllProperty() override;
-  virtual ~Edge() = default;
+  ~Edge() override = default;
 
  private:
   void Lock();

@@ -273,24 +273,24 @@ TEST(GraphDB, raftApplyUpdatesIdGeneratorCacheWithoutRestart) {
   rocksdb::WriteBatch wb;
   auto s = wb.Put(
       graphDB->graph_cf().meta_info,
-      std::string(1, static_cast<char>(MetaDataType::VertexLabel)) + "person",
+      std::string(1, static_cast<char>(MetadataType::VertexLabel)) + "person",
       std::string(common::AsChars(lid), sizeof(lid)));
   ASSERT_TRUE(s.ok());
   s = wb.Put(graphDB->graph_cf().meta_info,
-             std::string(1, static_cast<char>(MetaDataType::Property)) + "name",
+             std::string(1, static_cast<char>(MetadataType::Property)) + "name",
              std::string(common::AsChars(pid), sizeof(pid)));
   ASSERT_TRUE(s.ok());
   s = wb.Put(
       graphDB->graph_cf().meta_info,
-      std::string(1, static_cast<char>(MetaDataType::EdgeType)) + "knows",
+      std::string(1, static_cast<char>(MetadataType::EdgeType)) + "knows",
       std::string(common::AsChars(tid), sizeof(tid)));
   ASSERT_TRUE(s.ok());
   s = wb.Put(graphDB->graph_cf().meta_info,
-             std::string(1, static_cast<char>(MetaDataType::NextVertexId)),
+             std::string(1, static_cast<char>(MetadataType::NextVertexId)),
              std::string(common::AsChars(next_vid), sizeof(next_vid)));
   ASSERT_TRUE(s.ok());
   s = wb.Put(graphDB->graph_cf().meta_info,
-             std::string(1, static_cast<char>(MetaDataType::NextEdgeId)),
+             std::string(1, static_cast<char>(MetadataType::NextEdgeId)),
              std::string(common::AsChars(next_eid), sizeof(next_eid)));
   ASSERT_TRUE(s.ok());
 

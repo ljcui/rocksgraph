@@ -34,9 +34,9 @@ class NoVertexFound : public VertexIterator {
   std::unique_ptr<Vertex> ve_;
 };
 
-class ScanVertexBylabel : public VertexIterator {
+class ScanVertexByLabel : public VertexIterator {
  public:
-  ScanVertexBylabel(Transaction* txn, uint32_t lid);
+  ScanVertexByLabel(Transaction* txn, uint32_t lid);
   void Next() override;
   Vertex& GetVertex() override {
     assert(valid_);
@@ -49,9 +49,9 @@ class ScanVertexBylabel : public VertexIterator {
   std::unique_ptr<Vertex> ve_;
 };
 
-class ScanVertexBylabelProperties : public VertexIterator {
+class ScanVertexByLabelProperties : public VertexIterator {
  public:
-  ScanVertexBylabelProperties(
+  ScanVertexByLabelProperties(
       Transaction* txn, uint32_t lid,
       std::unordered_map<uint32_t, rg::Value> properties);
   void Next() override;
@@ -59,7 +59,7 @@ class ScanVertexBylabelProperties : public VertexIterator {
 
  private:
   bool MatchProperties();
-  std::unique_ptr<ScanVertexBylabel> iter_;
+  std::unique_ptr<ScanVertexByLabel> iter_;
   std::unordered_map<uint32_t, rg::Value> properties_;
 };
 
