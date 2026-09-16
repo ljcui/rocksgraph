@@ -6,6 +6,7 @@
 #include "bolt/messages.h"
 #include "bolt/pack.h"
 #include "bolt/path.h"
+#include "bolt/spatial.h"
 #include "bolt/temporal.h"
 #include "common/logger.h"
 
@@ -89,6 +90,19 @@ class PackStream {
     packer_.Int64(m.seconds);
     packer_.Int64(m.nanos);
   }
+  void PackPoint2D(const bolt::Point2D& point) {
+    packer_.StructHeader('X', 3);
+    packer_.Int64(point.spatialRefId);
+    packer_.Double(point.x);
+    packer_.Double(point.y);
+  }
+  void PackPoint3D(const bolt::Point3D& point) {
+    packer_.StructHeader('Y', 4);
+    packer_.Int64(point.spatialRefId);
+    packer_.Double(point.x);
+    packer_.Double(point.y);
+    packer_.Double(point.z);
+  }
 
   void PackX(const std::any& x) {
     if (!x.has_value()) {
@@ -145,6 +159,10 @@ class PackStream {
       PackTime(std::any_cast<const bolt::Time&>(x));
     } else if (type == typeid(bolt::Duration)) {
       PackDuration(std::any_cast<const bolt::Duration&>(x));
+    } else if (type == typeid(bolt::Point2D)) {
+      PackPoint2D(std::any_cast<const bolt::Point2D&>(x));
+    } else if (type == typeid(bolt::Point3D)) {
+      PackPoint3D(std::any_cast<const bolt::Point3D&>(x));
     } else {
       LOG_FATAL("PackX meet unexpected type {}", type.name());
     }

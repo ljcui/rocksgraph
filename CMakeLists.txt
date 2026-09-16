@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.15)
 project(rocksgraph)
 
+set(LGRAPH_VERSION_MAJOR 5)
+set(LGRAPH_VERSION_MINOR 0)
+set(LGRAPH_VERSION_PATCH 0)
+
 set(ROCKSGRAPH_TCK_DIR
     "${CMAKE_SOURCE_DIR}/../openCypher/tck"
     CACHE PATH "Path to an openCypher TCK checkout")
@@ -14,6 +18,22 @@ endif()
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+execute_process(
+  COMMAND git rev-parse --abbrev-ref HEAD
+  WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+  OUTPUT_VARIABLE GIT_BRANCH
+  OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+execute_process(
+  COMMAND git log -1 --format=%h
+  WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+  OUTPUT_VARIABLE GIT_COMMIT_HASH
+  OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+set(CXX_COMPILER_ID "${CMAKE_CXX_COMPILER_ID}")
+set(CXX_COMPILER_VERSION "${CMAKE_CXX_COMPILER_VERSION}")
+set(BUILD_TYPE "${CMAKE_BUILD_TYPE}")
+configure_file(common/version.h.in
+               "${CMAKE_CURRENT_BINARY_DIR}/generated/common/version.h" @ONLY)
 
 set(ROCKSGRAPH_CLANG_TIDY_FILE_REGEX "^(?!.*ast/cypher/).*$")
 find_program(RUN_CLANG_TIDY_BIN NAMES run-clang-tidy run-clang-tidy.py)
@@ -109,6 +129,7 @@ add_subdirectory(ast)
 add_subdirectory(ir)
 add_subdirectory(planner)
 add_subdirectory(runtime)
+add_subdirectory(server)
 add_subdirectory(tools)
 
 enable_testing()
