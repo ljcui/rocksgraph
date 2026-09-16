@@ -64,8 +64,5 @@ PY
   fi
 fi
 
-# Run every vendored feature by default.  Set ROCKSGRAPH_TCK_SCOPE=manifest
-# only when comparing with the legacy C++ allow-list.
-export ROCKSGRAPH_TCK_SCOPE=${ROCKSGRAPH_TCK_SCOPE:-all}
 cd "$script_dir"
 exec behave "$@"

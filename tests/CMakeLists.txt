@@ -83,14 +83,15 @@ add_test(NAME graphdb_test COMMAND graphdb_test)
 add_rocksgraph_test(raft_cluster_test graphdb/test_raft_cluster.cpp
                     rocksgraph_server)
 
-add_rocksgraph_test(tck_scenario_test tck/tck_scenario_test.cc
-                    rocksgraph_runtime)
-target_link_libraries(tck_scenario_test PRIVATE graphdb)
-set_property(
-  SOURCE tck/tck_scenario_test.cc APPEND PROPERTY OBJECT_DEPENDS
-  "${CMAKE_CURRENT_SOURCE_DIR}/tck/tck_scenario_manifest.tsv")
-target_compile_definitions(
-  tck_scenario_test
-  PRIVATE
-    ROCKSGRAPH_TCK_DIR="${ROCKSGRAPH_TCK_DIR}"
-    ROCKSGRAPH_TCK_MANIFEST="${CMAKE_CURRENT_SOURCE_DIR}/tck/tck_scenario_manifest.tsv")
+add_custom_target(
+  check-tck
+  COMMAND
+    ${CMAKE_COMMAND} -E env
+    "ROCKSGRAPH_TCK_SERVER_BIN=$<TARGET_FILE:rg-server>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tck/run_tck.sh" --no-color --no-junit
+    --no-capture --format progress
+  DEPENDS rg-server
+  WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+  COMMENT "Run the full openCypher TCK with Behave."
+  USES_TERMINAL
+  VERBATIM)
