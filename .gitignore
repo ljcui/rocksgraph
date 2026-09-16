@@ -3,3 +3,5 @@ cmake-build-debug/
 .idea/
 AGENTS.md
 CLAUDE.md
+tests/tck/reports/
+tests/tck/**/__pycache__/
