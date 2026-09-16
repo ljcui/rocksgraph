@@ -14,6 +14,15 @@ enum class BuiltinProcedureKind {
   kPropertyKeys,
   kRelationshipTypes,
   kProcedures,
+  kCreateNodeIndex,
+  kQueryNodes,
+  kRangeQueryNodes,
+  kCreateNodeFullTextIndex,
+  kQueryNodesByFullText,
+  kCreateNodeVectorField,
+  kCreateNodeVectorIndex,
+  kKnnSearchNodes,
+  kRaftNodeInfos,
 };
 
 struct BuiltinProcedureYield {

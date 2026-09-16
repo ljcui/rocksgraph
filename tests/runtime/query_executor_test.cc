@@ -2,9 +2,12 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <thread>
+#include <utility>
 #include <vector>
 
 #include "ast/ast_exception.h"
@@ -43,6 +46,19 @@ std::vector<std::vector<std::string>> StringRows(
     rows.push_back(std::move(values));
   }
   return rows;
+}
+
+template <typename Predicate>
+bool WaitUntil(Predicate predicate,
+               std::chrono::milliseconds timeout = std::chrono::seconds(10)) {
+  const auto deadline = std::chrono::steady_clock::now() + timeout;
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (predicate()) {
+      return true;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  return predicate();
 }
 
 std::unique_ptr<rg::QueryResultCursor> CursorFromTemporaryPlannedQuery(
@@ -862,21 +878,151 @@ TEST(QueryExecutorTest, ExecutesDbmsProcedures) {
   ASSERT_EQ(result.columns,
             (std::vector<std::string>{"name", "signature", "description",
                                       "mode", "worksOnSystem"}));
-  EXPECT_EQ(
-      StringRows(result),
-      (std::vector<std::vector<std::string>>{
-          {"\"db.labels\"", "\"db.labels() :: (label)\"",
-           "\"List all node labels in the graph.\"", "\"READ\"", "false"},
-          {"\"db.propertyKeys\"", "\"db.propertyKeys() :: (propertyKey)\"",
-           "\"List all property keys in the graph.\"", "\"READ\"", "false"},
-          {"\"db.relationshipTypes\"",
-           "\"db.relationshipTypes() :: (relationshipType)\"",
-           "\"List all relationship types in the graph.\"", "\"READ\"",
-           "false"},
-          {"\"dbms.procedures\"",
-           "\"dbms.procedures() :: (name, signature, description, mode, "
-           "worksOnSystem)\"",
-           "\"List all built-in procedures.\"", "\"READ\"", "false"}}));
+  std::vector<std::pair<std::string, std::string>> names_and_modes;
+  names_and_modes.reserve(result.rows.size());
+  for (const auto &row : result.rows) {
+    ASSERT_EQ(row.size(), 5U);
+    ASSERT_TRUE(row[0].IsString());
+    ASSERT_TRUE(row[1].IsString());
+    ASSERT_TRUE(row[2].IsString());
+    ASSERT_TRUE(row[3].IsString());
+    ASSERT_TRUE(row[4].IsBool());
+    EXPECT_FALSE(row[1].AsString().empty());
+    EXPECT_FALSE(row[2].AsString().empty());
+    EXPECT_FALSE(row[4].AsBool());
+    names_and_modes.emplace_back(row[0].AsString(), row[3].AsString());
+  }
+  EXPECT_EQ(names_and_modes, (std::vector<std::pair<std::string, std::string>>{
+                                 {"db.index.createNodeIndex", "WRITE"},
+                                 {"db.index.fulltext.createNodeIndex", "WRITE"},
+                                 {"db.index.fulltext.queryNodes", "READ"},
+                                 {"db.index.queryNodes", "READ"},
+                                 {"db.index.rangeQueryNodes", "READ"},
+                                 {"db.index.vector.createNodeField", "WRITE"},
+                                 {"db.index.vector.createNodeIndex", "WRITE"},
+                                 {"db.index.vector.knnSearchNodes", "READ"},
+                                 {"db.labels", "READ"},
+                                 {"db.propertyKeys", "READ"},
+                                 {"db.relationshipTypes", "READ"},
+                                 {"dbms.graph.getRaftNodeInfos", "READ"},
+                                 {"dbms.procedures", "READ"}}));
+}
+
+TEST(QueryExecutorTest, ExecutesIndexProceduresThroughCypher) {
+  rg::test::GraphDBTestDatabase graph;
+  graph.CreateNode({"ProcedurePerson"}, {{"name", rg::Value("Alice")},
+                                         {"region", rg::Value("north")},
+                                         {"score", rg::Value(10)}});
+  graph.CreateNode({"ProcedurePerson"}, {{"name", rg::Value("Bob")},
+                                         {"region", rg::Value("south")},
+                                         {"score", rg::Value(20)}});
+  graph.CreateNode({"ProcedurePerson"}, {{"name", rg::Value("Carol")},
+                                         {"region", rg::Value("north")},
+                                         {"score", rg::Value(30)}});
+
+  rg::QueryResult create_property_index = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "UNWIND [1] AS marker "
+      "CALL db.index.createNodeIndex('procedure_region_score', "
+      "'ProcedurePerson', ['region', 'score'], {unique:false}) "
+      "RETURN marker");
+  EXPECT_EQ(create_property_index.rows,
+            (std::vector<std::vector<rg::Value>>{{rg::Value(1)}}));
+  ASSERT_TRUE(WaitUntil([&] {
+    return graph.Graph().meta_info().GetReadyVertexPropertyIndex(
+               "procedure_region_score") != nullptr;
+  }));
+
+  rg::QueryResult exact = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "UNWIND [['north', 30]] AS key "
+      "CALL db.index.queryNodes('procedure_region_score', key) "
+      "YIELD node RETURN node.name");
+  EXPECT_EQ(exact.rows,
+            (std::vector<std::vector<rg::Value>>{{rg::Value("Carol")}}));
+
+  rg::QueryResult range = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "CALL db.index.rangeQueryNodes('procedure_region_score', "
+      "['north', 10], ['north', 30], "
+      "{left_closed:true, right_closed:false}) "
+      "YIELD node RETURN node.name ORDER BY node.name");
+  EXPECT_EQ(range.rows,
+            (std::vector<std::vector<rg::Value>>{{rg::Value("Alice")}}));
+
+  rg::QueryResult create_fulltext_index = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "CALL db.index.fulltext.createNodeIndex('procedure_text', "
+      "['ProcedurePerson'], ['name'])");
+  EXPECT_TRUE(create_fulltext_index.rows.empty());
+  ASSERT_TRUE(WaitUntil([&] {
+    return graph.Graph().meta_info().GetReadyVertexFullTextIndex(
+               "procedure_text") != nullptr;
+  }));
+  rg::QueryResult fulltext = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "CALL db.index.fulltext.queryNodes('procedure_text', 'Carol', 10) "
+      "YIELD node, score RETURN node.name, score");
+  ASSERT_EQ(fulltext.rows.size(), 1U);
+  EXPECT_EQ(fulltext.rows[0][0], rg::Value("Carol"));
+  EXPECT_TRUE(fulltext.rows[0][1].IsDouble());
+
+  EXPECT_TRUE(rg::test::ExecuteQueryAndCommit(
+                  graph,
+                  "CALL db.index.vector.createNodeField('ProcedureVector', "
+                  "'embedding', {dimension:2})")
+                  .rows.empty());
+  EXPECT_TRUE(rg::test::ExecuteQueryAndCommit(
+                  graph,
+                  "CALL db.index.vector.createNodeIndex('procedure_vector', "
+                  "'ProcedureVector', 'embedding', "
+                  "{dimension:2, distance_type:'l2', hnsw_m:8, "
+                  "hnsw_ef_construction:20})")
+                  .rows.empty());
+  ASSERT_TRUE(WaitUntil([&] {
+    return graph.Graph().meta_info().GetReadyVertexVectorIndex(
+               "procedure_vector") != nullptr;
+  }));
+
+  graph.CreateNode({"ProcedureVector"},
+                   {{"name", rg::Value("near")},
+                    {"embedding", rg::Value(rg::Value::List{rg::Value(1.0),
+                                                            rg::Value(0.0)})}});
+  graph.CreateNode({"ProcedureVector"},
+                   {{"name", rg::Value("far")},
+                    {"embedding", rg::Value(rg::Value::List{rg::Value(0.0),
+                                                            rg::Value(1.0)})}});
+
+  rg::QueryResult knn;
+  ASSERT_TRUE(WaitUntil([&] {
+    knn = rg::test::ExecuteQueryAndCommit(
+        graph,
+        "CALL db.index.vector.knnSearchNodes('procedure_vector', [1.0, 0.0], "
+        "{top_k:2}) YIELD node, distance "
+        "RETURN node.name, distance ORDER BY node.name");
+    return knn.rows.size() == 2U;
+  }));
+  EXPECT_EQ(knn.rows[0][0], rg::Value("far"));
+  EXPECT_EQ(knn.rows[1][0], rg::Value("near"));
+  EXPECT_TRUE(knn.rows[0][1].IsDouble());
+  EXPECT_TRUE(knn.rows[1][1].IsDouble());
+}
+
+TEST(QueryExecutorTest, RejectsInvalidIndexProcedureArguments) {
+  rg::test::GraphDBTestDatabase graph;
+  EXPECT_THROW(
+      (void)rg::test::ExecuteQueryAndCommit(
+          graph, "CALL db.index.createNodeIndex('bad', 'Person', 'name', {})"),
+      common::InvalidArgumentError);
+  EXPECT_THROW(
+      (void)rg::test::ExecuteQueryAndCommit(
+          graph,
+          "CALL db.index.vector.createNodeField('Person', 'embedding', {})"),
+      common::InvalidArgumentError);
+  EXPECT_THROW(
+      (void)rg::test::ExecuteQueryAndCommit(
+          graph, "CALL db.index.vector.knnSearchNodes('missing', ['bad'], {})"),
+      common::InvalidArgumentError);
 }
 
 TEST(QueryExecutorTest, ExecutesNamedPath) {

@@ -80,6 +80,9 @@ target_link_libraries(graphdb_test PRIVATE GTest::gtest graphdb
 set_target_properties(graphdb_test PROPERTIES BUILD_RPATH "/usr/local/lib")
 add_test(NAME graphdb_test COMMAND graphdb_test)
 
+add_rocksgraph_test(raft_cluster_test graphdb/test_raft_cluster.cpp
+                    rocksgraph_server)
+
 add_rocksgraph_test(tck_scenario_test tck/tck_scenario_test.cc
                     rocksgraph_runtime)
 target_link_libraries(tck_scenario_test PRIVATE graphdb)

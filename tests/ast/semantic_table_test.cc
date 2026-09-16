@@ -208,6 +208,12 @@ TEST(SemanticTableTest, UsesBuiltinProcedureRegistryForYieldTypes) {
                                       "mode", "worksOnSystem"}));
   EXPECT_EQ(table.KnownProcedureYieldType("DBMS.PROCEDURES", "worksOnSystem"),
             ast::SemanticVariableType::kScalar);
+  EXPECT_EQ(table.KnownProcedureYieldType("db.index.queryNodes", "node"),
+            ast::SemanticVariableType::kNode);
+  EXPECT_EQ(table.KnownProcedureYieldFields("db.index.vector.knnSearchNodes"),
+            (std::vector<std::string>{"node", "distance"}));
+  EXPECT_EQ(table.KnownProcedureReadOnly("db.index.vector.createNodeIndex"),
+            std::optional<bool>(false));
 }
 
 TEST(SemanticTableTest, InfersStructuredExpressionResultTypes) {

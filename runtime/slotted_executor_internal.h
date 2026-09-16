@@ -129,7 +129,7 @@ void SetScannedNode(SlottedRow *row, std::size_t offset,
                                    const SlottedRow &row, RuntimeState *state);
 using ProcedureRecord = Value::Map;
 [[nodiscard]] std::vector<ProcedureRecord> ExecuteProcedure(
-    const ProcedureCallOp &data, RuntimeState *state);
+    const ProcedureCallOp &data, const SlottedRow &row, RuntimeState *state);
 
 void ExecuteStreamingWrite(const CreateNodeOp &data, const SlottedRow &input,
                            SlottedRow *output, RuntimeState *state);

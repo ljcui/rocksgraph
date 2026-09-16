@@ -228,11 +228,30 @@ TEST(SemanticValidatorTest, RejectsUnknownProcedure) {
 
 TEST(SemanticValidatorTest, RejectsProcedureArgumentCountMismatch) {
   ExpectSemanticError("CALL db.labels(1)", "db.labels expects 0 arguments");
+  ExpectSemanticError("CALL db.index.queryNodes('index')",
+                      "db.index.queryNodes expects 2 arguments");
 }
 
 TEST(SemanticValidatorTest, RejectsUnknownProcedureYieldField) {
   ExpectSemanticError("CALL db.labels() YIELD missing RETURN missing",
                       "unknown yield field for db.labels: missing");
+}
+
+TEST(SemanticValidatorTest, AcceptsIndexAndRaftProcedures) {
+  EXPECT_NO_THROW(ast::ParseCypher(
+      "CALL db.index.createNodeIndex('idx', 'Person', ['name'], {})"));
+  EXPECT_NO_THROW(
+      ast::ParseCypher("CALL db.index.rangeQueryNodes('idx', null, 10, {}) "
+                       "YIELD node RETURN node"));
+  EXPECT_NO_THROW(
+      ast::ParseCypher("CALL db.index.fulltext.queryNodes('text', 'query', 10) "
+                       "YIELD node, score RETURN node, score"));
+  EXPECT_NO_THROW(ast::ParseCypher(
+      "CALL db.index.vector.knnSearchNodes('vector', [1.0], {top_k:1}) "
+      "YIELD node, distance RETURN node, distance"));
+  EXPECT_NO_THROW(ast::ParseCypher(
+      "CALL dbms.graph.getRaftNodeInfos('graph') YIELD node_id, is_leader "
+      "RETURN node_id, is_leader"));
 }
 
 TEST(SemanticValidatorTest, AcceptsRegisteredFunctionContracts) {

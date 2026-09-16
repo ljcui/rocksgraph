@@ -1058,7 +1058,7 @@ class ProcedureCallOperator final : public PullOperator {
       if (!PullInput(&input)) {
         return false;
       }
-      for (const auto &record : ExecuteProcedure(*data_, state_)) {
+      for (const auto &record : ExecuteProcedure(*data_, input, state_)) {
         SlottedRow output(node_->output_slots);
         CopyMappings(input, &output, node_->child_mappings[0]);
         for (const auto &item : data_->yields) {

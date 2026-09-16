@@ -8,6 +8,7 @@
 #include "ast/builtin_function.h"
 #include "ast/builtin_procedure.h"
 #include "common/exceptions.h"
+#include "graphdb/graph_db.h"
 #include "runtime/expression_evaluator.h"
 #include "runtime/graphdb_access.h"
 #include "runtime/slotted_executor_internal.h"
@@ -401,7 +402,137 @@ Value BuildPathValue(const PathBuildOp &data, const SlottedRow &row,
   return Value(std::move(path));
 }
 
+namespace {
+
+std::string ProcedureArgumentName(const ast::BuiltinProcedure &procedure,
+                                  std::string_view argument) {
+  return procedure.name + "() argument " + std::string(argument);
+}
+
+const std::string &RequireProcedureString(
+    const Value &value, const ast::BuiltinProcedure &procedure,
+    std::string_view argument) {
+  CHECK(value.IsString(), common::InvalidArgumentError,
+        ProcedureArgumentName(procedure, argument) + " must be a string");
+  return value.AsString();
+}
+
+const Value::Map &RequireProcedureMap(const Value &value,
+                                      const ast::BuiltinProcedure &procedure,
+                                      std::string_view argument) {
+  CHECK(value.IsMap(), common::InvalidArgumentError,
+        ProcedureArgumentName(procedure, argument) + " must be a map");
+  return value.AsMap();
+}
+
+std::int64_t RequireProcedureInteger(const Value &value,
+                                     const ast::BuiltinProcedure &procedure,
+                                     std::string_view argument) {
+  CHECK(value.IsInteger(), common::InvalidArgumentError,
+        ProcedureArgumentName(procedure, argument) + " must be an integer");
+  return value.AsInteger();
+}
+
+int CheckedProcedureInt(std::int64_t value,
+                        const ast::BuiltinProcedure &procedure,
+                        std::string_view argument) {
+  CHECK(value >= std::numeric_limits<int>::min() &&
+            value <= std::numeric_limits<int>::max(),
+        common::InvalidArgumentError,
+        ProcedureArgumentName(procedure, argument) + " is out of range");
+  return static_cast<int>(value);
+}
+
+std::vector<std::string> RequireProcedureStringList(
+    const Value &value, const ast::BuiltinProcedure &procedure,
+    std::string_view argument) {
+  CHECK(value.IsList(), common::InvalidArgumentError,
+        ProcedureArgumentName(procedure, argument) + " must be a list");
+  std::vector<std::string> result;
+  result.reserve(value.AsList().size());
+  for (const auto &item : value.AsList()) {
+    CHECK(item.IsString(), common::InvalidArgumentError,
+          ProcedureArgumentName(procedure, argument) +
+              " must contain only strings");
+    result.push_back(item.AsString());
+  }
+  return result;
+}
+
+const Value *FindProcedureOption(const Value::Map &options,
+                                 std::string_view name) {
+  const auto found = options.find(std::string(name));
+  return found == options.end() ? nullptr : &found->second;
+}
+
+bool ProcedureBoolOption(const Value::Map &options, std::string_view name,
+                         bool default_value,
+                         const ast::BuiltinProcedure &procedure) {
+  const Value *value = FindProcedureOption(options, name);
+  if (value == nullptr) {
+    return default_value;
+  }
+  CHECK(value->IsBool(), common::InvalidArgumentError,
+        ProcedureArgumentName(procedure, name) + " must be a boolean");
+  return value->AsBool();
+}
+
+int ProcedureIntOption(const Value::Map &options, std::string_view name,
+                       std::optional<int> default_value,
+                       const ast::BuiltinProcedure &procedure) {
+  const Value *value = FindProcedureOption(options, name);
+  CHECK(value != nullptr || default_value.has_value(),
+        common::InvalidArgumentError,
+        ProcedureArgumentName(procedure, name) + " is required");
+  if (value == nullptr) {
+    return *default_value;
+  }
+  return CheckedProcedureInt(RequireProcedureInteger(*value, procedure, name),
+                             procedure, name);
+}
+
+std::string ProcedureStringOption(const Value::Map &options,
+                                  std::string_view name,
+                                  std::string default_value,
+                                  const ast::BuiltinProcedure &procedure) {
+  const Value *value = FindProcedureOption(options, name);
+  return value == nullptr ? std::move(default_value)
+                          : RequireProcedureString(*value, procedure, name);
+}
+
+std::vector<float> RequireProcedureFloatList(
+    const Value &value, const ast::BuiltinProcedure &procedure,
+    std::string_view argument) {
+  CHECK(value.IsList(), common::InvalidArgumentError,
+        ProcedureArgumentName(procedure, argument) + " must be a list");
+  std::vector<float> result;
+  result.reserve(value.AsList().size());
+  for (const auto &item : value.AsList()) {
+    CHECK(item.IsInteger() || item.IsDouble(), common::InvalidArgumentError,
+          ProcedureArgumentName(procedure, argument) +
+              " must contain only numbers");
+    const double number = item.IsInteger()
+                              ? static_cast<double>(item.AsInteger())
+                              : item.AsDouble();
+    CHECK(std::isfinite(number) &&
+              number >= -std::numeric_limits<float>::max() &&
+              number <= std::numeric_limits<float>::max(),
+          common::InvalidArgumentError,
+          ProcedureArgumentName(procedure, argument) +
+              " contains a non-finite or out-of-range number");
+    result.push_back(static_cast<float>(number));
+  }
+  return result;
+}
+
+ProcedureRecord NodeRecord(graphdb::Vertex vertex) {
+  return {{"node", Value(MaterializeGraphDBVertex(std::move(vertex)))}};
+}
+
+}  // namespace
+
 std::vector<ProcedureRecord> ExecuteProcedure(const ProcedureCallOp &data,
+                                              const SlottedRow &row,
                                               RuntimeState *state) {
   CHECK(state != nullptr, common::InternalError, "runtime state is null");
   const ast::BuiltinProcedure *procedure =
@@ -411,8 +542,8 @@ std::vector<ProcedureRecord> ExecuteProcedure(const ProcedureCallOp &data,
   CHECK(data.arguments.size() == procedure->argument_count,
         common::InvalidArgumentError,
         procedure->name + "() received an invalid argument count");
-  CHECK(procedure->read_only && data.read_only, common::InvalidArgumentError,
-        "write procedure calls are not supported");
+  CHECK(procedure->read_only == data.read_only, common::InternalError,
+        "procedure access mode does not match its registry metadata");
   for (const auto &item : data.yields) {
     CHECK(ast::FindBuiltinProcedureYield(*procedure, item.result_field) !=
               nullptr,
@@ -420,6 +551,202 @@ std::vector<ProcedureRecord> ExecuteProcedure(const ProcedureCallOp &data,
           "unknown yield field for " + procedure->name + ": " +
               item.result_field);
   }
+
+  std::vector<Value> arguments;
+  arguments.reserve(data.arguments.size());
+  for (const auto &argument : data.arguments) {
+    arguments.push_back(Evaluate(argument, row, *state));
+  }
+
+  graphdb::Transaction &transaction = *state->transaction;
+  graphdb::GraphDB *graph = transaction.db();
+  CHECK(graph != nullptr, common::InternalError,
+        "procedure transaction has no graph database");
+
+  switch (procedure->kind) {
+    case ast::BuiltinProcedureKind::kCreateNodeIndex: {
+      const auto &index_name =
+          RequireProcedureString(arguments[0], *procedure, "index_name");
+      const auto &label =
+          RequireProcedureString(arguments[1], *procedure, "label");
+      std::vector<std::string> properties =
+          RequireProcedureStringList(arguments[2], *procedure, "properties");
+      const Value::Map &options =
+          RequireProcedureMap(arguments[3], *procedure, "parameter");
+      graph->AddVertexPropertyIndex(
+          index_name, ProcedureBoolOption(options, "unique", false, *procedure),
+          label, properties);
+      return {ProcedureRecord{}};
+    }
+    case ast::BuiltinProcedureKind::kQueryNodes: {
+      const auto &index_name =
+          RequireProcedureString(arguments[0], *procedure, "index_name");
+      std::vector<ProcedureRecord> records;
+      auto vertices =
+          transaction.QueryVertexByPropertyIndex(index_name, arguments[1]);
+      while (vertices->Valid()) {
+        state->CheckCancelled();
+        records.push_back(NodeRecord(vertices->GetVertex()));
+        vertices->Next();
+      }
+      return records;
+    }
+    case ast::BuiltinProcedureKind::kRangeQueryNodes: {
+      const auto &index_name =
+          RequireProcedureString(arguments[0], *procedure, "index_name");
+      const std::optional<Value> lower =
+          arguments[1].IsNull() ? std::nullopt
+                                : std::optional<Value>(arguments[1]);
+      const std::optional<Value> upper =
+          arguments[2].IsNull() ? std::nullopt
+                                : std::optional<Value>(arguments[2]);
+      const Value::Map &options =
+          RequireProcedureMap(arguments[3], *procedure, "parameter");
+      auto vertices = transaction.QueryVertexByPropertyRange(
+          index_name, lower, upper,
+          ProcedureBoolOption(options, "left_closed", true, *procedure),
+          ProcedureBoolOption(options, "right_closed", true, *procedure));
+      std::vector<ProcedureRecord> records;
+      while (vertices->Valid()) {
+        state->CheckCancelled();
+        records.push_back(NodeRecord(vertices->GetVertex()));
+        vertices->Next();
+      }
+      return records;
+    }
+    case ast::BuiltinProcedureKind::kCreateNodeFullTextIndex: {
+      const auto &index_name =
+          RequireProcedureString(arguments[0], *procedure, "index_name");
+      graph->AddVertexFullTextIndex(
+          index_name,
+          RequireProcedureStringList(arguments[1], *procedure, "labels"),
+          RequireProcedureStringList(arguments[2], *procedure, "properties"));
+      return {ProcedureRecord{}};
+    }
+    case ast::BuiltinProcedureKind::kQueryNodesByFullText: {
+      const auto &index_name =
+          RequireProcedureString(arguments[0], *procedure, "index_name");
+      const auto &query =
+          RequireProcedureString(arguments[1], *procedure, "query");
+      const std::int64_t top_n =
+          RequireProcedureInteger(arguments[2], *procedure, "top_n");
+      CHECK(top_n > 0, common::InvalidArgumentError,
+            ProcedureArgumentName(*procedure, "top_n") +
+                " must be greater than zero");
+      auto vertices = transaction.QueryVertexByFTIndex(
+          index_name, query, static_cast<std::size_t>(top_n));
+      std::vector<ProcedureRecord> records;
+      while (vertices->Valid()) {
+        state->CheckCancelled();
+        auto &scored = vertices->GetVertexScore();
+        records.push_back(
+            {{"node", Value(MaterializeGraphDBVertex(scored.vertex))},
+             {"score", Value(static_cast<double>(scored.score))}});
+        vertices->Next();
+      }
+      return records;
+    }
+    case ast::BuiltinProcedureKind::kCreateNodeVectorField: {
+      const auto &label =
+          RequireProcedureString(arguments[0], *procedure, "label");
+      const auto &property =
+          RequireProcedureString(arguments[1], *procedure, "property");
+      const Value::Map &options =
+          RequireProcedureMap(arguments[2], *procedure, "parameter");
+      graph->AddVertexVectorField(
+          label, property,
+          ProcedureIntOption(options, "dimension", std::nullopt, *procedure));
+      return {ProcedureRecord{}};
+    }
+    case ast::BuiltinProcedureKind::kCreateNodeVectorIndex: {
+      const auto &index_name =
+          RequireProcedureString(arguments[0], *procedure, "index_name");
+      const auto &label =
+          RequireProcedureString(arguments[1], *procedure, "label");
+      const auto &property =
+          RequireProcedureString(arguments[2], *procedure, "property");
+      const Value::Map &options =
+          RequireProcedureMap(arguments[3], *procedure, "parameter");
+      graph->AddVertexVectorIndex(
+          index_name, label, property,
+          ProcedureIntOption(options, "dimension", std::nullopt, *procedure),
+          ProcedureStringOption(options, "distance_type", "l2", *procedure),
+          ProcedureIntOption(options, "hnsw_m", 16, *procedure),
+          ProcedureIntOption(options, "hnsw_ef_construction", 100, *procedure));
+      return {ProcedureRecord{}};
+    }
+    case ast::BuiltinProcedureKind::kKnnSearchNodes: {
+      const auto &index_name =
+          RequireProcedureString(arguments[0], *procedure, "index_name");
+      std::vector<float> query =
+          RequireProcedureFloatList(arguments[1], *procedure, "query");
+      const Value::Map &options =
+          RequireProcedureMap(arguments[2], *procedure, "parameter");
+      const int top_k = ProcedureIntOption(options, "top_k", 10, *procedure);
+      const int ef_search =
+          ProcedureIntOption(options, "ef_search", 200, *procedure);
+      CHECK(top_k > 0, common::InvalidArgumentError,
+            ProcedureArgumentName(*procedure, "top_k") +
+                " must be greater than zero");
+      CHECK(ef_search > 0, common::InvalidArgumentError,
+            ProcedureArgumentName(*procedure, "ef_search") +
+                " must be greater than zero");
+      auto vertices = transaction.QueryVertexByKnnSearch(index_name, query,
+                                                         top_k, ef_search);
+      std::vector<ProcedureRecord> records;
+      while (vertices->Valid()) {
+        state->CheckCancelled();
+        auto &scored = vertices->GetVertexScore();
+        records.push_back(
+            {{"node", Value(MaterializeGraphDBVertex(scored.vertex))},
+             {"distance", Value(static_cast<double>(scored.score))}});
+        vertices->Next();
+      }
+      return records;
+    }
+    case ast::BuiltinProcedureKind::kRaftNodeInfos: {
+      const auto &graph_name =
+          RequireProcedureString(arguments[0], *procedure, "graph_name");
+      CHECK(graph_name == graph->db_meta().graph_name(),
+            common::InvalidArgumentError,
+            procedure->name +
+                "() can only inspect the graph bound to the current "
+                "transaction");
+      raft::RaftDriver *driver = graph->raft_driver();
+      CHECK(driver != nullptr, common::InvalidArgumentError,
+            "graph [" + graph_name + "] does not enable raft");
+      const meta::RaftNodeInfos node_infos = driver->GetNodeInfosWithLeader();
+      std::vector<std::uint64_t> node_ids;
+      node_ids.reserve(node_infos.nodes().size());
+      for (const auto &[node_id, node_info] : node_infos.nodes()) {
+        (void)node_info;
+        node_ids.push_back(node_id);
+      }
+      std::sort(node_ids.begin(), node_ids.end());
+      std::vector<ProcedureRecord> records;
+      records.reserve(node_ids.size());
+      for (const std::uint64_t node_id : node_ids) {
+        CHECK(node_id <= static_cast<std::uint64_t>(
+                             std::numeric_limits<std::int64_t>::max()),
+              common::InvalidArgumentError,
+              "Raft node id cannot be represented as a Cypher integer");
+        const auto &node_info = node_infos.nodes().at(node_id);
+        records.push_back(
+            {{"node_id", Value(static_cast<std::int64_t>(node_id))},
+             {"ip", Value(node_info.ip())},
+             {"bolt_port", Value(node_info.bolt_port())},
+             {"raft_port", Value(node_info.raft_poft())},
+             {"is_leader", Value(node_info.is_leader())}});
+      }
+      return records;
+    }
+    case ast::BuiltinProcedureKind::kLabels:
+    case ast::BuiltinProcedureKind::kPropertyKeys:
+    case ast::BuiltinProcedureKind::kRelationshipTypes:
+    case ast::BuiltinProcedureKind::kProcedures:
+      break;
+  }
+
   std::set<std::string> values;
   if (procedure->kind == ast::BuiltinProcedureKind::kLabels ||
       procedure->kind == ast::BuiltinProcedureKind::kPropertyKeys) {
