@@ -20,8 +20,8 @@ constexpr std::size_t kMaxRuleIterations = 64;
 
 bool ApplyRuleBottomUp(LogicalPlanPtr *plan,
                        const LogicalPlanRewriteRule &rule) {
-  CHECK(plan != nullptr && *plan != nullptr, common::InternalError,
-        "logical plan rewrite input is null");
+  RG_CHECK(plan != nullptr && *plan != nullptr, common::InternalError,
+           "logical plan rewrite input is null");
   bool changed = false;
   for (std::size_t i = 0; i < (*plan)->ChildCount(); ++i) {
     LogicalPlanPtr child = (*plan)->TakeChild(i);
@@ -32,11 +32,12 @@ bool ApplyRuleBottomUp(LogicalPlanPtr *plan,
   const std::unordered_set<std::string> solved_symbols =
       (*plan)->SolvedSymbols();
   const bool node_changed = rule.Apply(plan);
-  CHECK(*plan != nullptr, common::InternalError,
-        "logical plan rewrite produced a null plan");
-  CHECK((*plan)->OutputColumns() == output_columns &&
-            (*plan)->SolvedSymbols() == solved_symbols,
-        common::InternalError, "logical plan rewrite changed the plan schema");
+  RG_CHECK(*plan != nullptr, common::InternalError,
+           "logical plan rewrite produced a null plan");
+  RG_CHECK((*plan)->OutputColumns() == output_columns &&
+               (*plan)->SolvedSymbols() == solved_symbols,
+           common::InternalError,
+           "logical plan rewrite changed the plan schema");
   changed |= node_changed;
   return changed;
 }
@@ -80,9 +81,10 @@ bool IsRelationshipUniqueness(const ast::Expression *expression,
 LogicalPlanPtr PruneDistinctExpand(
     LogicalPlanPtr plan, const std::vector<LogicalProjectionItem> &items,
     bool *changed) {
-  CHECK(plan != nullptr, common::InternalError, "distinct input plan is null");
-  CHECK(changed != nullptr, common::InternalError,
-        "logical plan rewrite change flag is null");
+  RG_CHECK(plan != nullptr, common::InternalError,
+           "distinct input plan is null");
+  RG_CHECK(changed != nullptr, common::InternalError,
+           "logical plan rewrite change flag is null");
   const LogicalPlan *candidate = plan.get();
   std::vector<const FilterPlan *> filters;
   while (candidate->Type() == LogicalPlanNodeType::kFilter) {
@@ -184,8 +186,8 @@ bool PlanContainsWrites(const LogicalPlan &plan) {
 class UseTopNRule final : public LogicalPlanRewriteRule {
  public:
   [[nodiscard]] bool Apply(LogicalPlanPtr *plan) const override {
-    CHECK(plan != nullptr && *plan != nullptr, common::InternalError,
-          "logical plan rewrite input is null");
+    RG_CHECK(plan != nullptr && *plan != nullptr, common::InternalError,
+             "logical plan rewrite input is null");
     if ((*plan)->Type() != LogicalPlanNodeType::kLimit ||
         (*plan)->ChildCount() != 1 ||
         (*plan)->Child(0).Type() != LogicalPlanNodeType::kSort) {
@@ -214,8 +216,8 @@ class UseTopNRule final : public LogicalPlanRewriteRule {
 class PruneDistinctVarExpandRule final : public LogicalPlanRewriteRule {
  public:
   [[nodiscard]] bool Apply(LogicalPlanPtr *plan) const override {
-    CHECK(plan != nullptr && *plan != nullptr, common::InternalError,
-          "logical plan rewrite input is null");
+    RG_CHECK(plan != nullptr && *plan != nullptr, common::InternalError,
+             "logical plan rewrite input is null");
     if ((*plan)->Type() != LogicalPlanNodeType::kDistinct) {
       return false;
     }
@@ -234,27 +236,27 @@ LogicalPlanRewritePipeline::LogicalPlanRewritePipeline(
     std::vector<std::unique_ptr<LogicalPlanRewriteRule>> rules)
     : rules_(std::move(rules)) {
   for (const auto &rule : rules_) {
-    CHECK(rule != nullptr, common::InvalidArgumentError,
-          "logical plan rewrite rule is null");
+    RG_CHECK(rule != nullptr, common::InvalidArgumentError,
+             "logical plan rewrite rule is null");
   }
 }
 
 void LogicalPlanRewritePipeline::Add(
     std::unique_ptr<LogicalPlanRewriteRule> rule) {
-  CHECK(rule != nullptr, common::InvalidArgumentError,
-        "logical plan rewrite rule is null");
+  RG_CHECK(rule != nullptr, common::InvalidArgumentError,
+           "logical plan rewrite rule is null");
   rules_.push_back(std::move(rule));
 }
 
 LogicalPlanPtr LogicalPlanRewritePipeline::Run(LogicalPlanPtr plan) const {
-  CHECK(plan != nullptr, common::InvalidArgumentError,
-        "logical plan rewrite input is null");
+  RG_CHECK(plan != nullptr, common::InvalidArgumentError,
+           "logical plan rewrite input is null");
   for (const auto &rule : rules_) {
     std::size_t iteration = 0;
     while (ApplyRuleBottomUp(&plan, *rule)) {
       ++iteration;
-      CHECK(iteration < kMaxRuleIterations, common::InternalError,
-            "logical plan rewrite rule did not converge");
+      RG_CHECK(iteration < kMaxRuleIterations, common::InternalError,
+               "logical plan rewrite rule did not converge");
     }
   }
   return plan;

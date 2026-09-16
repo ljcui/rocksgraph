@@ -7,7 +7,7 @@
 #include <optional>
 #include <vector>
 
-#include "common/exceptions.h"
+#include "common/exception.h"
 #include "graphdb/graph_db.h"
 #include "graphdb/index.h"
 #include "graphdb/transaction.h"
@@ -117,11 +117,11 @@ std::optional<std::vector<float>> BuildVectorValues(
     return std::nullopt;
   }
   if (iter->second.size() != index->meta().dimensions()) {
-    THROW_CODE(InvalidParameter,
-               "vector field [label:{}, property:{}] dimension mismatch, "
-               "expect {}, actual {}",
-               index->meta().label(), index->meta().property(),
-               index->meta().dimensions(), iter->second.size());
+    RG_THROW_CODE(InvalidParameter,
+                  "vector field [label:{}, property:{}] dimension mismatch, "
+                  "expect {}, actual {}",
+                  index->meta().label(), index->meta().property(),
+                  index->meta().dimensions(), iter->second.size());
   }
   return iter->second;
 }

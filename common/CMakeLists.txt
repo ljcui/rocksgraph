@@ -3,7 +3,7 @@ find_package(spdlog REQUIRED)
 
 add_library(
   common STATIC
-  exceptions.cpp
+  exception.cpp
   flags.cpp
   logger.cpp)
 

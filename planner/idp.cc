@@ -70,7 +70,7 @@ PlanCandidate MakePlanCandidate(
     std::vector<std::size_t> relationship_indices, CostEstimate estimate,
     std::unordered_set<const Predicate *> planned_predicates,
     std::vector<LogicalSortItem> provided_order) {
-  CHECK(plan != nullptr, common::InternalError, "candidate plan is null");
+  RG_CHECK(plan != nullptr, common::InternalError, "candidate plan is null");
 
   PlanCandidate candidate;
   candidate.covered_symbols = plan->SolvedSymbols();
@@ -94,8 +94,8 @@ bool CandidateCostLess(const PlanCandidate &lhs, const PlanCandidate &rhs) {
 }
 
 void PlanTable::PutBest(PlanCandidate candidate) {
-  CHECK(candidate.plan != nullptr, common::InternalError,
-        "candidate plan is null");
+  RG_CHECK(candidate.plan != nullptr, common::InternalError,
+           "candidate plan is null");
   candidate.relationship_indices =
       NormalizedRelationshipKey(std::move(candidate.relationship_indices));
   const PlanKey key = CandidateKey(candidate);
@@ -112,8 +112,8 @@ void PlanTable::PutBest(PlanCandidate candidate) {
 
 void PlanTable::PruneRelationshipCount(std::size_t relationship_count,
                                        std::size_t max_candidates) {
-  CHECK(max_candidates > 0, common::InvalidArgumentError,
-        "max candidates must be positive");
+  RG_CHECK(max_candidates > 0, common::InvalidArgumentError,
+           "max candidates must be positive");
   std::vector<PlanKey> keys;
   for (const auto &candidate : entries_) {
     if (candidate.relationship_indices.size() != relationship_count) {
@@ -147,8 +147,9 @@ void PlanTable::PruneRelationshipCount(std::size_t relationship_count,
         };
         const PlanCandidate *lhs_candidate = cheapest_for_state(lhs);
         const PlanCandidate *rhs_candidate = cheapest_for_state(rhs);
-        CHECK(lhs_candidate != nullptr && rhs_candidate != nullptr,
-              common::InternalError, "missing plan candidate during pruning");
+        RG_CHECK(lhs_candidate != nullptr && rhs_candidate != nullptr,
+                 common::InternalError,
+                 "missing plan candidate during pruning");
         return CandidateCostLess(*lhs_candidate, *rhs_candidate);
       });
   keys.resize(max_candidates);
@@ -171,8 +172,8 @@ void PlanTable::PruneRelationshipCount(std::size_t relationship_count,
 
 PlanCandidate PlanTable::TakeBest(const PlanKey &key) {
   auto found = FindEntry(key);
-  CHECK(found != entries_.end(), common::InternalError,
-        "missing plan candidate");
+  RG_CHECK(found != entries_.end(), common::InternalError,
+           "missing plan candidate");
   PlanCandidate candidate = std::move(*found);
   entries_.erase(found);
   return candidate;

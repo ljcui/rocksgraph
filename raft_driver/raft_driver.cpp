@@ -10,7 +10,7 @@
 #include <future>
 #include <shared_mutex>
 
-#include "common/exceptions.h"
+#include "common/exception.h"
 #include "common/logger.h"
 
 using boost::asio::async_write;
@@ -638,7 +638,7 @@ eraft::Error RaftDriver::Run() {
     return eraft::Error("failed to open raft db, error: " + s.ToString());
   }
   storage_ = std::make_shared<RaftLogStorage>(db.release(), cf_handles[0],
-                                               cf_handles[1]);
+                                              cf_handles[1]);
   auto applied = std::max(apply_id_.load(), storage_->GetApplyIndex());
   auto nodes = storage_->GetNodeInfos();
   if (nodes.has_value()) {
@@ -946,7 +946,7 @@ PromiseContext::ApplyResult RaftDriver::ProposeRaftRequestAndWait(
 std::shared_ptr<PromiseContext> RaftDriver::ProposeRaftRequest(
     meta::RaftRequest request) {
   if (request.wb_kind() == meta::WriteBatchKind::UNKNOWN) {
-    THROW_CODE(InvalidParameter, "write batch kind must be specified");
+    RG_THROW_CODE(InvalidParameter, "write batch kind must be specified");
   }
   request.set_id(id_generator_.Next());
   raftpb::Message msg;

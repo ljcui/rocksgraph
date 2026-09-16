@@ -6,7 +6,7 @@
 
 #include <string>
 
-#include "common/exceptions.h"
+#include "common/exception.h"
 
 namespace graphdb {
 
@@ -16,14 +16,14 @@ template <typename IndexPtr>
                                                  const char* index_kind) {
   if (index->state() == meta::IndexBuildState::FAILED) {
     if (index->meta().build_error().empty()) {
-      THROW_CODE(IndexNotReady, "{} index [{}] build failed", index_kind,
-                 index_name);
+      RG_THROW_CODE(IndexNotReady, "{} index [{}] build failed", index_kind,
+                    index_name);
     }
-    THROW_CODE(IndexNotReady, "{} index [{}] build failed: {}", index_kind,
-               index_name, index->meta().build_error());
+    RG_THROW_CODE(IndexNotReady, "{} index [{}] build failed: {}", index_kind,
+                  index_name, index->meta().build_error());
   }
-  THROW_CODE(IndexNotReady, "{} index [{}] is still building", index_kind,
-             index_name);
+  RG_THROW_CODE(IndexNotReady, "{} index [{}] is still building", index_kind,
+                index_name);
 }
 
 }  // namespace graphdb

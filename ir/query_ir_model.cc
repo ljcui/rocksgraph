@@ -390,8 +390,8 @@ std::vector<QueryGraphComponent> QueryGraph::ConnectedComponents() const {
 
   auto add_covered_id = [&](QueryGraphComponent *component,
                             const LogicalVariable &symbol) {
-    CHECK(component != nullptr, common::InternalError,
-          "query graph component is null");
+    RG_CHECK(component != nullptr, common::InternalError,
+             "query graph component is null");
     AddSymbol(&component->covered_ids, symbol);
     if (!symbol.empty() && argument_ids.contains(symbol)) {
       component->touches_arguments = true;
@@ -497,69 +497,69 @@ QueryHorizon QueryHorizon::ForPassthrough() {
 }
 
 const RegularQueryProjection &QueryHorizon::RequireRegularProjection() const {
-  CHECK(kind == QueryHorizonKind::kRegularProjection,
-        common::InvalidArgumentError,
-        Unsupported("regular projection horizon"));
+  RG_CHECK(kind == QueryHorizonKind::kRegularProjection,
+           common::InvalidArgumentError,
+           Unsupported("regular projection horizon"));
   return regular_projection;
 }
 
 RegularQueryProjection &QueryHorizon::RequireRegularProjection() {
-  CHECK(kind == QueryHorizonKind::kRegularProjection,
-        common::InvalidArgumentError,
-        Unsupported("regular projection horizon"));
+  RG_CHECK(kind == QueryHorizonKind::kRegularProjection,
+           common::InvalidArgumentError,
+           Unsupported("regular projection horizon"));
   return regular_projection;
 }
 
 const DistinctQueryProjection &QueryHorizon::RequireDistinctProjection() const {
-  CHECK(kind == QueryHorizonKind::kDistinctProjection,
-        common::InvalidArgumentError,
-        Unsupported("distinct projection horizon"));
+  RG_CHECK(kind == QueryHorizonKind::kDistinctProjection,
+           common::InvalidArgumentError,
+           Unsupported("distinct projection horizon"));
   return distinct_projection;
 }
 
 DistinctQueryProjection &QueryHorizon::RequireDistinctProjection() {
-  CHECK(kind == QueryHorizonKind::kDistinctProjection,
-        common::InvalidArgumentError,
-        Unsupported("distinct projection horizon"));
+  RG_CHECK(kind == QueryHorizonKind::kDistinctProjection,
+           common::InvalidArgumentError,
+           Unsupported("distinct projection horizon"));
   return distinct_projection;
 }
 
 const AggregatingQueryProjection &QueryHorizon::RequireAggregatingProjection()
     const {
-  CHECK(kind == QueryHorizonKind::kAggregatingProjection,
-        common::InvalidArgumentError,
-        Unsupported("aggregating projection horizon"));
+  RG_CHECK(kind == QueryHorizonKind::kAggregatingProjection,
+           common::InvalidArgumentError,
+           Unsupported("aggregating projection horizon"));
   return aggregating_projection;
 }
 
 AggregatingQueryProjection &QueryHorizon::RequireAggregatingProjection() {
-  CHECK(kind == QueryHorizonKind::kAggregatingProjection,
-        common::InvalidArgumentError,
-        Unsupported("aggregating projection horizon"));
+  RG_CHECK(kind == QueryHorizonKind::kAggregatingProjection,
+           common::InvalidArgumentError,
+           Unsupported("aggregating projection horizon"));
   return aggregating_projection;
 }
 
 const UnwindHorizon &QueryHorizon::RequireUnwind() const {
-  CHECK(kind == QueryHorizonKind::kUnwind, common::InvalidArgumentError,
-        Unsupported("query horizon"));
+  RG_CHECK(kind == QueryHorizonKind::kUnwind, common::InvalidArgumentError,
+           Unsupported("query horizon"));
   return unwind;
 }
 
 UnwindHorizon &QueryHorizon::RequireUnwind() {
-  CHECK(kind == QueryHorizonKind::kUnwind, common::InvalidArgumentError,
-        Unsupported("query horizon"));
+  RG_CHECK(kind == QueryHorizonKind::kUnwind, common::InvalidArgumentError,
+           Unsupported("query horizon"));
   return unwind;
 }
 
 const ProcedureCallHorizon &QueryHorizon::RequireProcedureCall() const {
-  CHECK(kind == QueryHorizonKind::kProcedureCall, common::InvalidArgumentError,
-        Unsupported("procedure call horizon"));
+  RG_CHECK(kind == QueryHorizonKind::kProcedureCall,
+           common::InvalidArgumentError, Unsupported("procedure call horizon"));
   return procedure_call;
 }
 
 ProcedureCallHorizon &QueryHorizon::RequireProcedureCall() {
-  CHECK(kind == QueryHorizonKind::kProcedureCall, common::InvalidArgumentError,
-        Unsupported("procedure call horizon"));
+  RG_CHECK(kind == QueryHorizonKind::kProcedureCall,
+           common::InvalidArgumentError, Unsupported("procedure call horizon"));
   return procedure_call;
 }
 
@@ -569,29 +569,29 @@ SingleQueryIR *SingleQueryIR::Last() { return LastQueryPart(this); }
 
 const SingleQueryIR &QueryIR::RequireSingle() const {
   const auto *query = dynamic_cast<const SingleQueryIR *>(this);
-  CHECK(query != nullptr, common::InvalidArgumentError,
-        Unsupported("non-single query IR"));
+  RG_CHECK(query != nullptr, common::InvalidArgumentError,
+           Unsupported("non-single query IR"));
   return *query;
 }
 
 SingleQueryIR &QueryIR::RequireSingle() {
   auto *query = dynamic_cast<SingleQueryIR *>(this);
-  CHECK(query != nullptr, common::InvalidArgumentError,
-        Unsupported("non-single query IR"));
+  RG_CHECK(query != nullptr, common::InvalidArgumentError,
+           Unsupported("non-single query IR"));
   return *query;
 }
 
 const UnionQueryIR &QueryIR::RequireUnion() const {
   const auto *query = dynamic_cast<const UnionQueryIR *>(this);
-  CHECK(query != nullptr, common::InvalidArgumentError,
-        Unsupported("non-union query IR"));
+  RG_CHECK(query != nullptr, common::InvalidArgumentError,
+           Unsupported("non-union query IR"));
   return *query;
 }
 
 UnionQueryIR &QueryIR::RequireUnion() {
   auto *query = dynamic_cast<UnionQueryIR *>(this);
-  CHECK(query != nullptr, common::InvalidArgumentError,
-        Unsupported("non-union query IR"));
+  RG_CHECK(query != nullptr, common::InvalidArgumentError,
+           Unsupported("non-union query IR"));
   return *query;
 }
 
@@ -601,8 +601,8 @@ std::unique_ptr<QueryIR> MakeSingleQueryIR(SingleQueryIR single_query) {
 
 std::unique_ptr<QueryIR> MakeUnionQueryIR(std::unique_ptr<QueryIR> lhs,
                                           SingleQueryIR rhs, bool all) {
-  CHECK(lhs != nullptr, common::InvalidArgumentError,
-        "UNION lhs query IR is null");
+  RG_CHECK(lhs != nullptr, common::InvalidArgumentError,
+           "UNION lhs query IR is null");
   auto query = std::make_unique<UnionQueryIR>();
   query->lhs = std::move(lhs);
   query->rhs = std::move(rhs);

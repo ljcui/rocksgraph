@@ -8,7 +8,7 @@
 #include <boost/endian/conversion.hpp>
 
 #include "common/byte_utils.h"
-#include "common/exceptions.h"
+#include "common/exception.h"
 #include "common/logger.h"
 #include "raft_driver/raft_driver.h"
 using namespace boost::endian;
@@ -58,8 +58,8 @@ void IdGenerator::LoadToken(MetadataType type, const std::string &name,
     properties_name_to_id_[name] = id;
     properties_id_to_name_[id] = name;
   } else {
-    THROW_CODE(InvalidParameter, "unsupported token metadata type {}",
-               static_cast<int>(type));
+    RG_THROW_CODE(InvalidParameter, "unsupported token metadata type {}",
+                  static_cast<int>(type));
   }
 }
 
@@ -69,10 +69,11 @@ void IdGenerator::ApplyMetaRecord(MetadataType type,
   switch (type) {
     case MetadataType::VertexLabel: {
       if (value.size() != sizeof(uint32_t)) {
-        THROW_CODE(StorageEngineError,
-                   "vertex label metadata has invalid size, expect {}, actual "
-                   "{}",
-                   sizeof(uint32_t), value.size());
+        RG_THROW_CODE(
+            StorageEngineError,
+            "vertex label metadata has invalid size, expect {}, actual "
+            "{}",
+            sizeof(uint32_t), value.size());
       }
       uint32_t id = ReadValue<uint32_t>(value.data());
       uint32_t native_id = big_to_native(id);
@@ -85,9 +86,10 @@ void IdGenerator::ApplyMetaRecord(MetadataType type,
     }
     case MetadataType::EdgeType: {
       if (value.size() != sizeof(uint32_t)) {
-        THROW_CODE(StorageEngineError,
-                   "edge type metadata has invalid size, expect {}, actual {}",
-                   sizeof(uint32_t), value.size());
+        RG_THROW_CODE(
+            StorageEngineError,
+            "edge type metadata has invalid size, expect {}, actual {}",
+            sizeof(uint32_t), value.size());
       }
       uint32_t id = ReadValue<uint32_t>(value.data());
       uint32_t native_id = big_to_native(id);
@@ -100,9 +102,10 @@ void IdGenerator::ApplyMetaRecord(MetadataType type,
     }
     case MetadataType::Property: {
       if (value.size() != sizeof(uint32_t)) {
-        THROW_CODE(StorageEngineError,
-                   "property metadata has invalid size, expect {}, actual {}",
-                   sizeof(uint32_t), value.size());
+        RG_THROW_CODE(
+            StorageEngineError,
+            "property metadata has invalid size, expect {}, actual {}",
+            sizeof(uint32_t), value.size());
       }
       uint32_t id = ReadValue<uint32_t>(value.data());
       uint32_t native_id = big_to_native(id);
@@ -115,15 +118,15 @@ void IdGenerator::ApplyMetaRecord(MetadataType type,
     }
     case MetadataType::NextVertexId: {
       if (value.size() != sizeof(int64_t)) {
-        THROW_CODE(StorageEngineError,
-                   "next vertex id metadata has invalid size, expect {}, "
-                   "actual {}",
-                   sizeof(int64_t), value.size());
+        RG_THROW_CODE(StorageEngineError,
+                      "next vertex id metadata has invalid size, expect {}, "
+                      "actual {}",
+                      sizeof(int64_t), value.size());
       }
       int64_t next_vid = big_to_native(ReadValue<int64_t>(value.data()));
       if (next_vid < 1) {
-        THROW_CODE(StorageEngineError,
-                   "next vertex id metadata must be positive");
+        RG_THROW_CODE(StorageEngineError,
+                      "next vertex id metadata must be positive");
       }
       StoreMax(&persisted_next_vid_, next_vid);
       StoreMax(&next_vid_, next_vid);
@@ -132,15 +135,16 @@ void IdGenerator::ApplyMetaRecord(MetadataType type,
     }
     case MetadataType::NextEdgeId: {
       if (value.size() != sizeof(int64_t)) {
-        THROW_CODE(StorageEngineError,
-                   "next edge id metadata has invalid size, expect {}, actual "
-                   "{}",
-                   sizeof(int64_t), value.size());
+        RG_THROW_CODE(
+            StorageEngineError,
+            "next edge id metadata has invalid size, expect {}, actual "
+            "{}",
+            sizeof(int64_t), value.size());
       }
       int64_t next_eid = big_to_native(ReadValue<int64_t>(value.data()));
       if (next_eid < 1) {
-        THROW_CODE(StorageEngineError,
-                   "next edge id metadata must be positive");
+        RG_THROW_CODE(StorageEngineError,
+                      "next edge id metadata must be positive");
       }
       StoreMax(&persisted_next_eid_, next_eid);
       StoreMax(&next_eid_, next_eid);
@@ -164,7 +168,8 @@ void IdGenerator::SetMaxIds(uint32_t max_lid, uint32_t max_pid,
 
 void IdGenerator::SetNextEntityIds(int64_t next_vid, int64_t next_eid) {
   if (next_vid < 1 || next_eid < 1) {
-    THROW_CODE(InvalidParameter, "entity id range must start from positive id");
+    RG_THROW_CODE(InvalidParameter,
+                  "entity id range must start from positive id");
   }
   persisted_next_vid_ = next_vid;
   next_vid_ = next_vid;
@@ -197,7 +202,7 @@ int64_t IdGenerator::GetNextEntityId(std::atomic<int64_t> *next_id,
 
     int64_t start = persisted_next_id->load();
     if (start > std::numeric_limits<int64_t>::max() - kIdRangeSize) {
-      THROW_CODE(StorageEngineError, "entity id range exhausted");
+      RG_THROW_CODE(StorageEngineError, "entity id range exhausted");
     }
     int64_t end = start + kIdRangeSize;
     PersistEntityId(meta_type, end);
@@ -212,14 +217,14 @@ void IdGenerator::ProposeAndApply(rocksdb::WriteBatch *wb) {
   if (raft_driver_ == nullptr) {
     rocksdb::TransactionDBWriteOptimizations two;
     auto s = db_->Write({}, two, wb);
-    if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+    if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
     return;
   }
 
   auto apply_result =
       raft_driver_->ProposeWriteBatch(meta::WriteBatchKind::ID_GENERATOR, *wb);
   if (apply_result.err != nullptr) {
-    THROW_CODE(StorageEngineError, apply_result.err.String());
+    RG_THROW_CODE(StorageEngineError, apply_result.err.String());
   }
 }
 
@@ -229,7 +234,7 @@ void IdGenerator::PersistEntityId(MetadataType meta_type, int64_t next_id) {
   auto s = wb.Put(
       graph_cf_->meta_info, EntityIdKey(meta_type),
       std::string(AsChars(bigendian_next_id), sizeof(bigendian_next_id)));
-  if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
   ProposeAndApply(&wb);
 }
 
@@ -240,7 +245,7 @@ void IdGenerator::PersistToken(MetadataType type, const std::string &name,
   val.append(AsChars(id), sizeof(id));
   rocksdb::WriteBatch wb;
   auto s = wb.Put(graph_cf_->meta_info, key, val);
-  if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
   ProposeAndApply(&wb);
 }
 
@@ -264,7 +269,7 @@ void IdGenerator::ReserveIndexId(uint32_t native_index_id) {
 
 std::optional<uint32_t> IdGenerator::GetLid(const std::string &name) {
   if (name.empty()) {
-    THROW_CODE(InvalidParameter, "label name is empty");
+    RG_THROW_CODE(InvalidParameter, "label name is empty");
   }
   std::shared_lock read_lock(vertex_labels_mutex_);
   auto iter = vertex_labels_name_to_id_.find(name);
@@ -277,7 +282,7 @@ std::optional<uint32_t> IdGenerator::GetLid(const std::string &name) {
 
 std::optional<uint32_t> IdGenerator::GetPid(const std::string &name) {
   if (name.empty()) {
-    THROW_CODE(InvalidParameter, "property name is empty");
+    RG_THROW_CODE(InvalidParameter, "property name is empty");
   }
   std::shared_lock read_lock(properties_mutex_);
   auto iter = properties_name_to_id_.find(name);
@@ -290,7 +295,7 @@ std::optional<uint32_t> IdGenerator::GetPid(const std::string &name) {
 
 std::optional<uint32_t> IdGenerator::GetTid(const std::string &name) {
   if (name.empty()) {
-    THROW_CODE(InvalidParameter, "edge type is empty");
+    RG_THROW_CODE(InvalidParameter, "edge type is empty");
   }
   std::shared_lock read_lock(edge_types_mutex_);
   auto iter = edge_types_name_to_id_.find(name);
@@ -333,7 +338,7 @@ std::optional<std::string> IdGenerator::GetEdgeTypeName(uint32_t tid) {
 
 uint32_t IdGenerator::GetOrCreateLid(const std::string &name) {
   if (name.empty()) {
-    THROW_CODE(InvalidParameter, "label name is empty");
+    RG_THROW_CODE(InvalidParameter, "label name is empty");
   }
   {
     std::shared_lock read_lock(vertex_labels_mutex_);
@@ -362,7 +367,7 @@ uint32_t IdGenerator::GetOrCreateLid(const std::string &name) {
 
 uint32_t IdGenerator::GetOrCreateTid(const std::string &name) {
   if (name.empty()) {
-    THROW_CODE(InvalidParameter, "edge type is empty");
+    RG_THROW_CODE(InvalidParameter, "edge type is empty");
   }
   {
     std::shared_lock read_lock(edge_types_mutex_);
@@ -391,7 +396,7 @@ uint32_t IdGenerator::GetOrCreateTid(const std::string &name) {
 
 uint32_t IdGenerator::GetOrCreatePid(const std::string &name) {
   if (name.empty()) {
-    THROW_CODE(InvalidParameter, "property name is empty");
+    RG_THROW_CODE(InvalidParameter, "property name is empty");
   }
   {
     std::shared_lock read_lock(properties_mutex_);

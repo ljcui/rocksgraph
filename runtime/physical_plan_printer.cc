@@ -53,8 +53,8 @@ class PhysicalPlanPrinter final {
 
  private:
   void PrintNode(const PhysicalPlanNode &node) {
-    CHECK(node.output_slots != nullptr, common::InternalError,
-          "physical plan node is incomplete");
+    RG_CHECK(node.output_slots != nullptr, common::InternalError,
+             "physical plan node is incomplete");
     const std::string kind(ToString(node.kind));
     std::string line = kind;
     if (!node.details.empty()) {
@@ -83,29 +83,29 @@ class PhysicalPlanPrinter final {
     }
     if (node.kind == PhysicalOperatorKind::kValueHashJoin) {
       const auto *join = std::get_if<ValueHashJoinOp>(&node.data);
-      CHECK(join != nullptr, common::InternalError,
-            "value hash join physical payload is missing");
+      RG_CHECK(join != nullptr, common::InternalError,
+               "value hash join physical payload is missing");
       metadata.push_back(std::string("build=") +
                          (join->build_child == 0 ? "left" : "right"));
     }
     if (node.kind == PhysicalOperatorKind::kNodeHashJoin) {
       const auto *join = std::get_if<NodeHashJoinOp>(&node.data);
-      CHECK(join != nullptr, common::InternalError,
-            "node hash join physical payload is missing");
+      RG_CHECK(join != nullptr, common::InternalError,
+               "node hash join physical payload is missing");
       metadata.push_back(std::string("build=") +
                          (join->build_child == 0 ? "left" : "right"));
     }
     if (node.kind == PhysicalOperatorKind::kCartesianProduct) {
       const auto *product = std::get_if<CartesianProductOp>(&node.data);
-      CHECK(product != nullptr, common::InternalError,
-            "Cartesian product physical payload is missing");
+      RG_CHECK(product != nullptr, common::InternalError,
+               "Cartesian product physical payload is missing");
       metadata.push_back(std::string("cache=") +
                          (product->cached_child == 0 ? "left" : "right"));
     }
     if (node.kind == PhysicalOperatorKind::kPredicateJoin) {
       const auto *join = std::get_if<PredicateJoinOp>(&node.data);
-      CHECK(join != nullptr, common::InternalError,
-            "predicate join physical payload is missing");
+      RG_CHECK(join != nullptr, common::InternalError,
+               "predicate join physical payload is missing");
       metadata.push_back(std::string("cache=") +
                          (join->cached_child == 0 ? "left" : "right"));
     }
@@ -123,8 +123,8 @@ class PhysicalPlanPrinter final {
 
     ++indent_;
     for (const auto &child : node.children) {
-      CHECK(child != nullptr, common::InternalError,
-            "physical plan child is null");
+      RG_CHECK(child != nullptr, common::InternalError,
+               "physical plan child is null");
       PrintNode(*child);
     }
     --indent_;

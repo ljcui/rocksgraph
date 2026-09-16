@@ -12,11 +12,11 @@ bool FillAliasFromExpression(ProjectionItem &item) {
   if (!item.alias.empty()) {
     return false;
   }
-  CHECK(item.expression != nullptr, common::InvalidArgumentError,
-        "projection item expression is null");
+  RG_CHECK(item.expression != nullptr, common::InvalidArgumentError,
+           "projection item expression is null");
   const std::string text = ExpressionToString(*item.expression);
-  CHECK(!text.empty(), common::InvalidArgumentError,
-        "projection item alias stringify failed");
+  RG_CHECK(!text.empty(), common::InvalidArgumentError,
+           "projection item alias stringify failed");
   item.alias = text;
   return true;
 }
@@ -26,8 +26,8 @@ bool FillAliasFromExpression(ProjectionItem &item) {
 void ProjectionAliasRewriter::Visit(ProjectionBody &node) {
   ASTRewriter::Visit(node);
   for (const auto &item : node.items) {
-    CHECK(item != nullptr, common::InvalidArgumentError,
-          "projection item is null");
+    RG_CHECK(item != nullptr, common::InvalidArgumentError,
+             "projection item is null");
     FillAliasFromExpression(*item);
   }
 }

@@ -22,8 +22,8 @@ void LiteralDynamicPropertyRewriter::RewriteExpression(
       !index->index->Is(ASTNodeType::kStringLiteral)) {
     return;
   }
-  CHECK(index->list != nullptr, common::InvalidArgumentError,
-        "dynamic property object is null");
+  RG_CHECK(index->list != nullptr, common::InvalidArgumentError,
+           "dynamic property object is null");
 
   auto property = std::make_unique<PropertyExpression>();
   property->object = std::move(index->list);

@@ -157,7 +157,7 @@ TEST(EdgePropertyIndex, uniqueConstraintAndPersistence) {
 
     txn = graph_db->BeginTransaction();
     EXPECT_THROW_CODE(txn->CreateEdge(v1, v2, "OWNS", {{"code", Value("A")}}),
-                      IndexValueAlreadyExist);
+                      IndexValueAlreadyExists);
     txn->Rollback();
   }
 
@@ -302,7 +302,7 @@ TEST(VertexUniqueIndex, addLabelMaintainsIndex) {
 
   txn = graphDB->BeginTransaction();
   EXPECT_THROW_CODE(txn->GetVertexById(conflict_id).AddLabels({"label1"}),
-                    IndexValueAlreadyExist);
+                    IndexValueAlreadyExists);
   txn->Rollback();
 
   txn = graphDB->BeginTransaction();
@@ -453,7 +453,7 @@ TEST(VertexUniqueIndex, conflict) {
     EXPECT_THROW_CODE(
         txn->CreateVertex(
             v1_labels, {{"id", Value(i)}, {"str", Value(std::to_string(i))}}),
-        IndexValueAlreadyExist);
+        IndexValueAlreadyExists);
     txn->Rollback();
   }
   txn = graphDB->BeginTransaction();
@@ -461,12 +461,12 @@ TEST(VertexUniqueIndex, conflict) {
       "label1", std::unordered_map<std::string, Value>{{"id", Value(10)}});
   EXPECT_TRUE(viter->Valid());
   EXPECT_THROW_CODE(viter->GetVertex().SetProperties({{"id", Value(20)}}),
-                    IndexValueAlreadyExist);
+                    IndexValueAlreadyExists);
   txn->Rollback();
   txn = graphDB->BeginTransaction();
   auto v = txn->CreateVertex({"label1"}, {});
   EXPECT_THROW_CODE(v.SetProperties({{"id", Value(20)}}),
-                    IndexValueAlreadyExist);
+                    IndexValueAlreadyExists);
   txn->Rollback();
 }
 
@@ -535,7 +535,7 @@ TEST(VertexUniqueIndex, buildConflict) {
   ASSERT_TRUE(WaitUntilPropertyIndexReady(graphDB.get(), "label1_id"));
   EXPECT_THROW_CODE(
       graphDB->AddVertexPropertyIndex("label1_id", true, "label1", {"id"}),
-      VertexIndexAlreadyExist);
+      VertexIndexAlreadyExists);
 }
 
 TEST(VertexUniqueIndex, buildNonExists) {
@@ -552,7 +552,7 @@ TEST(VertexUniqueIndex, buildNonExists) {
   ASSERT_TRUE(WaitUntilPropertyIndexReady(graphDB.get(), "label1_id"));
   txn = graphDB->BeginTransaction();
   EXPECT_THROW_CODE(txn->CreateVertex(v1_labels, {{"id", Value(10)}}),
-                    IndexValueAlreadyExist);
+                    IndexValueAlreadyExists);
   txn->Rollback();
 }
 
@@ -604,8 +604,8 @@ TEST(VertexUniqueIndex, onlineBuildConflictsWithConcurrentWrite) {
         {"label1"}, {{"id", Value(49999)}, {"str", Value("dup_during_build")}});
     txn->Commit();
     duplicate_committed = true;
-  } catch (RocksGraphException& e) {
-    EXPECT_EQ(e.code(), ErrorCode::IndexValueAlreadyExist);
+  } catch (common::RocksGraphException& e) {
+    EXPECT_EQ(e.code(), common::ErrorCode::IndexValueAlreadyExists);
     txn->Rollback();
   }
 
@@ -812,13 +812,13 @@ TEST(VertexUniqueIndex, compositeLookupAndConflict) {
   txn = graphDB->BeginTransaction();
   EXPECT_THROW_CODE(txn->CreateVertex({"label1"}, {{"id", Value(1)},
                                                    {"country", Value("cn")}}),
-                    IndexValueAlreadyExist);
+                    IndexValueAlreadyExists);
   txn->Rollback();
 
   txn = graphDB->BeginTransaction();
   EXPECT_THROW_CODE(
       txn->GetVertexById(beta_id).SetProperties({{"country", Value("cn")}}),
-      IndexValueAlreadyExist);
+      IndexValueAlreadyExists);
   txn->Rollback();
 
   txn = graphDB->BeginTransaction();

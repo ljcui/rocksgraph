@@ -30,7 +30,7 @@ constexpr int kMinimumYear = -999'999'999;
 constexpr int kMaximumYear = 999'999'999;
 
 [[noreturn]] void InvalidTemporal(std::string message) {
-  THROW(common::InvalidArgumentError, std::move(message));
+  RG_THROW(common::InvalidArgumentError, std::move(message));
 }
 
 std::int64_t ParseInteger(std::string_view text, std::string_view context) {
@@ -765,8 +765,7 @@ LocalTime LocalTimeFromNanoseconds(WideInteger nanoseconds) {
   const int hour = static_cast<int>(seconds / 3600);
   const int minute = static_cast<int>((seconds % 3600) / 60);
   const int second = static_cast<int>(seconds % 60);
-  const int fraction =
-      static_cast<int>(nanoseconds % kNanosecondsPerSecond);
+  const int fraction = static_cast<int>(nanoseconds % kNanosecondsPerSecond);
   return {hour, minute, second, fraction, true};
 }
 
@@ -774,8 +773,8 @@ LocalDateTime AddDurationToLocalDateTime(const LocalDateTime &input,
                                          const Duration &duration, int sign) {
   LocalDateTime result = input;
   const WideInteger months = static_cast<WideInteger>(duration.months) * sign;
-  result.date =
-      AddMonthsClamped(result.date, CheckedWideInteger(months, "duration months"));
+  result.date = AddMonthsClamped(result.date,
+                                 CheckedWideInteger(months, "duration months"));
 
   constexpr WideInteger kNanosecondsPerDay =
       static_cast<WideInteger>(kSecondsPerDay) * kNanosecondsPerSecond;
@@ -788,8 +787,7 @@ LocalDateTime AddDurationToLocalDateTime(const LocalDateTime &input,
   const WideInteger day_carry = FloorDivide(total, kNanosecondsPerDay);
   const WideInteger time_of_day = total - day_carry * kNanosecondsPerDay;
   result.date = AddDays(
-      result.date,
-      static_cast<WideInteger>(duration.days) * sign + day_carry);
+      result.date, static_cast<WideInteger>(duration.days) * sign + day_carry);
   result.time = LocalTimeFromNanoseconds(time_of_day);
   return result;
 }
@@ -798,11 +796,10 @@ LocalTime AddDurationToLocalTime(const LocalTime &input,
                                  const Duration &duration, int sign) {
   constexpr WideInteger kNanosecondsPerDay =
       static_cast<WideInteger>(kSecondsPerDay) * kNanosecondsPerSecond;
-  const WideInteger current =
-      (static_cast<WideInteger>(input.hour) * 3600 + input.minute * 60 +
-       input.second) *
-          kNanosecondsPerSecond +
-      input.nanosecond;
+  const WideInteger current = (static_cast<WideInteger>(input.hour) * 3600 +
+                               input.minute * 60 + input.second) *
+                                  kNanosecondsPerSecond +
+                              input.nanosecond;
   const WideInteger total = current + DurationNanoseconds(duration) * sign;
   const WideInteger time_of_day =
       total - FloorDivide(total, kNanosecondsPerDay) * kNanosecondsPerDay;
@@ -902,8 +899,7 @@ std::string FormatFraction(int nanosecond) {
   return digits;
 }
 
-LocalDateTime UtcDateTimeFromEpoch(std::int64_t epoch_seconds,
-                                   int nanosecond) {
+LocalDateTime UtcDateTimeFromEpoch(std::int64_t epoch_seconds, int nanosecond) {
   std::int64_t days = epoch_seconds / kSecondsPerDay;
   std::int64_t second_of_day = epoch_seconds % kSecondsPerDay;
   if (second_of_day < 0) {
@@ -929,9 +925,8 @@ LocalDateTime UtcDateTime(std::chrono::system_clock::time_point now) {
 DateTime DateTimeAtInstant(std::chrono::system_clock::time_point now,
                            const std::string &timezone) {
   LocalDateTime local = UtcDateTime(now);
-  const int offset = timezone.empty()
-                         ? 0
-                         : TargetOffsetForConversion(timezone, local, 0);
+  const int offset =
+      timezone.empty() ? 0 : TargetOffsetForConversion(timezone, local, 0);
   local = ConvertOffset(local, 0, offset);
   return {local, offset, StoredTimezone(timezone)};
 }
@@ -1491,8 +1486,8 @@ Value ConstructDateTimeFromEpoch(const Value &seconds,
   }
   const int fraction =
       CheckedInt(nanoseconds.AsInteger(), 0, 999'999'999, "nanosecond");
-  return Value(DateTime{UtcDateTimeFromEpoch(seconds.AsInteger(), fraction), 0,
-                        {}});
+  return Value(
+      DateTime{UtcDateTimeFromEpoch(seconds.AsInteger(), fraction), 0, {}});
 }
 
 Value ConstructDateTimeFromEpochMillis(const Value &milliseconds) {
@@ -1508,7 +1503,8 @@ Value ConstructDateTimeFromEpochMillis(const Value &milliseconds) {
   }
   return Value(DateTime{
       UtcDateTimeFromEpoch(seconds, static_cast<int>(remainder * 1'000'000)),
-      0, {}});
+      0,
+      {}});
 }
 
 Value CurrentDate(const Value *timezone,
@@ -1530,8 +1526,8 @@ Value CurrentTime(const Value *timezone,
   std::string zone;
   if (!ClockTimezone(timezone, &zone)) return Value::Null();
   const DateTime date_time = DateTimeAtInstant(now, zone);
-  return Value(Time{date_time.local_date_time.time,
-                    date_time.utc_offset_seconds, {}});
+  return Value(
+      Time{date_time.local_date_time.time, date_time.utc_offset_seconds, {}});
 }
 
 Value CurrentLocalDateTime(const Value *timezone,
@@ -1562,16 +1558,15 @@ Value AddDurationToTemporal(const Value &temporal, const Duration &duration,
   const int sign = subtract ? -1 : 1;
   if (temporal.IsDate()) {
     Date result = temporal.AsDate();
-    const WideInteger months =
-        static_cast<WideInteger>(duration.months) * sign;
-    result = AddMonthsClamped(
-        result, CheckedWideInteger(months, "duration months"));
+    const WideInteger months = static_cast<WideInteger>(duration.months) * sign;
+    result =
+        AddMonthsClamped(result, CheckedWideInteger(months, "duration months"));
     constexpr WideInteger kNanosecondsPerDay =
         static_cast<WideInteger>(kSecondsPerDay) * kNanosecondsPerSecond;
     const WideInteger time_days =
         DurationNanoseconds(duration) * sign / kNanosecondsPerDay;
-    return Value(AddDays(result, static_cast<WideInteger>(duration.days) * sign +
-                                     time_days));
+    return Value(AddDays(
+        result, static_cast<WideInteger>(duration.days) * sign + time_days));
   }
   if (temporal.IsLocalTime()) {
     return Value(
@@ -1583,8 +1578,8 @@ Value AddDurationToTemporal(const Value &temporal, const Duration &duration,
                       input.utc_offset_seconds, input.timezone});
   }
   if (temporal.IsLocalDateTime()) {
-    return Value(AddDurationToLocalDateTime(temporal.AsLocalDateTime(),
-                                            duration, sign));
+    return Value(
+        AddDurationToLocalDateTime(temporal.AsLocalDateTime(), duration, sign));
   }
   if (temporal.IsDateTime()) {
     const DateTime &input = temporal.AsDateTime();
@@ -1598,17 +1593,16 @@ Value AddDurationToTemporal(const Value &temporal, const Duration &duration,
   InvalidTemporal("duration can only be added to a temporal value");
 }
 
-Value AddDurations(const Duration &left, const Duration &right,
-                   bool subtract) {
+Value AddDurations(const Duration &left, const Duration &right, bool subtract) {
   const int sign = subtract ? -1 : 1;
-  const std::int64_t months = CheckedWideInteger(
-      static_cast<WideInteger>(left.months) +
-          static_cast<WideInteger>(right.months) * sign,
-      "duration months");
-  const std::int64_t days = CheckedWideInteger(
-      static_cast<WideInteger>(left.days) +
-          static_cast<WideInteger>(right.days) * sign,
-      "duration days");
+  const std::int64_t months =
+      CheckedWideInteger(static_cast<WideInteger>(left.months) +
+                             static_cast<WideInteger>(right.months) * sign,
+                         "duration months");
+  const std::int64_t days =
+      CheckedWideInteger(static_cast<WideInteger>(left.days) +
+                             static_cast<WideInteger>(right.days) * sign,
+                         "duration days");
   return Value(NormalizeDurationNanoseconds(
       months, days,
       DurationNanoseconds(left) + DurationNanoseconds(right) * sign));
@@ -1629,10 +1623,9 @@ Value ScaleDuration(const Duration &duration, double factor) {
   const std::int64_t months = static_cast<std::int64_t>(total_months);
   const long double fractional_month_seconds =
       (total_months - months) * kAverageMonthSeconds;
-  const std::int64_t month_days = static_cast<std::int64_t>(
-      fractional_month_seconds / kSecondsPerDay);
-  long double seconds =
-      fractional_month_seconds - month_days * kSecondsPerDay;
+  const std::int64_t month_days =
+      static_cast<std::int64_t>(fractional_month_seconds / kSecondsPerDay);
+  long double seconds = fractional_month_seconds - month_days * kSecondsPerDay;
 
   const long double total_days = duration.days * scale;
   if (total_days <
@@ -1647,8 +1640,7 @@ Value ScaleDuration(const Duration &duration, double factor) {
   seconds += (total_days - explicit_days) * kSecondsPerDay;
   seconds +=
       (static_cast<long double>(duration.seconds) +
-       static_cast<long double>(duration.nanoseconds) /
-           kNanosecondsPerSecond) *
+       static_cast<long double>(duration.nanoseconds) / kNanosecondsPerSecond) *
       scale;
   const long double nanoseconds =
       std::nearbyint(seconds * kNanosecondsPerSecond);

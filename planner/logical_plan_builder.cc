@@ -78,10 +78,10 @@ std::vector<LogicalProjectionItem> LogicalProjectionItems(
   std::vector<LogicalProjectionItem> logical_items;
   logical_items.reserve(items.size());
   for (const auto &item : items) {
-    CHECK(item.expression != nullptr, common::InvalidArgumentError,
-          "projection expression is null");
-    CHECK(!item.alias.empty(), common::InvalidArgumentError,
-          "projection alias is empty");
+    RG_CHECK(item.expression != nullptr, common::InvalidArgumentError,
+             "projection expression is null");
+    RG_CHECK(!item.alias.empty(), common::InvalidArgumentError,
+             "projection alias is empty");
     logical_items.push_back({
         .expression = item.expression,
         .alias = item.alias,
@@ -107,8 +107,8 @@ std::vector<LogicalProjectionItem> PassthroughProjectionItems(
 
 void AppendPassthroughProjectionItem(
     std::string alias, std::vector<LogicalProjectionItem> *items) {
-  CHECK(items != nullptr, common::InternalError,
-        "logical projection item list is null");
+  RG_CHECK(items != nullptr, common::InternalError,
+           "logical projection item list is null");
   if (alias.empty()) {
     return;
   }
@@ -125,7 +125,7 @@ void AppendPassthroughProjectionItem(
 
 bool AddUniqueString(std::vector<std::string> *values,
                      const std::string &value) {
-  CHECK(values != nullptr, common::InternalError, "string list is null");
+  RG_CHECK(values != nullptr, common::InternalError, "string list is null");
   if (StringVectorContains(*values, value)) {
     return false;
   }
@@ -178,8 +178,8 @@ void AppendPassthroughProjectionItems(
     const LogicalPlan &input, const QueryProjection &projection,
     const std::vector<std::string> &aliases,
     std::vector<LogicalProjectionItem> *items) {
-  CHECK(items != nullptr, common::InternalError,
-        "logical projection item list is null");
+  RG_CHECK(items != nullptr, common::InternalError,
+           "logical projection item list is null");
   for (const auto &variable :
        ProjectionTailPassthroughVariables(input, projection, aliases)) {
     AppendPassthroughProjectionItem(variable, items);
@@ -245,7 +245,7 @@ void ValidateProjectionTailExpressionsAvailable(
     }
     if (!DependenciesMet(ast::CollectExpressionDependencies(*expression),
                          available)) {
-      THROW(
+      RG_THROW(
           common::InvalidArgumentError,
           UnsupportedInStage(kLogicalPlanStage,
                              std::string(context) +
@@ -258,10 +258,10 @@ void ValidateProjectionTailExpressionsAvailable(
       }
       if (precomputed.variable.empty() ||
           !StringVectorContains(input.OutputColumns(), precomputed.variable)) {
-        THROW(common::InvalidArgumentError,
-              UnsupportedInStage(kLogicalPlanStage,
-                                 std::string(context) +
-                                     " nested expression after projection"));
+        RG_THROW(common::InvalidArgumentError,
+                 UnsupportedInStage(kLogicalPlanStage,
+                                    std::string(context) +
+                                        " nested expression after projection"));
       }
     }
   };
@@ -285,15 +285,15 @@ LogicalOrderDirection ToLogicalOrderDirection(OrderDirection direction) {
     case OrderDirection::kDescending:
       return LogicalOrderDirection::kDescending;
   }
-  THROW(common::InternalError, "unknown order direction");
+  RG_THROW(common::InternalError, "unknown order direction");
 }
 
 std::vector<LogicalSortItem> SortItems(const RequiredOrder &required_order) {
   std::vector<LogicalSortItem> items;
   items.reserve(required_order.items.size());
   for (const auto &item : required_order.items) {
-    CHECK(item.expression != nullptr, common::InvalidArgumentError,
-          "sort expression is null");
+    RG_CHECK(item.expression != nullptr, common::InvalidArgumentError,
+             "sort expression is null");
     items.push_back({.expression = item.expression,
                      .direction = ToLogicalOrderDirection(item.direction)});
   }
@@ -354,8 +354,8 @@ std::vector<LogicalUnionMapping> LogicalUnionMappings(
   std::vector<LogicalUnionMapping> logical_mappings;
   logical_mappings.reserve(mappings.size());
   for (const auto &mapping : mappings) {
-    CHECK(!mapping.output_variable.empty(), common::InvalidArgumentError,
-          "UNION output variable is empty");
+    RG_CHECK(!mapping.output_variable.empty(), common::InvalidArgumentError,
+             "UNION output variable is empty");
     logical_mappings.push_back({.output_variable = mapping.output_variable,
                                 .lhs_variable = mapping.lhs_variable,
                                 .rhs_variable = mapping.rhs_variable});
@@ -431,8 +431,8 @@ std::vector<const ast::Expression *> JoinPredicateExpressions(
   std::vector<const ast::Expression *> expressions;
   expressions.reserve(predicates.size());
   for (const Predicate *predicate : predicates) {
-    CHECK(predicate != nullptr && predicate->expression != nullptr,
-          common::InvalidArgumentError, "join predicate expression is null");
+    RG_CHECK(predicate != nullptr && predicate->expression != nullptr,
+             common::InvalidArgumentError, "join predicate expression is null");
     expressions.push_back(predicate->expression);
   }
   return expressions;
@@ -511,27 +511,28 @@ CostEstimate EstimateLogicalPlanLeaf(const LogicalPlan &plan,
           seek.Types(), seek.PropertyKey(), seek.Predicates().size());
     }
     default:
-      THROW(common::InternalError, "unsupported logical plan leaf estimate: " +
-                                       std::string(plan.Name()));
+      RG_THROW(common::InternalError,
+               "unsupported logical plan leaf estimate: " +
+                   std::string(plan.Name()));
   }
 }
 
 const CostEstimate &OnlyChildEstimate(
     const std::vector<CostEstimate> &child_estimates,
     std::string_view node_name) {
-  CHECK(child_estimates.size() == 1, common::InternalError,
-        std::string(node_name) + " expected one child estimate");
+  RG_CHECK(child_estimates.size() == 1, common::InternalError,
+           std::string(node_name) + " expected one child estimate");
   return child_estimates.front();
 }
 
 void InheritTraits(const LogicalPlan &source, LogicalPlan *target) {
-  CHECK(target != nullptr, common::InternalError, "logical plan is null");
+  RG_CHECK(target != nullptr, common::InternalError, "logical plan is null");
   target->SetOrderingTrait(source.OrderingTrait());
   target->SetDistinctTrait(source.DistinctTrait());
 }
 
 void ClearTraits(LogicalPlan *plan) {
-  CHECK(plan != nullptr, common::InternalError, "logical plan is null");
+  RG_CHECK(plan != nullptr, common::InternalError, "logical plan is null");
   plan->ClearOrderingTrait();
   plan->SetDistinctTrait(false);
 }
@@ -661,50 +662,50 @@ CostEstimate EstimateLogicalPlanNode(
           OnlyChildEstimate(child_estimates, plan.Name()),
           plan.OutputColumns().size());
     case LogicalPlanNodeType::kCartesianProduct:
-      CHECK(child_estimates.size() == 2, common::InternalError,
-            "CartesianProduct expected two child estimates");
+      RG_CHECK(child_estimates.size() == 2, common::InternalError,
+               "CartesianProduct expected two child estimates");
       return cost_model.EstimateCartesianProduct(child_estimates[0],
                                                  child_estimates[1]);
     case LogicalPlanNodeType::kNodeHashJoin: {
-      CHECK(child_estimates.size() == 2, common::InternalError,
-            "NodeHashJoin expected two child estimates");
+      RG_CHECK(child_estimates.size() == 2, common::InternalError,
+               "NodeHashJoin expected two child estimates");
       const auto &join = static_cast<const NodeHashJoinPlan &>(plan);
       return cost_model.EstimateNodeHashJoin(
           child_estimates[0], child_estimates[1], join.JoinKeys().size());
     }
     case LogicalPlanNodeType::kValueHashJoin: {
-      CHECK(child_estimates.size() == 2, common::InternalError,
-            "ValueHashJoin expected two child estimates");
+      RG_CHECK(child_estimates.size() == 2, common::InternalError,
+               "ValueHashJoin expected two child estimates");
       const auto &join = static_cast<const ValueHashJoinPlan &>(plan);
       return cost_model.EstimateValueHashJoin(
           child_estimates[0], child_estimates[1], join.Predicates().size());
     }
     case LogicalPlanNodeType::kPredicateJoin: {
-      CHECK(child_estimates.size() == 2, common::InternalError,
-            "PredicateJoin expected two child estimates");
+      RG_CHECK(child_estimates.size() == 2, common::InternalError,
+               "PredicateJoin expected two child estimates");
       const auto &join = static_cast<const PredicateJoinPlan &>(plan);
       return cost_model.EstimatePredicateJoin(
           child_estimates[0], child_estimates[1], join.Predicates().size());
     }
     case LogicalPlanNodeType::kApply:
-      CHECK(child_estimates.size() == 2, common::InternalError,
-            "Apply expected two child estimates");
+      RG_CHECK(child_estimates.size() == 2, common::InternalError,
+               "Apply expected two child estimates");
       return cost_model.EstimateApply(child_estimates[0], child_estimates[1]);
     case LogicalPlanNodeType::kSemiApply:
     case LogicalPlanNodeType::kAntiSemiApply:
     case LogicalPlanNodeType::kLetSemiApply:
-      CHECK(child_estimates.size() == 2, common::InternalError,
-            std::string(plan.Name()) + " expected two child estimates");
+      RG_CHECK(child_estimates.size() == 2, common::InternalError,
+               std::string(plan.Name()) + " expected two child estimates");
       return cost_model.EstimateSemiApply(child_estimates[0],
                                           child_estimates[1]);
     case LogicalPlanNodeType::kRollUpApply:
-      CHECK(child_estimates.size() == 2, common::InternalError,
-            "RollUpApply expected two child estimates");
+      RG_CHECK(child_estimates.size() == 2, common::InternalError,
+               "RollUpApply expected two child estimates");
       return cost_model.EstimateRollUpApply(child_estimates[0],
                                             child_estimates[1]);
     case LogicalPlanNodeType::kOptionalApply:
-      CHECK(child_estimates.size() == 2, common::InternalError,
-            "OptionalApply expected two child estimates");
+      RG_CHECK(child_estimates.size() == 2, common::InternalError,
+               "OptionalApply expected two child estimates");
       return cost_model.EstimateOptionalApply(child_estimates[0],
                                               child_estimates[1]);
     case LogicalPlanNodeType::kCreateNode:
@@ -719,8 +720,8 @@ CostEstimate EstimateLogicalPlanNode(
       return cost_model.EstimateWrite(
           OnlyChildEstimate(child_estimates, plan.Name()), 1.0);
     case LogicalPlanNodeType::kMerge:
-      CHECK(child_estimates.size() == 2, common::InternalError,
-            "Merge expected two child estimates");
+      RG_CHECK(child_estimates.size() == 2, common::InternalError,
+               "Merge expected two child estimates");
       return cost_model.EstimateWrite(
           cost_model.EstimateSemiApply(child_estimates[0], child_estimates[1]),
           1.0);
@@ -741,19 +742,19 @@ CostEstimate EstimateLogicalPlanNode(
               .cost = input.cost + input.estimated_rows * call.cost};
     }
     case LogicalPlanNodeType::kUnion: {
-      CHECK(child_estimates.size() == 2, common::InternalError,
-            "Union expected two child estimates");
+      RG_CHECK(child_estimates.size() == 2, common::InternalError,
+               "Union expected two child estimates");
       const auto &union_plan = static_cast<const UnionPlan &>(plan);
       return cost_model.EstimateUnion(child_estimates[0], child_estimates[1],
                                       union_plan.All());
     }
   }
-  THROW(common::InternalError,
-        "unknown logical plan estimate: " + std::string(plan.Name()));
+  RG_THROW(common::InternalError,
+           "unknown logical plan estimate: " + std::string(plan.Name()));
 }
 
 void ApplyLogicalPlanTraits(LogicalPlan *plan) {
-  CHECK(plan != nullptr, common::InternalError, "logical plan is null");
+  RG_CHECK(plan != nullptr, common::InternalError, "logical plan is null");
   switch (plan->Type()) {
     case LogicalPlanNodeType::kFilter:
     case LogicalPlanNodeType::kPathBuild:
@@ -826,12 +827,12 @@ void ApplyLogicalPlanTraits(LogicalPlan *plan) {
 
 CostEstimate AnnotateLogicalPlanMetadata(LogicalPlan *plan,
                                          const CostModel &cost_model) {
-  CHECK(plan != nullptr, common::InternalError, "logical plan is null");
+  RG_CHECK(plan != nullptr, common::InternalError, "logical plan is null");
   std::vector<CostEstimate> child_estimates;
   child_estimates.reserve(plan->ChildCount());
   for (const auto &child : plan->Children()) {
-    CHECK(child != nullptr, common::InternalError,
-          "logical plan child is null");
+    RG_CHECK(child != nullptr, common::InternalError,
+             "logical plan child is null");
     child_estimates.push_back(
         AnnotateLogicalPlanMetadata(child.get(), cost_model));
   }
@@ -852,8 +853,8 @@ QueryGraph QueryGraphFromMergeMatchGraph(const MergeMatchGraph &match_graph) {
     if (label.variable.empty() || label.labels.empty()) {
       continue;
     }
-    CHECK(label.expression != nullptr, common::InternalError,
-          "MERGE label predicate expression is null");
+    RG_CHECK(label.expression != nullptr, common::InternalError,
+             "MERGE label predicate expression is null");
     Predicate predicate;
     predicate.expression = label.expression;
     predicate.dependencies.insert(label.variable);
@@ -866,10 +867,10 @@ QueryGraph QueryGraphFromMergeMatchGraph(const MergeMatchGraph &match_graph) {
     if (equality.variable.empty() || equality.property_key.empty()) {
       continue;
     }
-    CHECK(equality.value != nullptr, common::InvalidArgumentError,
-          "MERGE property equality value is null");
-    CHECK(equality.expression != nullptr, common::InternalError,
-          "MERGE property equality expression is null");
+    RG_CHECK(equality.value != nullptr, common::InvalidArgumentError,
+             "MERGE property equality value is null");
+    RG_CHECK(equality.expression != nullptr, common::InternalError,
+             "MERGE property equality expression is null");
     Predicate predicate;
     predicate.expression = equality.expression;
     predicate.dependencies.insert(equality.variable);
@@ -901,7 +902,7 @@ class LogicalPlanBuilder {
         return BuildUnion(query_ir.RequireUnion(),
                           /*produce_results=*/true);
     }
-    THROW(common::InternalError, "unknown query IR kind");
+    RG_THROW(common::InternalError, "unknown query IR kind");
   }
 
   std::unique_ptr<LogicalPlan> Build(const SingleQueryIR &query_ir) {
@@ -926,13 +927,13 @@ class LogicalPlanBuilder {
         return BuildUnion(query_ir.RequireUnion(),
                           /*produce_results=*/false);
     }
-    THROW(common::InternalError, "unknown query IR kind");
+    RG_THROW(common::InternalError, "unknown query IR kind");
   }
 
   std::unique_ptr<LogicalPlan> BuildUnion(const UnionQueryIR &union_query,
                                           bool produce_results) {
-    CHECK(union_query.lhs != nullptr, common::InvalidArgumentError,
-          "UNION lhs query IR is null");
+    RG_CHECK(union_query.lhs != nullptr, common::InvalidArgumentError,
+             "UNION lhs query IR is null");
     std::vector<LogicalUnionMapping> mappings =
         LogicalUnionMappings(union_query.mappings);
     std::vector<std::string> output_columns;
@@ -952,7 +953,8 @@ class LogicalPlanBuilder {
 
   std::unique_ptr<LogicalPlan> BuildTailSegment(
       std::unique_ptr<LogicalPlan> input, const SingleQueryIR &segment) {
-    CHECK(input != nullptr, common::InternalError, "tail input plan is null");
+    RG_CHECK(input != nullptr, common::InternalError,
+             "tail input plan is null");
     ValidateTailArgumentsAvailable(*input, segment.query_graph);
 
     std::unique_ptr<LogicalPlan> plan = std::move(input);
@@ -960,15 +962,15 @@ class LogicalPlanBuilder {
       if (!segment.query_graph.mutating_patterns.empty()) {
         plan = std::make_unique<WriteBarrierPlan>(std::move(plan));
       }
-      std::unique_ptr<LogicalPlan> rhs = BuildQueryGraph(
-          segment.query_graph, false, false, {},
-          /*apply_mutating_patterns=*/false);
+      std::unique_ptr<LogicalPlan> rhs =
+          BuildQueryGraph(segment.query_graph, false, false, {},
+                          /*apply_mutating_patterns=*/false);
       plan = std::make_unique<ApplyPlan>(std::move(plan), std::move(rhs));
       QueryGraphPlanningContext context(&planned_predicates_, &options_);
       context.ApplyAvailableFilters(segment.query_graph.selections, &plan);
       context.ValidateAllPredicatesPlanned(segment.query_graph.selections);
-      plan = ApplyMutatingPatterns(
-          std::move(plan), segment.query_graph.mutating_patterns);
+      plan = ApplyMutatingPatterns(std::move(plan),
+                                   segment.query_graph.mutating_patterns);
     } else {
       planned_predicates_.clear();
       ValidateSupportedQueryGraph(segment.query_graph);
@@ -1044,7 +1046,7 @@ class LogicalPlanBuilder {
                                   query_graph.selections, &context);
     }
 
-    CHECK(plan != nullptr, common::InternalError, "logical plan is null");
+    RG_CHECK(plan != nullptr, common::InternalError, "logical plan is null");
     plan = ApplyPathBuilds(std::move(plan), query_graph.path_patterns);
     plan = ApplyAssertIsNode(std::move(plan),
                              query_graph.assert_is_node_variables);
@@ -1063,21 +1065,21 @@ class LogicalPlanBuilder {
   void ValidateTailArgumentsAvailable(const LogicalPlan &input,
                                       const QueryGraph &query_graph) const {
     for (const auto &argument : query_graph.argument_ids) {
-      CHECK(StringVectorContains(input.OutputColumns(), argument),
-            common::InvalidArgumentError,
-            std::string(kLogicalPlanStage) +
-                ": tail argument is not available: " + argument);
+      RG_CHECK(StringVectorContains(input.OutputColumns(), argument),
+               common::InvalidArgumentError,
+               std::string(kLogicalPlanStage) +
+                   ": tail argument is not available: " + argument);
     }
   }
 
   void ValidateSupportedQueryGraph(const QueryGraph &query_graph) const {
-    CHECK(query_graph.hints.empty(), common::InvalidArgumentError,
-          UnsupportedInStage(kLogicalPlanStage, "planner hint"));
+    RG_CHECK(query_graph.hints.empty(), common::InvalidArgumentError,
+             UnsupportedInStage(kLogicalPlanStage, "planner hint"));
     for (const auto &predicate : query_graph.selections.predicates) {
       if (predicate.kind == PredicateKind::kExistsSubquery ||
           predicate.kind == PredicateKind::kNotExistsSubquery) {
-        CHECK(predicate.subquery != nullptr, common::InvalidArgumentError,
-              "EXISTS predicate subquery is null");
+        RG_CHECK(predicate.subquery != nullptr, common::InvalidArgumentError,
+                 "EXISTS predicate subquery is null");
       }
     }
   }
@@ -1085,8 +1087,8 @@ class LogicalPlanBuilder {
   std::unique_ptr<LogicalPlan> JoinComponents(
       std::unique_ptr<LogicalPlan> left, std::unique_ptr<LogicalPlan> right,
       const Selections &selections) {
-    CHECK(left != nullptr && right != nullptr, common::InternalError,
-          "component join input is null");
+    RG_CHECK(left != nullptr && right != nullptr, common::InternalError,
+             "component join input is null");
     const std::unordered_set<std::string> left_symbols = left->SolvedSymbols();
     const std::unordered_set<std::string> right_symbols =
         right->SolvedSymbols();
@@ -1118,9 +1120,9 @@ class LogicalPlanBuilder {
   CostEstimate EstimateComponentJoin(const LogicalPlan &left,
                                      const LogicalPlan &right,
                                      const Selections &selections) const {
-    CHECK(left.EstimatedRows().has_value() && left.Cost().has_value() &&
-              right.EstimatedRows().has_value() && right.Cost().has_value(),
-          common::InternalError, "component plan estimate is missing");
+    RG_CHECK(left.EstimatedRows().has_value() && left.Cost().has_value() &&
+                 right.EstimatedRows().has_value() && right.Cost().has_value(),
+             common::InternalError, "component plan estimate is missing");
     const CostEstimate left_estimate{.estimated_rows = *left.EstimatedRows(),
                                      .cost = *left.Cost()};
     const CostEstimate right_estimate{.estimated_rows = *right.EstimatedRows(),
@@ -1146,10 +1148,10 @@ class LogicalPlanBuilder {
   std::unique_ptr<LogicalPlan> JoinComponentsByCost(
       std::vector<std::unique_ptr<LogicalPlan>> plans,
       const Selections &selections, QueryGraphPlanningContext *context) {
-    CHECK(context != nullptr, common::InternalError,
-          "query graph planning context is null");
-    CHECK(!plans.empty(), common::InternalError,
-          "component plan list is empty");
+    RG_CHECK(context != nullptr, common::InternalError,
+             "query graph planning context is null");
+    RG_CHECK(!plans.empty(), common::InternalError,
+             "component plan list is empty");
     while (plans.size() > 1) {
       std::size_t best_left = 0;
       std::size_t best_right = 1;
@@ -1212,7 +1214,7 @@ class LogicalPlanBuilder {
   std::unique_ptr<LogicalPlan> ApplyMutatingPatterns(
       std::unique_ptr<LogicalPlan> plan,
       const std::vector<MutatingPattern> &mutating_patterns) {
-    CHECK(plan != nullptr, common::InternalError, "logical plan is null");
+    RG_CHECK(plan != nullptr, common::InternalError, "logical plan is null");
     if (mutating_patterns.empty()) {
       return plan;
     }
@@ -1245,20 +1247,20 @@ class LogicalPlanBuilder {
 
   std::unique_ptr<LogicalPlan> ApplyCreatePattern(
       std::unique_ptr<LogicalPlan> plan, const CreatePattern &pattern) {
-    CHECK(plan != nullptr, common::InternalError, "logical plan is null");
+    RG_CHECK(plan != nullptr, common::InternalError, "logical plan is null");
     for (const auto &command : pattern.commands) {
       switch (command.kind) {
         case CreateEntityKind::kNode:
-          CHECK(command.index < pattern.nodes.size(),
-                common::InvalidArgumentError,
-                "CREATE node command index is out of range");
+          RG_CHECK(command.index < pattern.nodes.size(),
+                   common::InvalidArgumentError,
+                   "CREATE node command index is out of range");
           plan = std::make_unique<CreateNodePlan>(std::move(plan),
                                                   pattern.nodes[command.index]);
           break;
         case CreateEntityKind::kRelationship:
-          CHECK(command.index < pattern.relationships.size(),
-                common::InvalidArgumentError,
-                "CREATE relationship command index is out of range");
+          RG_CHECK(command.index < pattern.relationships.size(),
+                   common::InvalidArgumentError,
+                   "CREATE relationship command index is out of range");
           plan = std::make_unique<CreateRelationshipPlan>(
               std::move(plan), pattern.relationships[command.index]);
           break;
@@ -1269,7 +1271,7 @@ class LogicalPlanBuilder {
 
   std::unique_ptr<LogicalPlan> ApplyMergePattern(
       std::unique_ptr<LogicalPlan> plan, const MergePattern &merge) {
-    CHECK(plan != nullptr, common::InternalError, "logical plan is null");
+    RG_CHECK(plan != nullptr, common::InternalError, "logical plan is null");
     plan = std::make_unique<MergePlan>(
         std::move(plan), BuildMergeMatchPlan(merge.match_graph), merge);
     return ApplyPathBuilds(std::move(plan), merge.create_pattern.path_patterns);
@@ -1288,7 +1290,7 @@ class LogicalPlanBuilder {
   std::unique_ptr<LogicalPlan> ApplySetPatterns(
       std::unique_ptr<LogicalPlan> plan,
       const std::vector<SetMutatingPattern> &patterns) {
-    CHECK(plan != nullptr, common::InternalError, "logical plan is null");
+    RG_CHECK(plan != nullptr, common::InternalError, "logical plan is null");
     for (const auto &pattern : patterns) {
       switch (pattern.kind) {
         case SetMutatingPatternKind::kSetProperty:
@@ -1318,7 +1320,7 @@ class LogicalPlanBuilder {
   std::unique_ptr<LogicalPlan> ApplyRemovePatterns(
       std::unique_ptr<LogicalPlan> plan,
       const std::vector<RemoveMutatingPattern> &patterns) {
-    CHECK(plan != nullptr, common::InternalError, "logical plan is null");
+    RG_CHECK(plan != nullptr, common::InternalError, "logical plan is null");
     for (const auto &pattern : patterns) {
       switch (pattern.kind) {
         case RemoveMutatingPatternKind::kRemoveProperty:
@@ -1337,7 +1339,7 @@ class LogicalPlanBuilder {
   std::unique_ptr<LogicalPlan> ApplyDeletePatterns(
       std::unique_ptr<LogicalPlan> plan,
       const std::vector<DeleteExpressionPattern> &patterns) {
-    CHECK(plan != nullptr, common::InternalError, "logical plan is null");
+    RG_CHECK(plan != nullptr, common::InternalError, "logical plan is null");
     std::vector<const ast::Expression *> expressions;
     expressions.reserve(patterns.size());
     bool detach = false;
@@ -1355,7 +1357,7 @@ class LogicalPlanBuilder {
 
   std::unique_ptr<LogicalPlan> ApplyHorizon(std::unique_ptr<LogicalPlan> plan,
                                             const QueryHorizon &horizon) {
-    CHECK(plan != nullptr, common::InternalError, "logical plan is null");
+    RG_CHECK(plan != nullptr, common::InternalError, "logical plan is null");
     switch (horizon.kind) {
       case QueryHorizonKind::kRegularProjection:
         return ApplyRegularProjection(std::move(plan),
@@ -1374,13 +1376,13 @@ class LogicalPlanBuilder {
       case QueryHorizonKind::kPassthrough:
         return plan;
     }
-    THROW(common::InternalError, "unknown query horizon kind");
+    RG_THROW(common::InternalError, "unknown query horizon kind");
   }
 
   std::unique_ptr<LogicalPlan> ApplyPathBuilds(
       std::unique_ptr<LogicalPlan> plan,
       const std::vector<PathPattern> &paths) {
-    CHECK(plan != nullptr, common::InternalError, "logical plan is null");
+    RG_CHECK(plan != nullptr, common::InternalError, "logical plan is null");
     for (const auto &path : paths) {
       plan = std::make_unique<PathBuildPlan>(std::move(plan), path);
     }
@@ -1390,7 +1392,7 @@ class LogicalPlanBuilder {
   std::unique_ptr<LogicalPlan> ApplyAssertIsNode(
       std::unique_ptr<LogicalPlan> plan,
       const std::unordered_set<LogicalVariable> &variables) {
-    CHECK(plan != nullptr, common::InternalError, "logical plan is null");
+    RG_CHECK(plan != nullptr, common::InternalError, "logical plan is null");
     if (variables.empty()) {
       return plan;
     }
@@ -1499,9 +1501,9 @@ class LogicalPlanBuilder {
   std::unique_ptr<LogicalPlan> ApplyOptionalMatches(
       std::unique_ptr<LogicalPlan> plan, const QueryGraph &query_graph,
       QueryGraphPlanningContext *context) {
-    CHECK(plan != nullptr, common::InternalError, "logical plan is null");
-    CHECK(context != nullptr, common::InternalError,
-          "query graph planning context is null");
+    RG_CHECK(plan != nullptr, common::InternalError, "logical plan is null");
+    RG_CHECK(context != nullptr, common::InternalError,
+             "query graph planning context is null");
     for (const auto &optional_match : query_graph.optional_matches) {
       if (auto expanded = TryOptionalExpand(plan, optional_match);
           expanded != nullptr) {
@@ -1598,10 +1600,10 @@ class LogicalPlanBuilder {
 
   std::unique_ptr<LogicalPlan> ApplyUnwind(std::unique_ptr<LogicalPlan> plan,
                                            const UnwindHorizon &unwind) {
-    CHECK(unwind.expression != nullptr, common::InvalidArgumentError,
-          "UNWIND expression is null");
-    CHECK(!unwind.alias.empty(), common::InvalidArgumentError,
-          "UNWIND alias is empty");
+    RG_CHECK(unwind.expression != nullptr, common::InvalidArgumentError,
+             "UNWIND expression is null");
+    RG_CHECK(!unwind.alias.empty(), common::InvalidArgumentError,
+             "UNWIND alias is empty");
     return std::make_unique<UnwindPlan>(std::move(plan), unwind.expression,
                                         unwind.alias);
   }
@@ -1609,9 +1611,9 @@ class LogicalPlanBuilder {
   std::unique_ptr<LogicalPlan> ApplyProcedureCall(
       std::unique_ptr<LogicalPlan> plan,
       const ProcedureCallHorizon &procedure_call) {
-    CHECK(plan != nullptr, common::InternalError, "logical plan is null");
-    CHECK(!procedure_call.procedure_name.empty(), common::InvalidArgumentError,
-          "procedure name is empty");
+    RG_CHECK(plan != nullptr, common::InternalError, "logical plan is null");
+    RG_CHECK(!procedure_call.procedure_name.empty(),
+             common::InvalidArgumentError, "procedure name is empty");
     ValidateProcedureCallDependencies(*plan, procedure_call);
 
     if (!procedure_call.read_only) {
@@ -1635,17 +1637,17 @@ class LogicalPlanBuilder {
       }
       const std::unordered_set<std::string> dependencies =
           ast::CollectExpressionDependencies(*argument);
-      CHECK(DependenciesMet(dependencies, symbols),
-            common::InvalidArgumentError,
-            UnsupportedInStage(kLogicalPlanStage,
-                               "procedure argument with unmet dependencies"));
+      RG_CHECK(
+          DependenciesMet(dependencies, symbols), common::InvalidArgumentError,
+          UnsupportedInStage(kLogicalPlanStage,
+                             "procedure argument with unmet dependencies"));
     }
   }
 
   std::unique_ptr<LogicalPlan> ApplyNestedExpressions(
       std::unique_ptr<LogicalPlan> plan,
       const std::vector<NestedIRExpression> &nested_expressions) {
-    CHECK(plan != nullptr, common::InternalError, "logical plan is null");
+    RG_CHECK(plan != nullptr, common::InternalError, "logical plan is null");
     std::unordered_set<const Predicate *> planned_predicates;
     QueryGraphPlanningContext context(&planned_predicates, &options_);
     context.ApplyNestedExpressions(nested_expressions, &plan);
@@ -1654,7 +1656,7 @@ class LogicalPlanBuilder {
 
   std::unique_ptr<LogicalPlan> ApplyProjectionSelections(
       std::unique_ptr<LogicalPlan> plan, const Selections &selections) {
-    CHECK(plan != nullptr, common::InternalError, "logical plan is null");
+    RG_CHECK(plan != nullptr, common::InternalError, "logical plan is null");
     std::unordered_set<const Predicate *> planned_predicates =
         planned_predicates_;
     QueryGraphPlanningContext context(&planned_predicates, &options_);
@@ -1665,8 +1667,8 @@ class LogicalPlanBuilder {
 
   void ApplyProjectionSelectionsBeforeProjection(
       std::unique_ptr<LogicalPlan> *plan, const Selections &selections) {
-    CHECK(plan != nullptr && *plan != nullptr, common::InternalError,
-          "logical plan is null");
+    RG_CHECK(plan != nullptr && *plan != nullptr, common::InternalError,
+             "logical plan is null");
     QueryGraphPlanningContext context(&planned_predicates_, &options_);
     context.ApplyAvailableFilters(selections, plan);
   }

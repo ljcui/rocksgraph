@@ -7,7 +7,7 @@
 #include "ast/ast_const_walker.h"
 #include "ast/builtin_function.h"
 #include "ast/builtin_procedure.h"
-#include "common/exceptions.h"
+#include "common/exception.h"
 #include "graphdb/graph_db.h"
 #include "runtime/expression_evaluator.h"
 #include "runtime/graphdb_access.h"
@@ -171,8 +171,8 @@ Value Evaluate(const ast::Expression &expression, const SlottedRow &row,
 
 Value Evaluate(const PhysicalExpression &expression, const SlottedRow &row,
                RuntimeState &state) {
-  CHECK(expression.Expression() != nullptr, common::InternalError,
-        "physical expression is null");
+  RG_CHECK(expression.Expression() != nullptr, common::InternalError,
+           "physical expression is null");
   return Evaluate(*expression.Expression(), row,
                   expression.PrecomputedExpressions(), state);
 }
@@ -196,7 +196,7 @@ Value ReadRowValue(const SlottedRow &row, std::size_t offset) {
 
 void StoreEvaluatedValue(SlottedRow *row, std::size_t offset, Value value,
                          RuntimeState &state) {
-  CHECK(row != nullptr, common::InternalError, "query row is null");
+  RG_CHECK(row != nullptr, common::InternalError, "query row is null");
   try {
     if (value.IsNode()) {
       row->Set(offset,
@@ -210,10 +210,12 @@ void StoreEvaluatedValue(SlottedRow *row, std::size_t offset, Value value,
                                 .type_id = value.AsRelationship().type_id}));
       return;
     }
-  } catch (const RocksGraphException &error) {
+  } catch (const common::RocksGraphException &error) {
     const bool entity_was_deleted =
-        (value.IsNode() && error.code() == ErrorCode::VertexIdNotFound) ||
-        (value.IsRelationship() && error.code() == ErrorCode::EdgeIdNotFound);
+        (value.IsNode() &&
+         error.code() == common::ErrorCode::VertexIdNotFound) ||
+        (value.IsRelationship() &&
+         error.code() == common::ErrorCode::EdgeIdNotFound);
     if (!entity_was_deleted) {
       throw;
     }
@@ -222,7 +224,7 @@ void StoreEvaluatedValue(SlottedRow *row, std::size_t offset, Value value,
 }
 
 bool TryBindNode(SlottedRow *row, std::size_t offset, graphdb::Vertex vertex) {
-  CHECK(row != nullptr, common::InternalError, "query row is null");
+  RG_CHECK(row != nullptr, common::InternalError, "query row is null");
   if (!row->IsInitialized(offset)) {
     row->Set(offset, std::move(vertex));
     return true;
@@ -265,9 +267,9 @@ bool TryBindNode(SlottedRow *row, std::optional<std::size_t> offset,
 
 void SetScannedNode(SlottedRow *row, std::size_t offset,
                     graphdb::Vertex vertex) {
-  CHECK(row != nullptr, common::InternalError, "query row is null");
-  CHECK(!row->IsInitialized(offset), common::InternalError,
-        "node scan slot is already initialized");
+  RG_CHECK(row != nullptr, common::InternalError, "query row is null");
+  RG_CHECK(!row->IsInitialized(offset), common::InternalError,
+           "node scan slot is already initialized");
   row->Set(offset, std::move(vertex));
 }
 
@@ -275,8 +277,8 @@ graphdb::Vertex Endpoint(const graphdb::Edge &edge, std::int64_t id) {
   if (edge.GetNativeStartId() == id) {
     return edge.GetStart();
   }
-  CHECK(edge.GetNativeEndId() == id, common::InternalError,
-        "node is not an endpoint of the relationship");
+  RG_CHECK(edge.GetNativeEndId() == id, common::InternalError,
+           "node is not an endpoint of the relationship");
   return edge.GetEnd();
 }
 
@@ -304,7 +306,7 @@ std::int64_t NodeId(const SlottedRow &row, std::size_t offset) {
   if (value.IsNull()) {
     return -1;
   }
-  CHECK(value.IsNode(), common::InvalidArgumentError, "expected node value");
+  RG_CHECK(value.IsNode(), common::InvalidArgumentError, "expected node value");
   return value.AsNode().id;
 }
 
@@ -353,19 +355,21 @@ bool CanTraverse(const std::vector<Value::RelationshipPtr> &relationships,
 Value BuildPathValue(const PathBuildOp &data, const SlottedRow &row,
                      RuntimeState *state) {
   const PhysicalPathPattern &pattern = data.path;
-  CHECK(state != nullptr && !pattern.nodes.empty(),
-        common::InvalidArgumentError, "path has no nodes: " + pattern.variable);
-  CHECK(pattern.nodes.size() == pattern.relationships.size() + 1,
-        common::InvalidArgumentError,
-        "path node and relationship counts do not match: " + pattern.variable);
-  CHECK(
+  RG_CHECK(state != nullptr && !pattern.nodes.empty(),
+           common::InvalidArgumentError,
+           "path has no nodes: " + pattern.variable);
+  RG_CHECK(
+      pattern.nodes.size() == pattern.relationships.size() + 1,
+      common::InvalidArgumentError,
+      "path node and relationship counts do not match: " + pattern.variable);
+  RG_CHECK(
       data.node_input_slots.size() == pattern.nodes.size() &&
           data.relationship_input_slots.size() == pattern.relationships.size(),
       common::InternalError, "path input slot bindings do not match pattern");
   auto path = std::make_shared<Path>();
   std::int64_t current = NodeId(row, data.node_input_slots.front());
-  CHECK(current >= 0, common::InvalidArgumentError,
-        "path starts with a null node");
+  RG_CHECK(current >= 0, common::InvalidArgumentError,
+           "path starts with a null node");
   path->nodes.push_back(MaterializePathNode(*state, current));
   for (std::size_t index = 0; index < pattern.relationships.size(); ++index) {
     state->CheckCancelled();
@@ -373,23 +377,23 @@ Value BuildPathValue(const PathBuildOp &data, const SlottedRow &row,
     std::vector<Value::RelationshipPtr> relationships;
     if (value.IsList()) {
       for (const auto &item : value.AsList()) {
-        CHECK(item.IsRelationship(), common::InvalidArgumentError,
-              "path relationship list contains a non-relationship");
+        RG_CHECK(item.IsRelationship(), common::InvalidArgumentError,
+                 "path relationship list contains a non-relationship");
         relationships.push_back(
             MaterializePathRelationship(*state, item.AsRelationship()));
       }
     } else {
-      CHECK(value.IsRelationship(), common::InvalidArgumentError,
-            "path value is not a relationship");
+      RG_CHECK(value.IsRelationship(), common::InvalidArgumentError,
+               "path value is not a relationship");
       relationships.push_back(
           MaterializePathRelationship(*state, value.AsRelationship()));
     }
     const std::int64_t target = NodeId(row, data.node_input_slots[index + 1]);
     if (!CanTraverse(relationships, current, target)) {
       std::reverse(relationships.begin(), relationships.end());
-      CHECK(CanTraverse(relationships, current, target),
-            common::InvalidArgumentError,
-            "path relationship sequence does not connect nodes");
+      RG_CHECK(CanTraverse(relationships, current, target),
+               common::InvalidArgumentError,
+               "path relationship sequence does not connect nodes");
     }
     for (const auto &relationship : relationships) {
       path->relationships.push_back(relationship);
@@ -412,48 +416,48 @@ std::string ProcedureArgumentName(const ast::BuiltinProcedure &procedure,
 const std::string &RequireProcedureString(
     const Value &value, const ast::BuiltinProcedure &procedure,
     std::string_view argument) {
-  CHECK(value.IsString(), common::InvalidArgumentError,
-        ProcedureArgumentName(procedure, argument) + " must be a string");
+  RG_CHECK(value.IsString(), common::InvalidArgumentError,
+           ProcedureArgumentName(procedure, argument) + " must be a string");
   return value.AsString();
 }
 
 const Value::Map &RequireProcedureMap(const Value &value,
                                       const ast::BuiltinProcedure &procedure,
                                       std::string_view argument) {
-  CHECK(value.IsMap(), common::InvalidArgumentError,
-        ProcedureArgumentName(procedure, argument) + " must be a map");
+  RG_CHECK(value.IsMap(), common::InvalidArgumentError,
+           ProcedureArgumentName(procedure, argument) + " must be a map");
   return value.AsMap();
 }
 
 std::int64_t RequireProcedureInteger(const Value &value,
                                      const ast::BuiltinProcedure &procedure,
                                      std::string_view argument) {
-  CHECK(value.IsInteger(), common::InvalidArgumentError,
-        ProcedureArgumentName(procedure, argument) + " must be an integer");
+  RG_CHECK(value.IsInteger(), common::InvalidArgumentError,
+           ProcedureArgumentName(procedure, argument) + " must be an integer");
   return value.AsInteger();
 }
 
 int CheckedProcedureInt(std::int64_t value,
                         const ast::BuiltinProcedure &procedure,
                         std::string_view argument) {
-  CHECK(value >= std::numeric_limits<int>::min() &&
-            value <= std::numeric_limits<int>::max(),
-        common::InvalidArgumentError,
-        ProcedureArgumentName(procedure, argument) + " is out of range");
+  RG_CHECK(value >= std::numeric_limits<int>::min() &&
+               value <= std::numeric_limits<int>::max(),
+           common::InvalidArgumentError,
+           ProcedureArgumentName(procedure, argument) + " is out of range");
   return static_cast<int>(value);
 }
 
 std::vector<std::string> RequireProcedureStringList(
     const Value &value, const ast::BuiltinProcedure &procedure,
     std::string_view argument) {
-  CHECK(value.IsList(), common::InvalidArgumentError,
-        ProcedureArgumentName(procedure, argument) + " must be a list");
+  RG_CHECK(value.IsList(), common::InvalidArgumentError,
+           ProcedureArgumentName(procedure, argument) + " must be a list");
   std::vector<std::string> result;
   result.reserve(value.AsList().size());
   for (const auto &item : value.AsList()) {
-    CHECK(item.IsString(), common::InvalidArgumentError,
-          ProcedureArgumentName(procedure, argument) +
-              " must contain only strings");
+    RG_CHECK(item.IsString(), common::InvalidArgumentError,
+             ProcedureArgumentName(procedure, argument) +
+                 " must contain only strings");
     result.push_back(item.AsString());
   }
   return result;
@@ -472,8 +476,8 @@ bool ProcedureBoolOption(const Value::Map &options, std::string_view name,
   if (value == nullptr) {
     return default_value;
   }
-  CHECK(value->IsBool(), common::InvalidArgumentError,
-        ProcedureArgumentName(procedure, name) + " must be a boolean");
+  RG_CHECK(value->IsBool(), common::InvalidArgumentError,
+           ProcedureArgumentName(procedure, name) + " must be a boolean");
   return value->AsBool();
 }
 
@@ -481,9 +485,9 @@ int ProcedureIntOption(const Value::Map &options, std::string_view name,
                        std::optional<int> default_value,
                        const ast::BuiltinProcedure &procedure) {
   const Value *value = FindProcedureOption(options, name);
-  CHECK(value != nullptr || default_value.has_value(),
-        common::InvalidArgumentError,
-        ProcedureArgumentName(procedure, name) + " is required");
+  RG_CHECK(value != nullptr || default_value.has_value(),
+           common::InvalidArgumentError,
+           ProcedureArgumentName(procedure, name) + " is required");
   if (value == nullptr) {
     return *default_value;
   }
@@ -503,23 +507,23 @@ std::string ProcedureStringOption(const Value::Map &options,
 std::vector<float> RequireProcedureFloatList(
     const Value &value, const ast::BuiltinProcedure &procedure,
     std::string_view argument) {
-  CHECK(value.IsList(), common::InvalidArgumentError,
-        ProcedureArgumentName(procedure, argument) + " must be a list");
+  RG_CHECK(value.IsList(), common::InvalidArgumentError,
+           ProcedureArgumentName(procedure, argument) + " must be a list");
   std::vector<float> result;
   result.reserve(value.AsList().size());
   for (const auto &item : value.AsList()) {
-    CHECK(item.IsInteger() || item.IsDouble(), common::InvalidArgumentError,
-          ProcedureArgumentName(procedure, argument) +
-              " must contain only numbers");
+    RG_CHECK(item.IsInteger() || item.IsDouble(), common::InvalidArgumentError,
+             ProcedureArgumentName(procedure, argument) +
+                 " must contain only numbers");
     const double number = item.IsInteger()
                               ? static_cast<double>(item.AsInteger())
                               : item.AsDouble();
-    CHECK(std::isfinite(number) &&
-              number >= -std::numeric_limits<float>::max() &&
-              number <= std::numeric_limits<float>::max(),
-          common::InvalidArgumentError,
-          ProcedureArgumentName(procedure, argument) +
-              " contains a non-finite or out-of-range number");
+    RG_CHECK(std::isfinite(number) &&
+                 number >= -std::numeric_limits<float>::max() &&
+                 number <= std::numeric_limits<float>::max(),
+             common::InvalidArgumentError,
+             ProcedureArgumentName(procedure, argument) +
+                 " contains a non-finite or out-of-range number");
     result.push_back(static_cast<float>(number));
   }
   return result;
@@ -534,22 +538,22 @@ ProcedureRecord NodeRecord(graphdb::Vertex vertex) {
 std::vector<ProcedureRecord> ExecuteProcedure(const ProcedureCallOp &data,
                                               const SlottedRow &row,
                                               RuntimeState *state) {
-  CHECK(state != nullptr, common::InternalError, "runtime state is null");
+  RG_CHECK(state != nullptr, common::InternalError, "runtime state is null");
   const ast::BuiltinProcedure *procedure =
       ast::FindBuiltinProcedure(data.procedure_name);
-  CHECK(procedure != nullptr, common::InvalidArgumentError,
-        "unknown procedure: " + data.procedure_name);
-  CHECK(data.arguments.size() == procedure->argument_count,
-        common::InvalidArgumentError,
-        procedure->name + "() received an invalid argument count");
-  CHECK(procedure->read_only == data.read_only, common::InternalError,
-        "procedure access mode does not match its registry metadata");
+  RG_CHECK(procedure != nullptr, common::InvalidArgumentError,
+           "unknown procedure: " + data.procedure_name);
+  RG_CHECK(data.arguments.size() == procedure->argument_count,
+           common::InvalidArgumentError,
+           procedure->name + "() received an invalid argument count");
+  RG_CHECK(procedure->read_only == data.read_only, common::InternalError,
+           "procedure access mode does not match its registry metadata");
   for (const auto &item : data.yields) {
-    CHECK(ast::FindBuiltinProcedureYield(*procedure, item.result_field) !=
-              nullptr,
-          common::InvalidArgumentError,
-          "unknown yield field for " + procedure->name + ": " +
-              item.result_field);
+    RG_CHECK(ast::FindBuiltinProcedureYield(*procedure, item.result_field) !=
+                 nullptr,
+             common::InvalidArgumentError,
+             "unknown yield field for " + procedure->name + ": " +
+                 item.result_field);
   }
 
   std::vector<Value> arguments;
@@ -560,8 +564,8 @@ std::vector<ProcedureRecord> ExecuteProcedure(const ProcedureCallOp &data,
 
   graphdb::Transaction &transaction = *state->transaction;
   graphdb::GraphDB *graph = transaction.db();
-  CHECK(graph != nullptr, common::InternalError,
-        "procedure transaction has no graph database");
+  RG_CHECK(graph != nullptr, common::InternalError,
+           "procedure transaction has no graph database");
 
   switch (procedure->kind) {
     case ast::BuiltinProcedureKind::kCreateNodeIndex: {
@@ -630,9 +634,9 @@ std::vector<ProcedureRecord> ExecuteProcedure(const ProcedureCallOp &data,
           RequireProcedureString(arguments[1], *procedure, "query");
       const std::int64_t top_n =
           RequireProcedureInteger(arguments[2], *procedure, "top_n");
-      CHECK(top_n > 0, common::InvalidArgumentError,
-            ProcedureArgumentName(*procedure, "top_n") +
-                " must be greater than zero");
+      RG_CHECK(top_n > 0, common::InvalidArgumentError,
+               ProcedureArgumentName(*procedure, "top_n") +
+                   " must be greater than zero");
       auto vertices = transaction.QueryVertexByFTIndex(
           index_name, query, static_cast<std::size_t>(top_n));
       std::vector<ProcedureRecord> records;
@@ -685,12 +689,12 @@ std::vector<ProcedureRecord> ExecuteProcedure(const ProcedureCallOp &data,
       const int top_k = ProcedureIntOption(options, "top_k", 10, *procedure);
       const int ef_search =
           ProcedureIntOption(options, "ef_search", 200, *procedure);
-      CHECK(top_k > 0, common::InvalidArgumentError,
-            ProcedureArgumentName(*procedure, "top_k") +
-                " must be greater than zero");
-      CHECK(ef_search > 0, common::InvalidArgumentError,
-            ProcedureArgumentName(*procedure, "ef_search") +
-                " must be greater than zero");
+      RG_CHECK(top_k > 0, common::InvalidArgumentError,
+               ProcedureArgumentName(*procedure, "top_k") +
+                   " must be greater than zero");
+      RG_CHECK(ef_search > 0, common::InvalidArgumentError,
+               ProcedureArgumentName(*procedure, "ef_search") +
+                   " must be greater than zero");
       auto vertices = transaction.QueryVertexByKnnSearch(index_name, query,
                                                          top_k, ef_search);
       std::vector<ProcedureRecord> records;
@@ -707,14 +711,14 @@ std::vector<ProcedureRecord> ExecuteProcedure(const ProcedureCallOp &data,
     case ast::BuiltinProcedureKind::kRaftNodeInfos: {
       const auto &graph_name =
           RequireProcedureString(arguments[0], *procedure, "graph_name");
-      CHECK(graph_name == graph->db_meta().graph_name(),
-            common::InvalidArgumentError,
-            procedure->name +
-                "() can only inspect the graph bound to the current "
-                "transaction");
+      RG_CHECK(graph_name == graph->db_meta().graph_name(),
+               common::InvalidArgumentError,
+               procedure->name +
+                   "() can only inspect the graph bound to the current "
+                   "transaction");
       raft::RaftDriver *driver = graph->raft_driver();
-      CHECK(driver != nullptr, common::InvalidArgumentError,
-            "graph [" + graph_name + "] does not enable raft");
+      RG_CHECK(driver != nullptr, common::InvalidArgumentError,
+               "graph [" + graph_name + "] does not enable raft");
       const meta::RaftNodeInfos node_infos = driver->GetNodeInfosWithLeader();
       std::vector<std::uint64_t> node_ids;
       node_ids.reserve(node_infos.nodes().size());
@@ -726,10 +730,10 @@ std::vector<ProcedureRecord> ExecuteProcedure(const ProcedureCallOp &data,
       std::vector<ProcedureRecord> records;
       records.reserve(node_ids.size());
       for (const std::uint64_t node_id : node_ids) {
-        CHECK(node_id <= static_cast<std::uint64_t>(
-                             std::numeric_limits<std::int64_t>::max()),
-              common::InvalidArgumentError,
-              "Raft node id cannot be represented as a Cypher integer");
+        RG_CHECK(node_id <= static_cast<std::uint64_t>(
+                                std::numeric_limits<std::int64_t>::max()),
+                 common::InvalidArgumentError,
+                 "Raft node id cannot be represented as a Cypher integer");
         const auto &node_info = node_infos.nodes().at(node_id);
         records.push_back(
             {{"node_id", Value(static_cast<std::int64_t>(node_id))},
@@ -816,8 +820,8 @@ Value::Map EvaluatePropertyMap(const PhysicalPropertyMap &property_map,
                                RuntimeState *state) {
   if (property_map.parameter.has_value()) {
     Value value = Evaluate(*property_map.parameter, row, *state);
-    CHECK(value.IsMap(), common::InvalidArgumentError,
-          std::string(operation) + " properties parameter must be a map");
+    RG_CHECK(value.IsMap(), common::InvalidArgumentError,
+             std::string(operation) + " properties parameter must be a map");
     return value.AsMap();
   }
   Value::Map properties;
@@ -833,8 +837,8 @@ void ExecuteStreamingWrite(const CreateNodeOp &data, const SlottedRow &input,
       EvaluatePropertyMap(data.properties, input, "CREATE node", state);
   const Value::NodePtr node = CreateGraphDBVertex(
       *state->transaction, data.labels, std::move(properties));
-  CHECK(node != nullptr, common::InternalError,
-        "storage returned a null created node");
+  RG_CHECK(node != nullptr, common::InternalError,
+           "storage returned a null created node");
   output->Set(data.node_slot, GraphDBVertexById(*state->transaction, node->id));
 }
 
@@ -843,14 +847,14 @@ void ExecuteStreamingWrite(const CreateRelationshipOp &data,
                            RuntimeState *state) {
   const std::int64_t left = NodeId(input, data.left_node_slot);
   const std::int64_t right = NodeId(input, data.right_node_slot);
-  CHECK(left >= 0 && right >= 0, common::InvalidArgumentError,
-        "CREATE relationship endpoints must be nodes");
+  RG_CHECK(left >= 0 && right >= 0, common::InvalidArgumentError,
+           "CREATE relationship endpoints must be nodes");
   Value::Map properties =
       EvaluatePropertyMap(data.properties, input, "CREATE relationship", state);
   const Value::RelationshipPtr relationship = CreateGraphDBEdge(
       *state->transaction, left, right, data.type, std::move(properties));
-  CHECK(relationship != nullptr, common::InternalError,
-        "storage returned a null created relationship");
+  RG_CHECK(relationship != nullptr, common::InternalError,
+           "storage returned a null created relationship");
   output->Set(
       data.relationship_slot,
       GraphDBEdgeById(*state->transaction, {.id = relationship->id,
@@ -865,8 +869,8 @@ Value::Map EvaluateMergeProperties(const PhysicalPropertyMap &properties,
   Value::Map values = EvaluatePropertyMap(properties, row, operation, state);
   for (const auto &[key, value] : values) {
     (void)key;
-    CHECK(!value.IsNull(), common::InvalidArgumentError,
-          operation + " property value is null");
+    RG_CHECK(!value.IsNull(), common::InvalidArgumentError,
+             operation + " property value is null");
   }
   return values;
 }
@@ -877,8 +881,8 @@ void ExecuteMergeCreate(const CreateNodeOp &data, SlottedRow *row,
       EvaluateMergeProperties(data.properties, *row, "node", state);
   const Value::NodePtr node = CreateGraphDBVertex(
       *state->transaction, data.labels, std::move(properties));
-  CHECK(node != nullptr, common::InternalError,
-        "storage returned a null created node");
+  RG_CHECK(node != nullptr, common::InternalError,
+           "storage returned a null created node");
   row->Set(data.node_slot, GraphDBVertexById(*state->transaction, node->id));
 }
 
@@ -886,14 +890,14 @@ void ExecuteMergeCreate(const CreateRelationshipOp &data, SlottedRow *row,
                         RuntimeState *state) {
   const std::int64_t left = NodeId(*row, data.left_node_slot);
   const std::int64_t right = NodeId(*row, data.right_node_slot);
-  CHECK(left >= 0 && right >= 0, common::InvalidArgumentError,
-        "MERGE relationship endpoints must be nodes");
+  RG_CHECK(left >= 0 && right >= 0, common::InvalidArgumentError,
+           "MERGE relationship endpoints must be nodes");
   Value::Map properties =
       EvaluateMergeProperties(data.properties, *row, "relationship", state);
   const Value::RelationshipPtr relationship = CreateGraphDBEdge(
       *state->transaction, left, right, data.type, std::move(properties));
-  CHECK(relationship != nullptr, common::InternalError,
-        "storage returned a null created relationship");
+  RG_CHECK(relationship != nullptr, common::InternalError,
+           "storage returned a null created relationship");
   row->Set(
       data.relationship_slot,
       GraphDBEdgeById(*state->transaction, {.id = relationship->id,
@@ -916,7 +920,8 @@ void ExecuteStreamingWrite(const SetPropertyOp &data, const SlottedRow &,
                             .type_id = entity.AsRelationship().type_id},
                            data.property_key, std::move(value));
   } else {
-    THROW(common::InvalidArgumentError, "SET property target is not an entity");
+    RG_THROW(common::InvalidArgumentError,
+             "SET property target is not an entity");
   }
 }
 
@@ -935,8 +940,8 @@ void ExecuteStreamingWrite(const SetPropertiesOp &data, const SlottedRow &,
   } else if (value.IsRelationship()) {
     properties = value.AsRelationship().properties;
   } else {
-    THROW(common::InvalidArgumentError,
-          "SET properties requires a map or graph entity value");
+    RG_THROW(common::InvalidArgumentError,
+             "SET properties requires a map or graph entity value");
   }
   if (entity.IsNode()) {
     SetGraphDBVertexProperties(*state->transaction, entity.AsNode().id,
@@ -947,8 +952,8 @@ void ExecuteStreamingWrite(const SetPropertiesOp &data, const SlottedRow &,
                               .type_id = entity.AsRelationship().type_id},
                              std::move(properties), data.include_existing);
   } else {
-    THROW(common::InvalidArgumentError,
-          "SET properties target is not an entity");
+    RG_THROW(common::InvalidArgumentError,
+             "SET properties target is not an entity");
   }
 }
 
@@ -958,8 +963,8 @@ void ExecuteStreamingWrite(const SetLabelsOp &data, const SlottedRow &,
   if (entity.IsNull()) {
     return;
   }
-  CHECK(entity.IsNode(), common::InvalidArgumentError,
-        "SET labels target is not a node");
+  RG_CHECK(entity.IsNode(), common::InvalidArgumentError,
+           "SET labels target is not a node");
   AddGraphDBVertexLabels(*state->transaction, entity.AsNode().id, data.labels);
 }
 
@@ -991,8 +996,8 @@ void ExecuteStreamingWrite(const RemovePropertyOp &data, const SlottedRow &,
                                .type_id = entity.AsRelationship().type_id},
                               data.property_key);
   } else {
-    CHECK(entity.IsNull(), common::InvalidArgumentError,
-          "REMOVE property target is not an entity");
+    RG_CHECK(entity.IsNull(), common::InvalidArgumentError,
+             "REMOVE property target is not an entity");
   }
 }
 
@@ -1000,8 +1005,8 @@ void ExecuteStreamingWrite(const RemoveLabelsOp &data, const SlottedRow &,
                            SlottedRow *output, RuntimeState *state) {
   const Value entity = Evaluate(data.entity, *output, *state);
   if (!entity.IsNull()) {
-    CHECK(entity.IsNode(), common::InvalidArgumentError,
-          "REMOVE labels target is not a node");
+    RG_CHECK(entity.IsNode(), common::InvalidArgumentError,
+             "REMOVE labels target is not a node");
     RemoveGraphDBVertexLabels(*state->transaction, entity.AsNode().id,
                               data.labels);
   }

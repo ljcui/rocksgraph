@@ -52,44 +52,45 @@ class QueryIRInputContractChecker final : public ast::ASTConstWalker {
 
  protected:
   void Visit(const ast::ProjectionBody &node) override {
-    CHECK(!node.star, common::InvalidArgumentError,
-          RewrittenAstRequired("projection star must be expanded"));
+    RG_CHECK(!node.star, common::InvalidArgumentError,
+             RewrittenAstRequired("projection star must be expanded"));
     ast::ASTConstWalker::Visit(node);
   }
 
   void Visit(const ast::ProjectionItem &node) override {
-    CHECK(node.expression != nullptr, common::InvalidArgumentError,
-          RewrittenAstRequired("projection item expression must exist"));
-    CHECK(!node.alias.empty(), common::InvalidArgumentError,
-          RewrittenAstRequired("projection item alias must be filled"));
+    RG_CHECK(node.expression != nullptr, common::InvalidArgumentError,
+             RewrittenAstRequired("projection item expression must exist"));
+    RG_CHECK(!node.alias.empty(), common::InvalidArgumentError,
+             RewrittenAstRequired("projection item alias must be filled"));
     ast::ASTConstWalker::Visit(node);
   }
 
   void Visit(const ast::ComparisonChainExpression &node) override {
     (void)node;
-    THROW(common::InvalidArgumentError,
-          RewrittenAstRequired(
-              "comparison chains must be rewritten to binary comparisons"));
+    RG_THROW(common::InvalidArgumentError,
+             RewrittenAstRequired(
+                 "comparison chains must be rewritten to binary comparisons"));
   }
 
   void Visit(const ast::ParenthesizedExpression &node) override {
     (void)node;
-    THROW(common::InvalidArgumentError,
-          RewrittenAstRequired("parenthesized expressions must be unwrapped"));
+    RG_THROW(
+        common::InvalidArgumentError,
+        RewrittenAstRequired("parenthesized expressions must be unwrapped"));
   }
 
   void Visit(const ast::PatternPredicateExpression &node) override {
     (void)node;
-    THROW(
+    RG_THROW(
         common::InvalidArgumentError,
         RewrittenAstRequired(
             "pattern predicates must be rewritten to existential subqueries"));
   }
 
   void Visit(const ast::ExistentialSubquery &node) override {
-    CHECK(node.pattern == nullptr, common::InvalidArgumentError,
-          RewrittenAstRequired(
-              "EXISTS patterns must be rewritten to MATCH subqueries"));
+    RG_CHECK(node.pattern == nullptr, common::InvalidArgumentError,
+             RewrittenAstRequired(
+                 "EXISTS patterns must be rewritten to MATCH subqueries"));
     ast::ASTConstWalker::Visit(node);
   }
 
@@ -131,38 +132,39 @@ class QueryIRInputContractChecker final : public ast::ASTConstWalker {
 
   void Visit(const ast::NodePattern &node) override {
     if (pattern_context_ != PatternContractContext::kNone) {
-      CHECK(!node.variable.empty(), common::InvalidArgumentError,
-            RewrittenAstRequired("anonymous nodes must be named"));
+      RG_CHECK(!node.variable.empty(), common::InvalidArgumentError,
+               RewrittenAstRequired("anonymous nodes must be named"));
     }
     if (pattern_context_ == PatternContractContext::kRead) {
-      CHECK(node.labels.empty(), common::InvalidArgumentError,
-            RewrittenAstRequired(
-                "inline node labels in read patterns must be normalized"));
-      CHECK(!node.properties, common::InvalidArgumentError,
-            RewrittenAstRequired(
-                "inline node properties in read patterns must be normalized"));
+      RG_CHECK(node.labels.empty(), common::InvalidArgumentError,
+               RewrittenAstRequired(
+                   "inline node labels in read patterns must be normalized"));
+      RG_CHECK(
+          !node.properties, common::InvalidArgumentError,
+          RewrittenAstRequired(
+              "inline node properties in read patterns must be normalized"));
     }
     ast::ASTConstWalker::Visit(node);
   }
 
   void Visit(const ast::RelationshipPattern &node) override {
     if (pattern_context_ != PatternContractContext::kNone) {
-      CHECK(node.detail != nullptr, common::InvalidArgumentError,
-            RewrittenAstRequired("anonymous relationships must be named"));
+      RG_CHECK(node.detail != nullptr, common::InvalidArgumentError,
+               RewrittenAstRequired("anonymous relationships must be named"));
     }
     ast::ASTConstWalker::Visit(node);
   }
 
   void Visit(const ast::RelationshipDetail &node) override {
     if (pattern_context_ != PatternContractContext::kNone) {
-      CHECK(!node.variable.empty(), common::InvalidArgumentError,
-            RewrittenAstRequired("anonymous relationships must be named"));
+      RG_CHECK(!node.variable.empty(), common::InvalidArgumentError,
+               RewrittenAstRequired("anonymous relationships must be named"));
     }
     if (pattern_context_ == PatternContractContext::kRead) {
-      CHECK(!node.properties, common::InvalidArgumentError,
-            RewrittenAstRequired(
-                "inline relationship properties in read patterns must be "
-                "normalized"));
+      RG_CHECK(!node.properties, common::InvalidArgumentError,
+               RewrittenAstRequired(
+                   "inline relationship properties in read patterns must be "
+                   "normalized"));
     }
     ast::ASTConstWalker::Visit(node);
   }
@@ -198,22 +200,22 @@ class QueryIRBuilder {
         return query_ir;
       }
       default: {
-        THROW(common::InvalidArgumentError, Unsupported("query type"));
+        RG_THROW(common::InvalidArgumentError, Unsupported("query type"));
       }
     }
   }
 
  private:
   [[nodiscard]] const ast::SemanticTable &SemanticTableRef() const {
-    CHECK(semantic_table_ != nullptr, common::InternalError,
-          "semantic table is null");
+    RG_CHECK(semantic_table_ != nullptr, common::InternalError,
+             "semantic table is null");
     return *semantic_table_;
   }
 
   std::unique_ptr<QueryIR> BuildRegularQuery(
       const ast::RegularQuery &query, ProjectionPosition projection_position) {
-    CHECK(query.single_query, common::InvalidArgumentError,
-          Missing("single query"));
+    RG_CHECK(query.single_query, common::InvalidArgumentError,
+             Missing("single query"));
 
     const ProjectionPosition branch_position =
         query.unions.empty() ? projection_position
@@ -221,8 +223,8 @@ class QueryIRBuilder {
     std::unique_ptr<QueryIR> query_ir = MakeSingleQueryIR(
         BuildSingleQuery(*query.single_query, branch_position));
     for (const auto &part : query.unions) {
-      CHECK(part && part->query, common::InvalidArgumentError,
-            Missing("UNION branch query"));
+      RG_CHECK(part && part->query, common::InvalidArgumentError,
+               Missing("UNION branch query"));
       SingleQueryIR rhs =
           BuildSingleQuery(*part->query, ProjectionPosition::kIntermediate);
       const std::vector<std::string> lhs_columns =
@@ -249,7 +251,8 @@ class QueryIRBuilder {
   }
 
   void AttachQueryGraphSubqueries(QueryGraph *query_graph) {
-    CHECK(query_graph != nullptr, common::InternalError, "query graph is null");
+    RG_CHECK(query_graph != nullptr, common::InternalError,
+             "query graph is null");
     AttachSelectionSubqueries(&query_graph->selections);
     for (auto &optional_match : query_graph->optional_matches) {
       AttachQueryGraphSubqueries(&optional_match);
@@ -257,7 +260,8 @@ class QueryIRBuilder {
   }
 
   void AttachQueryHorizonSubqueries(QueryHorizon *horizon) {
-    CHECK(horizon != nullptr, common::InternalError, "query horizon is null");
+    RG_CHECK(horizon != nullptr, common::InternalError,
+             "query horizon is null");
     switch (horizon->kind) {
       case QueryHorizonKind::kRegularProjection:
         AttachSelectionSubqueries(
@@ -285,11 +289,12 @@ class QueryIRBuilder {
       case QueryHorizonKind::kPassthrough:
         return;
     }
-    THROW(common::InternalError, "unknown query horizon kind");
+    RG_THROW(common::InternalError, "unknown query horizon kind");
   }
 
   void AttachSelectionSubqueries(Selections *selections) {
-    CHECK(selections != nullptr, common::InternalError, "selections is null");
+    RG_CHECK(selections != nullptr, common::InternalError,
+             "selections is null");
     for (auto &predicate : selections->predicates) {
       AppendNestedIRExpressions(
           &predicate.nested_expressions,
@@ -305,26 +310,26 @@ class QueryIRBuilder {
           predicate.kind != PredicateKind::kNotExistsSubquery) {
         continue;
       }
-      CHECK(predicate.subquery != nullptr, common::InvalidArgumentError,
-            Missing("EXISTS nested IR expression"));
+      RG_CHECK(predicate.subquery != nullptr, common::InvalidArgumentError,
+               Missing("EXISTS nested IR expression"));
     }
   }
 
   void AttachNestedIRExpressions(
       std::vector<NestedIRExpression> *nested_expressions) {
-    CHECK(nested_expressions != nullptr, common::InternalError,
-          "nested expression list is null");
+    RG_CHECK(nested_expressions != nullptr, common::InternalError,
+             "nested expression list is null");
     for (auto &nested : *nested_expressions) {
-      CHECK(nested.query != nullptr, common::InvalidArgumentError,
-            "nested IR expression query is null");
+      RG_CHECK(nested.query != nullptr, common::InvalidArgumentError,
+               "nested IR expression query is null");
     }
   }
 
   static void AppendNestedIRExpressions(
       std::vector<NestedIRExpression> *target,
       std::vector<NestedIRExpression> incoming) {
-    CHECK(target != nullptr, common::InternalError,
-          "nested expression target is null");
+    RG_CHECK(target != nullptr, common::InternalError,
+             "nested expression target is null");
     target->reserve(target->size() + incoming.size());
     for (auto &nested : incoming) {
       target->push_back(std::move(nested));
@@ -409,8 +414,8 @@ class QueryIRBuilder {
 
   std::unique_ptr<QueryIR> BuildPatternExistsQuery(
       const ast::ExistentialSubquery &exists) {
-    CHECK(exists.pattern != nullptr, common::InvalidArgumentError,
-          Missing("EXISTS pattern"));
+    RG_CHECK(exists.pattern != nullptr, common::InvalidArgumentError,
+             Missing("EXISTS pattern"));
     SingleQueryIR query;
     AddPatternToQueryGraph(&query.query_graph, *exists.pattern);
     if (exists.where_expr != nullptr) {
@@ -426,11 +431,11 @@ class QueryIRBuilder {
 
   NestedIRExpression BuildListIRExpression(
       const ast::PatternComprehension &comprehension) {
-    CHECK(comprehension.relationships_pattern != nullptr,
-          common::InvalidArgumentError,
-          Missing("pattern comprehension relationships pattern"));
-    CHECK(comprehension.eval_expr != nullptr, common::InvalidArgumentError,
-          Missing("pattern comprehension eval expression"));
+    RG_CHECK(comprehension.relationships_pattern != nullptr,
+             common::InvalidArgumentError,
+             Missing("pattern comprehension relationships pattern"));
+    RG_CHECK(comprehension.eval_expr != nullptr, common::InvalidArgumentError,
+             Missing("pattern comprehension eval expression"));
 
     NestedIRExpression nested;
     nested.kind = NestedIRExpressionKind::kList;
@@ -478,10 +483,10 @@ class QueryIRBuilder {
     std::unordered_set<std::string> projected_symbols;
     projected_symbols.reserve(body.items.size());
     for (const auto &item : body.items) {
-      CHECK(item != nullptr, common::InvalidArgumentError,
-            "projection item is null");
-      CHECK(item->expression != nullptr, common::InvalidArgumentError,
-            Missing("projection item expression"));
+      RG_CHECK(item != nullptr, common::InvalidArgumentError,
+               "projection item is null");
+      RG_CHECK(item->expression != nullptr, common::InvalidArgumentError,
+               Missing("projection item expression"));
       if (SemanticTableRef().ContainsAggregation(*item->expression)) {
         return false;
       }
@@ -502,8 +507,8 @@ class QueryIRBuilder {
     if (has_optional_boundary || has_update_boundary) {
       return false;
     }
-    CHECK(with_clause.body != nullptr, common::InvalidArgumentError,
-          Missing("WITH body"));
+    RG_CHECK(with_clause.body != nullptr, common::InvalidArgumentError,
+             Missing("WITH body"));
     return IsPureVariablePassthrough(*with_clause.body, available_symbols);
   }
 
@@ -519,15 +524,16 @@ class QueryIRBuilder {
                                    projection_position);
       }
       default: {
-        THROW(common::InvalidArgumentError, Unsupported("single query type"));
+        RG_THROW(common::InvalidArgumentError,
+                 Unsupported("single query type"));
       }
     }
   }
 
   SingleQueryIR BuildSinglePartQuery(const ast::SinglePartQuery &query,
                                      ProjectionPosition projection_position) {
-    CHECK(query.return_clause || !query.updating_clauses.empty(),
-          common::InvalidArgumentError, Missing("RETURN clause"));
+    RG_CHECK(query.return_clause || !query.updating_clauses.empty(),
+             common::InvalidArgumentError, Missing("RETURN clause"));
     return BuildQuerySegment(query.reading_clauses, query.updating_clauses,
                              query.return_clause.get(), {},
                              projection_position);
@@ -535,8 +541,8 @@ class QueryIRBuilder {
 
   SingleQueryIR BuildMultiPartQuery(const ast::MultiPartQuery &query,
                                     ProjectionPosition projection_position) {
-    CHECK(query.final_single_part_query, common::InvalidArgumentError,
-          Missing("final single query"));
+    RG_CHECK(query.final_single_part_query, common::InvalidArgumentError,
+             Missing("final single query"));
 
     SingleQueryIR root;
     SingleQueryIR *current_segment = &root;
@@ -567,8 +573,8 @@ class QueryIRBuilder {
     auto build_reading_clauses =
         [&](const std::vector<std::unique_ptr<ast::ReadingClause>> &reading) {
           for (const auto &clause : reading) {
-            CHECK(clause != nullptr, common::InvalidArgumentError,
-                  Missing("reading clause"));
+            RG_CHECK(clause != nullptr, common::InvalidArgumentError,
+                     Missing("reading clause"));
             if (clause->Is(ast::ASTNodeType::kUnwind)) {
               finish_and_start_next(QueryHorizon::ForUnwind(BuildUnwindHorizon(
                   *ast::CastAst<ast::Unwind>(clause.get()))));
@@ -589,8 +595,8 @@ class QueryIRBuilder {
             bool has_following_work) {
           for (std::size_t i = 0; i < updating.size(); ++i) {
             const auto &clause = updating[i];
-            CHECK(clause != nullptr, common::InvalidArgumentError,
-                  Missing("updating clause"));
+            RG_CHECK(clause != nullptr, common::InvalidArgumentError,
+                     Missing("updating clause"));
             const bool is_merge = clause->Is(ast::ASTNodeType::kMerge);
             if (is_merge && builder.HasLocalWork()) {
               finish_and_start_next(QueryHorizon::ForPassthrough());
@@ -606,10 +612,10 @@ class QueryIRBuilder {
         };
 
     for (const auto &part : query.parts) {
-      CHECK(part.with_clause, common::InvalidArgumentError,
-            Missing("WITH clause"));
-      CHECK(part.with_clause->body != nullptr, common::InvalidArgumentError,
-            Missing("WITH body"));
+      RG_CHECK(part.with_clause, common::InvalidArgumentError,
+               Missing("WITH clause"));
+      RG_CHECK(part.with_clause->body != nullptr, common::InvalidArgumentError,
+               Missing("WITH body"));
 
       build_reading_clauses(part.reading_clauses);
       build_updating_clauses(part.updating_clauses,
@@ -631,8 +637,8 @@ class QueryIRBuilder {
     }
 
     const ast::SinglePartQuery &final = *query.final_single_part_query;
-    CHECK(final.return_clause || !final.updating_clauses.empty(),
-          common::InvalidArgumentError, Missing("RETURN clause"));
+    RG_CHECK(final.return_clause || !final.updating_clauses.empty(),
+             common::InvalidArgumentError, Missing("RETURN clause"));
     build_reading_clauses(final.reading_clauses);
     build_updating_clauses(final.updating_clauses,
                            final.return_clause != nullptr);
@@ -648,8 +654,8 @@ class QueryIRBuilder {
   SingleQueryIR BuildSinglePartQuery(
       const ast::SinglePartQuery &query,
       const std::unordered_set<std::string> &argument_ids) {
-    CHECK(query.return_clause || !query.updating_clauses.empty(),
-          common::InvalidArgumentError, Missing("RETURN clause"));
+    RG_CHECK(query.return_clause || !query.updating_clauses.empty(),
+             common::InvalidArgumentError, Missing("RETURN clause"));
     return BuildQuerySegment(query.reading_clauses, query.updating_clauses,
                              query.return_clause.get(), argument_ids,
                              ProjectionPosition::kIntermediate);
@@ -670,8 +676,10 @@ class QueryIRBuilder {
 
   static void MoveProjectionTail(ProjectionParts *parts,
                                  QueryProjection *projection) {
-    CHECK(parts != nullptr, common::InternalError, "projection parts is null");
-    CHECK(projection != nullptr, common::InternalError, "projection is null");
+    RG_CHECK(parts != nullptr, common::InternalError,
+             "projection parts is null");
+    RG_CHECK(projection != nullptr, common::InternalError,
+             "projection is null");
     projection->required_order = std::move(parts->required_order);
     projection->interesting_order = std::move(parts->interesting_order);
     projection->pagination.skip = parts->skip;
@@ -682,7 +690,8 @@ class QueryIRBuilder {
 
   void AddProjectionSelections(QueryHorizon *horizon,
                                const ast::Expression *where) {
-    CHECK(horizon != nullptr, common::InternalError, "query horizon is null");
+    RG_CHECK(horizon != nullptr, common::InternalError,
+             "query horizon is null");
     if (where == nullptr) {
       return;
     }
@@ -705,25 +714,25 @@ class QueryIRBuilder {
             &selection_keys);
         return;
       case QueryHorizonKind::kUnwind:
-        THROW(common::InternalError,
-              "UNWIND horizon cannot have projection WHERE");
+        RG_THROW(common::InternalError,
+                 "UNWIND horizon cannot have projection WHERE");
       case QueryHorizonKind::kProcedureCall:
-        THROW(common::InternalError,
-              "procedure call horizon cannot have projection WHERE");
+        RG_THROW(common::InternalError,
+                 "procedure call horizon cannot have projection WHERE");
       case QueryHorizonKind::kPassthrough:
-        THROW(common::InternalError,
-              "passthrough horizon cannot have projection WHERE");
+        RG_THROW(common::InternalError,
+                 "passthrough horizon cannot have projection WHERE");
     }
-    THROW(common::InternalError, "unknown query horizon kind");
+    RG_THROW(common::InternalError, "unknown query horizon kind");
   }
 
   QueryHorizon BuildProjectionClause(
       const ast::ProjectionClause *projection_clause,
       ProjectionPosition projection_position) {
-    CHECK(projection_clause != nullptr, common::InvalidArgumentError,
-          Missing("projection clause"));
-    CHECK(projection_clause->body, common::InvalidArgumentError,
-          Missing("projection body"));
+    RG_CHECK(projection_clause != nullptr, common::InvalidArgumentError,
+             Missing("projection clause"));
+    RG_CHECK(projection_clause->body, common::InvalidArgumentError,
+             Missing("projection body"));
     QueryHorizon horizon =
         BuildProjectionBody(*projection_clause->body, projection_position);
     if (projection_clause->Is(ast::ASTNodeType::kWith)) {
@@ -740,8 +749,8 @@ class QueryIRBuilder {
       const ast::ProjectionClause *projection,
       const std::unordered_set<std::string> &argument_ids,
       ProjectionPosition projection_position) {
-    CHECK(projection != nullptr || !updating.empty(),
-          common::InvalidArgumentError, Missing("projection clause"));
+    RG_CHECK(projection != nullptr || !updating.empty(),
+             common::InvalidArgumentError, Missing("projection clause"));
     SingleQueryIR root;
     SingleQueryIR *current_segment = &root;
     std::unordered_set<std::string> current_argument_ids = argument_ids;
@@ -769,8 +778,8 @@ class QueryIRBuilder {
     };
 
     for (const auto &clause : reading) {
-      CHECK(clause != nullptr, common::InvalidArgumentError,
-            Missing("reading clause"));
+      RG_CHECK(clause != nullptr, common::InvalidArgumentError,
+               Missing("reading clause"));
       if (clause->Is(ast::ASTNodeType::kUnwind)) {
         finish_and_start_next(QueryHorizon::ForUnwind(
             BuildUnwindHorizon(*ast::CastAst<ast::Unwind>(clause.get()))));
@@ -787,8 +796,8 @@ class QueryIRBuilder {
 
     for (std::size_t i = 0; i < updating.size(); ++i) {
       const auto &clause = updating[i];
-      CHECK(clause != nullptr, common::InvalidArgumentError,
-            Missing("updating clause"));
+      RG_CHECK(clause != nullptr, common::InvalidArgumentError,
+               Missing("updating clause"));
       const bool is_merge = clause->Is(ast::ASTNodeType::kMerge);
       if (is_merge && builder.HasLocalWork()) {
         finish_and_start_next(QueryHorizon::ForPassthrough());
@@ -813,8 +822,8 @@ class QueryIRBuilder {
 
   QueryHorizon BuildProjectionBody(const ast::ProjectionBody &body,
                                    ProjectionPosition projection_position) {
-    CHECK(!body.star, common::InvalidArgumentError,
-          Unsupported("projection star before rewrite"));
+    RG_CHECK(!body.star, common::InvalidArgumentError,
+             Unsupported("projection star before rewrite"));
 
     ProjectionParts parts;
     parts.distinct = body.distinct;
@@ -824,15 +833,15 @@ class QueryIRBuilder {
     parts.grouping_items.reserve(body.items.size());
     parts.aggregation_items.reserve(body.items.size());
     for (const auto &item : body.items) {
-      CHECK(item, common::InvalidArgumentError,
-            "null projection item is not supported");
-      CHECK(item->expression, common::InvalidArgumentError,
-            Missing("projection item expression"));
+      RG_CHECK(item, common::InvalidArgumentError,
+               "null projection item is not supported");
+      RG_CHECK(item->expression, common::InvalidArgumentError,
+               Missing("projection item expression"));
       ProjectionItem projection_item;
       projection_item.expression = item->expression.get();
       projection_item.alias = item->alias;
-      CHECK(!projection_item.alias.empty(), common::InvalidArgumentError,
-            "projection item alias is empty after rewrite");
+      RG_CHECK(!projection_item.alias.empty(), common::InvalidArgumentError,
+               "projection item alias is empty after rewrite");
       const auto &output_types = SemanticTableRef().ProjectionOutputTypes(body);
       const auto output_type = output_types.find(projection_item.alias);
       if (output_type != output_types.end()) {
@@ -855,10 +864,10 @@ class QueryIRBuilder {
 
     parts.required_order.items.reserve(body.order_by.size());
     for (const auto &item : body.order_by) {
-      CHECK(item, common::InvalidArgumentError,
-            "null sort item is not supported");
-      CHECK(item->expression, common::InvalidArgumentError,
-            Missing("sort expression"));
+      RG_CHECK(item, common::InvalidArgumentError,
+               "null sort item is not supported");
+      RG_CHECK(item->expression, common::InvalidArgumentError,
+               Missing("sort expression"));
       OrderItem order_item;
       order_item.expression = item->expression.get();
       order_item.direction = item->ascending ? OrderDirection::kAscending
@@ -901,10 +910,10 @@ class QueryIRBuilder {
   }
 
   static UnwindHorizon BuildUnwindHorizon(const ast::Unwind &unwind) {
-    CHECK(unwind.expression != nullptr, common::InvalidArgumentError,
-          Missing("UNWIND expression"));
-    CHECK(!unwind.variable.empty(), common::InvalidArgumentError,
-          Missing("UNWIND variable"));
+    RG_CHECK(unwind.expression != nullptr, common::InvalidArgumentError,
+             Missing("UNWIND expression"));
+    RG_CHECK(!unwind.variable.empty(), common::InvalidArgumentError,
+             Missing("UNWIND variable"));
 
     UnwindHorizon horizon;
     horizon.expression = unwind.expression.get();
@@ -919,8 +928,8 @@ class QueryIRBuilder {
     horizon.yield_star = call.yield_star;
     horizon.arguments.reserve(call.arguments.size());
     for (const auto &argument : call.arguments) {
-      CHECK(argument != nullptr, common::InvalidArgumentError,
-            Missing("procedure argument"));
+      RG_CHECK(argument != nullptr, common::InvalidArgumentError,
+               Missing("procedure argument"));
       horizon.arguments.push_back(argument.get());
     }
     horizon.yield_items = BuildProcedureYieldItems(
@@ -941,8 +950,8 @@ class QueryIRBuilder {
     horizon.procedure_name = call.procedure_name;
     horizon.arguments.reserve(call.arguments.size());
     for (const auto &argument : call.arguments) {
-      CHECK(argument != nullptr, common::InvalidArgumentError,
-            Missing("procedure argument"));
+      RG_CHECK(argument != nullptr, common::InvalidArgumentError,
+               Missing("procedure argument"));
       horizon.arguments.push_back(argument.get());
     }
     horizon.yield_items =
@@ -984,8 +993,8 @@ class QueryIRBuilder {
 
   void AddProcedureYieldSelections(const ast::Expression *where,
                                    ProcedureCallHorizon *horizon) {
-    CHECK(horizon != nullptr, common::InternalError,
-          "procedure call horizon is null");
+    RG_CHECK(horizon != nullptr, common::InternalError,
+             "procedure call horizon is null");
     std::unordered_set<std::string> selection_keys;
     AddSelectionPredicates(where, SemanticTableRef(), nullptr,
                            &horizon->yield_selections, &selection_keys);

@@ -1,7 +1,7 @@
 #include "graphdb/vector_property.h"
 
 #include "common/byte_utils.h"
-#include "common/exceptions.h"
+#include "common/exception.h"
 
 using common::AsChars;
 using common::ReadValue;
@@ -56,9 +56,10 @@ bool TryParseVectorValue(const rg::Value& value, size_t dimensions,
 std::vector<float> ParseVectorValue(const rg::Value& value, size_t dimensions) {
   std::vector<float> vector;
   if (!TryParseVectorValue(value, dimensions, &vector)) {
-    THROW_CODE(InvalidParameter,
-               "vector field value should be a numeric list with dimension {}",
-               dimensions);
+    RG_THROW_CODE(
+        InvalidParameter,
+        "vector field value should be a numeric list with dimension {}",
+        dimensions);
   }
   return vector;
 }
@@ -83,9 +84,9 @@ std::string SerializeVector(const std::vector<float>& vector) {
 
 std::vector<float> DeserializeVector(rocksdb::Slice value, size_t dimensions) {
   if (value.size() != dimensions * sizeof(float)) {
-    THROW_CODE(StorageEngineError,
-               "vector field value has invalid size, expect {}, actual {}",
-               dimensions * sizeof(float), value.size());
+    RG_THROW_CODE(StorageEngineError,
+                  "vector field value has invalid size, expect {}, actual {}",
+                  dimensions * sizeof(float), value.size());
   }
   std::vector<float> vector;
   vector.reserve(dimensions);

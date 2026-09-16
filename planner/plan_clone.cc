@@ -293,8 +293,8 @@ std::unique_ptr<LogicalPlan> CloneComponentPlanWithoutMetadata(
           union_plan.All());
     }
     default:
-      THROW(common::InternalError,
-            "unsupported component plan clone: " + std::string(plan.Name()));
+      RG_THROW(common::InternalError,
+               "unsupported component plan clone: " + std::string(plan.Name()));
   }
 }
 
@@ -307,8 +307,8 @@ std::unique_ptr<LogicalPlan> CloneComponentPlan(const LogicalPlan &plan) {
 }
 
 PlanCandidate CloneCandidate(const PlanCandidate &candidate) {
-  CHECK(candidate.plan != nullptr, common::InternalError,
-        "candidate plan is null");
+  RG_CHECK(candidate.plan != nullptr, common::InternalError,
+           "candidate plan is null");
   PlanCandidate clone;
   clone.plan = CloneComponentPlan(*candidate.plan);
   clone.relationship_indices = candidate.relationship_indices;

@@ -28,7 +28,7 @@ std::unordered_map<std::string, Value> ToGraphDBProperties(
 template <typename Entity>
 void ApplyGraphDBProperties(Entity *entity, Value::Map properties,
                             bool include_existing) {
-  CHECK(entity != nullptr, common::InternalError, "graph entity is null");
+  RG_CHECK(entity != nullptr, common::InternalError, "graph entity is null");
   if (!include_existing) {
     entity->RemoveAllProperty();
   }

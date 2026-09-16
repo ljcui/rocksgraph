@@ -7,7 +7,7 @@
 #include "bolt/path.h"
 #include "bolt/spatial.h"
 #include "bolt/temporal.h"
-#include "common/exceptions.h"
+#include "common/exception.h"
 
 namespace bolt {
 const char* containsSystemUpdatesKey = "contains-system-updates";
@@ -867,8 +867,8 @@ std::any ServerHydrator(Unpacker& unpacker) {
     case PackType::String:
       return unpacker.String();
     case PackType::Structure: {
-      THROW_CODE(BoltDataException,
-                 "No support for unpacking struct in server stub");
+      RG_THROW_CODE(BoltDataException,
+                    "No support for unpacking struct in server stub");
     }
     case PackType::Bytes:
       return unpacker.ByteArray();
@@ -899,8 +899,8 @@ std::any ServerHydrator(Unpacker& unpacker) {
     case PackType::False:
       return false;
     default: {
-      THROW_CODE(BoltDataException, "Unsupported type to unpack: {}",
-                 static_cast<int>(unpacker.CurrentType()));
+      RG_THROW_CODE(BoltDataException, "Unsupported type to unpack: {}",
+                    static_cast<int>(unpacker.CurrentType()));
     }
   }
 }

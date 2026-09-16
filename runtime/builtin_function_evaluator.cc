@@ -111,19 +111,20 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
                               ExecutionClock clock,
                               graphdb::Transaction *transaction) {
   const ast::BuiltinFunction *builtin = ast::FindBuiltinFunction(kind);
-  CHECK(builtin != nullptr, common::InternalError,
-        "unknown built-in function kind");
-  CHECK(!builtin->aggregate, common::InvalidArgumentError,
-        "aggregate function requires aggregation execution: " + builtin->name);
-  CHECK(ast::BuiltinFunctionAcceptsArgumentCount(*builtin, arguments.size()),
-        common::InvalidArgumentError,
-        ast::BuiltinFunctionArgumentCountError(*builtin));
+  RG_CHECK(builtin != nullptr, common::InternalError,
+           "unknown built-in function kind");
+  RG_CHECK(
+      !builtin->aggregate, common::InvalidArgumentError,
+      "aggregate function requires aggregation execution: " + builtin->name);
+  RG_CHECK(ast::BuiltinFunctionAcceptsArgumentCount(*builtin, arguments.size()),
+           common::InvalidArgumentError,
+           ast::BuiltinFunctionArgumentCountError(*builtin));
   switch (builtin->kind) {
     case ast::BuiltinFunctionKind::kAbs:
       if (arguments[0].IsInteger()) {
         const std::int64_t value = arguments[0].AsInteger();
-        CHECK(value != std::numeric_limits<std::int64_t>::min(),
-              common::InvalidArgumentError, "abs() integer overflow");
+        RG_CHECK(value != std::numeric_limits<std::int64_t>::min(),
+                 common::InvalidArgumentError, "abs() integer overflow");
         return Value(value < 0 ? -value : value);
       }
       if (arguments[0].IsDouble()) {
@@ -148,8 +149,8 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
       if (arguments[0].IsNull()) {
         return Value::Null();
       }
-      CHECK(arguments[0].IsNode(), common::InvalidArgumentError,
-            "labels() argument must be a node");
+      RG_CHECK(arguments[0].IsNode(), common::InvalidArgumentError,
+               "labels() argument must be a node");
       Value::List labels;
       for (const auto &label : arguments[0].AsNode().labels) {
         labels.emplace_back(label);
@@ -165,8 +166,8 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
       if (arguments[0].IsNull()) {
         return Value::Null();
       }
-      CHECK(arguments[0].IsRelationship(), common::InvalidArgumentError,
-            "type() argument must be a relationship");
+      RG_CHECK(arguments[0].IsRelationship(), common::InvalidArgumentError,
+               "type() argument must be a relationship");
       return Value(arguments[0].AsRelationship().type);
     case ast::BuiltinFunctionKind::kSize:
       if (arguments[0].IsList()) {
@@ -330,21 +331,20 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
     case ast::BuiltinFunctionKind::kRand:
       return Value(RandomUnitDouble());
     case ast::BuiltinFunctionKind::kRange: {
-      if (std::any_of(arguments.begin(), arguments.end(),
-                      [](const Value &argument) {
-                        return argument.IsNull();
-                      })) {
+      if (std::any_of(
+              arguments.begin(), arguments.end(),
+              [](const Value &argument) { return argument.IsNull(); })) {
         return Value::Null();
       }
-      CHECK(arguments[0].IsInteger() && arguments[1].IsInteger() &&
-                (arguments.size() != 3 || arguments[2].IsInteger()),
-            common::InvalidArgumentError,
-            "range() arguments must be integers");
+      RG_CHECK(arguments[0].IsInteger() && arguments[1].IsInteger() &&
+                   (arguments.size() != 3 || arguments[2].IsInteger()),
+               common::InvalidArgumentError,
+               "range() arguments must be integers");
       const std::int64_t start = arguments[0].AsInteger();
       const std::int64_t end = arguments[1].AsInteger();
       const std::int64_t step =
           arguments.size() == 3 ? arguments[2].AsInteger() : 1;
-      CHECK(step != 0, common::InvalidArgumentError, "range() step is zero");
+      RG_CHECK(step != 0, common::InvalidArgumentError, "range() step is zero");
       Value::List values;
       for (std::int64_t value = start;
            step > 0 ? value <= end : value >= end;) {
@@ -399,10 +399,10 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
       const std::int64_t start = arguments[1].AsInteger();
       const std::int64_t length =
           arguments.size() == 3 ? arguments[2].AsInteger() : -1;
-      CHECK(start >= 0, common::InvalidArgumentError,
-            "substring() start is negative");
-      CHECK(length >= 0 || arguments.size() == 2, common::InvalidArgumentError,
-            "substring() length is negative");
+      RG_CHECK(start >= 0, common::InvalidArgumentError,
+               "substring() start is negative");
+      RG_CHECK(length >= 0 || arguments.size() == 2,
+               common::InvalidArgumentError, "substring() length is negative");
 
       const std::string &input = arguments[0].AsString();
       const std::vector<std::size_t> offsets = Utf8Offsets(input);
@@ -494,11 +494,11 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
       if (arguments[0].IsNull()) {
         return Value::Null();
       }
-      CHECK(!arguments[0].IsList() && !arguments[0].IsMap() &&
-                !arguments[0].IsNode() && !arguments[0].IsRelationship() &&
-                !arguments[0].IsPath(),
-            common::InvalidArgumentError,
-            "toString() argument has an invalid type");
+      RG_CHECK(!arguments[0].IsList() && !arguments[0].IsMap() &&
+                   !arguments[0].IsNode() && !arguments[0].IsRelationship() &&
+                   !arguments[0].IsPath(),
+               common::InvalidArgumentError,
+               "toString() argument has an invalid type");
       return arguments[0].IsString() ? arguments[0]
                                      : Value(arguments[0].ToString());
     case ast::BuiltinFunctionKind::kToInteger:
@@ -526,16 +526,16 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
         }
         if (const auto value = ParseDouble(text);
             value.has_value() && std::isfinite(*value) &&
-            *value >= static_cast<double>(
-                          std::numeric_limits<std::int64_t>::min()) &&
-            *value < static_cast<double>(
-                         std::numeric_limits<std::int64_t>::max())) {
+            *value >=
+                static_cast<double>(std::numeric_limits<std::int64_t>::min()) &&
+            *value <
+                static_cast<double>(std::numeric_limits<std::int64_t>::max())) {
           return Value(static_cast<std::int64_t>(*value));
         }
         return Value::Null();
       }
-      THROW(common::InvalidArgumentError,
-            "toInteger() argument has an invalid type");
+      RG_THROW(common::InvalidArgumentError,
+               "toInteger() argument has an invalid type");
     case ast::BuiltinFunctionKind::kToFloat:
       if (arguments[0].IsNull() || arguments[0].IsDouble()) {
         return arguments[0];
@@ -547,8 +547,8 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
         const auto value = ParseDouble(arguments[0].AsString());
         return value.has_value() ? Value(*value) : Value::Null();
       }
-      THROW(common::InvalidArgumentError,
-            "toFloat() argument has an invalid type");
+      RG_THROW(common::InvalidArgumentError,
+               "toFloat() argument has an invalid type");
     case ast::BuiltinFunctionKind::kToBoolean:
       if (arguments[0].IsNull() || arguments[0].IsBool()) {
         return arguments[0];
@@ -564,8 +564,8 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
         }
         return Value::Null();
       }
-      THROW(common::InvalidArgumentError,
-            "toBoolean() argument has an invalid type");
+      RG_THROW(common::InvalidArgumentError,
+               "toBoolean() argument has an invalid type");
     case ast::BuiltinFunctionKind::kToLower:
     case ast::BuiltinFunctionKind::kToUpper:
     case ast::BuiltinFunctionKind::kTrim:
@@ -594,12 +594,12 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
     case ast::BuiltinFunctionKind::kPercentileContinuous:
     case ast::BuiltinFunctionKind::kPercentileDiscrete:
     case ast::BuiltinFunctionKind::kSum:
-      THROW(common::InternalError,
-            "aggregate function requires aggregation execution: " +
-                builtin->name);
+      RG_THROW(common::InternalError,
+               "aggregate function requires aggregation execution: " +
+                   builtin->name);
   }
-  THROW(common::InternalError,
-        "built-in function has no scalar implementation: " + builtin->name);
+  RG_THROW(common::InternalError,
+           "built-in function has no scalar implementation: " + builtin->name);
 }
 
 Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,

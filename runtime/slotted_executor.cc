@@ -33,7 +33,8 @@ class PhysicalResultCursorImpl final : public PhysicalResultCursor {
   ~PhysicalResultCursorImpl() override { Close(); }
 
   [[nodiscard]] bool Next(std::vector<Value> *row) override {
-    CHECK(row != nullptr, common::InvalidArgumentError, "result row is null");
+    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+             "result row is null");
     if (closed_) {
       return false;
     }

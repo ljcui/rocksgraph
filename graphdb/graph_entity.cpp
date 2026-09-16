@@ -7,7 +7,7 @@
 #include <rocksdb/utilities/write_batch_with_index.h>
 
 #include "common/byte_utils.h"
-#include "common/exceptions.h"
+#include "common/exception.h"
 #include "common/logger.h"
 #include "graph_db.h"
 #include "graphdb/edge_index_updater.h"
@@ -47,7 +47,7 @@ VertexSerializedProperties LoadVertexSerializedProperties(
     if (s.IsNotFound()) {
       continue;
     }
-    if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+    if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
     props.emplace(pid, std::move(value));
   }
   return props;
@@ -69,7 +69,7 @@ VertexVectorProperties LoadVertexVectorProperties(
       if (s.IsNotFound()) {
         continue;
       }
-      if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+      if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
       props[pid] = DeserializeVector(value, field->dimensions());
     }
   }
@@ -91,7 +91,7 @@ VertexVectorProperties LoadAllVertexVectorProperties(
     if (s.IsNotFound()) {
       continue;
     }
-    if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+    if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
     props[pid] = DeserializeVector(value, field->dimensions());
     if (pids != nullptr) {
       pids->insert(pid);
@@ -274,7 +274,7 @@ std::unique_ptr<EdgeIterator> Vertex::NewEdgeIterator(
     const std::unordered_map<std::string, rg::Value> &props,
     const Vertex &other_node) {
   if (direction == EdgeDirection::BOTH) {
-    THROW_CODE(InputError, "EdgeDirection can not be BOTH");
+    RG_THROW_CODE(InputError, "EdgeDirection can not be BOTH");
   }
   auto tid = txn_->db()->id_generator().GetTid(type);
   if (!tid) {
@@ -300,7 +300,7 @@ std::unordered_set<uint32_t> Vertex::GetLabelIds() {
   std::string val;
   auto s = txn_->dbtxn()->Get(ro, txn_->db()->graph_cf().graph_topology,
                               rocksdb::Slice{AsChars(id_), sizeof(id_)}, &val);
-  if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
   std::unordered_set<uint32_t> ret;
   for (size_t i = 0; i < val.size(); i += sizeof(uint32_t)) {
     ret.insert(ReadValue<uint32_t>(val.data() + i));
@@ -313,7 +313,7 @@ void Vertex::Lock() {
   auto s = txn_->dbtxn()->GetForUpdate(
       ro, txn_->db()->graph_cf().graph_topology, GetIdView(),
       static_cast<std::string *>(nullptr));
-  if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
 }
 
 int Vertex::Delete() {
@@ -362,7 +362,7 @@ int Vertex::Delete() {
         labelVid.append(key.data(), key.size());
         auto s = txn_->dbtxn()->GetWriteBatch()->SingleDelete(
             txn_->db()->graph_cf().vertex_label_vid, labelVid);
-        if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+        if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
       }
       std::unordered_set<uint32_t> empty_lids;
       VertexSerializedProperties empty_properties;
@@ -373,16 +373,16 @@ int Vertex::Delete() {
       for (auto &p_key : prop_keys) {
         auto s = txn_->dbtxn()->GetWriteBatch()->Delete(
             txn_->db()->graph_cf().vertex_property, p_key);
-        if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+        if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
       }
       for (auto &p_key : vector_prop_keys) {
         auto s = txn_->dbtxn()->GetWriteBatch()->Delete(
             txn_->db()->graph_cf().vertex_vector_property, p_key);
-        if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+        if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
       }
       auto s = txn_->dbtxn()->GetWriteBatch()->Delete(
           txn_->db()->graph_cf().graph_topology, key);
-      if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+      if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
     } else {
       assert(key.size() == 29);
       auto p = key.data();
@@ -401,7 +401,7 @@ int Vertex::Delete() {
         auto s = txn_->dbtxn()->GetForUpdate(
             ro, txn_->db()->graph_cf().graph_topology,
             rocksdb::Slice(edge_lock_key), static_cast<std::string *>(nullptr));
-        if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+        if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
       }
       // delete other edge key
       std::string other_edge_key;
@@ -415,7 +415,7 @@ int Vertex::Delete() {
       other_edge_key.append(AsChars(eid), sizeof(eid));
       auto s = txn_->dbtxn()->GetWriteBatch()->SingleDelete(
           txn_->db()->graph_cf().graph_topology, other_edge_key);
-      if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+      if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
       deleted_edge++;
       // delete type eid
       std::string typeEid;
@@ -423,7 +423,7 @@ int Vertex::Delete() {
       typeEid.append(AsChars(eid), sizeof(eid));
       s = txn_->dbtxn()->GetWriteBatch()->SingleDelete(
           txn_->db()->graph_cf().edge_type_eid, typeEid);
-      if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+      if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
       // delete edge properties
       std::unique_ptr<rocksdb::Iterator> ep_iter;
       rocksdb::Slice ep_prefix(AsChars(eid), sizeof(eid));
@@ -440,12 +440,12 @@ int Vertex::Delete() {
                                     ep_iter->value().ToString());
         s = txn_->dbtxn()->GetWriteBatch()->Delete(
             txn_->db()->graph_cf().edge_property, prop_key);
-        if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+        if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
       }
       UpdateEdgeIndexes(txn_, eid, etid, old_edge_properties, {});
       s = txn_->dbtxn()->GetWriteBatch()->SingleDelete(
           txn_->db()->graph_cf().graph_topology, key);
-      if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+      if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
     }
   }
   return deleted_edge;
@@ -514,11 +514,11 @@ void Vertex::AddLabels(const std::unordered_set<std::string> &labels) {
       }
       if (vector_iter != updated_vector_props.end()) {
         if (vector_iter->second.size() != field->dimensions()) {
-          THROW_CODE(InvalidParameter,
-                     "vector field [label:{}, property:{}] dimension "
-                     "mismatch, expect {}, actual {}",
-                     field->label(), field->property(), field->dimensions(),
-                     vector_iter->second.size());
+          RG_THROW_CODE(InvalidParameter,
+                        "vector field [label:{}, property:{}] dimension "
+                        "mismatch, expect {}, actual {}",
+                        field->label(), field->property(), field->dimensions(),
+                        vector_iter->second.size());
         }
         vector_writes.emplace_back(VertexVectorPropertyKey(lid, pid, id_),
                                    SerializeVector(vector_iter->second));
@@ -537,18 +537,18 @@ void Vertex::AddLabels(const std::unordered_set<std::string> &labels) {
   }
   auto s = txn_->dbtxn()->GetWriteBatch()->Put(
       txn_->db()->graph_cf().graph_topology, GetIdView(), buffer);
-  if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
   for (auto &id : new_lids) {
     std::string key(AsChars(id), sizeof(id));
     key.append(GetIdView());
     s = txn_->dbtxn()->GetWriteBatch()->Put(
         txn_->db()->graph_cf().vertex_label_vid, key, {});
-    if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+    if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
   }
   for (const auto &[key, value] : vector_writes) {
     s = txn_->dbtxn()->GetWriteBatch()->Put(
         txn_->db()->graph_cf().vertex_vector_property, key, value);
-    if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+    if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
   }
 }
 
@@ -603,18 +603,18 @@ void Vertex::DeleteLabels(const std::unordered_set<std::string> &labels) {
   }
   auto s = txn_->dbtxn()->GetWriteBatch()->Put(
       txn_->db()->graph_cf().graph_topology, GetIdView(), buffer);
-  if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
   for (auto id : remove_lids) {
     std::string key(AsChars(id), sizeof(id));
     key.append(GetIdView());
     s = txn_->dbtxn()->GetWriteBatch()->SingleDelete(
         txn_->db()->graph_cf().vertex_label_vid, key);
-    if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+    if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
   }
   for (const auto &key : removed_vector_keys) {
     s = txn_->dbtxn()->GetWriteBatch()->Delete(
         txn_->db()->graph_cf().vertex_vector_property, key);
-    if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+    if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
   }
 }
 
@@ -646,7 +646,7 @@ rg::Value Vertex::GetProperty(uint32_t pid) {
   if (s.ok()) {
     return DeserializeValue({pval.data(), pval.size()});
   } else if (!s.IsNotFound()) {
-    THROW_CODE(StorageEngineError, s.ToString());
+    RG_THROW_CODE(StorageEngineError, s.ToString());
   }
   return {};
 }
@@ -654,7 +654,7 @@ rg::Value Vertex::GetProperty(uint32_t pid) {
 bool Vertex::TryGetVectorPropertyRaw(uint32_t pid, rocksdb::PinnableSlice *out,
                                      size_t *dimensions) {
   if (out == nullptr || dimensions == nullptr) {
-    THROW_CODE(InvalidParameter, "output vector should not be null");
+    RG_THROW_CODE(InvalidParameter, "output vector should not be null");
   }
   out->Reset();
   *dimensions = 0;
@@ -669,12 +669,12 @@ bool Vertex::TryGetVectorPropertyRaw(uint32_t pid, rocksdb::PinnableSlice *out,
     if (s.IsNotFound()) {
       continue;
     }
-    if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+    if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
     size_t expected_size = field->dimensions() * sizeof(float);
     if (out->size() != expected_size) {
-      THROW_CODE(StorageEngineError,
-                 "vector field value has invalid size, expect {}, actual {}",
-                 expected_size, out->size());
+      RG_THROW_CODE(StorageEngineError,
+                    "vector field value has invalid size, expect {}, actual {}",
+                    expected_size, out->size());
     }
     *dimensions = field->dimensions();
     return true;
@@ -757,7 +757,7 @@ void Vertex::SetProperties(
       std::string pkey = VertexPropertyKey(id_, pid);
       auto s = txn_->dbtxn()->GetWriteBatch()->Put(
           txn_->db()->graph_cf().vertex_property, pkey, pval);
-      if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+      if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
     }
     for (const auto &[pid, vector] : vector_properties) {
       for (const auto &field :
@@ -767,7 +767,7 @@ void Vertex::SetProperties(
         auto s = txn_->dbtxn()->GetWriteBatch()->Put(
             txn_->db()->graph_cf().vertex_vector_property, key,
             SerializeVector(vector));
-        if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+        if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
       }
     }
     return;
@@ -790,7 +790,7 @@ void Vertex::SetProperties(
     std::string pkey = VertexPropertyKey(id_, pid);
     auto s = txn_->dbtxn()->GetWriteBatch()->Put(
         txn_->db()->graph_cf().vertex_property, pkey, pval);
-    if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+    if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
   }
   for (const auto &[pid, vector] : vector_properties) {
     for (const auto &field :
@@ -800,7 +800,7 @@ void Vertex::SetProperties(
       auto s = txn_->dbtxn()->GetWriteBatch()->Put(
           txn_->db()->graph_cf().vertex_vector_property, key,
           SerializeVector(vector));
-      if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+      if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
     }
   }
 }
@@ -838,12 +838,12 @@ void Vertex::RemoveAllProperty() {
   for (auto &key : prop_keys) {
     auto s = txn_->dbtxn()->GetWriteBatch()->Delete(
         txn_->db()->graph_cf().vertex_property, key);
-    if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+    if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
   }
   for (auto &key : vector_prop_keys) {
     auto s = txn_->dbtxn()->GetWriteBatch()->Delete(
         txn_->db()->graph_cf().vertex_vector_property, key);
-    if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+    if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
   }
 }
 
@@ -873,11 +873,11 @@ void Vertex::RemoveProperty(const std::string &name) {
       std::string key = VertexVectorPropertyKey(lid, pid, id_);
       auto s = txn_->dbtxn()->GetWriteBatch()->Delete(
           txn_->db()->graph_cf().vertex_vector_property, key);
-      if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+      if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
     }
     auto s = txn_->dbtxn()->GetWriteBatch()->Delete(
         txn_->db()->graph_cf().vertex_property, VertexPropertyKey(id_, pid));
-    if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+    if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
     return;
   }
   std::string pkey = VertexPropertyKey(id_, pid);
@@ -890,10 +890,10 @@ void Vertex::RemoveProperty(const std::string &name) {
     if (s.IsNotFound()) {
       return;
     }
-    if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+    if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
     s = txn_->dbtxn()->GetWriteBatch()->Delete(
         txn_->db()->graph_cf().vertex_property, pkey);
-    if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+    if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
     return;
   }
   auto props = LoadVertexSerializedProperties(txn_, id_, required_pids);
@@ -907,7 +907,7 @@ void Vertex::RemoveProperty(const std::string &name) {
                       empty_vector_properties, empty_vector_properties, {pid});
   auto s = txn_->dbtxn()->GetWriteBatch()->Delete(
       txn_->db()->graph_cf().vertex_property, pkey);
-  if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
 }
 
 void Edge::Delete() {
@@ -923,7 +923,7 @@ void Edge::Delete() {
   key.append(AsChars(id_), sizeof(id_));
   auto s = txn_->dbtxn()->GetWriteBatch()->SingleDelete(
       txn_->db()->graph_cf().graph_topology, key);
-  if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
   key.clear();
   // delete in edge key
   key.append(AsChars(endId_), sizeof(endId_));
@@ -933,14 +933,14 @@ void Edge::Delete() {
   key.append(AsChars(id_), sizeof(id_));
   s = txn_->dbtxn()->GetWriteBatch()->SingleDelete(
       txn_->db()->graph_cf().graph_topology, key);
-  if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
   // delete type eid
   key.clear();
   key.append(AsChars(typeId_), sizeof(typeId_));
   key.append(AsChars(id_), sizeof(id_));
   s = txn_->dbtxn()->GetWriteBatch()->SingleDelete(
       txn_->db()->graph_cf().edge_type_eid, key);
-  if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
   // delete edge properties
   std::unique_ptr<rocksdb::Iterator> ep_iter;
   rocksdb::ReadOptions ro;
@@ -953,7 +953,7 @@ void Edge::Delete() {
     auto prop_key = ep_iter->key().ToString();  // must copy
     s = txn_->dbtxn()->GetWriteBatch()->Delete(
         txn_->db()->graph_cf().edge_property, prop_key);
-    if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+    if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
   }
 }
 
@@ -975,7 +975,7 @@ rg::Value Edge::GetProperty(uint32_t pid) {
   if (s.ok()) {
     return DeserializeValue({pinnable_val.data(), pinnable_val.size()});
   } else if (!s.IsNotFound()) {
-    THROW_CODE(StorageEngineError, s.ToString());
+    RG_THROW_CODE(StorageEngineError, s.ToString());
   }
   return {};
 }
@@ -985,7 +985,7 @@ Vertex Edge::GetOtherEnd(int64_t vid) const {
     return GetEnd();
   } else {
     if (vid != endId_) {
-      THROW_CODE(
+      RG_THROW_CODE(
           UnknownError, "GetOtherEnd error, startId:{}, endId:{}, vid:{}",
           big_to_native(startId_), big_to_native(endId_), big_to_native(vid));
     }
@@ -1038,7 +1038,7 @@ void Edge::SetProperties(
     auto serialized_value = SerializeValue(value);
     auto s = txn_->dbtxn()->GetWriteBatch()->Put(
         txn_->db()->graph_cf().edge_property, pkey, serialized_value);
-    if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+    if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
     new_properties[pid] = std::move(serialized_value);
   }
   UpdateEdgeIndexes(txn_, id_, typeId_, old_properties, new_properties);
@@ -1057,7 +1057,7 @@ void Edge::RemoveProperty(const std::string &name) {
   pkey.append(AsChars(pid), sizeof(pid));
   auto s = txn_->dbtxn()->GetWriteBatch()->Delete(
       txn_->db()->graph_cf().edge_property, pkey);
-  if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
   new_properties.erase(pid);
   UpdateEdgeIndexes(txn_, id_, typeId_, old_properties, new_properties);
 }
@@ -1080,7 +1080,7 @@ void Edge::RemoveAllProperty() {
   for (auto &key : prop_keys) {
     auto s = txn_->dbtxn()->GetWriteBatch()->Delete(
         txn_->db()->graph_cf().edge_property, key);
-    if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+    if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
   }
   UpdateEdgeIndexes(txn_, id_, typeId_, old_properties, {});
 }
@@ -1096,6 +1096,6 @@ void Edge::Lock() {
   auto s = txn_->dbtxn()->GetForUpdate(
       ro, txn_->db()->graph_cf().graph_topology, rocksdb::Slice(edge_lock_key),
       static_cast<std::string *>(nullptr));
-  if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
 }
 }  // namespace graphdb

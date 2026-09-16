@@ -10,7 +10,7 @@
 #include <string_view>
 #include <thread>
 
-#include "common/exceptions.h"
+#include "common/exception.h"
 #include "graphdb/graph_db.h"
 #include "proto/meta.pb.h"
 #include "raft_driver/raft_driver.h"
@@ -20,8 +20,8 @@
     try {                                                       \
       statement;                                                \
       FAIL() << "Expecting exception, but nothing is thrown.";  \
-    } catch (RocksGraphException & e) {                         \
-      if (e.code() != ErrorCode::error_code) {                  \
+    } catch (common::RocksGraphException & e) {                 \
+      if (e.code() != common::ErrorCode::error_code) {          \
         FAIL() << "Unexpected exception message: " << e.what(); \
       } else {                                                  \
         SUCCEED() << "Expected exception: " << e.what();        \
@@ -36,8 +36,8 @@
     try {                                                       \
       statement;                                                \
       FAIL() << "Expecting exception, but nothing is thrown.";  \
-    } catch (RocksGraphException & e) {                         \
-      if (e.code() != ErrorCode::error_code) {                  \
+    } catch (common::RocksGraphException & e) {                 \
+      if (e.code() != common::ErrorCode::error_code) {          \
         FAIL() << "Unexpected exception message: " << e.what(); \
       } else {                                                  \
         std::string what = e.what();                            \

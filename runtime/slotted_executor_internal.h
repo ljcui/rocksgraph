@@ -74,9 +74,9 @@ class OperatorFactory final {
 template <typename T>
 const T &OperatorData(const PhysicalPlanNode &node) {
   const T *data = std::get_if<T>(&node.data);
-  CHECK(data != nullptr, common::InternalError,
-        "physical operator payload does not match " +
-            std::string(ToString(node.kind)));
+  RG_CHECK(data != nullptr, common::InternalError,
+           "physical operator payload does not match " +
+               std::string(ToString(node.kind)));
   return *data;
 }
 

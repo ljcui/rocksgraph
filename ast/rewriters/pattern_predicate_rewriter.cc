@@ -16,9 +16,9 @@ void PatternPredicateRewriter::RewriteExpression(
     return;
   }
   auto *pattern_predicate = CastAst<PatternPredicateExpression>(expr.get());
-  CHECK(pattern_predicate->relationships_pattern != nullptr,
-        common::InvalidArgumentError,
-        "pattern predicate relationships pattern is null");
+  RG_CHECK(pattern_predicate->relationships_pattern != nullptr,
+           common::InvalidArgumentError,
+           "pattern predicate relationships pattern is null");
 
   auto relationships = std::move(pattern_predicate->relationships_pattern);
   auto element = std::make_unique<PatternElement>();

@@ -7,7 +7,6 @@
 #include <thread>
 
 #include "common/exception.h"
-#include "common/exceptions.h"
 #include "graphdb/assistant_pool.h"
 #include "graphdb/graph_db.h"
 #include "graphdb/transaction.h"
@@ -284,8 +283,8 @@ TEST_F(GraphDBQueryExecutorTest,
     (void)transaction->GetEdgeById(*rare_type,
                                    boost::endian::native_to_big(knows_));
     FAIL() << "lookup with a mismatched relationship type should fail";
-  } catch (const RocksGraphException &error) {
-    EXPECT_EQ(error.code(), ErrorCode::EdgeIdNotFound);
+  } catch (const common::RocksGraphException &error) {
+    EXPECT_EQ(error.code(), common::ErrorCode::EdgeIdNotFound);
   }
 
   EXPECT_EQ(count_edges(), edge_count_before);

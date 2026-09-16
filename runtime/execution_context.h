@@ -45,8 +45,8 @@ class BoundQueryParameters final {
                                    : std::optional<std::size_t>(found->second);
   }
   [[nodiscard]] const Value &At(std::size_t offset) const {
-    CHECK(offset < values_.size(), common::InternalError,
-          "parameter offset is out of range");
+    RG_CHECK(offset < values_.size(), common::InternalError,
+             "parameter offset is out of range");
     return values_[offset];
   }
 
@@ -75,8 +75,8 @@ class QueryMemoryTracker final {
       : limit_bytes_(limit_bytes) {}
 
   void Reserve(std::size_t bytes) {
-    CHECK(bytes <= limit_bytes_ - current_bytes_,
-          common::MemoryLimitExceededError, "query memory limit exceeded");
+    RG_CHECK(bytes <= limit_bytes_ - current_bytes_,
+             common::MemoryLimitExceededError, "query memory limit exceeded");
     current_bytes_ += bytes;
     peak_bytes_ = std::max(peak_bytes_, current_bytes_);
   }
@@ -127,14 +127,14 @@ struct ExecutionContext {
   ExecutionClock clock = ExecutionClock::Start();
 
   [[nodiscard]] graphdb::Transaction &GraphDBTransaction() const {
-    CHECK(transaction != nullptr, common::InvalidArgumentError,
-          "GraphDB transaction is not available in this execution context");
+    RG_CHECK(transaction != nullptr, common::InvalidArgumentError,
+             "GraphDB transaction is not available in this execution context");
     return *transaction;
   }
 
   void CheckCancelled() const {
-    CHECK(cancellation == nullptr || !cancellation->IsCancelled(),
-          common::QueryCancelledError, "query execution was cancelled");
+    RG_CHECK(cancellation == nullptr || !cancellation->IsCancelled(),
+             common::QueryCancelledError, "query execution was cancelled");
   }
 
   [[nodiscard]] const Value *FindParameter(std::string_view name) const {

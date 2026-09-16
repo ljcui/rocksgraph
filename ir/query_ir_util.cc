@@ -35,8 +35,8 @@ const ast::Expression *UnwrapParenthesized(const ast::Expression *expression) {
          unwrapped->Is(ast::ASTNodeType::kParenthesizedExpression)) {
     const auto *parenthesized =
         ast::CastAst<ast::ParenthesizedExpression>(unwrapped);
-    CHECK(parenthesized->expr != nullptr, common::InvalidArgumentError,
-          "parenthesized expression is null");
+    RG_CHECK(parenthesized->expr != nullptr, common::InvalidArgumentError,
+             "parenthesized expression is null");
     unwrapped = parenthesized->expr.get();
   }
   return unwrapped;
@@ -44,10 +44,11 @@ const ast::Expression *UnwrapParenthesized(const ast::Expression *expression) {
 
 void SplitConjunctivePredicates(const ast::Expression *expression,
                                 std::vector<const ast::Expression *> *output) {
-  CHECK(output != nullptr, common::InternalError, "predicate output is null");
+  RG_CHECK(output != nullptr, common::InternalError,
+           "predicate output is null");
   const ast::Expression *unwrapped = UnwrapParenthesized(expression);
-  CHECK(unwrapped != nullptr, common::InvalidArgumentError,
-        "null WHERE predicate is not supported");
+  RG_CHECK(unwrapped != nullptr, common::InvalidArgumentError,
+           "null WHERE predicate is not supported");
   if (unwrapped->Is(ast::ASTNodeType::kAndExpression)) {
     const auto *and_expression = ast::CastAst<ast::AndExpression>(unwrapped);
     SplitConjunctivePredicates(and_expression->left.get(), output);
@@ -129,7 +130,7 @@ PatternPropertyMap BuildPropertyMap(const ast::Properties *properties) {
 
 void AddCreatePatternSymbols(std::unordered_set<std::string> *symbols,
                              const CreatePattern &pattern) {
-  CHECK(symbols != nullptr, common::InternalError, "symbol set is null");
+  RG_CHECK(symbols != nullptr, common::InternalError, "symbol set is null");
   symbols->insert(pattern.path_variables.begin(), pattern.path_variables.end());
   for (const auto &node : pattern.nodes) {
     if (!node.variable.empty()) {
@@ -151,7 +152,7 @@ void AddCreatePatternSymbols(std::unordered_set<std::string> *symbols,
 
 void AddCreatePatternNodeSymbols(std::unordered_set<std::string> *symbols,
                                  const CreatePattern &pattern) {
-  CHECK(symbols != nullptr, common::InternalError, "symbol set is null");
+  RG_CHECK(symbols != nullptr, common::InternalError, "symbol set is null");
   for (const auto &node : pattern.nodes) {
     if (!node.variable.empty()) {
       symbols->insert(node.variable);
@@ -178,7 +179,7 @@ std::unordered_set<std::string> MutatingPatternAvailableSymbols(
     case MutatingPatternKind::kRemove:
       return {};
   }
-  THROW(common::InternalError, "unknown mutating pattern kind");
+  RG_THROW(common::InternalError, "unknown mutating pattern kind");
 }
 
 std::unordered_set<std::string> QueryGraphLocalAvailableSymbols(
@@ -189,8 +190,8 @@ std::unordered_set<std::string> QueryGraphLocalAvailableSymbols(
   symbols.insert(query_graph.pattern_nodes.begin(),
                  query_graph.pattern_nodes.end());
   for (const auto &relationship : query_graph.pattern_relationships) {
-    CHECK(!relationship.variable.empty(), common::InvalidArgumentError,
-          "relationship variable is empty");
+    RG_CHECK(!relationship.variable.empty(), common::InvalidArgumentError,
+             "relationship variable is empty");
     symbols.insert(relationship.variable);
   }
   for (const auto &mutating_pattern : query_graph.mutating_patterns) {
@@ -215,7 +216,7 @@ std::unordered_set<std::string> QueryGraphAvailableSymbols(
 
 void AddSymbol(std::unordered_set<std::string> *symbols,
                const std::string &symbol) {
-  CHECK(symbols != nullptr, common::InternalError, "symbol set is null");
+  RG_CHECK(symbols != nullptr, common::InternalError, "symbol set is null");
   if (!symbol.empty()) {
     symbols->insert(symbol);
   }
@@ -223,15 +224,15 @@ void AddSymbol(std::unordered_set<std::string> *symbols,
 
 void AddSymbols(std::unordered_set<std::string> *symbols,
                 const std::unordered_set<std::string> &incoming) {
-  CHECK(symbols != nullptr, common::InternalError, "symbol set is null");
+  RG_CHECK(symbols != nullptr, common::InternalError, "symbol set is null");
   symbols->insert(incoming.begin(), incoming.end());
 }
 
 void AddExpressionDependencySymbols(
     std::unordered_set<std::string> *dependencies,
     const ast::Expression *expression) {
-  CHECK(dependencies != nullptr, common::InternalError,
-        "dependency set is null");
+  RG_CHECK(dependencies != nullptr, common::InternalError,
+           "dependency set is null");
   if (expression == nullptr) {
     return;
   }
@@ -241,8 +242,8 @@ void AddExpressionDependencySymbols(
 void AddPropertyMapDependencySymbols(
     std::unordered_set<std::string> *dependencies,
     const PatternPropertyMap &properties) {
-  CHECK(dependencies != nullptr, common::InternalError,
-        "dependency set is null");
+  RG_CHECK(dependencies != nullptr, common::InternalError,
+           "dependency set is null");
   for (const auto &entry : properties.entries) {
     AddExpressionDependencySymbols(dependencies, entry.value);
   }
@@ -252,8 +253,8 @@ void AddPropertyMapDependencySymbols(
 void AddCreatePatternDependencySymbols(
     std::unordered_set<std::string> *dependencies,
     const CreatePattern &pattern) {
-  CHECK(dependencies != nullptr, common::InternalError,
-        "dependency set is null");
+  RG_CHECK(dependencies != nullptr, common::InternalError,
+           "dependency set is null");
   AddCreatePatternSymbols(dependencies, pattern);
   for (const auto &node : pattern.nodes) {
     AddPropertyMapDependencySymbols(dependencies, node.properties);
@@ -266,8 +267,8 @@ void AddCreatePatternDependencySymbols(
 void AddSetMutatingPatternDependencySymbols(
     std::unordered_set<std::string> *dependencies,
     const SetMutatingPattern &pattern) {
-  CHECK(dependencies != nullptr, common::InternalError,
-        "dependency set is null");
+  RG_CHECK(dependencies != nullptr, common::InternalError,
+           "dependency set is null");
   AddExpressionDependencySymbols(dependencies, pattern.entity);
   AddExpressionDependencySymbols(dependencies, pattern.value);
 }
@@ -275,8 +276,8 @@ void AddSetMutatingPatternDependencySymbols(
 void AddSetMutatingPatternDependencySymbols(
     std::unordered_set<std::string> *dependencies,
     const std::vector<SetMutatingPattern> &patterns) {
-  CHECK(dependencies != nullptr, common::InternalError,
-        "dependency set is null");
+  RG_CHECK(dependencies != nullptr, common::InternalError,
+           "dependency set is null");
   for (const auto &pattern : patterns) {
     AddSetMutatingPatternDependencySymbols(dependencies, pattern);
   }
@@ -285,16 +286,16 @@ void AddSetMutatingPatternDependencySymbols(
 void AddRemoveMutatingPatternDependencySymbols(
     std::unordered_set<std::string> *dependencies,
     const RemoveMutatingPattern &pattern) {
-  CHECK(dependencies != nullptr, common::InternalError,
-        "dependency set is null");
+  RG_CHECK(dependencies != nullptr, common::InternalError,
+           "dependency set is null");
   AddExpressionDependencySymbols(dependencies, pattern.entity);
 }
 
 void AddRemoveMutatingPatternDependencySymbols(
     std::unordered_set<std::string> *dependencies,
     const std::vector<RemoveMutatingPattern> &patterns) {
-  CHECK(dependencies != nullptr, common::InternalError,
-        "dependency set is null");
+  RG_CHECK(dependencies != nullptr, common::InternalError,
+           "dependency set is null");
   for (const auto &pattern : patterns) {
     AddRemoveMutatingPatternDependencySymbols(dependencies, pattern);
   }
@@ -431,7 +432,7 @@ std::string_view PredicateKindKey(PredicateKind kind) {
     case PredicateKind::kNotExistsSubquery:
       return "not_exists_subquery";
   }
-  THROW(common::InternalError, "unknown predicate kind");
+  RG_THROW(common::InternalError, "unknown predicate kind");
 }
 
 std::vector<std::string> SortedCopy(std::vector<std::string> values) {
@@ -440,7 +441,7 @@ std::vector<std::string> SortedCopy(std::vector<std::string> values) {
 }
 
 void AppendKeyPart(std::string *key, std::string_view part) {
-  CHECK(key != nullptr, common::InternalError, "predicate key is null");
+  RG_CHECK(key != nullptr, common::InternalError, "predicate key is null");
   key->append(std::to_string(part.size()));
   key->push_back(':');
   key->append(part.data(), part.size());
@@ -456,14 +457,14 @@ void AppendKeyParts(std::string *key, std::vector<std::string> parts) {
 
 std::string ExpressionKey(const ast::Expression &expression) {
   std::string key = ast::ExpressionToString(expression);
-  CHECK(!key.empty(), common::InvalidArgumentError,
-        "failed to stringify predicate expression");
+  RG_CHECK(!key.empty(), common::InvalidArgumentError,
+           "failed to stringify predicate expression");
   return key;
 }
 
 std::string PredicateKey(const Predicate &predicate) {
-  CHECK(predicate.expression != nullptr, common::InvalidArgumentError,
-        "predicate expression is null");
+  RG_CHECK(predicate.expression != nullptr, common::InvalidArgumentError,
+           "predicate expression is null");
   std::string key;
   AppendKeyPart(&key, PredicateKindKey(predicate.kind));
 
@@ -481,8 +482,9 @@ std::string PredicateKey(const Predicate &predicate) {
       AppendKeyPart(&key, predicate.variable);
       AppendKeyPart(&key, predicate.property_key);
       AppendKeyPart(&key, predicate.comparison_op);
-      CHECK(predicate.property_value != nullptr, common::InvalidArgumentError,
-            "property predicate value is null");
+      RG_CHECK(predicate.property_value != nullptr,
+               common::InvalidArgumentError,
+               "property predicate value is null");
       AppendKeyPart(&key, ExpressionKey(*predicate.property_value));
       break;
     case PredicateKind::kPropertyIn:
@@ -490,8 +492,9 @@ std::string PredicateKey(const Predicate &predicate) {
       AppendKeyPart(&key, predicate.variable);
       AppendKeyPart(&key, predicate.property_key);
       AppendKeyPart(&key, predicate.comparison_op);
-      CHECK(predicate.property_value != nullptr, common::InvalidArgumentError,
-            "property predicate value is null");
+      RG_CHECK(predicate.property_value != nullptr,
+               common::InvalidArgumentError,
+               "property predicate value is null");
       AppendKeyPart(&key, ExpressionKey(*predicate.property_value));
       break;
     case PredicateKind::kPropertyIsNull:
@@ -505,7 +508,7 @@ std::string PredicateKey(const Predicate &predicate) {
       AppendKeyPart(&key, ExpressionKey(*predicate.expression));
       break;
   }
-  CHECK(!key.empty(), common::InternalError, "predicate key is empty");
+  RG_CHECK(!key.empty(), common::InternalError, "predicate key is empty");
   return key;
 }
 
@@ -558,7 +561,7 @@ bool FillPropertyPredicate(Predicate *predicate,
                            const ast::PropertyExpression *property,
                            const ast::Expression *value,
                            std::string comparison_op, PredicateKind kind) {
-  CHECK(predicate != nullptr, common::InternalError, "predicate is null");
+  RG_CHECK(predicate != nullptr, common::InternalError, "predicate is null");
   if (property == nullptr) {
     return false;
   }
@@ -575,7 +578,8 @@ bool FillPropertyPredicate(Predicate *predicate,
 }
 
 void AddAssertIsNodeVariables(QueryGraph *query_graph) {
-  CHECK(query_graph != nullptr, common::InternalError, "query graph is null");
+  RG_CHECK(query_graph != nullptr, common::InternalError,
+           "query graph is null");
   for (const auto &node : query_graph->pattern_nodes) {
     if (query_graph->argument_ids.contains(node) &&
         !QueryGraphRelationshipCoversVariable(*query_graph, node)) {
@@ -587,9 +591,9 @@ void AddAssertIsNodeVariables(QueryGraph *query_graph) {
 void AddNestedPredicateInfo(Predicate *predicate,
                             const ast::SemanticTable &semantic_table,
                             const QueryGraph *query_graph) {
-  CHECK(predicate != nullptr, common::InternalError, "predicate is null");
-  CHECK(predicate->expression != nullptr, common::InvalidArgumentError,
-        "predicate expression is null");
+  RG_CHECK(predicate != nullptr, common::InternalError, "predicate is null");
+  RG_CHECK(predicate->expression != nullptr, common::InvalidArgumentError,
+           "predicate expression is null");
 
   class Collector final : public ast::ASTConstWalker {
    public:
@@ -646,13 +650,13 @@ void AddNestedPredicateInfo(Predicate *predicate,
 void ClassifyPredicate(Predicate *predicate,
                        const ast::SemanticTable &semantic_table,
                        const QueryGraph *query_graph) {
-  CHECK(predicate != nullptr, common::InternalError, "predicate is null");
-  CHECK(predicate->expression != nullptr, common::InvalidArgumentError,
-        "predicate expression is null");
+  RG_CHECK(predicate != nullptr, common::InternalError, "predicate is null");
+  RG_CHECK(predicate->expression != nullptr, common::InvalidArgumentError,
+           "predicate expression is null");
   const ast::Expression *expression =
       UnwrapParenthesized(predicate->expression);
-  CHECK(expression != nullptr, common::InvalidArgumentError,
-        "predicate expression is null");
+  RG_CHECK(expression != nullptr, common::InvalidArgumentError,
+           "predicate expression is null");
 
   if (expression->Is(ast::ASTNodeType::kLabelPredicateExpression)) {
     const auto *label = ast::CastAst<ast::LabelPredicateExpression>(expression);
@@ -755,18 +759,18 @@ void AddSelectionPredicates(const ast::Expression *where,
                             const QueryGraph *query_graph,
                             Selections *selections,
                             std::unordered_set<std::string> *selection_keys) {
-  CHECK(where != nullptr, common::InvalidArgumentError,
-        "selection predicate is null");
-  CHECK(selections != nullptr, common::InternalError, "selections is null");
-  CHECK(selection_keys != nullptr, common::InternalError,
-        "selection keys is null");
+  RG_CHECK(where != nullptr, common::InvalidArgumentError,
+           "selection predicate is null");
+  RG_CHECK(selections != nullptr, common::InternalError, "selections is null");
+  RG_CHECK(selection_keys != nullptr, common::InternalError,
+           "selection keys is null");
   std::vector<const ast::Expression *> predicates;
   SplitConjunctivePredicates(where, &predicates);
-  CHECK(!predicates.empty(), common::InvalidArgumentError,
-        "selection predicate list is empty");
+  RG_CHECK(!predicates.empty(), common::InvalidArgumentError,
+           "selection predicate list is empty");
   for (const ast::Expression *predicate : predicates) {
-    CHECK(predicate != nullptr, common::InvalidArgumentError,
-          "null selection predicate is not supported");
+    RG_CHECK(predicate != nullptr, common::InvalidArgumentError,
+             "null selection predicate is not supported");
 
     Predicate selection_predicate;
     selection_predicate.expression = predicate;

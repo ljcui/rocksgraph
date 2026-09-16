@@ -54,8 +54,8 @@ std::unordered_map<std::string, std::unordered_set<std::string>>
 SelectionDependenciesByExpression(const ir::Selections &selections) {
   std::unordered_map<std::string, std::unordered_set<std::string>> result;
   for (const auto &predicate : selections.predicates) {
-    CHECK(predicate.expression != nullptr, common::InvalidArgumentError,
-          "null selection predicate in QueryGraph");
+    RG_CHECK(predicate.expression != nullptr, common::InvalidArgumentError,
+             "null selection predicate in QueryGraph");
     result.emplace(ast::ExpressionToString(*predicate.expression),
                    predicate.dependencies);
   }

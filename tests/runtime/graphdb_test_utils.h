@@ -132,8 +132,8 @@ class GraphDBTestDatabase final {
 
   std::string AddNodeIndex(const std::vector<std::string>& labels,
                            std::string_view property, bool unique = false) {
-    CHECK(!labels.empty(), common::InvalidArgumentError,
-          "GraphDB node index requires a label");
+    RG_CHECK(!labels.empty(), common::InvalidArgumentError,
+             "GraphDB node index requires a label");
     const std::string index_name =
         "runtime_node_index_" + std::to_string(index_sequence_++);
     graph_->AddVertexPropertyIndex(index_name, unique, labels.front(),
@@ -148,8 +148,8 @@ class GraphDBTestDatabase final {
   std::string AddRelationshipIndex(const std::vector<std::string>& types,
                                    std::string_view property,
                                    bool unique = false) {
-    CHECK(!types.empty(), common::InvalidArgumentError,
-          "GraphDB relationship index requires a type");
+    RG_CHECK(!types.empty(), common::InvalidArgumentError,
+             "GraphDB relationship index requires a type");
     const std::string index_name =
         "runtime_edge_index_" + std::to_string(index_sequence_++);
     graph_->AddEdgePropertyIndex(index_name, unique, types.front(),
@@ -264,8 +264,9 @@ class GraphDBTestDatabase final {
     constexpr auto timeout = std::chrono::seconds(5);
     const auto deadline = std::chrono::steady_clock::now() + timeout;
     while (!predicate()) {
-      CHECK(std::chrono::steady_clock::now() < deadline,
-            common::InvalidArgumentError, "GraphDB index did not become ready");
+      RG_CHECK(std::chrono::steady_clock::now() < deadline,
+               common::InvalidArgumentError,
+               "GraphDB index did not become ready");
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
   }

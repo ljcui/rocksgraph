@@ -5,6 +5,8 @@ function(add_rocksgraph_test target source library)
   add_test(NAME ${target} COMMAND ${target})
 endfunction()
 
+add_rocksgraph_test(exception_test common/exception_test.cc common)
+
 add_rocksgraph_test(ast_node_type_test ast/ast_node_type_test.cc rocksgraph_ast)
 add_rocksgraph_test(ast_rewriter_test ast/ast_rewriter_test.cc rocksgraph_ast)
 add_rocksgraph_test(ast_to_cypher_test ast/ast_to_cypher_test.cc rocksgraph_ast)

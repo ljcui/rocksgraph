@@ -1,7 +1,7 @@
 #include "graphdb/edge_index_updater.h"
 
 #include "common/byte_utils.h"
-#include "common/exceptions.h"
+#include "common/exception.h"
 #include "graphdb/graph_db.h"
 #include "graphdb/index.h"
 #include "graphdb/transaction.h"
@@ -20,13 +20,13 @@ EdgeSerializedProperties LoadEdgeSerializedProperties(Transaction* txn,
        iter->Next()) {
     auto key = iter->key();
     if (key.size() != sizeof(eid) + sizeof(uint32_t)) {
-      THROW_CODE(StorageEngineError, "edge property key has invalid size");
+      RG_THROW_CODE(StorageEngineError, "edge property key has invalid size");
     }
     properties.emplace(common::ReadValue<uint32_t>(key.data() + sizeof(eid)),
                        iter->value().ToString());
   }
   if (!iter->status().ok()) {
-    THROW_CODE(StorageEngineError, iter->status().ToString());
+    RG_THROW_CODE(StorageEngineError, iter->status().ToString());
   }
   return properties;
 }

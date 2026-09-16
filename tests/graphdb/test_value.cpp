@@ -2,7 +2,7 @@
 
 #include <boost/endian/conversion.hpp>
 
-#include "common/exceptions.h"
+#include "common/exception.h"
 #include "graphdb/value_codec.h"
 #include "value/value.h"
 
@@ -43,14 +43,14 @@ TEST(Value, storageCodecRoundTrip) {
 }
 
 TEST(Value, storageCodecRejectsInvalidData) {
-  EXPECT_THROW(DeserializeValue({}), RocksGraphException);
+  EXPECT_THROW(DeserializeValue({}), common::RocksGraphException);
 
   std::string encoded = SerializeValue(Value(1));
   encoded.push_back('\0');
-  EXPECT_THROW(DeserializeValue(encoded), RocksGraphException);
+  EXPECT_THROW(DeserializeValue(encoded), common::RocksGraphException);
 
   EXPECT_THROW(SerializeValue(Value(Value::Map{{"key", Value(1)}})),
-               RocksGraphException);
+               common::RocksGraphException);
 }
 
 TEST(Endian, big) {

@@ -18,34 +18,34 @@ namespace {
 class PatternConverter {
  public:
   explicit PatternConverter(QueryGraph *graph) : graph_(graph) {
-    CHECK(graph_ != nullptr, common::InternalError,
-          "pattern converter query graph is null");
+    RG_CHECK(graph_ != nullptr, common::InternalError,
+             "pattern converter query graph is null");
   }
 
   void AddPattern(const ast::Pattern &pattern) {
-    CHECK(!pattern.parts.empty(), common::InvalidArgumentError,
-          Missing("pattern part"));
+    RG_CHECK(!pattern.parts.empty(), common::InvalidArgumentError,
+             Missing("pattern part"));
     for (const auto &part : pattern.parts) {
-      CHECK(part != nullptr, common::InvalidArgumentError,
-            Missing("pattern part"));
+      RG_CHECK(part != nullptr, common::InvalidArgumentError,
+               Missing("pattern part"));
       AddPatternPart(*part);
     }
   }
 
   void AddRelationshipsPattern(const ast::RelationshipsPattern &pattern,
                                std::string path_variable = {}) {
-    CHECK(pattern.node_pattern != nullptr, common::InvalidArgumentError,
-          Missing("relationships pattern node"));
-    CHECK(!pattern.chain.empty(), common::InvalidArgumentError,
-          Missing("relationships pattern chain"));
+    RG_CHECK(pattern.node_pattern != nullptr, common::InvalidArgumentError,
+             Missing("relationships pattern node"));
+    RG_CHECK(!pattern.chain.empty(), common::InvalidArgumentError,
+             Missing("relationships pattern chain"));
     PathPattern path;
     std::string left = AddNode(*pattern.node_pattern);
     path.nodes.push_back(left);
     for (const auto &link : pattern.chain) {
-      CHECK(link.first != nullptr, common::InvalidArgumentError,
-            Missing("relationship pattern"));
-      CHECK(link.second != nullptr, common::InvalidArgumentError,
-            Missing("node pattern"));
+      RG_CHECK(link.first != nullptr, common::InvalidArgumentError,
+               Missing("relationship pattern"));
+      RG_CHECK(link.second != nullptr, common::InvalidArgumentError,
+               Missing("node pattern"));
       std::string right = AddNode(*link.second);
       path.relationships.push_back(AddRelationship(*link.first, left, right));
       path.nodes.push_back(right);
@@ -60,8 +60,8 @@ class PatternConverter {
 
  private:
   void AddPatternPart(const ast::PatternPart &part) {
-    CHECK(part.element != nullptr, common::InvalidArgumentError,
-          Missing("pattern element"));
+    RG_CHECK(part.element != nullptr, common::InvalidArgumentError,
+             Missing("pattern element"));
     PathPattern path = AddPatternElement(*part.element);
     if (!part.variable.empty()) {
       graph_->pattern_paths.insert(part.variable);
@@ -72,16 +72,16 @@ class PatternConverter {
 
   PathPattern AddPatternElement(const ast::PatternElement &element) {
     if (!element.node_pattern) {
-      THROW(common::InternalError, "node_pattern is null");
+      RG_THROW(common::InternalError, "node_pattern is null");
     }
     PathPattern path;
     std::string left = AddNode(*element.node_pattern);
     path.nodes.push_back(left);
     for (const auto &link : element.chain) {
-      CHECK(link.first != nullptr, common::InvalidArgumentError,
-            Missing("relationship pattern"));
-      CHECK(link.second != nullptr, common::InvalidArgumentError,
-            Missing("node pattern"));
+      RG_CHECK(link.first != nullptr, common::InvalidArgumentError,
+               Missing("relationship pattern"));
+      RG_CHECK(link.second != nullptr, common::InvalidArgumentError,
+               Missing("node pattern"));
       std::string right = AddNode(*link.second);
       path.relationships.push_back(AddRelationship(*link.first, left, right));
       path.nodes.push_back(right);
@@ -91,12 +91,12 @@ class PatternConverter {
   }
 
   std::string AddNode(const ast::NodePattern &node) {
-    CHECK(!node.variable.empty(), common::InvalidArgumentError,
-          Unsupported("anonymous node"));
-    CHECK(node.labels.empty(), common::InvalidArgumentError,
-          Unsupported("node with labels"));
-    CHECK(!node.properties, common::InvalidArgumentError,
-          Unsupported("node with properties"));
+    RG_CHECK(!node.variable.empty(), common::InvalidArgumentError,
+             Unsupported("anonymous node"));
+    RG_CHECK(node.labels.empty(), common::InvalidArgumentError,
+             Unsupported("node with labels"));
+    RG_CHECK(!node.properties, common::InvalidArgumentError,
+             Unsupported("node with properties"));
     graph_->pattern_nodes.insert(node.variable);
     return node.variable;
   }
@@ -105,10 +105,10 @@ class PatternConverter {
                               const std::string &left,
                               const std::string &right) {
     const ast::RelationshipDetail *detail = pattern.detail.get();
-    CHECK(detail && !detail->variable.empty(), common::InvalidArgumentError,
-          Unsupported("anonymous relationship"));
-    CHECK(!detail->properties, common::InvalidArgumentError,
-          Unsupported("relationship with properties"));
+    RG_CHECK(detail && !detail->variable.empty(), common::InvalidArgumentError,
+             Unsupported("anonymous relationship"));
+    RG_CHECK(!detail->properties, common::InvalidArgumentError,
+             Unsupported("relationship with properties"));
 
     PatternRelationship relationship;
     relationship.variable = detail->variable;
@@ -157,11 +157,11 @@ class CreatePatternConverter {
       : existing_nodes_(std::move(existing_nodes)) {}
 
   CreatePattern Convert(const ast::Pattern &pattern) {
-    CHECK(!pattern.parts.empty(), common::InvalidArgumentError,
-          Missing("updating pattern part"));
+    RG_CHECK(!pattern.parts.empty(), common::InvalidArgumentError,
+             Missing("updating pattern part"));
     for (const auto &part : pattern.parts) {
-      CHECK(part != nullptr, common::InvalidArgumentError,
-            Missing("updating pattern part"));
+      RG_CHECK(part != nullptr, common::InvalidArgumentError,
+               Missing("updating pattern part"));
       AddPatternPart(*part);
     }
     return std::move(pattern_);
@@ -174,8 +174,8 @@ class CreatePatternConverter {
 
  private:
   void AddPatternPart(const ast::PatternPart &part) {
-    CHECK(part.element != nullptr, common::InvalidArgumentError,
-          Missing("updating pattern element"));
+    RG_CHECK(part.element != nullptr, common::InvalidArgumentError,
+             Missing("updating pattern element"));
     PathPattern path = AddPatternElement(*part.element);
     if (!part.variable.empty()) {
       pattern_.path_variables.insert(part.variable);
@@ -185,16 +185,16 @@ class CreatePatternConverter {
   }
 
   PathPattern AddPatternElement(const ast::PatternElement &element) {
-    CHECK(element.node_pattern != nullptr, common::InvalidArgumentError,
-          Missing("updating node pattern"));
+    RG_CHECK(element.node_pattern != nullptr, common::InvalidArgumentError,
+             Missing("updating node pattern"));
     PathPattern path;
     std::string left = AddNode(*element.node_pattern);
     path.nodes.push_back(left);
     for (const auto &link : element.chain) {
-      CHECK(link.first != nullptr, common::InvalidArgumentError,
-            Missing("updating relationship pattern"));
-      CHECK(link.second != nullptr, common::InvalidArgumentError,
-            Missing("updating node pattern"));
+      RG_CHECK(link.first != nullptr, common::InvalidArgumentError,
+               Missing("updating relationship pattern"));
+      RG_CHECK(link.second != nullptr, common::InvalidArgumentError,
+               Missing("updating node pattern"));
       std::string right = AddNode(*link.second);
       path.relationships.push_back(AddRelationship(*link.first, left, right));
       path.nodes.push_back(right);
@@ -204,12 +204,12 @@ class CreatePatternConverter {
   }
 
   std::string AddNode(const ast::NodePattern &node) {
-    CHECK(!node.variable.empty(), common::InvalidArgumentError,
-          Unsupported("anonymous node in updating pattern"));
+    RG_CHECK(!node.variable.empty(), common::InvalidArgumentError,
+             Unsupported("anonymous node in updating pattern"));
     if (node_indexes_.contains(node.variable)) {
-      CHECK(node.labels.empty() && !node.properties,
-            common::InvalidArgumentError,
-            Unsupported("reused updating node with labels or properties"));
+      RG_CHECK(node.labels.empty() && !node.properties,
+               common::InvalidArgumentError,
+               Unsupported("reused updating node with labels or properties"));
       return node.variable;
     }
 
@@ -219,9 +219,9 @@ class CreatePatternConverter {
     create_node.properties = BuildPropertyMap(node.properties.get());
     create_node.previously_bound = existing_nodes_.contains(node.variable);
     if (create_node.previously_bound) {
-      CHECK(create_node.labels.empty() && create_node.properties.empty(),
-            common::InvalidArgumentError,
-            Unsupported("bound updating node with labels or properties"));
+      RG_CHECK(create_node.labels.empty() && create_node.properties.empty(),
+               common::InvalidArgumentError,
+               Unsupported("bound updating node with labels or properties"));
     }
 
     const std::size_t index = pattern_.nodes.size();
@@ -238,11 +238,11 @@ class CreatePatternConverter {
                               const std::string &left,
                               const std::string &right) {
     const ast::RelationshipDetail *detail = pattern.detail.get();
-    CHECK(detail != nullptr && !detail->variable.empty(),
-          common::InvalidArgumentError,
-          Unsupported("anonymous relationship in updating pattern"));
-    CHECK(!detail->range.has_value(), common::InvalidArgumentError,
-          Unsupported("variable-length relationship in updating pattern"));
+    RG_CHECK(detail != nullptr && !detail->variable.empty(),
+             common::InvalidArgumentError,
+             Unsupported("anonymous relationship in updating pattern"));
+    RG_CHECK(!detail->range.has_value(), common::InvalidArgumentError,
+             Unsupported("variable-length relationship in updating pattern"));
 
     CreateRelationshipPattern create_relationship;
     create_relationship.variable = detail->variable;
@@ -307,10 +307,10 @@ std::unique_ptr<ast::Expression> MakePropertyExpression(
 
 const ast::Expression *AddMergeMatchExpression(
     MergeMatchGraph *match_graph, std::unique_ptr<ast::Expression> expression) {
-  CHECK(match_graph != nullptr, common::InternalError,
-        "merge match graph is null");
-  CHECK(expression != nullptr, common::InternalError,
-        "merge match expression is null");
+  RG_CHECK(match_graph != nullptr, common::InternalError,
+           "merge match graph is null");
+  RG_CHECK(expression != nullptr, common::InternalError,
+           "merge match expression is null");
   const ast::Expression *raw = expression.get();
   std::shared_ptr<ast::Expression> owned(std::move(expression));
   match_graph->predicate_expressions.push_back(std::move(owned));
@@ -319,8 +319,8 @@ const ast::Expression *AddMergeMatchExpression(
 
 const ast::Expression *BuildMergeMatchLabelExpression(
     MergeMatchGraph *match_graph, const PatternLabelPredicate &label) {
-  CHECK(match_graph != nullptr, common::InternalError,
-        "merge match graph is null");
+  RG_CHECK(match_graph != nullptr, common::InternalError,
+           "merge match graph is null");
   if (label.variable.empty() || label.labels.empty()) {
     return nullptr;
   }
@@ -333,10 +333,10 @@ const ast::Expression *BuildMergeMatchLabelExpression(
 
 const ast::Expression *BuildMergeMatchPropertyExpression(
     MergeMatchGraph *match_graph, const PatternPropertyEquality &equality) {
-  CHECK(match_graph != nullptr, common::InternalError,
-        "merge match graph is null");
-  CHECK(equality.value != nullptr, common::InvalidArgumentError,
-        "MERGE property equality value is null");
+  RG_CHECK(match_graph != nullptr, common::InternalError,
+           "merge match graph is null");
+  RG_CHECK(equality.value != nullptr, common::InvalidArgumentError,
+           "MERGE property equality value is null");
   if (equality.variable.empty() || equality.property_key.empty()) {
     return nullptr;
   }
@@ -394,8 +394,8 @@ SetMutatingPattern BuildSetMutatingPattern(const ast::SetItem &item) {
     case ast::SetItem::Type::kProperty: {
       const ast::PropertyExpression *property =
           AsPropertyExpression(item.target.get());
-      CHECK(property != nullptr, common::InvalidArgumentError,
-            Missing("SET property target"));
+      RG_CHECK(property != nullptr, common::InvalidArgumentError,
+               Missing("SET property target"));
       pattern.kind = SetMutatingPatternKind::kSetProperty;
       pattern.entity = property->object.get();
       pattern.property_key = property->property_key;
@@ -416,14 +416,15 @@ SetMutatingPattern BuildSetMutatingPattern(const ast::SetItem &item) {
       pattern.labels = item.labels;
       return pattern;
   }
-  THROW(common::InternalError, "unknown SET item kind");
+  RG_THROW(common::InternalError, "unknown SET item kind");
 }
 
 std::vector<SetMutatingPattern> BuildSetMutatingPatterns(const ast::Set &set) {
   std::vector<SetMutatingPattern> patterns;
   patterns.reserve(set.items.size());
   for (const auto &item : set.items) {
-    CHECK(item != nullptr, common::InvalidArgumentError, Missing("SET item"));
+    RG_CHECK(item != nullptr, common::InvalidArgumentError,
+             Missing("SET item"));
     patterns.push_back(BuildSetMutatingPattern(*item));
   }
   return patterns;
@@ -435,8 +436,8 @@ RemoveMutatingPattern BuildRemoveMutatingPattern(const ast::RemoveItem &item) {
     case ast::RemoveItem::Type::kProperty: {
       const ast::PropertyExpression *property =
           AsPropertyExpression(item.target.get());
-      CHECK(property != nullptr, common::InvalidArgumentError,
-            Missing("REMOVE property target"));
+      RG_CHECK(property != nullptr, common::InvalidArgumentError,
+               Missing("REMOVE property target"));
       pattern.kind = RemoveMutatingPatternKind::kRemoveProperty;
       pattern.entity = property->object.get();
       pattern.property_key = property->property_key;
@@ -448,7 +449,7 @@ RemoveMutatingPattern BuildRemoveMutatingPattern(const ast::RemoveItem &item) {
       pattern.labels = item.labels;
       return pattern;
   }
-  THROW(common::InternalError, "unknown REMOVE item kind");
+  RG_THROW(common::InternalError, "unknown REMOVE item kind");
 }
 
 std::vector<RemoveMutatingPattern> BuildRemoveMutatingPatterns(
@@ -456,8 +457,8 @@ std::vector<RemoveMutatingPattern> BuildRemoveMutatingPatterns(
   std::vector<RemoveMutatingPattern> patterns;
   patterns.reserve(remove.items.size());
   for (const auto &item : remove.items) {
-    CHECK(item != nullptr, common::InvalidArgumentError,
-          Missing("REMOVE item"));
+    RG_CHECK(item != nullptr, common::InvalidArgumentError,
+             Missing("REMOVE item"));
     patterns.push_back(BuildRemoveMutatingPattern(*item));
   }
   return patterns;
@@ -467,15 +468,15 @@ MergePattern BuildMergePattern(
     const ast::Merge &merge,
     const std::unordered_set<std::string> &available_arguments,
     std::unordered_set<LogicalVariable> existing_nodes) {
-  CHECK(merge.pattern_part != nullptr, common::InvalidArgumentError,
-        Missing("MERGE pattern"));
+  RG_CHECK(merge.pattern_part != nullptr, common::InvalidArgumentError,
+           Missing("MERGE pattern"));
   MergePattern pattern;
   pattern.create_pattern =
       BuildCreatePattern(*merge.pattern_part, std::move(existing_nodes));
   pattern.actions.reserve(merge.actions.size());
   for (const auto &action : merge.actions) {
-    CHECK(action.second != nullptr, common::InvalidArgumentError,
-          Missing("MERGE action SET"));
+    RG_CHECK(action.second != nullptr, common::InvalidArgumentError,
+             Missing("MERGE action SET"));
     MergeActionPattern action_pattern;
     action_pattern.on_match = action.first;
     action_pattern.set_patterns = BuildSetMutatingPatterns(*action.second);
@@ -521,13 +522,13 @@ void QueryGraphBuilder::BuildReadingClause(const ast::ReadingClause &clause) {
       BuildMatch(ast::CastAst<ast::Match>(clause));
       return;
     case ast::ASTNodeType::kUnwind:
-      THROW(common::InvalidArgumentError, Unsupported("UNWIND"));
+      RG_THROW(common::InvalidArgumentError, Unsupported("UNWIND"));
     case ast::ASTNodeType::kInQueryCall:
-      THROW(common::InvalidArgumentError, Unsupported("procedure call"));
+      RG_THROW(common::InvalidArgumentError, Unsupported("procedure call"));
     default:
       break;
   }
-  THROW(common::InvalidArgumentError, Unsupported("reading clause"));
+  RG_THROW(common::InvalidArgumentError, Unsupported("reading clause"));
 }
 
 void QueryGraphBuilder::BuildUpdatingClause(const ast::UpdatingClause &clause) {
@@ -572,11 +573,11 @@ void QueryGraphBuilder::BuildOptionalMatch(const ast::Match &match) {
 
 void QueryGraphBuilder::BuildRequiredMatch(const ast::Match &match) {
   if (match.optional_match) {
-    CHECK(match.pattern != nullptr, common::InvalidArgumentError,
-          Missing("OPTIONAL MATCH pattern"));
+    RG_CHECK(match.pattern != nullptr, common::InvalidArgumentError,
+             Missing("OPTIONAL MATCH pattern"));
   } else {
-    CHECK(match.pattern != nullptr, common::InvalidArgumentError,
-          Missing("MATCH pattern"));
+    RG_CHECK(match.pattern != nullptr, common::InvalidArgumentError,
+             Missing("MATCH pattern"));
   }
   AddPatternToQueryGraph(&graph_, *match.pattern);
   if (match.where) {
@@ -612,8 +613,8 @@ MutatingPattern QueryGraphBuilder::BuildMutatingPattern(
   switch (clause.node_type) {
     case ast::ASTNodeType::kCreate: {
       const auto &create = ast::CastAst<ast::Create>(clause);
-      CHECK(create.pattern != nullptr, common::InvalidArgumentError,
-            Missing("CREATE pattern"));
+      RG_CHECK(create.pattern != nullptr, common::InvalidArgumentError,
+               Missing("CREATE pattern"));
       mutating_pattern.kind = MutatingPatternKind::kCreate;
       mutating_pattern.create =
           BuildCreatePattern(*create.pattern, CurrentNodeSymbols());
@@ -637,8 +638,8 @@ MutatingPattern QueryGraphBuilder::BuildMutatingPattern(
       mutating_pattern.kind = MutatingPatternKind::kDelete;
       mutating_pattern.delete_patterns.reserve(del.expressions.size());
       for (const auto &expression : del.expressions) {
-        CHECK(expression != nullptr, common::InvalidArgumentError,
-              Missing("DELETE expression"));
+        RG_CHECK(expression != nullptr, common::InvalidArgumentError,
+                 Missing("DELETE expression"));
         mutating_pattern.delete_patterns.push_back(
             {.expression = expression.get(), .detach = del.detach});
       }
@@ -653,12 +654,12 @@ MutatingPattern QueryGraphBuilder::BuildMutatingPattern(
     default:
       break;
   }
-  THROW(common::InvalidArgumentError, Unsupported("updating clause"));
+  RG_THROW(common::InvalidArgumentError, Unsupported("updating clause"));
 }
 
 const ast::SemanticTable &QueryGraphBuilder::SemanticTableRef() const {
-  CHECK(semantic_table_ != nullptr, common::InternalError,
-        "semantic table is null");
+  RG_CHECK(semantic_table_ != nullptr, common::InternalError,
+           "semantic table is null");
   return *semantic_table_;
 }
 

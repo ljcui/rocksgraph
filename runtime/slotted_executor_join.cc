@@ -20,7 +20,8 @@ class LeftOuterHashJoinOperator final : public PullOperator {
   ~LeftOuterHashJoinOperator() override { Close(); }
 
   bool Next(SlottedRow *row) override {
-    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+             "output row is null");
     state_->CheckCancelled();
     if (closed_) {
       return false;
@@ -166,8 +167,8 @@ class CachedNestedLoopState final {
   ~CachedNestedLoopState() { Close(); }
 
   [[nodiscard]] bool Next(const SlottedRow **lhs, const SlottedRow **rhs) {
-    CHECK(lhs != nullptr && rhs != nullptr, common::InvalidArgumentError,
-          "nested-loop output rows are null");
+    RG_CHECK(lhs != nullptr && rhs != nullptr, common::InvalidArgumentError,
+             "nested-loop output rows are null");
     state_->CheckCancelled();
     if (closed_) {
       return false;
@@ -228,8 +229,8 @@ class CachedNestedLoopState final {
 
   void Initialize() {
     initialized_ = true;
-    CHECK(CachedChild() < 2, common::InternalError,
-          "invalid nested-loop cached child");
+    RG_CHECK(CachedChild() < 2, common::InternalError,
+             "invalid nested-loop cached child");
     PullOperator *source = Source(CachedChild());
     while (true) {
       SlottedRow input(node_->children[CachedChild()]->output_slots);
@@ -272,7 +273,8 @@ class CartesianProductOperator final : public PullOperator {
   ~CartesianProductOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
-    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+             "output row is null");
     const SlottedRow *lhs = nullptr;
     const SlottedRow *rhs = nullptr;
     while (loop_.Next(&lhs, &rhs)) {
@@ -310,7 +312,8 @@ class PredicateJoinOperator final : public PullOperator {
   ~PredicateJoinOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
-    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+             "output row is null");
     const SlottedRow *lhs = nullptr;
     const SlottedRow *rhs = nullptr;
     while (loop_.Next(&lhs, &rhs)) {
@@ -358,7 +361,8 @@ class NodeHashJoinOperator final : public PullOperator {
   ~NodeHashJoinOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
-    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+             "output row is null");
     state_->CheckCancelled();
     if (closed_) {
       return false;
@@ -441,8 +445,8 @@ class NodeHashJoinOperator final : public PullOperator {
 
   void Initialize() {
     initialized_ = true;
-    CHECK(BuildChild() < 2, common::InternalError,
-          "invalid node hash join build child");
+    RG_CHECK(BuildChild() < 2, common::InternalError,
+             "invalid node hash join build child");
     PullOperator *source = Source(BuildChild());
     while (true) {
       SlottedRow input(node_->children[BuildChild()]->output_slots);
@@ -510,7 +514,8 @@ class ValueHashJoinOperator final : public PullOperator {
   ~ValueHashJoinOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
-    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+             "output row is null");
     state_->CheckCancelled();
     if (closed_) {
       return false;
@@ -615,8 +620,8 @@ class ValueHashJoinOperator final : public PullOperator {
 
   void Initialize() {
     initialized_ = true;
-    CHECK(BuildChild() < 2, common::InternalError,
-          "invalid value hash join build child");
+    RG_CHECK(BuildChild() < 2, common::InternalError,
+             "invalid value hash join build child");
     PullOperator *source = Source(BuildChild());
     while (true) {
       SlottedRow input(node_->children[BuildChild()]->output_slots);
@@ -682,7 +687,8 @@ class UnionInputState final {
   ~UnionInputState() { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) {
-    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+             "output row is null");
     state_->CheckCancelled();
     if (closed_) {
       return false;
@@ -759,7 +765,8 @@ class UnionDistinctOperator final : public PullOperator {
   ~UnionDistinctOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
-    CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+             "output row is null");
     if (closed_) {
       return false;
     }
@@ -1028,9 +1035,9 @@ class MergeOperator final : public PullOperator {
 std::unique_ptr<PullOperator> BuildBinaryOperator(
     const PhysicalPlanNode &node, RuntimeState &state,
     std::unique_ptr<PullOperator> lhs, std::unique_ptr<PullOperator> rhs) {
-  CHECK(node.children.size() == 2, common::InternalError,
-        std::string(ToString(node.kind)) +
-            " physical node must have two children");
+  RG_CHECK(node.children.size() == 2, common::InternalError,
+           std::string(ToString(node.kind)) +
+               " physical node must have two children");
   switch (node.kind) {
     case PhysicalOperatorKind::kUnionAll:
       return std::make_unique<UnionAllOperator>(node, state, std::move(lhs),
@@ -1054,17 +1061,17 @@ std::unique_ptr<PullOperator> BuildBinaryOperator(
       return std::make_unique<PredicateJoinOperator>(
           node, state, std::move(lhs), std::move(rhs));
     default:
-      THROW(common::InternalError, "not a binary physical operator: " +
-                                       std::string(ToString(node.kind)));
+      RG_THROW(common::InternalError, "not a binary physical operator: " +
+                                          std::string(ToString(node.kind)));
   }
 }
 
 std::unique_ptr<PullOperator> BuildCorrelatedOperator(
     const PhysicalPlanNode &node, RuntimeState &state, OperatorFactory &factory,
     std::unique_ptr<PullOperator> lhs) {
-  CHECK(node.children.size() == 2, common::InternalError,
-        std::string(ToString(node.kind)) +
-            " physical node must have two children");
+  RG_CHECK(node.children.size() == 2, common::InternalError,
+           std::string(ToString(node.kind)) +
+               " physical node must have two children");
   switch (node.kind) {
     case PhysicalOperatorKind::kApply:
       return std::make_unique<ApplyOperator>(node, state, factory,
@@ -1091,8 +1098,8 @@ std::unique_ptr<PullOperator> BuildCorrelatedOperator(
       return std::make_unique<MergeOperator>(node, state, factory,
                                              std::move(lhs));
     default:
-      THROW(common::InternalError, "not a correlated physical operator: " +
-                                       std::string(ToString(node.kind)));
+      RG_THROW(common::InternalError, "not a correlated physical operator: " +
+                                          std::string(ToString(node.kind)));
   }
 }
 
@@ -1101,8 +1108,8 @@ bool CorrelatedRightState::NextLeft() {
   if (closed_) {
     return false;
   }
-  CHECK(!current_left_.has_value() && rhs_ == nullptr, common::InternalError,
-        "correlated right state still has an active left row");
+  RG_CHECK(!current_left_.has_value() && rhs_ == nullptr, common::InternalError,
+           "correlated right state still has an active left row");
   SlottedRow lhs_row(node_->children[0]->output_slots);
   if (!lhs_->Next(&lhs_row)) {
     Close();
@@ -1114,23 +1121,23 @@ bool CorrelatedRightState::NextLeft() {
 
 void CorrelatedRightState::OpenRight() {
   state_->CheckCancelled();
-  CHECK(!closed_ && current_left_.has_value() && rhs_ == nullptr,
-        common::InternalError,
-        "correlated right state cannot open the right child");
+  RG_CHECK(!closed_ && current_left_.has_value() && rhs_ == nullptr,
+           common::InternalError,
+           "correlated right state cannot open the right child");
   rhs_ = factory_->Build(*node_->children[1], *current_left_);
 }
 
 bool CorrelatedRightState::NextRight(SlottedRow *row) {
-  CHECK(row != nullptr, common::InvalidArgumentError, "right row is null");
-  CHECK(current_left_.has_value() && rhs_ != nullptr, common::InternalError,
-        "correlated right state has no active left row");
+  RG_CHECK(row != nullptr, common::InvalidArgumentError, "right row is null");
+  RG_CHECK(current_left_.has_value() && rhs_ != nullptr, common::InternalError,
+           "correlated right state has no active left row");
   state_->CheckCancelled();
   return rhs_->Next(row);
 }
 
 const SlottedRow &CorrelatedRightState::Left() const {
-  CHECK(current_left_.has_value(), common::InternalError,
-        "correlated right state has no active left row");
+  RG_CHECK(current_left_.has_value(), common::InternalError,
+           "correlated right state has no active left row");
   return *current_left_;
 }
 
@@ -1154,7 +1161,7 @@ void CorrelatedRightState::Close() noexcept {
 }
 
 bool ApplyOperator::Next(SlottedRow *row) {
-  CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+  RG_CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
   while (true) {
     state_->CheckCancelled();
     if (!correlated_.HasLeft()) {
@@ -1180,7 +1187,7 @@ bool ApplyOperator::Next(SlottedRow *row) {
 }
 
 bool OptionalApplyOperator::Next(SlottedRow *row) {
-  CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+  RG_CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
   while (true) {
     state_->CheckCancelled();
     if (!correlated_.HasLeft()) {
@@ -1219,7 +1226,7 @@ bool OptionalApplyOperator::Next(SlottedRow *row) {
   }
 }
 bool SemiApplyOperator::Next(SlottedRow *row) {
-  CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+  RG_CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
   while (correlated_.NextLeft()) {
     correlated_.OpenRight();
     SlottedRow rhs(node_->children[1]->output_slots);
@@ -1236,7 +1243,7 @@ bool SemiApplyOperator::Next(SlottedRow *row) {
 }
 
 bool AntiSemiApplyOperator::Next(SlottedRow *row) {
-  CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+  RG_CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
   while (correlated_.NextLeft()) {
     correlated_.OpenRight();
     SlottedRow rhs(node_->children[1]->output_slots);
@@ -1253,7 +1260,7 @@ bool AntiSemiApplyOperator::Next(SlottedRow *row) {
 }
 
 bool LetSemiApplyOperator::Next(SlottedRow *row) {
-  CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+  RG_CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
   if (!correlated_.NextLeft()) {
     return false;
   }
@@ -1268,7 +1275,7 @@ bool LetSemiApplyOperator::Next(SlottedRow *row) {
 }
 
 bool SelectOrSemiApplyOperator::Next(SlottedRow *row) {
-  CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+  RG_CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
   while (correlated_.NextLeft()) {
     if (PredicateIsTrue(
             Evaluate(data_->predicate, correlated_.Left(), *state_))) {
@@ -1292,7 +1299,7 @@ bool SelectOrSemiApplyOperator::Next(SlottedRow *row) {
 }
 
 bool RollUpApplyOperator::Next(SlottedRow *row) {
-  CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
+  RG_CHECK(row != nullptr, common::InvalidArgumentError, "output row is null");
   if (!correlated_.NextLeft()) {
     return false;
   }

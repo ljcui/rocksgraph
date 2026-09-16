@@ -8,7 +8,7 @@
 #include <cstring>
 
 #include "common/byte_utils.h"
-#include "common/exceptions.h"
+#include "common/exception.h"
 #include "common/logger.h"
 #include "graph_db.h"
 #include "graphdb/transaction.h"
@@ -30,14 +30,14 @@ int64_t ReadEdgePropertyIndexEid(
     rocksdb::Slice value) {
   if (index->is_unique()) {
     if (value.size() != sizeof(int64_t)) {
-      THROW_CODE(StorageEngineError,
-                 "edge unique index stores invalid eid size");
+      RG_THROW_CODE(StorageEngineError,
+                    "edge unique index stores invalid eid size");
     }
     return ReadValue<int64_t>(value.data());
   }
   if (key.size() < sizeof(uint32_t) + sizeof(int64_t)) {
-    THROW_CODE(StorageEngineError,
-               "edge non-unique index stores invalid key size");
+    RG_THROW_CODE(StorageEngineError,
+                  "edge non-unique index stores invalid key size");
   }
   return ReadValue<int64_t>(key.data() + key.size() - sizeof(int64_t));
 }
@@ -76,14 +76,14 @@ void ScanEdgeByTypes::Load() {
   const rocksdb::Slice key = iter_->key();
   const rocksdb::Slice value = iter_->value();
   if (key.size() != sizeof(uint32_t) + sizeof(int64_t)) {
-    THROW_CODE(StorageEngineError,
-               "edge type/eid key has invalid size, expect {}, actual {}",
-               sizeof(uint32_t) + sizeof(int64_t), key.size());
+    RG_THROW_CODE(StorageEngineError,
+                  "edge type/eid key has invalid size, expect {}, actual {}",
+                  sizeof(uint32_t) + sizeof(int64_t), key.size());
   }
   if (value.size() != 2 * sizeof(int64_t)) {
-    THROW_CODE(StorageEngineError,
-               "edge type/eid value has invalid size, expect {}, actual {}",
-               2 * sizeof(int64_t), value.size());
+    RG_THROW_CODE(StorageEngineError,
+                  "edge type/eid value has invalid size, expect {}, actual {}",
+                  2 * sizeof(int64_t), value.size());
   }
 
   const char *key_data = key.data();
@@ -112,8 +112,8 @@ void ScanEdgeByTypes::SeekToNextPrefix() {
 
 void ScanEdgeByTypes::CheckIteratorStatus() const {
   if (!iter_->status().ok()) {
-    THROW_CODE(StorageEngineError, "edge scan iterator failed: {}",
-               iter_->status().ToString());
+    RG_THROW_CODE(StorageEngineError, "edge scan iterator failed: {}",
+                  iter_->status().ToString());
   }
 }
 
@@ -431,7 +431,7 @@ GetEdgeByPropertyIndex::GetEdgeByPropertyIndex(
           ReadEdgePropertyIndexEid(index_, rocksdb::Slice(prefix_), index_val));
       valid_ = true;
     } else if (!s.IsNotFound()) {
-      THROW_CODE(StorageEngineError, s.ToString());
+      RG_THROW_CODE(StorageEngineError, s.ToString());
     }
     return;
   }
@@ -449,7 +449,7 @@ void GetEdgeByPropertyIndex::SeekToNextValid() {
     valid_ = true;
   }
   if (iter_ && !iter_->status().ok()) {
-    THROW_CODE(StorageEngineError, iter_->status().ToString());
+    RG_THROW_CODE(StorageEngineError, iter_->status().ToString());
   }
 }
 
@@ -503,7 +503,7 @@ void GetEdgeByPropertyRange::SeekToNextValid() {
     return;
   }
   if (iter_ && !iter_->status().ok()) {
-    THROW_CODE(StorageEngineError, iter_->status().ToString());
+    RG_THROW_CODE(StorageEngineError, iter_->status().ToString());
   }
 }
 

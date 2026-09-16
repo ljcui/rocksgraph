@@ -11,7 +11,7 @@
 #include <algorithm>
 #include <filesystem>
 
-#include "common/exceptions.h"
+#include "common/exception.h"
 
 namespace graphdb {
 
@@ -63,14 +63,14 @@ std::unique_ptr<FaissHnswIndex> FaissHnswIndex::Load(
     index->ValidateIndex(dim);
     auto* id_map = dynamic_cast<faiss::IndexIDMap2*>(index->index_.get());
     if (id_map == nullptr) {
-      THROW_CODE(VectorIndexException,
-                 "loaded index is not a faiss id-mapped hnsw index");
+      RG_THROW_CODE(VectorIndexException,
+                    "loaded index is not a faiss id-mapped hnsw index");
     }
     id_map->construct_rev_map();
     return index;
   } catch (const faiss::FaissException& e) {
-    THROW_CODE(IOException, "failed to load faiss hnsw index {}: {}", path,
-               e.msg);
+    RG_THROW_CODE(IOException, "failed to load faiss hnsw index {}: {}", path,
+                  e.msg);
   }
   return nullptr;
 }
@@ -92,7 +92,7 @@ void FaissHnswIndex::Add(const float* vectors, int64_t num_elements,
     }
     index_->add_with_ids(num_elements, vectors, faiss_ids.data());
   } catch (const faiss::FaissException& e) {
-    THROW_CODE(VectorIndexException, "failed to add vectors: {}", e.msg);
+    RG_THROW_CODE(VectorIndexException, "failed to add vectors: {}", e.msg);
   }
 }
 
@@ -117,7 +117,8 @@ FaissHnswIndex::SearchResult FaissHnswIndex::KnnSearch(
     index_->search(1, query, top_k, result.distances.data(), result.ids.data(),
                    &params);
   } catch (const faiss::FaissException& e) {
-    THROW_CODE(VectorIndexException, "search failed with exception: {}", e.msg);
+    RG_THROW_CODE(VectorIndexException, "search failed with exception: {}",
+                  e.msg);
   }
 
   return result;
@@ -132,11 +133,11 @@ void FaissHnswIndex::WriteToFile(const std::string& path) const {
     faiss::write_index(index_.get(), tmp.c_str());
     std::filesystem::rename(tmp, target);
   } catch (const faiss::FaissException& e) {
-    THROW_CODE(IOException, "failed to persist faiss hnsw index {}: {}", path,
-               e.msg);
+    RG_THROW_CODE(IOException, "failed to persist faiss hnsw index {}: {}",
+                  path, e.msg);
   } catch (const std::filesystem::filesystem_error& e) {
-    THROW_CODE(IOException, "failed to persist faiss hnsw index {}: {}", path,
-               e.what());
+    RG_THROW_CODE(IOException, "failed to persist faiss hnsw index {}: {}",
+                  path, e.what());
   }
 }
 
@@ -169,8 +170,8 @@ int FaissHnswIndex::DistanceTypeToFaissMetricType(
     case meta::VectorDistanceType::COSINE:
       return faiss::MetricType::METRIC_INNER_PRODUCT;
     default:
-      THROW_CODE(VectorIndexException, "invalid metric_type: {}",
-                 meta::VectorDistanceType_Name(distance_type));
+      RG_THROW_CODE(VectorIndexException, "invalid metric_type: {}",
+                    meta::VectorDistanceType_Name(distance_type));
   }
   return faiss::MetricType::METRIC_L2;
 }
@@ -178,8 +179,8 @@ int FaissHnswIndex::DistanceTypeToFaissMetricType(
 faiss::Index* FaissHnswIndex::BaseIndex() {
   auto* id_map = dynamic_cast<faiss::IndexIDMap*>(index_.get());
   if (id_map == nullptr) {
-    THROW_CODE(VectorIndexException,
-               "faiss index is not wrapped by index id map");
+    RG_THROW_CODE(VectorIndexException,
+                  "faiss index is not wrapped by index id map");
   }
   return id_map->index;
 }
@@ -187,8 +188,8 @@ faiss::Index* FaissHnswIndex::BaseIndex() {
 const faiss::Index* FaissHnswIndex::BaseIndex() const {
   auto* id_map = dynamic_cast<const faiss::IndexIDMap*>(index_.get());
   if (id_map == nullptr) {
-    THROW_CODE(VectorIndexException,
-               "faiss index is not wrapped by index id map");
+    RG_THROW_CODE(VectorIndexException,
+                  "faiss index is not wrapped by index id map");
   }
   return id_map->index;
 }
@@ -196,7 +197,8 @@ const faiss::Index* FaissHnswIndex::BaseIndex() const {
 faiss::IndexHNSW* FaissHnswIndex::HnswIndex() {
   auto* hnsw = dynamic_cast<faiss::IndexHNSW*>(BaseIndex());
   if (hnsw == nullptr) {
-    THROW_CODE(VectorIndexException, "loaded index is not a faiss hnsw index");
+    RG_THROW_CODE(VectorIndexException,
+                  "loaded index is not a faiss hnsw index");
   }
   return hnsw;
 }
@@ -204,7 +206,8 @@ faiss::IndexHNSW* FaissHnswIndex::HnswIndex() {
 const faiss::IndexHNSW* FaissHnswIndex::HnswIndex() const {
   auto* hnsw = dynamic_cast<const faiss::IndexHNSW*>(BaseIndex());
   if (hnsw == nullptr) {
-    THROW_CODE(VectorIndexException, "loaded index is not a faiss hnsw index");
+    RG_THROW_CODE(VectorIndexException,
+                  "loaded index is not a faiss hnsw index");
   }
   return hnsw;
 }
@@ -212,8 +215,8 @@ const faiss::IndexHNSW* FaissHnswIndex::HnswIndex() const {
 faiss::IndexFlatCodes* FaissHnswIndex::FlatStorage() {
   auto* storage = dynamic_cast<faiss::IndexFlatCodes*>(HnswIndex()->storage);
   if (storage == nullptr) {
-    THROW_CODE(VectorIndexException,
-               "faiss hnsw index storage is not flat code storage");
+    RG_THROW_CODE(VectorIndexException,
+                  "faiss hnsw index storage is not flat code storage");
   }
   return storage;
 }
@@ -222,35 +225,37 @@ const faiss::IndexFlatCodes* FaissHnswIndex::FlatStorage() const {
   auto* storage =
       dynamic_cast<const faiss::IndexFlatCodes*>(HnswIndex()->storage);
   if (storage == nullptr) {
-    THROW_CODE(VectorIndexException,
-               "faiss hnsw index storage is not flat code storage");
+    RG_THROW_CODE(VectorIndexException,
+                  "faiss hnsw index storage is not flat code storage");
   }
   return storage;
 }
 
 void FaissHnswIndex::ValidateIndex(int64_t dim) const {
   if (index_->d != dim) {
-    THROW_CODE(VectorIndexException,
-               "dimension mismatch when loading faiss hnsw index, expect {}, "
-               "actual {}",
-               dim, index_->d);
+    RG_THROW_CODE(
+        VectorIndexException,
+        "dimension mismatch when loading faiss hnsw index, expect {}, "
+        "actual {}",
+        dim, index_->d);
   }
   if (index_->metric_type !=
       static_cast<faiss::MetricType>(
           DistanceTypeToFaissMetricType(distance_type_))) {
-    THROW_CODE(VectorIndexException,
-               "metric mismatch when loading faiss hnsw index");
+    RG_THROW_CODE(VectorIndexException,
+                  "metric mismatch when loading faiss hnsw index");
   }
 
   const auto* hnsw = HnswIndex();
   if (hnsw->hnsw.nb_neighbors(0) != hnsw_m_ * 2 ||
       hnsw->hnsw.nb_neighbors(1) != hnsw_m_) {
-    THROW_CODE(VectorIndexException,
-               "hnsw m mismatch when loading faiss hnsw index");
+    RG_THROW_CODE(VectorIndexException,
+                  "hnsw m mismatch when loading faiss hnsw index");
   }
   if (hnsw->hnsw.efConstruction != ef_construction_) {
-    THROW_CODE(VectorIndexException,
-               "hnsw ef_construction mismatch when loading faiss hnsw index");
+    RG_THROW_CODE(
+        VectorIndexException,
+        "hnsw ef_construction mismatch when loading faiss hnsw index");
   }
 }
 

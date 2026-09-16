@@ -30,8 +30,8 @@ Expression *UnwrapParenthesized(Expression *expression) {
   while (unwrapped != nullptr &&
          unwrapped->Is(ASTNodeType::kParenthesizedExpression)) {
     auto *parenthesized = CastAst<ParenthesizedExpression>(unwrapped);
-    CHECK(parenthesized->expr != nullptr, common::InternalError,
-          "parenthesized expression is null");
+    RG_CHECK(parenthesized->expr != nullptr, common::InternalError,
+             "parenthesized expression is null");
     unwrapped = parenthesized->expr.get();
   }
   return unwrapped;
@@ -289,24 +289,24 @@ const ProjectionBody *TerminalProjectionBody(const SingleQuery &query) {
   switch (query.node_type) {
     case ASTNodeType::kSinglePartQuery: {
       const auto &single = CastAst<SinglePartQuery>(query);
-      CHECK(single.return_clause != nullptr, common::InternalError,
-            "single part query return clause is null");
-      CHECK(single.return_clause->body != nullptr, common::InternalError,
-            "single part query return body is null");
+      RG_CHECK(single.return_clause != nullptr, common::InternalError,
+               "single part query return clause is null");
+      RG_CHECK(single.return_clause->body != nullptr, common::InternalError,
+               "single part query return body is null");
       return single.return_clause->body.get();
     }
     case ASTNodeType::kMultiPartQuery: {
       const auto &multi = CastAst<MultiPartQuery>(query);
-      CHECK(multi.final_single_part_query != nullptr, common::InternalError,
-            "multi part query final single part is null");
-      CHECK(multi.final_single_part_query->return_clause != nullptr,
-            common::InternalError, "multi part query return clause is null");
-      CHECK(multi.final_single_part_query->return_clause->body != nullptr,
-            common::InternalError, "multi part query return body is null");
+      RG_CHECK(multi.final_single_part_query != nullptr, common::InternalError,
+               "multi part query final single part is null");
+      RG_CHECK(multi.final_single_part_query->return_clause != nullptr,
+               common::InternalError, "multi part query return clause is null");
+      RG_CHECK(multi.final_single_part_query->return_clause->body != nullptr,
+               common::InternalError, "multi part query return body is null");
       return multi.final_single_part_query->return_clause->body.get();
     }
     default: {
-      THROW(common::InternalError, "unsupported single query type");
+      RG_THROW(common::InternalError, "unsupported single query type");
     }
   }
 }
@@ -314,8 +314,8 @@ const ProjectionBody *TerminalProjectionBody(const SingleQuery &query) {
 std::optional<std::vector<std::string>> CollectTerminalColumns(
     const SingleQuery &query) {
   const ProjectionBody *body = TerminalProjectionBody(query);
-  CHECK(body != nullptr, common::InternalError,
-        "terminal projection body must not be null");
+  RG_CHECK(body != nullptr, common::InternalError,
+           "terminal projection body must not be null");
   if (body->star) {
     return std::nullopt;
   }
@@ -323,17 +323,17 @@ std::optional<std::vector<std::string>> CollectTerminalColumns(
   std::vector<std::string> columns;
   columns.reserve(body->items.size());
   for (const auto &item : body->items) {
-    CHECK(item != nullptr, common::InternalError, "projection item is null");
+    RG_CHECK(item != nullptr, common::InternalError, "projection item is null");
     if (!item->alias.empty()) {
       columns.push_back(item->alias);
       continue;
     }
 
-    CHECK(item->expression != nullptr, common::InternalError,
-          "projection item expression is null");
+    RG_CHECK(item->expression != nullptr, common::InternalError,
+             "projection item expression is null");
     const std::string name = ExpressionToString(*item->expression);
-    CHECK(!name.empty(), common::InternalError,
-          "projection item alias stringify failed");
+    RG_CHECK(!name.empty(), common::InternalError,
+             "projection item alias stringify failed");
     columns.push_back(name);
   }
   return columns;
@@ -500,7 +500,7 @@ class SemanticValidator : public ASTWalker {
   }
 
   void Visit(With &node) override {
-    CHECK(node.body != nullptr, common::InternalError, "WITH body is null");
+    RG_CHECK(node.body != nullptr, common::InternalError, "WITH body is null");
     ValidateWithAliases(*node.body);
     const Scope pre = CurrentScope();
     node.body->Accept(*this);
@@ -1311,7 +1311,7 @@ class SemanticValidator : public ASTWalker {
         return function.arguments.empty()
                    ? StaticValue{}
                    : (builtin->kind == BuiltinFunctionKind::kHead ||
-                      builtin->kind == BuiltinFunctionKind::kLast
+                              builtin->kind == BuiltinFunctionKind::kLast
                           ? ListElementType(function.arguments[0].get())
                           : InferType(function.arguments[0].get()));
       case BuiltinFunctionKind::kMaximum:
@@ -1825,7 +1825,7 @@ void ValidateStatement(ASTNode &node) {
   SemanticValidator validator(errors);
   validator.Validate(node);
   if (!errors.empty()) {
-    THROW(SemanticError, std::move(errors));
+    RG_THROW(SemanticError, std::move(errors));
   }
 }
 

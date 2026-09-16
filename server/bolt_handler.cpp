@@ -19,7 +19,6 @@
 #include "bolt/temporal.h"
 #include "bolt/worker_pool.h"
 #include "common/exception.h"
-#include "common/exceptions.h"
 #include "common/logger.h"
 #include "graphdb/graph_db.h"
 #include "graphdb/transaction.h"
@@ -206,7 +205,8 @@ rg::Value ConvertParameter(const std::any& data) {
     return rg::Value(rg::Point{static_cast<int32_t>(input.spatialRefId),
                                {input.x, input.y, input.z}});
   }
-  THROW_CODE(InputError, "Unexpected cypher parameter type: {}", type.name());
+  RG_THROW_CODE(InputError, "Unexpected cypher parameter type: {}",
+                type.name());
 }
 
 std::unordered_map<std::string, std::any> ConvertMap(
@@ -259,7 +259,7 @@ std::any ConvertValue(const rg::Value& value) {
       result.nodes.reserve(path.nodes.size());
       for (const auto& node : path.nodes) {
         if (!node) {
-          THROW_CODE(ValueException, "Path contains a null node");
+          RG_THROW_CODE(ValueException, "Path contains a null node");
         }
         result.nodes.push_back(
             std::any_cast<bolt::Node>(ConvertValue(rg::Value(node))));
@@ -269,7 +269,7 @@ std::any ConvertValue(const rg::Value& value) {
       for (size_t i = 0; i < path.relationships.size(); ++i) {
         const auto& relationship = path.relationships[i];
         if (!relationship || i + 1 >= path.nodes.size()) {
-          THROW_CODE(ValueException, "Path has an invalid relationship");
+          RG_THROW_CODE(ValueException, "Path has an invalid relationship");
         }
         result.rels.push_back({.id = relationship->id,
                                .elementId = std::to_string(relationship->id),
@@ -337,10 +337,10 @@ std::any ConvertValue(const rg::Value& value) {
                              point.coordinates[2],
                              static_cast<uint32_t>(point.srid)};
       }
-      THROW_CODE(ValueException, "Point should have 2 or 3 coordinates");
+      RG_THROW_CODE(ValueException, "Point should have 2 or 3 coordinates");
     }
   }
-  THROW_CODE(ValueException, "Unexpected query result value type");
+  RG_THROW_CODE(ValueException, "Unexpected query result value type");
 }
 
 std::unordered_map<std::string, std::any> ConvertMap(
@@ -434,9 +434,10 @@ static void PostIgnored(const std::shared_ptr<BoltConnection>& conn) {
 }
 
 static void PostFailure(const std::shared_ptr<BoltConnection>& conn,
-                        ErrorCode code, const std::string& msg) {
+                        common::ErrorCode code, const std::string& msg) {
   bolt::PackStream ps;
-  ps.AppendFailure({{"code", ErrorCodeToString(code)}, {"message", msg}});
+  ps.AppendFailure(
+      {{"code", common::ErrorCodeToString(code)}, {"message", msg}});
   conn->PostResponse(std::move(ps.MutableBuffer()));
 }
 
@@ -454,7 +455,7 @@ static bool InterruptedOrClosed(const std::shared_ptr<BoltConnection>& conn,
 }
 
 static void FailSession(const std::shared_ptr<BoltConnection>& conn,
-                        BoltSession* session, ErrorCode code,
+                        BoltSession* session, common::ErrorCode code,
                         const std::string& msg) {
   AbortActiveQuery(session);
   PostFailure(conn, code, msg);
@@ -486,31 +487,33 @@ static void FailUnsupportedRequest(const std::shared_ptr<BoltConnection>& conn,
       "The {} feature is not currently supported for Bolt connections.",
       feature);
   LOG_ERROR("Receive {}, but {}", ToString(type), err);
-  FailSession(conn, session, ErrorCode::Unimplemented, err);
+  FailSession(conn, session, common::ErrorCode::Unimplemented, err);
 }
 
 static int64_t ExtractPullOrDiscardN(BoltMsg type,
                                      const std::vector<std::any>& fields) {
   if (fields.size() != 1) {
-    THROW_CODE(InputError, "{} msg fields size error, size: {}",
-               bolt::ToString(type), fields.size());
+    RG_THROW_CODE(InputError, "{} msg fields size error, size: {}",
+                  bolt::ToString(type), fields.size());
   }
   auto* metadata =
       std::any_cast<std::unordered_map<std::string, std::any>>(&fields[0]);
   if (metadata == nullptr) {
-    THROW_CODE(InputError, "{} metadata should be a map", bolt::ToString(type));
+    RG_THROW_CODE(InputError, "{} metadata should be a map",
+                  bolt::ToString(type));
   }
   auto iter = metadata->find("n");
   if (iter == metadata->end()) {
-    THROW_CODE(InputError, "{} metadata should contain n",
-               bolt::ToString(type));
+    RG_THROW_CODE(InputError, "{} metadata should contain n",
+                  bolt::ToString(type));
   }
   auto* n = std::any_cast<int64_t>(&iter->second);
   if (n == nullptr) {
-    THROW_CODE(InputError, "{} n should be an integer", bolt::ToString(type));
+    RG_THROW_CODE(InputError, "{} n should be an integer",
+                  bolt::ToString(type));
   }
   if (*n == 0) {
-    THROW_CODE(InputError, "{} n should not be 0", bolt::ToString(type));
+    RG_THROW_CODE(InputError, "{} n should not be 0", bolt::ToString(type));
   }
   return *n;
 }
@@ -520,8 +523,8 @@ static void ProcessPullOrDiscard(const std::shared_ptr<BoltConnection>& conn,
                                  const std::vector<std::any>& fields) {
   try {
     if (!session->active_query || !session->active_query->result) {
-      THROW_CODE(InputError, "{} requires an active result stream",
-                 bolt::ToString(type));
+      RG_THROW_CODE(InputError, "{} requires an active result stream",
+                    bolt::ToString(type));
     }
 
     const int64_t n = ExtractPullOrDiscardN(type, fields);
@@ -583,12 +586,12 @@ static void ProcessPullOrDiscard(const std::shared_ptr<BoltConnection>& conn,
     FlushSessionBuffer(conn, session);
     LOG_DEBUG("Cypher execution completed");
     QUERY_LOG("{} {} {}", graph_name, elapsed, cypher.substr(0, 256));
-  } catch (const RocksGraphException& e) {
+  } catch (const common::RocksGraphException& e) {
     LOG_ERROR("{}", e.msg());
     FailSession(conn, session, e.code(), e.msg());
   } catch (std::exception& e) {
     LOG_ERROR("{}", e.what());
-    FailSession(conn, session, ErrorCode::UnknownError, e.what());
+    FailSession(conn, session, common::ErrorCode::UnknownError, e.what());
   }
 }
 
@@ -597,8 +600,8 @@ static void ProcessRun(GraphManager* graph_manager,
                        BoltSession* session, std::vector<std::any>& fields) {
   try {
     if (fields.size() != 3) {
-      THROW_CODE(InputError, "Run msg fields size error, size: {}",
-                 fields.size());
+      RG_THROW_CODE(InputError, "Run msg fields size error, size: {}",
+                    fields.size());
     }
     auto* cypher = std::any_cast<std::string>(&fields[0]);
     auto* params =
@@ -606,11 +609,11 @@ static void ProcessRun(GraphManager* graph_manager,
     auto* extra =
         std::any_cast<std::unordered_map<std::string, std::any>>(&fields[2]);
     if (cypher == nullptr || params == nullptr || extra == nullptr) {
-      THROW_CODE(InputError,
-                 "Run msg fields should be (string, map, map), got ({}, {}, "
-                 "{})",
-                 fields[0].type().name(), fields[1].type().name(),
-                 fields[2].type().name());
+      RG_THROW_CODE(InputError,
+                    "Run msg fields should be (string, map, map), got ({}, {}, "
+                    "{})",
+                    fields[0].type().name(), fields[1].type().name(),
+                    fields[2].type().name());
     }
 
     std::string graph;
@@ -618,7 +621,7 @@ static void ProcessRun(GraphManager* graph_manager,
     if (db_iter != extra->end()) {
       auto* db = std::any_cast<std::string>(&db_iter->second);
       if (db == nullptr) {
-        THROW_CODE(InputError, "Run msg db metadata should be a string");
+        RG_THROW_CODE(InputError, "Run msg db metadata should be a string");
       }
       graph = *db;
     }
@@ -646,12 +649,12 @@ static void ProcessRun(GraphManager* graph_manager,
     conn->PostResponse(std::move(ps.MutableBuffer()));
     session->active_query = std::move(active_query);
     session->state = bolt::SessionState::STREAMING;
-  } catch (const RocksGraphException& e) {
+  } catch (const common::RocksGraphException& e) {
     LOG_ERROR("{}", e.msg());
     FailSession(conn, session, e.code(), e.msg());
   } catch (std::exception& e) {
     LOG_ERROR("{}", e.what());
-    FailSession(conn, session, ErrorCode::UnknownError, e.what());
+    FailSession(conn, session, common::ErrorCode::UnknownError, e.what());
   }
 }
 

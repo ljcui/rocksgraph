@@ -9,7 +9,7 @@
 #include <filesystem>
 
 #include "common/byte_utils.h"
-#include "common/exceptions.h"
+#include "common/exception.h"
 #include "common/logger.h"
 #include "graphdb/vector_property.h"
 #include "proto/meta.pb.h"
@@ -703,13 +703,15 @@ void MetaInfo::Init(rocksdb::TransactionDB* db,
     if (prefix == MetadataType::NextVertexId ||
         prefix == MetadataType::NextEdgeId) {
       if (val.size() != sizeof(int64_t)) {
-        THROW_CODE(StorageEngineError,
-                   "entity id metadata has invalid size, expect {}, actual {}",
-                   sizeof(int64_t), val.size());
+        RG_THROW_CODE(
+            StorageEngineError,
+            "entity id metadata has invalid size, expect {}, actual {}",
+            sizeof(int64_t), val.size());
       }
       int64_t next_id = big_to_native(ReadValue<int64_t>(val.data()));
       if (next_id < 1) {
-        THROW_CODE(StorageEngineError, "entity id metadata must be positive");
+        RG_THROW_CODE(StorageEngineError,
+                      "entity id metadata must be positive");
       }
       if (prefix == MetadataType::NextVertexId) {
         next_vid = next_id;

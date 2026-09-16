@@ -1357,8 +1357,8 @@ TEST(RaftCluster,
           [&]() {
             try {
               return collect_fulltext_names() == graph_case.fulltext_names;
-            } catch (const RocksGraphException& e) {
-              if (e.code() == ErrorCode::IndexNotReady) {
+            } catch (const common::RocksGraphException& e) {
+              if (e.code() == common::ErrorCode::IndexNotReady) {
                 return false;
               }
               throw;
@@ -1379,8 +1379,8 @@ TEST(RaftCluster,
           [&]() {
             try {
               return collect_vector_names() == graph_case.vector_knn_names;
-            } catch (const RocksGraphException& e) {
-              if (e.code() == ErrorCode::IndexNotReady) {
+            } catch (const common::RocksGraphException& e) {
+              if (e.code() == common::ErrorCode::IndexNotReady) {
                 return false;
               }
               throw;

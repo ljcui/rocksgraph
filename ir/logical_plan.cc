@@ -75,14 +75,14 @@ static_assert(kLogicalPlanNodeTypeNames.size() ==
 
 void AddSymbol(std::unordered_set<std::string> *symbols,
                std::string_view symbol) {
-  CHECK(symbols != nullptr, common::InternalError, "symbol set is null");
+  RG_CHECK(symbols != nullptr, common::InternalError, "symbol set is null");
   if (!symbol.empty()) {
     symbols->emplace(symbol);
   }
 }
 
 void AddColumn(std::vector<std::string> *columns, std::string_view column) {
-  CHECK(columns != nullptr, common::InternalError, "column list is null");
+  RG_CHECK(columns != nullptr, common::InternalError, "column list is null");
   if (column.empty()) {
     return;
   }
@@ -105,8 +105,8 @@ std::unordered_set<std::string> SymbolsFromColumns(
 
 std::vector<LogicalPlanPtr> UnaryChildren(LogicalPlanPtr source,
                                           std::string_view node_name) {
-  CHECK(source != nullptr, common::InvalidArgumentError,
-        std::string(node_name) + " source is null");
+  RG_CHECK(source != nullptr, common::InvalidArgumentError,
+           std::string(node_name) + " source is null");
   std::vector<LogicalPlanPtr> children;
   children.push_back(std::move(source));
   return children;
@@ -115,10 +115,10 @@ std::vector<LogicalPlanPtr> UnaryChildren(LogicalPlanPtr source,
 std::vector<LogicalPlanPtr> BinaryChildren(LogicalPlanPtr left,
                                            LogicalPlanPtr right,
                                            std::string_view node_name) {
-  CHECK(left != nullptr, common::InvalidArgumentError,
-        std::string(node_name) + " left input is null");
-  CHECK(right != nullptr, common::InvalidArgumentError,
-        std::string(node_name) + " right input is null");
+  RG_CHECK(left != nullptr, common::InvalidArgumentError,
+           std::string(node_name) + " left input is null");
+  RG_CHECK(right != nullptr, common::InvalidArgumentError,
+           std::string(node_name) + " right input is null");
   std::vector<LogicalPlanPtr> children;
   children.push_back(std::move(left));
   children.push_back(std::move(right));
@@ -212,7 +212,7 @@ std::string ExpandArrow(ExpandDirection direction, bool left) {
     case ExpandDirection::kBoth:
       return "-";
   }
-  THROW(common::InternalError, "unknown expand direction");
+  RG_THROW(common::InternalError, "unknown expand direction");
 }
 
 std::string RelationshipDetails(std::string_view from_node,
@@ -245,7 +245,7 @@ std::string DirectionalRelationshipDetails(
       return RelationshipDetails(from_node, relationship, to_node,
                                  ExpandDirection::kBoth, types);
   }
-  THROW(common::InternalError, "unknown relationship direction");
+  RG_THROW(common::InternalError, "unknown relationship direction");
 }
 
 std::string NodePatternDetails(std::string_view variable,
@@ -327,8 +327,8 @@ std::string RelationshipDetailsWithProperties(
   }
   (void)relationship;
   const std::size_t position = out.find(']');
-  CHECK(position != std::string::npos, common::InternalError,
-        "relationship detail is missing relationship close");
+  RG_CHECK(position != std::string::npos, common::InternalError,
+           "relationship detail is missing relationship close");
   out.insert(position, " " + property_details);
   return out;
 }
@@ -416,7 +416,7 @@ std::string SetPatternDetails(const SetMutatingPattern &pattern) {
     case SetMutatingPatternKind::kSetLabels:
       return ExpressionDetail(pattern.entity) + ":" + Join(pattern.labels, ":");
   }
-  THROW(common::InternalError, "unknown SET pattern kind");
+  RG_THROW(common::InternalError, "unknown SET pattern kind");
 }
 
 std::string RemovePatternDetails(const RemoveMutatingPattern &pattern) {
@@ -426,7 +426,7 @@ std::string RemovePatternDetails(const RemoveMutatingPattern &pattern) {
     case RemoveMutatingPatternKind::kRemoveLabels:
       return ExpressionDetail(pattern.entity) + ":" + Join(pattern.labels, ":");
   }
-  THROW(common::InternalError, "unknown REMOVE pattern kind");
+  RG_THROW(common::InternalError, "unknown REMOVE pattern kind");
 }
 
 std::string MergeActionDetails(const MergeActionPattern &action) {
@@ -553,16 +553,16 @@ std::vector<ValueHashJoinKey> BuildValueHashJoinKeys(
   keys.reserve(predicates.size());
   for (const ast::Expression *predicate : predicates) {
     const ast::Expression *unwrapped = UnwrapParenthesized(predicate);
-    CHECK(unwrapped != nullptr &&
-              unwrapped->Is(ast::ASTNodeType::kComparisonExpression),
-          common::InvalidArgumentError,
-          "value hash join predicate is not a comparison");
+    RG_CHECK(unwrapped != nullptr &&
+                 unwrapped->Is(ast::ASTNodeType::kComparisonExpression),
+             common::InvalidArgumentError,
+             "value hash join predicate is not a comparison");
     const auto &comparison =
         ast::CastAst<ast::ComparisonExpression>(*unwrapped);
-    CHECK(comparison.op == "=" && comparison.left != nullptr &&
-              comparison.right != nullptr,
-          common::InvalidArgumentError,
-          "value hash join predicate is not an equality");
+    RG_CHECK(comparison.op == "=" && comparison.left != nullptr &&
+                 comparison.right != nullptr,
+             common::InvalidArgumentError,
+             "value hash join predicate is not an equality");
     const auto left_dependencies =
         ast::CollectExpressionDependencies(*comparison.left);
     const auto right_dependencies =
@@ -573,8 +573,9 @@ std::vector<ValueHashJoinKey> BuildValueHashJoinKeys(
     const bool reverse =
         DependenciesWithin(left_dependencies, right.SolvedSymbols()) &&
         DependenciesWithin(right_dependencies, left.SolvedSymbols());
-    CHECK(forward != reverse, common::InvalidArgumentError,
-          "value hash join predicate does not have one expression per input");
+    RG_CHECK(
+        forward != reverse, common::InvalidArgumentError,
+        "value hash join predicate does not have one expression per input");
     keys.push_back(forward ? ValueHashJoinKey{.left = comparison.left.get(),
                                               .right = comparison.right.get()}
                            : ValueHashJoinKey{.left = comparison.right.get(),
@@ -602,7 +603,7 @@ std::string_view ToString(ExpandDirection direction) {
     case ExpandDirection::kBoth:
       return "both";
   }
-  THROW(common::InternalError, "unknown expand direction");
+  RG_THROW(common::InternalError, "unknown expand direction");
 }
 
 std::string_view ToString(LogicalOrderDirection direction) {
@@ -612,7 +613,7 @@ std::string_view ToString(LogicalOrderDirection direction) {
     case LogicalOrderDirection::kDescending:
       return "DESC";
   }
-  THROW(common::InternalError, "unknown order direction");
+  RG_THROW(common::InternalError, "unknown order direction");
 }
 
 LogicalPlan::LogicalPlan(LogicalPlanNodeType type,
@@ -624,26 +625,26 @@ LogicalPlan::~LogicalPlan() = default;
 std::string LogicalPlan::Details() const { return {}; }
 
 const LogicalPlan &LogicalPlan::Child(std::size_t index) const {
-  CHECK(index < children_.size(), common::InvalidArgumentError,
-        "logical plan child index out of range");
+  RG_CHECK(index < children_.size(), common::InvalidArgumentError,
+           "logical plan child index out of range");
   return *children_[index];
 }
 
 LogicalPlan &LogicalPlan::Child(std::size_t index) {
-  CHECK(index < children_.size(), common::InvalidArgumentError,
-        "logical plan child index out of range");
+  RG_CHECK(index < children_.size(), common::InvalidArgumentError,
+           "logical plan child index out of range");
   return *children_[index];
 }
 
 LogicalPlanPtr LogicalPlan::TakeChild(std::size_t index) {
-  CHECK(index < children_.size() && children_[index] != nullptr,
-        common::InvalidArgumentError, "logical plan child is unavailable");
+  RG_CHECK(index < children_.size() && children_[index] != nullptr,
+           common::InvalidArgumentError, "logical plan child is unavailable");
   return std::move(children_[index]);
 }
 
 void LogicalPlan::ReplaceChild(std::size_t index, LogicalPlanPtr child) {
-  CHECK(index < children_.size() && child != nullptr,
-        common::InvalidArgumentError, "invalid replacement child");
+  RG_CHECK(index < children_.size() && child != nullptr,
+           common::InvalidArgumentError, "invalid replacement child");
   children_[index] = std::move(child);
 }
 
@@ -719,8 +720,8 @@ NodeByLabelScanPlan::NodeByLabelScanPlan(std::string variable,
     : LogicalPlan(LogicalPlanNodeType::kNodeByLabelScan),
       variable_(std::move(variable)),
       labels_(std::move(labels)) {
-  CHECK(!labels_.empty(), common::InvalidArgumentError,
-        "node label scan labels are empty");
+  RG_CHECK(!labels_.empty(), common::InvalidArgumentError,
+           "node label scan labels are empty");
   AddOutputColumn(variable_);
   AddSolvedSymbol(variable_);
 }
@@ -744,8 +745,8 @@ NodeIndexSeekPlan::NodeIndexSeekPlan(std::string variable,
       property_key_(std::move(property_key)),
       value_expression_(value_expression),
       unique_(unique) {
-  CHECK(!property_key_.empty(), common::InvalidArgumentError,
-        "node index seek property key is empty");
+  RG_CHECK(!property_key_.empty(), common::InvalidArgumentError,
+           "node index seek property key is empty");
   AddOutputColumn(variable_);
   AddSolvedSymbol(variable_);
 }
@@ -762,10 +763,10 @@ NodeIndexRangeSeekPlan::NodeIndexRangeSeekPlan(
       labels_(std::move(labels)),
       property_key_(std::move(property_key)),
       predicates_(std::move(predicates)) {
-  CHECK(!property_key_.empty(), common::InvalidArgumentError,
-        "node index range seek property key is empty");
-  CHECK(!predicates_.empty(), common::InvalidArgumentError,
-        "node index range seek predicates are empty");
+  RG_CHECK(!property_key_.empty(), common::InvalidArgumentError,
+           "node index range seek property key is empty");
+  RG_CHECK(!predicates_.empty(), common::InvalidArgumentError,
+           "node index range seek predicates are empty");
   AddOutputColumn(variable_);
   AddSolvedSymbol(variable_);
 }
@@ -783,8 +784,8 @@ RelationshipTypeScanPlan::RelationshipTypeScanPlan(
       to_node_(std::move(to_node)),
       direction_(direction),
       types_(std::move(types)) {
-  CHECK(!types_.empty(), common::InvalidArgumentError,
-        "relationship type scan types are empty");
+  RG_CHECK(!types_.empty(), common::InvalidArgumentError,
+           "relationship type scan types are empty");
   AddOutputColumn(from_node_);
   AddOutputColumn(relationship_);
   AddOutputColumn(to_node_);
@@ -812,8 +813,8 @@ RelationshipIndexSeekPlan::RelationshipIndexSeekPlan(
       property_key_(std::move(property_key)),
       value_expression_(value_expression),
       unique_(unique) {
-  CHECK(!property_key_.empty(), common::InvalidArgumentError,
-        "relationship index seek property key is empty");
+  RG_CHECK(!property_key_.empty(), common::InvalidArgumentError,
+           "relationship index seek property key is empty");
   AddOutputColumn(from_node_);
   AddOutputColumn(relationship_);
   AddOutputColumn(to_node_);
@@ -840,10 +841,10 @@ RelationshipIndexRangeSeekPlan::RelationshipIndexRangeSeekPlan(
       types_(std::move(types)),
       property_key_(std::move(property_key)),
       predicates_(std::move(predicates)) {
-  CHECK(!property_key_.empty(), common::InvalidArgumentError,
-        "relationship index range seek property key is empty");
-  CHECK(!predicates_.empty(), common::InvalidArgumentError,
-        "relationship index range seek predicates are empty");
+  RG_CHECK(!property_key_.empty(), common::InvalidArgumentError,
+           "relationship index range seek property key is empty");
+  RG_CHECK(!predicates_.empty(), common::InvalidArgumentError,
+           "relationship index range seek predicates are empty");
   AddOutputColumn(from_node_);
   AddOutputColumn(relationship_);
   AddOutputColumn(to_node_);
@@ -943,8 +944,8 @@ PathBuildPlan::PathBuildPlan(LogicalPlanPtr source, PathPattern path)
     : LogicalPlan(LogicalPlanNodeType::kPathBuild,
                   UnaryChildren(std::move(source), "PathBuild")),
       path_(std::move(path)) {
-  CHECK(!path_.variable.empty(), common::InvalidArgumentError,
-        "path variable is empty");
+  RG_CHECK(!path_.variable.empty(), common::InvalidArgumentError,
+           "path variable is empty");
   SetSolvedSymbols(Child(0).SolvedSymbols());
   SetOutputColumns(Child(0).OutputColumns());
   AddSolvedSymbol(path_.variable);
@@ -1171,13 +1172,13 @@ NodeHashJoinPlan::NodeHashJoinPlan(LogicalPlanPtr left, LogicalPlanPtr right,
           LogicalPlanNodeType::kNodeHashJoin,
           BinaryChildren(std::move(left), std::move(right), "NodeHashJoin")),
       join_keys_(std::move(join_keys)) {
-  CHECK(!join_keys_.empty(), common::InvalidArgumentError,
-        "node hash join keys are empty");
+  RG_CHECK(!join_keys_.empty(), common::InvalidArgumentError,
+           "node hash join keys are empty");
   for (const auto &key : join_keys_) {
-    CHECK(Child(0).SolvedSymbols().contains(key) &&
-              Child(1).SolvedSymbols().contains(key),
-          common::InvalidArgumentError,
-          "node hash join key is not solved by both inputs");
+    RG_CHECK(Child(0).SolvedSymbols().contains(key) &&
+                 Child(1).SolvedSymbols().contains(key),
+             common::InvalidArgumentError,
+             "node hash join key is not solved by both inputs");
   }
   SetSolvedSymbols(UnionSolvedSymbols(Child(0), Child(1)));
   SetOutputColumns(UnionOutputColumns(Child(0), Child(1)));
@@ -1192,8 +1193,8 @@ ValueHashJoinPlan::ValueHashJoinPlan(
           LogicalPlanNodeType::kValueHashJoin,
           BinaryChildren(std::move(left), std::move(right), "ValueHashJoin")),
       predicates_(std::move(predicates)) {
-  CHECK(!predicates_.empty(), common::InvalidArgumentError,
-        "value hash join predicates are empty");
+  RG_CHECK(!predicates_.empty(), common::InvalidArgumentError,
+           "value hash join predicates are empty");
   join_keys_ = BuildValueHashJoinKeys(predicates_, Child(0), Child(1));
   SetSolvedSymbols(UnionSolvedSymbols(Child(0), Child(1)));
   SetOutputColumns(UnionOutputColumns(Child(0), Child(1)));
@@ -1210,8 +1211,8 @@ PredicateJoinPlan::PredicateJoinPlan(
           LogicalPlanNodeType::kPredicateJoin,
           BinaryChildren(std::move(left), std::move(right), "PredicateJoin")),
       predicates_(std::move(predicates)) {
-  CHECK(!predicates_.empty(), common::InvalidArgumentError,
-        "predicate join predicates are empty");
+  RG_CHECK(!predicates_.empty(), common::InvalidArgumentError,
+           "predicate join predicates are empty");
   SetSolvedSymbols(UnionSolvedSymbols(Child(0), Child(1)));
   SetOutputColumns(UnionOutputColumns(Child(0), Child(1)));
 }
@@ -1308,8 +1309,8 @@ CreateNodePlan::CreateNodePlan(LogicalPlanPtr source, CreateNodePattern node)
     : LogicalPlan(LogicalPlanNodeType::kCreateNode,
                   UnaryChildren(std::move(source), "CreateNode")),
       node_(std::move(node)) {
-  CHECK(!node_.variable.empty(), common::InvalidArgumentError,
-        "created node variable is empty");
+  RG_CHECK(!node_.variable.empty(), common::InvalidArgumentError,
+           "created node variable is empty");
   SetSolvedSymbols(Child(0).SolvedSymbols());
   SetOutputColumns(Child(0).OutputColumns());
   AddSolvedSymbol(node_.variable);
@@ -1323,8 +1324,8 @@ CreateRelationshipPlan::CreateRelationshipPlan(
     : LogicalPlan(LogicalPlanNodeType::kCreateRelationship,
                   UnaryChildren(std::move(source), "CreateRelationship")),
       relationship_(std::move(relationship)) {
-  CHECK(!relationship_.variable.empty(), common::InvalidArgumentError,
-        "created relationship variable is empty");
+  RG_CHECK(!relationship_.variable.empty(), common::InvalidArgumentError,
+           "created relationship variable is empty");
   SetSolvedSymbols(Child(0).SolvedSymbols());
   SetOutputColumns(Child(0).OutputColumns());
   AddSolvedSymbol(relationship_.left_node);
@@ -1366,8 +1367,8 @@ SetPropertyPlan::SetPropertyPlan(LogicalPlanPtr source,
       entity_(entity),
       property_key_(std::move(property_key)),
       value_(value) {
-  CHECK(!property_key_.empty(), common::InvalidArgumentError,
-        "SET property key is empty");
+  RG_CHECK(!property_key_.empty(), common::InvalidArgumentError,
+           "SET property key is empty");
   SetSolvedSymbols(Child(0).SolvedSymbols());
   SetOutputColumns(Child(0).OutputColumns());
 }
@@ -1402,8 +1403,8 @@ SetLabelsPlan::SetLabelsPlan(LogicalPlanPtr source,
                   UnaryChildren(std::move(source), "SetLabels")),
       entity_(entity),
       labels_(std::move(labels)) {
-  CHECK(!labels_.empty(), common::InvalidArgumentError,
-        "SET labels list is empty");
+  RG_CHECK(!labels_.empty(), common::InvalidArgumentError,
+           "SET labels list is empty");
   SetSolvedSymbols(Child(0).SolvedSymbols());
   SetOutputColumns(Child(0).OutputColumns());
 }
@@ -1419,8 +1420,8 @@ RemovePropertyPlan::RemovePropertyPlan(LogicalPlanPtr source,
                   UnaryChildren(std::move(source), "RemoveProperty")),
       entity_(entity),
       property_key_(std::move(property_key)) {
-  CHECK(!property_key_.empty(), common::InvalidArgumentError,
-        "REMOVE property key is empty");
+  RG_CHECK(!property_key_.empty(), common::InvalidArgumentError,
+           "REMOVE property key is empty");
   SetSolvedSymbols(Child(0).SolvedSymbols());
   SetOutputColumns(Child(0).OutputColumns());
 }
@@ -1436,8 +1437,8 @@ RemoveLabelsPlan::RemoveLabelsPlan(LogicalPlanPtr source,
                   UnaryChildren(std::move(source), "RemoveLabels")),
       entity_(entity),
       labels_(std::move(labels)) {
-  CHECK(!labels_.empty(), common::InvalidArgumentError,
-        "REMOVE labels list is empty");
+  RG_CHECK(!labels_.empty(), common::InvalidArgumentError,
+           "REMOVE labels list is empty");
   SetSolvedSymbols(Child(0).SolvedSymbols());
   SetOutputColumns(Child(0).OutputColumns());
 }
@@ -1451,8 +1452,8 @@ DeletePlan::DeletePlan(LogicalPlanPtr source,
     : LogicalPlan(LogicalPlanNodeType::kDelete,
                   UnaryChildren(std::move(source), "Delete")),
       expressions_(std::move(expressions)) {
-  CHECK(!expressions_.empty(), common::InvalidArgumentError,
-        "DELETE expressions are empty");
+  RG_CHECK(!expressions_.empty(), common::InvalidArgumentError,
+           "DELETE expressions are empty");
   SetSolvedSymbols(Child(0).SolvedSymbols());
   SetOutputColumns(Child(0).OutputColumns());
 }
@@ -1466,8 +1467,8 @@ DetachDeletePlan::DetachDeletePlan(
     : LogicalPlan(LogicalPlanNodeType::kDetachDelete,
                   UnaryChildren(std::move(source), "DetachDelete")),
       expressions_(std::move(expressions)) {
-  CHECK(!expressions_.empty(), common::InvalidArgumentError,
-        "DETACH DELETE expressions are empty");
+  RG_CHECK(!expressions_.empty(), common::InvalidArgumentError,
+           "DETACH DELETE expressions are empty");
   SetSolvedSymbols(Child(0).SolvedSymbols());
   SetOutputColumns(Child(0).OutputColumns());
 }
@@ -1528,13 +1529,13 @@ ProcedureCallPlan::ProcedureCallPlan(
       yield_items_(std::move(yield_items)),
       yield_star_(yield_star),
       read_only_(read_only) {
-  CHECK(!procedure_name_.empty(), common::InvalidArgumentError,
-        "procedure name is empty");
+  RG_CHECK(!procedure_name_.empty(), common::InvalidArgumentError,
+           "procedure name is empty");
   SetSolvedSymbols(Child(0).SolvedSymbols());
   SetOutputColumns(Child(0).OutputColumns());
   for (const auto &item : yield_items_) {
-    CHECK(!item.variable.empty(), common::InvalidArgumentError,
-          "procedure yield variable is empty");
+    RG_CHECK(!item.variable.empty(), common::InvalidArgumentError,
+             "procedure yield variable is empty");
     AddSolvedSymbol(item.variable);
     AddOutputColumn(item.variable);
   }
@@ -1582,7 +1583,8 @@ NodeByIdSeekPlan::NodeByIdSeekPlan(std::string variable,
       variable_(std::move(variable)),
       ids_(ids),
       many_(many) {
-  CHECK(ids_ != nullptr, common::InvalidArgumentError, "ID expression is null");
+  RG_CHECK(ids_ != nullptr, common::InvalidArgumentError,
+           "ID expression is null");
   SetOutputColumns({variable_});
   SetSolvedSymbols({variable_});
 }
@@ -1599,8 +1601,8 @@ RelationshipByIdSeekPlan::RelationshipByIdSeekPlan(PatternRelationship pattern,
       pattern_(std::move(pattern)),
       ids_(ids),
       many_(many) {
-  CHECK(ids_ != nullptr && !pattern_.length.variable,
-        common::InvalidArgumentError, "invalid relationship ID seek");
+  RG_CHECK(ids_ != nullptr && !pattern_.length.variable,
+           common::InvalidArgumentError, "invalid relationship ID seek");
   AddOutputColumn(pattern_.left_node);
   AddOutputColumn(pattern_.variable);
   AddOutputColumn(pattern_.right_node);
@@ -1617,8 +1619,8 @@ ProjectEndpointsPlan::ProjectEndpointsPlan(LogicalPlanPtr source,
     : LogicalPlan(LogicalPlanNodeType::kProjectEndpoints,
                   UnaryChildren(std::move(source), "ProjectEndpoints")),
       pattern_(std::move(pattern)) {
-  CHECK(Child(0).SolvedSymbols().contains(pattern_.variable),
-        common::InvalidArgumentError, "projected relationship is not bound");
+  RG_CHECK(Child(0).SolvedSymbols().contains(pattern_.variable),
+           common::InvalidArgumentError, "projected relationship is not bound");
   SetOutputColumns(Child(0).OutputColumns());
   AddOutputColumn(pattern_.left_node);
   AddOutputColumn(pattern_.right_node);
@@ -1636,9 +1638,9 @@ OptionalExpandPlan::OptionalExpandPlan(
                   UnaryChildren(std::move(source), "OptionalExpand")),
       pattern_(std::move(pattern)),
       predicates_(std::move(predicates)) {
-  CHECK(!pattern_.length.variable &&
-            Child(0).SolvedSymbols().contains(pattern_.left_node),
-        common::InvalidArgumentError, "optional expand start is not bound");
+  RG_CHECK(!pattern_.length.variable &&
+               Child(0).SolvedSymbols().contains(pattern_.left_node),
+           common::InvalidArgumentError, "optional expand start is not bound");
   SetOutputColumns(Child(0).OutputColumns());
   AddOutputColumn(pattern_.variable);
   AddOutputColumn(pattern_.right_node);
@@ -1660,12 +1662,12 @@ LeftOuterHashJoinPlan::LeftOuterHashJoinPlan(LogicalPlanPtr left,
                   BinaryChildren(std::move(left), std::move(right),
                                  "LeftOuterHashJoin")),
       join_keys_(std::move(join_keys)) {
-  CHECK(!join_keys_.empty(), common::InvalidArgumentError,
-        "join keys are empty");
+  RG_CHECK(!join_keys_.empty(), common::InvalidArgumentError,
+           "join keys are empty");
   for (const auto &key : join_keys_) {
-    CHECK(Child(0).SolvedSymbols().contains(key) &&
-              Child(1).SolvedSymbols().contains(key),
-          common::InvalidArgumentError, "outer join key is not bound");
+    RG_CHECK(Child(0).SolvedSymbols().contains(key) &&
+                 Child(1).SolvedSymbols().contains(key),
+             common::InvalidArgumentError, "outer join key is not bound");
   }
   SetOutputColumns(UnionOutputColumns(Child(0), Child(1)));
   SetSolvedSymbols(UnionSolvedSymbols(Child(0), Child(1)));
@@ -1684,8 +1686,8 @@ SelectOrSemiApplyPlan::SelectOrSemiApplyPlan(LogicalPlanPtr left,
                                  "SelectOrSemiApply")),
       predicate_(predicate),
       anti_(anti) {
-  CHECK(predicate_ != nullptr, common::InvalidArgumentError,
-        "short-circuit predicate is null");
+  RG_CHECK(predicate_ != nullptr, common::InvalidArgumentError,
+           "short-circuit predicate is null");
   SetOutputColumns(Child(0).OutputColumns());
   SetSolvedSymbols(Child(0).SolvedSymbols());
 }
@@ -1700,11 +1702,11 @@ PruningVarExpandPlan::PruningVarExpandPlan(LogicalPlanPtr source,
     : LogicalPlan(LogicalPlanNodeType::kPruningVarExpand,
                   UnaryChildren(std::move(source), "PruningVarExpand")),
       pattern_(std::move(pattern)) {
-  CHECK(pattern_.length.variable && pattern_.length.min.value_or(1) <= 1 &&
-            pattern_.length.min.value_or(1) >= 0 &&
-            pattern_.length.max.value_or(0) >= 0 &&
-            pattern_.direction != Direction::kBoth,
-        common::InvalidArgumentError, "unsupported pruning expansion");
+  RG_CHECK(pattern_.length.variable && pattern_.length.min.value_or(1) <= 1 &&
+               pattern_.length.min.value_or(1) >= 0 &&
+               pattern_.length.max.value_or(0) >= 0 &&
+               pattern_.direction != Direction::kBoth,
+           common::InvalidArgumentError, "unsupported pruning expansion");
   SetOutputColumns(Child(0).OutputColumns());
   AddOutputColumn(pattern_.right_node);
   SetSolvedSymbols(SymbolsFromColumns(OutputColumns()));
