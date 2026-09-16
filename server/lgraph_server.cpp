@@ -25,7 +25,7 @@ bool LGraphServer::Start() {
   }
 
   if (galaxy_ != nullptr) {
-    LOG_ERROR("lgraph server start failed: previous galaxy is still open");
+    LOG_ERROR("rg-server start failed: previous galaxy is still open");
     return false;
   }
 

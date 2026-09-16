@@ -186,7 +186,7 @@ void SetupSignalHandler() {
 
 class LGraphDaemon : public Service {
  public:
-  LGraphDaemon() : Service("lgraph_server", FLAGS_pid_file) {}
+  LGraphDaemon() : Service("rg-server", FLAGS_pid_file) {}
   int Run() override {
     if (!SetupLogger()) return -1;
     SetupSignalHandler();
@@ -211,7 +211,7 @@ class LGraphDaemon : public Service {
     g_shutdown_signal = 0;
     try {
       if (!server.Start()) {
-        throw std::runtime_error("failed to start lgraph server");
+        throw std::runtime_error("failed to start rg-server");
       }
       while (g_shutdown_signal == 0 && server.Started()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -220,7 +220,7 @@ class LGraphDaemon : public Service {
         LOG_INFO("Received signal {}, shutdown",
                  strsignal(static_cast<int>(g_shutdown_signal)));
       } else if (!server.Started()) {
-        throw std::runtime_error("lgraph server exited unexpectedly");
+        throw std::runtime_error("rg-server exited unexpectedly");
       }
       server.Stop();
       spdlog::shutdown();

@@ -1,7 +1,7 @@
 #include "flags.h"
 
 DEFINE_string(data_path, "data", "Directory where the graph data is stored");
-DEFINE_string(pid_file, "lgraph.pid", "Pid file");
+DEFINE_string(pid_file, "rg-server.pid", "Pid file");
 
 DEFINE_string(log_path, "log", "Log file path");
 DEFINE_string(log_level, "info", "Log level");
