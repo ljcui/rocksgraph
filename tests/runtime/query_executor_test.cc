@@ -1965,6 +1965,45 @@ TEST(QueryExecutorTest, ExecutesMergeCreateAndMatchActions) {
             (std::vector<std::vector<std::string>>{{"true", "true"}}));
 }
 
+TEST(QueryExecutorTest, MergeDoesNotMaterializeDeletedNodeBindings) {
+  rg::test::GraphDBTestDatabase graph;
+  rg::test::ExecuteQueryAndCommit(graph, "CREATE (:A {num: 1}), (:A {num: 2})");
+
+  const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+      graph, "MATCH (a:A) DELETE a MERGE (a2:A) RETURN a2.num AS num");
+
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{{"null"}, {"null"}}));
+  const auto nodes = graph.Nodes();
+  ASSERT_EQ(nodes.size(), 1U);
+  EXPECT_EQ(nodes[0]->labels, std::vector<std::string>{"A"});
+  EXPECT_TRUE(nodes[0]->properties.empty());
+}
+
+TEST(QueryExecutorTest, MergeDoesNotMaterializeDeletedPathBindings) {
+  rg::test::GraphDBTestDatabase graph;
+  rg::test::ExecuteQueryAndCommit(graph,
+                                  "CREATE (a:A) "
+                                  "CREATE (b1:B {num: 0}), (b2:B {num: 1}) "
+                                  "CREATE (c1:C), (c2:C) "
+                                  "CREATE (a)-[:REL]->(b1), (a)-[:REL]->(b2), "
+                                  "(b1)-[:REL]->(c1), (b2)-[:REL]->(c2)");
+
+  rg::test::ExecuteQueryAndCommit(graph,
+                                  "MATCH (a:A)-[ab]->(b:B)-[bc]->(c:C) "
+                                  "DELETE ab, bc, b, c "
+                                  "MERGE (newB:B {num: 1}) "
+                                  "MERGE (a)-[:REL]->(newB) "
+                                  "MERGE (newC:C) "
+                                  "MERGE (newB)-[:REL]->(newC)");
+
+  EXPECT_EQ(graph.Nodes().size(), 3U);
+  EXPECT_EQ(graph.Relationships().size(), 2U);
+  const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+      graph, "MATCH (:A)-[:REL]->(b:B)-[:REL]->(:C) RETURN b.num AS num");
+  EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{{"1"}}));
+}
+
 TEST(QueryExecutorTest, PreservesBindingsAcrossConsecutiveMerges) {
   rg::test::GraphDBTestDatabase graph;
 

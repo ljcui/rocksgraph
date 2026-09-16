@@ -291,8 +291,8 @@ bool MergeMappings(const SlottedRow &source, SlottedRow *target,
                            mapping.target_offset);
       continue;
     }
-    if (!ValuesEqual(ReadRowValue(source, mapping.source_offset),
-                     ReadRowValue(*target, mapping.target_offset))) {
+    if (!source.SlotEquals(mapping.source_offset, *target,
+                           mapping.target_offset)) {
       return false;
     }
   }

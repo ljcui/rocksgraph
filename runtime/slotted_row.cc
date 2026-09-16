@@ -141,6 +141,57 @@ const Value &SlottedRow::ValueAt(std::size_t offset) const {
   return *value;
 }
 
+bool SlottedRow::SlotEquals(std::size_t offset, const SlottedRow &other,
+                            std::size_t other_offset) const {
+  CHECK(IsInitialized(offset), common::InvalidArgumentError,
+        "left slot is not initialized");
+  CHECK(other.IsInitialized(other_offset), common::InvalidArgumentError,
+        "right slot is not initialized");
+  const SlotValue &left = values_[offset];
+  const SlotValue &right = other.values_[other_offset];
+
+  auto node_id = [](const SlotValue &stored) -> std::optional<std::int64_t> {
+    if (const auto *vertex = std::get_if<graphdb::Vertex>(&stored)) {
+      return vertex->GetNativeId();
+    }
+    const auto *value = std::get_if<Value>(&stored);
+    if (value != nullptr && value->IsNode()) {
+      return value->AsNode().id;
+    }
+    return std::nullopt;
+  };
+  if (std::holds_alternative<graphdb::Vertex>(left) ||
+      std::holds_alternative<graphdb::Vertex>(right)) {
+    const auto left_id = node_id(left);
+    const auto right_id = node_id(right);
+    return left_id.has_value() && right_id.has_value() && *left_id == *right_id;
+  }
+
+  auto relationship_id =
+      [](const SlotValue &stored) -> std::optional<std::int64_t> {
+    if (const auto *edge = std::get_if<graphdb::Edge>(&stored)) {
+      return edge->GetNativeId();
+    }
+    const auto *value = std::get_if<Value>(&stored);
+    if (value != nullptr && value->IsRelationship()) {
+      return value->AsRelationship().id;
+    }
+    return std::nullopt;
+  };
+  if (std::holds_alternative<graphdb::Edge>(left) ||
+      std::holds_alternative<graphdb::Edge>(right)) {
+    const auto left_id = relationship_id(left);
+    const auto right_id = relationship_id(right);
+    return left_id.has_value() && right_id.has_value() && *left_id == *right_id;
+  }
+
+  const auto *left_value = std::get_if<Value>(&left);
+  const auto *right_value = std::get_if<Value>(&right);
+  CHECK(left_value != nullptr && right_value != nullptr, common::InternalError,
+        "initialized slots contain no comparable values");
+  return ValuesEqual(*left_value, *right_value);
+}
+
 bool SlottedRow::ReadProperty(std::size_t offset, std::string_view property_key,
                               Value *value) const {
   CHECK(value != nullptr, common::InternalError, "property output is null");

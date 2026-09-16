@@ -61,6 +61,8 @@ class SlottedRow final {
   [[nodiscard]] const graphdb::Vertex &VertexAt(std::size_t offset) const;
   [[nodiscard]] const graphdb::Edge &EdgeAt(std::size_t offset) const;
   [[nodiscard]] const Value &ValueAt(std::size_t offset) const;
+  [[nodiscard]] bool SlotEquals(std::size_t offset, const SlottedRow &other,
+                                std::size_t other_offset) const;
   [[nodiscard]] bool ReadProperty(std::size_t offset,
                                   std::string_view property_key,
                                   Value *value) const;
