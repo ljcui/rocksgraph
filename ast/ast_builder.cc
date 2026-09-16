@@ -655,6 +655,7 @@ class ASTBuilder {
     }
     if (dot_index < 0) {
       range.min = ParseIntegerLiteral(ctx->oC_IntegerLiteral(0)->getText());
+      range.max = range.min;
       return range;
     }
     for (auto *lit : ctx->oC_IntegerLiteral()) {

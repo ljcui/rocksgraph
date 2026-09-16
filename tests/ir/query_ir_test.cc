@@ -129,6 +129,17 @@ TEST(QueryIRInputContractTest, AcceptsRewrittenReturnStar) {
   EXPECT_EQ(projection.items[0].alias, "n");
 }
 
+TEST(QueryIRTest, TreatsDoubleArrowRelationshipAsUndirected) {
+  auto statement = ParseOrFail("MATCH (a)<-[r]->(b) RETURN r");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::QueryIR> query_ir = ir::CreateQueryIR(*statement);
+  const auto &relationships =
+      query_ir->RequireSingle().query_graph.pattern_relationships;
+  ASSERT_EQ(relationships.size(), 1U);
+  EXPECT_EQ(relationships[0].direction, ir::Direction::kBoth);
+}
+
 TEST(QueryIRPrinterTest, DumpsSimpleMatch) {
   ExpectQueryIRText("MATCH (n) RETURN n", R"(SingleQueryIR
   query_graph:

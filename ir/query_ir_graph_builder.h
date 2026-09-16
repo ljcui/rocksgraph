@@ -15,7 +15,8 @@ namespace ir {
 void AddPatternToQueryGraph(QueryGraph *query_graph,
                             const ast::Pattern &pattern);
 void AddRelationshipsPatternToQueryGraph(
-    QueryGraph *query_graph, const ast::RelationshipsPattern &pattern);
+    QueryGraph *query_graph, const ast::RelationshipsPattern &pattern,
+    std::string path_variable = {});
 
 class QueryGraphBuilder {
  public:

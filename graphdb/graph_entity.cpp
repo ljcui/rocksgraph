@@ -965,6 +965,7 @@ std::string Edge::GetType() {
 }
 
 rg::Value Edge::GetProperty(uint32_t pid) {
+  (void)txn_->GetEdgeById(typeId_, id_);
   rocksdb::ReadOptions ro;
   rocksdb::PinnableSlice pinnable_val;
   std::string pkey(AsChars(id_), sizeof(id_));

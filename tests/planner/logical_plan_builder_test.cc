@@ -831,6 +831,15 @@ TEST(LogicalPlanBuilderTest, RewritesOrderByProjectionExpressionToAlias) {
 )");
 }
 
+TEST(LogicalPlanBuilderTest, SortsAfterProjectionWhenAliasShadowsInput) {
+  ExpectLogicalPlanText("MATCH (n) RETURN n.num AS n ORDER BY n + 2",
+                        R"(ProduceResults [n]
+  Sort [n + 2 ASC]
+    Projection [n]
+      AllNodeScan [n]
+)");
+}
+
 TEST(LogicalPlanBuilderTest, DoesNotMoveNondeterministicOrderBeforeProjection) {
   ExpectLogicalPlanText("MATCH (n) RETURN rand() AS value ORDER BY value",
                         R"(ProduceResults [value]
@@ -1218,6 +1227,27 @@ TEST(LogicalPlanBuilderTest, BuildsProjectionExistsLetSemiApplyPlan) {
 )");
 }
 
+TEST(LogicalPlanBuilderTest,
+     PrecomputesNestedExpressionsInCrossComponentPredicates) {
+  ExpectLogicalPlanText(
+      "MATCH (a), (b) WHERE (a)-[:T]->(b) OR (a)-[:U]->(b) RETURN b",
+      R"(ProduceResults [b]
+  Projection [b]
+    Filter [EXISTS { MATCH (a)-[anon_0:T]->(b) RETURN 1 AS 1 } OR EXISTS { MATCH (a)-[anon_1:U]->(b) RETURN 1 AS 1 }]
+      LetSemiApply [__exists_1]
+        LetSemiApply [__exists_0]
+          CartesianProduct
+            AllNodeScan [a]
+            AllNodeScan [b]
+          Projection [1]
+            ExpandInto [(a)-[anon_0:T]->(b)]
+              Argument [a, b]
+        Projection [1]
+          ExpandInto [(a)-[anon_1:U]->(b)]
+            Argument [a, b]
+)");
+}
+
 TEST(LogicalPlanBuilderTest, BuildsPatternComprehensionRollUpApplyPlan) {
   ExpectLogicalPlanText("MATCH (n) RETURN [(n)-[r]->(m) | m.name] AS names",
                         R"(ProduceResults [names]
@@ -1227,6 +1257,19 @@ TEST(LogicalPlanBuilderTest, BuildsPatternComprehensionRollUpApplyPlan) {
       Projection [__list_value_0]
         Expand [(n)-[r]->(m)]
           Argument [n]
+)");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsNamedPathInPatternComprehension) {
+  ExpectLogicalPlanText("MATCH (n) RETURN [p = (n)-[r]->(m) | p] AS paths",
+                        R"(ProduceResults [paths]
+  Projection [paths]
+    RollUpApply [p <- __list_value_0]
+      AllNodeScan [n]
+      Projection [__list_value_0]
+        PathBuild [p]
+          Expand [(n)-[r]->(m)]
+            Argument [n]
 )");
 }
 
@@ -1392,22 +1435,37 @@ TEST(LogicalPlanBuilderTest, BuildsSetWithReturnPlan) {
 )");
 }
 
+TEST(LogicalPlanBuilderTest, BuildsTailUpdatesAboveStabilizedReads) {
+  ExpectLogicalPlanText("MATCH () CREATE () WITH * MATCH () CREATE ()",
+                        R"(CreateNode [anon_3]
+  WriteBarrier
+    Apply
+      WriteBarrier
+        Projection
+          CreateNode [anon_1]
+            WriteBarrier
+              AllNodeScan [anon_0]
+      AllNodeScan [anon_2]
+)");
+}
+
 TEST(LogicalPlanBuilderTest, BuildsMergePlan) {
   ExpectLogicalPlanText(
       "MATCH (m) MERGE (m)-[r:KNOWS {since: 2020}]->"
       "(n:Person {id: m.id}) ON MATCH SET r.seen = true RETURN r",
       R"(ProduceResults [r]
   Projection [r]
-    Apply
-      AllNodeScan [m]
-      Merge [(m)-[r:KNOWS {since: 2020}]->(n:Person {id: m.id}) ON MATCH SET r.seen = true]
-        WriteBarrier
+    Merge [(m)-[r:KNOWS {since: 2020}]->(n:Person {id: m.id}) ON MATCH SET r.seen = true]
+      WriteBarrier
+        Apply
+          WriteBarrier
+            AllNodeScan [m]
           Argument [m]
-        Filter [r.since = 2020]
-          Filter [n.id = m.id]
-            Filter [n:Person]
-              Expand [(m)-[r:KNOWS]->(n)]
-                Argument [m]
+      Filter [r.since = 2020]
+        Filter [n.id = m.id]
+          Filter [n:Person]
+            Expand [(m)-[r:KNOWS]->(n)]
+              Argument [m]
 )");
 }
 

@@ -373,10 +373,14 @@ MergeOp CopyPhysicalMerge(const ir::MergePattern &merge,
               "MERGE relationship command index is out of range");
         const ir::CreateRelationshipPattern &relationship =
             merge.create_pattern.relationships[command.index];
+        const bool incoming =
+            relationship.direction == ir::Direction::kIncoming;
         copied.create_commands.emplace_back(CreateRelationshipOp{
             .relationship_slot = output_slots.At(relationship.variable),
-            .left_node_slot = output_slots.At(relationship.left_node),
-            .right_node_slot = output_slots.At(relationship.right_node),
+            .left_node_slot = output_slots.At(
+                incoming ? relationship.right_node : relationship.left_node),
+            .right_node_slot = output_slots.At(
+                incoming ? relationship.left_node : relationship.right_node),
             .type = relationship.types.empty() ? std::string()
                                                : relationship.types.front(),
             .properties = CopyPhysicalPropertyMap(relationship.properties)});
@@ -924,7 +928,8 @@ class PhysicalPlanBuilder final {
                 FindSlot(*node->children[0]->output_slots, expand.ToNode()),
             .relationship_output_slot =
                 node->output_slots->At(expand.Relationship()),
-            .to_node_output_slot = node->output_slots->At(expand.ToNode())};
+            .to_node_output_slot = node->output_slots->At(expand.ToNode()),
+            .reverse_relationships = expand.ReverseRelationships()};
         return;
       }
       case PhysicalOperatorKind::kPruningVarExpand: {
@@ -1294,12 +1299,14 @@ class PhysicalPlanBuilder final {
             create.Relationship();
         CHECK(node->children.size() == 1, common::InternalError,
               "create relationship physical node must have one child");
+        const bool incoming =
+            relationship.direction == ir::Direction::kIncoming;
         node->data = CreateRelationshipOp{
             .relationship_slot = node->output_slots->At(relationship.variable),
-            .left_node_slot =
-                node->children[0]->output_slots->At(relationship.left_node),
-            .right_node_slot =
-                node->children[0]->output_slots->At(relationship.right_node),
+            .left_node_slot = node->children[0]->output_slots->At(
+                incoming ? relationship.right_node : relationship.left_node),
+            .right_node_slot = node->children[0]->output_slots->At(
+                incoming ? relationship.left_node : relationship.right_node),
             .type = relationship.types.empty() ? std::string()
                                                : relationship.types.front(),
             .properties = CopyPhysicalPropertyMap(relationship.properties)};

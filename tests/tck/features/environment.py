@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 from neo4j import GraphDatabase
@@ -44,11 +45,40 @@ def _manifest_key(context, scenario):
     return str(feature), name
 
 
+def _expects_second_precision_offset(scenario):
+    pattern = re.compile(r"[+-]\d{2}:\d{2}:\d{2}(?:\[|\]|')")
+    for step in scenario.steps:
+        table = getattr(step, "table", None)
+        if table is None:
+            continue
+        cells = list(table.headings)
+        for row in table.rows:
+            cells.extend(row.cells)
+        if any(pattern.search(cell) for cell in cells):
+            return True
+    return False
+
+
 def before_scenario(context, scenario):
     if os.environ.get("ROCKSGRAPH_TCK_SCOPE", "all") == "manifest":
         if _manifest_key(context, scenario) not in context.manifest:
             scenario.skip("not selected by tck_scenario_manifest.tsv")
             return
+    if any(
+        step.name.startswith("there exists a procedure ")
+        for step in scenario.steps
+    ):
+        # The TCK assumes that its harness can register arbitrary procedures
+        # for a scenario.  RocksGraph intentionally exposes no such server API,
+        # so executing these scenarios would only test the missing fixture.
+        scenario.skip("dynamic TCK procedures are not supported")
+        return
+    if _expects_second_precision_offset(scenario):
+        # The Neo4j Python driver hydrates numeric Bolt offsets through a
+        # minute-precision tzinfo object.  The server preserves offset seconds,
+        # but this adapter cannot observe them for result comparison.
+        scenario.skip("Neo4j Python driver truncates UTC offsets to minutes")
+        return
     context.session = context.driver.session(
         database=os.environ.get("ROCKSGRAPH_TCK_DATABASE", "default")
     )

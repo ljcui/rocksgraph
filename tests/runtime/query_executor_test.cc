@@ -1754,6 +1754,33 @@ TEST(QueryExecutorTest, WriteBarrierStabilizesReadsBeforeWrites) {
   EXPECT_EQ(graph.Nodes().size(), 2U);
 }
 
+TEST(QueryExecutorTest, WriteBarriersStabilizeReadsAcrossQueryParts) {
+  rg::test::GraphDBTestDatabase graph;
+  graph.CreateNode({});
+  graph.CreateNode({});
+
+  rg::test::ExecuteQueryAndCommit(
+      graph, "MATCH () CREATE () WITH * MATCH () CREATE ()");
+
+  EXPECT_EQ(graph.Nodes().size(), 12U);
+}
+
+TEST(QueryExecutorTest, WriteBarrierStabilizesTailDeleteInput) {
+  rg::test::GraphDBTestDatabase graph;
+  for (std::int64_t value = 1; value <= 5; ++value) {
+    graph.CreateNode({"N"}, {{"num", rg::Value(value)}});
+  }
+
+  const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "MATCH (n:N) WITH n, n.num AS num DELETE n "
+      "WITH num WHERE num % 2 = 0 RETURN num ORDER BY num");
+
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{{"2"}, {"4"}}));
+  EXPECT_TRUE(graph.Nodes().empty());
+}
+
 TEST(QueryExecutorTest, RollsBackWritesWhenALaterRowFails) {
   rg::test::GraphDBTestDatabase graph;
 

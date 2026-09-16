@@ -983,7 +983,11 @@ class VarExpandOperator final : public PullOperator {
             (!bound_to_.has_value() || frame.node == *bound_to_)) {
           Value::List relationships;
           relationships.reserve(path_references_.size());
-          for (const RelationshipReference relationship : path_references_) {
+          for (std::size_t i = 0; i < path_references_.size(); ++i) {
+            const std::size_t index = data_->reverse_relationships
+                                          ? path_references_.size() - i - 1
+                                          : i;
+            const RelationshipReference relationship = path_references_[index];
             relationships.emplace_back(Value(
                 MaterializeGraphDBEdge(*state_->transaction, relationship)));
           }

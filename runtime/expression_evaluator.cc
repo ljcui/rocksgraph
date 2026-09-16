@@ -8,13 +8,18 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
 #include "ast/ast_equal.h"
 #include "ast/ast_node.h"
 #include "common/exception.h"
+#include "graphdb/edge_iterator.h"
+#include "graphdb/graph_entity.h"
 #include "runtime/builtin_function_evaluator.h"
+#include "runtime/graphdb_access.h"
 #include "value/temporal.h"
 
 namespace rg {
@@ -90,6 +95,46 @@ class ScopedExpressionBindings final : public ExpressionBindings {
   const ExpressionBindings *parent_ = nullptr;
   std::string name_;
   Value value_;
+};
+
+class MapScopedExpressionBindings final : public ExpressionBindings {
+ public:
+  MapScopedExpressionBindings(const ExpressionBindings &parent,
+                              std::unordered_map<std::string, Value> values)
+      : parent_(&parent), values_(std::move(values)) {}
+
+  [[nodiscard]] Value Lookup(std::string_view name) const override {
+    const auto found = values_.find(std::string(name));
+    return found == values_.end() ? parent_->Lookup(name) : found->second;
+  }
+
+  [[nodiscard]] Value LookupVariable(
+      const ast::Variable &variable) const override {
+    return Lookup(variable.name);
+  }
+
+  [[nodiscard]] bool ReadProperty(std::string_view variable,
+                                  std::string_view property_key,
+                                  Value *value) const override {
+    return !values_.contains(std::string(variable)) &&
+           parent_->ReadProperty(variable, property_key, value);
+  }
+
+  [[nodiscard]] bool ReadVariableProperty(const ast::Variable &variable,
+                                          std::string_view property_key,
+                                          Value *value) const override {
+    return !values_.contains(variable.name) &&
+           parent_->ReadVariableProperty(variable, property_key, value);
+  }
+
+  [[nodiscard]] bool ReadParameter(const ast::Parameter &parameter,
+                                   Value *value) const override {
+    return parent_->ReadParameter(parameter, value);
+  }
+
+ private:
+  const ExpressionBindings *parent_ = nullptr;
+  std::unordered_map<std::string, Value> values_;
 };
 
 enum class TruthValue { kFalse, kTrue, kNull };
@@ -319,16 +364,29 @@ Value EvaluateListIndex(
   Value list = EvaluateExpression(*expression.list, row, precomputed, context);
   Value index_value =
       EvaluateExpression(*expression.index, row, precomputed, context);
-  const auto index = IntegerValue(index_value);
-  if (!list.IsList() || !index.has_value()) {
+  if (list.IsNull() || index_value.IsNull()) {
     return Value::Null();
   }
-  const auto &items = list.AsList();
-  const std::int64_t normalized = NormalizeListIndex(*index, items.size());
-  if (normalized < 0 || normalized >= static_cast<std::int64_t>(items.size())) {
-    return Value::Null();
+  if (list.IsList()) {
+    CHECK(index_value.IsInteger(), common::InvalidArgumentError,
+          "list index must be an integer");
+    const auto &items = list.AsList();
+    const std::int64_t normalized =
+        NormalizeListIndex(index_value.AsInteger(), items.size());
+    if (normalized < 0 ||
+        normalized >= static_cast<std::int64_t>(items.size())) {
+      return Value::Null();
+    }
+    return items[static_cast<std::size_t>(normalized)];
   }
-  return items[static_cast<std::size_t>(normalized)];
+  if (list.IsMap() || list.IsNode() || list.IsRelationship()) {
+    CHECK(index_value.IsString(), common::InvalidArgumentError,
+          "map property index must be a string");
+    const Value *value = FindProperty(list, index_value.AsString());
+    return value != nullptr ? *value : Value::Null();
+  }
+  THROW(common::InvalidArgumentError,
+        "indexed expression must be a list, map, node, or relationship");
 }
 
 Value EvaluateListSlice(
@@ -422,6 +480,109 @@ Value EvaluateListComprehension(
   return Value(std::move(output));
 }
 
+Value EvaluateLocallyCorrelatedPatternComprehension(
+    const ast::PatternComprehension &expression,
+    const ExpressionBindings &row,
+    const std::vector<ast::PrecomputedExpression> &precomputed,
+    ExecutionContext context) {
+  CHECK(expression.relationships_pattern != nullptr &&
+            expression.eval_expr != nullptr,
+        common::InvalidArgumentError, "pattern comprehension is incomplete");
+  const ast::RelationshipsPattern &pattern = *expression.relationships_pattern;
+  CHECK(pattern.node_pattern != nullptr && pattern.chain.size() == 1,
+        common::InvalidArgumentError,
+        "locally correlated pattern comprehension supports one hop");
+  const ast::NodePattern &start_pattern = *pattern.node_pattern;
+  CHECK(!start_pattern.variable.empty() && start_pattern.properties == nullptr,
+        common::InvalidArgumentError,
+        "locally correlated pattern comprehension requires a bound start "
+        "node without inline properties");
+
+  Value start = row.Lookup(start_pattern.variable);
+  if (start.IsNull()) {
+    return Value(Value::List{});
+  }
+  CHECK(start.IsNode(), common::InvalidArgumentError,
+        "pattern comprehension start must be a node");
+  if (!NodeHasLabels(start.AsNode(), start_pattern.labels)) {
+    return Value(Value::List{});
+  }
+
+  const auto &[relationship_ptr, next_node_ptr] = pattern.chain.front();
+  CHECK(relationship_ptr != nullptr && next_node_ptr != nullptr,
+        common::InvalidArgumentError,
+        "pattern comprehension relationship is incomplete");
+  const ast::RelationshipPattern &relationship_pattern = *relationship_ptr;
+  const ast::RelationshipDetail *detail = relationship_pattern.detail.get();
+  CHECK((detail == nullptr ||
+         (detail->range == std::nullopt && detail->properties == nullptr)) &&
+            next_node_ptr->properties == nullptr,
+        common::InvalidArgumentError,
+        "locally correlated pattern comprehension does not support variable "
+        "length or inline properties");
+
+  graphdb::EdgeDirection direction = graphdb::EdgeDirection::BOTH;
+  if (relationship_pattern.left_arrow &&
+      !relationship_pattern.right_arrow) {
+    direction = graphdb::EdgeDirection::INCOMING;
+  } else if (relationship_pattern.right_arrow &&
+             !relationship_pattern.left_arrow) {
+    direction = graphdb::EdgeDirection::OUTGOING;
+  }
+  const std::vector<std::string> types =
+      detail == nullptr ? std::vector<std::string>{} : detail->types;
+  graphdb::Vertex vertex = GraphDBVertexById(
+      context.GraphDBTransaction(), start.AsNode().id);
+  std::unique_ptr<graphdb::EdgeIterator> edges = vertex.NewEdgeIterator(
+      direction, std::unordered_set<std::string>(types.begin(), types.end()),
+      {});
+
+  Value::List output;
+  while (edges->Valid()) {
+    context.CheckCancelled();
+    graphdb::Edge edge = edges->GetEdge();
+    edges->Next();
+    const std::int64_t start_id = start.AsNode().id;
+    std::int64_t next_id = edge.GetNativeEndId();
+    if (edge.GetNativeStartId() != start_id) {
+      CHECK(direction != graphdb::EdgeDirection::OUTGOING &&
+                edge.GetNativeEndId() == start_id,
+            common::InternalError,
+            "edge iterator returned an unrelated relationship");
+      next_id = edge.GetNativeStartId();
+    }
+
+    Value::NodePtr next = MaterializeGraphDBVertex(
+        context.GraphDBTransaction(), next_id);
+    if (!NodeHasLabels(*next, next_node_ptr->labels)) {
+      continue;
+    }
+    Value::RelationshipPtr relationship = MaterializeGraphDBEdge(edge);
+    std::unordered_map<std::string, Value> bindings;
+    if (!next_node_ptr->variable.empty()) {
+      bindings.emplace(next_node_ptr->variable, Value(next));
+    }
+    if (detail != nullptr && !detail->variable.empty()) {
+      bindings.emplace(detail->variable, Value(relationship));
+    }
+    if (!expression.variable.empty()) {
+      auto path = std::make_shared<Path>();
+      path->nodes = {std::make_shared<Node>(start.AsNode()), next};
+      path->relationships = {relationship};
+      bindings.emplace(expression.variable, Value(std::move(path)));
+    }
+    MapScopedExpressionBindings scoped(row, std::move(bindings));
+    if (expression.where_expr != nullptr &&
+        !PredicateIsTrue(EvaluateExpression(
+            *expression.where_expr, scoped, precomputed, context))) {
+      continue;
+    }
+    output.push_back(EvaluateExpression(*expression.eval_expr, scoped,
+                                        precomputed, context));
+  }
+  return Value(std::move(output));
+}
+
 Value EvaluateQuantifier(
     const ast::Quantifier &quantifier, QuantifierMode mode,
     const ExpressionBindings &row,
@@ -500,6 +661,34 @@ Value EvaluateArithmetic(
   }
   if (left.IsNull() || right.IsNull()) {
     return Value::Null();
+  }
+  const bool add = expression.Is(ast::ASTNodeType::kAddExpression);
+  const bool subtract = expression.Is(ast::ASTNodeType::kSubtractExpression);
+  const bool multiply = expression.Is(ast::ASTNodeType::kMultiplyExpression);
+  const bool divide = expression.Is(ast::ASTNodeType::kDivideExpression);
+  const auto is_temporal = [](const Value &value) {
+    return value.IsDate() || value.IsLocalTime() || value.IsTime() ||
+           value.IsLocalDateTime() || value.IsDateTime();
+  };
+  if ((add || subtract) && left.IsDuration() && right.IsDuration()) {
+    return AddDurations(left.AsDuration(), right.AsDuration(), subtract);
+  }
+  if ((add || subtract) && is_temporal(left) && right.IsDuration()) {
+    return AddDurationToTemporal(left, right.AsDuration(), subtract);
+  }
+  if (add && left.IsDuration() && is_temporal(right)) {
+    return AddDurationToTemporal(right, left.AsDuration(), false);
+  }
+  if (multiply && left.IsDuration() && IsNumeric(right)) {
+    return ScaleDuration(left.AsDuration(), AsDoubleValue(right));
+  }
+  if (multiply && IsNumeric(left) && right.IsDuration()) {
+    return ScaleDuration(right.AsDuration(), AsDoubleValue(left));
+  }
+  if (divide && left.IsDuration() && IsNumeric(right)) {
+    const double divisor = AsDoubleValue(right);
+    CHECK(divisor != 0.0, common::InvalidArgumentError, "division by zero");
+    return ScaleDuration(left.AsDuration(), 1.0 / divisor);
   }
   if (expression.Is(ast::ASTNodeType::kAddExpression) && left.IsString() &&
       right.IsString()) {
@@ -891,6 +1080,10 @@ Value EvaluateExpression(
       return EvaluateListComprehension(
           ast::CastAst<ast::ListComprehension>(expression), row, precomputed,
           context);
+    case ast::ASTNodeType::kPatternComprehension:
+      return EvaluateLocallyCorrelatedPatternComprehension(
+          ast::CastAst<ast::PatternComprehension>(expression), row,
+          precomputed, context);
     case ast::ASTNodeType::kAllQuantifier:
       return EvaluateQuantifier(ast::CastAst<ast::AllQuantifier>(expression),
                                 QuantifierMode::kAll, row, precomputed,

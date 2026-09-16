@@ -1206,23 +1206,26 @@ TEST(PhysicalPlanTest, BuildsOwnedDeletePayloads) {
 
 TEST(PhysicalPlanTest, ExecutesDetachedDeleteOperators) {
   rg::test::GraphDBTestDatabase graph;
-  const auto isolated = graph.CreateNode({"N"});
+  graph.CreateNode({"N"});
   rg::PhysicalPlan delete_plan =
-      DetachedPhysicalPlan("MATCH (n:N) DELETE n RETURN n");
-  const auto deleted_rows = PhysicalWriteRows(delete_plan, &graph, {"n"});
+      DetachedPhysicalPlan("MATCH (n:N) DELETE n RETURN 1 AS deleted");
+  const auto deleted_rows =
+      PhysicalWriteRows(delete_plan, &graph, {"deleted"});
   ASSERT_EQ(deleted_rows.size(), 1U);
   ASSERT_EQ(deleted_rows.front().size(), 1U);
-  EXPECT_EQ(deleted_rows.front().front().AsNode().id, isolated->id);
+  EXPECT_EQ(deleted_rows.front().front(), rg::Value(1));
   EXPECT_TRUE(graph.Nodes().empty());
 
   const auto left = graph.CreateNode({"N"});
   const auto right = graph.CreateNode({"N"});
   graph.CreateRelationship(left, right, "R");
   rg::PhysicalPlan relationship_delete =
-      DetachedPhysicalPlan("MATCH ()-[r:R]->() DELETE r RETURN r");
+      DetachedPhysicalPlan(
+          "MATCH ()-[r:R]->() DELETE r RETURN type(r) AS type");
   const auto relationship_rows =
-      PhysicalWriteRows(relationship_delete, &graph, {"r"});
+      PhysicalWriteRows(relationship_delete, &graph, {"type"});
   ASSERT_EQ(relationship_rows.size(), 1U);
+  EXPECT_EQ(relationship_rows.front().front(), rg::Value("R"));
   EXPECT_TRUE(graph.Relationships().empty());
   EXPECT_EQ(graph.Nodes().size(), 2U);
 
@@ -1230,15 +1233,17 @@ TEST(PhysicalPlanTest, ExecutesDetachedDeleteOperators) {
   const auto connected_right = graph.CreateNode({"N"});
   graph.CreateRelationship(connected_left, connected_right, "R");
   rg::PhysicalPlan invalid_delete =
-      DetachedPhysicalPlan("MATCH (n:N) DELETE n RETURN n");
-  EXPECT_THROW((void)PhysicalWriteRows(invalid_delete, &graph, {"n"}),
+      DetachedPhysicalPlan("MATCH (n:N) DELETE n RETURN 1 AS deleted");
+  EXPECT_THROW((void)PhysicalWriteRows(invalid_delete, &graph, {"deleted"}),
                common::InvalidArgumentError);
   EXPECT_EQ(graph.Nodes().size(), 4U);
   EXPECT_EQ(graph.Relationships().size(), 1U);
 
   rg::PhysicalPlan detach_plan =
-      DetachedPhysicalPlan("MATCH (n:N) DETACH DELETE n RETURN n");
-  const auto detach_rows = PhysicalWriteRows(detach_plan, &graph, {"n"});
+      DetachedPhysicalPlan(
+          "MATCH (n:N) DETACH DELETE n RETURN 1 AS deleted");
+  const auto detach_rows =
+      PhysicalWriteRows(detach_plan, &graph, {"deleted"});
   EXPECT_EQ(detach_rows.size(), 4U);
   EXPECT_TRUE(graph.Nodes().empty());
   EXPECT_TRUE(graph.Relationships().empty());
@@ -1744,6 +1749,7 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForVariableTraversalOperators) {
     EXPECT_TRUE(data.length.variable);
     EXPECT_EQ(data.length.min, 0);
     EXPECT_EQ(data.length.max, 3);
+    EXPECT_FALSE(data.reverse_relationships);
     ExpectSameOffset(data.from_node_input_slot,
                      node->children[0]->output_slots->At("a"));
     EXPECT_FALSE(data.to_node_input_slot.has_value());
@@ -1796,12 +1802,13 @@ TEST(PhysicalPlanTest, BuildsTypedOwnedPayloadsForVariableTraversalOperators) {
     ir::VarExpandPlan logical(
         std::make_unique<ir::ArgumentPlan>(std::vector<std::string>{"a", "b"}),
         "a", "rs", "b", ir::ExpandDirection::kOutgoing, {"R"},
-        {.min = 1, .max = 2});
+        {.min = 1, .max = 2}, true);
     rg::PhysicalPlan physical = rg::CreatePhysicalPlan(logical);
     const auto &data = std::get<rg::VarExpandOp>(physical.Root().data);
     ASSERT_TRUE(data.to_node_input_slot.has_value());
     ExpectSameOffset(*data.to_node_input_slot,
                      physical.Root().children[0]->output_slots->At("b"));
+    EXPECT_TRUE(data.reverse_relationships);
   }
 }
 
@@ -1879,7 +1886,7 @@ TEST(PhysicalPlanTest,
           "r"),
       (std::vector<std::int64_t>{first_relationship->id, first_relationship->id,
                                  second_relationship->id,
-                                 second_relationship->id, self->id, self->id}));
+                                 second_relationship->id, self->id}));
 }
 
 TEST(PhysicalPlanTest, ClosesFixedExpandCursorEarly) {

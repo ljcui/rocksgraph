@@ -145,9 +145,11 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
       }
       return Value::Null();
     case ast::BuiltinFunctionKind::kLabels: {
-      if (!arguments[0].IsNode()) {
+      if (arguments[0].IsNull()) {
         return Value::Null();
       }
+      CHECK(arguments[0].IsNode(), common::InvalidArgumentError,
+            "labels() argument must be a node");
       Value::List labels;
       for (const auto &label : arguments[0].AsNode().labels) {
         labels.emplace_back(label);
@@ -160,9 +162,12 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
       }
       return arguments[0].AsList().back();
     case ast::BuiltinFunctionKind::kType:
-      return arguments[0].IsRelationship()
-                 ? Value(arguments[0].AsRelationship().type)
-                 : Value::Null();
+      if (arguments[0].IsNull()) {
+        return Value::Null();
+      }
+      CHECK(arguments[0].IsRelationship(), common::InvalidArgumentError,
+            "type() argument must be a relationship");
+      return Value(arguments[0].AsRelationship().type);
     case ast::BuiltinFunctionKind::kSize:
       if (arguments[0].IsList()) {
         return Value(static_cast<std::int64_t>(arguments[0].AsList().size()));
@@ -325,10 +330,16 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
     case ast::BuiltinFunctionKind::kRand:
       return Value(RandomUnitDouble());
     case ast::BuiltinFunctionKind::kRange: {
-      if (!arguments[0].IsInteger() || !arguments[1].IsInteger() ||
-          (arguments.size() == 3 && !arguments[2].IsInteger())) {
+      if (std::any_of(arguments.begin(), arguments.end(),
+                      [](const Value &argument) {
+                        return argument.IsNull();
+                      })) {
         return Value::Null();
       }
+      CHECK(arguments[0].IsInteger() && arguments[1].IsInteger() &&
+                (arguments.size() != 3 || arguments[2].IsInteger()),
+            common::InvalidArgumentError,
+            "range() arguments must be integers");
       const std::int64_t start = arguments[0].AsInteger();
       const std::int64_t end = arguments[1].AsInteger();
       const std::int64_t step =
@@ -483,6 +494,11 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
       if (arguments[0].IsNull()) {
         return Value::Null();
       }
+      CHECK(!arguments[0].IsList() && !arguments[0].IsMap() &&
+                !arguments[0].IsNode() && !arguments[0].IsRelationship() &&
+                !arguments[0].IsPath(),
+            common::InvalidArgumentError,
+            "toString() argument has an invalid type");
       return arguments[0].IsString() ? arguments[0]
                                      : Value(arguments[0].ToString());
     case ast::BuiltinFunctionKind::kToInteger:
@@ -504,10 +520,22 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
         return Value(arguments[0].AsBool() ? 1 : 0);
       }
       if (arguments[0].IsString()) {
-        const auto value = ParseInteger(arguments[0].AsString());
-        return value.has_value() ? Value(*value) : Value::Null();
+        const std::string &text = arguments[0].AsString();
+        if (const auto value = ParseInteger(text); value.has_value()) {
+          return Value(*value);
+        }
+        if (const auto value = ParseDouble(text);
+            value.has_value() && std::isfinite(*value) &&
+            *value >= static_cast<double>(
+                          std::numeric_limits<std::int64_t>::min()) &&
+            *value < static_cast<double>(
+                         std::numeric_limits<std::int64_t>::max())) {
+          return Value(static_cast<std::int64_t>(*value));
+        }
+        return Value::Null();
       }
-      return Value::Null();
+      THROW(common::InvalidArgumentError,
+            "toInteger() argument has an invalid type");
     case ast::BuiltinFunctionKind::kToFloat:
       if (arguments[0].IsNull() || arguments[0].IsDouble()) {
         return arguments[0];
@@ -515,14 +543,12 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
       if (arguments[0].IsInteger()) {
         return Value(static_cast<double>(arguments[0].AsInteger()));
       }
-      if (arguments[0].IsBool()) {
-        return Value(arguments[0].AsBool() ? 1.0 : 0.0);
-      }
       if (arguments[0].IsString()) {
         const auto value = ParseDouble(arguments[0].AsString());
         return value.has_value() ? Value(*value) : Value::Null();
       }
-      return Value::Null();
+      THROW(common::InvalidArgumentError,
+            "toFloat() argument has an invalid type");
     case ast::BuiltinFunctionKind::kToBoolean:
       if (arguments[0].IsNull() || arguments[0].IsBool()) {
         return arguments[0];
@@ -536,8 +562,10 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
         if (value == "false") {
           return Value(false);
         }
+        return Value::Null();
       }
-      return Value::Null();
+      THROW(common::InvalidArgumentError,
+            "toBoolean() argument has an invalid type");
     case ast::BuiltinFunctionKind::kToLower:
     case ast::BuiltinFunctionKind::kToUpper:
     case ast::BuiltinFunctionKind::kTrim:

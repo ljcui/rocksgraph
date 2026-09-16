@@ -176,6 +176,7 @@ TEST(LogicalPlanTest, VarExpandAndPathBuildExposeMetadata) {
   ASSERT_TRUE(var_expand.Length().max.has_value());
   EXPECT_EQ(var_expand.Length().min, 1);
   EXPECT_EQ(var_expand.Length().max, 3);
+  EXPECT_FALSE(var_expand.ReverseRelationships());
   EXPECT_EQ(var_expand.Details(), "(a)-[r:KNOWS*1..3]->(b)");
   EXPECT_EQ(var_expand.OutputColumns(),
             std::vector<std::string>({"a", "r", "b"}));

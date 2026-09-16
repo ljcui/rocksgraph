@@ -913,7 +913,8 @@ VarExpandPlan::VarExpandPlan(LogicalPlanPtr source, std::string from_node,
                              std::string relationship, std::string to_node,
                              ExpandDirection direction,
                              std::vector<std::string> types,
-                             LogicalVariableLength length)
+                             LogicalVariableLength length,
+                             bool reverse_relationships)
     : LogicalPlan(LogicalPlanNodeType::kVarExpand,
                   UnaryChildren(std::move(source), "VarExpand")),
       from_node_(std::move(from_node)),
@@ -921,7 +922,8 @@ VarExpandPlan::VarExpandPlan(LogicalPlanPtr source, std::string from_node,
       to_node_(std::move(to_node)),
       direction_(direction),
       types_(std::move(types)),
-      length_(std::move(length)) {
+      length_(std::move(length)),
+      reverse_relationships_(reverse_relationships) {
   SetSolvedSymbols(Child(0).SolvedSymbols());
   SetOutputColumns(Child(0).OutputColumns());
   AddSolvedSymbol(from_node_);

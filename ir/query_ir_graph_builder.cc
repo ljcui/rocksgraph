@@ -32,20 +32,29 @@ class PatternConverter {
     }
   }
 
-  void AddRelationshipsPattern(const ast::RelationshipsPattern &pattern) {
+  void AddRelationshipsPattern(const ast::RelationshipsPattern &pattern,
+                               std::string path_variable = {}) {
     CHECK(pattern.node_pattern != nullptr, common::InvalidArgumentError,
           Missing("relationships pattern node"));
     CHECK(!pattern.chain.empty(), common::InvalidArgumentError,
           Missing("relationships pattern chain"));
+    PathPattern path;
     std::string left = AddNode(*pattern.node_pattern);
+    path.nodes.push_back(left);
     for (const auto &link : pattern.chain) {
       CHECK(link.first != nullptr, common::InvalidArgumentError,
             Missing("relationship pattern"));
       CHECK(link.second != nullptr, common::InvalidArgumentError,
             Missing("node pattern"));
       std::string right = AddNode(*link.second);
-      AddRelationship(*link.first, left, right);
+      path.relationships.push_back(AddRelationship(*link.first, left, right));
+      path.nodes.push_back(right);
       left = right;
+    }
+    if (!path_variable.empty()) {
+      graph_->pattern_paths.insert(path_variable);
+      path.variable = std::move(path_variable);
+      graph_->path_patterns.push_back(std::move(path));
     }
   }
 
@@ -111,7 +120,9 @@ class PatternConverter {
       relationship.length.min = detail->range->min;
       relationship.length.max = detail->range->max;
     }
-    if (pattern.left_arrow) {
+    if (pattern.left_arrow && pattern.right_arrow) {
+      relationship.direction = Direction::kBoth;
+    } else if (pattern.left_arrow) {
       relationship.direction = Direction::kIncoming;
     } else if (pattern.right_arrow) {
       relationship.direction = Direction::kOutgoing;
@@ -127,6 +138,9 @@ class PatternConverter {
 };
 
 Direction PatternDirection(const ast::RelationshipPattern &pattern) {
+  if (pattern.left_arrow && pattern.right_arrow) {
+    return Direction::kBoth;
+  }
   if (pattern.left_arrow) {
     return Direction::kIncoming;
   }
@@ -488,9 +502,10 @@ void AddPatternToQueryGraph(QueryGraph *query_graph,
 }
 
 void AddRelationshipsPatternToQueryGraph(
-    QueryGraph *query_graph, const ast::RelationshipsPattern &pattern) {
+    QueryGraph *query_graph, const ast::RelationshipsPattern &pattern,
+    std::string path_variable) {
   PatternConverter converter(query_graph);
-  converter.AddRelationshipsPattern(pattern);
+  converter.AddRelationshipsPattern(pattern, std::move(path_variable));
 }
 
 QueryGraphBuilder::QueryGraphBuilder(

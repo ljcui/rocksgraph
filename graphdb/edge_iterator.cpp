@@ -180,7 +180,7 @@ ScanEdgeByVidDirectionTypes::ScanEdgeByVidDirectionTypes(
   SeekToNextPrefix();
 }
 
-void ScanEdgeByVidDirectionTypes::Load() {
+bool ScanEdgeByVidDirectionTypes::Load() {
   auto p = iter_->key().data();
   int64_t vid1 = ReadValue<int64_t>(p);
   p += sizeof(int64_t);
@@ -191,11 +191,16 @@ void ScanEdgeByVidDirectionTypes::Load() {
   int64_t vid2 = ReadValue<int64_t>(p);
   p += sizeof(int64_t);
   int64_t eid = ReadValue<int64_t>(p);
+  if (direction_ == EdgeDirection::BOTH && dir == EdgeDirection::INCOMING &&
+      vid1 == vid2) {
+    return false;
+  }
   if (dir == EdgeDirection::OUTGOING) {
     ee_ = std::make_unique<Edge>(txn_, eid, vid1, vid2, etid);
   } else {
     ee_ = std::make_unique<Edge>(txn_, eid, vid2, vid1, etid);
   }
+  return true;
 }
 
 void ScanEdgeByVidDirectionTypes::SeekToNextPrefix() {
@@ -203,13 +208,12 @@ void ScanEdgeByVidDirectionTypes::SeekToNextPrefix() {
     prefix_ = prefixes_.front();
     prefixes_.pop();
     iter_->Seek(prefix_);
-    if (iter_->Valid()) {
-      auto key = iter_->key();
-      if (key.starts_with(prefix_)) {
+    while (iter_->Valid() && iter_->key().starts_with(prefix_)) {
+      if (Load()) {
         valid_ = true;
-        Load();
         return;
       }
+      iter_->Next();
     }
   }
 }
@@ -217,12 +221,10 @@ void ScanEdgeByVidDirectionTypes::SeekToNextPrefix() {
 void ScanEdgeByVidDirectionTypes::Next() {
   assert(valid_);
   valid_ = false;
-  iter_->Next();
-  if (iter_->Valid()) {
-    auto key = iter_->key();
-    if (key.starts_with(prefix_)) {
+  for (iter_->Next(); iter_->Valid() && iter_->key().starts_with(prefix_);
+       iter_->Next()) {
+    if (Load()) {
       valid_ = true;
-      Load();
       return;
     }
   }

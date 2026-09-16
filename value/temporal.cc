@@ -718,6 +718,97 @@ Duration NormalizeDuration(std::int64_t months, std::int64_t days,
           static_cast<std::int32_t>(nanosecond_remainder)};
 }
 
+using WideInteger = __int128_t;
+
+Date AddMonthsClamped(const Date &date, std::int64_t months);
+
+WideInteger DurationNanoseconds(const Duration &duration) {
+  return static_cast<WideInteger>(duration.seconds) * kNanosecondsPerSecond +
+         duration.nanoseconds;
+}
+
+std::int64_t CheckedWideInteger(WideInteger value, std::string_view component) {
+  if (value < std::numeric_limits<std::int64_t>::min() ||
+      value > std::numeric_limits<std::int64_t>::max()) {
+    InvalidTemporal(std::string(component) + " is out of range");
+  }
+  return static_cast<std::int64_t>(value);
+}
+
+Duration NormalizeDurationNanoseconds(std::int64_t months, std::int64_t days,
+                                      WideInteger nanoseconds) {
+  WideInteger seconds = nanoseconds / kNanosecondsPerSecond;
+  WideInteger remainder = nanoseconds % kNanosecondsPerSecond;
+  if (remainder < 0) {
+    --seconds;
+    remainder += kNanosecondsPerSecond;
+  }
+  return {months, days, CheckedWideInteger(seconds, "duration seconds"),
+          static_cast<std::int32_t>(remainder)};
+}
+
+WideInteger FloorDivide(WideInteger dividend, WideInteger divisor) {
+  WideInteger quotient = dividend / divisor;
+  if (dividend % divisor < 0) {
+    --quotient;
+  }
+  return quotient;
+}
+
+Date AddDays(const Date &date, WideInteger days) {
+  const std::int64_t count = CheckedWideInteger(days, "duration days");
+  return FromSysDays(ToSysDays(date) + Days{count});
+}
+
+LocalTime LocalTimeFromNanoseconds(WideInteger nanoseconds) {
+  const WideInteger seconds = nanoseconds / kNanosecondsPerSecond;
+  const int hour = static_cast<int>(seconds / 3600);
+  const int minute = static_cast<int>((seconds % 3600) / 60);
+  const int second = static_cast<int>(seconds % 60);
+  const int fraction =
+      static_cast<int>(nanoseconds % kNanosecondsPerSecond);
+  return {hour, minute, second, fraction, true};
+}
+
+LocalDateTime AddDurationToLocalDateTime(const LocalDateTime &input,
+                                         const Duration &duration, int sign) {
+  LocalDateTime result = input;
+  const WideInteger months = static_cast<WideInteger>(duration.months) * sign;
+  result.date =
+      AddMonthsClamped(result.date, CheckedWideInteger(months, "duration months"));
+
+  constexpr WideInteger kNanosecondsPerDay =
+      static_cast<WideInteger>(kSecondsPerDay) * kNanosecondsPerSecond;
+  const WideInteger current =
+      (static_cast<WideInteger>(result.time.hour) * 3600 +
+       result.time.minute * 60 + result.time.second) *
+          kNanosecondsPerSecond +
+      result.time.nanosecond;
+  const WideInteger total = current + DurationNanoseconds(duration) * sign;
+  const WideInteger day_carry = FloorDivide(total, kNanosecondsPerDay);
+  const WideInteger time_of_day = total - day_carry * kNanosecondsPerDay;
+  result.date = AddDays(
+      result.date,
+      static_cast<WideInteger>(duration.days) * sign + day_carry);
+  result.time = LocalTimeFromNanoseconds(time_of_day);
+  return result;
+}
+
+LocalTime AddDurationToLocalTime(const LocalTime &input,
+                                 const Duration &duration, int sign) {
+  constexpr WideInteger kNanosecondsPerDay =
+      static_cast<WideInteger>(kSecondsPerDay) * kNanosecondsPerSecond;
+  const WideInteger current =
+      (static_cast<WideInteger>(input.hour) * 3600 + input.minute * 60 +
+       input.second) *
+          kNanosecondsPerSecond +
+      input.nanosecond;
+  const WideInteger total = current + DurationNanoseconds(duration) * sign;
+  const WideInteger time_of_day =
+      total - FloorDivide(total, kNanosecondsPerDay) * kNanosecondsPerDay;
+  return LocalTimeFromNanoseconds(time_of_day);
+}
+
 Duration DurationFromMap(const Value::Map &map) {
   const long double years = MapNumber(map, "years").value_or(0);
   const long double months = MapNumber(map, "months").value_or(0);
@@ -1464,6 +1555,111 @@ Value ConstructDuration(const Value *argument) {
   if (argument->IsString()) return Value(ParseDuration(argument->AsString()));
   if (argument->IsMap()) return Value(DurationFromMap(argument->AsMap()));
   return Value::Null();
+}
+
+Value AddDurationToTemporal(const Value &temporal, const Duration &duration,
+                            bool subtract) {
+  const int sign = subtract ? -1 : 1;
+  if (temporal.IsDate()) {
+    Date result = temporal.AsDate();
+    const WideInteger months =
+        static_cast<WideInteger>(duration.months) * sign;
+    result = AddMonthsClamped(
+        result, CheckedWideInteger(months, "duration months"));
+    constexpr WideInteger kNanosecondsPerDay =
+        static_cast<WideInteger>(kSecondsPerDay) * kNanosecondsPerSecond;
+    const WideInteger time_days =
+        DurationNanoseconds(duration) * sign / kNanosecondsPerDay;
+    return Value(AddDays(result, static_cast<WideInteger>(duration.days) * sign +
+                                     time_days));
+  }
+  if (temporal.IsLocalTime()) {
+    return Value(
+        AddDurationToLocalTime(temporal.AsLocalTime(), duration, sign));
+  }
+  if (temporal.IsTime()) {
+    const Time &input = temporal.AsTime();
+    return Value(Time{AddDurationToLocalTime(input.local_time, duration, sign),
+                      input.utc_offset_seconds, input.timezone});
+  }
+  if (temporal.IsLocalDateTime()) {
+    return Value(AddDurationToLocalDateTime(temporal.AsLocalDateTime(),
+                                            duration, sign));
+  }
+  if (temporal.IsDateTime()) {
+    const DateTime &input = temporal.AsDateTime();
+    LocalDateTime local =
+        AddDurationToLocalDateTime(input.local_date_time, duration, sign);
+    const int offset = input.timezone.empty()
+                           ? input.utc_offset_seconds
+                           : ZoneOffset(input.timezone, local);
+    return Value(DateTime{local, offset, input.timezone});
+  }
+  InvalidTemporal("duration can only be added to a temporal value");
+}
+
+Value AddDurations(const Duration &left, const Duration &right,
+                   bool subtract) {
+  const int sign = subtract ? -1 : 1;
+  const std::int64_t months = CheckedWideInteger(
+      static_cast<WideInteger>(left.months) +
+          static_cast<WideInteger>(right.months) * sign,
+      "duration months");
+  const std::int64_t days = CheckedWideInteger(
+      static_cast<WideInteger>(left.days) +
+          static_cast<WideInteger>(right.days) * sign,
+      "duration days");
+  return Value(NormalizeDurationNanoseconds(
+      months, days,
+      DurationNanoseconds(left) + DurationNanoseconds(right) * sign));
+}
+
+Value ScaleDuration(const Duration &duration, double factor) {
+  if (!std::isfinite(factor)) {
+    InvalidTemporal("duration factor must be finite");
+  }
+  const long double scale = factor;
+  const long double total_months = duration.months * scale;
+  if (total_months <
+          static_cast<long double>(std::numeric_limits<std::int64_t>::min()) ||
+      total_months >
+          static_cast<long double>(std::numeric_limits<std::int64_t>::max())) {
+    InvalidTemporal("duration months is out of range");
+  }
+  const std::int64_t months = static_cast<std::int64_t>(total_months);
+  const long double fractional_month_seconds =
+      (total_months - months) * kAverageMonthSeconds;
+  const std::int64_t month_days = static_cast<std::int64_t>(
+      fractional_month_seconds / kSecondsPerDay);
+  long double seconds =
+      fractional_month_seconds - month_days * kSecondsPerDay;
+
+  const long double total_days = duration.days * scale;
+  if (total_days <
+          static_cast<long double>(std::numeric_limits<std::int64_t>::min()) ||
+      total_days >
+          static_cast<long double>(std::numeric_limits<std::int64_t>::max())) {
+    InvalidTemporal("duration days is out of range");
+  }
+  const std::int64_t explicit_days = static_cast<std::int64_t>(total_days);
+  const std::int64_t days = CheckedWideInteger(
+      static_cast<WideInteger>(month_days) + explicit_days, "duration days");
+  seconds += (total_days - explicit_days) * kSecondsPerDay;
+  seconds +=
+      (static_cast<long double>(duration.seconds) +
+       static_cast<long double>(duration.nanoseconds) /
+           kNanosecondsPerSecond) *
+      scale;
+  const long double nanoseconds =
+      std::nearbyint(seconds * kNanosecondsPerSecond);
+  if (nanoseconds <
+          static_cast<long double>(std::numeric_limits<std::int64_t>::min()) ||
+      nanoseconds >
+          static_cast<long double>(std::numeric_limits<std::int64_t>::max())) {
+    InvalidTemporal("duration is out of range");
+  }
+  return Value(NormalizeDurationNanoseconds(
+      months, days, static_cast<std::int64_t>(nanoseconds)));
 }
 
 Value DurationBetween(const Value &left, const Value &right) {

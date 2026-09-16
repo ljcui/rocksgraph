@@ -927,16 +927,25 @@ void ExecuteStreamingWrite(const SetPropertiesOp &data, const SlottedRow &,
     return;
   }
   Value value = Evaluate(data.value, *output, *state);
-  CHECK(value.IsMap(), common::InvalidArgumentError,
-        "SET properties requires a map value");
+  Value::Map properties;
+  if (value.IsMap()) {
+    properties = std::move(value.AsMap());
+  } else if (value.IsNode()) {
+    properties = value.AsNode().properties;
+  } else if (value.IsRelationship()) {
+    properties = value.AsRelationship().properties;
+  } else {
+    THROW(common::InvalidArgumentError,
+          "SET properties requires a map or graph entity value");
+  }
   if (entity.IsNode()) {
     SetGraphDBVertexProperties(*state->transaction, entity.AsNode().id,
-                               std::move(value.AsMap()), data.include_existing);
+                               std::move(properties), data.include_existing);
   } else if (entity.IsRelationship()) {
     SetGraphDBEdgeProperties(*state->transaction,
                              {.id = entity.AsRelationship().id,
                               .type_id = entity.AsRelationship().type_id},
-                             std::move(value.AsMap()), data.include_existing);
+                             std::move(properties), data.include_existing);
   } else {
     THROW(common::InvalidArgumentError,
           "SET properties target is not an entity");

@@ -69,7 +69,7 @@ class ScanEdgeByVidDirectionTypes : public EdgeIterator {
   };
 
  private:
-  void Load();
+  bool Load();
   void SeekToNextPrefix();
   int64_t vid_;
   EdgeDirection direction_;

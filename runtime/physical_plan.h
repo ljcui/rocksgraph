@@ -229,6 +229,7 @@ struct VarExpandOp {
   std::optional<std::size_t> to_node_input_slot;
   std::size_t relationship_output_slot = 0;
   std::size_t to_node_output_slot = 0;
+  bool reverse_relationships = false;
 };
 
 struct PruningVarExpandOp {

@@ -5,10 +5,98 @@
 #include <functional>
 #include <limits>
 #include <sstream>
+#include <tuple>
 
 #include "value/temporal.h"
 
 namespace rg {
+
+namespace {
+
+int ValueOrderRank(const Value &value) {
+  switch (value.Type()) {
+    case ValueType::kMap:
+      return 0;
+    case ValueType::kNode:
+      return 1;
+    case ValueType::kRelationship:
+      return 2;
+    case ValueType::kList:
+      return 3;
+    case ValueType::kPath:
+      return 4;
+    case ValueType::kString:
+      return 5;
+    case ValueType::kBool:
+      return 6;
+    case ValueType::kInteger:
+    case ValueType::kDouble:
+      return 7;
+    case ValueType::kDate:
+      return 8;
+    case ValueType::kLocalTime:
+      return 9;
+    case ValueType::kTime:
+      return 10;
+    case ValueType::kLocalDateTime:
+      return 11;
+    case ValueType::kDateTime:
+      return 12;
+    case ValueType::kDuration:
+      return 13;
+    case ValueType::kPoint:
+      return 14;
+    case ValueType::kNull:
+      return 15;
+  }
+  return 15;
+}
+
+auto LocalTimeKey(const LocalTime &time) {
+  return std::tie(time.hour, time.minute, time.second, time.nanosecond);
+}
+
+std::int64_t LocalNanoseconds(const LocalTime &time) {
+  constexpr std::int64_t kNanosecondsPerSecond = 1'000'000'000;
+  return (((static_cast<std::int64_t>(time.hour) * 60) + time.minute) * 60 +
+          time.second) *
+             kNanosecondsPerSecond +
+         time.nanosecond;
+}
+
+std::int64_t DaysFromCivil(int year, unsigned month, unsigned day) {
+  std::int64_t adjusted_year = year;
+  adjusted_year -= month <= 2;
+  const std::int64_t era =
+      (adjusted_year >= 0 ? adjusted_year : adjusted_year - 399) / 400;
+  const unsigned year_of_era = static_cast<unsigned>(adjusted_year - era * 400);
+  const unsigned day_of_year =
+      (153 * (month > 2 ? month - 3 : month + 9) + 2) / 5 + day - 1;
+  const unsigned day_of_era =
+      year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+  return era * 146097 + static_cast<std::int64_t>(day_of_era) - 719468;
+}
+
+auto LocalDateTimeKey(const LocalDateTime &date_time) {
+  return std::tie(date_time.date.year, date_time.date.month,
+                  date_time.date.day, date_time.time.hour,
+                  date_time.time.minute, date_time.time.second,
+                  date_time.time.nanosecond);
+}
+
+std::pair<std::int64_t, int32_t> DateTimeKey(const DateTime &date_time) {
+  const Date &date = date_time.local_date_time.date;
+  const LocalTime &time = date_time.local_date_time.time;
+  const std::int64_t seconds =
+      DaysFromCivil(date.year, static_cast<unsigned>(date.month),
+                    static_cast<unsigned>(date.day)) *
+          86'400 +
+      static_cast<std::int64_t>(time.hour) * 3'600 + time.minute * 60 +
+      time.second - date_time.utc_offset_seconds;
+  return {seconds, time.nanosecond};
+}
+
+}  // namespace
 
 bool ValueLess(const Value &left, const Value &right) {
   if (left.IsNull() || right.IsNull()) {
@@ -44,7 +132,7 @@ bool ValueLess(const Value &left, const Value &right) {
     return !std::isnan(number) && !ValuesEqual(left, right) && !integer_less;
   }
   if (left.Type() != right.Type()) {
-    return static_cast<int>(left.Type()) < static_cast<int>(right.Type());
+    return ValueOrderRank(left) < ValueOrderRank(right);
   }
   if (left.IsString()) {
     return left.AsString() < right.AsString();
@@ -57,6 +145,49 @@ bool ValueLess(const Value &left, const Value &right) {
   }
   if (left.IsRelationship()) {
     return left.AsRelationship().id < right.AsRelationship().id;
+  }
+  if (left.IsList()) {
+    const auto &lhs = left.AsList();
+    const auto &rhs = right.AsList();
+    const std::size_t common_size = std::min(lhs.size(), rhs.size());
+    for (std::size_t index = 0; index < common_size; ++index) {
+      if (ValuesEqual(lhs[index], rhs[index])) {
+        continue;
+      }
+      if (ValueLess(lhs[index], rhs[index])) {
+        return true;
+      }
+      if (ValueLess(rhs[index], lhs[index])) {
+        return false;
+      }
+    }
+    return lhs.size() < rhs.size();
+  }
+  if (left.IsDate()) {
+    const Date &lhs = left.AsDate();
+    const Date &rhs = right.AsDate();
+    return std::tie(lhs.year, lhs.month, lhs.day) <
+           std::tie(rhs.year, rhs.month, rhs.day);
+  }
+  if (left.IsLocalTime()) {
+    return LocalTimeKey(left.AsLocalTime()) < LocalTimeKey(right.AsLocalTime());
+  }
+  if (left.IsTime()) {
+    const Time &lhs = left.AsTime();
+    const Time &rhs = right.AsTime();
+    return LocalNanoseconds(lhs.local_time) -
+               static_cast<std::int64_t>(lhs.utc_offset_seconds) *
+                   1'000'000'000 <
+           LocalNanoseconds(rhs.local_time) -
+               static_cast<std::int64_t>(rhs.utc_offset_seconds) *
+                   1'000'000'000;
+  }
+  if (left.IsLocalDateTime()) {
+    return LocalDateTimeKey(left.AsLocalDateTime()) <
+           LocalDateTimeKey(right.AsLocalDateTime());
+  }
+  if (left.IsDateTime()) {
+    return DateTimeKey(left.AsDateTime()) < DateTimeKey(right.AsDateTime());
   }
   return left.ToString() < right.ToString();
 }

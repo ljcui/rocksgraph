@@ -310,6 +310,12 @@ std::any ConvertValue(const rg::Value& value) {
     }
     case rg::ValueType::kDateTime: {
       const auto& date_time = value.AsDateTime();
+      if (!date_time.timezone.empty()) {
+        return bolt::DateTimeZoneId{
+            LocalDateTimeToEpochSeconds(date_time.local_date_time) -
+                date_time.utc_offset_seconds,
+            date_time.local_date_time.time.nanosecond, date_time.timezone};
+      }
       return bolt::DateTime{
           LocalDateTimeToEpochSeconds(date_time.local_date_time),
           date_time.local_date_time.time.nanosecond,

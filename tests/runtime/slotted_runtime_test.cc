@@ -30,20 +30,88 @@ TEST(SlottedRuntimeTest, ExhaustsWritesBelowLimit) {
   }
 }
 
-TEST(SlottedRuntimeTest, KeepsDeletedEntitiesAvailableToResults) {
+TEST(SlottedRuntimeTest, RejectsPropertyAccessOnDeletedNodes) {
   rg::test::GraphDBTestDatabase graph;
-  const auto node =
-      graph.CreateVertex({"N"}, {{"name", rg::Value("deleted node")}});
+  graph.CreateVertex({"N"}, {{"name", rg::Value("deleted node")}});
+
+  EXPECT_ANY_THROW((void)rg::test::ExecuteQueryAndCommit(
+      graph, "MATCH (n:N) DELETE n RETURN n.name AS name"));
+
+  EXPECT_EQ(graph.VertexCount(), 1U);
+}
+
+TEST(SlottedRuntimeTest, KeepsDeletedRelationshipTypeAvailable) {
+  rg::test::GraphDBTestDatabase graph;
+  rg::test::ExecuteQueryAndCommit(graph, "CREATE ()-[:T]->()");
 
   const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
-      graph, "MATCH (n:N) DELETE n RETURN n, n.name AS name");
+      graph, "MATCH ()-[r:T]->() DELETE r RETURN type(r)");
 
   ASSERT_EQ(result.rows.size(), 1U);
-  ASSERT_EQ(result.rows.front().size(), 2U);
-  EXPECT_TRUE(result.rows.front()[0].IsNode());
-  EXPECT_EQ(result.rows.front()[0].AsNode().id, node);
-  EXPECT_EQ(result.rows.front()[1].AsString(), "deleted node");
+  EXPECT_EQ(result.rows[0][0], rg::Value("T"));
+}
+
+TEST(SlottedRuntimeTest, DeletesAllEntitiesInAPath) {
+  rg::test::GraphDBTestDatabase graph;
+  rg::test::ExecuteQueryAndCommit(
+      graph, "CREATE (:N)-[:R]->(:N)-[:R]->(:N)");
+
+  rg::test::ExecuteQueryAndCommit(
+      graph, "MATCH p = (:N)-[:R]->(:N)-[:R]->(:N) DETACH DELETE p");
+
   EXPECT_EQ(graph.VertexCount(), 0U);
+}
+
+TEST(SlottedRuntimeTest, CopiesPropertiesFromGraphEntities) {
+  rg::test::GraphDBTestDatabase graph;
+  const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "CREATE (source {name: 'Ada', score: 7}), (target) "
+      "SET target = source RETURN target.name, target.score");
+
+  ASSERT_EQ(result.rows.size(), 1U);
+  EXPECT_EQ(result.rows[0][0], rg::Value("Ada"));
+  EXPECT_EQ(result.rows[0][1], rg::Value(7));
+}
+
+TEST(SlottedRuntimeTest,
+     KeepsVariableLengthRelationshipsInWrittenPatternOrder) {
+  rg::test::GraphDBTestDatabase graph;
+  rg::test::ExecuteQueryAndCommit(
+      graph,
+      "CREATE (:Start)-[:R {position: 1}]->()"
+      "-[:R {position: 2}]->(:End)");
+
+  const rg::QueryResult result = graph.ExecuteQueryAndCommit(
+      "MATCH (a)-[relationships:R*2..2]->(b:End) "
+      "RETURN relationships");
+
+  ASSERT_EQ(result.rows.size(), 1U);
+  ASSERT_EQ(result.rows[0].size(), 1U);
+  const auto &relationships = result.rows[0][0].AsList();
+  ASSERT_EQ(relationships.size(), 2U);
+  EXPECT_EQ(relationships[0].AsRelationship().properties.at("position"),
+            rg::Value(1));
+  EXPECT_EQ(relationships[1].AsRelationship().properties.at("position"),
+            rg::Value(2));
+}
+
+TEST(SlottedRuntimeTest,
+     EvaluatesPatternComprehensionCorrelatedToListVariable) {
+  rg::test::GraphDBTestDatabase graph;
+  rg::test::ExecuteQueryAndCommit(
+      graph,
+      "CREATE (n:X)-[:T]->(middle)-[:T]->(:Y), "
+      "(middle)-[:T]->(:Y)");
+
+  const rg::QueryResult result = graph.ExecuteQueryAndCommit(
+      "MATCH p = (n:X)-->() "
+      "RETURN [x IN nodes(p) | size([(x)-->(:Y) | 1])] AS counts");
+
+  ASSERT_EQ(result.rows.size(), 1U);
+  ASSERT_EQ(result.rows[0].size(), 1U);
+  EXPECT_EQ(result.rows[0][0],
+            rg::Value(rg::Value::List{rg::Value(0), rg::Value(2)}));
 }
 
 TEST(SlottedRuntimeTest, StreamsRowsAndCanCloseEarly) {

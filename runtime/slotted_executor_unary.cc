@@ -2201,25 +2201,40 @@ class DeleteOperator final : public PullOperator {
     while (source_->Next(&input)) {
       state_->CheckCancelled();
       SlottedRow output = CopyUnaryOutput(*node_, input);
-      output.MaterializeGraphEntities();
       BufferRow(std::move(output));
       for (const PhysicalExpression &expression : data_->expressions) {
         const Value entity = Evaluate(expression, input, *state_);
         if (entity.IsNull()) {
           continue;
         }
-        CHECK(entity.IsNode() || entity.IsRelationship(),
+        CHECK(entity.IsNode() || entity.IsRelationship() || entity.IsPath(),
               common::InvalidArgumentError,
-              "DELETE expression is not a graph entity");
+              "DELETE expression is not a graph entity or path");
         if (entity.IsNode()) {
           node_ids.insert(entity.AsNode().id);
-        } else {
+        } else if (entity.IsRelationship()) {
           const Relationship &relationship = entity.AsRelationship();
           relationship_ids.insert(relationship.id);
           graphdb_relationships.insert_or_assign(
               relationship.id,
               RelationshipReference{.id = relationship.id,
                                     .type_id = relationship.type_id});
+        } else {
+          const Path &path = entity.AsPath();
+          for (const auto &node : path.nodes) {
+            CHECK(node != nullptr, common::InternalError,
+                  "DELETE path contains a null node");
+            node_ids.insert(node->id);
+          }
+          for (const auto &relationship : path.relationships) {
+            CHECK(relationship != nullptr, common::InternalError,
+                  "DELETE path contains a null relationship");
+            relationship_ids.insert(relationship->id);
+            graphdb_relationships.insert_or_assign(
+                relationship->id,
+                RelationshipReference{.id = relationship->id,
+                                      .type_id = relationship->type_id});
+          }
         }
       }
     }

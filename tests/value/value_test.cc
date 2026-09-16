@@ -8,6 +8,8 @@
 #include <unordered_set>
 #include <utility>
 
+#include "value/temporal.h"
+
 namespace {
 
 void ExpectEquivalentKeys(const rg::Value &left, const rg::Value &right) {
@@ -178,6 +180,70 @@ TEST(ValueTest, HashesCompositeKeysInColumnOrder) {
   keys.insert({.values = {rg::Value("x"), rg::Value(1)}});
 
   EXPECT_EQ(keys.size(), 2U);
+}
+
+TEST(ValueTest, OrdersListsLexicographicallyUsingCypherTypePrecedence) {
+  const rg::Value empty(rg::Value::List{});
+  const rg::Value string(rg::Value::List{rg::Value("a")});
+  const rg::Value string_integer(
+      rg::Value::List{rg::Value("a"), rg::Value(1)});
+  const rg::Value integer(rg::Value::List{rg::Value(1)});
+  const rg::Value integer_string(
+      rg::Value::List{rg::Value(1), rg::Value("a")});
+  const rg::Value integer_null(
+      rg::Value::List{rg::Value(1), rg::Value::Null()});
+
+  EXPECT_TRUE(rg::ValueLess(empty, string));
+  EXPECT_TRUE(rg::ValueLess(string, string_integer));
+  EXPECT_TRUE(rg::ValueLess(string_integer, integer));
+  EXPECT_TRUE(rg::ValueLess(integer, integer_string));
+  EXPECT_TRUE(rg::ValueLess(integer_string, integer_null));
+}
+
+TEST(ValueTest, OrdersZonedTemporalValuesByInstant) {
+  const rg::Value earlier_time(
+      rg::Time{{12, 35, 15, 0, true}, 5 * 3'600, {}});
+  const rg::Value later_time(
+      rg::Time{{10, 35, 0, 0, true}, -8 * 3'600, {}});
+  EXPECT_TRUE(rg::ValueLess(earlier_time, later_time));
+
+  const rg::Value earlier_date_time(rg::DateTime{
+      {{1984, 10, 11}, {12, 31, 14, 645876123, true}}, 17 * 60, {}});
+  const rg::Value later_date_time(rg::DateTime{
+      {{1984, 10, 11}, {12, 30, 14, 12, true}}, 15 * 60, {}});
+  EXPECT_TRUE(rg::ValueLess(earlier_date_time, later_date_time));
+}
+
+TEST(ValueTest, OrdersMixedValuesUsingCypherTypePrecedence) {
+  EXPECT_TRUE(rg::ValueLess(rg::Value(rg::Value::Map{}),
+                            rg::Value(rg::Value::List{})));
+  EXPECT_TRUE(rg::ValueLess(rg::Value(rg::Value::List{}), rg::Value("text")));
+  EXPECT_TRUE(rg::ValueLess(rg::Value("text"), rg::Value(false)));
+  EXPECT_TRUE(rg::ValueLess(rg::Value(false), rg::Value(1.5)));
+  EXPECT_TRUE(rg::ValueLess(rg::Value(1.5), rg::Value::Null()));
+}
+
+TEST(ValueTest, AppliesDurationsToTemporalValues) {
+  const rg::Duration duration{149, 14, 58'390, 2};
+  EXPECT_EQ(rg::AddDurationToTemporal(rg::Value(rg::Date{1984, 10, 11}),
+                                     duration, false),
+            rg::Value(rg::Date{1997, 3, 25}));
+  EXPECT_EQ(rg::AddDurationToTemporal(rg::Value(rg::Date{1984, 10, 11}),
+                                     duration, true),
+            rg::Value(rg::Date{1972, 4, 27}));
+
+  const rg::Value local_time = rg::AddDurationToTemporal(
+      rg::Value(rg::LocalTime{12, 31, 14, 1, true}), duration, false);
+  EXPECT_EQ(local_time,
+            rg::Value(rg::LocalTime{4, 44, 24, 3, true}));
+}
+
+TEST(ValueTest, CombinesAndScalesDurations) {
+  const rg::Duration duration{149, 14, 58'390, 1};
+  EXPECT_EQ(rg::AddDurations(duration, duration, false),
+            rg::Value(rg::Duration{298, 28, 116'780, 2}));
+  EXPECT_EQ(rg::ScaleDuration(duration, 0.5),
+            rg::Value(rg::Duration{74, 22, 48'068, 0}));
 }
 
 TEST(ValueTest, GraphTypes) {

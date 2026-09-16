@@ -323,6 +323,25 @@ std::vector<LogicalSortItem> PlanningOrderForHorizon(
       !projection.nested_expressions.empty()) {
     return {};
   }
+  for (const auto &order_item : projection.interesting_order.candidates) {
+    if (order_item.expression == nullptr ||
+        AsVariableExpression(order_item.expression) != nullptr) {
+      continue;
+    }
+    const auto dependencies =
+        ast::CollectExpressionDependencies(*order_item.expression);
+    for (const auto &mapping :
+         projection.interesting_order.reverse_projection) {
+      if (!dependencies.contains(mapping.projected_alias)) {
+        continue;
+      }
+      const ast::Variable *source =
+          AsVariableExpression(mapping.source_expression);
+      if (source == nullptr || source->name != mapping.projected_alias) {
+        return {};
+      }
+    }
+  }
   std::vector<LogicalSortItem> ordering =
       PlanningOrder(projection.interesting_order);
   return OrderingExpressionsDeterministic(ordering)
@@ -402,7 +421,8 @@ bool IsValueHashJoinPredicate(const Predicate &predicate,
 }
 
 bool CanUsePredicateJoin(const Predicate &predicate) {
-  return predicate.kind != PredicateKind::kExistsSubquery &&
+  return predicate.nested_expressions.empty() &&
+         predicate.kind != PredicateKind::kExistsSubquery &&
          predicate.kind != PredicateKind::kNotExistsSubquery;
 }
 
@@ -937,12 +957,18 @@ class LogicalPlanBuilder {
 
     std::unique_ptr<LogicalPlan> plan = std::move(input);
     if (segment.query_graph.HasLocalWork()) {
-      std::unique_ptr<LogicalPlan> rhs =
-          BuildQueryGraph(segment.query_graph, false);
+      if (!segment.query_graph.mutating_patterns.empty()) {
+        plan = std::make_unique<WriteBarrierPlan>(std::move(plan));
+      }
+      std::unique_ptr<LogicalPlan> rhs = BuildQueryGraph(
+          segment.query_graph, false, false, {},
+          /*apply_mutating_patterns=*/false);
       plan = std::make_unique<ApplyPlan>(std::move(plan), std::move(rhs));
       QueryGraphPlanningContext context(&planned_predicates_, &options_);
       context.ApplyAvailableFilters(segment.query_graph.selections, &plan);
       context.ValidateAllPredicatesPlanned(segment.query_graph.selections);
+      plan = ApplyMutatingPatterns(
+          std::move(plan), segment.query_graph.mutating_patterns);
     } else {
       planned_predicates_.clear();
       ValidateSupportedQueryGraph(segment.query_graph);
@@ -953,7 +979,8 @@ class LogicalPlanBuilder {
   std::unique_ptr<LogicalPlan> BuildQueryGraph(
       const QueryGraph &query_graph, bool validate_all_predicates = true,
       bool seed_external_arguments = false,
-      std::vector<LogicalSortItem> interesting_order = {}) {
+      std::vector<LogicalSortItem> interesting_order = {},
+      bool apply_mutating_patterns = true) {
     planned_predicates_.clear();
     ValidateSupportedQueryGraph(query_graph);
     QueryGraphPlanningContext context(&planned_predicates_, &options_);
@@ -1023,8 +1050,10 @@ class LogicalPlanBuilder {
                              query_graph.assert_is_node_variables);
     context.ApplyAvailableFilters(query_graph.selections, &plan);
     plan = ApplyOptionalMatches(std::move(plan), query_graph, &context);
-    plan =
-        ApplyMutatingPatterns(std::move(plan), query_graph.mutating_patterns);
+    if (apply_mutating_patterns) {
+      plan =
+          ApplyMutatingPatterns(std::move(plan), query_graph.mutating_patterns);
+    }
     if (validate_all_predicates) {
       context.ValidateAllPredicatesPlanned(query_graph.selections);
     }

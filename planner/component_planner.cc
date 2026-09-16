@@ -708,7 +708,7 @@ class IdpComponentPlanner final : public ComponentPlanner {
       candidate.plan = std::make_unique<VarExpandPlan>(
           std::move(candidate.plan), from_node, relationship.variable, to_node,
           ToExpandDirection(direction), relationship_types,
-          ToLogicalVariableLength(relationship.length));
+          ToLogicalVariableLength(relationship.length), !left_solved);
     } else if (left_solved && right_solved) {
       estimate = cost_model_.EstimateExpandInto(CandidateEstimate(candidate),
                                                 relationship_types);

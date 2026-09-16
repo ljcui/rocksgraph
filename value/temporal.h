@@ -39,6 +39,12 @@ namespace rg {
 [[nodiscard]] Value CurrentDateTime(
     const Value *timezone, std::chrono::system_clock::time_point now);
 [[nodiscard]] Value ConstructDuration(const Value *argument);
+[[nodiscard]] Value AddDurationToTemporal(const Value &temporal,
+                                          const Duration &duration,
+                                          bool subtract);
+[[nodiscard]] Value AddDurations(const Duration &left, const Duration &right,
+                                 bool subtract);
+[[nodiscard]] Value ScaleDuration(const Duration &duration, double factor);
 [[nodiscard]] Value DurationBetween(const Value &left, const Value &right);
 [[nodiscard]] Value DurationInMonths(const Value &left, const Value &right);
 [[nodiscard]] Value DurationInDays(const Value &left, const Value &right);

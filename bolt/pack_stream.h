@@ -74,6 +74,12 @@ class PackStream {
     packer_.Int64(m.nanoseconds);
     packer_.Int64(m.tz_offset_seconds);
   }
+  void PackDateTimeZoneId(const bolt::DateTimeZoneId& m) {
+    packer_.StructHeader('i', 3);
+    packer_.Int64(m.seconds);
+    packer_.Int64(m.nanoseconds);
+    packer_.String(m.tz_id);
+  }
   void PackLocalTime(const bolt::LocalTime& m) {
     packer_.StructHeader('t', 1);
     packer_.Int64(m.nanoseconds);
@@ -153,6 +159,8 @@ class PackStream {
       PackLocalDateTime(std::any_cast<const bolt::LocalDateTime&>(x));
     } else if (type == typeid(bolt::DateTime)) {
       PackDateTime(std::any_cast<const bolt::DateTime&>(x));
+    } else if (type == typeid(bolt::DateTimeZoneId)) {
+      PackDateTimeZoneId(std::any_cast<const bolt::DateTimeZoneId&>(x));
     } else if (type == typeid(bolt::LocalTime)) {
       PackLocalTime(std::any_cast<const bolt::LocalTime&>(x));
     } else if (type == typeid(bolt::Time)) {

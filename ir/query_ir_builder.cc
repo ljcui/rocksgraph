@@ -353,12 +353,29 @@ class QueryIRBuilder {
           : builder_(builder), nested_expressions_(nested_expressions) {}
 
      protected:
+      void Visit(const ast::ListComprehension &node) override {
+        WalkMaybe(node.list_expr);
+        local_variables_.push_back(node.variable);
+        WalkMaybe(node.where_expr);
+        WalkMaybe(node.eval_expr);
+        local_variables_.pop_back();
+      }
+
       void Visit(const ast::ExistentialSubquery &node) override {
         nested_expressions_->push_back(builder_->BuildExistsIRExpression(node));
       }
 
       void Visit(const ast::PatternComprehension &node) override {
-        nested_expressions_->push_back(builder_->BuildListIRExpression(node));
+        const auto dependencies =
+            builder_->SemanticTableRef().ExpressionDependencies(node);
+        const bool locally_correlated =
+            std::any_of(local_variables_.begin(), local_variables_.end(),
+                        [&](const std::string &variable) {
+                          return dependencies.contains(variable);
+                        });
+        if (!locally_correlated) {
+          nested_expressions_->push_back(builder_->BuildListIRExpression(node));
+        }
         WalkMaybe(node.where_expr);
         WalkMaybe(node.eval_expr);
       }
@@ -366,6 +383,7 @@ class QueryIRBuilder {
      private:
       QueryIRBuilder *builder_ = nullptr;
       std::vector<NestedIRExpression> *nested_expressions_ = nullptr;
+      std::vector<std::string> local_variables_;
     };
 
     Collector collector(this, &nested_expressions);
@@ -426,7 +444,8 @@ class QueryIRBuilder {
 
     SingleQueryIR query;
     AddRelationshipsPatternToQueryGraph(&query.query_graph,
-                                        *comprehension.relationships_pattern);
+                                        *comprehension.relationships_pattern,
+                                        comprehension.variable);
     if (comprehension.where_expr != nullptr) {
       std::unordered_set<std::string> selection_keys;
       AddSelectionPredicates(comprehension.where_expr.get(), SemanticTableRef(),
