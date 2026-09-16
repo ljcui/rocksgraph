@@ -24,7 +24,7 @@ namespace graphdb {
 class Transaction;
 }
 namespace server {
-class Galaxy;
+class GraphManager;
 }
 namespace graphdb {
 
@@ -38,7 +38,7 @@ struct GraphDBOptions {
 };
 
 class GraphDB {
-  friend class server::Galaxy;
+  friend class server::GraphManager;
 
  public:
   GraphDB() = default;

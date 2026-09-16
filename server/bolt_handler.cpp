@@ -1,21 +1,3 @@
-/**
- * Copyright 2022 AntGroup CO., Ltd.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- */
-
-//
-// Created by botu.wzy
-//
-
 #include "server/bolt_handler.h"
 
 #include <spdlog/fmt/chrono.h>
@@ -43,7 +25,7 @@
 #include "graphdb/transaction.h"
 #include "runtime/query_executor.h"
 #include "server/bolt_session.h"
-#include "server/galaxy.h"
+#include "server/graph_manager.h"
 
 using namespace bolt;
 using std::chrono::duration_cast;
@@ -595,7 +577,7 @@ static void ProcessPullOrDiscard(const std::shared_ptr<BoltConnection>& conn,
     FlushSessionBuffer(conn, session);
     LOG_DEBUG("Cypher execution completed");
     QUERY_LOG("{} {} {}", graph_name, elapsed, cypher.substr(0, 256));
-  } catch (const LgraphException& e) {
+  } catch (const RocksGraphException& e) {
     LOG_ERROR("{}", e.msg());
     FailSession(conn, session, e.code(), e.msg());
   } catch (std::exception& e) {
@@ -604,7 +586,7 @@ static void ProcessPullOrDiscard(const std::shared_ptr<BoltConnection>& conn,
   }
 }
 
-static void ProcessRun(Galaxy* galaxy,
+static void ProcessRun(GraphManager* graph_manager,
                        const std::shared_ptr<BoltConnection>& conn,
                        BoltSession* session, std::vector<std::any>& fields) {
   try {
@@ -646,7 +628,7 @@ static void ProcessRun(Galaxy* galaxy,
     for (const auto& [name, value] : *params) {
       query_options.parameters.emplace(name, ConvertParameter(value));
     }
-    active_query->graph_db = galaxy->OpenGraph(graph);
+    active_query->graph_db = graph_manager->OpenGraph(graph);
     active_query->transaction = active_query->graph_db->BeginTransaction();
     LOG_DEBUG("Execute {}", active_query->cypher.substr(0, 256));
     active_query->result =
@@ -658,7 +640,7 @@ static void ProcessRun(Galaxy* galaxy,
     conn->PostResponse(std::move(ps.MutableBuffer()));
     session->active_query = std::move(active_query);
     session->state = bolt::SessionState::STREAMING;
-  } catch (const LgraphException& e) {
+  } catch (const RocksGraphException& e) {
     LOG_ERROR("{}", e.msg());
     FailSession(conn, session, e.code(), e.msg());
   } catch (std::exception& e) {
@@ -667,7 +649,7 @@ static void ProcessRun(Galaxy* galaxy,
   }
 }
 
-static void ProcessReadyState(Galaxy* galaxy,
+static void ProcessReadyState(GraphManager* graph_manager,
                               const std::shared_ptr<BoltConnection>& conn,
                               BoltSession* session, BoltMsg type,
                               std::vector<std::any>& fields) {
@@ -676,7 +658,7 @@ static void ProcessReadyState(Galaxy* galaxy,
   } else if (type == bolt::BoltMsg::Route) {
     FailUnsupportedRequest(conn, session, type, "routing");
   } else if (type == bolt::BoltMsg::Run) {
-    ProcessRun(galaxy, conn, session, fields);
+    ProcessRun(graph_manager, conn, session, fields);
   } else {
     CloseProtocolError(conn, session, type);
   }
@@ -692,7 +674,7 @@ static void ProcessStreamingState(const std::shared_ptr<BoltConnection>& conn,
   }
 }
 
-static void ProcessBoltMessage(Galaxy* galaxy,
+static void ProcessBoltMessage(GraphManager* graph_manager,
                                const std::shared_ptr<BoltConnection>& conn,
                                BoltSession* session, BoltMsgDetail msg) {
   auto& fields = msg.fields;
@@ -718,7 +700,7 @@ static void ProcessBoltMessage(Galaxy* galaxy,
       ProcessRecoverableState(conn, session, type);
       break;
     case SessionState::READY:
-      ProcessReadyState(galaxy, conn, session, type, fields);
+      ProcessReadyState(graph_manager, conn, session, type, fields);
       break;
     case SessionState::STREAMING:
       ProcessStreamingState(conn, session, type, fields);
@@ -741,19 +723,20 @@ static std::shared_ptr<BoltSessionContext> GetSessionContext(
 }
 
 static bool EnqueueSessionMessage(
-    Galaxy* galaxy, const std::shared_ptr<bolt::BoltWorkerPool>& pool,
-    BoltConnection& conn, std::shared_ptr<BoltSessionContext> context,
-    BoltMsgDetail msg) {
-  if (!pool->Post(context->strand, [galaxy, conn = conn.shared_from_this(),
-                                    context, msg = std::move(msg)]() mutable {
-        if (!conn->has_closed()) {
-          ProcessBoltMessage(galaxy, conn, context->session.get(),
-                             std::move(msg));
-        }
-        if (conn->has_closed()) {
-          AbortActiveQuery(context->session.get());
-        }
-      })) {
+    GraphManager* graph_manager,
+    const std::shared_ptr<bolt::BoltWorkerPool>& pool, BoltConnection& conn,
+    std::shared_ptr<BoltSessionContext> context, BoltMsgDetail msg) {
+  if (!pool->Post(
+          context->strand, [graph_manager, conn = conn.shared_from_this(),
+                            context, msg = std::move(msg)]() mutable {
+            if (!conn->has_closed()) {
+              ProcessBoltMessage(graph_manager, conn, context->session.get(),
+                                 std::move(msg));
+            }
+            if (conn->has_closed()) {
+              AbortActiveQuery(context->session.get());
+            }
+          })) {
     LOG_WARN("failed to schedule bolt session: worker pool is stopped");
     conn.Close();
     return false;
@@ -763,11 +746,12 @@ static bool EnqueueSessionMessage(
 
 }  // namespace
 
-BoltHandler NewBoltHandler(Galaxy* galaxy, BoltHandlerOptions options) {
+BoltHandler NewBoltHandler(GraphManager* graph_manager,
+                           BoltHandlerOptions options) {
   auto worker_pool = std::make_shared<bolt::BoltWorkerPool>(
       options.worker_thread_num, "bolt-worker-", "bolt");
-  return [galaxy, options, worker_pool](BoltConnection& conn, BoltMsg msg,
-                                        std::vector<std::any> fields) {
+  return [graph_manager, options, worker_pool](
+             BoltConnection& conn, BoltMsg msg, std::vector<std::any> fields) {
     if (msg == BoltMsg::Hello) {
       auto existing_context = GetSessionContext(conn);
       if (existing_context) {
@@ -819,14 +803,15 @@ BoltHandler NewBoltHandler(Galaxy* galaxy, BoltHandlerOptions options) {
         return;
       }
       (void)credentials;
-      /* TODO(anyone): wire real authentication through the server-owned galaxy.
+      /* TODO(anyone): wire real authentication through the server-owned graph
+       * manager.
        */
       std::unordered_map<std::string, std::any> meta;
       meta["connection_id"] =
           std::string("bolt") + std::to_string(conn.conn_id());
       // Neo4j python client check that the returned server info must start
       // with 'Neo4j/'
-      meta["server"] = "Neo4j/tugraph-db";
+      meta["server"] = "Neo4j/rocksgraph";
       auto context =
           std::make_shared<BoltSessionContext>(worker_pool->MakeStrand());
       auto session = context->session;
@@ -872,8 +857,8 @@ BoltHandler NewBoltHandler(Galaxy* galaxy, BoltHandlerOptions options) {
       if (msg == BoltMsg::Reset) {
         RequestSessionInterrupt(context->session.get());
       }
-      EnqueueSessionMessage(galaxy, worker_pool, conn, std::move(context),
-                            {msg, std::move(fields)});
+      EnqueueSessionMessage(graph_manager, worker_pool, conn,
+                            std::move(context), {msg, std::move(fields)});
     } else {
       LOG_WARN("receive unknown bolt message: {}", ToString(msg));
       conn.Close();

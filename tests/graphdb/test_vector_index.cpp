@@ -72,7 +72,7 @@ bool WaitUntilVectorQueryCount(
       }
       txn->Commit();
       query_succeeded = true;
-    } catch (LgraphException& e) {
+    } catch (RocksGraphException& e) {
       txn->Rollback();
       if (e.code() != ErrorCode::IndexNotReady) {
         throw;

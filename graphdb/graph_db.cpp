@@ -1028,7 +1028,7 @@ void GraphDB::ClearData() {
   if (db_meta_.enable_raft()) {
     THROW_CODE(InvalidParameter,
                "ClearData is not supported on raft graph [{}]; use "
-               "Galaxy::ClearGraph instead",
+               "GraphManager::ClearGraph instead",
                db_meta_.graph_name());
   }
   ClearDataInternal();

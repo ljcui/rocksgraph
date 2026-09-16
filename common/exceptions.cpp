@@ -24,17 +24,17 @@ const char* ErrorCodeDesc(ErrorCode code) {
   }
 }
 
-LgraphException::LgraphException(ErrorCode code)
+RocksGraphException::RocksGraphException(ErrorCode code)
     : code_(code), msg_(ErrorCodeDesc(code)) {
   what_ = fmt::format("[{}] {}", ErrorCodeToString(code_), msg_);
 }
 
-LgraphException::LgraphException(ErrorCode code, std::string msg)
+RocksGraphException::RocksGraphException(ErrorCode code, std::string msg)
     : code_(code), msg_(std::move(msg)) {
   what_ = fmt::format("[{}] {}", ErrorCodeToString(code_), msg_);
 }
 
-LgraphException::LgraphException(ErrorCode code, const char* msg)
+RocksGraphException::RocksGraphException(ErrorCode code, const char* msg)
     : code_(code), msg_(msg) {
   what_ = fmt::format("[{}] {}", ErrorCodeToString(code_), msg_);
 }

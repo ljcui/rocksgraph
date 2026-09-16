@@ -1,22 +1,4 @@
-/**
- * Copyright 2024 AntGroup CO., Ltd.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- */
-
-//
-// Created by botu.wzy
-//
-
-#include "galaxy.h"
+#include "server/graph_manager.h"
 
 #include <boost/endian/conversion.hpp>
 #include <filesystem>
@@ -33,13 +15,13 @@ constexpr std::string_view kSystemGraphName = "system";
 
 std::string BuildGraphMetaKey(uint64_t graph_id) {
   std::string key;
-  key.append(1, static_cast<char>(GalaxyMetaDataType::GraphDB));
+  key.append(1, static_cast<char>(GraphManagerMetadataType::GraphDB));
   native_to_big_inplace(graph_id);
   key.append((const char *)&graph_id, sizeof(graph_id));
   return key;
 }
 
-std::string BuildGalaxyMetaKey(GalaxyMetaDataType type) {
+std::string BuildGraphManagerMetaKey(GraphManagerMetadataType type) {
   return std::string(1, static_cast<char>(type));
 }
 
@@ -139,7 +121,7 @@ std::vector<eraft::Peer> BuildInitPeers(const meta::RaftNodeInfos &node_infos) {
 
 }  // namespace
 
-Galaxy::~Galaxy() {
+GraphManager::~GraphManager() {
   graphs_.clear();
   auto s = meta_db_->Close();
   if (!s.ok()) {
@@ -147,13 +129,13 @@ Galaxy::~Galaxy() {
   }
   delete meta_db_;
   meta_db_ = nullptr;
-  LOG_INFO("Close galaxy");
+  LOG_INFO("Close graph manager");
 }
 
-std::unique_ptr<Galaxy> Galaxy::Open(const std::string &path,
-                                     const GalaxyOptions &galaxy_options,
-                                     LocalNodeOptions local_node_options) {
-  LOG_INFO("Open galaxy: {}", path);
+std::unique_ptr<GraphManager> GraphManager::Open(
+    const std::string &path, const GraphManagerOptions &graph_manager_options,
+    LocalNodeOptions local_node_options) {
+  LOG_INFO("Open graph manager: {}", path);
   rocksdb::Options options;
   options.create_if_missing = true;
   options.create_missing_column_families = true;
@@ -165,35 +147,37 @@ std::unique_ptr<Galaxy> Galaxy::Open(const std::string &path,
   auto s =
       rocksdb::TransactionDB::Open(options, txn_db_options, meta_path, &db);
   if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
-  auto galaxy = std::make_unique<Galaxy>();
-  galaxy->path_ = path;
-  raft::RaftManager::Configure(galaxy_options.raft_scheduler_shards);
-  galaxy->block_cache_ = rocksdb::NewLRUCache(galaxy_options.block_cache_size);
-  galaxy->options_ = galaxy_options;
-  galaxy->local_node_options_ = std::move(local_node_options);
-  galaxy->meta_db_ = db;
-  galaxy->raft_log_block_cache_ =
-      rocksdb::NewLRUCache(galaxy_options.raft_log_block_cache_size);
-  galaxy->assistant_pool_ = std::make_shared<graphdb::AssistantPool>(
-      galaxy_options.assistant_thread_num);
+  auto graph_manager = std::make_unique<GraphManager>();
+  graph_manager->path_ = path;
+  raft::RaftManager::Configure(graph_manager_options.raft_scheduler_shards);
+  graph_manager->block_cache_ =
+      rocksdb::NewLRUCache(graph_manager_options.block_cache_size);
+  graph_manager->options_ = graph_manager_options;
+  graph_manager->local_node_options_ = std::move(local_node_options);
+  graph_manager->meta_db_ = db;
+  graph_manager->raft_log_block_cache_ =
+      rocksdb::NewLRUCache(graph_manager_options.raft_log_block_cache_size);
+  graph_manager->assistant_pool_ = std::make_shared<graphdb::AssistantPool>(
+      graph_manager_options.assistant_thread_num);
 
   rocksdb::ReadOptions ro;
   {
     std::string next_graph_id_key(
-        1, static_cast<char>(GalaxyMetaDataType::NextGraphID));
+        1, static_cast<char>(GraphManagerMetadataType::NextGraphID));
     std::string val;
-    s = galaxy->meta_db_->Get(ro, next_graph_id_key, &val);
+    s = graph_manager->meta_db_->Get(ro, next_graph_id_key, &val);
     if (s.ok()) {
-      galaxy->next_graph_id_ = *(uint64_t *)val.data();
+      graph_manager->next_graph_id_ = *(uint64_t *)val.data();
     } else if (s.IsNotFound()) {
-      galaxy->next_graph_id_ = 1;
+      graph_manager->next_graph_id_ = 1;
     } else {
       THROW_CODE(StorageEngineError, s.ToString());
     }
   }
-  std::unique_ptr<rocksdb::Iterator> iter(galaxy->meta_db_->NewIterator(ro));
+  std::unique_ptr<rocksdb::Iterator> iter(
+      graph_manager->meta_db_->NewIterator(ro));
   std::string prefix;
-  prefix.append(1, static_cast<char>(GalaxyMetaDataType::GraphDB));
+  prefix.append(1, static_cast<char>(GraphManagerMetadataType::GraphDB));
   for (iter->Seek(prefix); iter->Valid() && iter->key().starts_with(prefix);
        iter->Next()) {
     auto val = iter->value();
@@ -202,28 +186,29 @@ std::unique_ptr<Galaxy> Galaxy::Open(const std::string &path,
     assert(f);
     LOG_INFO("Load GraphDB: [{}]", meta.ShortDebugString());
     std::string graph_path =
-        galaxy->path_ + "/graph" + std::to_string(meta.graph_id());
+        graph_manager->path_ + "/graph" + std::to_string(meta.graph_id());
     auto graph_db = GraphDB::Open(
         graph_path,
-        {.block_cache = galaxy->block_cache_,
-         .assistant_pool = galaxy->assistant_pool_,
-         .ft_apply_interval_ = galaxy->options_.ft_apply_interval,
-         .ft_writer_threads_ = galaxy->options_.ft_writer_threads,
-         .ft_writer_memory_budget_ = galaxy->options_.ft_writer_memory_budget,
-         .vt_apply_interval_ = galaxy->options_.vt_apply_interval});
+        {.block_cache = graph_manager->block_cache_,
+         .assistant_pool = graph_manager->assistant_pool_,
+         .ft_apply_interval_ = graph_manager->options_.ft_apply_interval,
+         .ft_writer_threads_ = graph_manager->options_.ft_writer_threads,
+         .ft_writer_memory_budget_ =
+             graph_manager->options_.ft_writer_memory_budget,
+         .vt_apply_interval_ = graph_manager->options_.vt_apply_interval});
     graph_db->db_meta() = meta;
     if (meta.enable_raft()) {
-      galaxy->StartGraphRaft(graph_db.get(), nullptr);
+      graph_manager->StartGraphRaft(graph_db.get(), nullptr);
     }
-    galaxy->graphs_.emplace(meta.graph_name(), std::move(graph_db));
+    graph_manager->graphs_.emplace(meta.graph_name(), std::move(graph_db));
   }
-  if (galaxy->graphs_.empty()) {
-    galaxy->CreateGraph("default");
+  if (graph_manager->graphs_.empty()) {
+    graph_manager->CreateGraph("default");
   }
-  return galaxy;
+  return graph_manager;
 }
 
-std::shared_ptr<GraphDB> Galaxy::OpenGraph(const std::string &name) {
+std::shared_ptr<GraphDB> GraphManager::OpenGraph(const std::string &name) {
   std::shared_lock<std::shared_mutex> read_lock(graphs_mutex_);
   auto iter = graphs_.find(name);
   if (iter != graphs_.end()) {
@@ -233,21 +218,21 @@ std::shared_ptr<GraphDB> Galaxy::OpenGraph(const std::string &name) {
   }
 }
 
-GraphDB *Galaxy::CreateGraph(const std::string &name) {
+GraphDB *GraphManager::CreateGraph(const std::string &name) {
   std::lock_guard<std::mutex> guard(create_graph_mutex_);
   return CreateGraphInternal(name, nullptr);
 }
 
-GraphDB *Galaxy::CreateGraphWithRaft(const std::string &name,
-                                     const meta::RaftNodeInfos &node_infos) {
+GraphDB *GraphManager::CreateGraphWithRaft(
+    const std::string &name, const meta::RaftNodeInfos &node_infos) {
   std::lock_guard<std::mutex> guard(create_graph_mutex_);
   ValidateGraphNameForCreate(name);
   ValidateRaftNodeInfos(node_infos, name);
   return CreateGraphInternal(name, &node_infos);
 }
 
-GraphDB *Galaxy::CreateGraphInternal(const std::string &name,
-                                     const meta::RaftNodeInfos *node_infos) {
+GraphDB *GraphManager::CreateGraphInternal(
+    const std::string &name, const meta::RaftNodeInfos *node_infos) {
   ValidateGraphNameForCreate(name);
   meta::GraphDBMetaInfo meta;
   uint64_t graph_id = next_graph_id_.load();
@@ -257,8 +242,8 @@ GraphDB *Galaxy::CreateGraphInternal(const std::string &name,
   return CreateGraphWithId(meta, node_infos);
 }
 
-GraphDB *Galaxy::CreateGraphWithId(const meta::GraphDBMetaInfo &meta,
-                                   const meta::RaftNodeInfos *node_infos) {
+GraphDB *GraphManager::CreateGraphWithId(
+    const meta::GraphDBMetaInfo &meta, const meta::RaftNodeInfos *node_infos) {
   std::unique_lock<std::shared_mutex> write_lock(graphs_mutex_);
   auto iter = graphs_.find(meta.graph_name());
   if (iter != graphs_.end()) {
@@ -285,7 +270,7 @@ GraphDB *Galaxy::CreateGraphWithId(const meta::GraphDBMetaInfo &meta,
   }
   rocksdb::WriteBatch wb;
   wb.Put(BuildGraphMetaKey(meta.graph_id()), meta.SerializeAsString());
-  wb.Put(BuildGalaxyMetaKey(GalaxyMetaDataType::NextGraphID),
+  wb.Put(BuildGraphManagerMetaKey(GraphManagerMetadataType::NextGraphID),
          std::string((const char *)&next, sizeof(next)));
   auto s = meta_db_->Write({}, {}, &wb);
   if (!s.ok()) THROW_CODE(StorageEngineError, s.ToString());
@@ -298,8 +283,8 @@ GraphDB *Galaxy::CreateGraphWithId(const meta::GraphDBMetaInfo &meta,
   return graphs_[meta.graph_name()].get();
 }
 
-void Galaxy::StartGraphRaft(GraphDB *graph_db,
-                            const meta::RaftNodeInfos *node_infos) {
+void GraphManager::StartGraphRaft(GraphDB *graph_db,
+                                  const meta::RaftNodeInfos *node_infos) {
   auto local_node = BuildLocalNodeConfig(graph_db->db_meta().graph_name(),
                                          local_node_options_);
   auto store_config = BuildRaftLogStoreConfig(graph_db->path() + "/raft",
@@ -334,7 +319,7 @@ void Galaxy::StartGraphRaft(GraphDB *graph_db,
   graph_db->SetRaftDriver(std::move(raft_driver));
 }
 
-GraphDB *Galaxy::ClearGraph(const std::string &name) {
+GraphDB *GraphManager::ClearGraph(const std::string &name) {
   std::lock_guard<std::mutex> guard(create_graph_mutex_);
   std::unique_lock<std::shared_mutex> write_lock(graphs_mutex_);
   auto iter = graphs_.find(name);
@@ -350,7 +335,7 @@ GraphDB *Galaxy::ClearGraph(const std::string &name) {
   return iter->second.get();
 }
 
-void Galaxy::DeleteGraph(const std::string &name) {
+void GraphManager::DeleteGraph(const std::string &name) {
   std::lock_guard<std::mutex> guard(create_graph_mutex_);
   std::unique_lock<std::shared_mutex> write_lock(graphs_mutex_);
   auto iter = graphs_.find(name);

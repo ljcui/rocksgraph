@@ -1,10 +1,6 @@
 cmake_minimum_required(VERSION 3.15)
 project(rocksgraph)
 
-set(LGRAPH_VERSION_MAJOR 5)
-set(LGRAPH_VERSION_MINOR 0)
-set(LGRAPH_VERSION_PATCH 0)
-
 set(ROCKSGRAPH_TCK_DIR
     "${CMAKE_SOURCE_DIR}/../openCypher/tck"
     CACHE PATH "Path to an openCypher TCK checkout")

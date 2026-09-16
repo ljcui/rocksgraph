@@ -1,5 +1,5 @@
-add_library(rocksgraph_server STATIC bolt_handler.cpp galaxy.cpp
-                                     lgraph_server.cpp raft_server.cpp)
+add_library(rocksgraph_server STATIC bolt_handler.cpp graph_manager.cpp
+                                     graph_server.cpp raft_server.cpp)
 
 target_compile_features(rocksgraph_server PUBLIC cxx_std_20)
 target_include_directories(rocksgraph_server PUBLIC ${PROJECT_SOURCE_DIR})

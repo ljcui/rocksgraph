@@ -17,8 +17,8 @@ void SetupQueryLogger() {
 bool SetupLogger() {
   try {
     auto logger = spdlog::rotating_logger_mt(
-        "lgraph_logger", FLAGS_log_path + "/lgraph.log", FLAGS_log_max_size,
-        FLAGS_log_max_files);
+        "rg_server_logger", FLAGS_log_path + "/rg-server.log",
+        FLAGS_log_max_size, FLAGS_log_max_files);
     logger->set_level(spdlog::level::from_str(FLAGS_log_level));
     logger->set_pattern("[%Y-%m-%d %H:%M:%S.%e %t %l %s:%#] %v");
     spdlog::set_default_logger(logger);

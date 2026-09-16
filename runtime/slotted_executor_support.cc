@@ -209,7 +209,7 @@ void StoreEvaluatedValue(SlottedRow *row, std::size_t offset, Value value,
                                 .type_id = value.AsRelationship().type_id}));
       return;
     }
-  } catch (const LgraphException &error) {
+  } catch (const RocksGraphException &error) {
     const bool entity_was_deleted =
         (value.IsNode() && error.code() == ErrorCode::VertexIdNotFound) ||
         (value.IsRelationship() && error.code() == ErrorCode::EdgeIdNotFound);

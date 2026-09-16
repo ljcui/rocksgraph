@@ -1,21 +1,3 @@
-/**
- * Copyright 2024 AntGroup CO., Ltd.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- */
-
-//
-// Created by botu.wzy
-//
-
 #include <sys/resource.h>
 
 #include <chrono>
@@ -33,7 +15,7 @@
 #include "common/flags.h"
 #include "common/logger.h"
 #include "common/version.h"
-#include "server/lgraph_server.h"
+#include "server/graph_server.h"
 #include "server/raft_server.h"
 #include "service.h"
 
@@ -64,44 +46,14 @@ volatile std::sig_atomic_t g_shutdown_signal = 0;
 
 std::string Version() {
   std::ostringstream info;
-  std::string version;
-  version.append(std::to_string(LGRAPH_VERSION_MAJOR))
-      .append(".")
-      .append(std::to_string(LGRAPH_VERSION_MINOR))
-      .append(".")
-      .append(std::to_string(LGRAPH_VERSION_PATCH));
-  info << "\nTuGraph v" << version << "\nCompiled from " << GIT_BRANCH
-       << " branch\nCommit " << GIT_COMMIT_HASH;
+  info << "\nRocksGraph\nCompiled from " << GIT_BRANCH << " branch\nCommit "
+       << GIT_COMMIT_HASH;
   info << "\nCPP compiler version: " << CXX_COMPILER_ID << " "
        << CXX_COMPILER_VERSION << ".";
   return info.str();
 }
 void PrintWelcome() {
-  std::string version;
-  version.append(std::to_string(5))
-      .append(".")
-      .append(std::to_string(0))
-      .append(".")
-      .append(std::to_string(0));
   std::ostringstream info;
-  info << "\n"
-       << "********************************************************************"
-          "**"
-       << "\n"
-       << "*                  TuGraph Graph Database v" << version
-       << std::string(26 - version.size(), ' ') << "*" << "\n"
-       << "*                                                                   "
-          " *"
-       << "\n"
-       << "*    Copyright(C) 2018-2023 Ant Group. All rights reserved.         "
-          " *"
-       << "\n"
-       << "*                                                                   "
-          " *"
-       << "\n"
-       << "********************************************************************"
-          "**"
-       << "\n";
   {
     tabulate::Table table;
     table.format().trim_mode(tabulate::Format::TrimMode::kNone).locale("C");
@@ -184,14 +136,14 @@ void SetupSignalHandler() {
   }
 }
 
-class LGraphDaemon : public Service {
+class ServerDaemon : public Service {
  public:
-  LGraphDaemon() : Service("rg-server", FLAGS_pid_file) {}
+  ServerDaemon() : Service("rg-server", FLAGS_pid_file) {}
   int Run() override {
     if (!SetupLogger()) return -1;
     SetupSignalHandler();
     PrintWelcome();
-    LGraphServer server(
+    GraphServer server(
         {.data_path = FLAGS_data_path,
          .local_node_options = {.host = FLAGS_host,
                                 .bolt_port = FLAGS_bolt_port,
@@ -199,7 +151,7 @@ class LGraphDaemon : public Service {
          .bolt_io_thread_num = FLAGS_bolt_io_thread_num,
          .bolt_worker_thread_num = FLAGS_bolt_worker_thread_num,
          .max_bolt_connections = FLAGS_max_bolt_connections,
-         .galaxy_options = {
+         .graph_manager_options = {
              .block_cache_size = FLAGS_graph_block_cache,
              .raft_log_block_cache_size = FLAGS_raft_log_block_cache,
              .raft_scheduler_shards = FLAGS_raft_scheduler_shards,
@@ -238,7 +190,7 @@ int main(int argc, char* argv[]) {
   gflags::SetVersionString(Version());
   gflags::SetUsageMessage("Usage: " + std::string(argv[0]) + " [options]");
   gflags::ParseCommandLineFlags(&argc, &argv, true);
-  server::LGraphDaemon daemon;
+  server::ServerDaemon daemon;
   spdlog::set_pattern("%v");
   if (FLAGS_mode == "run") {
     return daemon.Run();

@@ -306,7 +306,7 @@ TEST(IndexAccessTest, DeletesNodeAndRelationships) {
   auto transaction = graph.BeginTransaction();
   auto vertex_a = rg::GraphDBVertexById(*transaction, a->id);
   EXPECT_EQ(vertex_a.Delete(), 1);
-  EXPECT_THROW(rg::GraphDBVertexById(*transaction, a->id), LgraphException);
+  EXPECT_THROW(rg::GraphDBVertexById(*transaction, a->id), RocksGraphException);
   EXPECT_TRUE(EdgeIds(transaction->NewEdgeIterator()).empty());
   transaction->Commit();
 
@@ -316,7 +316,7 @@ TEST(IndexAccessTest, DeletesNodeAndRelationships) {
   EXPECT_THROW(
       verify->GetEdgeById(relationship->type_id,
                           boost::endian::native_to_big(relationship->id)),
-      LgraphException);
+      RocksGraphException);
   verify->Rollback();
 }
 
@@ -328,7 +328,7 @@ TEST(IndexAccessTest, EnforcesUniqueIndexesOnCreateAndUpdate) {
   {
     auto transaction = graph.BeginTransaction();
     EXPECT_THROW(transaction->CreateVertex({"N"}, {{"key", rg::Value(1)}}),
-                 LgraphException);
+                 RocksGraphException);
     transaction->Rollback();
   }
   const auto second = graph.CreateNode({"N"}, {{"key", rg::Value(2)}});
@@ -338,7 +338,7 @@ TEST(IndexAccessTest, EnforcesUniqueIndexesOnCreateAndUpdate) {
     auto transaction = graph.BeginTransaction();
     auto second_vertex = rg::GraphDBVertexById(*transaction, second->id);
     EXPECT_THROW(second_vertex.SetProperties({{"key", rg::Value(1)}}),
-                 LgraphException);
+                 RocksGraphException);
     transaction->Rollback();
   }
   auto verify = graph.BeginTransaction();
@@ -352,7 +352,7 @@ TEST(IndexAccessTest, EnforcesUniqueIndexesOnCreateAndUpdate) {
   const auto other = graph.CreateNode({"Other"}, {{"key", rg::Value(1)}});
   auto label_transaction = graph.BeginTransaction();
   auto other_vertex = rg::GraphDBVertexById(*label_transaction, other->id);
-  EXPECT_THROW(other_vertex.AddLabels({"N"}), LgraphException);
+  EXPECT_THROW(other_vertex.AddLabels({"N"}), RocksGraphException);
   label_transaction->Rollback();
   auto label_verify = graph.BeginTransaction();
   EXPECT_EQ(rg::GraphDBVertexById(*label_verify, other->id).GetLabels(),
@@ -374,7 +374,7 @@ TEST(IndexAccessTest, EnforcesUniqueRelationshipIndexes) {
     auto end = rg::GraphDBVertexById(*transaction, b->id);
     EXPECT_THROW(
         transaction->CreateEdge(start, end, "R", {{"key", rg::Value(1)}}),
-        LgraphException);
+        RocksGraphException);
     transaction->Rollback();
   }
   const auto second =
@@ -384,7 +384,7 @@ TEST(IndexAccessTest, EnforcesUniqueRelationshipIndexes) {
     auto second_edge =
         rg::GraphDBEdgeById(*transaction, {second->id, second->type_id});
     EXPECT_THROW(second_edge.SetProperties({{"key", rg::Value(1)}}),
-                 LgraphException);
+                 RocksGraphException);
     transaction->Rollback();
   }
   auto verify = graph.BeginTransaction();
@@ -429,7 +429,7 @@ TEST(IndexAccessTest, UniqueIndexCreationIsAtomicWhenReplacingAnIndex) {
 
   EXPECT_THROW(graph.Graph().AddVertexPropertyIndex("replacement_unique_index",
                                                     true, "N", {"key"}),
-               LgraphException);
+               RocksGraphException);
   const auto index =
       graph.Graph().meta_info().GetVertexPropertyIndex(index_name);
   ASSERT_NE(index, nullptr);

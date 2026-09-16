@@ -1,21 +1,3 @@
-/**
- * Copyright 2024 AntGroup CO., Ltd.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- */
-
-//
-// Created by botu.wzy
-//
-
 #pragma once
 #include <atomic>
 #include <cstdint>
@@ -29,12 +11,12 @@
 #include "graphdb/graph_db.h"
 
 namespace server {
-enum class GalaxyMetaDataType : char {
+enum class GraphManagerMetadataType : char {
   GraphDB = 0,
   NextGraphID = 1,
 };
 
-struct GalaxyOptions {
+struct GraphManagerOptions {
   size_t block_cache_size = 64 * 1024 * 1024L;
   size_t raft_log_block_cache_size = 256 * 1024 * 1024L;
   size_t raft_scheduler_shards = 4;
@@ -51,17 +33,17 @@ struct LocalNodeOptions {
   uint32_t raft_port = 0;
 };
 
-class Galaxy {
+class GraphManager {
  public:
-  Galaxy() = default;
-  ~Galaxy();
+  GraphManager() = default;
+  ~GraphManager();
   // No copying allowed
-  Galaxy(const Galaxy&) = delete;
-  void operator=(const Galaxy&) = delete;
+  GraphManager(const GraphManager&) = delete;
+  void operator=(const GraphManager&) = delete;
 
-  static std::unique_ptr<Galaxy> Open(const std::string& path,
-                                      const GalaxyOptions& galaxy_options,
-                                      LocalNodeOptions local_node_options = {});
+  static std::unique_ptr<GraphManager> Open(
+      const std::string& path, const GraphManagerOptions& graph_manager_options,
+      LocalNodeOptions local_node_options = {});
   std::shared_ptr<graphdb::GraphDB> OpenGraph(const std::string& name);
   graphdb::GraphDB* CreateGraph(const std::string& name);
   graphdb::GraphDB* CreateGraphWithRaft(const std::string& name,
@@ -89,7 +71,7 @@ class Galaxy {
   std::mutex create_graph_mutex_;
   std::atomic<uint64_t> next_graph_id_ = 1;
   std::string path_;
-  GalaxyOptions options_;
+  GraphManagerOptions options_;
   LocalNodeOptions local_node_options_;
 };
 }  // namespace server

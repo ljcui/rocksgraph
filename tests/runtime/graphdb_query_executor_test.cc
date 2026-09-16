@@ -284,7 +284,7 @@ TEST_F(GraphDBQueryExecutorTest,
     (void)transaction->GetEdgeById(*rare_type,
                                    boost::endian::native_to_big(knows_));
     FAIL() << "lookup with a mismatched relationship type should fail";
-  } catch (const LgraphException &error) {
+  } catch (const RocksGraphException &error) {
     EXPECT_EQ(error.code(), ErrorCode::EdgeIdNotFound);
   }
 

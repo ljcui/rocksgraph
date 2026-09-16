@@ -44,7 +44,7 @@ TEST(GraphDB, clearDataRejectsRaftGraph) {
   graphDB->db_meta().set_enable_raft(true);
 
   EXPECT_THROW_CODE_MSG(graphDB->ClearData(), InvalidParameter,
-                        "Galaxy::ClearGraph");
+                        "GraphManager::ClearGraph");
 }
 
 TEST(GraphDB, basicCreate) {

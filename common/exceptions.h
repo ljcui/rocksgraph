@@ -48,13 +48,14 @@ enum class ErrorCode {
 const char* ErrorCodeToString(ErrorCode code);
 const char* ErrorCodeDesc(ErrorCode code);
 
-class LgraphException : public std::exception {
+class RocksGraphException : public std::exception {
  public:
-  explicit LgraphException(ErrorCode code);
-  explicit LgraphException(ErrorCode code, std::string msg);
-  explicit LgraphException(ErrorCode code, const char* msg);
+  explicit RocksGraphException(ErrorCode code);
+  explicit RocksGraphException(ErrorCode code, std::string msg);
+  explicit RocksGraphException(ErrorCode code, const char* msg);
   template <typename... Ts>
-  explicit LgraphException(ErrorCode code, const char* format, const Ts&... ds)
+  explicit RocksGraphException(ErrorCode code, const char* format,
+                               const Ts&... ds)
       : code_(code), msg_(fmt::format(fmt::runtime(format), ds...)) {
     what_ = fmt::format("[{}] {}", ErrorCodeToString(code_), msg_);
   }
@@ -71,4 +72,4 @@ class LgraphException : public std::exception {
 };
 
 #define THROW_CODE(code, ...) \
-  throw LgraphException(ErrorCode::code, ##__VA_ARGS__)
+  throw RocksGraphException(ErrorCode::code, ##__VA_ARGS__)

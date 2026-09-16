@@ -20,7 +20,7 @@
     try {                                                       \
       statement;                                                \
       FAIL() << "Expecting exception, but nothing is thrown.";  \
-    } catch (LgraphException & e) {                             \
+    } catch (RocksGraphException & e) {                         \
       if (e.code() != ErrorCode::error_code) {                  \
         FAIL() << "Unexpected exception message: " << e.what(); \
       } else {                                                  \
@@ -36,7 +36,7 @@
     try {                                                       \
       statement;                                                \
       FAIL() << "Expecting exception, but nothing is thrown.";  \
-    } catch (LgraphException & e) {                             \
+    } catch (RocksGraphException & e) {                         \
       if (e.code() != ErrorCode::error_code) {                  \
         FAIL() << "Unexpected exception message: " << e.what(); \
       } else {                                                  \
@@ -89,7 +89,7 @@ inline bool WaitUntilPropertyIndexFailed(
 namespace testutil {
 
 inline constexpr std::array<std::string_view, 8> kTestDataDirectories = {
-    "testdb",       "cypher_testdb", "temporal_db", "test_galaxy",
+    "testdb",       "cypher_testdb", "temporal_db", "test_graph_manager",
     "test_ftindex", "testkv",        "varlendb",    "testdb_raft_cluster"};
 
 inline void CleanupTestDataDirectories() {

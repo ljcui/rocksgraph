@@ -43,14 +43,14 @@ TEST(Value, storageCodecRoundTrip) {
 }
 
 TEST(Value, storageCodecRejectsInvalidData) {
-  EXPECT_THROW(DeserializeValue({}), LgraphException);
+  EXPECT_THROW(DeserializeValue({}), RocksGraphException);
 
   std::string encoded = SerializeValue(Value(1));
   encoded.push_back('\0');
-  EXPECT_THROW(DeserializeValue(encoded), LgraphException);
+  EXPECT_THROW(DeserializeValue(encoded), RocksGraphException);
 
   EXPECT_THROW(SerializeValue(Value(Value::Map{{"key", Value(1)}})),
-               LgraphException);
+               RocksGraphException);
 }
 
 TEST(Endian, big) {

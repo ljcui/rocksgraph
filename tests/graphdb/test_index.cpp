@@ -604,7 +604,7 @@ TEST(VertexUniqueIndex, onlineBuildConflictsWithConcurrentWrite) {
         {"label1"}, {{"id", Value(49999)}, {"str", Value("dup_during_build")}});
     txn->Commit();
     duplicate_committed = true;
-  } catch (LgraphException& e) {
+  } catch (RocksGraphException& e) {
     EXPECT_EQ(e.code(), ErrorCode::IndexValueAlreadyExist);
     txn->Rollback();
   }

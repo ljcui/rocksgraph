@@ -459,7 +459,7 @@ class NodeByIdSeekOperator final : public PullOperator {
           *row = std::move(output);
           return true;
         }
-      } catch (const LgraphException &error) {
+      } catch (const RocksGraphException &error) {
         if (error.code() == ErrorCode::VertexIdNotFound) {
           continue;
         }
@@ -496,7 +496,7 @@ std::optional<graphdb::Edge> FindGraphDBRelationshipById(
       try {
         const RelationshipReference reference{.id = id, .type_id = *type_id};
         return GraphDBEdgeById(transaction, reference);
-      } catch (const LgraphException &error) {
+      } catch (const RocksGraphException &error) {
         if (error.code() != ErrorCode::EdgeIdNotFound) {
           throw;
         }
@@ -1454,7 +1454,7 @@ class ProjectEndpointsOperator final : public PullOperator {
         (void)GraphDBEdgeById(
             *state_->transaction,
             {.id = relationship->id, .type_id = relationship->type_id});
-      } catch (const LgraphException &error) {
+      } catch (const RocksGraphException &error) {
         if (error.code() == ErrorCode::EdgeIdNotFound) {
           return;
         }
