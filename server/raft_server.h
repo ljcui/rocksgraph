@@ -6,7 +6,6 @@
 #include <thread>
 #include <vector>
 
-#include "common/type_traits.h"
 #include "etcd_raft/raftpb/raft.pb.h"
 
 namespace server {
@@ -16,8 +15,10 @@ class GraphManager;
 class RaftServer final {
  public:
   RaftServer() = default;
-  DISABLE_COPY(RaftServer);
-  DISABLE_MOVE(RaftServer);
+  RaftServer(const RaftServer&) = delete;
+  RaftServer& operator=(const RaftServer&) = delete;
+  RaftServer(RaftServer&&) = delete;
+  RaftServer& operator=(RaftServer&&) = delete;
 
   bool Start(GraphManager* graph_manager, uint32_t port);
   void Stop();

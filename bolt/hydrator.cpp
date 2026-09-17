@@ -10,15 +10,12 @@
 #include "common/exception.h"
 
 namespace bolt {
-const char* containsSystemUpdatesKey = "contains-system-updates";
-const char* containsUpdatesKey = "contains-updates";
-
 std::unordered_map<std::string, int> ExtractIntCounters(
     std::unordered_map<std::string, std::any> counters) {
   std::unordered_map<std::string, int> result;
   for (auto& pair : counters) {
-    if (pair.first != containsSystemUpdatesKey &&
-        pair.first != containsUpdatesKey) {
+    if (pair.first != kContainsSystemUpdates &&
+        pair.first != kContainsUpdates) {
       result[pair.first] = std::any_cast<int>(pair.second);
     }
   }
@@ -218,7 +215,7 @@ std::unordered_map<std::string, std::any> Hydrator::GetSuccessStats() {
 }
 
 std::any Hydrator::parseStatValue(const std::string& key) {
-  if (key == containsSystemUpdatesKey || key == containsUpdatesKey) {
+  if (key == kContainsSystemUpdates || key == kContainsUpdates) {
     return std::optional<bool>(unp_->Bool());
   } else {
     return (int)(unp_->Int());

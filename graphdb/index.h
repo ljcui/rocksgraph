@@ -17,7 +17,6 @@
 #include <utility>
 #include <vector>
 
-#include "common/type_traits.h"
 #include "ftindex/include/lib.rs.h"
 #include "graphdb/graph_cf.h"
 #include "graphdb/id_generator.h"

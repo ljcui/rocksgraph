@@ -5,8 +5,6 @@
 #include <thread>
 #include <vector>
 
-#include "common/type_traits.h"
-
 namespace graphdb {
 
 class AssistantPool {
@@ -14,8 +12,10 @@ class AssistantPool {
   explicit AssistantPool(size_t thread_num);
   ~AssistantPool();
 
-  DISABLE_COPY(AssistantPool);
-  DISABLE_MOVE(AssistantPool);
+  AssistantPool(const AssistantPool&) = delete;
+  AssistantPool& operator=(const AssistantPool&) = delete;
+  AssistantPool(AssistantPool&&) = delete;
+  AssistantPool& operator=(AssistantPool&&) = delete;
 
   boost::asio::io_service& Service() { return service_; }
   boost::asio::io_service::strand NewStrand() {

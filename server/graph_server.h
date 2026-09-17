@@ -7,7 +7,6 @@
 #include <utility>
 
 #include "bolt/bolt_server.h"
-#include "common/type_traits.h"
 #include "server/graph_manager.h"
 #include "server/raft_server.h"
 
@@ -27,8 +26,10 @@ class GraphServer final {
   explicit GraphServer(GraphServerOptions options)
       : options_(std::move(options)) {}
 
-  DISABLE_COPY(GraphServer);
-  DISABLE_MOVE(GraphServer);
+  GraphServer(const GraphServer&) = delete;
+  GraphServer& operator=(const GraphServer&) = delete;
+  GraphServer(GraphServer&&) = delete;
+  GraphServer& operator=(GraphServer&&) = delete;
 
   bool Start();
   void Stop();

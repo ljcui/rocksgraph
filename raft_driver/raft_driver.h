@@ -17,7 +17,6 @@
 #include <utility>
 #include <vector>
 
-#include "common/type_traits.h"
 #include "proto/meta.pb.h"
 #include "raft_driver/raft_log_store.h"
 
@@ -107,8 +106,10 @@ class RaftManager : public std::enable_shared_from_this<RaftManager> {
   static void Configure(size_t raft_shard_count);
   static std::shared_ptr<RaftManager> Instance();
   ~RaftManager();
-  DISABLE_COPY(RaftManager);
-  DISABLE_MOVE(RaftManager);
+  RaftManager(const RaftManager&) = delete;
+  RaftManager& operator=(const RaftManager&) = delete;
+  RaftManager(RaftManager&&) = delete;
+  RaftManager& operator=(RaftManager&&) = delete;
 
   size_t PickShard(const std::string& graph) const;
   boost::asio::io_service& raft_service(size_t shard_id);

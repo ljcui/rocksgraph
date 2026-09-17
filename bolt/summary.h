@@ -1,5 +1,9 @@
 #pragma once
+
+#include <any>
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -13,18 +17,20 @@ enum class StatementType : char {
   StatementTypeWrite,
   StatementTypeSchemaWrite
 };
-#define NodesCreated "nodes-created"
-#define NodesDeleted "nodes-deleted"
-#define RelationshipsCreated "relationships-created"
-#define RelationshipsDeleted "relationships-deleted"
-#define PropertiesSet "properties-set"
-#define LabelsAdded "labels-added"
-#define LabelsRemoved "labels-removed"
-#define IndexesAdded "indexes-added"
-#define IndexesRemoved "indexes-removed"
-#define ConstraintsAdded "constraints-added"
-#define ConstraintsRemoved "constraints-removed"
-#define SystemUpdates "system-updates"
+inline constexpr char kNodesCreated[] = "nodes-created";
+inline constexpr char kNodesDeleted[] = "nodes-deleted";
+inline constexpr char kRelationshipsCreated[] = "relationships-created";
+inline constexpr char kRelationshipsDeleted[] = "relationships-deleted";
+inline constexpr char kPropertiesSet[] = "properties-set";
+inline constexpr char kLabelsAdded[] = "labels-added";
+inline constexpr char kLabelsRemoved[] = "labels-removed";
+inline constexpr char kIndexesAdded[] = "indexes-added";
+inline constexpr char kIndexesRemoved[] = "indexes-removed";
+inline constexpr char kConstraintsAdded[] = "constraints-added";
+inline constexpr char kConstraintsRemoved[] = "constraints-removed";
+inline constexpr char kSystemUpdates[] = "system-updates";
+inline constexpr char kContainsSystemUpdates[] = "contains-system-updates";
+inline constexpr char kContainsUpdates[] = "contains-updates";
 
 struct Plan {
   // operation is the operation this plan is performing.

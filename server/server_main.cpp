@@ -46,10 +46,10 @@ volatile std::sig_atomic_t g_shutdown_signal = 0;
 
 std::string Version() {
   std::ostringstream info;
-  info << "\nRocksGraph\nCompiled from " << GIT_BRANCH << " branch\nCommit "
-       << GIT_COMMIT_HASH;
-  info << "\nCPP compiler version: " << CXX_COMPILER_ID << " "
-       << CXX_COMPILER_VERSION << ".";
+  info << "\nRocksGraph\nCompiled from " << common::kGitBranch
+       << " branch\nCommit " << common::kGitCommitHash;
+  info << "\nCPP compiler version: " << common::kCxxCompilerId << " "
+       << common::kCxxCompilerVersion << ".";
   return info.str();
 }
 void PrintWelcome() {
@@ -58,9 +58,9 @@ void PrintWelcome() {
     tabulate::Table table;
     table.format().trim_mode(tabulate::Format::TrimMode::kNone).locale("C");
     info << "Compile Information:\n";
-    table.add_row({"Branch", GIT_BRANCH});
-    table.add_row({"Commit", GIT_COMMIT_HASH});
-    table.add_row({"BuildType", BUILD_TYPE});
+    table.add_row({"Branch", common::kGitBranch});
+    table.add_row({"Commit", common::kGitCommitHash});
+    table.add_row({"BuildType", common::kBuildType});
     info << table << "\n";
   }
   {

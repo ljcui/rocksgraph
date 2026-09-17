@@ -3,7 +3,6 @@
 #include <thread>
 #include <vector>
 
-#include "common/type_traits.h"
 #include "connection.h"
 #include "io_service.h"
 
@@ -11,8 +10,10 @@ namespace bolt {
 class BoltServer final {
  public:
   BoltServer() = default;
-  DISABLE_COPY(BoltServer);
-  DISABLE_MOVE(BoltServer);
+  BoltServer(const BoltServer&) = delete;
+  BoltServer& operator=(const BoltServer&) = delete;
+  BoltServer(BoltServer&&) = delete;
+  BoltServer& operator=(BoltServer&&) = delete;
   bool Start(
       uint32_t port, uint32_t io_thread_num, size_t max_connections,
       const std::function<void(bolt::BoltConnection& conn, bolt::BoltMsg msg,

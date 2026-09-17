@@ -1,7 +1,11 @@
 #pragma once
 
-#define GIT_BRANCH "@GIT_BRANCH@"
-#define GIT_COMMIT_HASH "@GIT_COMMIT_HASH@"
-#define CXX_COMPILER_ID "@CXX_COMPILER_ID@"
-#define CXX_COMPILER_VERSION "@CXX_COMPILER_VERSION@"
-#define BUILD_TYPE "@BUILD_TYPE@"
+namespace common {
+
+inline constexpr char kGitBranch[] = "@GIT_BRANCH@";
+inline constexpr char kGitCommitHash[] = "@GIT_COMMIT_HASH@";
+inline constexpr char kCxxCompilerId[] = "@CXX_COMPILER_ID@";
+inline constexpr char kCxxCompilerVersion[] = "@CXX_COMPILER_VERSION@";
+inline constexpr char kBuildType[] = "@BUILD_TYPE@";
+
+}  // namespace common

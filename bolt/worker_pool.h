@@ -13,7 +13,6 @@
 #include <utility>
 
 #include "common/logger.h"
-#include "common/type_traits.h"
 
 namespace bolt {
 
@@ -28,8 +27,10 @@ class BoltWorkerPool {
         worker_name_prefix_(std::move(worker_name_prefix)),
         log_name_(std::move(log_name)) {}
 
-  DISABLE_COPY(BoltWorkerPool);
-  DISABLE_MOVE(BoltWorkerPool);
+  BoltWorkerPool(const BoltWorkerPool&) = delete;
+  BoltWorkerPool& operator=(const BoltWorkerPool&) = delete;
+  BoltWorkerPool(BoltWorkerPool&&) = delete;
+  BoltWorkerPool& operator=(BoltWorkerPool&&) = delete;
 
   ~BoltWorkerPool() { Stop(); }
 
