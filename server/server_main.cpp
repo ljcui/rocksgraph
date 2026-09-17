@@ -6,12 +6,12 @@
 #include <cstring>
 #include <fstream>
 #include <sstream>
-#include <stdexcept>
 #include <tabulate/table.hpp>
 #include <thread>
 #include <unordered_set>
 
 #include "bolt/bolt_server.h"
+#include "common/exception.h"
 #include "common/flags.h"
 #include "common/logger.h"
 #include "common/version.h"
@@ -163,7 +163,7 @@ class ServerDaemon : public Service {
     g_shutdown_signal = 0;
     try {
       if (!server.Start()) {
-        throw std::runtime_error("failed to start rg-server");
+        RG_THROW(common::InternalError, "failed to start rg-server");
       }
       while (g_shutdown_signal == 0 && server.Started()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -172,7 +172,7 @@ class ServerDaemon : public Service {
         LOG_INFO("Received signal {}, shutdown",
                  strsignal(static_cast<int>(g_shutdown_signal)));
       } else if (!server.Started()) {
-        throw std::runtime_error("rg-server exited unexpectedly");
+        RG_THROW(common::InternalError, "rg-server exited unexpectedly");
       }
       server.Stop();
       spdlog::shutdown();

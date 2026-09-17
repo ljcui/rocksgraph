@@ -7,6 +7,7 @@
 
 #include "bolt/graph.h"
 #include "bolt/record.h"
+#include "common/exception.h"
 #include "value/temporal.h"
 
 namespace bolt {
@@ -28,7 +29,8 @@ rg::Date DateFromEpochDays(std::int64_t days) {
   year += month <= 2;
   if (year < std::numeric_limits<std::int32_t>::min() ||
       year > std::numeric_limits<std::int32_t>::max()) {
-    throw std::runtime_error("Bolt date is outside the supported year range");
+    RG_THROW(common::InvalidArgumentError,
+             "Bolt date is outside the supported year range");
   }
   return {static_cast<std::int32_t>(year), static_cast<std::int32_t>(month),
           static_cast<std::int32_t>(day)};
@@ -147,7 +149,7 @@ nlohmann::json ToJsonObj(const std::any& item) {
   } else {
     auto err = std::string("Unsupported type: ") + item.type().name();
     LOG_ERROR(err);
-    throw std::runtime_error(err);
+    RG_THROW(common::InvalidArgumentError, err);
   }
 }
 
