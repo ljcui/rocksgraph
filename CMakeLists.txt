@@ -68,6 +68,8 @@ if(CLANG_FORMAT_BIN OR CMAKE_FORMAT_BIN)
          "^${CMAKE_SOURCE_DIR}/(proto|etcd_raft/raftpb)/.*\\.pb\\.(cc|h)$")
     list(FILTER ROCKSGRAPH_FORMAT_FILES EXCLUDE REGEX
          "^${CMAKE_SOURCE_DIR}/graphdb/ftindex/include/lib\\.rs\\.h$")
+    list(FILTER ROCKSGRAPH_FORMAT_FILES EXCLUDE REGEX
+         "^${CMAKE_SOURCE_DIR}/tools/linenoise/")
     add_custom_command(
       TARGET format
       COMMAND ${CLANG_FORMAT_BIN} -i -style=file ${ROCKSGRAPH_FORMAT_FILES}

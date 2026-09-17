@@ -7,3 +7,8 @@ add_executable(cypher_dump cypher_dump.cc)
 target_link_libraries(cypher_dump PRIVATE RocksGraph::runtime ${GFLAGS_TARGET}
                                           ${SPDLOG_TARGET})
 set_target_properties(cypher_dump PROPERTIES BUILD_RPATH "/usr/local/lib")
+
+add_executable(rg-cli rg_cli.cc linenoise/linenoise.c)
+target_link_libraries(rg-cli PRIVATE RocksGraph::bolt ${GFLAGS_TARGET}
+                                     ${SPDLOG_TARGET})
+set_target_properties(rg-cli PROPERTIES BUILD_RPATH "/usr/local/lib")

@@ -70,6 +70,11 @@ add_test(
     -DTEST_DB=${CMAKE_CURRENT_BINARY_DIR}/cypher_run_persistence_testdb -P
     ${CMAKE_CURRENT_SOURCE_DIR}/tools/cypher_run_persistence_test.cmake)
 
+add_test(NAME rg_cli_test
+         COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tools/rg_cli_test.sh
+                 $<TARGET_FILE:rg-server> $<TARGET_FILE:rg-cli>)
+set_tests_properties(rg_cli_test PROPERTIES TIMEOUT 60)
+
 find_package(OpenMP REQUIRED)
 add_executable(
   graphdb_test
