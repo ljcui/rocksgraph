@@ -23,7 +23,7 @@
 
 namespace {
 
-class FakePlannerCatalog final : public ir::PlannerCatalog {
+class FakePlannerCatalog final : public planner::PlannerCatalog {
  public:
   void AddNodeIndex(std::vector<std::string> labels,
                     std::string_view property_key, bool unique = false,
@@ -47,7 +47,7 @@ class FakePlannerCatalog final : public ir::PlannerCatalog {
         .supports_range = supports_range};
   }
 
-  [[nodiscard]] std::optional<ir::NodeIndexDescriptor> FindNodeIndex(
+  [[nodiscard]] std::optional<planner::NodeIndexDescriptor> FindNodeIndex(
       const std::vector<std::string> &labels,
       std::string_view property_key) const override {
     const auto found = node_indexes_.find(IndexKey(labels, property_key));
@@ -57,7 +57,7 @@ class FakePlannerCatalog final : public ir::PlannerCatalog {
     return found->second;
   }
 
-  [[nodiscard]] std::optional<ir::RelationshipIndexDescriptor>
+  [[nodiscard]] std::optional<planner::RelationshipIndexDescriptor>
   FindRelationshipIndex(const std::vector<std::string> &relationship_types,
                         std::string_view property_key) const override {
     const auto found =
@@ -81,8 +81,8 @@ class FakePlannerCatalog final : public ir::PlannerCatalog {
     return key;
   }
 
-  std::unordered_map<std::string, ir::NodeIndexDescriptor> node_indexes_;
-  std::unordered_map<std::string, ir::RelationshipIndexDescriptor>
+  std::unordered_map<std::string, planner::NodeIndexDescriptor> node_indexes_;
+  std::unordered_map<std::string, planner::RelationshipIndexDescriptor>
       relationship_indexes_;
 };
 
@@ -99,33 +99,34 @@ std::unique_ptr<ast::Statement> ParseOrFail(const std::string &query) {
   return {};
 }
 
-std::string LogicalPlanText(const std::string &query,
-                            const ir::LogicalPlanBuilderOptions &options = {}) {
+std::string LogicalPlanText(
+    const std::string &query,
+    const planner::LogicalPlanBuilderOptions &options = {}) {
   auto statement = ParseOrFail(query);
   if (!statement) {
     return {};
   }
   std::unique_ptr<ir::QueryIR> query_ir = ir::CreateQueryIR(*statement);
   std::unique_ptr<ir::LogicalPlan> logical_plan =
-      ir::CreateLogicalPlan(*query_ir, options);
+      planner::CreateLogicalPlan(*query_ir, options);
   return ir::LogicalPlanToString(*logical_plan);
 }
 
-ir::PlannedQuery PlannedQueryFor(
+planner::PlannedQuery PlannedQueryFor(
     const std::string &query,
-    const ir::LogicalPlanBuilderOptions &options = {}) {
-  return ir::PlanCypher(query, options);
+    const planner::LogicalPlanBuilderOptions &options = {}) {
+  return planner::PlanCypher(query, options);
 }
 
-ir::LogicalPlanBuilderOptions WithAllIndexes(
-    const ir::PlannerStatistics *statistics = nullptr) {
+planner::LogicalPlanBuilderOptions WithAllIndexes(
+    const planner::PlannerStatistics *statistics = nullptr) {
   return {.planner_statistics = statistics,
           .planner_catalog = &test_support::AssumeAllIndexesCatalog()};
 }
 
-void ExpectLogicalPlanText(const std::string &query,
-                           const std::string &expected,
-                           const ir::LogicalPlanBuilderOptions &options = {}) {
+void ExpectLogicalPlanText(
+    const std::string &query, const std::string &expected,
+    const planner::LogicalPlanBuilderOptions &options = {}) {
   EXPECT_EQ(LogicalPlanText(query, options), expected);
 }
 
@@ -148,7 +149,7 @@ std::unique_ptr<ast::ComparisonExpression> Equality(
 void ExpectLogicalPlanInvalidArgument(const ir::SingleQueryIR &query,
                                       const std::string &message_substring) {
   try {
-    (void)ir::CreateLogicalPlan(query);
+    (void)planner::CreateLogicalPlan(query);
     FAIL() << "expected InvalidArgumentError";
   } catch (const common::InvalidArgumentError &e) {
     EXPECT_NE(e.Message().find(message_substring), std::string::npos)
@@ -174,7 +175,7 @@ TEST(LogicalPlanBuilderTest, UsesNodeLabelPredicateAsLeafScan) {
 }
 
 TEST(LogicalPlanBuilderTest, AnnotatesCostMetadataAndPrintsWhenRequested) {
-  ir::PlannedQuery query = PlannedQueryFor("MATCH (n:Person) RETURN n");
+  planner::PlannedQuery query = PlannedQueryFor("MATCH (n:Person) RETURN n");
   const ir::LogicalPlan &plan = query.LogicalPlan();
 
   EXPECT_TRUE(plan.EstimatedRows().has_value());
@@ -228,7 +229,7 @@ TEST(LogicalPlanBuilderTest, UsesNodeIndexOnlyWhenCatalogLabelsMatch) {
   Projection [n]
     NodeIndexSeek [n:Person WHERE n.name = 'Ada']
 )",
-      ir::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
+      planner::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
 
   ExpectLogicalPlanText(
       "MATCH (n:Movie) WHERE n.name = 'Ada' RETURN n",
@@ -237,7 +238,7 @@ TEST(LogicalPlanBuilderTest, UsesNodeIndexOnlyWhenCatalogLabelsMatch) {
     Filter [n.name = 'Ada']
       NodeByLabelScan [n:Movie]
 )",
-      ir::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
+      planner::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
 }
 
 TEST(LogicalPlanBuilderTest, UsesCheaperNodeScanWhenIndexCostIsHigher) {
@@ -286,7 +287,7 @@ TEST(LogicalPlanBuilderTest, UsesOnlyCatalogAvailableNodePropertyIndex) {
     Filter [n.a_slow = 1]
       NodeIndexSeek [n WHERE n.z_fast = 2]
 )",
-      ir::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
+      planner::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
 }
 
 TEST(LogicalPlanBuilderTest, UsesUniqueNodePropertyIndexSeekCandidate) {
@@ -301,7 +302,7 @@ TEST(LogicalPlanBuilderTest, UsesUniqueNodePropertyIndexSeekCandidate) {
     Filter [n.a_regular = 1]
       NodeIndexSeek [n WHERE n.z_unique = 2]
 )",
-      ir::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
+      planner::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
 }
 
 TEST(LogicalPlanBuilderTest, UsesNodePropertyIndexRangeSeek) {
@@ -323,7 +324,7 @@ TEST(LogicalPlanBuilderTest, KeepsNodeRangeFiltersWhenIndexUnavailable) {
       Filter [n.age >= 10]
         AllNodeScan [n]
 )",
-      ir::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
+      planner::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
 }
 
 TEST(LogicalPlanBuilderTest, RespectsNodeIndexCapabilities) {
@@ -342,7 +343,7 @@ TEST(LogicalPlanBuilderTest, RespectsNodeIndexCapabilities) {
     Filter [n.name = 'Ada']
       NodeByLabelScan [n:Person]
 )",
-      ir::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
+      planner::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
   ExpectLogicalPlanText(
       "MATCH (n:Person) WHERE n.age >= 18 RETURN n",
       R"(ProduceResults [n]
@@ -350,7 +351,7 @@ TEST(LogicalPlanBuilderTest, RespectsNodeIndexCapabilities) {
     Filter [n.age >= 18]
       NodeByLabelScan [n:Person]
 )",
-      ir::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
+      planner::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
 }
 
 TEST(LogicalPlanBuilderTest, UsesNodePropertyIndexRangeSeekForReversedBounds) {
@@ -409,7 +410,7 @@ TEST(LogicalPlanBuilderTest, IdpPruningKeepsCheapestLeafCandidate) {
     Expand [(b)<-[r]-(a)]
       NodeByLabelScan [b:Person]
 )",
-                        ir::LogicalPlanBuilderOptions{
+                        planner::LogicalPlanBuilderOptions{
                             .max_idp_candidates_per_relationship_count = 1});
 }
 
@@ -424,7 +425,7 @@ TEST(LogicalPlanBuilderTest, IdpUsesInjectedStatisticsForLeafCost) {
       Expand [(b)<-[r]-(a)]
         NodeByLabelScan [b:Rare]
 )",
-      ir::LogicalPlanBuilderOptions{.planner_statistics = &statistics});
+      planner::LogicalPlanBuilderOptions{.planner_statistics = &statistics});
 }
 
 TEST(LogicalPlanBuilderTest, IdpUsesRelationshipTypeFanoutStatistics) {
@@ -437,7 +438,7 @@ TEST(LogicalPlanBuilderTest, IdpUsesRelationshipTypeFanoutStatistics) {
     Expand [(b)-[r2:RARE_REL]->(c)]
       RelationshipTypeScan [(a)-[r1:COMMON_REL]->(b)]
 )",
-      ir::LogicalPlanBuilderOptions{.planner_statistics = &statistics});
+      planner::LogicalPlanBuilderOptions{.planner_statistics = &statistics});
 }
 
 TEST(LogicalPlanBuilderTest, UsesRelationshipTypeScanWhenCheaper) {
@@ -449,7 +450,7 @@ TEST(LogicalPlanBuilderTest, UsesRelationshipTypeScanWhenCheaper) {
   Projection [r]
     RelationshipTypeScan [(a)-[r:RARE_REL]->(b)]
 )",
-      ir::LogicalPlanBuilderOptions{.planner_statistics = &statistics});
+      planner::LogicalPlanBuilderOptions{.planner_statistics = &statistics});
 }
 
 TEST(LogicalPlanBuilderTest, UsesRelationshipPropertyIndexSeekWithCatalog) {
@@ -472,7 +473,7 @@ TEST(LogicalPlanBuilderTest,
       Expand [(a)-[r]->(b)]
         AllNodeScan [a]
 )",
-      ir::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
+      planner::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
 }
 
 TEST(LogicalPlanBuilderTest, UsesRelationshipIndexOnlyWhenCatalogTypesMatch) {
@@ -485,7 +486,7 @@ TEST(LogicalPlanBuilderTest, UsesRelationshipIndexOnlyWhenCatalogTypesMatch) {
   Projection [r]
     RelationshipIndexSeek [(a)-[r:KNOWS]->(b) WHERE r.since = 2020]
 )",
-      ir::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
+      planner::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
 
   ExpectLogicalPlanText(
       "MATCH (a)-[r:LIKES]->(b) WHERE r.since = 2020 RETURN r",
@@ -495,7 +496,7 @@ TEST(LogicalPlanBuilderTest, UsesRelationshipIndexOnlyWhenCatalogTypesMatch) {
       Expand [(a)-[r:LIKES]->(b)]
         AllNodeScan [a]
 )",
-      ir::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
+      planner::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
 }
 
 TEST(LogicalPlanBuilderTest,
@@ -525,7 +526,7 @@ TEST(LogicalPlanBuilderTest,
     Filter [r.a_slow = 1]
       RelationshipIndexSeek [(a)-[r]->(b) WHERE r.z_fast = 2]
 )",
-      ir::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
+      planner::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
 }
 
 TEST(LogicalPlanBuilderTest, UsesUniqueRelationshipPropertyIndexSeekCandidate) {
@@ -540,7 +541,7 @@ TEST(LogicalPlanBuilderTest, UsesUniqueRelationshipPropertyIndexSeekCandidate) {
     Filter [r.a_regular = 1]
       RelationshipIndexSeek [(a)-[r]->(b) WHERE r.z_unique = 2]
 )",
-      ir::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
+      planner::LogicalPlanBuilderOptions{.planner_catalog = &catalog});
 }
 
 TEST(LogicalPlanBuilderTest,
@@ -590,7 +591,7 @@ TEST(LogicalPlanBuilderTest,
         Expand [(a)-[r1:AB]->(b)]
           AllNodeScan [a]
 )",
-      ir::LogicalPlanBuilderOptions{.planner_statistics = &statistics});
+      planner::LogicalPlanBuilderOptions{.planner_statistics = &statistics});
 }
 
 TEST(LogicalPlanBuilderTest, IdpBuildsTwoHopJoinFromCheaperMiddleLeaf) {
@@ -746,7 +747,7 @@ TEST(LogicalPlanBuilderTest, JoinsCheapestDisconnectedComponentsFirst) {
         NodeByLabelScan [b:Rare]
         NodeByLabelScan [c:Medium]
 )",
-      ir::LogicalPlanBuilderOptions{.planner_statistics = &statistics});
+      planner::LogicalPlanBuilderOptions{.planner_statistics = &statistics});
 }
 
 TEST(LogicalPlanBuilderTest, JoinsDisconnectedEqualityComponentsFirst) {
@@ -879,7 +880,7 @@ TEST(LogicalPlanBuilderTest, BuildsDistinctOrderByPlan) {
 }
 
 TEST(LogicalPlanBuilderTest, AnnotatesOrderingAndDistinctTraits) {
-  ir::PlannedQuery query =
+  planner::PlannedQuery query =
       PlannedQueryFor("MATCH (n) RETURN DISTINCT n ORDER BY n");
   const ir::LogicalPlan &plan = query.LogicalPlan();
 
@@ -936,7 +937,7 @@ TEST(LogicalPlanBuilderTest, BuildsPostAggregationProjectionPlan) {
 }
 
 TEST(LogicalPlanBuilderTest, DeduplicatesAggregateSubexpressions) {
-  ir::PlannedQuery query =
+  planner::PlannedQuery query =
       PlannedQueryFor("MATCH (n) RETURN count(n) + count(n) AS doubled");
   const ir::LogicalPlan &plan = query.LogicalPlan();
   ASSERT_EQ(plan.Type(), ir::LogicalPlanNodeType::kProduceResults);
@@ -1133,9 +1134,9 @@ TEST(LogicalPlanBuilderTest, BuildsProcedureMetadataCallPlan) {
 TEST(LogicalPlanBuilderTest, AnnotatesProcedureCallCostMetadata) {
   test_support::FakePlannerStatistics statistics;
   statistics.procedure_rows = 3.0;
-  ir::PlannedQuery query = PlannedQueryFor(
+  planner::PlannedQuery query = PlannedQueryFor(
       "CALL db.labels()",
-      ir::LogicalPlanBuilderOptions{.planner_statistics = &statistics});
+      planner::LogicalPlanBuilderOptions{.planner_statistics = &statistics});
   const ir::LogicalPlan &plan = query.LogicalPlan();
 
   EXPECT_EQ(plan.Type(), ir::LogicalPlanNodeType::kProcedureCall);

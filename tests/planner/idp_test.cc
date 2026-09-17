@@ -8,18 +8,18 @@
 
 namespace {
 
-ir::PlanCandidate Candidate(std::vector<std::string> symbols,
-                            std::vector<std::size_t> relationship_indices,
-                            double cost) {
-  return ir::MakePlanCandidate(
+planner::PlanCandidate Candidate(std::vector<std::string> symbols,
+                                 std::vector<std::size_t> relationship_indices,
+                                 double cost) {
+  return planner::MakePlanCandidate(
       std::make_unique<ir::ArgumentPlan>(std::move(symbols)),
       std::move(relationship_indices),
-      ir::CostEstimate{.estimated_rows = cost, .cost = cost});
+      planner::CostEstimate{.estimated_rows = cost, .cost = cost});
 }
 
-ir::PlanKey Key(std::vector<std::size_t> relationship_indices,
-                std::vector<std::string> covered_symbols,
-                std::vector<ir::OrderingKeyItem> ordering = {}) {
+planner::PlanKey Key(std::vector<std::size_t> relationship_indices,
+                     std::vector<std::string> covered_symbols,
+                     std::vector<planner::OrderingKeyItem> ordering = {}) {
   return {.relationship_indices = std::move(relationship_indices),
           .covered_symbols = std::move(covered_symbols),
           .ordering = std::move(ordering)};
@@ -28,18 +28,18 @@ ir::PlanKey Key(std::vector<std::size_t> relationship_indices,
 }  // namespace
 
 TEST(IdpPlanTableTest, PutBestKeepsLowestCostForSameKey) {
-  ir::PlanTable table;
+  planner::PlanTable table;
   table.PutBest(Candidate({"a"}, {1}, 20.0));
   table.PutBest(Candidate({"a"}, {1}, 10.0));
   table.PutBest(Candidate({"a"}, {1}, 30.0));
 
-  const ir::PlanCandidate *best = table.Best(Key({1}, {"a"}));
+  const planner::PlanCandidate *best = table.Best(Key({1}, {"a"}));
   ASSERT_NE(best, nullptr);
   EXPECT_EQ(best->cost, 10.0);
 }
 
 TEST(IdpPlanTableTest, PruneRelationshipCountOnlyPrunesRequestedSize) {
-  ir::PlanTable table;
+  planner::PlanTable table;
   table.PutBest(Candidate({"expensive"}, {1}, 30.0));
   table.PutBest(Candidate({"cheap"}, {2}, 10.0));
   table.PutBest(Candidate({"two_hop"}, {1, 2}, 100.0));
@@ -52,7 +52,7 @@ TEST(IdpPlanTableTest, PruneRelationshipCountOnlyPrunesRequestedSize) {
 }
 
 TEST(IdpPlanTableTest, PruneRelationshipCountKeepsCheapestCandidates) {
-  ir::PlanTable table;
+  planner::PlanTable table;
   table.PutBest(Candidate({"expensive"}, {1}, 30.0));
   table.PutBest(Candidate({"mid"}, {2}, 20.0));
   table.PutBest(Candidate({"cheap"}, {3}, 10.0));
@@ -65,7 +65,7 @@ TEST(IdpPlanTableTest, PruneRelationshipCountKeepsCheapestCandidates) {
 }
 
 TEST(IdpPlanTableTest, PruneRelationshipCountUsesPlanKeyForStableTies) {
-  ir::PlanTable table;
+  planner::PlanTable table;
   table.PutBest(Candidate({"c"}, {3}, 10.0));
   table.PutBest(Candidate({"a"}, {1}, 10.0));
   table.PutBest(Candidate({"b"}, {2}, 10.0));
@@ -82,9 +82,9 @@ TEST(IdpPlanTableTest, KeepsCheapestCandidateForEachOrdering) {
   variable.name = "a";
   ir::LogicalSortItem order{.expression = &variable};
 
-  ir::PlanTable table;
+  planner::PlanTable table;
   table.PutBest(Candidate({"a"}, {1}, 10.0));
-  ir::PlanCandidate ordered = Candidate({"a"}, {1}, 20.0);
+  planner::PlanCandidate ordered = Candidate({"a"}, {1}, 20.0);
   ordered.provided_order = {order};
   ordered.plan->SetOrderingTrait(ordered.provided_order);
   table.PutBest(std::move(ordered));
@@ -102,9 +102,9 @@ TEST(IdpPlanTableTest, PruningRetainsOrderingVariantForKeptState) {
   variable.name = "a";
   ir::LogicalSortItem order{.expression = &variable};
 
-  ir::PlanTable table;
+  planner::PlanTable table;
   table.PutBest(Candidate({"a"}, {1}, 10.0));
-  ir::PlanCandidate ordered = Candidate({"a"}, {1}, 20.0);
+  planner::PlanCandidate ordered = Candidate({"a"}, {1}, 20.0);
   ordered.provided_order = {order};
   ordered.plan->SetOrderingTrait(ordered.provided_order);
   table.PutBest(std::move(ordered));

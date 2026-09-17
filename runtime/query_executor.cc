@@ -16,8 +16,9 @@
 namespace rg {
 namespace {
 
-ir::LogicalPlanBuilderOptions PlannerOptionsFor(const QueryOptions &options) {
-  return ir::LogicalPlanBuilderOptions{
+planner::LogicalPlanBuilderOptions PlannerOptionsFor(
+    const QueryOptions &options) {
+  return planner::LogicalPlanBuilderOptions{
       .max_idp_candidates_per_relationship_count =
           options.max_idp_candidates_per_relationship_count,
       .planner_statistics = options.planner_statistics,
@@ -165,8 +166,8 @@ std::unique_ptr<QueryResultCursor> ExecuteQueryCursor(
   if (options.planner_catalog == nullptr) {
     options.planner_catalog = &graphdb_catalog;
   }
-  ir::PlannedQuery planned_query =
-      ir::PlanCypher(cypher, PlannerOptionsFor(options));
+  planner::PlannedQuery planned_query =
+      planner::PlanCypher(cypher, PlannerOptionsFor(options));
   return QueryResultCursorImpl::Create(planned_query.LogicalPlan(), transaction,
                                        options.parameters,
                                        std::move(options.execution));

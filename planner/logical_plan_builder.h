@@ -7,7 +7,7 @@
 #include "ir/query_ir.h"
 #include "planner/catalog.h"
 
-namespace ir {
+namespace planner {
 
 class PlannerStatistics;
 
@@ -20,11 +20,13 @@ struct LogicalPlanBuilderOptions {
 // These low-level builders borrow AST expressions reachable through query_ir.
 // Keep the source Statement and QueryIR alive for the resulting plan's
 // lifetime. Prefer PlanCypher when compiling query text.
-std::unique_ptr<LogicalPlan> CreateLogicalPlan(const QueryIR &query_ir);
-std::unique_ptr<LogicalPlan> CreateLogicalPlan(const SingleQueryIR &query_ir);
-std::unique_ptr<LogicalPlan> CreateLogicalPlan(
-    const QueryIR &query_ir, const LogicalPlanBuilderOptions &options);
-std::unique_ptr<LogicalPlan> CreateLogicalPlan(
-    const SingleQueryIR &query_ir, const LogicalPlanBuilderOptions &options);
+std::unique_ptr<ir::LogicalPlan> CreateLogicalPlan(const ir::QueryIR &query_ir);
+std::unique_ptr<ir::LogicalPlan> CreateLogicalPlan(
+    const ir::SingleQueryIR &query_ir);
+std::unique_ptr<ir::LogicalPlan> CreateLogicalPlan(
+    const ir::QueryIR &query_ir, const LogicalPlanBuilderOptions &options);
+std::unique_ptr<ir::LogicalPlan> CreateLogicalPlan(
+    const ir::SingleQueryIR &query_ir,
+    const LogicalPlanBuilderOptions &options);
 
-}  // namespace ir
+}  // namespace planner

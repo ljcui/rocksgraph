@@ -77,7 +77,7 @@ int main(int argc, char **argv) {
     }
     if (FLAGS_mode == "logical_plan" || FLAGS_mode == "physical_plan") {
       try {
-        ir::PlannedQuery planned_query = ir::PlanCypher(input);
+        planner::PlannedQuery planned_query = planner::PlanCypher(input);
         if (FLAGS_mode == "logical_plan") {
           ir::PrintLogicalPlan(
               planned_query.LogicalPlan(), std::cout,

@@ -5,7 +5,9 @@
 
 #include "common/exception.h"
 
-namespace ir {
+namespace planner {
+
+using namespace ir;
 namespace {
 
 std::vector<std::string> NormalizedSymbolKey(
@@ -214,4 +216,4 @@ std::vector<PlanCandidate>::const_iterator PlanTable::FindEntry(
                       });
 }
 
-}  // namespace ir
+}  // namespace planner

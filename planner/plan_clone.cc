@@ -5,7 +5,9 @@
 
 #include "common/exception.h"
 
-namespace ir {
+namespace planner {
+
+using namespace ir;
 namespace {
 
 std::unique_ptr<LogicalPlan> CloneComponentPlanWithoutMetadata(
@@ -320,4 +322,4 @@ PlanCandidate CloneCandidate(const PlanCandidate &candidate) {
   return clone;
 }
 
-}  // namespace ir
+}  // namespace planner

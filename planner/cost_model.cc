@@ -3,7 +3,8 @@
 #include <algorithm>
 #include <cmath>
 
-namespace ir {
+namespace planner {
+
 namespace {
 
 const HeuristicPlannerStatistics &DefaultStatistics() {
@@ -467,4 +468,4 @@ CostEstimate ApplyFilterEstimates(CostEstimate estimate,
   return cost_model.ApplyFilters(estimate, filter_count);
 }
 
-}  // namespace ir
+}  // namespace planner

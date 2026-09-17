@@ -527,7 +527,8 @@ std::unique_ptr<QueryIR> MakeUnionQueryIR(std::unique_ptr<QueryIR> lhs,
 // is rejected when it still contains unexpanded-star, missing-alias,
 // anonymous-pattern, or pattern-predicate states that the query IR does not
 // consume directly. The returned IR borrows expressions from statement, which
-// must therefore outlive it. Prefer ir::PlanCypher when starting from text.
+// must therefore outlive it. Prefer planner::PlanCypher when starting from
+// text.
 std::unique_ptr<QueryIR> CreateQueryIR(const ast::Statement &statement);
 
 }  // namespace ir

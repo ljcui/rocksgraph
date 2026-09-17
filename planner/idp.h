@@ -11,7 +11,7 @@
 #include "planner/cost_model.h"
 #include "planner/order_property.h"
 
-namespace ir {
+namespace planner {
 
 struct PlanKey {
   std::vector<std::size_t> relationship_indices;
@@ -23,11 +23,11 @@ struct PlanKey {
 [[nodiscard]] bool operator<(const PlanKey &lhs, const PlanKey &rhs);
 
 struct PlanCandidate {
-  std::unique_ptr<LogicalPlan> plan;
+  std::unique_ptr<ir::LogicalPlan> plan;
   std::vector<std::size_t> relationship_indices;
   std::unordered_set<std::string> covered_symbols;
-  std::unordered_set<const Predicate *> planned_predicates;
-  std::vector<LogicalSortItem> provided_order;
+  std::unordered_set<const ir::Predicate *> planned_predicates;
+  std::vector<ir::LogicalSortItem> provided_order;
   double estimated_rows = 1.0;
   double cost = 1.0;
 };
@@ -43,10 +43,10 @@ struct PlanCandidate {
 [[nodiscard]] PlanKey CandidateKey(const PlanCandidate &candidate);
 
 [[nodiscard]] PlanCandidate MakePlanCandidate(
-    std::unique_ptr<LogicalPlan> plan,
+    std::unique_ptr<ir::LogicalPlan> plan,
     std::vector<std::size_t> relationship_indices, CostEstimate estimate = {},
-    std::unordered_set<const Predicate *> planned_predicates = {},
-    std::vector<LogicalSortItem> provided_order = {});
+    std::unordered_set<const ir::Predicate *> planned_predicates = {},
+    std::vector<ir::LogicalSortItem> provided_order = {});
 
 class PlanTable {
  public:
@@ -67,4 +67,4 @@ class PlanTable {
   std::vector<PlanCandidate> entries_;
 };
 
-}  // namespace ir
+}  // namespace planner

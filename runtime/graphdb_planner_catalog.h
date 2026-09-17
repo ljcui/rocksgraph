@@ -13,15 +13,15 @@ class GraphDB;
 
 namespace rg {
 
-class GraphDBPlannerCatalog final : public ir::PlannerCatalog {
+class GraphDBPlannerCatalog final : public planner::PlannerCatalog {
  public:
   explicit GraphDBPlannerCatalog(graphdb::GraphDB& graph) : graph_(&graph) {}
 
-  [[nodiscard]] std::optional<ir::NodeIndexDescriptor> FindNodeIndex(
+  [[nodiscard]] std::optional<planner::NodeIndexDescriptor> FindNodeIndex(
       const std::vector<std::string>& labels,
       std::string_view property_key) const override;
 
-  [[nodiscard]] std::optional<ir::RelationshipIndexDescriptor>
+  [[nodiscard]] std::optional<planner::RelationshipIndexDescriptor>
   FindRelationshipIndex(const std::vector<std::string>& relationship_types,
                         std::string_view property_key) const override;
 

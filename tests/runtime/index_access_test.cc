@@ -249,7 +249,7 @@ TEST(IndexAccessTest, RangeResultsMatchFiltersAcrossValueTypes) {
     graph.AddNodeIndex({"N"}, "value");
     graph.AddRelationshipIndex({"R"}, "value");
 
-    ir::EmptyPlannerCatalog empty_catalog;
+    planner::EmptyPlannerCatalog empty_catalog;
     rg::GraphDBPlannerCatalog graphdb_catalog(graph.Graph());
     for (const auto& bound : values) {
       for (const auto* op : {"<", "<=", ">", ">="}) {

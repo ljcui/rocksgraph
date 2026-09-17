@@ -10,17 +10,17 @@
 
 namespace {
 
-ir::PlannedQuery PlanInNestedScope() {
+planner::PlannedQuery PlanInNestedScope() {
   std::string cypher = "RETURN 1 + 2 AS value";
-  return ir::PlanCypher(cypher);
+  return planner::PlanCypher(cypher);
 }
 
 }  // namespace
 
 TEST(PlannedQueryTest, OwnsExpressionsAcrossMovesAndScopes) {
-  ir::PlannedQuery query = PlanInNestedScope();
-  ir::PlannedQuery moved = std::move(query);
-  ir::PlannedQuery assigned = ir::PlanCypher("RETURN 0 AS discarded");
+  planner::PlannedQuery query = PlanInNestedScope();
+  planner::PlannedQuery moved = std::move(query);
+  planner::PlannedQuery assigned = planner::PlanCypher("RETURN 0 AS discarded");
   assigned = std::move(moved);
 
   EXPECT_EQ(assigned.Ir().Kind(), ir::QueryIRKind::kSingle);

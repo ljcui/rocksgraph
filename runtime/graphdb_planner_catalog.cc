@@ -4,9 +4,9 @@
 
 namespace rg {
 
-std::optional<ir::NodeIndexDescriptor> GraphDBPlannerCatalog::FindNodeIndex(
-    const std::vector<std::string>& labels,
-    std::string_view property_key) const {
+std::optional<planner::NodeIndexDescriptor>
+GraphDBPlannerCatalog::FindNodeIndex(const std::vector<std::string>& labels,
+                                     std::string_view property_key) const {
   if (labels.size() != 1 || property_key.empty()) {
     return std::nullopt;
   }
@@ -20,11 +20,11 @@ std::optional<ir::NodeIndexDescriptor> GraphDBPlannerCatalog::FindNodeIndex(
   if (!index || index->PropertyCount() != 1) {
     return std::nullopt;
   }
-  return ir::NodeIndexDescriptor{.property_key = std::string(property_key),
-                                 .unique = index->is_unique()};
+  return planner::NodeIndexDescriptor{.property_key = std::string(property_key),
+                                      .unique = index->is_unique()};
 }
 
-std::optional<ir::RelationshipIndexDescriptor>
+std::optional<planner::RelationshipIndexDescriptor>
 GraphDBPlannerCatalog::FindRelationshipIndex(
     const std::vector<std::string>& relationship_types,
     std::string_view property_key) const {
@@ -41,7 +41,7 @@ GraphDBPlannerCatalog::FindRelationshipIndex(
   if (!index || index->PropertyCount() != 1) {
     return std::nullopt;
   }
-  return ir::RelationshipIndexDescriptor{
+  return planner::RelationshipIndexDescriptor{
       .property_key = std::string(property_key), .unique = index->is_unique()};
 }
 

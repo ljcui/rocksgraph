@@ -15,7 +15,7 @@
 
 namespace {
 
-class ReplaceAllNodeScanRule final : public ir::LogicalPlanRewriteRule {
+class ReplaceAllNodeScanRule final : public planner::LogicalPlanRewriteRule {
  public:
   [[nodiscard]] bool Apply(ir::LogicalPlanPtr *plan) const override {
     if ((*plan)->Type() != ir::LogicalPlanNodeType::kAllNodeScan) {
@@ -28,7 +28,7 @@ class ReplaceAllNodeScanRule final : public ir::LogicalPlanRewriteRule {
   }
 };
 
-class ChangeSchemaRule final : public ir::LogicalPlanRewriteRule {
+class ChangeSchemaRule final : public planner::LogicalPlanRewriteRule {
  public:
   [[nodiscard]] bool Apply(ir::LogicalPlanPtr *plan) const override {
     if ((*plan)->Type() != ir::LogicalPlanNodeType::kAllNodeScan) {
@@ -59,7 +59,7 @@ TEST(LogicalPlanRewriterTest, AppliesCustomRulesBottomUp) {
   predicate->value = true;
   ir::LogicalPlanPtr plan = std::make_unique<ir::FilterPlan>(
       std::make_unique<ir::AllNodeScanPlan>("n"), predicate.get());
-  ir::LogicalPlanRewritePipeline pipeline;
+  planner::LogicalPlanRewritePipeline pipeline;
   pipeline.Add(std::make_unique<ReplaceAllNodeScanRule>());
 
   plan = pipeline.Run(std::move(plan));
@@ -70,7 +70,7 @@ TEST(LogicalPlanRewriterTest, AppliesCustomRulesBottomUp) {
 }
 
 TEST(LogicalPlanRewriterTest, RejectsRulesThatChangeThePlanSchema) {
-  ir::LogicalPlanRewritePipeline pipeline;
+  planner::LogicalPlanRewritePipeline pipeline;
   pipeline.Add(std::make_unique<ChangeSchemaRule>());
 
   EXPECT_THROW((void)pipeline.Run(std::make_unique<ir::AllNodeScanPlan>("n")),
@@ -82,7 +82,7 @@ TEST(LogicalPlanRewriterTest, DefaultPipelinePrunesDistinctVarExpand) {
       "MATCH (a)-[r:R*0..3]->(b) RETURN DISTINCT id(b)");
   std::unique_ptr<ir::QueryIR> query_ir = ir::CreateQueryIR(*statement);
 
-  ir::LogicalPlanPtr plan = ir::CreateLogicalPlan(*query_ir);
+  ir::LogicalPlanPtr plan = planner::CreateLogicalPlan(*query_ir);
 
   const ir::LogicalPlan *pruning =
       Find(*plan, ir::LogicalPlanNodeType::kPruningVarExpand);
@@ -97,7 +97,7 @@ TEST(LogicalPlanRewriterTest, DefaultPipelineLeavesPathSensitiveExpand) {
       "MATCH (a)-[r:R*0..3]->(b) RETURN DISTINCT r, b");
   std::unique_ptr<ir::QueryIR> query_ir = ir::CreateQueryIR(*statement);
 
-  ir::LogicalPlanPtr plan = ir::CreateLogicalPlan(*query_ir);
+  ir::LogicalPlanPtr plan = planner::CreateLogicalPlan(*query_ir);
 
   EXPECT_NE(Find(*plan, ir::LogicalPlanNodeType::kVarExpand), nullptr);
   EXPECT_EQ(Find(*plan, ir::LogicalPlanNodeType::kPruningVarExpand), nullptr);
@@ -108,7 +108,7 @@ TEST(LogicalPlanRewriterTest, DefaultPipelineRewritesSortAndLimitToTopN) {
       "UNWIND [3, 1, 2] AS x RETURN x ORDER BY x LIMIT 2");
   std::unique_ptr<ir::QueryIR> query_ir = ir::CreateQueryIR(*statement);
 
-  ir::LogicalPlanPtr plan = ir::CreateLogicalPlan(*query_ir);
+  ir::LogicalPlanPtr plan = planner::CreateLogicalPlan(*query_ir);
 
   const ir::LogicalPlan *top_n = Find(*plan, ir::LogicalPlanNodeType::kTopN);
   ASSERT_NE(top_n, nullptr);
@@ -127,7 +127,7 @@ TEST(LogicalPlanRewriterTest, DefaultPipelineKeepsSkipAndWriteBoundaries) {
           "UNWIND [3, 1, 2] AS x RETURN x ORDER BY x SKIP 1 LIMIT 1");
   std::unique_ptr<ir::QueryIR> skipped_ir =
       ir::CreateQueryIR(*skipped_statement);
-  ir::LogicalPlanPtr skipped = ir::CreateLogicalPlan(*skipped_ir);
+  ir::LogicalPlanPtr skipped = planner::CreateLogicalPlan(*skipped_ir);
 
   EXPECT_EQ(Find(*skipped, ir::LogicalPlanNodeType::kTopN), nullptr);
   EXPECT_NE(Find(*skipped, ir::LogicalPlanNodeType::kSort), nullptr);
@@ -136,7 +136,7 @@ TEST(LogicalPlanRewriterTest, DefaultPipelineKeepsSkipAndWriteBoundaries) {
   std::unique_ptr<ast::Statement> write_statement = ast::ParseCypherAndRewrite(
       "MATCH (n) SET n.x = 1 RETURN n ORDER BY n LIMIT 2");
   std::unique_ptr<ir::QueryIR> write_ir = ir::CreateQueryIR(*write_statement);
-  ir::LogicalPlanPtr write = ir::CreateLogicalPlan(*write_ir);
+  ir::LogicalPlanPtr write = planner::CreateLogicalPlan(*write_ir);
 
   EXPECT_EQ(Find(*write, ir::LogicalPlanNodeType::kTopN), nullptr);
   EXPECT_NE(Find(*write, ir::LogicalPlanNodeType::kSort), nullptr);

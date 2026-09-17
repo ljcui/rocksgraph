@@ -7,7 +7,9 @@
 #include "common/exception.h"
 #include "ir/query_ir.h"
 
-namespace ir {
+namespace planner {
+
+using namespace ir;
 
 PlannedQuery::PlannedQuery(std::unique_ptr<ast::Statement> statement,
                            std::unique_ptr<QueryIR> query_ir,
@@ -57,4 +59,4 @@ PlannedQuery PlanCypher(std::string_view cypher,
                       std::move(logical_plan));
 }
 
-}  // namespace ir
+}  // namespace planner

@@ -13,7 +13,7 @@
 
 namespace test_support {
 
-class FakePlannerStatistics final : public ir::PlannerStatistics {
+class FakePlannerStatistics final : public planner::PlannerStatistics {
  public:
   double all_node_count = 1000.0;
   double labeled_node_count = 100.0;
@@ -22,7 +22,7 @@ class FakePlannerStatistics final : public ir::PlannerStatistics {
   double node_index_range_seek_selectivity = 0.1;
   std::unordered_map<std::string, double> node_index_seek_selectivity_by_key;
   std::unordered_map<std::string, double> node_index_range_selectivity_by_key;
-  std::optional<ir::PropertyHistogram> node_property_histogram;
+  std::optional<planner::PropertyHistogram> node_property_histogram;
 
   double untyped_relationship_count = 10000.0;
   double typed_relationship_count = 5000.0;
@@ -33,7 +33,7 @@ class FakePlannerStatistics final : public ir::PlannerStatistics {
       relationship_index_seek_selectivity_by_key;
   std::unordered_map<std::string, double>
       relationship_index_range_selectivity_by_key;
-  std::optional<ir::PropertyHistogram> relationship_property_histogram;
+  std::optional<planner::PropertyHistogram> relationship_property_histogram;
   double untyped_expand_fanout = 10.0;
   double typed_expand_fanout = 3.0;
   std::unordered_map<std::string, double> expand_fanout_by_type;
@@ -75,7 +75,7 @@ class FakePlannerStatistics final : public ir::PlannerStatistics {
       const std::unordered_set<std::string> &labels,
       std::string_view property_key) const override {
     if (node_property_histogram.has_value()) {
-      return ir::PlannerStatistics::EstimateNodeIndexSeekSelectivity(
+      return planner::PlannerStatistics::EstimateNodeIndexSeekSelectivity(
           labels, property_key);
     }
     const auto found =
@@ -121,8 +121,9 @@ class FakePlannerStatistics final : public ir::PlannerStatistics {
       const std::vector<std::string> &relationship_types,
       std::string_view property_key) const override {
     if (relationship_property_histogram.has_value()) {
-      return ir::PlannerStatistics::EstimateRelationshipIndexSeekSelectivity(
-          relationship_types, property_key);
+      return planner::PlannerStatistics::
+          EstimateRelationshipIndexSeekSelectivity(relationship_types,
+                                                   property_key);
     }
     const auto found = relationship_index_seek_selectivity_by_key.find(
         std::string(property_key));
@@ -194,7 +195,7 @@ class FakePlannerStatistics final : public ir::PlannerStatistics {
     if (combined_filter_selectivity.has_value()) {
       return *combined_filter_selectivity;
     }
-    return ir::PlannerStatistics::EstimateCombinedFilterSelectivity(
+    return planner::PlannerStatistics::EstimateCombinedFilterSelectivity(
         predicate_count);
   }
 
@@ -233,7 +234,8 @@ class FakePlannerStatistics final : public ir::PlannerStatistics {
       return std::min(input_rows, std::max(0.0, *literal_limit));
     }
     return unknown_limit_rows.value_or(
-        ir::PlannerStatistics::EstimateLimitRows(input_rows, literal_limit));
+        planner::PlannerStatistics::EstimateLimitRows(input_rows,
+                                                      literal_limit));
   }
 
   [[nodiscard]] double EstimateProcedureRows(
@@ -243,7 +245,7 @@ class FakePlannerStatistics final : public ir::PlannerStatistics {
     return procedure_rows;
   }
 
-  [[nodiscard]] std::optional<ir::PropertyHistogram> NodePropertyHistogram(
+  [[nodiscard]] std::optional<planner::PropertyHistogram> NodePropertyHistogram(
       const std::unordered_set<std::string> &labels,
       std::string_view property_key) const override {
     (void)labels;
@@ -251,7 +253,7 @@ class FakePlannerStatistics final : public ir::PlannerStatistics {
     return node_property_histogram;
   }
 
-  [[nodiscard]] std::optional<ir::PropertyHistogram>
+  [[nodiscard]] std::optional<planner::PropertyHistogram>
   RelationshipPropertyHistogram(
       const std::vector<std::string> &relationship_types,
       std::string_view property_key) const override {

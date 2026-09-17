@@ -5,7 +5,7 @@
 
 #include "ir/logical_plan.h"
 
-namespace ir {
+namespace planner {
 
 class LogicalPlanRewriteRule {
  public:
@@ -16,7 +16,7 @@ class LogicalPlanRewriteRule {
 
   // A rule may replace the current node but must preserve its output columns
   // and solved symbols.
-  [[nodiscard]] virtual bool Apply(LogicalPlanPtr *plan) const = 0;
+  [[nodiscard]] virtual bool Apply(ir::LogicalPlanPtr *plan) const = 0;
 };
 
 class LogicalPlanRewritePipeline {
@@ -26,7 +26,7 @@ class LogicalPlanRewritePipeline {
       std::vector<std::unique_ptr<LogicalPlanRewriteRule>> rules);
 
   void Add(std::unique_ptr<LogicalPlanRewriteRule> rule);
-  [[nodiscard]] LogicalPlanPtr Run(LogicalPlanPtr plan) const;
+  [[nodiscard]] ir::LogicalPlanPtr Run(ir::LogicalPlanPtr plan) const;
 
  private:
   std::vector<std::unique_ptr<LogicalPlanRewriteRule>> rules_;
@@ -34,6 +34,6 @@ class LogicalPlanRewritePipeline {
 
 [[nodiscard]] LogicalPlanRewritePipeline
 MakeDefaultLogicalPlanRewritePipeline();
-[[nodiscard]] LogicalPlanPtr RewriteLogicalPlan(LogicalPlanPtr plan);
+[[nodiscard]] ir::LogicalPlanPtr RewriteLogicalPlan(ir::LogicalPlanPtr plan);
 
-}  // namespace ir
+}  // namespace planner

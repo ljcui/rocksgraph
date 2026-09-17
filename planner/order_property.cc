@@ -13,7 +13,9 @@
 #include "common/exception.h"
 #include "ir/query_ir_internal.h"
 
-namespace ir {
+namespace planner {
+
+using namespace ir;
 namespace {
 
 class DeterminismChecker final : public ast::ASTConstWalker {
@@ -191,4 +193,4 @@ std::vector<LogicalSortItem> ProjectOrdering(
   return projected;
 }
 
-}  // namespace ir
+}  // namespace planner

@@ -7,7 +7,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace ir {
+namespace planner {
 
 struct CostEstimate {
   double estimated_rows = 1.0;
@@ -180,4 +180,4 @@ class CostModel {
                                                 std::size_t filter_count,
                                                 const CostModel &cost_model);
 
-}  // namespace ir
+}  // namespace planner

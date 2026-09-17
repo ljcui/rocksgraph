@@ -13,7 +13,9 @@
 #include "ir/query_ir_internal.h"
 #include "planner/order_property.h"
 
-namespace ir {
+namespace planner {
+
+using namespace ir;
 namespace {
 
 constexpr std::size_t kMaxRuleIterations = 64;
@@ -273,4 +275,4 @@ LogicalPlanPtr RewriteLogicalPlan(LogicalPlanPtr plan) {
   return MakeDefaultLogicalPlanRewritePipeline().Run(std::move(plan));
 }
 
-}  // namespace ir
+}  // namespace planner

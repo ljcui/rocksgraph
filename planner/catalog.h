@@ -5,7 +5,7 @@
 #include <string_view>
 #include <vector>
 
-namespace ir {
+namespace planner {
 
 struct NodeIndexDescriptor {
   std::string property_key;
@@ -55,4 +55,4 @@ class EmptyPlannerCatalog final : public PlannerCatalog {
   }
 };
 
-}  // namespace ir
+}  // namespace planner

@@ -7,11 +7,11 @@
 #include "ir/logical_plan.h"
 #include "ir/query_ir.h"
 
-namespace ir {
+namespace planner {
 
 struct OrderingKeyItem {
   std::string expression;
-  LogicalOrderDirection direction = LogicalOrderDirection::kAscending;
+  ir::LogicalOrderDirection direction = ir::LogicalOrderDirection::kAscending;
 };
 
 [[nodiscard]] bool operator==(const OrderingKeyItem &lhs,
@@ -20,20 +20,20 @@ struct OrderingKeyItem {
                              const OrderingKeyItem &rhs);
 
 [[nodiscard]] std::vector<OrderingKeyItem> OrderingKey(
-    const std::vector<LogicalSortItem> &ordering);
+    const std::vector<ir::LogicalSortItem> &ordering);
 [[nodiscard]] bool OrderingSatisfies(
-    const std::vector<LogicalSortItem> &provided,
-    const std::vector<LogicalSortItem> &required);
+    const std::vector<ir::LogicalSortItem> &provided,
+    const std::vector<ir::LogicalSortItem> &required);
 [[nodiscard]] bool OrderingDependenciesAvailable(
-    const std::vector<LogicalSortItem> &ordering,
+    const std::vector<ir::LogicalSortItem> &ordering,
     const std::unordered_set<std::string> &symbols);
 [[nodiscard]] bool OrderingExpressionsDeterministic(
-    const std::vector<LogicalSortItem> &ordering);
+    const std::vector<ir::LogicalSortItem> &ordering);
 [[nodiscard]] bool ExpressionIsDeterministic(const ast::Expression &expression);
-[[nodiscard]] std::vector<LogicalSortItem> PlanningOrder(
-    const InterestingOrder &interesting_order);
-[[nodiscard]] std::vector<LogicalSortItem> ProjectOrdering(
-    const std::vector<LogicalSortItem> &ordering,
-    const ProjectionPlan &projection);
+[[nodiscard]] std::vector<ir::LogicalSortItem> PlanningOrder(
+    const ir::InterestingOrder &interesting_order);
+[[nodiscard]] std::vector<ir::LogicalSortItem> ProjectOrdering(
+    const std::vector<ir::LogicalSortItem> &ordering,
+    const ir::ProjectionPlan &projection);
 
-}  // namespace ir
+}  // namespace planner

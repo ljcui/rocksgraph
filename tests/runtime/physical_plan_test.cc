@@ -19,10 +19,10 @@
 
 namespace {
 
-using PlannedQuery = ir::PlannedQuery;
+using PlannedQuery = planner::PlannedQuery;
 
-ir::PlannedQuery Plan(std::string cypher) {
-  return ir::PlanCypher(
+planner::PlannedQuery Plan(std::string cypher) {
+  return planner::PlanCypher(
       cypher, {.planner_catalog = &test_support::AssumeAllIndexesCatalog()});
 }
 
@@ -53,7 +53,7 @@ const rg::PhysicalPlanNode *FindPhysicalPlan(const rg::PhysicalPlanNode &node,
 }
 
 rg::PhysicalPlan DetachedPhysicalPlan(const std::string &cypher) {
-  ir::PlannedQuery query = Plan(cypher);
+  planner::PlannedQuery query = Plan(cypher);
   return rg::CreatePhysicalPlan(query.LogicalPlan());
 }
 

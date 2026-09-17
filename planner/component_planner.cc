@@ -21,7 +21,9 @@
 #include "planner/order_property.h"
 #include "planner/plan_clone.h"
 
-namespace ir {
+namespace planner {
+
+using namespace ir;
 namespace {
 
 constexpr std::string_view kLogicalPlanStage = "logical plan";
@@ -1287,4 +1289,4 @@ std::unique_ptr<ComponentPlanner> MakeComponentPlanner(
       options.planner_statistics);
 }
 
-}  // namespace ir
+}  // namespace planner

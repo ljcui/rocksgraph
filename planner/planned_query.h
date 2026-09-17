@@ -9,7 +9,7 @@ namespace ast {
 class Statement;
 }  // namespace ast
 
-namespace ir {
+namespace planner {
 
 // Owns every compilation artifact whose expressions are referenced by the
 // query IR and logical plan.
@@ -22,16 +22,16 @@ class PlannedQuery final {
   ~PlannedQuery();
 
   [[nodiscard]] const ast::Statement &Ast() const noexcept;
-  [[nodiscard]] const QueryIR &Ir() const noexcept;
+  [[nodiscard]] const ir::QueryIR &Ir() const noexcept;
   [[nodiscard]] const ir::LogicalPlan &LogicalPlan() const noexcept;
 
  private:
   PlannedQuery(std::unique_ptr<ast::Statement> statement,
-               std::unique_ptr<QueryIR> query_ir,
+               std::unique_ptr<ir::QueryIR> query_ir,
                std::unique_ptr<ir::LogicalPlan> logical_plan);
 
   std::unique_ptr<ast::Statement> statement_;
-  std::unique_ptr<QueryIR> query_ir_;
+  std::unique_ptr<ir::QueryIR> query_ir_;
   std::unique_ptr<ir::LogicalPlan> logical_plan_;
 
   friend PlannedQuery PlanCypher(std::string_view cypher,
@@ -41,4 +41,4 @@ class PlannedQuery final {
 [[nodiscard]] PlannedQuery PlanCypher(
     std::string_view cypher, const LogicalPlanBuilderOptions &options = {});
 
-}  // namespace ir
+}  // namespace planner

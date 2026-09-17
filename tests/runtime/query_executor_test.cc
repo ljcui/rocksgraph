@@ -63,7 +63,7 @@ bool WaitUntil(Predicate predicate,
 
 std::unique_ptr<rg::QueryResultCursor> CursorFromTemporaryPlannedQuery(
     graphdb::Transaction &transaction) {
-  ir::PlannedQuery query = ir::PlanCypher("RETURN 1 + 2 AS value");
+  planner::PlannedQuery query = planner::PlanCypher("RETURN 1 + 2 AS value");
   return rg::QueryExecutor(transaction).ExecuteCursor(query.LogicalPlan());
 }
 
@@ -102,8 +102,8 @@ TEST(QueryExecutorTest, DefaultLogicalPlanDoesNotAssumeIndexes) {
   rg::test::GraphDBTestDatabase graph;
   auto ada = graph.CreateNode({"Person"}, {{"name", rg::Value("Ada")}});
 
-  ir::PlannedQuery query =
-      ir::PlanCypher("MATCH (n:Person) WHERE n.name = 'Ada' RETURN id(n)");
+  planner::PlannedQuery query =
+      planner::PlanCypher("MATCH (n:Person) WHERE n.name = 'Ada' RETURN id(n)");
 
   const rg::QueryResult result =
       rg::test::ExecutePlanAndCommit(graph, query.LogicalPlan());

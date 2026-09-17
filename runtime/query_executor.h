@@ -14,12 +14,12 @@ namespace graphdb {
 class Transaction;
 }
 
-namespace ir {
+namespace planner {
 
 class PlannerCatalog;
 class PlannerStatistics;
 
-}  // namespace ir
+}  // namespace planner
 
 namespace rg {
 
@@ -48,8 +48,8 @@ class QueryResultCursor {
 
 struct QueryOptions {
   std::size_t max_idp_candidates_per_relationship_count = 128;
-  const ir::PlannerStatistics *planner_statistics = nullptr;
-  const ir::PlannerCatalog *planner_catalog = nullptr;
+  const planner::PlannerStatistics *planner_statistics = nullptr;
+  const planner::PlannerCatalog *planner_catalog = nullptr;
   QueryParameters parameters;
   QueryExecutionOptions execution;
 };
