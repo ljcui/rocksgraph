@@ -6,6 +6,8 @@
 
 #include <rocksdb/utilities/write_batch_with_index.h>
 
+#include <optional>
+
 #include "common/byte_utils.h"
 #include "common/exception.h"
 #include "common/logger.h"
@@ -152,6 +154,29 @@ std::unordered_set<uint32_t> CollectVertexIndexPropertyIds(
   return required_pids;
 }
 
+std::unique_ptr<EdgeIterator> ComposeIncidentEdgeIterator(
+    Transaction *txn, int64_t origin_vertex_id, EdgeDirection direction,
+    std::unordered_set<uint32_t> type_ids,
+    std::unordered_map<uint32_t, rg::Value> edge_properties,
+    std::optional<int64_t> other_vertex_id = std::nullopt,
+    std::unordered_set<uint32_t> other_vertex_labels = {},
+    std::unordered_map<uint32_t, rg::Value> other_vertex_properties = {}) {
+  std::unique_ptr<EdgeIterator> iterator =
+      std::make_unique<IncidentEdgeIterator>(txn, origin_vertex_id, direction,
+                                             std::move(type_ids));
+  if (!edge_properties.empty()) {
+    iterator = std::make_unique<EdgePropertyFilterIterator>(
+        std::move(iterator), std::move(edge_properties));
+  }
+  if (other_vertex_id.has_value() || !other_vertex_labels.empty() ||
+      !other_vertex_properties.empty()) {
+    iterator = std::make_unique<EdgeOtherVertexFilterIterator>(
+        std::move(iterator), origin_vertex_id, other_vertex_id,
+        std::move(other_vertex_labels), std::move(other_vertex_properties));
+  }
+  return iterator;
+}
+
 }  // namespace
 
 std::unique_ptr<EdgeIterator> Vertex::NewEdgeIterator(
@@ -163,7 +188,7 @@ std::unique_ptr<EdgeIterator> Vertex::NewEdgeIterator(
     if (pid) {
       prop_map.emplace(pid.value(), val);
     } else {
-      return std::make_unique<NoEdgeFound>(txn_);
+      return std::make_unique<EmptyEdgeIterator>(txn_);
     }
   }
   std::unordered_set<uint32_t> type_set;
@@ -174,10 +199,10 @@ std::unique_ptr<EdgeIterator> Vertex::NewEdgeIterator(
     }
   }
   if (!types.empty() && type_set.empty()) {
-    return std::make_unique<NoEdgeFound>(txn_);
+    return std::make_unique<EmptyEdgeIterator>(txn_);
   }
-  return std::make_unique<ScanEdgeByVidDirectionTypesProperties>(
-      txn_, id_, direction, std::move(type_set), std::move(prop_map));
+  return ComposeIncidentEdgeIterator(txn_, id_, direction, std::move(type_set),
+                                     std::move(prop_map));
 }
 
 std::unique_ptr<EdgeIterator> Vertex::NewEdgeIterator(
@@ -192,7 +217,7 @@ std::unique_ptr<EdgeIterator> Vertex::NewEdgeIterator(
       if (pid) {
         prop_map.emplace(pid.value(), val);
       } else {
-        return std::make_unique<NoEdgeFound>(txn_);
+        return std::make_unique<EmptyEdgeIterator>(txn_);
       }
     }
   }
@@ -205,7 +230,7 @@ std::unique_ptr<EdgeIterator> Vertex::NewEdgeIterator(
       }
     }
     if (type_set.empty()) {
-      return std::make_unique<NoEdgeFound>(txn_);
+      return std::make_unique<EmptyEdgeIterator>(txn_);
     }
   }
   std::unordered_set<uint32_t> other_node_label_set;
@@ -217,7 +242,7 @@ std::unique_ptr<EdgeIterator> Vertex::NewEdgeIterator(
       }
     }
     if (other_node_label_set.empty()) {
-      return std::make_unique<NoEdgeFound>(txn_);
+      return std::make_unique<EmptyEdgeIterator>(txn_);
     }
   }
   std::unordered_map<uint32_t, rg::Value> other_node_prop_map;
@@ -227,13 +252,14 @@ std::unique_ptr<EdgeIterator> Vertex::NewEdgeIterator(
       if (pid) {
         other_node_prop_map.emplace(pid.value(), val);
       } else {
-        return std::make_unique<NoEdgeFound>(txn_);
+        return std::make_unique<EmptyEdgeIterator>(txn_);
       }
     }
   }
-  return std::make_unique<ScanEdgeByVidDirectionTypesPropertiesOtherNode>(
-      txn_, id_, direction, std::move(type_set), std::move(prop_map),
-      std::move(other_node_label_set), std::move(other_node_prop_map));
+  return ComposeIncidentEdgeIterator(txn_, id_, direction, std::move(type_set),
+                                     std::move(prop_map), std::nullopt,
+                                     std::move(other_node_label_set),
+                                     std::move(other_node_prop_map));
 }
 
 std::unique_ptr<EdgeIterator> Vertex::NewEdgeIterator(
@@ -247,7 +273,7 @@ std::unique_ptr<EdgeIterator> Vertex::NewEdgeIterator(
       if (pid) {
         prop_map.emplace(pid.value(), val);
       } else {
-        return std::make_unique<NoEdgeFound>(txn_);
+        return std::make_unique<EmptyEdgeIterator>(txn_);
       }
     }
   }
@@ -260,13 +286,12 @@ std::unique_ptr<EdgeIterator> Vertex::NewEdgeIterator(
       }
     }
     if (type_set.empty()) {
-      return std::make_unique<NoEdgeFound>(txn_);
+      return std::make_unique<EmptyEdgeIterator>(txn_);
     }
   }
 
-  return std::make_unique<ScanEdgeByVidDirectionTypesPropertiesOtherVid>(
-      txn_, id_, direction, std::move(type_set), std::move(prop_map),
-      other_node);
+  return ComposeIncidentEdgeIterator(txn_, id_, direction, std::move(type_set),
+                                     std::move(prop_map), other_node.GetId());
 }
 
 std::unique_ptr<EdgeIterator> Vertex::NewEdgeIterator(
@@ -278,7 +303,7 @@ std::unique_ptr<EdgeIterator> Vertex::NewEdgeIterator(
   }
   auto tid = txn_->db()->id_generator().GetTid(type);
   if (!tid) {
-    return std::make_unique<NoEdgeFound>(txn_);
+    return std::make_unique<EmptyEdgeIterator>(txn_);
   }
   std::unordered_map<uint32_t, rg::Value> prop_map;
   if (!props.empty()) {
@@ -287,12 +312,13 @@ std::unique_ptr<EdgeIterator> Vertex::NewEdgeIterator(
       if (pid) {
         prop_map.emplace(pid.value(), val);
       } else {
-        return std::make_unique<NoEdgeFound>(txn_);
+        return std::make_unique<EmptyEdgeIterator>(txn_);
       }
     }
   }
-  return std::make_unique<ScanEdgeByVidDirectionTypePropertiesOtherNode>(
-      txn_, id_, direction, tid.value(), prop_map, other_node);
+  return ComposeIncidentEdgeIterator(txn_, id_, direction,
+                                     std::unordered_set<uint32_t>{tid.value()},
+                                     std::move(prop_map), other_node.GetId());
 }
 
 std::unordered_set<uint32_t> Vertex::GetLabelIds() {

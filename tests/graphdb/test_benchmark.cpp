@@ -85,13 +85,13 @@ class BenchmarkLightningGraph {
     auto viter = txn->NewVertexIterator("Person",
                                         std::unordered_map<std::string, Value>{
                                             {"no", Value(std::move(no_from))}});
-    EXPECT_TRUE(dynamic_cast<GetVertexByUniqueIndex*>(viter.get()));
+    EXPECT_TRUE(dynamic_cast<VertexUniqueIndexIterator*>(viter.get()));
     EXPECT_TRUE(viter->Valid());
     auto vertex_from = viter->GetVertex();
     viter =
         txn->NewVertexIterator("Person", std::unordered_map<std::string, Value>{
                                              {"no", Value(std::move(no_to))}});
-    EXPECT_TRUE(dynamic_cast<GetVertexByUniqueIndex*>(viter.get()));
+    EXPECT_TRUE(dynamic_cast<VertexUniqueIndexIterator*>(viter.get()));
     EXPECT_TRUE(viter->Valid());
     auto vertex_to = viter->GetVertex();
     txn->CreateEdge(vertex_from, vertex_to, "Knows", {});
@@ -116,7 +116,7 @@ class BenchmarkLightningGraph {
     }
     for (size_t i = 0; i < depth; ++i) {
       for (auto vid : src_vertexs) {
-        auto eit = std::make_unique<graphdb::ScanEdgeByVidDirectionTypes>(
+        auto eit = std::make_unique<graphdb::IncidentEdgeIterator>(
             txn.get(), vid, graphdb::EdgeDirection::BOTH, type_set);
         while (eit->Valid()) {
           int64_t dst = eit->GetEdge().GetOtherEnd(vid).GetId();

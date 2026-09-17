@@ -622,6 +622,57 @@ TEST(GraphDB, edgeIterator) {
   txn->Commit();
 }
 
+TEST(GraphDB, composesEdgeIteratorFilters) {
+  fs::remove_all(testdb);
+  auto graph_db = GraphDB::Open(testdb, testutil::NewGraphDBOptions());
+  auto txn = graph_db->BeginTransaction();
+  auto origin = txn->CreateVertex({"Origin"}, {});
+  auto matching = txn->CreateVertex({"Person"}, {{"active", Value(true)}});
+  auto wrong_label = txn->CreateVertex({"Other"}, {{"active", Value(true)}});
+  auto wrong_property =
+      txn->CreateVertex({"Person"}, {{"active", Value(false)}});
+
+  auto expected =
+      txn->CreateEdge(origin, matching, "KNOWS", {{"rank", Value(1)}});
+  txn->CreateEdge(origin, wrong_label, "KNOWS", {{"rank", Value(1)}});
+  txn->CreateEdge(origin, wrong_property, "KNOWS", {{"rank", Value(1)}});
+  txn->CreateEdge(origin, matching, "LIKES", {{"rank", Value(1)}});
+  txn->CreateEdge(origin, matching, "KNOWS", {{"rank", Value(2)}});
+
+  auto property_filtered = origin.NewEdgeIterator(
+      EdgeDirection::OUTGOING, {"KNOWS"}, {{"rank", Value(1)}});
+  EXPECT_NE(dynamic_cast<EdgePropertyFilterIterator*>(property_filtered.get()),
+            nullptr);
+
+  auto other_vertex_filtered = origin.NewEdgeIterator(
+      EdgeDirection::OUTGOING, {"KNOWS"}, {{"rank", Value(1)}}, {"Person"},
+      {{"active", Value(true)}});
+  EXPECT_NE(
+      dynamic_cast<EdgeOtherVertexFilterIterator*>(other_vertex_filtered.get()),
+      nullptr);
+  ASSERT_TRUE(other_vertex_filtered->Valid());
+  EXPECT_EQ(other_vertex_filtered->GetEdge(), expected);
+  other_vertex_filtered->Next();
+  EXPECT_FALSE(other_vertex_filtered->Valid());
+
+  auto exact_other = origin.NewEdgeIterator(
+      EdgeDirection::OUTGOING, std::unordered_set<std::string>{"KNOWS"},
+      {{"rank", Value(1)}}, matching);
+  ASSERT_TRUE(exact_other->Valid());
+  EXPECT_EQ(exact_other->GetEdge(), expected);
+  exact_other->Next();
+  EXPECT_FALSE(exact_other->Valid());
+
+  auto exact_type_and_other = origin.NewEdgeIterator(
+      EdgeDirection::OUTGOING, "KNOWS", {{"rank", Value(1)}}, matching);
+  ASSERT_TRUE(exact_type_and_other->Valid());
+  EXPECT_EQ(exact_type_and_other->GetEdge(), expected);
+  exact_type_and_other->Next();
+  EXPECT_FALSE(exact_type_and_other->Valid());
+
+  txn->Commit();
+}
+
 TEST(GraphDB, scanEdgesByTypes) {
   fs::remove_all(testdb);
   auto graphDB = GraphDB::Open(testdb, testutil::NewGraphDBOptions());

@@ -280,22 +280,22 @@ Edge Transaction::GetEdgeById(uint32_t etid, int64_t eid) {
 }
 
 std::unique_ptr<VertexIterator> Transaction::NewVertexIterator() {
-  return std::make_unique<ScanAllVertex>(this);
+  return std::make_unique<VertexScanIterator>(this);
 }
 
 std::unique_ptr<VertexIterator> Transaction::NewVertexIterator(
     const std::string& label) {
   auto lid = db_->id_generator().GetLid(label);
   if (lid.has_value()) {
-    return std::make_unique<ScanVertexByLabel>(this, lid.value());
+    return std::make_unique<VertexLabelScanIterator>(this, lid.value());
   } else {
-    return std::make_unique<NoVertexFound>(this);
+    return std::make_unique<EmptyVertexIterator>(this);
   }
 }
 
 std::unique_ptr<EdgeIterator> Transaction::NewEdgeIterator() {
-  return std::make_unique<ScanEdgeByTypes>(this,
-                                           std::unordered_set<uint32_t>{});
+  return std::make_unique<EdgeTypeScanIterator>(this,
+                                                std::unordered_set<uint32_t>{});
 }
 
 std::unique_ptr<EdgeIterator> Transaction::NewEdgeIterator(
@@ -307,49 +307,53 @@ std::unique_ptr<EdgeIterator> Transaction::NewEdgeIterator(
     }
   }
   if (!types.empty() && type_ids.empty()) {
-    return std::make_unique<NoEdgeFound>(this);
+    return std::make_unique<EmptyEdgeIterator>(this);
   }
-  return std::make_unique<ScanEdgeByTypes>(this, std::move(type_ids));
+  return std::make_unique<EdgeTypeScanIterator>(this, std::move(type_ids));
 }
 
 std::string Transaction::GetVertexIteratorInfo(
     const std::optional<std::string>& label,
     const std::optional<std::unordered_set<std::string>>& props) {
-  if (!label && !props) {
-    return "ScanAllVertex";
-  } else if (label && !props) {
+  if (!label && (!props || props->empty())) {
+    return "VertexScanIterator";
+  } else if (label && (!props || props->empty())) {
     auto lid = db_->id_generator().GetLid(label.value());
     if (!lid.has_value()) {
-      return "NoVertexFound";
+      return "EmptyVertexIterator";
     } else {
-      return "ScanVertexByLabel";
+      return "VertexLabelScanIterator";
     }
   } else if (!label && props) {
     std::unordered_map<uint32_t, rg::Value> map;
     for (auto& name : props.value()) {
       auto pid = db_->id_generator().GetPid(name);
       if (!pid.has_value()) {
-        return "NoVertexFound";
+        return "EmptyVertexIterator";
       }
     }
-    return "ScanVertexByProperties";
+    return "VertexPropertyFilterIterator(VertexScanIterator)";
   } else {
     auto lid = db_->id_generator().GetLid(label.value());
     if (!lid.has_value()) {
-      return "NoVertexFound";
+      return "EmptyVertexIterator";
     }
     std::unordered_set<uint32_t> pids;
     for (auto& name : props.value()) {
       auto pid = db_->id_generator().GetPid(name);
       if (!pid.has_value()) {
-        return "NoVertexFound";
+        return "EmptyVertexIterator";
       }
       pids.insert(pid.value());
     }
-    if (db_->meta_info().GetBestVertexPropertyUniqueIndex(lid.value(), pids)) {
-      return "GetVertexByUniqueIndex";
+    if (auto index = db_->meta_info().GetBestVertexPropertyUniqueIndex(
+            lid.value(), pids)) {
+      if (index->PropertyCount() == pids.size()) {
+        return "VertexUniqueIndexIterator";
+      }
+      return "VertexPropertyFilterIterator(VertexUniqueIndexIterator)";
     }
-    return "ScanVertexByLabelProperties";
+    return "VertexPropertyFilterIterator(VertexLabelScanIterator)";
   }
 }
 
@@ -357,35 +361,41 @@ std::unique_ptr<VertexIterator> Transaction::NewVertexIterator(
     const std::optional<std::string>& label,
     const std::optional<std::unordered_map<std::string, rg::Value>>& props) {
   if (!label && !props) {
-    return std::make_unique<ScanAllVertex>(this);
+    return std::make_unique<VertexScanIterator>(this);
   } else if (label && !props) {
     auto lid = db_->id_generator().GetLid(label.value());
     if (!lid.has_value()) {
-      return std::make_unique<NoVertexFound>(this);
+      return std::make_unique<EmptyVertexIterator>(this);
     } else {
-      return std::make_unique<ScanVertexByLabel>(this, lid.value());
+      return std::make_unique<VertexLabelScanIterator>(this, lid.value());
     }
   } else if (!label && props) {
     std::unordered_map<uint32_t, rg::Value> map;
     for (auto& [name, val] : props.value()) {
       auto pid = db_->id_generator().GetPid(name);
       if (!pid.has_value()) {
-        return std::make_unique<NoVertexFound>(this);
+        return std::make_unique<EmptyVertexIterator>(this);
       } else {
         map.emplace(pid.value(), val);
       }
     }
-    return std::make_unique<ScanVertexByProperties>(this, std::move(map));
+    std::unique_ptr<VertexIterator> iterator =
+        std::make_unique<VertexScanIterator>(this);
+    if (!map.empty()) {
+      iterator = std::make_unique<VertexPropertyFilterIterator>(
+          std::move(iterator), std::move(map));
+    }
+    return iterator;
   } else {
     auto lid = db_->id_generator().GetLid(label.value());
     if (!lid.has_value()) {
-      return std::make_unique<NoVertexFound>(this);
+      return std::make_unique<EmptyVertexIterator>(this);
     }
     std::unordered_map<uint32_t, rg::Value> map;
     for (auto& [name, val] : props.value()) {
       auto pid = db_->id_generator().GetPid(name);
       if (!pid.has_value()) {
-        return std::make_unique<NoVertexFound>(this);
+        return std::make_unique<EmptyVertexIterator>(this);
       }
       map.emplace(pid.value(), val);
     }
@@ -396,8 +406,13 @@ std::unique_ptr<VertexIterator> Transaction::NewVertexIterator(
     auto unique_index =
         db_->meta_info().GetBestVertexPropertyUniqueIndex(lid.value(), pids);
     if (!unique_index) {
-      return std::make_unique<ScanVertexByLabelProperties>(this, lid.value(),
-                                                           std::move(map));
+      std::unique_ptr<VertexIterator> iterator =
+          std::make_unique<VertexLabelScanIterator>(this, lid.value());
+      if (!map.empty()) {
+        iterator = std::make_unique<VertexPropertyFilterIterator>(
+            std::move(iterator), std::move(map));
+      }
+      return iterator;
     }
     std::vector<rg::Value> indexed_values;
     indexed_values.reserve(unique_index->PropertyCount());
@@ -405,9 +420,14 @@ std::unique_ptr<VertexIterator> Transaction::NewVertexIterator(
       indexed_values.push_back(map.at(pid));
       map.erase(pid);
     }
-    return std::make_unique<GetVertexByUniqueIndex>(
-        this, std::move(unique_index), std::move(indexed_values),
-        std::move(map));
+    std::unique_ptr<VertexIterator> iterator =
+        std::make_unique<VertexUniqueIndexIterator>(
+            this, std::move(unique_index), std::move(indexed_values));
+    if (!map.empty()) {
+      iterator = std::make_unique<VertexPropertyFilterIterator>(
+          std::move(iterator), std::move(map));
+    }
+    return iterator;
   }
 }
 
@@ -565,8 +585,8 @@ void Transaction::Rollback() {
 
 std::unique_ptr<VertexScoreIterator> Transaction::QueryVertexByFTIndex(
     const std::string& index_name, const std::string& query, size_t top_n) {
-  return std::make_unique<GetVertexByFullTextIndex>(this, index_name, query,
-                                                    top_n);
+  return std::make_unique<VertexFullTextSearchIterator>(this, index_name, query,
+                                                        top_n);
 }
 
 std::unique_ptr<graphdb::VertexIterator>
@@ -575,8 +595,8 @@ Transaction::QueryVertexByPropertyIndex(const std::string& index_name,
   auto index = ResolveVertexPropertyIndexOrThrow(this, index_name);
   auto values = BuildPropertyIndexQueryValues(index, query, "query");
   auto key = index->IndexKey(values);
-  return std::make_unique<GetVertexByPropertyIndex>(this, std::move(index),
-                                                    std::move(key));
+  return std::make_unique<VertexIndexSeekIterator>(this, std::move(index),
+                                                   std::move(key));
 }
 
 std::unique_ptr<graphdb::VertexIterator>
@@ -590,7 +610,7 @@ Transaction::QueryVertexByPropertyIndex(const std::vector<std::string>& labels,
   auto lid = db_->id_generator().GetLid(labels.front());
   auto pid = db_->id_generator().GetPid(property_key);
   if (!lid.has_value() || !pid.has_value()) {
-    return std::make_unique<NoVertexFound>(this);
+    return std::make_unique<EmptyVertexIterator>(this);
   }
   auto index = db_->meta_info().GetReadyVertexPropertyIndex(*lid, *pid);
   if (!index) {
@@ -611,8 +631,8 @@ std::unique_ptr<graphdb::EdgeIterator> Transaction::QueryEdgeByPropertyIndex(
   auto index = ResolveEdgePropertyIndexOrThrow(this, index_name);
   auto values = BuildPropertyIndexQueryValues(index, query, "query");
   auto key = index->IndexKey(values);
-  return std::make_unique<GetEdgeByPropertyIndex>(this, std::move(index),
-                                                  std::move(key));
+  return std::make_unique<EdgeIndexSeekIterator>(this, std::move(index),
+                                                 std::move(key));
 }
 
 std::unique_ptr<graphdb::EdgeIterator> Transaction::QueryEdgeByPropertyIndex(
@@ -625,7 +645,7 @@ std::unique_ptr<graphdb::EdgeIterator> Transaction::QueryEdgeByPropertyIndex(
   auto tid = db_->id_generator().GetTid(types.front());
   auto pid = db_->id_generator().GetPid(property_key);
   if (!tid.has_value() || !pid.has_value()) {
-    return std::make_unique<NoEdgeFound>(this);
+    return std::make_unique<EmptyEdgeIterator>(this);
   }
   auto index = db_->meta_info().GetReadyEdgePropertyIndex(*tid, *pid);
   if (!index) {
@@ -649,9 +669,9 @@ std::unique_ptr<graphdb::EdgeIterator> Transaction::QueryEdgeByPropertyRange(
   auto upper_key = BuildPropertyIndexRangeKey(index, upper, "upper");
   if (IsEmptyPropertyIndexRange(lower_key, upper_key, left_closed,
                                 right_closed)) {
-    return std::make_unique<NoEdgeFound>(this);
+    return std::make_unique<EmptyEdgeIterator>(this);
   }
-  return std::make_unique<GetEdgeByPropertyRange>(
+  return std::make_unique<EdgeIndexRangeIterator>(
       this, std::move(index), std::move(lower_key), std::move(upper_key),
       left_closed, right_closed);
 }
@@ -668,7 +688,7 @@ std::unique_ptr<graphdb::EdgeIterator> Transaction::QueryEdgeByPropertyRange(
   auto tid = db_->id_generator().GetTid(types.front());
   auto pid = db_->id_generator().GetPid(property_key);
   if (!tid.has_value() || !pid.has_value()) {
-    return std::make_unique<NoEdgeFound>(this);
+    return std::make_unique<EmptyEdgeIterator>(this);
   }
   auto index = db_->meta_info().GetReadyEdgePropertyIndex(*tid, *pid);
   if (!index) {
@@ -694,9 +714,9 @@ Transaction::QueryVertexByPropertyRange(const std::string& index_name,
   auto upper_key = BuildPropertyIndexRangeKey(index, upper, "upper");
   if (IsEmptyPropertyIndexRange(lower_key, upper_key, left_closed,
                                 right_closed)) {
-    return std::make_unique<NoVertexFound>(this);
+    return std::make_unique<EmptyVertexIterator>(this);
   }
-  return std::make_unique<GetVertexByPropertyRange>(
+  return std::make_unique<VertexIndexRangeIterator>(
       this, std::move(index), std::move(lower_key), std::move(upper_key),
       left_closed, right_closed);
 }
@@ -714,7 +734,7 @@ Transaction::QueryVertexByPropertyRange(const std::vector<std::string>& labels,
   auto lid = db_->id_generator().GetLid(labels.front());
   auto pid = db_->id_generator().GetPid(property_key);
   if (!lid.has_value() || !pid.has_value()) {
-    return std::make_unique<NoVertexFound>(this);
+    return std::make_unique<EmptyVertexIterator>(this);
   }
   auto index = db_->meta_info().GetReadyVertexPropertyIndex(*lid, *pid);
   if (!index) {
@@ -735,8 +755,8 @@ std::unique_ptr<graphdb::VertexScoreIterator>
 Transaction::QueryVertexByKnnSearch(const std::string& index_name,
                                     const std::vector<float>& query, int top_k,
                                     int ef_search) {
-  return std::make_unique<GetVertexByKnnSearch>(this, index_name, query, top_k,
-                                                ef_search);
+  return std::make_unique<VertexKnnSearchIterator>(this, index_name, query,
+                                                   top_k, ef_search);
 }
 
 }  // namespace graphdb

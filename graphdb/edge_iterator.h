@@ -1,192 +1,150 @@
-//
-// Created by botu.wzy
-//
-
 #pragma once
+
 #include <rocksdb/utilities/transaction.h>
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <queue>
+#include <string>
+#include <unordered_map>
 #include <unordered_set>
 
 #include "edge_direction.h"
 #include "graph_entity.h"
-#include "iterator.h"
+#include "graph_iterator.h"
+
 namespace graphdb {
+
 struct EdgePropertyIndex;
-class EdgeIterator : public Iterator {
+
+class EdgeIterator : public GraphIterator {
  public:
-  explicit EdgeIterator(Transaction* txn) : Iterator(txn) {}
+  explicit EdgeIterator(Transaction* txn) : GraphIterator(txn) {}
   virtual Edge& GetEdge() = 0;
 };
 
-class NoEdgeFound : public EdgeIterator {
+class EmptyEdgeIterator final : public EdgeIterator {
  public:
-  explicit NoEdgeFound(Transaction* txn) : EdgeIterator(txn) {
-    valid_ = false;  // always false
-  }
+  explicit EmptyEdgeIterator(Transaction* txn) : EdgeIterator(txn) {}
   void Next() override {}
-  Edge& GetEdge() override {
-    assert(valid_);
-    return *ee_;
-  };
-
- private:
-  std::unique_ptr<Edge> ee_;
+  Edge& GetEdge() override;
 };
 
-class ScanEdgeByTypes : public EdgeIterator {
+class EdgeTypeScanIterator final : public EdgeIterator {
  public:
-  ScanEdgeByTypes(Transaction* txn, std::unordered_set<uint32_t> types);
+  EdgeTypeScanIterator(Transaction* txn, std::unordered_set<uint32_t> type_ids);
   void Next() override;
-  Edge& GetEdge() override {
-    assert(valid_);
-    return *ee_;
-  }
+  Edge& GetEdge() override;
 
  private:
-  void Load();
+  void LoadCurrent();
   void SeekToNextPrefix();
   void CheckIteratorStatus() const;
 
   bool scan_all_ = false;
-  std::unique_ptr<rocksdb::Iterator> iter_;
+  std::unique_ptr<rocksdb::Iterator> iterator_;
   std::queue<std::string> prefixes_;
   std::string prefix_;
-  std::unique_ptr<Edge> ee_;
+  std::unique_ptr<Edge> edge_;
 };
 
-class ScanEdgeByVidDirectionTypes : public EdgeIterator {
+class IncidentEdgeIterator final : public EdgeIterator {
  public:
-  ScanEdgeByVidDirectionTypes(Transaction* txn, int64_t vid,
-                              EdgeDirection direction,
-                              std::unordered_set<uint32_t> types);
+  IncidentEdgeIterator(Transaction* txn, int64_t vertex_id,
+                       EdgeDirection direction,
+                       std::unordered_set<uint32_t> type_ids);
   void Next() override;
-  Edge& GetEdge() override {
-    assert(valid_);
-    return *ee_;
-  };
+  Edge& GetEdge() override;
 
  private:
-  bool Load();
+  bool LoadCurrent();
   void SeekToNextPrefix();
-  int64_t vid_;
+
+  int64_t vertex_id_;
   EdgeDirection direction_;
-  std::unordered_set<uint32_t> types_;
-  std::unique_ptr<rocksdb::Iterator> iter_;
+  std::unordered_set<uint32_t> type_ids_;
+  std::unique_ptr<rocksdb::Iterator> iterator_;
   std::string prefix_;
   std::queue<std::string> prefixes_;
-  std::unique_ptr<Edge> ee_;
+  std::unique_ptr<Edge> edge_;
 };
 
-class ScanEdgeByVidDirectionTypesProperties : public EdgeIterator {
+class EdgePropertyFilterIterator final : public EdgeIterator {
  public:
-  ScanEdgeByVidDirectionTypesProperties(
-      Transaction* txn, int64_t vid, EdgeDirection direction,
-      std::unordered_set<uint32_t> types,
+  EdgePropertyFilterIterator(
+      std::unique_ptr<EdgeIterator> source,
       std::unordered_map<uint32_t, rg::Value> properties);
   void Next() override;
-  Edge& GetEdge() override { return iter_->GetEdge(); };
+  Edge& GetEdge() override;
 
  private:
-  bool MatchProperties();
-  std::unique_ptr<ScanEdgeByVidDirectionTypes> iter_;
+  void SeekToNextMatch();
+  bool Matches(Edge& edge) const;
+
+  std::unique_ptr<EdgeIterator> source_;
   std::unordered_map<uint32_t, rg::Value> properties_;
 };
 
-class ScanEdgeByVidDirectionTypesPropertiesOtherNode : public EdgeIterator {
+class EdgeOtherVertexFilterIterator final : public EdgeIterator {
  public:
-  ScanEdgeByVidDirectionTypesPropertiesOtherNode(
-      Transaction* txn, int64_t vid, EdgeDirection direction,
-      std::unordered_set<uint32_t> types,
-      std::unordered_map<uint32_t, rg::Value> properties,
-      std::unordered_set<uint32_t> other_node_labels,
-      std::unordered_map<uint32_t, rg::Value> other_node_properties);
+  EdgeOtherVertexFilterIterator(
+      std::unique_ptr<EdgeIterator> source, int64_t origin_vertex_id,
+      std::optional<int64_t> other_vertex_id,
+      std::unordered_set<uint32_t> other_vertex_labels,
+      std::unordered_map<uint32_t, rg::Value> other_vertex_properties);
   void Next() override;
-  Edge& GetEdge() override { return iter_->GetEdge(); };
+  Edge& GetEdge() override;
 
  private:
-  bool MatchOtherEnd(Vertex& other_end);
-  int64_t vid_;
-  std::unique_ptr<ScanEdgeByVidDirectionTypesProperties> iter_;
-  std::unordered_set<uint32_t> other_node_labels_;
-  std::unordered_map<uint32_t, rg::Value> other_node_properties_;
+  void SeekToNextMatch();
+  bool Matches(Edge& edge) const;
+
+  std::unique_ptr<EdgeIterator> source_;
+  int64_t origin_vertex_id_;
+  std::optional<int64_t> other_vertex_id_;
+  std::unordered_set<uint32_t> other_vertex_labels_;
+  std::unordered_map<uint32_t, rg::Value> other_vertex_properties_;
 };
 
-class ScanEdgeByVidDirectionTypesPropertiesOtherVid : public EdgeIterator {
+class EdgeIndexSeekIterator final : public EdgeIterator {
  public:
-  ScanEdgeByVidDirectionTypesPropertiesOtherVid(
-      Transaction* txn, int64_t vid, EdgeDirection direction,
-      std::unordered_set<uint32_t> types,
-      std::unordered_map<uint32_t, rg::Value> properties, const Vertex& other);
+  EdgeIndexSeekIterator(Transaction* txn,
+                        std::shared_ptr<EdgePropertyIndex> index,
+                        std::string prefix);
   void Next() override;
-  Edge& GetEdge() override { return iter_->GetEdge(); };
-
- private:
-  int64_t vid_;
-  std::unique_ptr<ScanEdgeByVidDirectionTypesProperties> iter_;
-  const Vertex& other_node_;
-};
-
-class ScanEdgeByVidDirectionTypePropertiesOtherNode : public EdgeIterator {
- public:
-  ScanEdgeByVidDirectionTypePropertiesOtherNode(
-      Transaction* txn, int64_t vid, EdgeDirection direction, uint32_t type,
-      std::unordered_map<uint32_t, rg::Value> properties,
-      const Vertex& other_node);
-  void Next() override;
-  Edge& GetEdge() override { return iter_->GetEdge(); };
-
- private:
-  bool MatchProperties();
-  int64_t vid_;
-  std::unordered_map<uint32_t, rg::Value> properties_;
-  const Vertex& other_node_;
-  std::unique_ptr<ScanEdgeByVidDirectionTypes> iter_;
-};
-
-class GetEdgeByPropertyIndex : public EdgeIterator {
- public:
-  GetEdgeByPropertyIndex(Transaction* txn,
-                         std::shared_ptr<EdgePropertyIndex> index,
-                         std::string prefix);
-  void Next() override;
-  Edge& GetEdge() override {
-    assert(valid_);
-    return *ee_;
-  }
+  Edge& GetEdge() override;
 
  private:
   void SeekToNextValid();
+
   std::shared_ptr<EdgePropertyIndex> index_;
   std::string prefix_;
-  std::unique_ptr<rocksdb::Iterator> iter_;
-  std::unique_ptr<Edge> ee_;
+  std::unique_ptr<rocksdb::Iterator> iterator_;
+  std::unique_ptr<Edge> edge_;
 };
 
-class GetEdgeByPropertyRange : public EdgeIterator {
+class EdgeIndexRangeIterator final : public EdgeIterator {
  public:
-  GetEdgeByPropertyRange(Transaction* txn,
+  EdgeIndexRangeIterator(Transaction* txn,
                          std::shared_ptr<EdgePropertyIndex> index,
                          std::optional<std::string> lower_key,
                          std::optional<std::string> upper_key, bool left_closed,
                          bool right_closed);
   void Next() override;
-  Edge& GetEdge() override {
-    assert(valid_);
-    return *ee_;
-  }
+  Edge& GetEdge() override;
 
  private:
   void SeekToNextValid();
+
   std::shared_ptr<EdgePropertyIndex> index_;
   std::string index_prefix_;
   std::optional<std::string> lower_key_;
   std::optional<std::string> upper_key_;
   bool left_closed_ = true;
   bool right_closed_ = true;
-  std::unique_ptr<rocksdb::Iterator> iter_;
-  std::unique_ptr<Edge> ee_;
+  std::unique_ptr<rocksdb::Iterator> iterator_;
+  std::unique_ptr<Edge> edge_;
 };
+
 }  // namespace graphdb

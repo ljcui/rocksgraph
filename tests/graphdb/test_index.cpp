@@ -209,27 +209,27 @@ TEST(VertexUniqueIndex, basic) {
   for (auto i = 0; i < 100; i++) {
     auto viter = txn->NewVertexIterator(
         "label1", std::unordered_map<std::string, Value>{{"id", Value(i)}});
-    EXPECT_TRUE(dynamic_cast<GetVertexByUniqueIndex*>(viter.get()));
+    EXPECT_TRUE(dynamic_cast<VertexUniqueIndexIterator*>(viter.get()));
     EXPECT_TRUE(viter->Valid());
     EXPECT_EQ(viter->GetVertex().GetProperty("str"), Value(std::to_string(i)));
   }
   for (auto i = 100; i < 110; i++) {
     auto viter = txn->NewVertexIterator(
         "label1", std::unordered_map<std::string, Value>{{"id", Value(i)}});
-    EXPECT_TRUE(dynamic_cast<GetVertexByUniqueIndex*>(viter.get()));
+    EXPECT_TRUE(dynamic_cast<VertexUniqueIndexIterator*>(viter.get()));
     EXPECT_FALSE(viter->Valid());
   }
   for (auto i = 0; i < 100; i++) {
     auto viter = txn->NewVertexIterator(
         "label2", std::unordered_map<std::string, Value>{{"id", Value(i)}});
-    EXPECT_TRUE(dynamic_cast<ScanVertexByLabelProperties*>(viter.get()));
+    EXPECT_TRUE(dynamic_cast<VertexPropertyFilterIterator*>(viter.get()));
     EXPECT_TRUE(viter->Valid());
   }
   for (auto i = 0; i < 100; i++) {
     auto viter = txn->NewVertexIterator("label1",
                                         std::unordered_map<std::string, Value>{
                                             {"str", Value(std::to_string(i))}});
-    EXPECT_TRUE(dynamic_cast<ScanVertexByLabelProperties*>(viter.get()));
+    EXPECT_TRUE(dynamic_cast<VertexPropertyFilterIterator*>(viter.get()));
     EXPECT_TRUE(viter->Valid());
   }
   txn->Commit();
@@ -256,13 +256,13 @@ TEST(VertexUniqueIndex, delete) {
   for (auto i = 0; i < 10; i++) {
     auto viter = txn->NewVertexIterator(
         "label1", std::unordered_map<std::string, Value>{{"id", Value(i)}});
-    EXPECT_TRUE(dynamic_cast<GetVertexByUniqueIndex*>(viter.get()));
+    EXPECT_TRUE(dynamic_cast<VertexUniqueIndexIterator*>(viter.get()));
     EXPECT_FALSE(viter->Valid());
   }
   for (auto i = 10; i < 100; i++) {
     auto viter = txn->NewVertexIterator(
         "label1", std::unordered_map<std::string, Value>{{"id", Value(i)}});
-    EXPECT_TRUE(dynamic_cast<GetVertexByUniqueIndex*>(viter.get()));
+    EXPECT_TRUE(dynamic_cast<VertexUniqueIndexIterator*>(viter.get()));
     EXPECT_TRUE(viter->Valid());
     EXPECT_EQ(viter->GetVertex().GetProperty("str"), Value(std::to_string(i)));
   }
@@ -294,7 +294,7 @@ TEST(VertexUniqueIndex, addLabelMaintainsIndex) {
   txn = graphDB->BeginTransaction();
   auto viter = txn->NewVertexIterator(
       "label1", std::unordered_map<std::string, Value>{{"id", Value(2)}});
-  EXPECT_TRUE(dynamic_cast<GetVertexByUniqueIndex*>(viter.get()));
+  EXPECT_TRUE(dynamic_cast<VertexUniqueIndexIterator*>(viter.get()));
   ASSERT_TRUE(viter->Valid());
   EXPECT_EQ(viter->GetVertex().GetId(), addable_id);
   EXPECT_EQ(viter->GetVertex().GetProperty("str"), Value("v2"));
@@ -308,7 +308,7 @@ TEST(VertexUniqueIndex, addLabelMaintainsIndex) {
   txn = graphDB->BeginTransaction();
   viter = txn->NewVertexIterator(
       "label1", std::unordered_map<std::string, Value>{{"id", Value(1)}});
-  EXPECT_TRUE(dynamic_cast<GetVertexByUniqueIndex*>(viter.get()));
+  EXPECT_TRUE(dynamic_cast<VertexUniqueIndexIterator*>(viter.get()));
   ASSERT_TRUE(viter->Valid());
   EXPECT_EQ(viter->GetVertex().GetId(), indexed_id);
   txn->Commit();
@@ -333,7 +333,7 @@ TEST(VertexUniqueIndex, deleteLabelMaintainsIndex) {
   txn = graphDB->BeginTransaction();
   auto viter = txn->NewVertexIterator(
       "label1", std::unordered_map<std::string, Value>{{"id", Value(1)}});
-  EXPECT_TRUE(dynamic_cast<GetVertexByUniqueIndex*>(viter.get()));
+  EXPECT_TRUE(dynamic_cast<VertexUniqueIndexIterator*>(viter.get()));
   EXPECT_FALSE(viter->Valid());
   txn->Commit();
 
@@ -346,7 +346,7 @@ TEST(VertexUniqueIndex, deleteLabelMaintainsIndex) {
   txn = graphDB->BeginTransaction();
   viter = txn->NewVertexIterator(
       "label1", std::unordered_map<std::string, Value>{{"id", Value(1)}});
-  EXPECT_TRUE(dynamic_cast<GetVertexByUniqueIndex*>(viter.get()));
+  EXPECT_TRUE(dynamic_cast<VertexUniqueIndexIterator*>(viter.get()));
   ASSERT_TRUE(viter->Valid());
   EXPECT_EQ(viter->GetVertex().GetId(), replacement_id);
   EXPECT_EQ(viter->GetVertex().GetProperty("str"), Value("replacement"));
@@ -375,13 +375,13 @@ TEST(VertexUniqueIndex, update) {
   for (auto i = 0; i < 100; i++) {
     auto viter = txn->NewVertexIterator(
         "label1", std::unordered_map<std::string, Value>{{"id", Value(i)}});
-    EXPECT_TRUE(dynamic_cast<GetVertexByUniqueIndex*>(viter.get()));
+    EXPECT_TRUE(dynamic_cast<VertexUniqueIndexIterator*>(viter.get()));
     EXPECT_FALSE(viter->Valid());
   }
   for (auto i = 100; i < 200; i++) {
     auto viter = txn->NewVertexIterator(
         "label1", std::unordered_map<std::string, Value>{{"id", Value(i)}});
-    EXPECT_TRUE(dynamic_cast<GetVertexByUniqueIndex*>(viter.get()));
+    EXPECT_TRUE(dynamic_cast<VertexUniqueIndexIterator*>(viter.get()));
     EXPECT_TRUE(viter->Valid());
     EXPECT_EQ(viter->GetVertex().GetProperty("str"), Value(std::to_string(i)));
   }
@@ -394,14 +394,14 @@ TEST(VertexUniqueIndex, update) {
   for (auto i = 100; i < 200; i++) {
     auto viter = txn->NewVertexIterator(
         "label1", std::unordered_map<std::string, Value>{{"id", Value(i)}});
-    EXPECT_TRUE(dynamic_cast<GetVertexByUniqueIndex*>(viter.get()));
+    EXPECT_TRUE(dynamic_cast<VertexUniqueIndexIterator*>(viter.get()));
     EXPECT_FALSE(viter->Valid());
   }
   for (auto i = 100; i < 200; i++) {
     auto viter =
         txn->NewVertexIterator("label1", std::unordered_map<std::string, Value>{
                                              {"id", Value(std::to_string(i))}});
-    EXPECT_TRUE(dynamic_cast<GetVertexByUniqueIndex*>(viter.get()));
+    EXPECT_TRUE(dynamic_cast<VertexUniqueIndexIterator*>(viter.get()));
     EXPECT_TRUE(viter->Valid());
   }
   txn->Commit();
@@ -429,7 +429,7 @@ TEST(VertexUniqueIndex, idempotentUpdate) {
   txn = graphDB->BeginTransaction();
   viter = txn->NewVertexIterator(
       "label1", std::unordered_map<std::string, Value>{{"id", Value(1)}});
-  EXPECT_TRUE(dynamic_cast<GetVertexByUniqueIndex*>(viter.get()));
+  EXPECT_TRUE(dynamic_cast<VertexUniqueIndexIterator*>(viter.get()));
   ASSERT_TRUE(viter->Valid());
   EXPECT_EQ(viter->GetVertex().GetId(), vid);
   EXPECT_EQ(viter->GetVertex().GetProperty("str"), Value("after"));
@@ -489,7 +489,7 @@ TEST(VertexUniqueIndex, reopen) {
   for (auto i = 0; i < 100; i++) {
     auto viter = txn->NewVertexIterator(
         "label1", std::unordered_map<std::string, Value>{{"id", Value(i)}});
-    EXPECT_TRUE(dynamic_cast<GetVertexByUniqueIndex*>(viter.get()));
+    EXPECT_TRUE(dynamic_cast<VertexUniqueIndexIterator*>(viter.get()));
     EXPECT_TRUE(viter->Valid());
     EXPECT_EQ(viter->GetVertex().GetProperty("str"), Value(std::to_string(i)));
   }
@@ -734,24 +734,24 @@ TEST(VertexPropertyIndex, nonUniqueQueryAndRange) {
 
   txn = graphDB->BeginTransaction();
   auto viter = txn->QueryVertexByPropertyIndex("person_id", Value(2));
-  EXPECT_TRUE(dynamic_cast<GetVertexByPropertyIndex*>(viter.get()));
+  EXPECT_TRUE(dynamic_cast<VertexIndexSeekIterator*>(viter.get()));
   EXPECT_EQ(CollectVertexIds(std::move(viter)),
             (std::vector<int64_t>{bob_id, cindy_id}));
 
   viter = txn->QueryVertexByPropertyRange("person_id", Value(2), Value(3), true,
                                           true);
-  EXPECT_TRUE(dynamic_cast<GetVertexByPropertyRange*>(viter.get()));
+  EXPECT_TRUE(dynamic_cast<VertexIndexRangeIterator*>(viter.get()));
   EXPECT_EQ(CollectVertexIds(std::move(viter)),
             (std::vector<int64_t>{bob_id, cindy_id, david_id}));
 
   viter = txn->QueryVertexByPropertyRange("person_id", Value(2), Value(3),
                                           false, false);
-  EXPECT_TRUE(dynamic_cast<GetVertexByPropertyRange*>(viter.get()));
+  EXPECT_TRUE(dynamic_cast<VertexIndexRangeIterator*>(viter.get()));
   EXPECT_TRUE(CollectVertexIds(std::move(viter)).empty());
 
   viter = txn->QueryVertexByPropertyRange("person_id", Value(4), Value(2), true,
                                           true);
-  EXPECT_TRUE(dynamic_cast<NoVertexFound*>(viter.get()));
+  EXPECT_TRUE(dynamic_cast<EmptyVertexIterator*>(viter.get()));
   EXPECT_TRUE(CollectVertexIds(std::move(viter)).empty());
   txn->Commit();
 
@@ -796,17 +796,37 @@ TEST(VertexUniqueIndex, compositeLookupAndConflict) {
   txn = graphDB->BeginTransaction();
   EXPECT_EQ(txn->GetVertexIteratorInfo(
                 "label1", std::unordered_set<std::string>{"id", "country"}),
-            "GetVertexByUniqueIndex");
+            "VertexUniqueIndexIterator");
+  EXPECT_EQ(
+      txn->GetVertexIteratorInfo(
+          "label1", std::unordered_set<std::string>{"id", "country", "str"}),
+      "VertexPropertyFilterIterator(VertexUniqueIndexIterator)");
   EXPECT_EQ(txn->GetVertexIteratorInfo("label1",
                                        std::unordered_set<std::string>{"id"}),
-            "ScanVertexByLabelProperties");
+            "VertexPropertyFilterIterator(VertexLabelScanIterator)");
   auto viter = txn->NewVertexIterator(
       "label1", std::unordered_map<std::string, Value>{
                     {"id", Value(1)}, {"country", Value("cn")}});
-  EXPECT_TRUE(dynamic_cast<GetVertexByUniqueIndex*>(viter.get()));
+  EXPECT_TRUE(dynamic_cast<VertexUniqueIndexIterator*>(viter.get()));
   ASSERT_TRUE(viter->Valid());
   EXPECT_EQ(viter->GetVertex().GetId(), alpha_id);
   EXPECT_EQ(viter->GetVertex().GetProperty("str"), Value("alpha"));
+
+  viter = txn->NewVertexIterator(
+      "label1",
+      std::unordered_map<std::string, Value>{
+          {"id", Value(1)}, {"country", Value("cn")}, {"str", Value("alpha")}});
+  EXPECT_NE(dynamic_cast<VertexPropertyFilterIterator*>(viter.get()), nullptr);
+  ASSERT_TRUE(viter->Valid());
+  EXPECT_EQ(viter->GetVertex().GetId(), alpha_id);
+
+  viter = txn->NewVertexIterator(
+      "label1",
+      std::unordered_map<std::string, Value>{{"id", Value(1)},
+                                             {"country", Value("cn")},
+                                             {"str", Value("not-alpha")}});
+  EXPECT_NE(dynamic_cast<VertexPropertyFilterIterator*>(viter.get()), nullptr);
+  EXPECT_FALSE(viter->Valid());
   txn->Commit();
 
   txn = graphDB->BeginTransaction();
@@ -830,7 +850,7 @@ TEST(VertexUniqueIndex, compositeLookupAndConflict) {
   viter = txn->NewVertexIterator(
       "label1", std::unordered_map<std::string, Value>{
                     {"id", Value(2)}, {"country", Value("cn")}});
-  EXPECT_TRUE(dynamic_cast<GetVertexByUniqueIndex*>(viter.get()));
+  EXPECT_TRUE(dynamic_cast<VertexUniqueIndexIterator*>(viter.get()));
   ASSERT_TRUE(viter->Valid());
   EXPECT_EQ(viter->GetVertex().GetId(), beta_id);
   EXPECT_EQ(viter->GetVertex().GetProperty("str"), Value("beta"));
