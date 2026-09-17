@@ -48,6 +48,11 @@ add_library(
   edge_index_updater.cpp
   edge_iterator.cpp
   graph_db.cpp
+  graph_db_index_build.cpp
+  graph_db_internal.cpp
+  graph_db_property_index.cpp
+  graph_db_raft.cpp
+  graph_db_search_index.cpp
   graph_entity.cpp
   hnsw_index.cpp
   id_generator.cpp
