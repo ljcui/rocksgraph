@@ -14,6 +14,8 @@ add_library(
   slotted_executor_support.cc
   slotted_executor_unary.cc
   slotted_row.cc)
+add_library(RocksGraph::runtime ALIAS rocksgraph_runtime)
 
 target_include_directories(rocksgraph_runtime PUBLIC ${PROJECT_SOURCE_DIR})
-target_link_libraries(rocksgraph_runtime PUBLIC graphdb rocksgraph_planner)
+target_link_libraries(rocksgraph_runtime PUBLIC RocksGraph::graphdb
+                                                RocksGraph::planner)

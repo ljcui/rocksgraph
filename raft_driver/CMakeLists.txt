@@ -2,10 +2,13 @@ find_package(Boost REQUIRED)
 find_package(RocksDB REQUIRED)
 find_package(Threads REQUIRED)
 
-add_library(raft_driver STATIC logger.cpp raft_driver.cpp raft_log_store.cpp)
+add_library(rocksgraph_raft_driver STATIC logger.cpp raft_driver.cpp
+                                          raft_log_store.cpp)
+add_library(RocksGraph::raft_driver ALIAS rocksgraph_raft_driver)
 
-target_compile_features(raft_driver PUBLIC cxx_std_20)
-target_include_directories(raft_driver PUBLIC ${PROJECT_SOURCE_DIR})
+target_compile_features(rocksgraph_raft_driver PUBLIC cxx_std_20)
+target_include_directories(rocksgraph_raft_driver PUBLIC ${PROJECT_SOURCE_DIR})
 target_link_libraries(
-  raft_driver PUBLIC Boost::headers RocksDB::rocksdb Threads::Threads common
-                     etcd_raft proto)
+  rocksgraph_raft_driver
+  PUBLIC Boost::headers RocksDB::rocksdb Threads::Threads RocksGraph::common
+         RocksGraph::etcd_raft RocksGraph::proto)

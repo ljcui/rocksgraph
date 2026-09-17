@@ -9,7 +9,8 @@ add_library(
   query_ir_model.cc
   query_ir_printer.cc
   query_ir_util.cc)
+add_library(RocksGraph::ir ALIAS rocksgraph_ir)
 
 target_include_directories(rocksgraph_ir PUBLIC ${PROJECT_SOURCE_DIR})
-target_link_libraries(rocksgraph_ir PUBLIC rocksgraph_ast)
+target_link_libraries(rocksgraph_ir PUBLIC RocksGraph::ast)
 set_target_properties(rocksgraph_ir PROPERTIES BUILD_RPATH "/usr/local/lib")

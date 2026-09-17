@@ -2,9 +2,12 @@ find_package(Boost REQUIRED)
 find_package(Threads REQUIRED)
 find_package(nlohmann_json REQUIRED)
 
-add_library(bolt STATIC bolt_server.cpp connection.cpp hydrator.cpp pack.cpp)
+add_library(rocksgraph_bolt STATIC bolt_server.cpp connection.cpp hydrator.cpp
+                                   pack.cpp)
+add_library(RocksGraph::bolt ALIAS rocksgraph_bolt)
 
-target_compile_features(bolt PUBLIC cxx_std_20)
-target_include_directories(bolt PUBLIC ${PROJECT_SOURCE_DIR})
-target_link_libraries(bolt PUBLIC Boost::headers Threads::Threads common
-                                  nlohmann_json::nlohmann_json rocksgraph_value)
+target_compile_features(rocksgraph_bolt PUBLIC cxx_std_20)
+target_include_directories(rocksgraph_bolt PUBLIC ${PROJECT_SOURCE_DIR})
+target_link_libraries(
+  rocksgraph_bolt PUBLIC Boost::headers Threads::Threads RocksGraph::common
+                         nlohmann_json::nlohmann_json RocksGraph::value)

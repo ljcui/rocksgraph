@@ -38,6 +38,7 @@ add_library(
   rewriters/subquery_projection_dependency_rewriter.cc
   rewriters/uniqueness_predicates_rewriter.cc
   ${ROCKSGRAPH_AST_GENERATED_SOURCES})
+add_library(RocksGraph::ast ALIAS rocksgraph_ast)
 
 target_include_directories(rocksgraph_ast PUBLIC ${PROJECT_SOURCE_DIR})
 target_link_libraries(rocksgraph_ast PUBLIC ANTLR4Runtime::antlr4_runtime)

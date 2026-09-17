@@ -6,9 +6,9 @@ find_package(Threads REQUIRED)
 
 find_path(FAISS_INCLUDE_DIR faiss/Index.h REQUIRED)
 find_library(FAISS_LIBRARY NAMES faiss REQUIRED)
-add_library(graphdb_faiss STATIC IMPORTED)
+add_library(rocksgraph_graphdb_faiss STATIC IMPORTED)
 set_target_properties(
-  graphdb_faiss
+  rocksgraph_graphdb_faiss
   PROPERTIES IMPORTED_LOCATION "${FAISS_LIBRARY}"
              INTERFACE_INCLUDE_DIRECTORIES "${FAISS_INCLUDE_DIR}"
              INTERFACE_LINK_LIBRARIES "BLAS::BLAS;OpenMP::OpenMP_CXX")
@@ -34,16 +34,16 @@ add_custom_command(
   DEPENDS ${FTINDEX_SOURCES}
   COMMENT "Building the full-text index library"
   VERBATIM)
-add_custom_target(graphdb_ftindex_build DEPENDS "${FTINDEX_LIBRARY}")
-add_library(graphdb_ftindex STATIC IMPORTED)
+add_custom_target(rocksgraph_graphdb_ftindex_build DEPENDS "${FTINDEX_LIBRARY}")
+add_library(rocksgraph_graphdb_ftindex STATIC IMPORTED)
 set_target_properties(
-  graphdb_ftindex
+  rocksgraph_graphdb_ftindex
   PROPERTIES IMPORTED_LOCATION "${FTINDEX_LIBRARY}"
              INTERFACE_LINK_LIBRARIES "Threads::Threads;${CMAKE_DL_LIBS};m")
-add_dependencies(graphdb_ftindex graphdb_ftindex_build)
+add_dependencies(rocksgraph_graphdb_ftindex rocksgraph_graphdb_ftindex_build)
 
 add_library(
-  graphdb STATIC
+  rocksgraph_graphdb STATIC
   assistant_pool.cpp
   edge_index_updater.cpp
   edge_iterator.cpp
@@ -64,17 +64,18 @@ add_library(
   vector_store.cpp
   vertex_index_updater.cpp
   vertex_iterator.cpp)
+add_library(RocksGraph::graphdb ALIAS rocksgraph_graphdb)
 
-target_compile_features(graphdb PUBLIC cxx_std_20)
-target_include_directories(graphdb PUBLIC ${PROJECT_SOURCE_DIR})
+target_compile_features(rocksgraph_graphdb PUBLIC cxx_std_20)
+target_include_directories(rocksgraph_graphdb PUBLIC ${PROJECT_SOURCE_DIR})
 target_link_libraries(
-  graphdb
+  rocksgraph_graphdb
   PUBLIC Boost::headers
          RocksDB::rocksdb
          Threads::Threads
-         common
-         graphdb_faiss
-         graphdb_ftindex
-         proto
-         raft_driver
-         rocksgraph_value)
+         RocksGraph::common
+         rocksgraph_graphdb_faiss
+         rocksgraph_graphdb_ftindex
+         RocksGraph::proto
+         RocksGraph::raft_driver
+         RocksGraph::value)
