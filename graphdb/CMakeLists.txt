@@ -76,6 +76,7 @@ target_link_libraries(
          RocksGraph::common
          rocksgraph_graphdb_faiss
          rocksgraph_graphdb_ftindex
-         RocksGraph::proto
+         RocksGraph::graph_replication_proto
+         RocksGraph::graph_storage_proto
          RocksGraph::raft_driver
          RocksGraph::value)

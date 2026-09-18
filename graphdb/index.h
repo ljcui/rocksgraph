@@ -21,7 +21,7 @@
 #include "graphdb/graph_cf.h"
 #include "graphdb/id_generator.h"
 #include "graphdb/vector_store.h"
-#include "proto/meta.pb.h"
+#include "proto/graph_storage.pb.h"
 #include "value/value.h"
 
 namespace graphdb {

@@ -17,7 +17,7 @@
 #include <utility>
 #include <vector>
 
-#include "proto/meta.pb.h"
+#include "proto/graph_replication.pb.h"
 #include "raft_driver/raft_log_store.h"
 
 namespace raft {

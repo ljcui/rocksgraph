@@ -1,13 +1,25 @@
 syntax = "proto3";
 package meta;
 
-import "raft.proto";
-
 message VertexPropertyIndex {
     string name        = 1;
     bool is_unique     = 2;
     string label       = 3;
     uint32 label_id    = 4;
+    repeated string properties   = 5;
+    repeated uint32 property_ids = 6;
+    uint32 index_id    = 7;
+    IndexBuildState state = 8;
+    uint64 build_start_wal_id = 9;
+    uint64 applied_wal_id = 10;
+    string build_error = 11;
+}
+
+message EdgePropertyIndex {
+    string name        = 1;
+    bool is_unique     = 2;
+    string edge_type   = 3;
+    uint32 edge_type_id = 4;
     repeated string properties   = 5;
     repeated uint32 property_ids = 6;
     uint32 index_id    = 7;
@@ -106,13 +118,6 @@ message PropertyIndexUpdate {
     repeated bytes values   = 3;
 }
 
-enum WriteBatchKind {
-    UNKNOWN = 0;
-    GRAPH_WRITE = 1;
-    ID_GENERATOR = 2;
-    GRAPH_INDEX_DDL = 3;
-}
-
 message GraphIndexDdlRequest {
     enum Operation {
         CREATE_VERTEX_PROPERTY_INDEX = 0;
@@ -127,43 +132,4 @@ message GraphIndexDdlRequest {
     }
     Operation operation = 1;
     bytes payload = 2;
-}
-
-message RaftRequest {
-    uint64 id = 1;
-    WriteBatchKind wb_kind = 2;
-    bytes wb_data = 3;
-}
-
-message RaftMessage {
-    string graph = 1;
-    raftpb.Message message = 2;
-}
-
-message RaftNodeInfo {
-    uint64 node_id       = 1;
-    string ip            = 2;
-    int32 bolt_port      = 3;
-    int32 raft_poft      = 4;
-    bool is_leader       = 5;
-    bool is_learner      = 6;
-    string graph         = 7;
-}
-
-message RaftNodeInfos {
-    map<uint64, RaftNodeInfo> nodes = 1;
-}
-
-message EdgePropertyIndex {
-    string name        = 1;
-    bool is_unique     = 2;
-    string edge_type   = 3;
-    uint32 edge_type_id = 4;
-    repeated string properties   = 5;
-    repeated uint32 property_ids = 6;
-    uint32 index_id    = 7;
-    IndexBuildState state = 8;
-    uint64 build_start_wal_id = 9;
-    uint64 applied_wal_id = 10;
-    string build_error = 11;
 }

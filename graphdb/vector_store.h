@@ -10,7 +10,7 @@
 #include <vector>
 
 #include "graphdb/hnsw_index.h"
-#include "proto/meta.pb.h"
+#include "proto/graph_storage.pb.h"
 
 namespace rocksdb {
 class DB;

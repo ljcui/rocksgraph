@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-#include "proto/meta.pb.h"
+#include "proto/graph_storage.pb.h"
 
 namespace faiss {
 struct IndexHNSW;

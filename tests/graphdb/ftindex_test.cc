@@ -14,7 +14,7 @@
 #include "graphdb/ftindex/include/lib.rs.h"
 #include "graphdb/graph_db.h"
 #include "graphdb/transaction.h"
-#include "proto/meta.pb.h"
+#include "proto/graph_storage.pb.h"
 #include "test_util.h"
 #include "value/value.h"
 

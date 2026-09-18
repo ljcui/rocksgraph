@@ -16,7 +16,8 @@
 #include "graph_cf.h"
 #include "id_generator.h"
 #include "meta_info.h"
-#include "proto/meta.pb.h"
+#include "proto/graph_replication.pb.h"
+#include "proto/graph_storage.pb.h"
 #include "raft_driver/raft_driver.h"
 #include "value/value.h"
 

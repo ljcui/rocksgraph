@@ -1,0 +1,36 @@
+syntax = "proto3";
+package meta;
+
+import "raft.proto";
+
+enum WriteBatchKind {
+    UNKNOWN = 0;
+    GRAPH_WRITE = 1;
+    ID_GENERATOR = 2;
+    GRAPH_INDEX_DDL = 3;
+}
+
+message RaftRequest {
+    uint64 id = 1;
+    WriteBatchKind wb_kind = 2;
+    bytes wb_data = 3;
+}
+
+message RaftMessage {
+    string graph = 1;
+    raftpb.Message message = 2;
+}
+
+message RaftNodeInfo {
+    uint64 node_id       = 1;
+    string ip            = 2;
+    int32 bolt_port      = 3;
+    int32 raft_poft      = 4;
+    bool is_leader       = 5;
+    bool is_learner      = 6;
+    string graph         = 7;
+}
+
+message RaftNodeInfos {
+    map<uint64, RaftNodeInfo> nodes = 1;
+}

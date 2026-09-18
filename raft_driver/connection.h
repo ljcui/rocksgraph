@@ -7,7 +7,7 @@
 
 #include "common/logger.h"
 #include "etcd_raft/raftpb/raft.pb.h"
-#include "proto/meta.pb.h"
+#include "proto/graph_replication.pb.h"
 
 namespace raft {
 

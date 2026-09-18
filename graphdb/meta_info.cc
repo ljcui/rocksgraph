@@ -12,7 +12,7 @@
 #include "common/exception.h"
 #include "common/logger.h"
 #include "graphdb/vector_property.h"
-#include "proto/meta.pb.h"
+#include "proto/graph_storage.pb.h"
 using namespace boost::endian;
 using common::AsChars;
 using common::ReadValue;

@@ -12,7 +12,8 @@
 
 #include "common/exception.h"
 #include "graphdb/graph_db.h"
-#include "proto/meta.pb.h"
+#include "proto/graph_replication.pb.h"
+#include "proto/graph_storage.pb.h"
 #include "raft_driver/raft_driver.h"
 
 #define EXPECT_THROW_CODE(statement, error_code)                \
