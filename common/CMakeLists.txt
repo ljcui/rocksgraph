@@ -1,7 +1,7 @@
 find_package(gflags REQUIRED)
 find_package(spdlog REQUIRED)
 
-add_library(rocksgraph_common STATIC exception.cpp flags.cpp logger.cpp)
+add_library(rocksgraph_common STATIC exception.cc flags.cc logger.cc)
 add_library(RocksGraph::common ALIAS rocksgraph_common)
 
 target_compile_features(rocksgraph_common PUBLIC cxx_std_20)

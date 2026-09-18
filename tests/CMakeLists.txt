@@ -78,22 +78,22 @@ set_tests_properties(rg_cli_test PROPERTIES TIMEOUT 60)
 find_package(OpenMP REQUIRED)
 add_executable(
   graphdb_test
-  graphdb/graphdb_test_main.cpp
-  graphdb/benchmark_test.cpp
-  graphdb/concurrency_test.cpp
-  graphdb/ftindex_test.cpp
-  graphdb/graph_db_test.cpp
-  graphdb/index_test.cpp
-  graphdb/kv_engine_test.cpp
-  graphdb/transaction_test.cpp
-  graphdb/value_test.cpp
-  graphdb/vector_index_test.cpp)
+  graphdb/graphdb_test_main.cc
+  graphdb/benchmark_test.cc
+  graphdb/concurrency_test.cc
+  graphdb/ftindex_test.cc
+  graphdb/graph_db_test.cc
+  graphdb/index_test.cc
+  graphdb/kv_engine_test.cc
+  graphdb/transaction_test.cc
+  graphdb/value_test.cc
+  graphdb/vector_index_test.cc)
 target_link_libraries(graphdb_test PRIVATE GTest::gtest RocksGraph::graphdb
                                            OpenMP::OpenMP_CXX)
 set_target_properties(graphdb_test PROPERTIES BUILD_RPATH "/usr/local/lib")
 add_test(NAME graphdb_test COMMAND graphdb_test)
 
-rocksgraph_add_test(raft_cluster_test graphdb/raft_cluster_test.cpp
+rocksgraph_add_test(raft_cluster_test graphdb/raft_cluster_test.cc
                     RocksGraph::server)
 
 add_custom_target(

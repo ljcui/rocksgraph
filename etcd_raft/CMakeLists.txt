@@ -16,18 +16,18 @@ if(ROCKSGRAPH_BUILD_RAFT_TESTS)
   add_executable(
     raft_test
     test_main.cc
-    raftpb/confstate_test.cpp
-    tracker/inflights_test.cpp
-    tracker/progress_test.cpp
+    raftpb/confstate_test.cc
+    tracker/inflights_test.cc
+    tracker/progress_test.cc
     util_test.cc
     storage_test.cc
-    log_unstable_test.cpp
-    log_test.cpp
-    raft_test.cpp
-    rawnode_test.cpp
-    raft_snap_test.cpp
-    raft_flow_control_test.cpp
-    raft_paper_test.cpp)
+    log_unstable_test.cc
+    log_test.cc
+    raft_test.cc
+    rawnode_test.cc
+    raft_snap_test.cc
+    raft_flow_control_test.cc
+    raft_paper_test.cc)
   target_compile_definitions(raft_test PRIVATE RAFT_TEST=1 RAFT_LOG=1)
   target_link_libraries(raft_test PRIVATE GTest::gtest RocksGraph::etcd_raft
                                           Threads::Threads)

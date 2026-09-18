@@ -44,26 +44,26 @@ add_dependencies(rocksgraph_graphdb_ftindex rocksgraph_graphdb_ftindex_build)
 
 add_library(
   rocksgraph_graphdb STATIC
-  assistant_pool.cpp
-  edge_index_updater.cpp
-  edge_iterator.cpp
-  graph_db.cpp
-  graph_db_index_build.cpp
-  graph_db_internal.cpp
-  graph_db_property_index.cpp
-  graph_db_raft.cpp
-  graph_db_search_index.cpp
-  graph_entity.cpp
-  hnsw_index.cpp
-  id_generator.cpp
-  index.cpp
-  meta_info.cpp
-  transaction.cpp
-  value_codec.cpp
-  vector_property.cpp
-  vector_store.cpp
-  vertex_index_updater.cpp
-  vertex_iterator.cpp)
+  assistant_pool.cc
+  edge_index_updater.cc
+  edge_iterator.cc
+  graph_db.cc
+  graph_db_index_build.cc
+  graph_db_internal.cc
+  graph_db_property_index.cc
+  graph_db_raft.cc
+  graph_db_search_index.cc
+  graph_entity.cc
+  hnsw_index.cc
+  id_generator.cc
+  index.cc
+  meta_info.cc
+  transaction.cc
+  value_codec.cc
+  vector_property.cc
+  vector_store.cc
+  vertex_index_updater.cc
+  vertex_iterator.cc)
 add_library(RocksGraph::graphdb ALIAS rocksgraph_graphdb)
 
 target_compile_features(rocksgraph_graphdb PUBLIC cxx_std_20)

@@ -2,8 +2,8 @@ find_package(Boost REQUIRED)
 find_package(RocksDB REQUIRED)
 find_package(Threads REQUIRED)
 
-add_library(rocksgraph_raft_driver STATIC logger.cpp raft_driver.cpp
-                                          raft_log_store.cpp)
+add_library(rocksgraph_raft_driver STATIC logger.cc raft_driver.cc
+                                          raft_log_store.cc)
 add_library(RocksGraph::raft_driver ALIAS rocksgraph_raft_driver)
 
 target_compile_features(rocksgraph_raft_driver PUBLIC cxx_std_20)
