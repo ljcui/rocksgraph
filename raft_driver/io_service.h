@@ -1,74 +1,13 @@
 #pragma once
-#include <pthread.h>
-
 #include <boost/asio.hpp>
 #include <boost/lexical_cast.hpp>
-#include <iostream>
-#include <thread>
 #include <unordered_map>
 
-#include "common/exception.h"
+#include "common/io_service_pool.h"
 #include "common/logger.h"
 
 using boost::asio::ip::tcp;
 namespace raft {
-
-class IOServicePool : private boost::asio::noncopyable {
- public:
-  ~IOServicePool() { Stop(); }
-
-  explicit IOServicePool(std::size_t pool_size) : next_io_service_(0) {
-    RG_THROW_IF(pool_size == 0, common::InvalidArgumentError,
-                "io_service_pool size is 0");
-    for (std::size_t i = 0; i < pool_size; ++i) {
-      io_service_ptr io_service(new boost::asio::io_service(1));
-      work_ptr work(new boost::asio::io_service::work(*io_service));
-      io_services_.push_back(std::move(io_service));
-      works_.push_back(std::move(work));
-    }
-  }
-
-  void Run() {
-    for (std::size_t i = 0; i < io_services_.size(); ++i) {
-      boost::asio::io_service &service = *io_services_[i];
-      threads_.emplace_back([i, &service]() {
-        std::string name = "io-worker-" + std::to_string(i);
-        pthread_setname_np(pthread_self(), name.c_str());
-        service.run();
-      });
-    }
-  }
-
-  void Stop() {
-    if (stopped_) {
-      return;
-    }
-    for (std::size_t i = 0; i < io_services_.size(); ++i) {
-      io_services_[i]->stop();
-    }
-    for (auto &t : threads_) {
-      t.join();
-    }
-    stopped_ = true;
-  }
-
-  boost::asio::io_service &GetIOService() {
-    boost::asio::io_service &io_service = *io_services_[next_io_service_];
-    ++next_io_service_;
-    if (next_io_service_ == io_services_.size()) next_io_service_ = 0;
-    return io_service;
-  }
-
- private:
-  typedef std::unique_ptr<boost::asio::io_service> io_service_ptr;
-  typedef std::unique_ptr<boost::asio::io_service::work> work_ptr;
-
-  std::vector<io_service_ptr> io_services_;
-  std::vector<work_ptr> works_;
-  std::size_t next_io_service_;
-  std::vector<std::thread> threads_;
-  bool stopped_ = false;
-};
 
 inline void socket_set_options(tcp::socket &socket) {
   socket.set_option(boost::asio::ip::tcp::no_delay(true));
@@ -134,7 +73,7 @@ class IOService : private boost::asio::noncopyable {
   F handler_;
   std::unordered_map<int64_t, std::shared_ptr<T>> connections_;
   tcp::acceptor acceptor_;
-  IOServicePool io_service_pool_;
+  common::IOServicePool io_service_pool_;
   int next_conn_id_ = 0;
   boost::posix_time::seconds interval_;
   boost::asio::deadline_timer timer_;

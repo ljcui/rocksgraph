@@ -3,18 +3,14 @@
 #include <any>
 #include <cstdint>
 
-#include "bolt/io_service.h"
 #include "bolt/temporal.h"
 #include "bolt/to_string.h"
 #include "common/exception.h"
-#include "raft_driver/io_service.h"
+#include "common/io_service_pool.h"
 
-TEST(ExceptionBoundaryTest, BoltIoServicePoolRejectsZeroSize) {
-  EXPECT_THROW({ bolt::IOServicePool pool(0); }, common::InvalidArgumentError);
-}
-
-TEST(ExceptionBoundaryTest, RaftIoServicePoolRejectsZeroSize) {
-  EXPECT_THROW({ raft::IOServicePool pool(0); }, common::InvalidArgumentError);
+TEST(ExceptionBoundaryTest, IoServicePoolRejectsZeroSize) {
+  EXPECT_THROW(
+      { common::IOServicePool pool(0); }, common::InvalidArgumentError);
 }
 
 TEST(ExceptionBoundaryTest, BoltValuePrinterRejectsOutOfRangeDate) {

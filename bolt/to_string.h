@@ -8,6 +8,7 @@
 #include "bolt/graph.h"
 #include "bolt/record.h"
 #include "common/exception.h"
+#include "common/logger.h"
 #include "value/temporal.h"
 
 namespace bolt {
