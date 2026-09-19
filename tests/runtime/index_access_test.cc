@@ -24,7 +24,7 @@ std::vector<std::int64_t> VertexIds(
     std::unique_ptr<graphdb::VertexIterator> iterator) {
   std::vector<std::int64_t> ids;
   while (iterator->Valid()) {
-    ids.push_back(iterator->GetVertex().GetNativeId());
+    ids.push_back(iterator->GetVertex().GetId());
     iterator->Next();
   }
   std::sort(ids.begin(), ids.end());
@@ -35,7 +35,7 @@ std::vector<std::int64_t> EdgeIds(
     std::unique_ptr<graphdb::EdgeIterator> iterator) {
   std::vector<std::int64_t> ids;
   while (iterator->Valid()) {
-    ids.push_back(iterator->GetEdge().GetNativeId());
+    ids.push_back(iterator->GetEdge().GetId());
     iterator->Next();
   }
   std::sort(ids.begin(), ids.end());
@@ -53,7 +53,7 @@ std::vector<std::int64_t> VertexIdsByLabels(
         std::all_of(required_labels.begin(), required_labels.end(),
                     [&](const auto& label) { return labels.contains(label); });
     if (matches) {
-      ids.push_back(iterator->GetVertex().GetNativeId());
+      ids.push_back(iterator->GetVertex().GetId());
     }
     iterator->Next();
   }
@@ -96,9 +96,9 @@ TEST(IndexAccessTest, TransactionExposesOneReadWriteView) {
   auto node =
       transaction->CreateVertex({"Person"}, {{"name", rg::Value("Ada")}});
   EXPECT_EQ(node.GetProperty("name"), rg::Value("Ada"));
-  EXPECT_EQ(rg::GraphDBVertexById(*transaction, node.GetNativeId())
-                .GetProperty("name"),
-            rg::Value("Ada"));
+  EXPECT_EQ(
+      rg::GraphDBVertexById(*transaction, node.GetId()).GetProperty("name"),
+      rg::Value("Ada"));
 
   transaction->Rollback();
   auto verify = graph.BeginTransaction();
@@ -153,7 +153,7 @@ TEST(IndexAccessTest, MaintainsLabelsAndTypesAcrossMutationsAndRollback) {
   EXPECT_EQ(EdgeIds(transaction->NewEdgeIterator({"R"})),
             (std::vector<std::int64_t>{}));
   EXPECT_EQ(EdgeIds(transaction->NewEdgeIterator({"R", "S"})),
-            (std::vector<std::int64_t>{relationship_s.GetNativeId()}));
+            (std::vector<std::int64_t>{relationship_s.GetId()}));
   transaction->Rollback();
 
   auto verify = graph.BeginTransaction();
@@ -209,8 +209,8 @@ TEST(IndexAccessTest, MaintainsRangeIndexesAcrossWritesAndRollback) {
   auto vertex_c = transaction->CreateVertex({"N"}, {{"value", rg::Value(11)}});
   auto edge_s = transaction->CreateEdge(vertex_a, vertex_c, "R",
                                         {{"value", rg::Value(11)}});
-  EXPECT_EQ(nodes(), (std::vector<std::int64_t>{vertex_c.GetNativeId()}));
-  EXPECT_EQ(relationships(), (std::vector<std::int64_t>{edge_s.GetNativeId()}));
+  EXPECT_EQ(nodes(), (std::vector<std::int64_t>{vertex_c.GetId()}));
+  EXPECT_EQ(relationships(), (std::vector<std::int64_t>{edge_s.GetId()}));
   edge_s.Delete();
   vertex_c.Delete();
   EXPECT_TRUE(nodes().empty());
@@ -314,10 +314,8 @@ TEST(IndexAccessTest, DeletesNodeAndRelationships) {
   auto verify = graph.BeginTransaction();
   EXPECT_EQ(VertexIds(verify->NewVertexIterator()),
             (std::vector<std::int64_t>{b->id}));
-  EXPECT_THROW(
-      verify->GetEdgeById(relationship->type_id,
-                          boost::endian::native_to_big(relationship->id)),
-      common::RocksGraphException);
+  EXPECT_THROW(verify->GetEdgeById(relationship->type_id, relationship->id),
+               common::RocksGraphException);
   verify->Rollback();
 }
 

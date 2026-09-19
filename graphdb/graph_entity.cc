@@ -13,13 +13,11 @@
 #include "common/logger.h"
 #include "graph_db.h"
 #include "graphdb/edge_index_updater.h"
+#include "graphdb/id_codec.h"
 #include "graphdb/transaction.h"
 #include "graphdb/value_codec.h"
 #include "graphdb/vector_property.h"
 #include "graphdb/vertex_index_updater.h"
-using namespace boost::endian;
-using common::AsChars;
-using common::ReadValue;
 namespace graphdb {
 namespace {
 
@@ -27,13 +25,15 @@ constexpr char kEdgeLockKeyPrefix = static_cast<char>(0xFF);
 
 std::string BuildEdgeLockKey(int64_t eid) {
   std::string key(1, kEdgeLockKeyPrefix);
-  key.append(AsChars(eid), sizeof(eid));
+  AppendBigEndianId(key, eid);
   return key;
 }
 
 std::string VertexPropertyKey(int64_t vid, uint32_t pid) {
-  std::string key(AsChars(vid), sizeof(vid));
-  key.append(AsChars(pid), sizeof(pid));
+  std::string key;
+  key.reserve(sizeof(vid) + sizeof(pid));
+  AppendBigEndianId(key, vid);
+  AppendBigEndianId(key, pid);
   return key;
 }
 
@@ -63,7 +63,7 @@ VertexVectorProperties LoadVertexVectorProperties(
   for (auto pid : pids) {
     for (const auto &field :
          txn->db()->meta_info().GetVertexVectorFields(lids, pid)) {
-      uint32_t lid = native_to_big(field->label_id());
+      uint32_t lid = field->label_id();
       std::string key = VertexVectorPropertyKey(lid, pid, vid);
       std::string value;
       auto s = txn->dbtxn()->Get(
@@ -84,8 +84,8 @@ VertexVectorProperties LoadAllVertexVectorProperties(
   VertexVectorProperties props;
   rocksdb::ReadOptions ro;
   for (const auto &field : txn->db()->meta_info().GetVertexVectorFields(lids)) {
-    uint32_t lid = native_to_big(field->label_id());
-    uint32_t pid = native_to_big(field->property_id());
+    uint32_t lid = field->label_id();
+    uint32_t pid = field->property_id();
     std::string key = VertexVectorPropertyKey(lid, pid, vid);
     std::string value;
     auto s = txn->dbtxn()->Get(ro, txn->db()->graph_cf().vertex_vector_property,
@@ -325,11 +325,11 @@ std::unordered_set<uint32_t> Vertex::GetLabelIds() {
   rocksdb::ReadOptions ro;
   std::string val;
   auto s = txn_->dbtxn()->Get(ro, txn_->db()->graph_cf().graph_topology,
-                              rocksdb::Slice{AsChars(id_), sizeof(id_)}, &val);
+                              EncodeBigEndianId(id_), &val);
   if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
   std::unordered_set<uint32_t> ret;
   for (size_t i = 0; i < val.size(); i += sizeof(uint32_t)) {
-    ret.insert(ReadValue<uint32_t>(val.data() + i));
+    ret.insert(ReadBigEndianId<uint32_t>(val.data() + i));
   }
   return ret;
 }
@@ -337,7 +337,7 @@ std::unordered_set<uint32_t> Vertex::GetLabelIds() {
 void Vertex::Lock() {
   rocksdb::ReadOptions ro;
   auto s = txn_->dbtxn()->GetForUpdate(
-      ro, txn_->db()->graph_cf().graph_topology, GetIdView(),
+      ro, txn_->db()->graph_cf().graph_topology, EncodeBigEndianId(id_),
       static_cast<std::string *>(nullptr));
   if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
 }
@@ -348,7 +348,7 @@ int Vertex::Delete() {
   // lock vertex
   Lock();
   std::unique_ptr<rocksdb::Iterator> iter;
-  rocksdb::Slice prefix(AsChars(id_), sizeof(id_));
+  const std::string prefix = EncodeBigEndianId(id_);
   iter.reset(
       txn_->dbtxn()->GetIterator(ro, txn_->db()->graph_cf().graph_topology));
   for (iter->Seek(prefix); iter->Valid() && iter->key().starts_with(prefix);
@@ -358,7 +358,7 @@ int Vertex::Delete() {
     if (key.size() == sizeof(int64_t)) {
       std::unordered_set<uint32_t> labelIds;
       for (size_t i = 0; i < val.size(); i += sizeof(uint32_t)) {
-        labelIds.insert(ReadValue<uint32_t>(val.data() + i));
+        labelIds.insert(ReadBigEndianId<uint32_t>(val.data() + i));
       }
       std::unordered_set<uint32_t> pids;
       std::unordered_map<uint32_t, std::string> props;
@@ -374,7 +374,7 @@ int Vertex::Delete() {
            vp_iter->Valid() && vp_iter->key().starts_with(vp_prefix);
            vp_iter->Next()) {
         auto p_key = vp_iter->key().ToString();  // must copy
-        auto pid = ReadValue<uint32_t>(p_key.data() + sizeof(int64_t));
+        auto pid = ReadBigEndianId<uint32_t>(p_key.data() + sizeof(int64_t));
         pids.insert(pid);
         props.emplace(pid, vp_iter->value().ToString());
         prop_keys.push_back(std::move(p_key));
@@ -384,7 +384,7 @@ int Vertex::Delete() {
       // delete label vid
       for (auto labelId : labelIds) {
         std::string labelVid;
-        labelVid.append(AsChars(labelId), sizeof(labelId));
+        AppendBigEndianId(labelVid, labelId);
         labelVid.append(key.data(), key.size());
         auto s = txn_->dbtxn()->GetWriteBatch()->SingleDelete(
             txn_->db()->graph_cf().vertex_label_vid, labelVid);
@@ -412,15 +412,15 @@ int Vertex::Delete() {
     } else {
       assert(key.size() == 29);
       auto p = key.data();
-      int64_t vid1 = ReadValue<int64_t>(p);
+      int64_t vid1 = ReadBigEndianId<int64_t>(p);
       p += sizeof(int64_t);
       auto dir = static_cast<EdgeDirection>(*(p));
       p += sizeof(char);
-      uint32_t etid = ReadValue<uint32_t>(p);
+      uint32_t etid = ReadBigEndianId<uint32_t>(p);
       p += sizeof(uint32_t);
-      int64_t vid2 = ReadValue<int64_t>(p);
+      int64_t vid2 = ReadBigEndianId<int64_t>(p);
       p += sizeof(int64_t);
-      int64_t eid = ReadValue<int64_t>(p);
+      int64_t eid = ReadBigEndianId<int64_t>(p);
       {
         // lock edge
         auto edge_lock_key = BuildEdgeLockKey(eid);
@@ -431,28 +431,28 @@ int Vertex::Delete() {
       }
       // delete other edge key
       std::string other_edge_key;
-      other_edge_key.append(AsChars(vid2), sizeof(vid2));
+      AppendBigEndianId(other_edge_key, vid2);
       other_edge_key.append(1,
                             static_cast<char>(dir == EdgeDirection::OUTGOING
                                                   ? EdgeDirection::INCOMING
                                                   : EdgeDirection::OUTGOING));
-      other_edge_key.append(AsChars(etid), sizeof(etid));
-      other_edge_key.append(AsChars(vid1), sizeof(vid1));
-      other_edge_key.append(AsChars(eid), sizeof(eid));
+      AppendBigEndianId(other_edge_key, etid);
+      AppendBigEndianId(other_edge_key, vid1);
+      AppendBigEndianId(other_edge_key, eid);
       auto s = txn_->dbtxn()->GetWriteBatch()->SingleDelete(
           txn_->db()->graph_cf().graph_topology, other_edge_key);
       if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
       deleted_edge++;
       // delete type eid
       std::string typeEid;
-      typeEid.append(AsChars(etid), sizeof(etid));
-      typeEid.append(AsChars(eid), sizeof(eid));
+      AppendBigEndianId(typeEid, etid);
+      AppendBigEndianId(typeEid, eid);
       s = txn_->dbtxn()->GetWriteBatch()->SingleDelete(
           txn_->db()->graph_cf().edge_type_eid, typeEid);
       if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
       // delete edge properties
       std::unique_ptr<rocksdb::Iterator> ep_iter;
-      rocksdb::Slice ep_prefix(AsChars(eid), sizeof(eid));
+      const std::string ep_prefix = EncodeBigEndianId(eid);
       EdgeSerializedProperties old_edge_properties;
       ep_iter.reset(
           txn_->dbtxn()->GetIterator(ro, txn_->db()->graph_cf().edge_property));
@@ -462,8 +462,9 @@ int Vertex::Delete() {
         auto prop_key = ep_iter->key().ToString();  // must copy
         auto prop_slice = ep_iter->key();
         prop_slice.remove_prefix(sizeof(eid));
-        old_edge_properties.emplace(ReadValue<uint32_t>(prop_slice.data()),
-                                    ep_iter->value().ToString());
+        old_edge_properties.emplace(
+            ReadBigEndianId<uint32_t>(prop_slice.data()),
+            ep_iter->value().ToString());
         s = txn_->dbtxn()->GetWriteBatch()->Delete(
             txn_->db()->graph_cf().edge_property, prop_key);
         if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
@@ -516,7 +517,7 @@ void Vertex::AddLabels(const std::unordered_set<std::string> &labels) {
   auto updated_vector_fields =
       txn_->db()->meta_info().GetVertexVectorFields(updated_lids);
   for (const auto &field : updated_vector_fields) {
-    required_pids.insert(native_to_big(field->property_id()));
+    required_pids.insert(field->property_id());
   }
   std::vector<std::pair<std::string, std::string>> vector_writes;
   if (!required_pids.empty()) {
@@ -527,8 +528,8 @@ void Vertex::AddLabels(const std::unordered_set<std::string> &labels) {
     auto updated_vector_props =
         LoadVertexVectorProperties(txn_, id_, updated_lids, required_pids);
     for (const auto &field : updated_vector_fields) {
-      uint32_t lid = native_to_big(field->label_id());
-      uint32_t pid = native_to_big(field->property_id());
+      uint32_t lid = field->label_id();
+      uint32_t pid = field->property_id();
       auto prop_iter = props.find(pid);
       auto vector_iter = updated_vector_props.find(pid);
       if (vector_iter == updated_vector_props.end() &&
@@ -559,14 +560,15 @@ void Vertex::AddLabels(const std::unordered_set<std::string> &labels) {
   labelIds = std::move(updated_lids);
   std::string buffer;
   for (auto l : labelIds) {
-    buffer.append(AsChars(l), sizeof(l));
+    AppendBigEndianId(buffer, l);
   }
+  const std::string vertex_key = EncodeBigEndianId(id_);
   auto s = txn_->dbtxn()->GetWriteBatch()->Put(
-      txn_->db()->graph_cf().graph_topology, GetIdView(), buffer);
+      txn_->db()->graph_cf().graph_topology, vertex_key, buffer);
   if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
   for (auto &id : new_lids) {
-    std::string key(AsChars(id), sizeof(id));
-    key.append(GetIdView());
+    std::string key = EncodeBigEndianId(id);
+    key.append(vertex_key);
     s = txn_->dbtxn()->GetWriteBatch()->Put(
         txn_->db()->graph_cf().vertex_label_vid, key, {});
     if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
@@ -606,8 +608,8 @@ void Vertex::DeleteLabels(const std::unordered_set<std::string> &labels) {
   std::vector<std::string> removed_vector_keys;
   for (const auto &field :
        txn_->db()->meta_info().GetVertexVectorFields(remove_lids)) {
-    uint32_t lid = native_to_big(field->label_id());
-    uint32_t pid = native_to_big(field->property_id());
+    uint32_t lid = field->label_id();
+    uint32_t pid = field->property_id();
     removed_vector_keys.push_back(VertexVectorPropertyKey(lid, pid, id_));
   }
   std::unordered_set<uint32_t> touched_pids;
@@ -625,14 +627,15 @@ void Vertex::DeleteLabels(const std::unordered_set<std::string> &labels) {
   labelIds = std::move(remaining_lids);
   std::string buffer;
   for (auto l : labelIds) {
-    buffer.append(AsChars(l), sizeof(l));
+    AppendBigEndianId(buffer, l);
   }
+  const std::string vertex_key = EncodeBigEndianId(id_);
   auto s = txn_->dbtxn()->GetWriteBatch()->Put(
-      txn_->db()->graph_cf().graph_topology, GetIdView(), buffer);
+      txn_->db()->graph_cf().graph_topology, vertex_key, buffer);
   if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
   for (auto id : remove_lids) {
-    std::string key(AsChars(id), sizeof(id));
-    key.append(GetIdView());
+    std::string key = EncodeBigEndianId(id);
+    key.append(vertex_key);
     s = txn_->dbtxn()->GetWriteBatch()->SingleDelete(
         txn_->db()->graph_cf().vertex_label_vid, key);
     if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
@@ -665,8 +668,7 @@ rg::Value Vertex::GetProperty(uint32_t pid) {
   }
   rocksdb::ReadOptions ro;
   rocksdb::PinnableSlice pval;
-  std::string pkey(AsChars(id_), sizeof(id_));
-  pkey.append(AsChars(pid), sizeof(pid));
+  std::string pkey = VertexPropertyKey(id_, pid);
   auto s = txn_->dbtxn()->Get(ro, txn_->db()->graph_cf().vertex_property, pkey,
                               &pval);
   if (s.ok()) {
@@ -688,7 +690,7 @@ bool Vertex::TryGetVectorPropertyRaw(uint32_t pid, rocksdb::PinnableSlice *out,
   rocksdb::ReadOptions ro;
   for (const auto &field :
        txn_->db()->meta_info().GetVertexVectorFields(lids, pid)) {
-    uint32_t lid = native_to_big(field->label_id());
+    uint32_t lid = field->label_id();
     std::string key = VertexVectorPropertyKey(lid, pid, id_);
     auto s = txn_->dbtxn()->Get(
         ro, txn_->db()->graph_cf().vertex_vector_property, key, out);
@@ -709,14 +711,14 @@ bool Vertex::TryGetVectorPropertyRaw(uint32_t pid, rocksdb::PinnableSlice *out,
 }
 
 std::unordered_map<std::string, rg::Value> Vertex::GetAllProperty() {
-  std::string prefix(AsChars(id_), sizeof(id_));
+  std::string prefix = EncodeBigEndianId(id_);
   rocksdb::ReadOptions ro;
   std::unordered_map<std::string, rg::Value> ret;
   auto lids = GetLabelIds();
   std::unordered_set<uint32_t> vector_pids;
   for (const auto &field :
        txn_->db()->meta_info().GetVertexVectorFields(lids)) {
-    vector_pids.insert(native_to_big(field->property_id()));
+    vector_pids.insert(field->property_id());
   }
   std::unique_ptr<rocksdb::Iterator> p_iter;
   p_iter.reset(
@@ -726,7 +728,7 @@ std::unordered_map<std::string, rg::Value> Vertex::GetAllProperty() {
     auto key = p_iter->key();
     auto value = p_iter->value();
     key.remove_prefix(sizeof(int64_t));
-    uint32_t pid = ReadValue<uint32_t>(key.data());
+    uint32_t pid = ReadBigEndianId<uint32_t>(key.data());
     if (vector_pids.count(pid)) {
       continue;
     }
@@ -788,7 +790,7 @@ void Vertex::SetProperties(
     for (const auto &[pid, vector] : vector_properties) {
       for (const auto &field :
            txn_->db()->meta_info().GetVertexVectorFields(lids, pid)) {
-        uint32_t lid = native_to_big(field->label_id());
+        uint32_t lid = field->label_id();
         std::string key = VertexVectorPropertyKey(lid, pid, id_);
         auto s = txn_->dbtxn()->GetWriteBatch()->Put(
             txn_->db()->graph_cf().vertex_vector_property, key,
@@ -821,7 +823,7 @@ void Vertex::SetProperties(
   for (const auto &[pid, vector] : vector_properties) {
     for (const auto &field :
          txn_->db()->meta_info().GetVertexVectorFields(lids, pid)) {
-      uint32_t lid = native_to_big(field->label_id());
+      uint32_t lid = field->label_id();
       std::string key = VertexVectorPropertyKey(lid, pid, id_);
       auto s = txn_->dbtxn()->GetWriteBatch()->Put(
           txn_->db()->graph_cf().vertex_vector_property, key,
@@ -834,7 +836,7 @@ void Vertex::SetProperties(
 void Vertex::RemoveAllProperty() {
   Lock();
   auto lids = GetLabelIds();
-  std::string prefix(AsChars(id_), sizeof(id_));
+  std::string prefix = EncodeBigEndianId(id_);
   rocksdb::ReadOptions ro;
   std::unordered_set<uint32_t> pids;
   std::unordered_map<uint32_t, std::string> props;
@@ -850,7 +852,7 @@ void Vertex::RemoveAllProperty() {
     prop_keys.push_back(key.ToString());
     auto value = p_iter->value();
     key.remove_prefix(sizeof(int64_t));
-    uint32_t pid = ReadValue<uint32_t>(key.data());
+    uint32_t pid = ReadBigEndianId<uint32_t>(key.data());
     props.emplace(pid, value.ToString());
     pids.insert(pid);
   }
@@ -895,7 +897,7 @@ void Vertex::RemoveProperty(const std::string &name) {
     UpdateVertexIndexes(txn_, id_, lids, lids, props, empty_properties,
                         vector_props, empty_vector_properties, touched_pids);
     for (const auto &field : vector_fields) {
-      uint32_t lid = native_to_big(field->label_id());
+      uint32_t lid = field->label_id();
       std::string key = VertexVectorPropertyKey(lid, pid, id_);
       auto s = txn_->dbtxn()->GetWriteBatch()->Delete(
           txn_->db()->graph_cf().vertex_vector_property, key);
@@ -942,35 +944,35 @@ void Edge::Delete() {
   UpdateEdgeIndexes(txn_, id_, typeId_, old_properties, {});
   // delete out edge key
   std::string key;
-  key.append(AsChars(startId_), sizeof(startId_));
+  AppendBigEndianId(key, startId_);
   key.append(1, static_cast<char>(EdgeDirection::OUTGOING));
-  key.append(AsChars(typeId_), sizeof(typeId_));
-  key.append(AsChars(endId_), sizeof(endId_));
-  key.append(AsChars(id_), sizeof(id_));
+  AppendBigEndianId(key, typeId_);
+  AppendBigEndianId(key, endId_);
+  AppendBigEndianId(key, id_);
   auto s = txn_->dbtxn()->GetWriteBatch()->SingleDelete(
       txn_->db()->graph_cf().graph_topology, key);
   if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
   key.clear();
   // delete in edge key
-  key.append(AsChars(endId_), sizeof(endId_));
+  AppendBigEndianId(key, endId_);
   key.append(1, static_cast<char>(EdgeDirection::INCOMING));
-  key.append(AsChars(typeId_), sizeof(typeId_));
-  key.append(AsChars(startId_), sizeof(startId_));
-  key.append(AsChars(id_), sizeof(id_));
+  AppendBigEndianId(key, typeId_);
+  AppendBigEndianId(key, startId_);
+  AppendBigEndianId(key, id_);
   s = txn_->dbtxn()->GetWriteBatch()->SingleDelete(
       txn_->db()->graph_cf().graph_topology, key);
   if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
   // delete type eid
   key.clear();
-  key.append(AsChars(typeId_), sizeof(typeId_));
-  key.append(AsChars(id_), sizeof(id_));
+  AppendBigEndianId(key, typeId_);
+  AppendBigEndianId(key, id_);
   s = txn_->dbtxn()->GetWriteBatch()->SingleDelete(
       txn_->db()->graph_cf().edge_type_eid, key);
   if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
   // delete edge properties
   std::unique_ptr<rocksdb::Iterator> ep_iter;
   rocksdb::ReadOptions ro;
-  rocksdb::Slice ep_prefix(AsChars(id_), sizeof(id_));
+  const std::string ep_prefix = EncodeBigEndianId(id_);
   ep_iter.reset(
       txn_->dbtxn()->GetIterator(ro, txn_->db()->graph_cf().edge_property));
   for (ep_iter->Seek(ep_prefix);
@@ -994,8 +996,7 @@ rg::Value Edge::GetProperty(uint32_t pid) {
   (void)txn_->GetEdgeById(typeId_, id_);
   rocksdb::ReadOptions ro;
   rocksdb::PinnableSlice pinnable_val;
-  std::string pkey(AsChars(id_), sizeof(id_));
-  pkey.append(AsChars(pid), sizeof(pid));
+  std::string pkey = VertexPropertyKey(id_, pid);
   auto s = txn_->dbtxn()->Get(ro, txn_->db()->graph_cf().edge_property, pkey,
                               &pinnable_val);
   if (s.ok()) {
@@ -1011,9 +1012,9 @@ Vertex Edge::GetOtherEnd(int64_t vid) const {
     return GetEnd();
   } else {
     if (vid != endId_) {
-      RG_THROW_CODE(
-          UnknownError, "GetOtherEnd error, startId:{}, endId:{}, vid:{}",
-          big_to_native(startId_), big_to_native(endId_), big_to_native(vid));
+      RG_THROW_CODE(UnknownError,
+                    "GetOtherEnd error, startId:{}, endId:{}, vid:{}", startId_,
+                    endId_, vid);
     }
     return GetStart();
   }
@@ -1028,7 +1029,7 @@ rg::Value Edge::GetProperty(const std::string &name) {
 }
 
 std::unordered_map<std::string, rg::Value> Edge::GetAllProperty() {
-  std::string prefix(AsChars(id_), sizeof(id_));
+  std::string prefix = EncodeBigEndianId(id_);
   rocksdb::ReadOptions ro;
   std::unordered_map<std::string, rg::Value> ret;
   std::unique_ptr<rocksdb::Iterator> p_iter;
@@ -1039,7 +1040,7 @@ std::unordered_map<std::string, rg::Value> Edge::GetAllProperty() {
     auto key = p_iter->key();
     auto value = p_iter->value();
     key.remove_prefix(sizeof(int64_t));
-    uint32_t pid = ReadValue<uint32_t>(key.data());
+    uint32_t pid = ReadBigEndianId<uint32_t>(key.data());
     auto optional = txn_->db()->id_generator().GetPropertyName(pid);
     if (optional.has_value()) {
       rg::Value v = DeserializeValue({value.data(), value.size()});
@@ -1059,8 +1060,7 @@ void Edge::SetProperties(
   auto new_properties = old_properties;
   for (auto &[name, value] : properties) {
     auto pid = txn_->db()->id_generator().GetOrCreatePid(name);
-    std::string pkey(AsChars(id_), sizeof(id_));
-    pkey.append(AsChars(pid), sizeof(pid));
+    std::string pkey = VertexPropertyKey(id_, pid);
     auto serialized_value = SerializeValue(value);
     auto s = txn_->dbtxn()->GetWriteBatch()->Put(
         txn_->db()->graph_cf().edge_property, pkey, serialized_value);
@@ -1079,8 +1079,7 @@ void Edge::RemoveProperty(const std::string &name) {
   auto old_properties = LoadEdgeSerializedProperties(txn_, id_);
   auto new_properties = old_properties;
   auto pid = optional.value();
-  std::string pkey(AsChars(id_), sizeof(id_));
-  pkey.append(AsChars(pid), sizeof(pid));
+  std::string pkey = VertexPropertyKey(id_, pid);
   auto s = txn_->dbtxn()->GetWriteBatch()->Delete(
       txn_->db()->graph_cf().edge_property, pkey);
   if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
@@ -1092,7 +1091,7 @@ void Edge::RemoveAllProperty() {
   Lock();
   auto old_properties = LoadEdgeSerializedProperties(txn_, id_);
   std::vector<std::string> prop_keys;
-  std::string prefix(AsChars(id_), sizeof(id_));
+  std::string prefix = EncodeBigEndianId(id_);
   rocksdb::ReadOptions ro;
   std::unique_ptr<rocksdb::Iterator> p_iter;
   p_iter.reset(

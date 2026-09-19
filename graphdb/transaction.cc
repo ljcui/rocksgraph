@@ -7,7 +7,6 @@
 #include <rocksdb/utilities/write_batch_with_index.h>
 
 #include <algorithm>
-#include <boost/endian/conversion.hpp>
 #include <cstring>
 
 #include "common/byte_utils.h"
@@ -15,13 +14,12 @@
 #include "common/logger.h"
 #include "graphdb/edge_index_updater.h"
 #include "graphdb/graph_db.h"
+#include "graphdb/id_codec.h"
 #include "graphdb/index_error.h"
 #include "graphdb/value_codec.h"
 #include "graphdb/vector_property.h"
 #include "graphdb/vertex_index_updater.h"
 using namespace graphdb;
-using namespace boost::endian;
-using common::AsChars;
 
 namespace {
 
@@ -130,18 +128,18 @@ Vertex Transaction::CreateVertex(
     auto lid = db_->id_generator().GetOrCreateLid(label);
     lids.emplace(lid);
     buffer.clear();
-    buffer.append(AsChars(lid), sizeof(lid));
-    buffer.append(AsChars(vid), sizeof(vid));
+    AppendBigEndianId(buffer, lid);
+    AppendBigEndianId(buffer, vid);
     s = txn_->GetWriteBatch()->Put(db_->graph_cf().vertex_label_vid, buffer,
                                    {});
     if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
   }
   buffer.clear();
   for (auto lid : lids) {
-    buffer.append(AsChars(lid), sizeof(lid));
+    AppendBigEndianId(buffer, lid);
   }
-  s = txn_->GetWriteBatch()->Put(db_->graph_cf().graph_topology,
-                                 rocksdb::Slice(AsChars(vid), sizeof(vid)),
+  const std::string vertex_key = EncodeBigEndianId(vid);
+  s = txn_->GetWriteBatch()->Put(db_->graph_cf().graph_topology, vertex_key,
                                  buffer);
   if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
   VertexSerializedProperties serialized_values;
@@ -170,8 +168,8 @@ Vertex Transaction::CreateVertex(
   }
   for (const auto& [pid, val] : serialized_values) {
     buffer.clear();
-    buffer.append(AsChars(vid), sizeof(vid));
-    buffer.append(AsChars(pid), sizeof(pid));
+    AppendBigEndianId(buffer, vid);
+    AppendBigEndianId(buffer, pid);
     s = txn_->GetWriteBatch()->Put(db_->graph_cf().vertex_property, buffer,
                                    val);
     if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
@@ -189,12 +187,14 @@ Edge Transaction::CreateEdge(
     const Vertex& start, const Vertex& end, const std::string& type,
     const std::unordered_map<std::string, rg::Value>& values) {
   rocksdb::Status s;
+  const std::string start_key = EncodeBigEndianId(start.GetId());
+  const std::string end_key = EncodeBigEndianId(end.GetId());
   {
     rocksdb::ReadOptions ro;
-    s = txn_->GetForUpdate(ro, db_->graph_cf().graph_topology,
-                           start.GetIdView(), (std::string*)nullptr);
+    s = txn_->GetForUpdate(ro, db_->graph_cf().graph_topology, start_key,
+                           (std::string*)nullptr);
     if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
-    s = txn_->GetForUpdate(ro, db_->graph_cf().graph_topology, end.GetIdView(),
+    s = txn_->GetForUpdate(ro, db_->graph_cf().graph_topology, end_key,
                            (std::string*)nullptr);
     if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
   }
@@ -203,28 +203,28 @@ Edge Transaction::CreateEdge(
   uint32_t tid = db_->id_generator().GetOrCreateTid(type);
   std::string key, val;
   // out key
-  key.append(start.GetIdView());
+  key.append(start_key);
   key.append(1, 0);
-  key.append(AsChars(tid), sizeof(tid));
-  key.append(end.GetIdView());
-  key.append(AsChars(eid), sizeof(eid));
+  AppendBigEndianId(key, tid);
+  key.append(end_key);
+  AppendBigEndianId(key, eid);
   s = txn_->GetWriteBatch()->Put(db_->graph_cf().graph_topology, key, {});
   if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
   // in key
   key.clear();
-  key.append(end.GetIdView());
+  key.append(end_key);
   key.append(1, 1);
-  key.append(AsChars(tid), sizeof(tid));
-  key.append(start.GetIdView());
-  key.append(AsChars(eid), sizeof(eid));
+  AppendBigEndianId(key, tid);
+  key.append(start_key);
+  AppendBigEndianId(key, eid);
   s = txn_->GetWriteBatch()->Put(db_->graph_cf().graph_topology, key, {});
   if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
   // type
   key.clear();
-  key.append(AsChars(tid), sizeof(tid));
-  key.append(AsChars(eid), sizeof(eid));
-  val.append(start.GetIdView());
-  val.append(end.GetIdView());
+  AppendBigEndianId(key, tid);
+  AppendBigEndianId(key, eid);
+  val.append(start_key);
+  val.append(end_key);
   s = txn_->GetWriteBatch()->Put(db_->graph_cf().edge_type_eid, key, val);
   if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
   // properties
@@ -232,8 +232,8 @@ Edge Transaction::CreateEdge(
   for (const auto& [name, value] : values) {
     uint32_t pid = db_->id_generator().GetOrCreatePid(name);
     key.clear();
-    key.append(AsChars(eid), sizeof(eid));
-    key.append(AsChars(pid), sizeof(pid));
+    AppendBigEndianId(key, eid);
+    AppendBigEndianId(key, pid);
     val = SerializeValue(value);
     serialized_properties.emplace(pid, val);
     s = txn_->GetWriteBatch()->Put(db_->graph_cf().edge_property, key, val);
@@ -246,13 +246,12 @@ Edge Transaction::CreateEdge(
 Vertex Transaction::GetVertexById(int64_t vid) {
   rocksdb::ReadOptions ro;
   std::string val;
-  auto s = txn_->Get(ro, db_->graph_cf().graph_topology,
-                     rocksdb::Slice(AsChars(vid), sizeof(vid)), &val);
+  auto s = txn_->Get(ro, db_->graph_cf().graph_topology, EncodeBigEndianId(vid),
+                     &val);
   if (s.ok()) {
     return {this, vid};
   } else if (s.IsNotFound()) {
-    RG_THROW_CODE(VertexIdNotFound, "Vertex id {} not found",
-                  big_to_native(vid));
+    RG_THROW_CODE(VertexIdNotFound, "Vertex id {} not found", vid);
   } else {
     RG_THROW_CODE(StorageEngineError, s.ToString());
   }
@@ -260,20 +259,19 @@ Vertex Transaction::GetVertexById(int64_t vid) {
 
 Edge Transaction::GetEdgeById(uint32_t etid, int64_t eid) {
   std::string key;
-  key.append(AsChars(etid), sizeof(etid));
-  key.append(AsChars(eid), sizeof(eid));
+  AppendBigEndianId(key, etid);
+  AppendBigEndianId(key, eid);
   rocksdb::ReadOptions ro;
   std::string val;
   auto s = txn_->Get(ro, db_->graph_cf().edge_type_eid, key, &val);
   if (s.ok()) {
     auto p = val.data();
-    int64_t startId = common::ReadValue<int64_t>(p);
+    int64_t startId = ReadBigEndianId<int64_t>(p);
     p += sizeof(int64_t);
-    int64_t endId = common::ReadValue<int64_t>(p);
+    int64_t endId = ReadBigEndianId<int64_t>(p);
     return {this, eid, startId, endId, etid};
   } else if (s.IsNotFound()) {
-    RG_THROW_CODE(EdgeIdNotFound, "Edge [etid:{},eid:{}] not found",
-                  big_to_native(etid), big_to_native(eid));
+    RG_THROW_CODE(EdgeIdNotFound, "Edge [etid:{},eid:{}] not found", etid, eid);
   } else {
     RG_THROW_CODE(StorageEngineError, s.ToString());
   }

@@ -12,6 +12,7 @@
 #include "common/byte_utils.h"
 #include "common/exception.h"
 #include "common/logger.h"
+#include "graphdb/id_codec.h"
 
 using common::AsChars;
 using common::ReadValue;
@@ -56,7 +57,7 @@ std::string VectorStore::BuildMetaKey(const std::string& name) {
 }
 
 std::string VectorStore::BuildVidKey(int64_t vid) {
-  return BuildKey(kVidPrefix, {AsChars(vid), sizeof(vid)});
+  return BuildKey(kVidPrefix, EncodeBigEndianId(vid));
 }
 
 std::string VectorStore::BuildDeleteMarkKey(int64_t vector_id) {
@@ -138,8 +139,8 @@ void VectorStore::LoadState() {
                     "vector store key has invalid size, expect {}, actual {}",
                     sizeof(int64_t), key.size());
     }
-    int64_t id = ReadValue<int64_t>(key.data());
     if (prefix == kVidPrefix) {
+      int64_t id = ReadBigEndianId<int64_t>(key.data());
       if (value.size() != sizeof(int64_t)) {
         RG_THROW_CODE(VectorIndexException,
                       "vector store vid mapping has invalid value size, expect "
@@ -160,8 +161,9 @@ void VectorStore::LoadState() {
             "0, actual {}",
             value.size());
       }
-      max_vector_id = std::max(max_vector_id, id);
-      deleted_vector_ids_.emplace(id);
+      int64_t vector_id = ReadValue<int64_t>(key.data());
+      max_vector_id = std::max(max_vector_id, vector_id);
+      deleted_vector_ids_.emplace(vector_id);
       continue;
     }
     RG_THROW_CODE(VectorIndexException,

@@ -1,7 +1,7 @@
 #include "graphdb/vector_property.h"
 
-#include "common/byte_utils.h"
 #include "common/exception.h"
+#include "graphdb/id_codec.h"
 
 using common::AsChars;
 using common::ReadValue;
@@ -15,17 +15,17 @@ uint64_t VectorFieldKey(uint32_t lid, uint32_t pid) {
 std::string VertexVectorPropertyKey(uint32_t lid, uint32_t pid, int64_t vid) {
   std::string key;
   key.reserve(sizeof(lid) + sizeof(pid) + sizeof(vid));
-  key.append(AsChars(lid), sizeof(lid));
-  key.append(AsChars(pid), sizeof(pid));
-  key.append(AsChars(vid), sizeof(vid));
+  AppendBigEndianId(key, lid);
+  AppendBigEndianId(key, pid);
+  AppendBigEndianId(key, vid);
   return key;
 }
 
 std::string VertexVectorPropertyPrefix(uint32_t lid, uint32_t pid) {
   std::string prefix;
   prefix.reserve(sizeof(lid) + sizeof(pid));
-  prefix.append(AsChars(lid), sizeof(lid));
-  prefix.append(AsChars(pid), sizeof(pid));
+  AppendBigEndianId(prefix, lid);
+  AppendBigEndianId(prefix, pid);
   return prefix;
 }
 

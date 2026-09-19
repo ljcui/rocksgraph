@@ -513,7 +513,7 @@ std::optional<graphdb::Edge> FindGraphDBRelationshipById(
   auto edges = transaction.NewEdgeIterator();
   while (edges->Valid()) {
     const graphdb::Edge &edge = edges->GetEdge();
-    if (edge.GetNativeId() == id) {
+    if (edge.GetId() == id) {
       return edge;
     }
     edges->Next();
@@ -529,9 +529,9 @@ bool EmitGraphDBRelationship(const PhysicalPlanNode &node,
                              bool reverse,
                              std::optional<graphdb::Edge> *pending_reverse,
                              SlottedRow *row, RuntimeState &state) {
-  Relationship relationship{.id = edge.GetNativeId(),
-                            .start_node_id = edge.GetNativeStartId(),
-                            .end_node_id = edge.GetNativeEndId(),
+  Relationship relationship{.id = edge.GetId(),
+                            .start_node_id = edge.GetStartId(),
+                            .end_node_id = edge.GetEndId(),
                             .type_id = edge.GetTypeId(),
                             .type = edge.GetType()};
   if (!RelationshipHasType(relationship, pattern.types)) {
@@ -830,9 +830,9 @@ class FixedExpandOperatorBase : public PullOperator {
         while (graphdb_cursor_->Valid()) {
           graphdb::Edge edge = graphdb_cursor_->GetEdge();
           graphdb_cursor_->Next();
-          Relationship relationship{.id = edge.GetNativeId(),
-                                    .start_node_id = edge.GetNativeStartId(),
-                                    .end_node_id = edge.GetNativeEndId(),
+          Relationship relationship{.id = edge.GetId(),
+                                    .start_node_id = edge.GetStartId(),
+                                    .end_node_id = edge.GetEndId(),
                                     .type_id = edge.GetTypeId()};
           const std::optional<std::int64_t> to = NextPhysicalExpandNode(
               relationship, from_id_, pattern_->direction);
@@ -1027,14 +1027,14 @@ class VarExpandOperator final : public PullOperator {
       while (frame.graphdb_cursor->Valid()) {
         const graphdb::Edge edge = frame.graphdb_cursor->GetEdge();
         frame.graphdb_cursor->Next();
-        const RelationshipReference relationship{.id = edge.GetNativeId(),
+        const RelationshipReference relationship{.id = edge.GetId(),
                                                  .type_id = edge.GetTypeId()};
         if (used_.contains(relationship.id)) {
           continue;
         }
         const Relationship value{.id = relationship.id,
-                                 .start_node_id = edge.GetNativeStartId(),
-                                 .end_node_id = edge.GetNativeEndId(),
+                                 .start_node_id = edge.GetStartId(),
+                                 .end_node_id = edge.GetEndId(),
                                  .type_id = relationship.type_id};
         const std::optional<std::int64_t> next =
             NextPhysicalExpandNode(value, frame.node, data_->pattern.direction);
@@ -1218,19 +1218,18 @@ class PruningVarExpandOperator final : public PullOperator {
         while (graphdb_cursor_->Valid()) {
           auto edge = graphdb_cursor_->GetEdge();
           graphdb_cursor_->Next();
-          const Relationship relationship{
-              .id = edge.GetNativeId(),
-              .start_node_id = edge.GetNativeStartId(),
-              .end_node_id = edge.GetNativeEndId(),
-              .type_id = edge.GetTypeId(),
-              .type = edge.GetType()};
+          const Relationship relationship{.id = edge.GetId(),
+                                          .start_node_id = edge.GetStartId(),
+                                          .end_node_id = edge.GetEndId(),
+                                          .type_id = edge.GetTypeId(),
+                                          .type = edge.GetType()};
           if (!RelationshipHasType(relationship, data_->pattern.types)) {
             continue;
           }
           const std::int64_t to =
               data_->pattern.direction == PhysicalExpandDirection::kIncoming
-                  ? edge.GetNativeStartId()
-                  : edge.GetNativeEndId();
+                  ? edge.GetStartId()
+                  : edge.GetEndId();
           if (to == start_ && !start_emitted_) {
             start_emitted_ = true;
             if (Emit(to, row)) {
@@ -1310,13 +1309,12 @@ class OptionalExpandOperator final : public PullOperator {
         state_->CheckCancelled();
         const graphdb::Edge edge = graphdb_cursor_->GetEdge();
         graphdb_cursor_->Next();
-        const RelationshipReference reference{.id = edge.GetNativeId(),
+        const RelationshipReference reference{.id = edge.GetId(),
                                               .type_id = edge.GetTypeId()};
-        const Relationship relationship{
-            .id = reference.id,
-            .start_node_id = edge.GetNativeStartId(),
-            .end_node_id = edge.GetNativeEndId(),
-            .type_id = reference.type_id};
+        const Relationship relationship{.id = reference.id,
+                                        .start_node_id = edge.GetStartId(),
+                                        .end_node_id = edge.GetEndId(),
+                                        .type_id = reference.type_id};
         const std::optional<std::int64_t> to = NextPhysicalExpandNode(
             relationship, from_id_, data_->pattern.direction);
         if (!to.has_value()) {

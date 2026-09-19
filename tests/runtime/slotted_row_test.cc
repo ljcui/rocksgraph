@@ -28,14 +28,12 @@ TEST(SlottedRowTest, StoresGraphDBEntitiesAndValues) {
   row.Set(slots->At("r"), relationship_edge);
   row.Set(slots->At("value"), rg::Value(42));
 
-  EXPECT_EQ(row.VertexAt(slots->At("n")).GetNativeId(),
-            node_vertex.GetNativeId());
-  EXPECT_EQ(row.EdgeAt(slots->At("r")).GetNativeId(),
-            relationship_edge.GetNativeId());
+  EXPECT_EQ(row.VertexAt(slots->At("n")).GetId(), node_vertex.GetId());
+  EXPECT_EQ(row.EdgeAt(slots->At("r")).GetId(), relationship_edge.GetId());
   EXPECT_EQ(row.ValueAt(slots->At("value")).AsInteger(), 42);
-  EXPECT_EQ(row.Get(slots->At("n")).AsNode().id, node_vertex.GetNativeId());
+  EXPECT_EQ(row.Get(slots->At("n")).AsNode().id, node_vertex.GetId());
   EXPECT_EQ(row.Get(slots->At("r")).AsRelationship().id,
-            relationship_edge.GetNativeId());
+            relationship_edge.GetId());
   transaction->Rollback();
 }
 
@@ -93,22 +91,19 @@ TEST(SlottedRowTest, CopiesBetweenLayoutsWithoutChangingStoredValues) {
        .target_offset = target_slots->At("x")}};
   rg::SlottedRow copied = source.CopyTo(target_slots, mappings);
 
-  EXPECT_EQ(copied.VertexAt(target_slots->At("x")).GetNativeId(),
-            vertex.GetNativeId());
+  EXPECT_EQ(copied.VertexAt(target_slots->At("x")).GetId(), vertex.GetId());
   EXPECT_TRUE(copied.Get(target_slots->At("x")).IsNode());
-  EXPECT_EQ(copied.Get(target_slots->At("x")).AsNode().id,
-            vertex.GetNativeId());
+  EXPECT_EQ(copied.Get(target_slots->At("x")).AsNode().id, vertex.GetId());
 
   const std::vector<rg::SlotMapping> reverse_mappings{
       {.source_offset = target_slots->At("x"),
        .target_offset = entity_slots->At("x")}};
   rg::SlottedRow copied_back = copied.CopyTo(entity_slots, reverse_mappings);
-  EXPECT_EQ(copied_back.VertexAt(entity_slots->At("x")).GetNativeId(),
-            vertex.GetNativeId());
+  EXPECT_EQ(copied_back.VertexAt(entity_slots->At("x")).GetId(),
+            vertex.GetId());
 
   copied.MaterializeGraphEntities();
-  EXPECT_EQ(copied.ValueAt(target_slots->At("x")).AsNode().id,
-            vertex.GetNativeId());
+  EXPECT_EQ(copied.ValueAt(target_slots->At("x")).AsNode().id, vertex.GetId());
   transaction->Rollback();
 }
 
@@ -120,10 +115,10 @@ TEST(SlottedRowTest, GraphDBExposesClosableVertexIterators) {
   auto transaction = database.BeginTransaction();
   auto cursor = transaction->NewVertexIterator();
   ASSERT_TRUE(cursor->Valid());
-  EXPECT_EQ(cursor->GetVertex().GetNativeId(), first);
+  EXPECT_EQ(cursor->GetVertex().GetId(), first);
   cursor->Next();
   ASSERT_TRUE(cursor->Valid());
-  EXPECT_EQ(cursor->GetVertex().GetNativeId(), second);
+  EXPECT_EQ(cursor->GetVertex().GetId(), second);
   cursor->Next();
   EXPECT_FALSE(cursor->Valid());
   transaction->Commit();

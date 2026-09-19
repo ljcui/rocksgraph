@@ -95,10 +95,10 @@ std::int64_t SlottedRow::EntityIdAt(std::size_t offset) const {
            "entity slot is not initialized");
   const SlotValue &stored = values_[offset];
   if (const auto *vertex = std::get_if<graphdb::Vertex>(&stored)) {
-    return vertex->GetNativeId();
+    return vertex->GetId();
   }
   if (const auto *edge = std::get_if<graphdb::Edge>(&stored)) {
-    return edge->GetNativeId();
+    return edge->GetId();
   }
   const auto *value = std::get_if<Value>(&stored);
   RG_CHECK(value != nullptr, common::InternalError,
@@ -154,7 +154,7 @@ bool SlottedRow::SlotEquals(std::size_t offset, const SlottedRow &other,
 
   auto node_id = [](const SlotValue &stored) -> std::optional<std::int64_t> {
     if (const auto *vertex = std::get_if<graphdb::Vertex>(&stored)) {
-      return vertex->GetNativeId();
+      return vertex->GetId();
     }
     const auto *value = std::get_if<Value>(&stored);
     if (value != nullptr && value->IsNode()) {
@@ -172,7 +172,7 @@ bool SlottedRow::SlotEquals(std::size_t offset, const SlottedRow &other,
   auto relationship_id =
       [](const SlotValue &stored) -> std::optional<std::int64_t> {
     if (const auto *edge = std::get_if<graphdb::Edge>(&stored)) {
-      return edge->GetNativeId();
+      return edge->GetId();
     }
     const auto *value = std::get_if<Value>(&stored);
     if (value != nullptr && value->IsRelationship()) {
@@ -314,7 +314,7 @@ bool TryBindEdge(SlottedRow *row, std::size_t offset, graphdb::Edge edge) {
   }
   const Value existing = row->Get(offset);
   return existing.IsRelationship() &&
-         existing.AsRelationship().id == edge.GetNativeId() &&
+         existing.AsRelationship().id == edge.GetId() &&
          existing.AsRelationship().type_id == edge.GetTypeId();
 }
 

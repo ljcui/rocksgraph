@@ -3,6 +3,7 @@
 #include "common/byte_utils.h"
 #include "common/exception.h"
 #include "graphdb/graph_db.h"
+#include "graphdb/id_codec.h"
 #include "graphdb/index.h"
 #include "graphdb/transaction.h"
 #include "graphdb/value_codec.h"
@@ -13,7 +14,7 @@ EdgeSerializedProperties LoadEdgeSerializedProperties(Transaction* txn,
                                                       int64_t eid) {
   EdgeSerializedProperties properties;
   rocksdb::ReadOptions ro;
-  std::string prefix(common::AsChars(eid), sizeof(eid));
+  std::string prefix = EncodeBigEndianId(eid);
   std::unique_ptr<rocksdb::Iterator> iter(
       txn->dbtxn()->GetIterator(ro, txn->db()->graph_cf().edge_property));
   for (iter->Seek(prefix); iter->Valid() && iter->key().starts_with(prefix);
@@ -22,7 +23,7 @@ EdgeSerializedProperties LoadEdgeSerializedProperties(Transaction* txn,
     if (key.size() != sizeof(eid) + sizeof(uint32_t)) {
       RG_THROW_CODE(StorageEngineError, "edge property key has invalid size");
     }
-    properties.emplace(common::ReadValue<uint32_t>(key.data() + sizeof(eid)),
+    properties.emplace(ReadBigEndianId<uint32_t>(key.data() + sizeof(eid)),
                        iter->value().ToString());
   }
   if (!iter->status().ok()) {

@@ -5,17 +5,15 @@
 #include "vertex_iterator.h"
 
 #include <algorithm>
-#include <boost/endian/conversion.hpp>
 #include <cstring>
 
 #include "common/byte_utils.h"
 #include "common/exception.h"
 #include "common/logger.h"
 #include "graph_db.h"
+#include "graphdb/id_codec.h"
 #include "graphdb/transaction.h"
 #include "index_error.h"
-using common::AsChars;
-using common::ReadValue;
 namespace graphdb {
 
 namespace {
@@ -42,13 +40,13 @@ int64_t ReadPropertyIndexVid(const std::shared_ptr<VertexPropertyIndex> &index,
       RG_THROW_CODE(StorageEngineError,
                     "vertex unique index stores invalid vid size");
     }
-    return ReadValue<int64_t>(value.data());
+    return ReadBigEndianId<int64_t>(value.data());
   }
   if (key.size() < sizeof(uint32_t) + sizeof(int64_t)) {
     RG_THROW_CODE(StorageEngineError,
                   "vertex non-unique index stores invalid key size");
   }
-  return ReadValue<int64_t>(key.data() + key.size() - sizeof(int64_t));
+  return ReadBigEndianId<int64_t>(key.data() + key.size() - sizeof(int64_t));
 }
 
 }  // namespace
@@ -63,7 +61,7 @@ VertexLabelScanIterator::VertexLabelScanIterator(Transaction *txn,
   rocksdb::ReadOptions ro;
   iterator_.reset(
       txn->dbtxn()->GetIterator(ro, txn->db()->graph_cf().vertex_label_vid));
-  iterator_->Seek({AsChars(label_id_), sizeof(label_id_)});
+  iterator_->Seek(EncodeBigEndianId(label_id_));
   LoadCurrent();
 }
 
@@ -74,11 +72,12 @@ void VertexLabelScanIterator::LoadCurrent() {
   }
   auto key = iterator_->key();
   if (key.size() != sizeof(uint32_t) + sizeof(int64_t) ||
-      label_id_ != ReadValue<uint32_t>(key.data())) {
+      label_id_ != ReadBigEndianId<uint32_t>(key.data())) {
     return;
   }
   key.remove_prefix(sizeof(uint32_t));
-  vertex_ = std::make_unique<Vertex>(txn_, ReadValue<int64_t>(key.data()));
+  vertex_ =
+      std::make_unique<Vertex>(txn_, ReadBigEndianId<int64_t>(key.data()));
   valid_ = true;
 }
 
@@ -106,7 +105,7 @@ void VertexScanIterator::SeekToNextVertex() {
   while (iterator_->Valid()) {
     if (iterator_->key().size() == sizeof(int64_t)) {
       vertex_ = std::make_unique<Vertex>(
-          txn_, ReadValue<int64_t>(iterator_->key().data()));
+          txn_, ReadBigEndianId<int64_t>(iterator_->key().data()));
       valid_ = true;
       return;
     }
@@ -177,7 +176,7 @@ VertexUniqueIndexIterator::VertexUniqueIndexIterator(
   std::string index_key = index_->IndexKey(values);
   auto s = txn_->dbtxn()->Get(ro, index_->cf(), index_key, &index_val);
   if (s.ok()) {
-    int64_t vid = ReadValue<int64_t>(index_val.data());
+    int64_t vid = ReadBigEndianId<int64_t>(index_val.data());
     vertex_ = std::make_unique<Vertex>(txn_, vid);
     valid_ = true;
   } else if (!s.IsNotFound()) {
@@ -255,7 +254,7 @@ VertexIndexRangeIterator::VertexIndexRangeIterator(
       upper_key_(std::move(upper_key)),
       left_closed_(left_closed),
       right_closed_(right_closed) {
-  index_prefix_.assign(AsChars(index_->index_id()), sizeof(index_->index_id()));
+  index_prefix_ = EncodeBigEndianId(index_->index_id());
   rocksdb::ReadOptions ro;
   iterator_.reset(txn->dbtxn()->GetIterator(ro, index_->cf()));
   if (lower_key_.has_value()) {

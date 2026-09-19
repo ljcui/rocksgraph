@@ -10,10 +10,10 @@
 
 #include "common/byte_utils.h"
 #include "common/exception.h"
+#include "graphdb/id_codec.h"
 
 namespace fs = std::filesystem;
 using namespace boost::endian;
-using common::AsChars;
 using common::ReadValue;
 
 namespace graphdb::internal {
@@ -25,8 +25,7 @@ void ThrowIfIteratorError(rocksdb::Iterator* iter, std::string_view action);
 std::string BuildFullTextIndexPath(const std::string& graph_path,
                                    const std::string& index_name,
                                    uint32_t index_id) {
-  return graph_path + "/ft/" + index_name + "_" +
-         std::to_string(big_to_native(index_id));
+  return graph_path + "/ft/" + index_name + "_" + std::to_string(index_id);
 }
 
 std::string BuildMetaKey(MetadataType type, const std::string& name) {
@@ -47,7 +46,7 @@ std::string BuildVectorFieldMetaKey(const std::string& label,
 uint64_t LoadVisibleMaxWalId(rocksdb::TransactionDB* db, GraphCF* graph_cf,
                              uint32_t index_id,
                              const rocksdb::Snapshot* snapshot) {
-  std::string prefix(AsChars(index_id), sizeof(index_id));
+  std::string prefix = EncodeBigEndianId(index_id);
   std::string seek_key(prefix);
   seek_key.append(sizeof(uint64_t), static_cast<char>(0xFF));
   rocksdb::ReadOptions ro;
@@ -80,13 +79,13 @@ uint64_t LoadVisibleMaxWalId(rocksdb::TransactionDB* db, GraphCF* graph_cf,
 void DeletePropertyIndexRanges(rocksdb::TransactionDB* db, GraphCF* graph_cf,
                                uint32_t index_id) {
   rocksdb::WriteBatch wb;
-  std::string start_key(AsChars(index_id), sizeof(index_id));
-  std::string end_key(AsChars(index_id), sizeof(index_id));
+  std::string start_key = EncodeBigEndianId(index_id);
+  std::string end_key = start_key;
   end_key.append(128, static_cast<char>(0xFF));
   wb.DeleteRange(graph_cf->index, start_key, end_key);
 
-  std::string wal_start(AsChars(index_id), sizeof(index_id));
-  std::string wal_end(AsChars(index_id), sizeof(index_id));
+  std::string wal_start = EncodeBigEndianId(index_id);
+  std::string wal_end = wal_start;
   wal_end.append(sizeof(uint64_t), static_cast<char>(0xFF));
   wb.DeleteRange(graph_cf->wal, wal_start, wal_end);
 
@@ -100,8 +99,8 @@ void DeletePropertyIndexRanges(rocksdb::TransactionDB* db, GraphCF* graph_cf,
 void DeletePropertyIndexWalRange(rocksdb::TransactionDB* db, GraphCF* graph_cf,
                                  uint32_t index_id) {
   rocksdb::WriteBatch wb;
-  std::string wal_start(AsChars(index_id), sizeof(index_id));
-  std::string wal_end(AsChars(index_id), sizeof(index_id));
+  std::string wal_start = EncodeBigEndianId(index_id);
+  std::string wal_end = wal_start;
   wal_end.append(sizeof(uint64_t), static_cast<char>(0xFF));
   wb.DeleteRange(graph_cf->wal, wal_start, wal_end);
   rocksdb::TransactionDBWriteOptimizations two;
@@ -113,9 +112,9 @@ void DeletePropertyIndexWalRange(rocksdb::TransactionDB* db, GraphCF* graph_cf,
 
 void DeleteFullTextIndexRanges(rocksdb::TransactionDB* db, GraphCF* graph_cf,
                                uint32_t index_id) {
-  std::string start_key(AsChars(index_id), sizeof(index_id));
+  std::string start_key = EncodeBigEndianId(index_id);
   start_key.append(sizeof(int64_t), static_cast<char>(0x00));
-  std::string end_key(AsChars(index_id), sizeof(index_id));
+  std::string end_key = EncodeBigEndianId(index_id);
   end_key.append(sizeof(int64_t), static_cast<char>(0xFF));
 
   rocksdb::WriteBatch wb;
@@ -133,8 +132,8 @@ void DeleteFullTextIndexRanges(rocksdb::TransactionDB* db, GraphCF* graph_cf,
 void DeleteVectorIndexRanges(rocksdb::TransactionDB* db, GraphCF* graph_cf,
                              uint32_t index_id) {
   rocksdb::WriteBatch wb;
-  std::string wal_start(AsChars(index_id), sizeof(index_id));
-  std::string wal_end(AsChars(index_id), sizeof(index_id));
+  std::string wal_start = EncodeBigEndianId(index_id);
+  std::string wal_end = wal_start;
   wal_end.append(sizeof(uint64_t), static_cast<char>(0xFF));
   wb.DeleteRange(graph_cf->wal, wal_start, wal_end);
 

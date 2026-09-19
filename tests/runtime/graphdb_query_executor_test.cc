@@ -55,27 +55,25 @@ class GraphDBQueryExecutorTest : public testing::Test {
     ada_ = transaction
                ->CreateVertex({"Person"}, {{"name", rg::Value("Ada")},
                                            {"age", rg::Value(10)}})
-               .GetNativeId();
+               .GetId();
     grace_ = transaction
                  ->CreateVertex({"Person"}, {{"name", rg::Value("Grace")},
                                              {"age", rg::Value(20)}})
-                 .GetNativeId();
+                 .GetId();
     other_ = transaction
                  ->CreateVertex({"Person"}, {{"name", rg::Value("Other")},
                                              {"age", rg::Value(30)}})
-                 .GetNativeId();
-    auto ada = transaction->GetVertexById(boost::endian::native_to_big(ada_));
-    auto grace =
-        transaction->GetVertexById(boost::endian::native_to_big(grace_));
-    auto other =
-        transaction->GetVertexById(boost::endian::native_to_big(other_));
+                 .GetId();
+    auto ada = transaction->GetVertexById(ada_);
+    auto grace = transaction->GetVertexById(grace_);
+    auto other = transaction->GetVertexById(other_);
     knows_ = transaction
                  ->CreateEdge(ada, grace, "KNOWS", {{"since", rg::Value(2020)}})
-                 .GetNativeId();
+                 .GetId();
     rare_ =
         transaction
             ->CreateEdge(grace, other, "RARE_REL", {{"weight", rg::Value(7)}})
-            .GetNativeId();
+            .GetId();
     transaction->Commit();
 
     graph_->AddVertexPropertyIndex("person_name", false, "Person", {"name"});
@@ -272,16 +270,14 @@ TEST_F(GraphDBQueryExecutorTest,
   };
 
   const std::size_t edge_count_before = count_edges();
-  const graphdb::Edge edge = transaction->GetEdgeById(
-      *knows_type, boost::endian::native_to_big(knows_));
-  EXPECT_EQ(edge.GetNativeId(), knows_);
+  const graphdb::Edge edge = transaction->GetEdgeById(*knows_type, knows_);
+  EXPECT_EQ(edge.GetId(), knows_);
   EXPECT_EQ(edge.GetTypeId(), *knows_type);
-  EXPECT_EQ(edge.GetNativeStartId(), ada_);
-  EXPECT_EQ(edge.GetNativeEndId(), grace_);
+  EXPECT_EQ(edge.GetStartId(), ada_);
+  EXPECT_EQ(edge.GetEndId(), grace_);
 
   try {
-    (void)transaction->GetEdgeById(*rare_type,
-                                   boost::endian::native_to_big(knows_));
+    (void)transaction->GetEdgeById(*rare_type, knows_);
     FAIL() << "lookup with a mismatched relationship type should fail";
   } catch (const common::RocksGraphException &error) {
     EXPECT_EQ(error.code(), common::ErrorCode::EdgeIdNotFound);

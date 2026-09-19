@@ -2272,10 +2272,9 @@ class DeleteOperator final : public PullOperator {
         auto relationships =
             vertex.NewEdgeIterator(graphdb::EdgeDirection::BOTH, {}, {});
         while (relationships->Valid()) {
-          RG_CHECK(
-              relationship_ids.contains(relationships->GetEdge().GetNativeId()),
-              common::InvalidArgumentError,
-              "DELETE node still has relationships");
+          RG_CHECK(relationship_ids.contains(relationships->GetEdge().GetId()),
+                   common::InvalidArgumentError,
+                   "DELETE node still has relationships");
           relationships->Next();
         }
       }

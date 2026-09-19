@@ -5,16 +5,14 @@
 #include "edge_iterator.h"
 
 #include <algorithm>
-#include <boost/endian/conversion.hpp>
 #include <cstring>
 
 #include "common/byte_utils.h"
 #include "common/exception.h"
 #include "common/logger.h"
 #include "graph_db.h"
+#include "graphdb/id_codec.h"
 #include "graphdb/transaction.h"
-using common::AsChars;
-using common::ReadValue;
 namespace graphdb {
 namespace {
 
@@ -34,13 +32,13 @@ int64_t ReadEdgePropertyIndexEid(
       RG_THROW_CODE(StorageEngineError,
                     "edge unique index stores invalid eid size");
     }
-    return ReadValue<int64_t>(value.data());
+    return ReadBigEndianId<int64_t>(value.data());
   }
   if (key.size() < sizeof(uint32_t) + sizeof(int64_t)) {
     RG_THROW_CODE(StorageEngineError,
                   "edge non-unique index stores invalid key size");
   }
-  return ReadValue<int64_t>(key.data() + key.size() - sizeof(int64_t));
+  return ReadBigEndianId<int64_t>(key.data() + key.size() - sizeof(int64_t));
 }
 
 std::unique_ptr<Edge> LoadIndexedEdge(Transaction *txn,
@@ -72,7 +70,7 @@ EdgeTypeScanIterator::EdgeTypeScanIterator(
     return;
   }
   for (uint32_t type_id : type_ids) {
-    prefixes_.emplace(AsChars(type_id), sizeof(type_id));
+    prefixes_.emplace(EncodeBigEndianId(type_id));
   }
   SeekToNextPrefix();
 }
@@ -92,11 +90,12 @@ void EdgeTypeScanIterator::LoadCurrent() {
   }
 
   const char *key_data = key.data();
-  const uint32_t type = ReadValue<uint32_t>(key_data);
-  const int64_t eid = ReadValue<int64_t>(key_data + sizeof(type));
+  const uint32_t type = ReadBigEndianId<uint32_t>(key_data);
+  const int64_t eid = ReadBigEndianId<int64_t>(key_data + sizeof(type));
   const char *value_data = value.data();
-  const int64_t start_id = ReadValue<int64_t>(value_data);
-  const int64_t end_id = ReadValue<int64_t>(value_data + sizeof(start_id));
+  const int64_t start_id = ReadBigEndianId<int64_t>(value_data);
+  const int64_t end_id =
+      ReadBigEndianId<int64_t>(value_data + sizeof(start_id));
   edge_ = std::make_unique<Edge>(txn_, eid, start_id, end_id, type);
 }
 
@@ -162,13 +161,14 @@ IncidentEdgeIterator::IncidentEdgeIterator(
   if (direction_ == EdgeDirection::OUTGOING ||
       direction_ == EdgeDirection::BOTH) {
     std::string prefix;
-    prefix.append(AsChars(vertex_id_), sizeof(vertex_id_)).append(1, 0);
+    AppendBigEndianId(prefix, vertex_id_);
+    prefix.append(1, 0);
     if (type_ids_.empty()) {
       prefixes_.push(prefix);
     } else {
       for (auto type : type_ids_) {
         std::string tmp = prefix;
-        tmp.append(AsChars(type), sizeof(type));
+        AppendBigEndianId(tmp, type);
         prefixes_.push(std::move(tmp));
       }
     }
@@ -176,13 +176,14 @@ IncidentEdgeIterator::IncidentEdgeIterator(
   if (direction_ == EdgeDirection::INCOMING ||
       direction_ == EdgeDirection::BOTH) {
     std::string prefix;
-    prefix.append(AsChars(vertex_id_), sizeof(vertex_id_)).append(1, 1);
+    AppendBigEndianId(prefix, vertex_id_);
+    prefix.append(1, 1);
     if (type_ids_.empty()) {
       prefixes_.push(prefix);
     } else {
       for (auto type : type_ids_) {
         std::string tmp = prefix;
-        tmp.append(AsChars(type), sizeof(type));
+        AppendBigEndianId(tmp, type);
         prefixes_.push(std::move(tmp));
       }
     }
@@ -192,15 +193,15 @@ IncidentEdgeIterator::IncidentEdgeIterator(
 
 bool IncidentEdgeIterator::LoadCurrent() {
   auto p = iterator_->key().data();
-  int64_t vid1 = ReadValue<int64_t>(p);
+  int64_t vid1 = ReadBigEndianId<int64_t>(p);
   p += sizeof(int64_t);
   auto dir = static_cast<EdgeDirection>(*(p));
   p += sizeof(char);
-  uint32_t etid = ReadValue<uint32_t>(p);
+  uint32_t etid = ReadBigEndianId<uint32_t>(p);
   p += sizeof(uint32_t);
-  int64_t vid2 = ReadValue<int64_t>(p);
+  int64_t vid2 = ReadBigEndianId<int64_t>(p);
   p += sizeof(int64_t);
-  int64_t eid = ReadValue<int64_t>(p);
+  int64_t eid = ReadBigEndianId<int64_t>(p);
   if (direction_ == EdgeDirection::BOTH && dir == EdgeDirection::INCOMING &&
       vid1 == vid2) {
     return false;
@@ -406,7 +407,7 @@ EdgeIndexRangeIterator::EdgeIndexRangeIterator(
       upper_key_(std::move(upper_key)),
       left_closed_(left_closed),
       right_closed_(right_closed) {
-  index_prefix_.assign(AsChars(index_->index_id()), sizeof(index_->index_id()));
+  index_prefix_ = EncodeBigEndianId(index_->index_id());
   rocksdb::ReadOptions ro;
   iterator_.reset(txn_->dbtxn()->GetIterator(ro, index_->cf()));
   if (lower_key_) {

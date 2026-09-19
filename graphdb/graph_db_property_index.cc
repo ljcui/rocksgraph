@@ -2,16 +2,11 @@
 // Created by botu.wzy
 //
 
-#include <boost/endian/conversion.hpp>
-
-#include "common/byte_utils.h"
 #include "common/exception.h"
 #include "common/logger.h"
 #include "graph_db.h"
 #include "graph_db_internal.h"
-
-using namespace boost::endian;
-using common::AsChars;
+#include "graphdb/id_codec.h"
 
 namespace graphdb {
 using namespace internal;
@@ -48,7 +43,7 @@ void GraphDB::AddVertexPropertyIndex(
   if (meta_info_.GetVertexPropertyIndex(lid, pids)) {
     RG_THROW_CODE(VertexIndexAlreadyExists,
                   "Vertex index [label:{}, property_count:{}] already exists",
-                  big_to_native(lid), pids.size());
+                  lid, pids.size());
   }
 
   auto index_id = id_generator().GetNextIndexId();
@@ -56,14 +51,14 @@ void GraphDB::AddVertexPropertyIndex(
   meta_val.set_name(index_name);
   meta_val.set_is_unique(unique);
   meta_val.set_label(label);
-  meta_val.set_label_id(big_to_native(lid));
-  meta_val.set_index_id(big_to_native(index_id));
+  meta_val.set_label_id(lid);
+  meta_val.set_index_id(index_id);
   meta_val.set_build_start_wal_id(0);
   meta_val.set_applied_wal_id(0);
   meta_val.clear_build_error();
   for (size_t i = 0; i < properties.size(); ++i) {
     meta_val.add_properties(properties[i]);
-    meta_val.add_property_ids(big_to_native(pids[i]));
+    meta_val.add_property_ids(pids[i]);
   }
 
   auto* driver = raft_driver();
@@ -104,11 +99,11 @@ void GraphDB::ApplyCreateVertexPropertyIndex(
         meta_val.name(), meta_val.property_ids_size(),
         meta_val.properties_size());
   }
-  auto lid = native_to_big(meta_val.label_id());
+  auto lid = meta_val.label_id();
   std::vector<uint32_t> pids;
   pids.reserve(meta_val.property_ids_size());
   for (auto pid : meta_val.property_ids()) {
-    pids.push_back(native_to_big(pid));
+    pids.push_back(pid);
   }
   CheckNoVectorFieldForNormalIndex(
       meta_info_, {lid}, std::unordered_set<uint32_t>(pids.begin(), pids.end()),
@@ -118,7 +113,7 @@ void GraphDB::ApplyCreateVertexPropertyIndex(
                   "Vertex index [label:{}, property_count:{}] already exists",
                   meta_val.label_id(), pids.size());
   }
-  auto index_id = native_to_big(meta_val.index_id());
+  auto index_id = meta_val.index_id();
   id_generator().ReserveIndexId(meta_val.index_id());
 
   auto vpi = std::make_shared<VertexPropertyIndex>(db_, &graph_cf_, meta_val,
@@ -195,12 +190,12 @@ void GraphDB::ApplyDeleteVertexPropertyIndex(
   rocksdb::WriteBatch wb;
   wb.Delete(graph_cf_.meta_info,
             BuildMetaKey(MetadataType::VertexPropertyIndex, index_name));
-  std::string start_key(AsChars(index_id), sizeof(index_id));
-  std::string end_key(AsChars(index_id), sizeof(index_id));
+  std::string start_key = EncodeBigEndianId(index_id);
+  std::string end_key = start_key;
   end_key.append(128, static_cast<char>(0xFF));
   wb.DeleteRange(graph_cf_.index, start_key, end_key);
-  std::string wal_start(AsChars(index_id), sizeof(index_id));
-  std::string wal_end(AsChars(index_id), sizeof(index_id));
+  std::string wal_start = EncodeBigEndianId(index_id);
+  std::string wal_end = wal_start;
   wal_end.append(sizeof(uint64_t), static_cast<char>(0xFF));
   wb.DeleteRange(graph_cf_.wal, wal_start, wal_end);
   if (apply_index > 0) {
@@ -243,8 +238,8 @@ void GraphDB::AddEdgePropertyIndex(const std::string& index_name, bool unique,
   if (meta_info_.GetEdgePropertyIndex(tid, pids)) {
     RG_THROW_CODE(
         EdgePropertyIndexAlreadyExists,
-        "Edge property index [type:{}, property_count:{}] already exists",
-        big_to_native(tid), pids.size());
+        "Edge property index [type:{}, property_count:{}] already exists", tid,
+        pids.size());
   }
 
   auto index_id = id_generator().GetNextIndexId();
@@ -252,14 +247,14 @@ void GraphDB::AddEdgePropertyIndex(const std::string& index_name, bool unique,
   meta_val.set_name(index_name);
   meta_val.set_is_unique(unique);
   meta_val.set_edge_type(edge_type);
-  meta_val.set_edge_type_id(big_to_native(tid));
-  meta_val.set_index_id(big_to_native(index_id));
+  meta_val.set_edge_type_id(tid);
+  meta_val.set_index_id(index_id);
   meta_val.set_build_start_wal_id(0);
   meta_val.set_applied_wal_id(0);
   meta_val.clear_build_error();
   for (size_t i = 0; i < properties.size(); ++i) {
     meta_val.add_properties(properties[i]);
-    meta_val.add_property_ids(big_to_native(pids[i]));
+    meta_val.add_property_ids(pids[i]);
   }
 
   if (raft_driver() != nullptr) {
@@ -299,17 +294,17 @@ void GraphDB::ApplyCreateEdgePropertyIndex(uint64_t apply_index,
         meta_val.name(), meta_val.property_ids_size(),
         meta_val.properties_size());
   }
-  auto tid = native_to_big(meta_val.edge_type_id());
+  auto tid = meta_val.edge_type_id();
   std::vector<uint32_t> pids;
   pids.reserve(meta_val.property_ids_size());
-  for (auto pid : meta_val.property_ids()) pids.push_back(native_to_big(pid));
+  for (auto pid : meta_val.property_ids()) pids.push_back(pid);
   if (meta_info_.GetEdgePropertyIndex(tid, pids)) {
     RG_THROW_CODE(
         EdgePropertyIndexAlreadyExists,
         "Edge property index [type:{}, property_count:{}] already exists",
         meta_val.edge_type_id(), pids.size());
   }
-  auto index_id = native_to_big(meta_val.index_id());
+  auto index_id = meta_val.index_id();
   id_generator().ReserveIndexId(meta_val.index_id());
   auto epi = std::make_shared<EdgePropertyIndex>(db_, &graph_cf_, meta_val,
                                                  graph_cf_.index, index_id, tid,
@@ -384,12 +379,12 @@ void GraphDB::ApplyDeleteEdgePropertyIndex(
   rocksdb::WriteBatch wb;
   wb.Delete(graph_cf_.meta_info,
             BuildMetaKey(MetadataType::EdgePropertyIndex, index_name));
-  std::string start_key(AsChars(index_id), sizeof(index_id));
-  std::string end_key(AsChars(index_id), sizeof(index_id));
+  std::string start_key = EncodeBigEndianId(index_id);
+  std::string end_key = start_key;
   end_key.append(128, static_cast<char>(0xFF));
   wb.DeleteRange(graph_cf_.index, start_key, end_key);
-  std::string wal_start(AsChars(index_id), sizeof(index_id));
-  std::string wal_end(AsChars(index_id), sizeof(index_id));
+  std::string wal_start = EncodeBigEndianId(index_id);
+  std::string wal_end = wal_start;
   wal_end.append(sizeof(uint64_t), static_cast<char>(0xFF));
   wb.DeleteRange(graph_cf_.wal, wal_start, wal_end);
   if (apply_index > 0) {

@@ -1,7 +1,6 @@
 #include "runtime/graphdb_access.h"
 
 #include <algorithm>
-#include <boost/endian/conversion.hpp>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -50,13 +49,12 @@ void ApplyGraphDBProperties(Entity *entity, Value::Map properties,
 
 graphdb::Vertex GraphDBVertexById(graphdb::Transaction &transaction,
                                   std::int64_t id) {
-  return transaction.GetVertexById(boost::endian::native_to_big(id));
+  return transaction.GetVertexById(id);
 }
 
 graphdb::Edge GraphDBEdgeById(graphdb::Transaction &transaction,
                               RelationshipReference relationship) {
-  return transaction.GetEdgeById(relationship.type_id,
-                                 boost::endian::native_to_big(relationship.id));
+  return transaction.GetEdgeById(relationship.type_id, relationship.id);
 }
 
 Value::NodePtr MaterializeGraphDBVertex(graphdb::Transaction &transaction,
@@ -66,7 +64,7 @@ Value::NodePtr MaterializeGraphDBVertex(graphdb::Transaction &transaction,
 
 Value::NodePtr MaterializeGraphDBVertex(graphdb::Vertex vertex) {
   auto node = std::make_shared<Node>();
-  node->id = vertex.GetNativeId();
+  node->id = vertex.GetId();
   const auto labels = vertex.GetLabels();
   node->labels.assign(labels.begin(), labels.end());
   std::sort(node->labels.begin(), node->labels.end());
@@ -82,9 +80,9 @@ Value::RelationshipPtr MaterializeGraphDBEdge(
 
 Value::RelationshipPtr MaterializeGraphDBEdge(graphdb::Edge edge) {
   auto value = std::make_shared<Relationship>();
-  value->id = edge.GetNativeId();
-  value->start_node_id = edge.GetNativeStartId();
-  value->end_node_id = edge.GetNativeEndId();
+  value->id = edge.GetId();
+  value->start_node_id = edge.GetStartId();
+  value->end_node_id = edge.GetEndId();
   value->type_id = edge.GetTypeId();
   value->type = edge.GetType();
   auto properties = edge.GetAllProperty();
@@ -98,7 +96,7 @@ Value::NodePtr CreateGraphDBVertex(graphdb::Transaction &transaction,
   std::unordered_set<std::string> graphdb_labels(labels.begin(), labels.end());
   graphdb::Vertex vertex =
       transaction.CreateVertex(graphdb_labels, ToGraphDBProperties(properties));
-  return MaterializeGraphDBVertex(transaction, vertex.GetNativeId());
+  return MaterializeGraphDBVertex(transaction, vertex.GetId());
 }
 
 Value::RelationshipPtr CreateGraphDBEdge(graphdb::Transaction &transaction,
@@ -110,8 +108,7 @@ Value::RelationshipPtr CreateGraphDBEdge(graphdb::Transaction &transaction,
   graphdb::Vertex end = GraphDBVertexById(transaction, end_node_id);
   graphdb::Edge edge =
       transaction.CreateEdge(start, end, type, ToGraphDBProperties(properties));
-  return MaterializeGraphDBEdge(transaction,
-                                {edge.GetNativeId(), edge.GetTypeId()});
+  return MaterializeGraphDBEdge(transaction, {edge.GetId(), edge.GetTypeId()});
 }
 
 void SetGraphDBVertexProperty(graphdb::Transaction &transaction,

@@ -543,13 +543,13 @@ Value EvaluateLocallyCorrelatedPatternComprehension(
     graphdb::Edge edge = edges->GetEdge();
     edges->Next();
     const std::int64_t start_id = start.AsNode().id;
-    std::int64_t next_id = edge.GetNativeEndId();
-    if (edge.GetNativeStartId() != start_id) {
+    std::int64_t next_id = edge.GetEndId();
+    if (edge.GetStartId() != start_id) {
       RG_CHECK(direction != graphdb::EdgeDirection::OUTGOING &&
-                   edge.GetNativeEndId() == start_id,
+                   edge.GetEndId() == start_id,
                common::InternalError,
                "edge iterator returned an unrelated relationship");
-      next_id = edge.GetNativeStartId();
+      next_id = edge.GetStartId();
     }
 
     Value::NodePtr next =

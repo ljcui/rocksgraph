@@ -8,6 +8,7 @@
 
 #include "common/byte_utils.h"
 #include "graphdb/graph_db.h"
+#include "graphdb/id_codec.h"
 #include "graphdb/transaction.h"
 #include "test_util.h"
 #include "value/value.h"
@@ -30,7 +31,7 @@ std::vector<int64_t> CollectVertexPropertyIndexVids(
     std::string index_val;
     auto s = txn->dbtxn()->Get(ro, index->cf(), prefix, &index_val);
     if (s.ok()) {
-      vids.push_back(common::ReadValue<int64_t>(index_val.data()));
+      vids.push_back(ReadBigEndianId<int64_t>(index_val.data()));
     } else if (!s.IsNotFound()) {
       throw std::runtime_error(s.ToString());
     }
@@ -46,7 +47,7 @@ std::vector<int64_t> CollectVertexPropertyIndexVids(
     if (key.size() != sizeof(int64_t)) {
       throw std::runtime_error("invalid non-unique vertex index entry");
     }
-    vids.push_back(common::ReadValue<int64_t>(key.data()));
+    vids.push_back(ReadBigEndianId<int64_t>(key.data()));
   }
   std::sort(vids.begin(), vids.end());
   return vids;
@@ -567,10 +568,10 @@ TEST(VertexPropertyIndex, loadPreservesBuildStartWalId) {
   meta.set_name("label1_id");
   meta.set_is_unique(true);
   meta.set_label("label1");
-  meta.set_label_id(boost::endian::big_to_native(lid));
+  meta.set_label_id(lid);
   meta.add_properties("id");
-  meta.add_property_ids(boost::endian::big_to_native(pid));
-  meta.set_index_id(boost::endian::big_to_native(index_id));
+  meta.add_property_ids(pid);
+  meta.set_index_id(index_id);
   meta.set_state(meta::IndexBuildState::BUILDING);
   meta.set_build_start_wal_id(8);
   meta.set_applied_wal_id(0);

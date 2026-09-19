@@ -3,12 +3,10 @@
 //
 
 #pragma once
-#include <boost/endian/conversion.hpp>
 #include <cstddef>
 #include <unordered_map>
 #include <unordered_set>
 
-#include "common/byte_utils.h"
 #include "edge_direction.h"
 #include "value/value.h"
 
@@ -39,12 +37,6 @@ class Vertex : public Property {
  public:
   Vertex(Transaction* txn, int64_t id) : txn_(txn), id_(id) {}
   [[nodiscard]] int64_t GetId() const { return id_; };
-  [[nodiscard]] int64_t GetNativeId() const {
-    return boost::endian::big_to_native(id_);
-  };
-  [[nodiscard]] std::string_view GetIdView() const {
-    return common::AsStringView(id_);
-  };
 
   std::unordered_set<uint32_t> GetLabelIds();
   std::unordered_set<std::string> GetLabels();
@@ -95,19 +87,10 @@ class Edge : public Property {
       : txn_(txn), id_(id), startId_(startId), endId_(endId), typeId_(typeId) {}
 
   [[nodiscard]] int64_t GetId() const { return id_; };
-  [[nodiscard]] int64_t GetNativeId() const {
-    return boost::endian::big_to_native(id_);
-  };
   [[nodiscard]] Vertex GetStart() const { return {txn_, startId_}; };
   [[nodiscard]] int64_t GetStartId() const { return startId_; };
-  [[nodiscard]] int64_t GetNativeStartId() const {
-    return boost::endian::big_to_native(startId_);
-  };
   [[nodiscard]] Vertex GetEnd() const { return {txn_, endId_}; };
   [[nodiscard]] int64_t GetEndId() const { return endId_; };
-  [[nodiscard]] int64_t GetNativeEndId() const {
-    return boost::endian::big_to_native(endId_);
-  };
   [[nodiscard]] uint32_t GetTypeId() const { return typeId_; };
   [[nodiscard]] Vertex GetOtherEnd(int64_t vid) const;
   std::string GetType();

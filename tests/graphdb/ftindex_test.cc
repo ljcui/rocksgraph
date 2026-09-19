@@ -13,6 +13,7 @@
 #include "common/logger.h"
 #include "graphdb/ftindex/include/lib.rs.h"
 #include "graphdb/graph_db.h"
+#include "graphdb/id_codec.h"
 #include "graphdb/transaction.h"
 #include "proto/graph_storage.pb.h"
 #include "test_util.h"
@@ -101,7 +102,7 @@ std::vector<meta::FullTextIndexUpdate> ReadFullTextWalUpdates(
     GraphDB* graph_db, const std::shared_ptr<VertexFullTextIndex>& index) {
   auto txn = graph_db->BeginTransaction();
   rocksdb::ReadOptions ro;
-  std::string prefix(AsChars(index->index_id()), sizeof(index->index_id()));
+  std::string prefix = EncodeBigEndianId(index->index_id());
   std::vector<meta::FullTextIndexUpdate> updates;
   std::unique_ptr<rocksdb::Iterator> iter(
       txn->dbtxn()->GetIterator(ro, graph_db->graph_cf().wal));
@@ -421,7 +422,7 @@ TEST(FTIndex, deleteIndexRejectsPendingTransactionCommit) {
 
   auto index = graphDB->meta_info().GetVertexFullTextIndex("ft_index");
   ASSERT_TRUE(index != nullptr);
-  std::string prefix(AsChars(index->index_id()), sizeof(index->index_id()));
+  std::string prefix = EncodeBigEndianId(index->index_id());
 
   auto txn = graphDB->BeginTransaction();
   txn->CreateVertex({"label1"},
@@ -978,17 +979,13 @@ TEST(FTIndex, createIndexClearsStaleArtifactsFromPreviousFailedBuild) {
   ft_add_document(*stale_ft, 777, fields, values);
   ft_commit(*stale_ft, "0");
 
-  uint32_t stale_index_id =
-      boost::endian::native_to_big(static_cast<uint32_t>(1));
-  int64_t stale_vid = boost::endian::native_to_big(static_cast<int64_t>(888));
+  constexpr uint32_t stale_index_id = 1;
+  constexpr int64_t stale_vid = 888;
+  std::string stale_index_key = EncodeBigEndianId(stale_index_id);
+  AppendBigEndianId(stale_index_key, stale_vid);
 
-  std::string stale_index_key(AsChars(stale_index_id), sizeof(stale_index_id));
-  stale_index_key.append(AsChars(stale_vid), sizeof(stale_vid));
-
-  uint64_t stale_wal_id =
-      boost::endian::native_to_big(static_cast<uint64_t>(1));
-  std::string stale_wal_key(AsChars(stale_index_id), sizeof(stale_index_id));
-  stale_wal_key.append(AsChars(stale_wal_id), sizeof(stale_wal_id));
+  std::string stale_wal_key = EncodeBigEndianId(stale_index_id);
+  AppendBigEndianId(stale_wal_key, static_cast<uint64_t>(1));
 
   meta::FullTextIndexUpdate stale_update;
   stale_update.set_type(meta::UpdateType::Add);
@@ -1017,7 +1014,7 @@ TEST(FTIndex, createIndexClearsStaleArtifactsFromPreviousFailedBuild) {
   ASSERT_TRUE(index != nullptr);
   index->ApplyWAL();
 
-  std::string prefix(AsChars(index->index_id()), sizeof(index->index_id()));
+  std::string prefix = EncodeBigEndianId(index->index_id());
   EXPECT_EQ(
       CountKeysWithPrefix(graphDB.get(), graphDB->graph_cf().index, prefix), 0);
 
@@ -1063,7 +1060,7 @@ TEST(FTIndex, applyWalDoesNotWriteIndexMarkers) {
   auto vertex = txn->CreateVertex({"label1"}, {{"id", Value(1)}});
   int64_t vid = vertex.GetId();
   txn->Commit();
-  std::string prefix(AsChars(index->index_id()), sizeof(index->index_id()));
+  std::string prefix = EncodeBigEndianId(index->index_id());
   EXPECT_EQ(
       CountKeysWithPrefix(graphDB.get(), graphDB->graph_cf().index, prefix), 0);
 

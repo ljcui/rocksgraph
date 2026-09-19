@@ -12,6 +12,7 @@
 #include "common/flags.h"
 #include "common/logger.h"
 #include "graphdb/graph_db.h"
+#include "graphdb/id_codec.h"
 #include "graphdb/transaction.h"
 #include "graphdb/value_codec.h"
 #include "graphdb/vector_property.h"
@@ -786,8 +787,7 @@ TEST(VectorIndex, deleteOnlyWalIsCheckpointedAndTrimmed) {
 
     auto index = graphDB->meta_info().GetVertexVectorIndex(index_name);
     ASSERT_TRUE(index != nullptr);
-    std::string prefix(common::AsChars(index->index_id()),
-                       sizeof(index->index_id()));
+    std::string prefix = EncodeBigEndianId(index->index_id());
 
     auto txn = graphDB->BeginTransaction();
     txn->CreateVertex(
@@ -838,8 +838,7 @@ TEST(VectorIndex, restartAfterCheckpointContinuesWalSequence) {
 
     auto index = graphDB->meta_info().GetVertexVectorIndex(index_name);
     ASSERT_TRUE(index != nullptr);
-    std::string prefix(common::AsChars(index->index_id()),
-                       sizeof(index->index_id()));
+    std::string prefix = EncodeBigEndianId(index->index_id());
 
     auto txn = graphDB->BeginTransaction();
     txn->CreateVertex(

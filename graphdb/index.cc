@@ -17,6 +17,7 @@
 #include "common/logger.h"
 #include "ftindex/include/lib.rs.h"
 #include "graphdb/graph_db.h"
+#include "graphdb/id_codec.h"
 #include "graphdb/transaction.h"
 #include "graphdb/value_codec.h"
 #include "graphdb/vector_property.h"
@@ -237,7 +238,7 @@ rg::Value DeserializeStoredPropertyValue(const std::string& value) {
 uint64_t LoadVisibleMaxWalId(rocksdb::TransactionDB* db, GraphCF* graph_cf,
                              uint32_t index_id,
                              const rocksdb::Snapshot* snapshot) {
-  std::string prefix(AsChars(index_id), sizeof(index_id));
+  std::string prefix = EncodeBigEndianId(index_id);
   std::string seek_key(prefix);
   seek_key.append(sizeof(uint64_t), static_cast<char>(0xFF));
   rocksdb::ReadOptions ro;
@@ -289,7 +290,7 @@ void VertexPropertyIndex::UpdateIndexDirect(
           RG_THROW_CODE(StorageEngineError,
                         "vertex unique index stores invalid vid size");
         }
-        if (ReadValue<int64_t>(tmp.data()) != vid) {
+        if (ReadBigEndianId<int64_t>(tmp.data()) != vid) {
           RG_THROW_CODE(IndexValueAlreadyExists);
         }
         keep_existing_entry = true;
@@ -309,8 +310,8 @@ void VertexPropertyIndex::UpdateIndexDirect(
       keep_existing_entry = false;
     }
     if (new_values && !keep_existing_entry) {
-      auto s = txn->dbtxn()->GetWriteBatch()->Put(
-          cf_, new_key, rocksdb::Slice(AsChars(vid), sizeof(vid)));
+      auto s = txn->dbtxn()->GetWriteBatch()->Put(cf_, new_key,
+                                                  EncodeBigEndianId(vid));
       if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
     }
   } else {
@@ -392,7 +393,7 @@ void VertexPropertyIndex::ApplyBuildUpdate(
           RG_THROW_CODE(StorageEngineError,
                         "vertex unique index stores invalid vid size");
         }
-        if (ReadValue<int64_t>(current_vid.data()) != update.vid()) {
+        if (ReadBigEndianId<int64_t>(current_vid.data()) != update.vid()) {
           RG_THROW_CODE(IndexValueAlreadyExists);
         }
         return;
@@ -400,8 +401,7 @@ void VertexPropertyIndex::ApplyBuildUpdate(
       if (!s.IsNotFound()) {
         RG_THROW_CODE(StorageEngineError, s.ToString());
       }
-      s = db_->Put(wo, cf_, index_key,
-                   rocksdb::Slice(AsChars(update.vid()), sizeof(update.vid())));
+      s = db_->Put(wo, cf_, index_key, EncodeBigEndianId(update.vid()));
     } else if (update.type() == meta::UpdateType::Delete) {
       if (s.IsNotFound()) {
         return;
@@ -413,7 +413,7 @@ void VertexPropertyIndex::ApplyBuildUpdate(
         RG_THROW_CODE(StorageEngineError,
                       "vertex unique index stores invalid vid size");
       }
-      if (ReadValue<int64_t>(current_vid.data()) != update.vid()) {
+      if (ReadBigEndianId<int64_t>(current_vid.data()) != update.vid()) {
         return;
       }
       s = db_->Delete(wo, cf_, index_key);
@@ -463,18 +463,18 @@ void VertexPropertyIndex::Load(const rocksdb::Snapshot* snapshot,
   ro.snapshot = snapshot;
   std::unique_ptr<rocksdb::Iterator> iter(
       db_->NewIterator(ro, graph_cf_->vertex_label_vid));
-  rocksdb::Slice prefix(AsChars(lid_), sizeof(lid_));
+  const std::string prefix = EncodeBigEndianId(lid_);
   for (iter->Seek(prefix); iter->Valid() && iter->key().starts_with(prefix);
        iter->Next()) {
     auto key = iter->key();
     key.remove_prefix(sizeof(uint32_t));
-    int64_t vid = ReadValue<int64_t>(key.data());
+    int64_t vid = ReadBigEndianId<int64_t>(key.data());
     std::vector<rg::Value> values;
     values.reserve(pids_.size());
     bool complete = true;
     for (auto pid : pids_) {
-      std::string property_key(AsChars(vid), sizeof(vid));
-      property_key.append(AsChars(pid), sizeof(pid));
+      std::string property_key = EncodeBigEndianId(vid);
+      AppendBigEndianId(property_key, pid);
       std::string property_val;
       auto s =
           db_->Get(ro, graph_cf_->vertex_property, property_key, &property_val);
@@ -505,7 +505,7 @@ void VertexPropertyIndex::Load(const rocksdb::Snapshot* snapshot,
 }
 
 void VertexPropertyIndex::ApplyWAL() {
-  std::string prefix(AsChars(index_id_), sizeof(index_id_));
+  std::string prefix = EncodeBigEndianId(index_id_);
   std::string start_key(prefix);
   uint64_t next = big_to_native(apply_id_) + 1;
   native_to_big_inplace(next);
@@ -552,7 +552,7 @@ void VertexPropertyIndex::ApplyWAL() {
 }
 
 std::string VertexPropertyIndex::NextWALKey() {
-  std::string ret(AsChars(index_id_), sizeof(index_id_));
+  std::string ret = EncodeBigEndianId(index_id_);
   uint64_t wal_id = native_to_big(next_wal_id_++);
   ret.append(AsChars(wal_id), sizeof(wal_id));
   return ret;
@@ -560,7 +560,7 @@ std::string VertexPropertyIndex::NextWALKey() {
 
 std::string VertexPropertyIndex::IndexKey(
     const std::vector<rg::Value>& values) const {
-  std::string index_key(AsChars(index_id_), sizeof(index_id_));
+  std::string index_key = EncodeBigEndianId(index_id_);
   index_key.append(EncodePropertyIndexValues(values));
   return index_key;
 }
@@ -568,7 +568,7 @@ std::string VertexPropertyIndex::IndexKey(
 std::string VertexPropertyIndex::EntryKey(const std::vector<rg::Value>& values,
                                           int64_t vid) const {
   std::string index_key = IndexKey(values);
-  index_key.append(AsChars(vid), sizeof(vid));
+  AppendBigEndianId(index_key, vid);
   return index_key;
 }
 
@@ -591,8 +591,8 @@ VertexPropertyIndex::LoadIndexedPropertyValues(
         continue;
       }
     }
-    std::string property_key(AsChars(vid), sizeof(vid));
-    property_key.append(AsChars(pid), sizeof(pid));
+    std::string property_key = EncodeBigEndianId(vid);
+    AppendBigEndianId(property_key, pid);
     std::string property_val;
     auto s = txn->dbtxn()->Get(ro, txn->db()->graph_cf().vertex_property,
                                property_key, &property_val);
@@ -666,7 +666,7 @@ void EdgePropertyIndex::UpdateIndexDirect(
           RG_THROW_CODE(StorageEngineError,
                         "edge unique index stores invalid eid size");
         }
-        if (ReadValue<int64_t>(current_eid.data()) != eid) {
+        if (ReadBigEndianId<int64_t>(current_eid.data()) != eid) {
           RG_THROW_CODE(IndexValueAlreadyExists);
         }
         keep_existing_entry = true;
@@ -690,8 +690,8 @@ void EdgePropertyIndex::UpdateIndexDirect(
       keep_existing_entry = false;
     }
     if (new_values && !keep_existing_entry) {
-      auto s = txn->dbtxn()->GetWriteBatch()->Put(
-          cf_, new_key, rocksdb::Slice(AsChars(eid), sizeof(eid)));
+      auto s = txn->dbtxn()->GetWriteBatch()->Put(cf_, new_key,
+                                                  EncodeBigEndianId(eid));
       if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
     }
   } else {
@@ -773,14 +773,13 @@ void EdgePropertyIndex::ApplyBuildUpdate(
           RG_THROW_CODE(StorageEngineError,
                         "edge unique index stores invalid eid size");
         }
-        if (ReadValue<int64_t>(current_eid.data()) != update.vid()) {
+        if (ReadBigEndianId<int64_t>(current_eid.data()) != update.vid()) {
           RG_THROW_CODE(IndexValueAlreadyExists);
         }
         return;
       }
       if (!s.IsNotFound()) RG_THROW_CODE(StorageEngineError, s.ToString());
-      s = db_->Put(wo, cf_, index_key,
-                   rocksdb::Slice(AsChars(update.vid()), sizeof(update.vid())));
+      s = db_->Put(wo, cf_, index_key, EncodeBigEndianId(update.vid()));
     } else if (update.type() == meta::UpdateType::Delete) {
       if (s.IsNotFound()) return;
       if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
@@ -788,7 +787,7 @@ void EdgePropertyIndex::ApplyBuildUpdate(
         RG_THROW_CODE(StorageEngineError,
                       "edge unique index stores invalid eid size");
       }
-      if (ReadValue<int64_t>(current_eid.data()) != update.vid()) return;
+      if (ReadBigEndianId<int64_t>(current_eid.data()) != update.vid()) return;
       s = db_->Delete(wo, cf_, index_key);
     } else {
       RG_THROW_CODE(StorageEngineError,
@@ -834,7 +833,7 @@ void EdgePropertyIndex::Load(const rocksdb::Snapshot* snapshot,
   ro.snapshot = snapshot;
   std::unique_ptr<rocksdb::Iterator> iter(
       db_->NewIterator(ro, graph_cf_->edge_type_eid));
-  rocksdb::Slice prefix(AsChars(tid_), sizeof(tid_));
+  const std::string prefix = EncodeBigEndianId(tid_);
   for (iter->Seek(prefix); iter->Valid() && iter->key().starts_with(prefix);
        iter->Next()) {
     auto key = iter->key();
@@ -842,13 +841,13 @@ void EdgePropertyIndex::Load(const rocksdb::Snapshot* snapshot,
       RG_THROW_CODE(StorageEngineError, "edge type/eid key has invalid size");
     }
     key.remove_prefix(sizeof(tid_));
-    int64_t eid = ReadValue<int64_t>(key.data());
+    int64_t eid = ReadBigEndianId<int64_t>(key.data());
     std::vector<rg::Value> values;
     values.reserve(pids_.size());
     bool complete = true;
     for (auto pid : pids_) {
-      std::string property_key(AsChars(eid), sizeof(eid));
-      property_key.append(AsChars(pid), sizeof(pid));
+      std::string property_key = EncodeBigEndianId(eid);
+      AppendBigEndianId(property_key, pid);
       std::string property_val;
       auto s =
           db_->Get(ro, graph_cf_->edge_property, property_key, &property_val);
@@ -872,7 +871,7 @@ void EdgePropertyIndex::Load(const rocksdb::Snapshot* snapshot,
 }
 
 void EdgePropertyIndex::ApplyWAL() {
-  std::string prefix(AsChars(index_id_), sizeof(index_id_));
+  std::string prefix = EncodeBigEndianId(index_id_);
   std::string start_key(prefix);
   uint64_t next = big_to_native(apply_id_) + 1;
   native_to_big_inplace(next);
@@ -915,7 +914,7 @@ void EdgePropertyIndex::ApplyWAL() {
 }
 
 std::string EdgePropertyIndex::NextWALKey() {
-  std::string ret(AsChars(index_id_), sizeof(index_id_));
+  std::string ret = EncodeBigEndianId(index_id_);
   uint64_t wal_id = native_to_big(next_wal_id_++);
   ret.append(AsChars(wal_id), sizeof(wal_id));
   return ret;
@@ -923,7 +922,7 @@ std::string EdgePropertyIndex::NextWALKey() {
 
 std::string EdgePropertyIndex::IndexKey(
     const std::vector<rg::Value>& values) const {
-  std::string index_key(AsChars(index_id_), sizeof(index_id_));
+  std::string index_key = EncodeBigEndianId(index_id_);
   index_key.append(EncodePropertyIndexValues(values));
   return index_key;
 }
@@ -931,7 +930,7 @@ std::string EdgePropertyIndex::IndexKey(
 std::string EdgePropertyIndex::EntryKey(const std::vector<rg::Value>& values,
                                         int64_t eid) const {
   std::string index_key = IndexKey(values);
-  index_key.append(AsChars(eid), sizeof(eid));
+  AppendBigEndianId(index_key, eid);
   return index_key;
 }
 
@@ -1118,14 +1117,15 @@ VertexFullTextIndex::VertexFullTextIndex(
   }
   meta_.set_applied_wal_id(big_to_native(apply_id_));
 
-  std::string prefix(AsChars(index_id_), sizeof(index_id_));
+  const std::string index_prefix = EncodeBigEndianId(index_id_);
+  std::string prefix(index_prefix);
   prefix.append(8, 0xFF);
   rocksdb::ReadOptions ro;
   std::unique_ptr<rocksdb::Iterator> iter(db_->NewIterator(ro, graph_cf_->wal));
   iter->SeekForPrev(prefix);
   if (iter->Valid()) {
     auto key = iter->key();
-    if (key.starts_with({AsChars(index_id_), sizeof(index_id_)})) {
+    if (key.starts_with(index_prefix)) {
       key.remove_prefix(sizeof(index_id_));
       if (key.size() != sizeof(uint64_t)) {
         RG_THROW_CODE(
@@ -1156,7 +1156,7 @@ void VertexFullTextIndex::DeleteIndex(Transaction* txn, int64_t vid,
 }
 
 std::string VertexFullTextIndex::NextWALKey() {
-  std::string ret(AsChars(index_id_), sizeof(index_id_));
+  std::string ret = EncodeBigEndianId(index_id_);
   uint64_t wal_id = native_to_big(next_wal_id_++);
   ret.append(AsChars(wal_id), sizeof(wal_id));
   return ret;
@@ -1182,12 +1182,12 @@ void VertexFullTextIndex::Load(const rocksdb::Snapshot* snapshot,
     ro.snapshot = snapshot;
     std::unique_ptr<rocksdb::Iterator> iter(
         db_->NewIterator(ro, graph_cf_->vertex_label_vid));
-    rocksdb::Slice prefix(AsChars(lid), sizeof(lid));
+    const std::string prefix = EncodeBigEndianId(lid);
     for (iter->Seek(prefix); iter->Valid() && iter->key().starts_with(prefix);
          iter->Next()) {
       auto key = iter->key();
       key.remove_prefix(sizeof(uint32_t));
-      int64_t id = ReadValue<int64_t>(key.data());
+      int64_t id = ReadBigEndianId<int64_t>(key.data());
       if (loaded_vids) {
         // A vertex may appear in multiple label scans; skip it before
         // property IO.
@@ -1204,7 +1204,7 @@ void VertexFullTextIndex::Load(const rocksdb::Snapshot* snapshot,
       for (const auto& [pid, prop_name] : indexed_properties) {
         std::string property_val;
         property_key.resize(vertex_key_size);
-        property_key.append(AsChars(pid), sizeof(pid));
+        AppendBigEndianId(property_key, pid);
         auto s = db_->Get(ro, graph_cf_->vertex_property, property_key,
                           &property_val);
         if (s.IsNotFound()) {
@@ -1290,7 +1290,7 @@ void VertexFullTextIndex::Commit(const std::string& payload) {
 
 void VertexFullTextIndex::ApplyWAL() {
   std::lock_guard<std::mutex> lock(mutex_);
-  std::string prefix(AsChars(index_id_), sizeof(index_id_));
+  std::string prefix = EncodeBigEndianId(index_id_);
   std::string start_key(prefix);
   uint64_t next = big_to_native(apply_id_) + 1;
   native_to_big_inplace(next);
@@ -1413,7 +1413,8 @@ VertexVectorIndex::VertexVectorIndex(rocksdb::TransactionDB* db,
            big_to_native(apply_id_));
   meta_.set_applied_wal_id(big_to_native(apply_id_));
   {
-    std::string prefix(AsChars(index_id_), sizeof(index_id_));
+    const std::string index_prefix = EncodeBigEndianId(index_id_);
+    std::string prefix(index_prefix);
     prefix.append(8, 0xFF);
     rocksdb::ReadOptions ro;
     std::unique_ptr<rocksdb::Iterator> iter(
@@ -1421,7 +1422,7 @@ VertexVectorIndex::VertexVectorIndex(rocksdb::TransactionDB* db,
     iter->SeekForPrev(prefix);
     if (iter->Valid()) {
       auto key = iter->key();
-      if (key.starts_with({AsChars(index_id_), sizeof(index_id_)})) {
+      if (key.starts_with(index_prefix)) {
         key.remove_prefix(sizeof(index_id_));
         if (key.size() != sizeof(uint64_t)) {
           RG_THROW_CODE(
@@ -1586,7 +1587,7 @@ void VertexVectorIndex::DeleteIfPresent(Transaction* txn, int64_t vid) {
 }
 
 std::string VertexVectorIndex::NextWALKey() {
-  std::string ret(AsChars(index_id_), sizeof(index_id_));
+  std::string ret = EncodeBigEndianId(index_id_);
   uint64_t wal_id = native_to_big(next_wal_id_++);
   ret.append(AsChars(wal_id), sizeof(wal_id));
   return ret;
@@ -1594,7 +1595,7 @@ std::string VertexVectorIndex::NextWALKey() {
 
 void VertexVectorIndex::ApplyWAL() {
   std::lock_guard<std::mutex> lock(apply_mutex_);
-  std::string prefix(AsChars(index_id_), sizeof(index_id_));
+  std::string prefix = EncodeBigEndianId(index_id_);
   std::string start_key(prefix);
   uint64_t next = big_to_native(apply_id_) + 1;
   native_to_big_inplace(next);
@@ -1720,7 +1721,7 @@ void VertexVectorIndex::Load(const rocksdb::Snapshot* snapshot,
       RG_THROW_CODE(StorageEngineError,
                     "vertex vector property key has invalid vid size");
     }
-    int64_t vid = ReadValue<int64_t>(key.data());
+    int64_t vid = ReadBigEndianId<int64_t>(key.data());
     auto embedding = DeserializeVector(iter->value(), meta_.dimensions());
     {
       std::unique_lock write(mutex_);

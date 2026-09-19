@@ -1,22 +1,21 @@
+#include "graphdb/graph_db.h"
+
 #include <gtest/gtest.h>
 
 #include <algorithm>
-#include <boost/endian/conversion.hpp>
 #include <filesystem>
 #include <unordered_set>
 #include <vector>
 
 #include "common/byte_utils.h"
 #include "common/logger.h"
-#include "graphdb/graph_db.h"
+#include "graphdb/id_codec.h"
 #include "graphdb/transaction.h"
 #include "test_util.h"
 #include "value/value.h"
 
 using rg::Value;
 namespace fs = std::filesystem;
-using boost::endian::big_to_native;
-using boost::endian::native_to_big_inplace;
 using namespace graphdb;
 static std::string testdb = "testdb";
 static std::unordered_map<std::string, Value> properties = {
@@ -63,12 +62,12 @@ TEST(GraphDB, basicCreate) {
   auto e2 = txn->CreateEdge(v2, v3, "edge_type23", properties);
   auto e3 = txn->CreateEdge(v3, v4, "edge_type34", properties);
   auto e4 = txn->CreateEdge(v4, v1, "edge_type41", properties);
-  EXPECT_LT(big_to_native(v1.GetId()), big_to_native(v2.GetId()));
-  EXPECT_LT(big_to_native(v2.GetId()), big_to_native(v3.GetId()));
-  EXPECT_LT(big_to_native(v3.GetId()), big_to_native(v4.GetId()));
-  EXPECT_LT(big_to_native(e1.GetId()), big_to_native(e2.GetId()));
-  EXPECT_LT(big_to_native(e2.GetId()), big_to_native(e3.GetId()));
-  EXPECT_LT(big_to_native(e3.GetId()), big_to_native(e4.GetId()));
+  EXPECT_LT(v1.GetId(), v2.GetId());
+  EXPECT_LT(v2.GetId(), v3.GetId());
+  EXPECT_LT(v3.GetId(), v4.GetId());
+  EXPECT_LT(e1.GetId(), e2.GetId());
+  EXPECT_LT(e2.GetId(), e3.GetId());
+  EXPECT_LT(e3.GetId(), e4.GetId());
   EXPECT_EQ(v1.GetAllProperty(), properties);
   EXPECT_EQ(v2.GetAllProperty(), properties);
   EXPECT_EQ(v3.GetAllProperty(), properties);
@@ -118,12 +117,12 @@ TEST(GraphDB, reOpen) {
   e2 = txn->GetEdgeById(e2.GetTypeId(), e2.GetId());
   e3 = txn->GetEdgeById(e3.GetTypeId(), e3.GetId());
   e4 = txn->GetEdgeById(e4.GetTypeId(), e4.GetId());
-  EXPECT_LT(big_to_native(v1.GetId()), big_to_native(v2.GetId()));
-  EXPECT_LT(big_to_native(v2.GetId()), big_to_native(v3.GetId()));
-  EXPECT_LT(big_to_native(v3.GetId()), big_to_native(v4.GetId()));
-  EXPECT_LT(big_to_native(e1.GetId()), big_to_native(e2.GetId()));
-  EXPECT_LT(big_to_native(e2.GetId()), big_to_native(e3.GetId()));
-  EXPECT_LT(big_to_native(e3.GetId()), big_to_native(e4.GetId()));
+  EXPECT_LT(v1.GetId(), v2.GetId());
+  EXPECT_LT(v2.GetId(), v3.GetId());
+  EXPECT_LT(v3.GetId(), v4.GetId());
+  EXPECT_LT(e1.GetId(), e2.GetId());
+  EXPECT_LT(e2.GetId(), e3.GetId());
+  EXPECT_LT(e3.GetId(), e4.GetId());
   EXPECT_EQ(v1.GetAllProperty(), properties);
   EXPECT_EQ(v2.GetAllProperty(), properties);
   EXPECT_EQ(v3.GetAllProperty(), properties);
@@ -152,8 +151,8 @@ TEST(GraphDB, entityIdRangeReOpen) {
   auto e1 = txn->CreateEdge(v1, v2, "edge_type12", {});
   txn->Commit();
 
-  auto max_vid = std::max(big_to_native(v1.GetId()), big_to_native(v2.GetId()));
-  auto max_eid = big_to_native(e1.GetId());
+  auto max_vid = std::max(v1.GetId(), v2.GetId());
+  auto max_eid = e1.GetId();
   txn.reset();
   graphDB.reset();
 
@@ -162,8 +161,8 @@ TEST(GraphDB, entityIdRangeReOpen) {
   auto existing = txn->GetVertexById(v2.GetId());
   auto v3 = txn->CreateVertex({"label3"}, {});
   auto e2 = txn->CreateEdge(existing, v3, "edge_type23", {});
-  EXPECT_GT(big_to_native(v3.GetId()), max_vid);
-  EXPECT_GT(big_to_native(e2.GetId()), max_eid);
+  EXPECT_GT(v3.GetId(), max_vid);
+  EXPECT_GT(e2.GetId(), max_eid);
   txn->Commit();
 }
 
@@ -176,21 +175,19 @@ TEST(GraphDB, entityIdRangeRefill) {
   vids.reserve(1030);
   for (int i = 0; i < 1030; ++i) {
     auto v = txn->CreateVertex({"label1"}, {});
-    vids.push_back(big_to_native(v.GetId()));
+    vids.push_back(v.GetId());
   }
   for (size_t i = 1; i < vids.size(); ++i) {
     EXPECT_LT(vids[i - 1], vids[i]);
   }
 
-  auto start =
-      txn->GetVertexById(boost::endian::native_to_big(static_cast<int64_t>(1)));
-  auto end =
-      txn->GetVertexById(boost::endian::native_to_big(static_cast<int64_t>(2)));
+  auto start = txn->GetVertexById(1);
+  auto end = txn->GetVertexById(2);
   std::vector<int64_t> eids;
   eids.reserve(1030);
   for (int i = 0; i < 1030; ++i) {
     auto e = txn->CreateEdge(start, end, "edge_type12", {});
-    eids.push_back(big_to_native(e.GetId()));
+    eids.push_back(e.GetId());
   }
   for (size_t i = 1; i < eids.size(); ++i) {
     EXPECT_LT(eids[i - 1], eids[i]);
@@ -247,8 +244,8 @@ TEST(GraphDB, raftIdGeneratorPersistsStateAndApplyIndex) {
 
   auto next_vid = graphDB->id_generator().GetNextVid();
   auto next_eid = graphDB->id_generator().GetNextEid();
-  EXPECT_GT(big_to_native(next_vid), big_to_native(vid));
-  EXPECT_GT(big_to_native(next_eid), big_to_native(eid));
+  EXPECT_GT(next_vid, vid);
+  EXPECT_GT(next_eid, eid);
   EXPECT_GT(graphDB->GetRaftApplyIndex(), apply_index);
 }
 
@@ -264,34 +261,28 @@ TEST(GraphDB, raftApplyUpdatesIdGeneratorCacheWithoutRestart) {
   constexpr int64_t kNextVid = 1025;
   constexpr int64_t kNextEid = 2049;
 
-  uint32_t lid = boost::endian::native_to_big(kLabelId);
-  uint32_t pid = boost::endian::native_to_big(kPropertyId);
-  uint32_t tid = boost::endian::native_to_big(kEdgeTypeId);
-  int64_t next_vid = boost::endian::native_to_big(kNextVid);
-  int64_t next_eid = boost::endian::native_to_big(kNextEid);
-
   rocksdb::WriteBatch wb;
   auto s = wb.Put(
       graphDB->graph_cf().meta_info,
       std::string(1, static_cast<char>(MetadataType::VertexLabel)) + "person",
-      std::string(common::AsChars(lid), sizeof(lid)));
+      EncodeBigEndianId(kLabelId));
   ASSERT_TRUE(s.ok());
   s = wb.Put(graphDB->graph_cf().meta_info,
              std::string(1, static_cast<char>(MetadataType::Property)) + "name",
-             std::string(common::AsChars(pid), sizeof(pid)));
+             EncodeBigEndianId(kPropertyId));
   ASSERT_TRUE(s.ok());
   s = wb.Put(
       graphDB->graph_cf().meta_info,
       std::string(1, static_cast<char>(MetadataType::EdgeType)) + "knows",
-      std::string(common::AsChars(tid), sizeof(tid)));
+      EncodeBigEndianId(kEdgeTypeId));
   ASSERT_TRUE(s.ok());
   s = wb.Put(graphDB->graph_cf().meta_info,
              std::string(1, static_cast<char>(MetadataType::NextVertexId)),
-             std::string(common::AsChars(next_vid), sizeof(next_vid)));
+             EncodeBigEndianId(kNextVid));
   ASSERT_TRUE(s.ok());
   s = wb.Put(graphDB->graph_cf().meta_info,
              std::string(1, static_cast<char>(MetadataType::NextEdgeId)),
-             std::string(common::AsChars(next_eid), sizeof(next_eid)));
+             EncodeBigEndianId(kNextEid));
   ASSERT_TRUE(s.ok());
 
   meta::RaftRequest request;
@@ -300,17 +291,14 @@ TEST(GraphDB, raftApplyUpdatesIdGeneratorCacheWithoutRestart) {
   graphDB->ApplyRaftRequest(1, request);
 
   EXPECT_EQ(graphDB->GetRaftApplyIndex(), 1U);
-  EXPECT_EQ(graphDB->id_generator().GetLid("person"), lid);
-  EXPECT_EQ(graphDB->id_generator().GetPid("name"), pid);
-  EXPECT_EQ(graphDB->id_generator().GetTid("knows"), tid);
-  EXPECT_EQ(graphDB->id_generator().GetOrCreateLid("company"),
-            boost::endian::native_to_big(kLabelId + 1));
-  EXPECT_EQ(graphDB->id_generator().GetOrCreatePid("age"),
-            boost::endian::native_to_big(kPropertyId + 1));
-  EXPECT_EQ(graphDB->id_generator().GetOrCreateTid("likes"),
-            boost::endian::native_to_big(kEdgeTypeId + 1));
-  EXPECT_EQ(big_to_native(graphDB->id_generator().GetNextVid()), kNextVid);
-  EXPECT_EQ(big_to_native(graphDB->id_generator().GetNextEid()), kNextEid);
+  EXPECT_EQ(graphDB->id_generator().GetLid("person"), kLabelId);
+  EXPECT_EQ(graphDB->id_generator().GetPid("name"), kPropertyId);
+  EXPECT_EQ(graphDB->id_generator().GetTid("knows"), kEdgeTypeId);
+  EXPECT_EQ(graphDB->id_generator().GetOrCreateLid("company"), kLabelId + 1);
+  EXPECT_EQ(graphDB->id_generator().GetOrCreatePid("age"), kPropertyId + 1);
+  EXPECT_EQ(graphDB->id_generator().GetOrCreateTid("likes"), kEdgeTypeId + 1);
+  EXPECT_EQ(graphDB->id_generator().GetNextVid(), kNextVid);
+  EXPECT_EQ(graphDB->id_generator().GetNextEid(), kNextEid);
 }
 
 TEST(GraphDB, updateProperty) {

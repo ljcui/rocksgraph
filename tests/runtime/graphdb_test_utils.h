@@ -168,7 +168,7 @@ class GraphDBTestDatabase final {
       auto iterator = transaction->NewVertexIterator();
       while (iterator->Valid()) {
         nodes.push_back(MaterializeGraphDBVertex(
-            *transaction, iterator->GetVertex().GetNativeId()));
+            *transaction, iterator->GetVertex().GetId()));
         iterator->Next();
       }
       transaction->Commit();
@@ -187,7 +187,7 @@ class GraphDBTestDatabase final {
       while (iterator->Valid()) {
         const auto& edge = iterator->GetEdge();
         relationships.push_back(MaterializeGraphDBEdge(
-            *transaction, {edge.GetNativeId(), edge.GetTypeId()}));
+            *transaction, {edge.GetId(), edge.GetTypeId()}));
         iterator->Next();
       }
       transaction->Commit();
@@ -211,7 +211,7 @@ class GraphDBTestDatabase final {
     try {
       const std::int64_t id =
           transaction->CreateVertex(label_set, ToGraphDBProperties(properties))
-              .GetNativeId();
+              .GetId();
       transaction->Commit();
       return id;
     } catch (...) {
@@ -230,14 +230,12 @@ class GraphDBTestDatabase final {
                           std::string type, Value::Map properties = {}) {
     auto transaction = BeginTransaction();
     try {
-      const auto start = transaction->GetVertexById(
-          boost::endian::native_to_big(start_node_id));
-      const auto end =
-          transaction->GetVertexById(boost::endian::native_to_big(end_node_id));
+      const auto start = transaction->GetVertexById(start_node_id);
+      const auto end = transaction->GetVertexById(end_node_id);
       const std::int64_t id =
           transaction
               ->CreateEdge(start, end, type, ToGraphDBProperties(properties))
-              .GetNativeId();
+              .GetId();
       transaction->Commit();
       return id;
     } catch (...) {

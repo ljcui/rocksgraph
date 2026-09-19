@@ -230,7 +230,7 @@ bool TryBindNode(SlottedRow *row, std::size_t offset, graphdb::Vertex vertex) {
     return true;
   }
   const Value existing = row->Get(offset);
-  return existing.IsNode() && existing.AsNode().id == vertex.GetNativeId();
+  return existing.IsNode() && existing.AsNode().id == vertex.GetId();
 }
 
 bool TryBindNode(SlottedRow *row, std::optional<std::size_t> offset,
@@ -274,10 +274,10 @@ void SetScannedNode(SlottedRow *row, std::size_t offset,
 }
 
 graphdb::Vertex Endpoint(const graphdb::Edge &edge, std::int64_t id) {
-  if (edge.GetNativeStartId() == id) {
+  if (edge.GetStartId() == id) {
     return edge.GetStart();
   }
-  RG_CHECK(edge.GetNativeEndId() == id, common::InternalError,
+  RG_CHECK(edge.GetEndId() == id, common::InternalError,
            "node is not an endpoint of the relationship");
   return edge.GetEnd();
 }

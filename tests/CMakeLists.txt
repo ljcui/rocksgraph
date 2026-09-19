@@ -82,6 +82,7 @@ add_executable(
   graphdb/concurrency_test.cc
   graphdb/ftindex_test.cc
   graphdb/graph_db_test.cc
+  graphdb/id_codec_test.cc
   graphdb/index_test.cc
   graphdb/kv_engine_test.cc
   graphdb/transaction_test.cc

@@ -2,17 +2,13 @@
 // Created by botu.wzy
 //
 
-#include <boost/endian/conversion.hpp>
 #include <filesystem>
 
-#include "common/byte_utils.h"
 #include "common/exception.h"
 #include "common/logger.h"
 #include "graph_db.h"
 #include "graph_db_internal.h"
-
-using namespace boost::endian;
-using common::AsChars;
+#include "graphdb/id_codec.h"
 
 namespace graphdb {
 using namespace internal;
@@ -28,22 +24,20 @@ void GraphDB::AddVertexFullTextIndex(
     RG_THROW_CODE(VertexFullTextIndexAlreadyExists,
                   "Vertex fulltext index [{}] already exists", index_name);
   }
-  std::unordered_set<uint32_t> lids, native_lids;
-  std::unordered_set<uint32_t> pids, native_pids;
+  std::unordered_set<uint32_t> lids;
+  std::unordered_set<uint32_t> pids;
   for (const auto& label : labels) {
     auto lid = id_generator().GetOrCreateLid(label);
     lids.insert(lid);
-    native_lids.insert(big_to_native(lid));
   }
   for (const auto& prop : properties) {
     auto pid = id_generator().GetOrCreatePid(prop);
     pids.insert(pid);
-    native_pids.insert(big_to_native(pid));
   }
   CheckNoVectorFieldForNormalIndex(meta_info_, lids, pids, index_name);
   uint32_t index_id = id_generator().GetNextIndexId();
   meta::VertexFullTextIndex meta;
-  meta.set_index_id(big_to_native(index_id));
+  meta.set_index_id(index_id);
   meta.set_name(index_name);
   meta.set_state(meta::IndexBuildState::BUILDING);
   meta.set_build_start_wal_id(0);
@@ -51,8 +45,8 @@ void GraphDB::AddVertexFullTextIndex(
   meta.clear_build_error();
   *meta.mutable_labels() = {labels.begin(), labels.end()};
   *meta.mutable_properties() = {properties.begin(), properties.end()};
-  *meta.mutable_label_ids() = {native_lids.begin(), native_lids.end()};
-  *meta.mutable_property_ids() = {native_pids.begin(), native_pids.end()};
+  *meta.mutable_label_ids() = {lids.begin(), lids.end()};
+  *meta.mutable_property_ids() = {pids.begin(), pids.end()};
 
   auto* driver = raft_driver();
   if (driver != nullptr) {
@@ -91,17 +85,14 @@ void GraphDB::ApplyCreateVertexFullTextIndex(uint64_t apply_index,
                   "property counts",
                   meta.name());
   }
-  uint32_t index_id = native_to_big(meta.index_id());
+  uint32_t index_id = meta.index_id();
   id_generator().ReserveIndexId(meta.index_id());
   std::unordered_set<uint32_t> lids, pids;
-  std::unordered_set<uint32_t> native_lids, native_pids;
   for (auto id : meta.label_ids()) {
-    native_lids.insert(id);
-    lids.insert(native_to_big(id));
+    lids.insert(id);
   }
   for (auto id : meta.property_ids()) {
-    native_pids.insert(id);
-    pids.insert(native_to_big(id));
+    pids.insert(id);
   }
   CheckNoVectorFieldForNormalIndex(meta_info_, lids, pids, meta.name());
   meta.set_path(BuildFullTextIndexPath(path_, meta.name(), index_id));
@@ -130,7 +121,7 @@ void GraphDB::ApplyCreateVertexFullTextIndex(uint64_t apply_index,
   if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
   meta_info_.AddVertexFullTextIndex(v_ft_index);
   LOG_INFO("Begin online build vertex full text index: [lids:{}, pids:{}]",
-           native_lids, native_pids);
+           lids, pids);
   ScheduleVertexFullTextIndexBuild(v_ft_index, false);
 }
 
@@ -186,9 +177,9 @@ void GraphDB::ApplyDeleteVertexFullTextIndex(
   wb.Delete(graph_cf_.meta_info,
             BuildMetaKey(MetadataType::VertexFullTextIndex, index_name));
 
-  std::string start_key(AsChars(index_id), sizeof(index_id));
+  std::string start_key = EncodeBigEndianId(index_id);
   start_key.append(sizeof(int64_t), static_cast<char>(0x00));
-  std::string end_key(AsChars(index_id), sizeof(index_id));
+  std::string end_key = EncodeBigEndianId(index_id);
   end_key.append(sizeof(int64_t), static_cast<char>(0xFF));
   wb.DeleteRange(graph_cf_.index, start_key, end_key);
   wb.DeleteRange(graph_cf_.wal, start_key, end_key);
@@ -270,18 +261,18 @@ void GraphDB::AddVertexVectorIndex(const std::string& index_name,
   if (meta_info_.GetVertexVectorIndex(lid, pid)) {
     RG_THROW_CODE(VertexVectorIndexAlreadyExists,
                   "Vertex vector index [label:{}, property:{}] already exists",
-                  big_to_native(lid), big_to_native(pid));
+                  lid, pid);
   }
   CheckNoNormalIndexForVectorField(meta_info_, lid, pid, label, property);
   uint32_t index_id = id_generator().GetNextIndexId();
   meta::VectorIndexType index_type = meta::VectorIndexType::HNSW;
   meta::VertexVectorIndex meta;
-  meta.set_index_id(big_to_native(index_id));
+  meta.set_index_id(index_id);
   meta.set_name(index_name);
   meta.set_label(label);
   meta.set_property(property);
-  meta.set_label_id(big_to_native(lid));
-  meta.set_property_id(big_to_native(pid));
+  meta.set_label_id(lid);
+  meta.set_property_id(pid);
   meta.set_dimensions(dimension);
   meta.set_index_type(index_type);
   meta.set_distance_type(dist_type);
@@ -323,9 +314,9 @@ void GraphDB::AddVertexVectorField(const std::string& label,
 
   meta::VertexVectorField meta;
   meta.set_label(label);
-  meta.set_label_id(big_to_native(lid));
+  meta.set_label_id(lid);
   meta.set_property(property);
-  meta.set_property_id(big_to_native(pid));
+  meta.set_property_id(pid);
   meta.set_dimensions(dimension);
 
   auto* driver = raft_driver();
@@ -349,8 +340,8 @@ void GraphDB::ApplyCreateVertexVectorField(uint64_t apply_index,
                   "dimension should be an integer in the range [1, 4096]");
   }
 
-  auto lid = native_to_big(meta.label_id());
-  auto pid = native_to_big(meta.property_id());
+  auto lid = meta.label_id();
+  auto pid = meta.property_id();
   auto existing_field = meta_info_.GetVertexVectorField(lid, pid);
   if (existing_field) {
     if (apply_index > 0 && existing_field->dimensions() == meta.dimensions()) {
@@ -406,8 +397,8 @@ void GraphDB::ApplyCreateVertexVectorIndex(uint64_t apply_index,
     RG_THROW_CODE(VertexVectorIndexAlreadyExists,
                   "Vertex vector index [{}] already exists", meta.name());
   }
-  auto lid = native_to_big(meta.label_id());
-  auto pid = native_to_big(meta.property_id());
+  auto lid = meta.label_id();
+  auto pid = meta.property_id();
   if (meta_info_.GetVertexVectorIndex(lid, pid)) {
     RG_THROW_CODE(VertexVectorIndexAlreadyExists,
                   "Vertex vector index [label:{}, property:{}] already exists",
@@ -429,7 +420,7 @@ void GraphDB::ApplyCreateVertexVectorIndex(uint64_t apply_index,
                   "Vector field [label:{}, property:{}] is not defined",
                   meta.label(), meta.property());
   }
-  uint32_t index_id = native_to_big(meta.index_id());
+  uint32_t index_id = meta.index_id();
   id_generator().ReserveIndexId(meta.index_id());
   meta.set_path(path_ + "/vt/" + meta.name());
   meta.set_state(meta::IndexBuildState::BUILDING);
@@ -509,8 +500,8 @@ void GraphDB::ApplyDeleteVertexVectorIndex(
   wb.Delete(graph_cf_.meta_info,
             BuildMetaKey(MetadataType::VertexVectorIndex, index_name));
 
-  std::string wal_start(AsChars(index_id), sizeof(index_id));
-  std::string wal_end(AsChars(index_id), sizeof(index_id));
+  std::string wal_start = EncodeBigEndianId(index_id);
+  std::string wal_end = wal_start;
   wal_end.append(sizeof(uint64_t), static_cast<char>(0xFF));
   wb.DeleteRange(graph_cf_.wal, wal_start, wal_end);
   if (apply_index > 0) {

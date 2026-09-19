@@ -5,17 +5,15 @@
 #include "meta_info.h"
 
 #include <algorithm>
-#include <boost/endian/conversion.hpp>
 #include <filesystem>
 
 #include "common/byte_utils.h"
 #include "common/exception.h"
 #include "common/logger.h"
+#include "graphdb/id_codec.h"
 #include "graphdb/vector_property.h"
 #include "proto/graph_storage.pb.h"
-using namespace boost::endian;
 using common::AsChars;
-using common::ReadValue;
 namespace graphdb {
 namespace {
 
@@ -514,7 +512,7 @@ MetaInfo::GetVertexVectorFields(const std::unordered_set<uint32_t>& lids) {
   std::shared_lock lock(mutex_);
   std::vector<std::shared_ptr<meta::VertexVectorField>> fields;
   for (const auto& [_, field] : vertex_vector_fields_) {
-    if (lids.count(native_to_big(field->label_id()))) {
+    if (lids.count(field->label_id())) {
       fields.push_back(field);
     }
   }
@@ -523,8 +521,7 @@ MetaInfo::GetVertexVectorFields(const std::unordered_set<uint32_t>& lids) {
 
 bool MetaInfo::AddVertexVectorField(
     std::shared_ptr<meta::VertexVectorField> field) {
-  auto field_key = VectorFieldKey(native_to_big(field->label_id()),
-                                  native_to_big(field->property_id()));
+  auto field_key = VectorFieldKey(field->label_id(), field->property_id());
   std::unique_lock lock(mutex_);
   if (vertex_vector_fields_.count(field_key)) {
     return false;
@@ -708,7 +705,7 @@ void MetaInfo::Init(rocksdb::TransactionDB* db,
             "entity id metadata has invalid size, expect {}, actual {}",
             sizeof(int64_t), val.size());
       }
-      int64_t next_id = big_to_native(ReadValue<int64_t>(val.data()));
+      int64_t next_id = ReadBigEndianId<int64_t>(val.data());
       if (next_id < 1) {
         RG_THROW_CODE(StorageEngineError,
                       "entity id metadata must be positive");
@@ -723,15 +720,14 @@ void MetaInfo::Init(rocksdb::TransactionDB* db,
     if (prefix == MetadataType::VertexLabel ||
         prefix == MetadataType::EdgeType || prefix == MetadataType::Property) {
       std::string name(key.data() + 1, key.size() - 1);
-      uint32_t id = ReadValue<uint32_t>(val.data());
+      uint32_t id = ReadBigEndianId<uint32_t>(val.data());
       id_generator_.LoadToken(prefix, name, id);
-      uint32_t native_id = big_to_native(id);
       if (prefix == MetadataType::VertexLabel) {
-        max_lid = std::max(max_lid, native_id);
+        max_lid = std::max(max_lid, id);
       } else if (prefix == MetadataType::EdgeType) {
-        max_tid = std::max(max_tid, native_id);
+        max_tid = std::max(max_tid, id);
       } else {
-        max_pid = std::max(max_pid, native_id);
+        max_pid = std::max(max_pid, id);
       }
       continue;
     }
@@ -741,13 +737,13 @@ void MetaInfo::Init(rocksdb::TransactionDB* db,
       assert(ret);
       LOG_INFO("vertex property index: [{}]", meta.ShortDebugString());
       max_index_id = std::max(max_index_id, meta.index_id());
-      uint32_t lid = native_to_big(meta.label_id());
+      uint32_t lid = meta.label_id();
       std::vector<uint32_t> pids;
       pids.reserve(meta.property_ids_size());
       for (auto pid : meta.property_ids()) {
-        pids.push_back(native_to_big(pid));
+        pids.push_back(pid);
       }
-      uint32_t index_id = native_to_big(meta.index_id());
+      uint32_t index_id = meta.index_id();
       auto vi = std::make_shared<VertexPropertyIndex>(
           db, graph_cf, meta, graph_cf->index, index_id, lid, std::move(pids));
       AddVertexPropertyIndex(std::move(vi));
@@ -761,10 +757,10 @@ void MetaInfo::Init(rocksdb::TransactionDB* db,
       max_index_id = std::max(max_index_id, meta.index_id());
       std::vector<uint32_t> pids;
       pids.reserve(meta.property_ids_size());
-      for (auto pid : meta.property_ids()) pids.push_back(native_to_big(pid));
+      for (auto pid : meta.property_ids()) pids.push_back(pid);
       auto epi = std::make_shared<EdgePropertyIndex>(
-          db, graph_cf, meta, graph_cf->index, native_to_big(meta.index_id()),
-          native_to_big(meta.edge_type_id()), std::move(pids));
+          db, graph_cf, meta, graph_cf->index, meta.index_id(),
+          meta.edge_type_id(), std::move(pids));
       AddEdgePropertyIndex(std::move(epi));
       continue;
     }
@@ -776,15 +772,15 @@ void MetaInfo::Init(rocksdb::TransactionDB* db,
       max_index_id = std::max(max_index_id, meta.index_id());
       std::unordered_set<uint32_t> lids, pids;
       for (auto id : meta.label_ids()) {
-        lids.insert(native_to_big(id));
+        lids.insert(id);
       }
       for (auto id : meta.property_ids()) {
-        pids.insert(native_to_big(id));
+        pids.insert(id);
       }
       auto v_ft_index = std::make_shared<VertexFullTextIndex>(
-          db, service, strand, graph_cf, &id_generator_, meta,
-          native_to_big(meta.index_id()), ft_writer_threads,
-          ft_writer_memory_budget, lids, pids, ft_commit_interval);
+          db, service, strand, graph_cf, &id_generator_, meta, meta.index_id(),
+          ft_writer_threads, ft_writer_memory_budget, lids, pids,
+          ft_commit_interval);
       AddVertexFullTextIndex(v_ft_index);
       if (meta.state() == meta::IndexBuildState::READY) {
         v_ft_index->Start();
@@ -806,9 +802,8 @@ void MetaInfo::Init(rocksdb::TransactionDB* db,
       LOG_INFO("vertex vector index: [{}]", meta.ShortDebugString());
       max_index_id = std::max(max_index_id, meta.index_id());
       auto index = std::make_shared<VertexVectorIndex>(
-          db, service, strand, graph_cf, native_to_big(meta.index_id()),
-          native_to_big(meta.label_id()), native_to_big(meta.property_id()),
-          meta, vt_commit_interval);
+          db, service, strand, graph_cf, meta.index_id(), meta.label_id(),
+          meta.property_id(), meta, vt_commit_interval);
       AddVertexVectorIndex(index);
       if (meta.state() == meta::IndexBuildState::READY) {
         index->Start();
