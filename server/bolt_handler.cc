@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cstddef>
 #include <functional>
+#include <limits>
 #include <map>
 #include <memory>
 #include <string_view>
@@ -25,6 +26,7 @@
 #include "runtime/query_executor.h"
 #include "server/bolt_session.h"
 #include "server/graph_manager.h"
+#include "value/temporal.h"
 
 using namespace bolt;
 using std::chrono::duration_cast;
@@ -108,11 +110,76 @@ int64_t LocalDateTimeToEpochSeconds(const rg::LocalDateTime& value) {
       .count();
 }
 
+int32_t ParameterNanosecond(int64_t value) {
+  if (value < 0 || value >= 1'000'000'000) {
+    RG_THROW_CODE(InputError, "parameter nanosecond is out of range");
+  }
+  return static_cast<int32_t>(value);
+}
+
+int32_t ParameterUtcOffset(int64_t value) {
+  constexpr int64_t kMaximumUtcOffsetSeconds = 18 * 60 * 60;
+  if (value < -kMaximumUtcOffsetSeconds || value > kMaximumUtcOffsetSeconds) {
+    RG_THROW_CODE(InputError, "parameter UTC offset is out of range");
+  }
+  return static_cast<int32_t>(value);
+}
+
+int64_t AddParameterUtcOffset(int64_t seconds, int32_t offset) {
+  if ((offset > 0 && seconds > std::numeric_limits<int64_t>::max() - offset) ||
+      (offset < 0 && seconds < std::numeric_limits<int64_t>::min() - offset)) {
+    RG_THROW_CODE(InputError, "datetime parameter seconds are out of range");
+  }
+  return seconds + offset;
+}
+
+rg::Value NamedZoneDateTimeParameter(int64_t seconds, int64_t nanoseconds,
+                                     const std::string& timezone,
+                                     bool seconds_are_utc) {
+  if (timezone.empty()) {
+    RG_THROW_CODE(InputError, "datetime parameter timezone is empty");
+  }
+  const int32_t fraction = ParameterNanosecond(nanoseconds);
+  try {
+    rg::Value source =
+        seconds_are_utc ? rg::ConstructDateTimeFromEpoch(rg::Value(seconds),
+                                                         rg::Value(nanoseconds))
+                        : rg::Value(LocalDateTimeFromEpoch(seconds, fraction));
+    const rg::Value fields(rg::Value::Map{{"datetime", std::move(source)},
+                                          {"timezone", rg::Value(timezone)}});
+    return rg::ConstructDateTime(&fields);
+  } catch (const common::Exception& error) {
+    RG_THROW_CODE(InputError, "invalid datetime parameter: {}",
+                  error.Message());
+  }
+}
+
+rg::Duration DurationParameter(const bolt::Duration& input) {
+  constexpr int64_t kNanosecondsPerSecond = 1'000'000'000;
+  int64_t carry = input.nanos / kNanosecondsPerSecond;
+  int64_t fraction = input.nanos % kNanosecondsPerSecond;
+  if (fraction < 0) {
+    --carry;
+    fraction += kNanosecondsPerSecond;
+  }
+  if ((carry > 0 &&
+       input.seconds > std::numeric_limits<int64_t>::max() - carry) ||
+      (carry < 0 &&
+       input.seconds < std::numeric_limits<int64_t>::min() - carry)) {
+    RG_THROW_CODE(InputError, "duration parameter seconds are out of range");
+  }
+  return {input.months, input.days, input.seconds + carry,
+          static_cast<int32_t>(fraction)};
+}
+
 rg::Value ConvertParameter(const std::any& data) {
   if (!data.has_value()) {
     return rg::Value::Null();
   }
   const std::type_info& type = data.type();
+  if (type == typeid(bolt::ByteArray)) {
+    RG_THROW_CODE(InputError, "Cypher byte-array parameters are not supported");
+  }
   if (type == typeid(std::string)) {
     return rg::Value(std::any_cast<const std::string&>(data));
   }
@@ -156,6 +223,10 @@ rg::Value ConvertParameter(const std::any& data) {
         std::any_cast<const bolt::LocalTime&>(data).nanoseconds;
     constexpr int64_t kNanosPerSecond = 1'000'000'000;
     constexpr int64_t kSecondsPerHour = 3600;
+    constexpr int64_t kNanosPerDay = 86'400 * kNanosPerSecond;
+    if (nanos < 0 || nanos >= kNanosPerDay) {
+      RG_THROW_CODE(InputError, "local time parameter is out of range");
+    }
     const int64_t seconds = nanos / kNanosPerSecond;
     return rg::Value(
         rg::LocalTime{static_cast<int32_t>(seconds / kSecondsPerHour),
@@ -167,41 +238,60 @@ rg::Value ConvertParameter(const std::any& data) {
     const auto& input = std::any_cast<const bolt::Time&>(data);
     const rg::Value local = ConvertParameter(
         std::any(bolt::LocalTime{.nanoseconds = input.nanoseconds}));
-    return rg::Value(rg::Time{local.AsLocalTime(),
-                              static_cast<int32_t>(input.tz_offset_seconds),
-                              {}});
+    return rg::Value(rg::Time{
+        local.AsLocalTime(), ParameterUtcOffset(input.tz_offset_seconds), {}});
   }
   if (type == typeid(bolt::LocalDateTime)) {
     const auto& input = std::any_cast<const bolt::LocalDateTime&>(data);
-    return rg::Value(LocalDateTimeFromEpoch(input.seconds, input.nanoseconds));
+    return rg::Value(LocalDateTimeFromEpoch(
+        input.seconds, ParameterNanosecond(input.nanoseconds)));
   }
   if (type == typeid(bolt::DateTime)) {
     const auto& input = std::any_cast<const bolt::DateTime&>(data);
+    const int32_t offset = ParameterUtcOffset(input.tz_offset_seconds);
     return rg::Value(rg::DateTime{
-        LocalDateTimeFromEpoch(input.seconds + input.tz_offset_seconds,
-                               input.nanoseconds),
-        static_cast<int32_t>(input.tz_offset_seconds),
+        LocalDateTimeFromEpoch(AddParameterUtcOffset(input.seconds, offset),
+                               ParameterNanosecond(input.nanoseconds)),
+        offset,
         {}});
   }
   if (type == typeid(bolt::LegacyDateTime)) {
     const auto& input = std::any_cast<const bolt::LegacyDateTime&>(data);
     return rg::Value(
-        rg::DateTime{LocalDateTimeFromEpoch(input.seconds, input.nanoseconds),
-                     static_cast<int32_t>(input.tz_offset_seconds),
+        rg::DateTime{LocalDateTimeFromEpoch(
+                         input.seconds, ParameterNanosecond(input.nanoseconds)),
+                     ParameterUtcOffset(input.tz_offset_seconds),
                      {}});
+  }
+  if (type == typeid(bolt::DateTimeZoneId)) {
+    const auto& input = std::any_cast<const bolt::DateTimeZoneId&>(data);
+    return NamedZoneDateTimeParameter(input.seconds, input.nanoseconds,
+                                      input.tz_id, true);
+  }
+  if (type == typeid(bolt::LegacyDateTimeZoneId)) {
+    const auto& input = std::any_cast<const bolt::LegacyDateTimeZoneId&>(data);
+    return NamedZoneDateTimeParameter(input.seconds, input.nanoseconds,
+                                      input.tz_id, false);
   }
   if (type == typeid(bolt::Duration)) {
     const auto& input = std::any_cast<const bolt::Duration&>(data);
-    return rg::Value(rg::Duration{input.months, input.days, input.seconds,
-                                  static_cast<int32_t>(input.nanos)});
+    return rg::Value(DurationParameter(input));
   }
   if (type == typeid(bolt::Point2D)) {
     const auto& input = std::any_cast<const bolt::Point2D&>(data);
+    if (input.spatialRefId >
+        static_cast<uint32_t>(std::numeric_limits<int32_t>::max())) {
+      RG_THROW_CODE(InputError, "point parameter SRID is out of range");
+    }
     return rg::Value(rg::Point{static_cast<int32_t>(input.spatialRefId),
                                {input.x, input.y}});
   }
   if (type == typeid(bolt::Point3D)) {
     const auto& input = std::any_cast<const bolt::Point3D&>(data);
+    if (input.spatialRefId >
+        static_cast<uint32_t>(std::numeric_limits<int32_t>::max())) {
+      RG_THROW_CODE(InputError, "point parameter SRID is out of range");
+    }
     return rg::Value(rg::Point{static_cast<int32_t>(input.spatialRefId),
                                {input.x, input.y, input.z}});
   }
@@ -589,6 +679,9 @@ static void ProcessPullOrDiscard(const std::shared_ptr<BoltConnection>& conn,
   } catch (const common::RocksGraphException& e) {
     LOG_ERROR("{}", e.msg());
     FailSession(conn, session, e.code(), e.msg());
+  } catch (const common::InvalidArgumentError& e) {
+    LOG_ERROR("{}", e.what());
+    FailSession(conn, session, common::ErrorCode::InputError, e.what());
   } catch (std::exception& e) {
     LOG_ERROR("{}", e.what());
     FailSession(conn, session, common::ErrorCode::UnknownError, e.what());
@@ -652,6 +745,9 @@ static void ProcessRun(GraphManager* graph_manager,
   } catch (const common::RocksGraphException& e) {
     LOG_ERROR("{}", e.msg());
     FailSession(conn, session, e.code(), e.msg());
+  } catch (const common::InvalidArgumentError& e) {
+    LOG_ERROR("{}", e.what());
+    FailSession(conn, session, common::ErrorCode::InputError, e.what());
   } catch (std::exception& e) {
     LOG_ERROR("{}", e.what());
     FailSession(conn, session, common::ErrorCode::UnknownError, e.what());

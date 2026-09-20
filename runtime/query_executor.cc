@@ -6,6 +6,8 @@
 #include <utility>
 #include <vector>
 
+#include "ast/ast_const_walker.h"
+#include "ast/ast_node.h"
 #include "common/exception.h"
 #include "graphdb/transaction.h"
 #include "planner/planned_query.h"
@@ -23,6 +25,26 @@ planner::LogicalPlanBuilderOptions PlannerOptionsFor(
           options.max_idp_candidates_per_relationship_count,
       .planner_statistics = options.planner_statistics,
       .planner_catalog = options.planner_catalog};
+}
+
+void ValidateQueryParameters(const ast::Statement &statement,
+                             const QueryParameters &parameters) {
+  class ParameterValidator final : public ast::ASTConstWalker {
+   public:
+    explicit ParameterValidator(const QueryParameters &parameters)
+        : parameters_(&parameters) {}
+
+    void Visit(const ast::Parameter &parameter) override {
+      if (!parameters_->contains(parameter.name)) {
+        RG_THROW(common::InvalidArgumentError,
+                 "missing query parameter: " + parameter.name);
+      }
+    }
+
+   private:
+    const QueryParameters *parameters_ = nullptr;
+  } validator(parameters);
+  validator.Walk(statement);
 }
 
 class QueryResultCursorImpl final : public QueryResultCursor {
@@ -168,6 +190,7 @@ std::unique_ptr<QueryResultCursor> ExecuteQueryCursor(
   }
   planner::PlannedQuery planned_query =
       planner::PlanCypher(cypher, PlannerOptionsFor(options));
+  ValidateQueryParameters(planned_query.Ast(), options.parameters);
   return QueryResultCursorImpl::Create(planned_query.LogicalPlan(), transaction,
                                        options.parameters,
                                        std::move(options.execution));

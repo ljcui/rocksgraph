@@ -24,6 +24,12 @@ enum class PackType {
   False,
 };
 
+// A PackStream byte array is distinct from a UTF-8 string. It is kept as a
+// tagged value until the query boundary decides whether the value is usable.
+struct ByteArray {
+  std::string value;
+};
+
 struct Marker {
   PackType typ = PackType::Undef;
   int8_t shortlen = 0;

@@ -2,6 +2,8 @@
 
 #include <spdlog/fmt/fmt.h>
 
+#include <limits>
+
 #include "bolt/graph.h"
 #include "bolt/messages.h"
 #include "bolt/path.h"
@@ -854,6 +856,121 @@ std::any Hydrator::GetUnknownStructError(uint8_t t) {
   return {};
 }
 
+namespace {
+
+void RequireServerStructureLength(uint8_t tag, uint32_t actual,
+                                  uint32_t expected) {
+  if (actual != expected) {
+    RG_THROW_CODE(BoltDataException,
+                  "PackStream structure {} expected {} fields, got {}",
+                  static_cast<char>(tag), expected, actual);
+  }
+}
+
+void NextServerField(Unpacker& unpacker, PackType expected, uint8_t tag,
+                     uint32_t field) {
+  unpacker.Next();
+  if (unpacker.CurrentType() != expected) {
+    RG_THROW_CODE(BoltDataException,
+                  "PackStream structure {} field {} has an invalid type",
+                  static_cast<char>(tag), field);
+  }
+}
+
+int64_t ReadServerInteger(Unpacker& unpacker, uint8_t tag, uint32_t field) {
+  NextServerField(unpacker, PackType::Integer, tag, field);
+  return unpacker.Int();
+}
+
+double ReadServerFloat(Unpacker& unpacker, uint8_t tag, uint32_t field) {
+  NextServerField(unpacker, PackType::Float, tag, field);
+  return unpacker.Double();
+}
+
+std::string ReadServerString(Unpacker& unpacker, uint8_t tag, uint32_t field) {
+  NextServerField(unpacker, PackType::String, tag, field);
+  return unpacker.String();
+}
+
+uint32_t ReadServerSpatialRefId(Unpacker& unpacker, uint8_t tag) {
+  const int64_t srid = ReadServerInteger(unpacker, tag, 0);
+  if (srid < 0 ||
+      static_cast<uint64_t>(srid) > std::numeric_limits<uint32_t>::max()) {
+    RG_THROW_CODE(BoltDataException, "PackStream point SRID is out of range");
+  }
+  return static_cast<uint32_t>(srid);
+}
+
+std::any HydrateServerStructure(Unpacker& unpacker) {
+  const uint8_t tag = unpacker.StructTag();
+  const uint32_t fields = unpacker.Len();
+  switch (tag) {
+    case 'X': {
+      RequireServerStructureLength(tag, fields, 3);
+      const uint32_t srid = ReadServerSpatialRefId(unpacker, tag);
+      const double x = ReadServerFloat(unpacker, tag, 1);
+      const double y = ReadServerFloat(unpacker, tag, 2);
+      return Point2D{.x = x, .y = y, .spatialRefId = srid};
+    }
+    case 'Y': {
+      RequireServerStructureLength(tag, fields, 4);
+      const uint32_t srid = ReadServerSpatialRefId(unpacker, tag);
+      const double x = ReadServerFloat(unpacker, tag, 1);
+      const double y = ReadServerFloat(unpacker, tag, 2);
+      const double z = ReadServerFloat(unpacker, tag, 3);
+      return Point3D{.x = x, .y = y, .z = z, .spatialRefId = srid};
+    }
+    case 'F':
+      RequireServerStructureLength(tag, fields, 3);
+      return LegacyDateTime{
+          .seconds = ReadServerInteger(unpacker, tag, 0),
+          .nanoseconds = ReadServerInteger(unpacker, tag, 1),
+          .tz_offset_seconds = ReadServerInteger(unpacker, tag, 2)};
+    case 'I':
+      RequireServerStructureLength(tag, fields, 3);
+      return DateTime{.seconds = ReadServerInteger(unpacker, tag, 0),
+                      .nanoseconds = ReadServerInteger(unpacker, tag, 1),
+                      .tz_offset_seconds = ReadServerInteger(unpacker, tag, 2)};
+    case 'f':
+      RequireServerStructureLength(tag, fields, 3);
+      return LegacyDateTimeZoneId{
+          .seconds = ReadServerInteger(unpacker, tag, 0),
+          .nanoseconds = ReadServerInteger(unpacker, tag, 1),
+          .tz_id = ReadServerString(unpacker, tag, 2)};
+    case 'i':
+      RequireServerStructureLength(tag, fields, 3);
+      return DateTimeZoneId{.seconds = ReadServerInteger(unpacker, tag, 0),
+                            .nanoseconds = ReadServerInteger(unpacker, tag, 1),
+                            .tz_id = ReadServerString(unpacker, tag, 2)};
+    case 'd':
+      RequireServerStructureLength(tag, fields, 2);
+      return LocalDateTime{.seconds = ReadServerInteger(unpacker, tag, 0),
+                           .nanoseconds = ReadServerInteger(unpacker, tag, 1)};
+    case 'D':
+      RequireServerStructureLength(tag, fields, 1);
+      return Date{.days = ReadServerInteger(unpacker, tag, 0)};
+    case 'T':
+      RequireServerStructureLength(tag, fields, 2);
+      return Time{.nanoseconds = ReadServerInteger(unpacker, tag, 0),
+                  .tz_offset_seconds = ReadServerInteger(unpacker, tag, 1)};
+    case 't':
+      RequireServerStructureLength(tag, fields, 1);
+      return LocalTime{.nanoseconds = ReadServerInteger(unpacker, tag, 0)};
+    case 'E':
+      RequireServerStructureLength(tag, fields, 4);
+      return Duration{.months = ReadServerInteger(unpacker, tag, 0),
+                      .days = ReadServerInteger(unpacker, tag, 1),
+                      .seconds = ReadServerInteger(unpacker, tag, 2),
+                      .nanos = ReadServerInteger(unpacker, tag, 3)};
+    default:
+      RG_THROW_CODE(BoltDataException,
+                    "Unsupported PackStream structure parameter tag: {}",
+                    static_cast<char>(tag));
+  }
+}
+
+}  // namespace
+
 // Utility to test hydration
 std::any ServerHydrator(Unpacker& unpacker) {
   switch (unpacker.CurrentType()) {
@@ -863,12 +980,10 @@ std::any ServerHydrator(Unpacker& unpacker) {
       return unpacker.Double();
     case PackType::String:
       return unpacker.String();
-    case PackType::Structure: {
-      RG_THROW_CODE(BoltDataException,
-                    "No support for unpacking struct in server stub");
-    }
+    case PackType::Structure:
+      return HydrateServerStructure(unpacker);
     case PackType::Bytes:
-      return unpacker.ByteArray();
+      return ByteArray{unpacker.ByteArray()};
     case PackType::List: {
       auto n = unpacker.Len();
       std::vector<std::any> a;

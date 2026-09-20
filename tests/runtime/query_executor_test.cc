@@ -302,6 +302,12 @@ TEST(QueryExecutorTest, RejectsMissingQueryParameters) {
   EXPECT_THROW(
       (void)rg::test::ExecuteQueryAndCommit(graph, "RETURN $missing AS value"),
       common::InvalidArgumentError);
+
+  EXPECT_THROW((void)rg::test::ExecuteQueryAndCommit(
+                   graph,
+                   "MATCH (n:DefinitelyMissing) WHERE n.value = $missing "
+                   "RETURN n"),
+               common::InvalidArgumentError);
 }
 
 TEST(QueryExecutorTest, ImplementsThreeValuedBooleanLogic) {

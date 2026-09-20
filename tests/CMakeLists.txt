@@ -9,6 +9,7 @@ rocksgraph_add_test(exception_test common/exception_test.cc RocksGraph::common)
 rocksgraph_add_test(exception_boundary_test bolt/exception_boundary_test.cc
                     RocksGraph::bolt)
 rocksgraph_add_test(bolt_summary_test bolt/summary_test.cc RocksGraph::bolt)
+rocksgraph_add_test(bolt_hydrator_test bolt/hydrator_test.cc RocksGraph::bolt)
 
 rocksgraph_add_test(ast_node_type_test ast/ast_node_type_test.cc
                     RocksGraph::ast)

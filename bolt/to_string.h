@@ -6,6 +6,7 @@
 #include <string>
 
 #include "bolt/graph.h"
+#include "bolt/pack.h"
 #include "bolt/record.h"
 #include "common/exception.h"
 #include "common/logger.h"
@@ -81,7 +82,10 @@ nlohmann::json ToJsonObj(const std::any& item) {
   if (!item.has_value()) {
     return nullptr;
   }
-  if (item.type() == typeid(int64_t)) {
+  if (item.type() == typeid(bolt::ByteArray)) {
+    const auto& bytes = std::any_cast<const bolt::ByteArray&>(item).value;
+    return "<bytes:" + std::to_string(bytes.size()) + ">";
+  } else if (item.type() == typeid(int64_t)) {
     return std::any_cast<int64_t>(item);
   } else if (item.type() == typeid(bool)) {
     return std::any_cast<bool>(item);
