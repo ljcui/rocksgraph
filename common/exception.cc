@@ -64,6 +64,14 @@ const char *ErrorCodeToString(ErrorCode code) noexcept {
       return "Unimplemented";
     case ErrorCode::IOException:
       return "IOException";
+    case ErrorCode::NotFound:
+      return "NotFound";
+    case ErrorCode::InternalError:
+      return "InternalError";
+    case ErrorCode::QueryCancelled:
+      return "QueryCancelled";
+    case ErrorCode::MemoryLimitExceeded:
+      return "MemoryLimitExceeded";
     default:
       return "Unknown Error Code";
   }
@@ -131,6 +139,14 @@ const char *ErrorCodeDesc(ErrorCode code) noexcept {
       return "Unimplemented.";
     case ErrorCode::IOException:
       return "I/O exception.";
+    case ErrorCode::NotFound:
+      return "Object not found.";
+    case ErrorCode::InternalError:
+      return "Internal error.";
+    case ErrorCode::QueryCancelled:
+      return "Query execution was cancelled.";
+    case ErrorCode::MemoryLimitExceeded:
+      return "Query memory limit exceeded.";
     default:
       return "Unknown Error Code";
   }

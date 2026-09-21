@@ -45,3 +45,24 @@ TEST(ExceptionTest, ThrowCodeUsesDefaultDescription) {
   }
   FAIL() << "expected common::RocksGraphException";
 }
+
+TEST(ExceptionTest, TypedExceptionsCarryErrorCodes) {
+  try {
+    RG_THROW(common::InvalidArgumentError, "invalid argument");
+  } catch (const common::Exception &error) {
+    EXPECT_EQ(error.code(), common::ErrorCode::InvalidParameter);
+    EXPECT_EQ(error.msg(), "invalid argument");
+    EXPECT_EQ(error.Type(), "InvalidArgumentError");
+    return;
+  }
+  FAIL() << "expected common::InvalidArgumentError";
+}
+
+TEST(ExceptionTest, TypedExceptionCodesHaveDescriptions) {
+  EXPECT_STREQ(common::ErrorCodeToString(common::ErrorCode::InternalError),
+               "InternalError");
+  EXPECT_STREQ(common::ErrorCodeDesc(common::ErrorCode::QueryCancelled),
+               "Query execution was cancelled.");
+  EXPECT_STREQ(common::ErrorCodeDesc(common::ErrorCode::MemoryLimitExceeded),
+               "Query memory limit exceeded.");
+}

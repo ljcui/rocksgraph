@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "ast_equal.h"
-#include "ast_exception.h"
 #include "ast_walker.h"
 #include "builtin_function.h"
 #include "builtin_procedure.h"
@@ -1825,7 +1824,7 @@ void ValidateStatement(ASTNode &node) {
   SemanticValidator validator(errors);
   validator.Validate(node);
   if (!errors.empty()) {
-    RG_THROW(SemanticError, std::move(errors));
+    RG_THROW_CODE(CypherException, std::move(errors));
   }
 }
 

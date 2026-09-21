@@ -4,7 +4,6 @@
 
 #include "ast/ast_builder.h"
 #include "ast/ast_equal.h"
-#include "ast/ast_exception.h"
 #include "ast/rewriters/aggregation_expression_rewriter.h"
 #include "ast/rewriters/anonymous_pattern_name_rewriter.h"
 #include "ast/rewriters/comparison_chain_rewriter.h"
@@ -19,17 +18,15 @@
 #include "ast/rewriters/return_star_rewriter.h"
 #include "ast/rewriters/rewriter_pipeline.h"
 #include "ast/rewriters/uniqueness_predicates_rewriter.h"
+#include "common/exception.h"
 
 namespace {
 
 std::unique_ptr<ast::Statement> ParseOrFail(const std::string &query) {
   try {
     return ast::ParseCypher(query);
-  } catch (const ast::ParseError &e) {
-    ADD_FAILURE() << "parse errors for query: " << query
-                  << " message: " << e.what();
-  } catch (const ast::SemanticError &e) {
-    ADD_FAILURE() << "semantic errors for query: " << query
+  } catch (const common::RocksGraphException &e) {
+    ADD_FAILURE() << "query error for query: " << query
                   << " message: " << e.what();
   }
   return {};
@@ -476,8 +473,8 @@ TEST(RewriterPipelineTest, DefaultPipelineAddsUniquenessPredicates) {
 TEST(RewriterPipelineTest, RejectsRepeatedRelationshipBeforeRewrite) {
   EXPECT_THROW(
       (void)ast::ParseCypherAndRewrite("MATCH (a)-[r]->(b)-[r]->(c) RETURN *"),
-      ast::SemanticError);
+      common::RocksGraphException);
   EXPECT_THROW((void)ast::ParseCypherAndRewrite(
                    "MATCH (a)-[r*1..2]->(b)-[r*1..2]->(c) RETURN *"),
-               ast::SemanticError);
+               common::RocksGraphException);
 }

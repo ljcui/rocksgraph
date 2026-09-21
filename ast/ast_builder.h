@@ -7,8 +7,8 @@
 
 namespace ast {
 
-// Parse Cypher text into AST. Throws ast::ParseError or ast::SemanticError on
-// failure.
+// Parse Cypher text into AST. Throws a common::RocksGraphException with
+// ParserException or CypherException on failure.
 std::unique_ptr<Statement> ParseCypher(const std::string &input);
 
 // Parse and apply default AST rewriters when parsing succeeds.

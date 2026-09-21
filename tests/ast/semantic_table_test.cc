@@ -9,18 +9,15 @@
 #include <vector>
 
 #include "ast/ast_builder.h"
-#include "ast/ast_exception.h"
+#include "common/exception.h"
 
 namespace {
 
 std::unique_ptr<ast::Statement> ParseOrFail(const std::string &query) {
   try {
     return ast::ParseCypherAndRewrite(query);
-  } catch (const ast::ParseError &e) {
-    ADD_FAILURE() << "parse errors for query: " << query
-                  << " message: " << e.what();
-  } catch (const ast::SemanticError &e) {
-    ADD_FAILURE() << "semantic errors for query: " << query
+  } catch (const common::RocksGraphException &e) {
+    ADD_FAILURE() << "query error for query: " << query
                   << " message: " << e.what();
   }
   return {};

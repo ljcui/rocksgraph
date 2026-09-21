@@ -3,8 +3,8 @@
 #include <vector>
 
 #include "ast/ast_builder.h"
-#include "ast/ast_exception.h"
 #include "ast/ast_printer.h"
+#include "common/exception.h"
 #include "gflags/gflags.h"
 #include "ir/logical_plan_printer.h"
 #include "ir/query_ir.h"
@@ -96,13 +96,13 @@ int main(int argc, char **argv) {
     spdlog::error("Unsupported dump mode: {}", FLAGS_mode);
     PrintMinimalUsage();
     return 1;
-  } catch (const ast::ParseError &e) {
-    for (const auto &err : e.Errors()) {
-      spdlog::error("Parse error: {}", err);
-    }
-  } catch (const ast::SemanticError &e) {
-    for (const auto &err : e.Errors()) {
-      spdlog::error("Semantic error: {}", err);
+  } catch (const common::RocksGraphException &e) {
+    if (e.code() == common::ErrorCode::ParserException) {
+      spdlog::error("Parse error: {}", e.msg());
+    } else if (e.code() == common::ErrorCode::CypherException) {
+      spdlog::error("Semantic error: {}", e.msg());
+    } else {
+      spdlog::error("Internal error: {}", e.msg());
     }
   } catch (const Exception &e) {
     spdlog::error("Internal error: {}", e.what());

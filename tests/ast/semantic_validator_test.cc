@@ -1,57 +1,47 @@
 #include <gtest/gtest.h>
 
-#include <algorithm>
 #include <string>
-#include <vector>
 
 #include "ast/ast_builder.h"
-#include "ast/ast_exception.h"
 #include "ast/ast_node.h"
 #include "ast/ast_to_cypher.h"
+#include "common/exception.h"
 
 namespace {
-
-bool HasError(const std::vector<std::string> &errors,
-              const std::string &expected) {
-  return std::find(errors.begin(), errors.end(), expected) != errors.end();
-}
 
 void ExpectSemanticError(const std::string &query,
                          const std::string &expected_error) {
   try {
     (void)ast::ParseCypher(query);
     FAIL() << "expected semantic error";
-  } catch (const ast::SemanticError &e) {
-    EXPECT_TRUE(HasError(e.Errors(), expected_error));
-  } catch (const ast::ParseError &e) {
-    FAIL() << "unexpected parse error: " << e.what();
+  } catch (const common::RocksGraphException &e) {
+    EXPECT_EQ(e.code(), common::ErrorCode::CypherException);
+    EXPECT_NE(e.msg().find(expected_error), std::string::npos) << e.msg();
+  }
+}
+
+void ExpectParserError(const std::string &query,
+                       const std::string &expected_error) {
+  try {
+    (void)ast::ParseCypher(query);
+    FAIL() << "expected parser error";
+  } catch (const common::RocksGraphException &e) {
+    EXPECT_EQ(e.code(), common::ErrorCode::ParserException);
+    EXPECT_NE(e.msg().find(expected_error), std::string::npos) << e.msg();
   }
 }
 
 }  // namespace
 
 TEST(SemanticValidatorTest, UndefinedReturnVariable) {
-  try {
-    (void)ast::ParseCypher("MATCH (n) RETURN m");
-    FAIL() << "expected semantic error";
-  } catch (const ast::SemanticError &e) {
-    EXPECT_TRUE(HasError(e.Errors(), "undefined variable: m"));
-  } catch (const ast::ParseError &e) {
-    FAIL() << "unexpected parse error: " << e.what();
-  }
+  ExpectSemanticError("MATCH (n) RETURN m", "undefined variable: m");
 }
 
 TEST(SemanticValidatorTest, WithProjectionScopes) {
   EXPECT_NO_THROW(ast::ParseCypher("MATCH (n) WITH n AS m RETURN m"));
 
-  try {
-    (void)ast::ParseCypher("MATCH (n) WITH n AS m RETURN n");
-    FAIL() << "expected semantic error";
-  } catch (const ast::SemanticError &e) {
-    EXPECT_TRUE(HasError(e.Errors(), "undefined variable: n"));
-  } catch (const ast::ParseError &e) {
-    FAIL() << "unexpected parse error: " << e.what();
-  }
+  ExpectSemanticError("MATCH (n) WITH n AS m RETURN n",
+                      "undefined variable: n");
 }
 
 TEST(SemanticValidatorTest, ComprehensionUsesOuterScope) {
@@ -60,28 +50,14 @@ TEST(SemanticValidatorTest, ComprehensionUsesOuterScope) {
 }
 
 TEST(SemanticValidatorTest, RejectsUnionColumnCountMismatch) {
-  try {
-    (void)ast::ParseCypher("RETURN 1 AS a UNION RETURN 1 AS b, 2 AS c");
-    FAIL() << "expected semantic error";
-  } catch (const ast::SemanticError &e) {
-    EXPECT_TRUE(HasError(
-        e.Errors(), "UNION branches must return the same number of columns"));
-  } catch (const ast::ParseError &e) {
-    FAIL() << "unexpected parse error: " << e.what();
-  }
+  ExpectSemanticError("RETURN 1 AS a UNION RETURN 1 AS b, 2 AS c",
+                      "UNION branches must return the same number of columns");
 }
 
 TEST(SemanticValidatorTest, RejectsUnionColumnNameMismatch) {
-  try {
-    (void)ast::ParseCypher("RETURN 1 AS a UNION RETURN 1 AS b");
-    FAIL() << "expected semantic error";
-  } catch (const ast::SemanticError &e) {
-    EXPECT_TRUE(HasError(
-        e.Errors(),
-        "UNION branches must return the same column names by position"));
-  } catch (const ast::ParseError &e) {
-    FAIL() << "unexpected parse error: " << e.what();
-  }
+  ExpectSemanticError(
+      "RETURN 1 AS a UNION RETURN 1 AS b",
+      "UNION branches must return the same column names by position");
 }
 
 TEST(SemanticValidatorTest, RejectsUnionMismatchAfterReturnStarRewrite) {
@@ -89,12 +65,13 @@ TEST(SemanticValidatorTest, RejectsUnionMismatchAfterReturnStarRewrite) {
     (void)ast::ParseCypherAndRewrite(
         "MATCH (n) RETURN * UNION MATCH (m) RETURN m AS x");
     FAIL() << "expected semantic error";
-  } catch (const ast::SemanticError &e) {
-    EXPECT_TRUE(HasError(
-        e.Errors(),
-        "UNION branches must return the same column names by position"));
-  } catch (const ast::ParseError &e) {
-    FAIL() << "unexpected parse error: " << e.what();
+  } catch (const common::RocksGraphException &e) {
+    EXPECT_EQ(e.code(), common::ErrorCode::CypherException);
+    EXPECT_NE(
+        e.msg().find(
+            "UNION branches must return the same column names by position"),
+        std::string::npos)
+        << e.msg();
   }
 }
 
@@ -303,19 +280,10 @@ TEST(SemanticValidatorTest, ParsesSmallestIntegerWithoutOverflow) {
 }
 
 TEST(SemanticValidatorTest, RejectsIntegerLiteralOutsideInt64Range) {
-  try {
-    (void)ast::ParseCypher("RETURN 9223372036854775808 AS value");
-    FAIL() << "expected parse error";
-  } catch (const ast::ParseError &e) {
-    EXPECT_TRUE(HasError(e.Errors(), "integer literal is out of range"));
-  }
-
-  try {
-    (void)ast::ParseCypher("RETURN -9223372036854775809 AS value");
-    FAIL() << "expected parse error";
-  } catch (const ast::ParseError &e) {
-    EXPECT_TRUE(HasError(e.Errors(), "integer literal is out of range"));
-  }
+  ExpectParserError("RETURN 9223372036854775808 AS value",
+                    "integer literal is out of range");
+  ExpectParserError("RETURN -9223372036854775809 AS value",
+                    "integer literal is out of range");
 }
 
 TEST(SemanticValidatorTest, RejectsPatternVariableTypeConflicts) {

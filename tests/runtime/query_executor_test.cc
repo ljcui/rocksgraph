@@ -10,7 +10,6 @@
 #include <utility>
 #include <vector>
 
-#include "ast/ast_exception.h"
 #include "common/exception.h"
 #include "planner/planned_query.h"
 #include "tests/runtime/graphdb_test_utils.h"
@@ -185,7 +184,7 @@ TEST(QueryExecutorTest, PlanningFailureLeavesTransactionActive) {
 
   EXPECT_THROW(
       (void)rg::ExecuteQueryCursor(*transaction, "RETURN NOT 1 AS value"),
-      ast::SemanticError);
+      common::RocksGraphException);
   EXPECT_EQ(transaction->GetState(), graphdb::Transaction::State::kActive);
   transaction->Rollback();
   EXPECT_EQ(transaction->GetState(), graphdb::Transaction::State::kRolledBack);
@@ -452,7 +451,7 @@ TEST(QueryExecutorTest, RejectsInvalidPredicatesAndUnsafeIntegerArithmetic) {
 
   EXPECT_THROW(
       (void)rg::test::ExecuteQueryAndCommit(graph, "RETURN NOT 1 AS value"),
-      ast::SemanticError);
+      common::RocksGraphException);
   EXPECT_THROW((void)rg::test::ExecuteQueryAndCommit(
                    graph, "RETURN 9223372036854775807 + 1 AS value"),
                common::InvalidArgumentError);
@@ -579,10 +578,10 @@ TEST(QueryExecutorTest, RejectsInvalidSkipAndLimitCounts) {
 
   EXPECT_THROW(
       (void)rg::test::ExecuteQueryAndCommit(graph, "RETURN 1 AS x SKIP -1"),
-      ast::SemanticError);
+      common::RocksGraphException);
   EXPECT_THROW(
       (void)rg::test::ExecuteQueryAndCommit(graph, "RETURN 1 AS x LIMIT 1.5"),
-      ast::SemanticError);
+      common::RocksGraphException);
   EXPECT_THROW((void)rg::test::ExecuteQueryAndCommit(
                    graph, "MATCH (n:Missing) RETURN n LIMIT null"),
                common::InvalidArgumentError);
