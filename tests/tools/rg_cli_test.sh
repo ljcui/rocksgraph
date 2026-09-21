@@ -51,7 +51,6 @@ PY
 )
 
 "$server_bin" \
-  --mode=run \
   --data_path="$test_dir/data" \
   --host=127.0.0.1 \
   --bolt_port="$bolt_port" \

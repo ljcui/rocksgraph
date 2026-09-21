@@ -2,7 +2,6 @@
 #include <gflags/gflags.h>
 
 DECLARE_string(data_path);
-DECLARE_string(pid_file);
 
 DECLARE_string(log_path);
 DECLARE_string(log_level);
