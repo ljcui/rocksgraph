@@ -1,5 +1,5 @@
 add_library(
-  rocksgraph_planner STATIC
+  rocksgraph_planner SHARED
   component_planner.cc
   cost_model.cc
   idp.cc

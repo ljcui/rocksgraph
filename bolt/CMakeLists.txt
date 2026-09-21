@@ -2,7 +2,7 @@ find_package(Boost REQUIRED)
 find_package(Threads REQUIRED)
 find_package(nlohmann_json REQUIRED)
 
-add_library(rocksgraph_bolt STATIC bolt_server.cc connection.cc hydrator.cc
+add_library(rocksgraph_bolt SHARED bolt_server.cc connection.cc hydrator.cc
                                    pack.cc)
 add_library(RocksGraph::bolt ALIAS rocksgraph_bolt)
 

@@ -1,5 +1,5 @@
 add_library(
-  rocksgraph_ir STATIC
+  rocksgraph_ir SHARED
   logical_plan.cc
   logical_plan_printer.cc
   query_ir.cc

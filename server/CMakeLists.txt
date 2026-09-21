@@ -1,4 +1,4 @@
-add_library(rocksgraph_server STATIC bolt_handler.cc graph_manager.cc
+add_library(rocksgraph_server SHARED bolt_handler.cc graph_manager.cc
                                      graph_server.cc raft_server.cc)
 add_library(RocksGraph::server ALIAS rocksgraph_server)
 

@@ -6,7 +6,7 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.27")
 endif()
 
 add_library(
-  rocksgraph_ast STATIC
+  rocksgraph_ast SHARED
   ast_builder.cc
   ast_clone.cc
   ast_const_walker.cc

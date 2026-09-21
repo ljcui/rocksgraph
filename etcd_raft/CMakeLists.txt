@@ -1,6 +1,6 @@
 find_package(Protobuf REQUIRED)
 
-add_library(rocksgraph_etcd_raft STATIC raftpb/raft.pb.cc)
+add_library(rocksgraph_etcd_raft SHARED raftpb/raft.pb.cc)
 add_library(RocksGraph::etcd_raft ALIAS rocksgraph_etcd_raft)
 
 target_compile_features(rocksgraph_etcd_raft PUBLIC cxx_std_20)

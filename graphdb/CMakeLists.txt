@@ -43,7 +43,7 @@ set_target_properties(
 add_dependencies(rocksgraph_graphdb_ftindex rocksgraph_graphdb_ftindex_build)
 
 add_library(
-  rocksgraph_graphdb STATIC
+  rocksgraph_graphdb SHARED
   assistant_pool.cc
   edge_index_updater.cc
   edge_iterator.cc
@@ -71,7 +71,7 @@ target_include_directories(rocksgraph_graphdb PUBLIC ${PROJECT_SOURCE_DIR})
 target_link_libraries(
   rocksgraph_graphdb
   PUBLIC Boost::headers
-         RocksDB::rocksdb
+         ${ROCKSDB_TARGET}
          Threads::Threads
          RocksGraph::common
          rocksgraph_graphdb_faiss
