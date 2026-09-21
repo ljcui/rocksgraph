@@ -141,7 +141,9 @@ class LeftOuterHashJoinOperator final : public PullOperator {
   RuntimeState *state_;
   std::unique_ptr<PullOperator> lhs_;
   std::unique_ptr<PullOperator> rhs_;
-  std::unordered_map<CompositeValueKey, Bucket, ValueHash, ValueEqual> buckets_;
+  std::unordered_map<CompositeValueKey, Bucket, CompositeValueKeyHash,
+                     CompositeValueKeyEqual>
+      buckets_;
   std::vector<SlottedRow> build_rows_;
   std::optional<SlottedRow> left_;
   const Bucket *matches_ = nullptr;
@@ -491,7 +493,9 @@ class NodeHashJoinOperator final : public PullOperator {
   RuntimeState *state_ = nullptr;
   std::unique_ptr<PullOperator> lhs_;
   std::unique_ptr<PullOperator> rhs_;
-  std::unordered_map<CompositeValueKey, Bucket, ValueHash, ValueEqual> buckets_;
+  std::unordered_map<CompositeValueKey, Bucket, CompositeValueKeyHash,
+                     CompositeValueKeyEqual>
+      buckets_;
   std::vector<SlottedRow> build_rows_;
   std::optional<SlottedRow> probe_row_;
   const Bucket *bucket_ = nullptr;
@@ -665,7 +669,9 @@ class ValueHashJoinOperator final : public PullOperator {
   RuntimeState *state_ = nullptr;
   std::unique_ptr<PullOperator> lhs_;
   std::unique_ptr<PullOperator> rhs_;
-  std::unordered_map<CompositeValueKey, Bucket, ValueHash, ValueEqual> buckets_;
+  std::unordered_map<CompositeValueKey, Bucket, CompositeValueKeyHash,
+                     CompositeValueKeyEqual>
+      buckets_;
   std::vector<SlottedRow> build_rows_;
   std::optional<SlottedRow> probe_row_;
   const Bucket *bucket_ = nullptr;
@@ -808,7 +814,9 @@ class UnionDistinctOperator final : public PullOperator {
   const UnionDistinctOp *data_ = nullptr;
   RuntimeState *state_ = nullptr;
   UnionInputState input_;
-  std::unordered_set<CompositeValueKey, ValueHash, ValueEqual> seen_;
+  std::unordered_set<CompositeValueKey, CompositeValueKeyHash,
+                     CompositeValueKeyEqual>
+      seen_;
   std::size_t reserved_bytes_ = 0;
   bool closed_ = false;
 };

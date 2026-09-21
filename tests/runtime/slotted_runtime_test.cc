@@ -4,12 +4,26 @@
 #include <limits>
 #include <memory>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "common/exception.h"
+#include "runtime/composite_value_key.h"
 #include "runtime/query_executor.h"
 #include "tests/common/exception_test_utils.h"
 #include "tests/runtime/graphdb_test_utils.h"
+
+TEST(SlottedRuntimeTest, HashesCompositeKeysInColumnOrder) {
+  std::unordered_set<rg::slotted::CompositeValueKey,
+                     rg::slotted::CompositeValueKeyHash,
+                     rg::slotted::CompositeValueKeyEqual>
+      keys;
+  keys.insert({.values = {rg::Value(1), rg::Value("x")}});
+  keys.insert({.values = {rg::Value(1.0), rg::Value("x")}});
+  keys.insert({.values = {rg::Value("x"), rg::Value(1)}});
+
+  EXPECT_EQ(keys.size(), 2U);
+}
 
 TEST(SlottedRuntimeTest, ExhaustsWritesBelowLimit) {
   rg::test::GraphDBTestDatabase graph;

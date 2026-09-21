@@ -1328,7 +1328,7 @@ class OrderedDistinctOperator final : public PullOperator {
       std::vector<Value> values =
           EvaluateGroupingValues(data_->grouping_items, input, state_);
       CompositeValueKey key{.values = values};
-      if (last_key_.has_value() && ValueEqual{}(*last_key_, key)) {
+      if (last_key_.has_value() && CompositeValueKeyEqual{}(*last_key_, key)) {
         continue;
       }
       ReplaceLastKey(std::move(key));
@@ -1429,7 +1429,9 @@ class HashDistinctOperator final : public PullOperator {
 
   void Initialize() {
     initialized_ = true;
-    std::unordered_set<CompositeValueKey, ValueHash, ValueEqual> seen;
+    std::unordered_set<CompositeValueKey, CompositeValueKeyHash,
+                       CompositeValueKeyEqual>
+        seen;
     SlottedRow input(node_->children[0]->output_slots);
     while (source_->Next(&input)) {
       state_->CheckCancelled();
@@ -1523,7 +1525,8 @@ class HashAggregationOperator final : public PullOperator {
     const std::vector<AggregateAccumulator> accumulator_templates =
         CreateAggregateAccumulators(data_->aggregation_items);
     std::vector<std::unique_ptr<Group>> groups;
-    std::unordered_map<CompositeValueKey, std::size_t, ValueHash, ValueEqual>
+    std::unordered_map<CompositeValueKey, std::size_t, CompositeValueKeyHash,
+                       CompositeValueKeyEqual>
         group_indexes;
     SlottedRow input(node_->children[0]->output_slots);
     while (source_->Next(&input)) {
@@ -1632,7 +1635,7 @@ class OrderedAggregationOperator final : public PullOperator {
       }
       CompositeValueKey next_key{.values = EvaluateGroupingValues(
                                      data_->grouping_items, next, state_)};
-      if (!ValueEqual{}(key, next_key)) {
+      if (!CompositeValueKeyEqual{}(key, next_key)) {
         BufferPending(std::move(next), std::move(next_key));
         break;
       }

@@ -146,12 +146,12 @@ rg::Value NamedZoneDateTimeParameter(int64_t seconds, int64_t nanoseconds,
   const int32_t fraction = ParameterNanosecond(nanoseconds);
   try {
     rg::Value source =
-        seconds_are_utc ? rg::ConstructDateTimeFromEpoch(rg::Value(seconds),
-                                                         rg::Value(nanoseconds))
+        seconds_are_utc ? rg::temporal::ConstructDateTimeFromEpoch(
+                              rg::Value(seconds), rg::Value(nanoseconds))
                         : rg::Value(LocalDateTimeFromEpoch(seconds, fraction));
     const rg::Value fields(rg::Value::Map{{"datetime", std::move(source)},
                                           {"timezone", rg::Value(timezone)}});
-    return rg::ConstructDateTime(&fields);
+    return rg::temporal::ConstructDateTime(fields);
   } catch (const common::Exception& error) {
     RG_THROW(common::ErrorCode::InputError, "invalid datetime parameter: {}",
              error.message());

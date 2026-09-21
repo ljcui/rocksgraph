@@ -183,16 +183,8 @@ struct Path {
   std::vector<Value::RelationshipPtr> relationships;
 };
 
-struct CompositeValueKey {
-  std::vector<Value> values;
-
-  bool operator==(const CompositeValueKey &other) const noexcept;
-};
-
 struct ValueHash {
   [[nodiscard]] std::size_t operator()(const Value &value) const noexcept;
-  [[nodiscard]] std::size_t operator()(
-      const CompositeValueKey &key) const noexcept;
 };
 
 // Hash-key equality is reflexive, so all NaN values form one key equivalence
@@ -200,8 +192,6 @@ struct ValueHash {
 struct ValueEqual {
   [[nodiscard]] bool operator()(const Value &left,
                                 const Value &right) const noexcept;
-  [[nodiscard]] bool operator()(const CompositeValueKey &left,
-                                const CompositeValueKey &right) const noexcept;
 };
 
 bool operator==(const Node &left, const Node &right);

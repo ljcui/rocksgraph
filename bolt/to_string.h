@@ -108,7 +108,7 @@ nlohmann::json ToJsonObj(const std::any& item) {
     return ToJsonObj(path);
   } else if (item.type() == typeid(bolt::Date)) {
     const auto& date = std::any_cast<const bolt::Date&>(item);
-    return ToJsonObj(rg::FormatDate(DateFromEpochDays(date.days)));
+    return ToJsonObj(rg::temporal::FormatDate(DateFromEpochDays(date.days)));
   } else if (item.type() == typeid(bolt::DateTime)) {
     const auto& dateTime = std::any_cast<const bolt::DateTime&>(item);
     rg::DateTime value{
@@ -116,10 +116,10 @@ nlohmann::json ToJsonObj(const std::any& item) {
                                dateTime.nanoseconds),
         static_cast<std::int32_t>(dateTime.tz_offset_seconds),
         {}};
-    return ToJsonObj(rg::FormatDateTime(value));
+    return ToJsonObj(rg::temporal::FormatDateTime(value));
   } else if (item.type() == typeid(bolt::LocalDateTime)) {
     const auto& localDateTime = std::any_cast<const bolt::LocalDateTime&>(item);
-    return ToJsonObj(rg::FormatLocalDateTime(LocalDateTimeFromEpoch(
+    return ToJsonObj(rg::temporal::FormatLocalDateTime(LocalDateTimeFromEpoch(
         localDateTime.seconds, localDateTime.nanoseconds)));
   } else if (item.type() == typeid(std::vector<std::any>)) {
     const auto& vector = std::any_cast<const std::vector<std::any>&>(item);
@@ -138,19 +138,19 @@ nlohmann::json ToJsonObj(const std::any& item) {
     return ret;
   } else if (item.type() == typeid(bolt::LocalTime)) {
     const auto& time = std::any_cast<const bolt::LocalTime&>(item);
-    return ToJsonObj(
-        rg::FormatLocalTime(LocalTimeFromNanoseconds(time.nanoseconds)));
+    return ToJsonObj(rg::temporal::FormatLocalTime(
+        LocalTimeFromNanoseconds(time.nanoseconds)));
   } else if (item.type() == typeid(bolt::Time)) {
     const auto& time = std::any_cast<const bolt::Time&>(item);
     rg::Time value{LocalTimeFromNanoseconds(time.nanoseconds),
                    static_cast<std::int32_t>(time.tz_offset_seconds),
                    {}};
-    return ToJsonObj(rg::FormatTime(value));
+    return ToJsonObj(rg::temporal::FormatTime(value));
   } else if (item.type() == typeid(bolt::Duration)) {
     const auto& duration = std::any_cast<const bolt::Duration&>(item);
-    return ToJsonObj(
-        rg::FormatDuration({duration.months, duration.days, duration.seconds,
-                            static_cast<std::int32_t>(duration.nanos)}));
+    return ToJsonObj(rg::temporal::FormatDuration(
+        {duration.months, duration.days, duration.seconds,
+         static_cast<std::int32_t>(duration.nanos)}));
   } else {
     auto err = std::string("Unsupported type: ") + item.type().name();
     LOG_ERROR(err);

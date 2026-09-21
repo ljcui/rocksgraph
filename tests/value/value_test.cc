@@ -173,15 +173,6 @@ TEST(ValueTest, HashesTemporalDurationAndPointValues) {
                                 rg::Value(rg::Point{7203, {1.0, 2.0}})));
 }
 
-TEST(ValueTest, HashesCompositeKeysInColumnOrder) {
-  std::unordered_set<rg::CompositeValueKey, rg::ValueHash, rg::ValueEqual> keys;
-  keys.insert({.values = {rg::Value(1), rg::Value("x")}});
-  keys.insert({.values = {rg::Value(1.0), rg::Value("x")}});
-  keys.insert({.values = {rg::Value("x"), rg::Value(1)}});
-
-  EXPECT_EQ(keys.size(), 2U);
-}
-
 TEST(ValueTest, OrdersListsLexicographicallyUsingCypherTypePrecedence) {
   const rg::Value empty(rg::Value::List{});
   const rg::Value string(rg::Value::List{rg::Value("a")});
@@ -225,24 +216,26 @@ TEST(ValueTest, OrdersMixedValuesUsingCypherTypePrecedence) {
 
 TEST(ValueTest, AppliesDurationsToTemporalValues) {
   const rg::Duration duration{149, 14, 58'390, 2};
-  EXPECT_EQ(rg::AddDurationToTemporal(rg::Value(rg::Date{1984, 10, 11}),
-                                     duration, false),
+  EXPECT_EQ(rg::temporal::AddDurationToTemporal(
+                rg::Value(rg::Date{1984, 10, 11}), duration),
             rg::Value(rg::Date{1997, 3, 25}));
-  EXPECT_EQ(rg::AddDurationToTemporal(rg::Value(rg::Date{1984, 10, 11}),
-                                     duration, true),
+  EXPECT_EQ(rg::temporal::SubtractDurationFromTemporal(
+                rg::Value(rg::Date{1984, 10, 11}), duration),
             rg::Value(rg::Date{1972, 4, 27}));
 
-  const rg::Value local_time = rg::AddDurationToTemporal(
-      rg::Value(rg::LocalTime{12, 31, 14, 1, true}), duration, false);
+  const rg::Value local_time = rg::temporal::AddDurationToTemporal(
+      rg::Value(rg::LocalTime{12, 31, 14, 1, true}), duration);
   EXPECT_EQ(local_time,
             rg::Value(rg::LocalTime{4, 44, 24, 3, true}));
 }
 
 TEST(ValueTest, CombinesAndScalesDurations) {
   const rg::Duration duration{149, 14, 58'390, 1};
-  EXPECT_EQ(rg::AddDurations(duration, duration, false),
+  EXPECT_EQ(rg::temporal::AddDurations(duration, duration),
             rg::Value(rg::Duration{298, 28, 116'780, 2}));
-  EXPECT_EQ(rg::ScaleDuration(duration, 0.5),
+  EXPECT_EQ(rg::temporal::SubtractDurations(duration, duration),
+            rg::Value(rg::Duration{}));
+  EXPECT_EQ(rg::temporal::ScaleDuration(duration, 0.5),
             rg::Value(rg::Duration{74, 22, 48'068, 0}));
 }
 

@@ -676,25 +676,30 @@ Value EvaluateArithmetic(
            value.IsLocalDateTime() || value.IsDateTime();
   };
   if ((add || subtract) && left.IsDuration() && right.IsDuration()) {
-    return AddDurations(left.AsDuration(), right.AsDuration(), subtract);
+    return subtract
+               ? temporal::SubtractDurations(left.AsDuration(),
+                                             right.AsDuration())
+               : temporal::AddDurations(left.AsDuration(), right.AsDuration());
   }
   if ((add || subtract) && is_temporal(left) && right.IsDuration()) {
-    return AddDurationToTemporal(left, right.AsDuration(), subtract);
+    return subtract ? temporal::SubtractDurationFromTemporal(left,
+                                                             right.AsDuration())
+                    : temporal::AddDurationToTemporal(left, right.AsDuration());
   }
   if (add && left.IsDuration() && is_temporal(right)) {
-    return AddDurationToTemporal(right, left.AsDuration(), false);
+    return temporal::AddDurationToTemporal(right, left.AsDuration());
   }
   if (multiply && left.IsDuration() && IsNumeric(right)) {
-    return ScaleDuration(left.AsDuration(), AsDoubleValue(right));
+    return temporal::ScaleDuration(left.AsDuration(), AsDoubleValue(right));
   }
   if (multiply && IsNumeric(left) && right.IsDuration()) {
-    return ScaleDuration(right.AsDuration(), AsDoubleValue(left));
+    return temporal::ScaleDuration(right.AsDuration(), AsDoubleValue(left));
   }
   if (divide && left.IsDuration() && IsNumeric(right)) {
     const double divisor = AsDoubleValue(right);
     RG_CHECK(divisor != 0.0, common::ErrorCode::InvalidParameter,
              "division by zero");
-    return ScaleDuration(left.AsDuration(), 1.0 / divisor);
+    return temporal::ScaleDuration(left.AsDuration(), 1.0 / divisor);
   }
   if (expression.Is(ast::ASTNodeType::kAddExpression) && left.IsString() &&
       right.IsString()) {
@@ -863,7 +868,7 @@ Value EvaluateExpression(
       if (value != nullptr) {
         return *value;
       }
-      return TemporalProperty(object, property.property_key)
+      return temporal::TemporalProperty(object, property.property_key)
           .value_or(Value::Null());
     }
     case ast::ASTNodeType::kListIndexExpression:

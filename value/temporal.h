@@ -7,58 +7,84 @@
 
 #include "value/value.h"
 
-namespace rg {
+namespace rg::temporal {
 
-[[nodiscard]] Value ConstructDate(const Value *argument,
+[[nodiscard]] Value ConstructDate(std::chrono::system_clock::time_point now =
+                                      std::chrono::system_clock::now());
+[[nodiscard]] Value ConstructDate(const Value &argument,
                                   std::chrono::system_clock::time_point now =
                                       std::chrono::system_clock::now());
 [[nodiscard]] Value ConstructLocalTime(
-    const Value *argument, std::chrono::system_clock::time_point now =
+    std::chrono::system_clock::time_point now =
+        std::chrono::system_clock::now());
+[[nodiscard]] Value ConstructLocalTime(
+    const Value &argument, std::chrono::system_clock::time_point now =
                                std::chrono::system_clock::now());
-[[nodiscard]] Value ConstructTime(const Value *argument,
+[[nodiscard]] Value ConstructTime(std::chrono::system_clock::time_point now =
+                                      std::chrono::system_clock::now());
+[[nodiscard]] Value ConstructTime(const Value &argument,
                                   std::chrono::system_clock::time_point now =
                                       std::chrono::system_clock::now());
 [[nodiscard]] Value ConstructLocalDateTime(
-    const Value *argument, std::chrono::system_clock::time_point now =
+    std::chrono::system_clock::time_point now =
+        std::chrono::system_clock::now());
+[[nodiscard]] Value ConstructLocalDateTime(
+    const Value &argument, std::chrono::system_clock::time_point now =
                                std::chrono::system_clock::now());
 [[nodiscard]] Value ConstructDateTime(
-    const Value *argument, std::chrono::system_clock::time_point now =
+    std::chrono::system_clock::time_point now =
+        std::chrono::system_clock::now());
+[[nodiscard]] Value ConstructDateTime(
+    const Value &argument, std::chrono::system_clock::time_point now =
                                std::chrono::system_clock::now());
 [[nodiscard]] Value ConstructDateTimeFromEpoch(const Value &seconds,
                                                const Value &nanoseconds);
-[[nodiscard]] Value ConstructDateTimeFromEpochMillis(
-    const Value &milliseconds);
-[[nodiscard]] Value CurrentDate(
-    const Value *timezone, std::chrono::system_clock::time_point now);
-[[nodiscard]] Value CurrentLocalTime(
-    const Value *timezone, std::chrono::system_clock::time_point now);
-[[nodiscard]] Value CurrentTime(
-    const Value *timezone, std::chrono::system_clock::time_point now);
+[[nodiscard]] Value ConstructDateTimeFromEpochMillis(const Value &milliseconds);
+[[nodiscard]] Value CurrentDate(std::chrono::system_clock::time_point now);
+[[nodiscard]] Value CurrentDate(const Value &timezone,
+                                std::chrono::system_clock::time_point now);
+[[nodiscard]] Value CurrentLocalTime(std::chrono::system_clock::time_point now);
+[[nodiscard]] Value CurrentLocalTime(const Value &timezone,
+                                     std::chrono::system_clock::time_point now);
+[[nodiscard]] Value CurrentTime(std::chrono::system_clock::time_point now);
+[[nodiscard]] Value CurrentTime(const Value &timezone,
+                                std::chrono::system_clock::time_point now);
 [[nodiscard]] Value CurrentLocalDateTime(
-    const Value *timezone, std::chrono::system_clock::time_point now);
-[[nodiscard]] Value CurrentDateTime(
-    const Value *timezone, std::chrono::system_clock::time_point now);
-[[nodiscard]] Value ConstructDuration(const Value *argument);
+    std::chrono::system_clock::time_point now);
+[[nodiscard]] Value CurrentLocalDateTime(
+    const Value &timezone, std::chrono::system_clock::time_point now);
+[[nodiscard]] Value CurrentDateTime(std::chrono::system_clock::time_point now);
+[[nodiscard]] Value CurrentDateTime(const Value &timezone,
+                                    std::chrono::system_clock::time_point now);
+[[nodiscard]] Value ConstructDuration(const Value &argument);
 [[nodiscard]] Value AddDurationToTemporal(const Value &temporal,
-                                          const Duration &duration,
-                                          bool subtract);
-[[nodiscard]] Value AddDurations(const Duration &left, const Duration &right,
-                                 bool subtract);
+                                          const Duration &duration);
+[[nodiscard]] Value SubtractDurationFromTemporal(const Value &temporal,
+                                                 const Duration &duration);
+[[nodiscard]] Value AddDurations(const Duration &left, const Duration &right);
+[[nodiscard]] Value SubtractDurations(const Duration &left,
+                                      const Duration &right);
 [[nodiscard]] Value ScaleDuration(const Duration &duration, double factor);
 [[nodiscard]] Value DurationBetween(const Value &left, const Value &right);
 [[nodiscard]] Value DurationInMonths(const Value &left, const Value &right);
 [[nodiscard]] Value DurationInDays(const Value &left, const Value &right);
 [[nodiscard]] Value DurationInSeconds(const Value &left, const Value &right);
+[[nodiscard]] Value TruncateDate(const Value &unit, const Value &input);
 [[nodiscard]] Value TruncateDate(const Value &unit, const Value &input,
-                                 const Value *fields);
+                                 const Value &fields);
+[[nodiscard]] Value TruncateLocalTime(const Value &unit, const Value &input);
 [[nodiscard]] Value TruncateLocalTime(const Value &unit, const Value &input,
-                                      const Value *fields);
+                                      const Value &fields);
+[[nodiscard]] Value TruncateTime(const Value &unit, const Value &input);
 [[nodiscard]] Value TruncateTime(const Value &unit, const Value &input,
-                                 const Value *fields);
+                                 const Value &fields);
+[[nodiscard]] Value TruncateLocalDateTime(const Value &unit,
+                                          const Value &input);
 [[nodiscard]] Value TruncateLocalDateTime(const Value &unit, const Value &input,
-                                          const Value *fields);
+                                          const Value &fields);
+[[nodiscard]] Value TruncateDateTime(const Value &unit, const Value &input);
 [[nodiscard]] Value TruncateDateTime(const Value &unit, const Value &input,
-                                     const Value *fields);
+                                     const Value &fields);
 
 [[nodiscard]] std::optional<Value> TemporalProperty(const Value &value,
                                                     std::string_view property);
@@ -70,4 +96,4 @@ namespace rg {
 [[nodiscard]] std::string FormatDateTime(const DateTime &date_time);
 [[nodiscard]] std::string FormatDuration(const Duration &duration);
 
-}  // namespace rg
+}  // namespace rg::temporal

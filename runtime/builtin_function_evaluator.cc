@@ -184,36 +184,54 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
                        arguments[0].AsPath().relationships.size()))
                  : Value::Null();
     case ast::BuiltinFunctionKind::kLocalDateTime:
-      return ConstructLocalDateTime(arguments.empty() ? nullptr : &arguments[0],
-                                    clock.statement_time);
+      return arguments.empty()
+                 ? temporal::ConstructLocalDateTime(clock.statement_time)
+                 : temporal::ConstructLocalDateTime(arguments[0],
+                                                    clock.statement_time);
     case ast::BuiltinFunctionKind::kLocalDateTimeRealtime:
-      return CurrentLocalDateTime(arguments.empty() ? nullptr : &arguments[0],
-                                  clock.Realtime());
+      return arguments.empty()
+                 ? temporal::CurrentLocalDateTime(clock.Realtime())
+                 : temporal::CurrentLocalDateTime(arguments[0],
+                                                  clock.Realtime());
     case ast::BuiltinFunctionKind::kLocalDateTimeStatement:
-      return CurrentLocalDateTime(arguments.empty() ? nullptr : &arguments[0],
-                                  clock.statement_time);
+      return arguments.empty()
+                 ? temporal::CurrentLocalDateTime(clock.statement_time)
+                 : temporal::CurrentLocalDateTime(arguments[0],
+                                                  clock.statement_time);
     case ast::BuiltinFunctionKind::kLocalDateTimeTransaction:
-      return CurrentLocalDateTime(arguments.empty() ? nullptr : &arguments[0],
-                                  clock.transaction_time);
+      return arguments.empty()
+                 ? temporal::CurrentLocalDateTime(clock.transaction_time)
+                 : temporal::CurrentLocalDateTime(arguments[0],
+                                                  clock.transaction_time);
     case ast::BuiltinFunctionKind::kLocalDateTimeTruncate:
-      return TruncateLocalDateTime(
-          arguments[0], arguments[1],
-          arguments.size() == 3 ? &arguments[2] : nullptr);
+      return arguments.size() == 3
+                 ? temporal::TruncateLocalDateTime(arguments[0], arguments[1],
+                                                   arguments[2])
+                 : temporal::TruncateLocalDateTime(arguments[0], arguments[1]);
     case ast::BuiltinFunctionKind::kLocalTime:
-      return ConstructLocalTime(arguments.empty() ? nullptr : &arguments[0],
-                                clock.statement_time);
+      return arguments.empty()
+                 ? temporal::ConstructLocalTime(clock.statement_time)
+                 : temporal::ConstructLocalTime(arguments[0],
+                                                clock.statement_time);
     case ast::BuiltinFunctionKind::kLocalTimeRealtime:
-      return CurrentLocalTime(arguments.empty() ? nullptr : &arguments[0],
-                              clock.Realtime());
+      return arguments.empty()
+                 ? temporal::CurrentLocalTime(clock.Realtime())
+                 : temporal::CurrentLocalTime(arguments[0], clock.Realtime());
     case ast::BuiltinFunctionKind::kLocalTimeStatement:
-      return CurrentLocalTime(arguments.empty() ? nullptr : &arguments[0],
-                              clock.statement_time);
+      return arguments.empty()
+                 ? temporal::CurrentLocalTime(clock.statement_time)
+                 : temporal::CurrentLocalTime(arguments[0],
+                                              clock.statement_time);
     case ast::BuiltinFunctionKind::kLocalTimeTransaction:
-      return CurrentLocalTime(arguments.empty() ? nullptr : &arguments[0],
-                              clock.transaction_time);
+      return arguments.empty()
+                 ? temporal::CurrentLocalTime(clock.transaction_time)
+                 : temporal::CurrentLocalTime(arguments[0],
+                                              clock.transaction_time);
     case ast::BuiltinFunctionKind::kLocalTimeTruncate:
-      return TruncateLocalTime(arguments[0], arguments[1],
-                               arguments.size() == 3 ? &arguments[2] : nullptr);
+      return arguments.size() == 3
+                 ? temporal::TruncateLocalTime(arguments[0], arguments[1],
+                                               arguments[2])
+                 : temporal::TruncateLocalTime(arguments[0], arguments[1]);
     case ast::BuiltinFunctionKind::kCoalesce:
       for (const Value &argument : arguments) {
         if (!argument.IsNull()) {
@@ -222,49 +240,63 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
       }
       return Value::Null();
     case ast::BuiltinFunctionKind::kDate:
-      return ConstructDate(arguments.empty() ? nullptr : &arguments[0],
-                           clock.statement_time);
+      return arguments.empty()
+                 ? temporal::ConstructDate(clock.statement_time)
+                 : temporal::ConstructDate(arguments[0], clock.statement_time);
     case ast::BuiltinFunctionKind::kDateRealtime:
-      return CurrentDate(arguments.empty() ? nullptr : &arguments[0],
-                         clock.Realtime());
+      return arguments.empty()
+                 ? temporal::CurrentDate(clock.Realtime())
+                 : temporal::CurrentDate(arguments[0], clock.Realtime());
     case ast::BuiltinFunctionKind::kDateStatement:
-      return CurrentDate(arguments.empty() ? nullptr : &arguments[0],
-                         clock.statement_time);
+      return arguments.empty()
+                 ? temporal::CurrentDate(clock.statement_time)
+                 : temporal::CurrentDate(arguments[0], clock.statement_time);
     case ast::BuiltinFunctionKind::kDateTransaction:
-      return CurrentDate(arguments.empty() ? nullptr : &arguments[0],
-                         clock.transaction_time);
+      return arguments.empty()
+                 ? temporal::CurrentDate(clock.transaction_time)
+                 : temporal::CurrentDate(arguments[0], clock.transaction_time);
     case ast::BuiltinFunctionKind::kDateTruncate:
-      return TruncateDate(arguments[0], arguments[1],
-                          arguments.size() == 3 ? &arguments[2] : nullptr);
+      return arguments.size() == 3
+                 ? temporal::TruncateDate(arguments[0], arguments[1],
+                                          arguments[2])
+                 : temporal::TruncateDate(arguments[0], arguments[1]);
     case ast::BuiltinFunctionKind::kDateTime:
-      return ConstructDateTime(arguments.empty() ? nullptr : &arguments[0],
-                               clock.statement_time);
+      return arguments.empty()
+                 ? temporal::ConstructDateTime(clock.statement_time)
+                 : temporal::ConstructDateTime(arguments[0],
+                                               clock.statement_time);
     case ast::BuiltinFunctionKind::kDateTimeFromEpoch:
-      return ConstructDateTimeFromEpoch(arguments[0], arguments[1]);
+      return temporal::ConstructDateTimeFromEpoch(arguments[0], arguments[1]);
     case ast::BuiltinFunctionKind::kDateTimeFromEpochMillis:
-      return ConstructDateTimeFromEpochMillis(arguments[0]);
+      return temporal::ConstructDateTimeFromEpochMillis(arguments[0]);
     case ast::BuiltinFunctionKind::kDateTimeRealtime:
-      return CurrentDateTime(arguments.empty() ? nullptr : &arguments[0],
-                             clock.Realtime());
+      return arguments.empty()
+                 ? temporal::CurrentDateTime(clock.Realtime())
+                 : temporal::CurrentDateTime(arguments[0], clock.Realtime());
     case ast::BuiltinFunctionKind::kDateTimeStatement:
-      return CurrentDateTime(arguments.empty() ? nullptr : &arguments[0],
-                             clock.statement_time);
+      return arguments.empty() ? temporal::CurrentDateTime(clock.statement_time)
+                               : temporal::CurrentDateTime(
+                                     arguments[0], clock.statement_time);
     case ast::BuiltinFunctionKind::kDateTimeTransaction:
-      return CurrentDateTime(arguments.empty() ? nullptr : &arguments[0],
-                             clock.transaction_time);
+      return arguments.empty()
+                 ? temporal::CurrentDateTime(clock.transaction_time)
+                 : temporal::CurrentDateTime(arguments[0],
+                                             clock.transaction_time);
     case ast::BuiltinFunctionKind::kDateTimeTruncate:
-      return TruncateDateTime(arguments[0], arguments[1],
-                              arguments.size() == 3 ? &arguments[2] : nullptr);
+      return arguments.size() == 3
+                 ? temporal::TruncateDateTime(arguments[0], arguments[1],
+                                              arguments[2])
+                 : temporal::TruncateDateTime(arguments[0], arguments[1]);
     case ast::BuiltinFunctionKind::kDuration:
-      return ConstructDuration(&arguments[0]);
+      return temporal::ConstructDuration(arguments[0]);
     case ast::BuiltinFunctionKind::kDurationBetween:
-      return DurationBetween(arguments[0], arguments[1]);
+      return temporal::DurationBetween(arguments[0], arguments[1]);
     case ast::BuiltinFunctionKind::kDurationInDays:
-      return DurationInDays(arguments[0], arguments[1]);
+      return temporal::DurationInDays(arguments[0], arguments[1]);
     case ast::BuiltinFunctionKind::kDurationInMonths:
-      return DurationInMonths(arguments[0], arguments[1]);
+      return temporal::DurationInMonths(arguments[0], arguments[1]);
     case ast::BuiltinFunctionKind::kDurationInSeconds:
-      return DurationInSeconds(arguments[0], arguments[1]);
+      return temporal::DurationInSeconds(arguments[0], arguments[1]);
     case ast::BuiltinFunctionKind::kEndNode:
     case ast::BuiltinFunctionKind::kStartNode: {
       if (!arguments[0].IsRelationship()) {
@@ -434,20 +466,26 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
       return Value(Value::List(arguments[0].AsList().begin() + 1,
                                arguments[0].AsList().end()));
     case ast::BuiltinFunctionKind::kTime:
-      return ConstructTime(arguments.empty() ? nullptr : &arguments[0],
-                           clock.statement_time);
+      return arguments.empty()
+                 ? temporal::ConstructTime(clock.statement_time)
+                 : temporal::ConstructTime(arguments[0], clock.statement_time);
     case ast::BuiltinFunctionKind::kTimeRealtime:
-      return CurrentTime(arguments.empty() ? nullptr : &arguments[0],
-                         clock.Realtime());
+      return arguments.empty()
+                 ? temporal::CurrentTime(clock.Realtime())
+                 : temporal::CurrentTime(arguments[0], clock.Realtime());
     case ast::BuiltinFunctionKind::kTimeStatement:
-      return CurrentTime(arguments.empty() ? nullptr : &arguments[0],
-                         clock.statement_time);
+      return arguments.empty()
+                 ? temporal::CurrentTime(clock.statement_time)
+                 : temporal::CurrentTime(arguments[0], clock.statement_time);
     case ast::BuiltinFunctionKind::kTimeTransaction:
-      return CurrentTime(arguments.empty() ? nullptr : &arguments[0],
-                         clock.transaction_time);
+      return arguments.empty()
+                 ? temporal::CurrentTime(clock.transaction_time)
+                 : temporal::CurrentTime(arguments[0], clock.transaction_time);
     case ast::BuiltinFunctionKind::kTimeTruncate:
-      return TruncateTime(arguments[0], arguments[1],
-                          arguments.size() == 3 ? &arguments[2] : nullptr);
+      return arguments.size() == 3
+                 ? temporal::TruncateTime(arguments[0], arguments[1],
+                                          arguments[2])
+                 : temporal::TruncateTime(arguments[0], arguments[1]);
     case ast::BuiltinFunctionKind::kNodes:
     case ast::BuiltinFunctionKind::kRelationships: {
       if (!arguments[0].IsPath()) {

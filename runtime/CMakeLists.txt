@@ -1,6 +1,7 @@
 add_library(
   rocksgraph_runtime
   builtin_function_evaluator.cc
+  composite_value_key.cc
   expression_evaluator.cc
   graphdb_access.cc
   graphdb_planner_catalog.cc

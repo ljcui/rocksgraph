@@ -13,6 +13,7 @@
 #include "common/exception.h"
 #include "graphdb/graph_entity.h"
 #include "graphdb/transaction.h"
+#include "runtime/composite_value_key.h"
 #include "runtime/slotted_executor.h"
 
 namespace rg::slotted {

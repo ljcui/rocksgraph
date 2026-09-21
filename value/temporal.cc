@@ -1347,8 +1347,12 @@ std::optional<Value> OffsetProperty(int offset, const std::string &timezone,
 
 }  // namespace
 
-Value ConstructDate(const Value *argument,
-                    std::chrono::system_clock::time_point now) {
+namespace temporal {
+
+namespace {
+
+Value ConstructDateImpl(const Value *argument,
+                        std::chrono::system_clock::time_point now) {
   if (argument == nullptr) return Value(UtcDateTime(now).date);
   if (argument->IsNull()) return Value::Null();
   if (argument->IsDate()) return *argument;
@@ -1360,8 +1364,8 @@ Value ConstructDate(const Value *argument,
   return Value::Null();
 }
 
-Value ConstructLocalTime(const Value *argument,
-                         std::chrono::system_clock::time_point now) {
+Value ConstructLocalTimeImpl(const Value *argument,
+                             std::chrono::system_clock::time_point now) {
   if (argument == nullptr) return Value(UtcDateTime(now).time);
   if (argument->IsNull()) return Value::Null();
   if (argument->IsLocalTime()) return *argument;
@@ -1374,8 +1378,8 @@ Value ConstructLocalTime(const Value *argument,
   return Value::Null();
 }
 
-Value ConstructTime(const Value *argument,
-                    std::chrono::system_clock::time_point now) {
+Value ConstructTimeImpl(const Value *argument,
+                        std::chrono::system_clock::time_point now) {
   if (argument == nullptr) return Value(Time{UtcDateTime(now).time, 0, {}});
   if (argument->IsNull()) return Value::Null();
   if (argument->IsTime()) return *argument;
@@ -1419,8 +1423,8 @@ Value ConstructTime(const Value *argument,
   return Value::Null();
 }
 
-Value ConstructLocalDateTime(const Value *argument,
-                             std::chrono::system_clock::time_point now) {
+Value ConstructLocalDateTimeImpl(const Value *argument,
+                                 std::chrono::system_clock::time_point now) {
   if (argument == nullptr) return Value(UtcDateTime(now));
   if (argument->IsNull()) return Value::Null();
   if (argument->IsLocalDateTime()) return *argument;
@@ -1437,8 +1441,8 @@ Value ConstructLocalDateTime(const Value *argument,
   return Value::Null();
 }
 
-Value ConstructDateTime(const Value *argument,
-                        std::chrono::system_clock::time_point now) {
+Value ConstructDateTimeImpl(const Value *argument,
+                            std::chrono::system_clock::time_point now) {
   if (argument == nullptr) return Value(DateTime{UtcDateTime(now), 0, {}});
   if (argument->IsNull()) return Value::Null();
   if (argument->IsDateTime()) return *argument;
@@ -1478,6 +1482,53 @@ Value ConstructDateTime(const Value *argument,
   return Value::Null();
 }
 
+}  // namespace
+
+Value ConstructDate(std::chrono::system_clock::time_point now) {
+  return ConstructDateImpl(nullptr, now);
+}
+
+Value ConstructDate(const Value &argument,
+                    std::chrono::system_clock::time_point now) {
+  return ConstructDateImpl(&argument, now);
+}
+
+Value ConstructLocalTime(std::chrono::system_clock::time_point now) {
+  return ConstructLocalTimeImpl(nullptr, now);
+}
+
+Value ConstructLocalTime(const Value &argument,
+                         std::chrono::system_clock::time_point now) {
+  return ConstructLocalTimeImpl(&argument, now);
+}
+
+Value ConstructTime(std::chrono::system_clock::time_point now) {
+  return ConstructTimeImpl(nullptr, now);
+}
+
+Value ConstructTime(const Value &argument,
+                    std::chrono::system_clock::time_point now) {
+  return ConstructTimeImpl(&argument, now);
+}
+
+Value ConstructLocalDateTime(std::chrono::system_clock::time_point now) {
+  return ConstructLocalDateTimeImpl(nullptr, now);
+}
+
+Value ConstructLocalDateTime(const Value &argument,
+                             std::chrono::system_clock::time_point now) {
+  return ConstructLocalDateTimeImpl(&argument, now);
+}
+
+Value ConstructDateTime(std::chrono::system_clock::time_point now) {
+  return ConstructDateTimeImpl(nullptr, now);
+}
+
+Value ConstructDateTime(const Value &argument,
+                        std::chrono::system_clock::time_point now) {
+  return ConstructDateTimeImpl(&argument, now);
+}
+
 Value ConstructDateTimeFromEpoch(const Value &seconds,
                                  const Value &nanoseconds) {
   if (seconds.IsNull() || nanoseconds.IsNull()) return Value::Null();
@@ -1507,22 +1558,24 @@ Value ConstructDateTimeFromEpochMillis(const Value &milliseconds) {
       {}});
 }
 
-Value CurrentDate(const Value *timezone,
-                  std::chrono::system_clock::time_point now) {
+namespace {
+
+Value CurrentDateImpl(const Value *timezone,
+                      std::chrono::system_clock::time_point now) {
   std::string zone;
   if (!ClockTimezone(timezone, &zone)) return Value::Null();
   return Value(DateTimeAtInstant(now, zone).local_date_time.date);
 }
 
-Value CurrentLocalTime(const Value *timezone,
-                       std::chrono::system_clock::time_point now) {
+Value CurrentLocalTimeImpl(const Value *timezone,
+                           std::chrono::system_clock::time_point now) {
   std::string zone;
   if (!ClockTimezone(timezone, &zone)) return Value::Null();
   return Value(DateTimeAtInstant(now, zone).local_date_time.time);
 }
 
-Value CurrentTime(const Value *timezone,
-                  std::chrono::system_clock::time_point now) {
+Value CurrentTimeImpl(const Value *timezone,
+                      std::chrono::system_clock::time_point now) {
   std::string zone;
   if (!ClockTimezone(timezone, &zone)) return Value::Null();
   const DateTime date_time = DateTimeAtInstant(now, zone);
@@ -1530,32 +1583,79 @@ Value CurrentTime(const Value *timezone,
       Time{date_time.local_date_time.time, date_time.utc_offset_seconds, {}});
 }
 
-Value CurrentLocalDateTime(const Value *timezone,
-                           std::chrono::system_clock::time_point now) {
+Value CurrentLocalDateTimeImpl(const Value *timezone,
+                               std::chrono::system_clock::time_point now) {
   std::string zone;
   if (!ClockTimezone(timezone, &zone)) return Value::Null();
   return Value(DateTimeAtInstant(now, zone).local_date_time);
 }
 
-Value CurrentDateTime(const Value *timezone,
-                      std::chrono::system_clock::time_point now) {
+Value CurrentDateTimeImpl(const Value *timezone,
+                          std::chrono::system_clock::time_point now) {
   std::string zone;
   if (!ClockTimezone(timezone, &zone)) return Value::Null();
   return Value(DateTimeAtInstant(now, zone));
 }
 
-Value ConstructDuration(const Value *argument) {
-  if (argument == nullptr) InvalidTemporal("duration() requires an argument");
-  if (argument->IsNull()) return Value::Null();
-  if (argument->IsDuration()) return *argument;
-  if (argument->IsString()) return Value(ParseDuration(argument->AsString()));
-  if (argument->IsMap()) return Value(DurationFromMap(argument->AsMap()));
+}  // namespace
+
+Value CurrentDate(std::chrono::system_clock::time_point now) {
+  return CurrentDateImpl(nullptr, now);
+}
+
+Value CurrentDate(const Value &timezone,
+                  std::chrono::system_clock::time_point now) {
+  return CurrentDateImpl(&timezone, now);
+}
+
+Value CurrentLocalTime(std::chrono::system_clock::time_point now) {
+  return CurrentLocalTimeImpl(nullptr, now);
+}
+
+Value CurrentLocalTime(const Value &timezone,
+                       std::chrono::system_clock::time_point now) {
+  return CurrentLocalTimeImpl(&timezone, now);
+}
+
+Value CurrentTime(std::chrono::system_clock::time_point now) {
+  return CurrentTimeImpl(nullptr, now);
+}
+
+Value CurrentTime(const Value &timezone,
+                  std::chrono::system_clock::time_point now) {
+  return CurrentTimeImpl(&timezone, now);
+}
+
+Value CurrentLocalDateTime(std::chrono::system_clock::time_point now) {
+  return CurrentLocalDateTimeImpl(nullptr, now);
+}
+
+Value CurrentLocalDateTime(const Value &timezone,
+                           std::chrono::system_clock::time_point now) {
+  return CurrentLocalDateTimeImpl(&timezone, now);
+}
+
+Value CurrentDateTime(std::chrono::system_clock::time_point now) {
+  return CurrentDateTimeImpl(nullptr, now);
+}
+
+Value CurrentDateTime(const Value &timezone,
+                      std::chrono::system_clock::time_point now) {
+  return CurrentDateTimeImpl(&timezone, now);
+}
+
+Value ConstructDuration(const Value &argument) {
+  if (argument.IsNull()) return Value::Null();
+  if (argument.IsDuration()) return argument;
+  if (argument.IsString()) return Value(ParseDuration(argument.AsString()));
+  if (argument.IsMap()) return Value(DurationFromMap(argument.AsMap()));
   return Value::Null();
 }
 
-Value AddDurationToTemporal(const Value &temporal, const Duration &duration,
-                            bool subtract) {
-  const int sign = subtract ? -1 : 1;
+namespace {
+
+Value AddDurationToTemporalImpl(const Value &temporal, const Duration &duration,
+                                int sign) {
   if (temporal.IsDate()) {
     Date result = temporal.AsDate();
     const WideInteger months = static_cast<WideInteger>(duration.months) * sign;
@@ -1590,11 +1690,10 @@ Value AddDurationToTemporal(const Value &temporal, const Duration &duration,
                            : ZoneOffset(input.timezone, local);
     return Value(DateTime{local, offset, input.timezone});
   }
-  InvalidTemporal("duration can only be added to a temporal value");
+  InvalidTemporal("duration can only be applied to a temporal value");
 }
 
-Value AddDurations(const Duration &left, const Duration &right, bool subtract) {
-  const int sign = subtract ? -1 : 1;
+Value AddDurationsImpl(const Duration &left, const Duration &right, int sign) {
   const std::int64_t months =
       CheckedWideInteger(static_cast<WideInteger>(left.months) +
                              static_cast<WideInteger>(right.months) * sign,
@@ -1606,6 +1705,25 @@ Value AddDurations(const Duration &left, const Duration &right, bool subtract) {
   return Value(NormalizeDurationNanoseconds(
       months, days,
       DurationNanoseconds(left) + DurationNanoseconds(right) * sign));
+}
+
+}  // namespace
+
+Value AddDurationToTemporal(const Value &temporal, const Duration &duration) {
+  return AddDurationToTemporalImpl(temporal, duration, 1);
+}
+
+Value SubtractDurationFromTemporal(const Value &temporal,
+                                   const Duration &duration) {
+  return AddDurationToTemporalImpl(temporal, duration, -1);
+}
+
+Value AddDurations(const Duration &left, const Duration &right) {
+  return AddDurationsImpl(left, right, 1);
+}
+
+Value SubtractDurations(const Duration &left, const Duration &right) {
+  return AddDurationsImpl(left, right, -1);
 }
 
 Value ScaleDuration(const Duration &duration, double factor) {
@@ -1691,7 +1809,10 @@ Value DurationInSeconds(const Value &left, const Value &right) {
       DifferenceInSeconds(ToTemporalOperand(left), ToTemporalOperand(right))));
 }
 
-Value TruncateDate(const Value &unit, const Value &input, const Value *fields) {
+namespace {
+
+Value TruncateDateImpl(const Value &unit, const Value &input,
+                       const Value *fields) {
   if (unit.IsNull() || input.IsNull() ||
       (fields != nullptr && fields->IsNull())) {
     return Value::Null();
@@ -1705,8 +1826,8 @@ Value TruncateDate(const Value &unit, const Value &input, const Value *fields) {
   return Value(ApplyTruncationDateFields(parsed_unit, result, map));
 }
 
-Value TruncateLocalTime(const Value &unit, const Value &input,
-                        const Value *fields) {
+Value TruncateLocalTimeImpl(const Value &unit, const Value &input,
+                            const Value *fields) {
   if (unit.IsNull() || input.IsNull() ||
       (fields != nullptr && fields->IsNull())) {
     return Value::Null();
@@ -1717,7 +1838,8 @@ Value TruncateLocalTime(const Value &unit, const Value &input,
   return Value(ApplyTruncationTimeFields(result, map));
 }
 
-Value TruncateTime(const Value &unit, const Value &input, const Value *fields) {
+Value TruncateTimeImpl(const Value &unit, const Value &input,
+                       const Value *fields) {
   if (unit.IsNull() || input.IsNull() ||
       (fields != nullptr && fields->IsNull())) {
     return Value::Null();
@@ -1741,8 +1863,8 @@ Value TruncateTime(const Value &unit, const Value &input, const Value *fields) {
   return Value(Time{local, offset, {}});
 }
 
-Value TruncateLocalDateTime(const Value &unit, const Value &input,
-                            const Value *fields) {
+Value TruncateLocalDateTimeImpl(const Value &unit, const Value &input,
+                                const Value *fields) {
   if (unit.IsNull() || input.IsNull() ||
       (fields != nullptr && fields->IsNull())) {
     return Value::Null();
@@ -1752,8 +1874,8 @@ Value TruncateLocalDateTime(const Value &unit, const Value &input,
   return Value(TruncateLocalDateTimeValue(parsed_unit, input, map));
 }
 
-Value TruncateDateTime(const Value &unit, const Value &input,
-                       const Value *fields) {
+Value TruncateDateTimeImpl(const Value &unit, const Value &input,
+                           const Value *fields) {
   if (unit.IsNull() || input.IsNull() ||
       (fields != nullptr && fields->IsNull())) {
     return Value::Null();
@@ -1764,6 +1886,51 @@ Value TruncateDateTime(const Value &unit, const Value &input,
       TruncateLocalDateTimeValue(parsed_unit, input, map);
   const TruncationTimezone timezone = TruncatedTimezone(input, map, local);
   return Value(DateTime{local, timezone.offset_seconds, timezone.timezone});
+}
+
+}  // namespace
+
+Value TruncateDate(const Value &unit, const Value &input) {
+  return TruncateDateImpl(unit, input, nullptr);
+}
+
+Value TruncateDate(const Value &unit, const Value &input, const Value &fields) {
+  return TruncateDateImpl(unit, input, &fields);
+}
+
+Value TruncateLocalTime(const Value &unit, const Value &input) {
+  return TruncateLocalTimeImpl(unit, input, nullptr);
+}
+
+Value TruncateLocalTime(const Value &unit, const Value &input,
+                        const Value &fields) {
+  return TruncateLocalTimeImpl(unit, input, &fields);
+}
+
+Value TruncateTime(const Value &unit, const Value &input) {
+  return TruncateTimeImpl(unit, input, nullptr);
+}
+
+Value TruncateTime(const Value &unit, const Value &input, const Value &fields) {
+  return TruncateTimeImpl(unit, input, &fields);
+}
+
+Value TruncateLocalDateTime(const Value &unit, const Value &input) {
+  return TruncateLocalDateTimeImpl(unit, input, nullptr);
+}
+
+Value TruncateLocalDateTime(const Value &unit, const Value &input,
+                            const Value &fields) {
+  return TruncateLocalDateTimeImpl(unit, input, &fields);
+}
+
+Value TruncateDateTime(const Value &unit, const Value &input) {
+  return TruncateDateTimeImpl(unit, input, nullptr);
+}
+
+Value TruncateDateTime(const Value &unit, const Value &input,
+                       const Value &fields) {
+  return TruncateDateTimeImpl(unit, input, &fields);
 }
 
 std::optional<Value> TemporalProperty(const Value &value,
@@ -1934,4 +2101,5 @@ std::string FormatDuration(const Duration &duration) {
   return out.str();
 }
 
+}  // namespace temporal
 }  // namespace rg

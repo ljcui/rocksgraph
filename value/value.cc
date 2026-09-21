@@ -414,27 +414,27 @@ void AppendValue(std::ostringstream &oss, const Value &value) {
       AppendPath(oss, value.AsPath());
       break;
     case ValueType::kDate: {
-      oss << FormatDate(value.AsDate());
+      oss << temporal::FormatDate(value.AsDate());
       break;
     }
     case ValueType::kLocalTime: {
-      oss << FormatLocalTime(value.AsLocalTime());
+      oss << temporal::FormatLocalTime(value.AsLocalTime());
       break;
     }
     case ValueType::kTime: {
-      oss << FormatTime(value.AsTime());
+      oss << temporal::FormatTime(value.AsTime());
       break;
     }
     case ValueType::kLocalDateTime: {
-      oss << FormatLocalDateTime(value.AsLocalDateTime());
+      oss << temporal::FormatLocalDateTime(value.AsLocalDateTime());
       break;
     }
     case ValueType::kDateTime: {
-      oss << FormatDateTime(value.AsDateTime());
+      oss << temporal::FormatDateTime(value.AsDateTime());
       break;
     }
     case ValueType::kDuration: {
-      oss << FormatDuration(value.AsDuration());
+      oss << temporal::FormatDuration(value.AsDuration());
       break;
     }
     case ValueType::kPoint: {
@@ -802,11 +802,6 @@ bool ValuesEqual(const Value &left, const Value &right) {
   return left == right;
 }
 
-bool CompositeValueKey::operator==(
-    const CompositeValueKey &other) const noexcept {
-  return ValueEqual{}(*this, other);
-}
-
 bool ValueEqual::operator()(const Value &left,
                             const Value &right) const noexcept {
   const bool left_numeric = left.IsInteger() || left.IsDouble();
@@ -915,19 +910,6 @@ bool ValueEqual::operator()(const Value &left,
   return false;
 }
 
-bool ValueEqual::operator()(const CompositeValueKey &left,
-                            const CompositeValueKey &right) const noexcept {
-  if (left.values.size() != right.values.size()) {
-    return false;
-  }
-  for (std::size_t index = 0; index < left.values.size(); ++index) {
-    if (!(*this)(left.values[index], right.values[index])) {
-      return false;
-    }
-  }
-  return true;
-}
-
 std::size_t ValueHash::operator()(const Value &value) const noexcept {
   if (value.IsInteger() || value.IsDouble()) {
     return HashNumber(value);
@@ -1023,14 +1005,6 @@ std::size_t ValueHash::operator()(const Value &value) const noexcept {
       }
       return seed;
     }
-  }
-  return seed;
-}
-
-std::size_t ValueHash::operator()(const CompositeValueKey &key) const noexcept {
-  std::size_t seed = std::hash<std::size_t>{}(key.values.size());
-  for (const Value &value : key.values) {
-    seed = HashCombine(seed, (*this)(value));
   }
   return seed;
 }
