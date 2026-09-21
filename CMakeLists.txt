@@ -3,7 +3,7 @@ project(rocksgraph)
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE
-      "Debug"
+      "Release"
       CACHE STRING "Choose the type of build." FORCE)
 endif()
 
