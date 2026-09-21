@@ -1,5 +1,5 @@
-add_library(rocksgraph_server SHARED bolt_handler.cc graph_manager.cc
-                                     graph_server.cc raft_server.cc)
+add_library(rocksgraph_server bolt_handler.cc graph_manager.cc graph_server.cc
+                              raft_server.cc)
 add_library(RocksGraph::server ALIAS rocksgraph_server)
 
 target_compile_features(rocksgraph_server PUBLIC cxx_std_20)

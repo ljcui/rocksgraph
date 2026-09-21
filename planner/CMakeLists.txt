@@ -1,5 +1,5 @@
 add_library(
-  rocksgraph_planner SHARED
+  rocksgraph_planner
   component_planner.cc
   cost_model.cc
   idp.cc

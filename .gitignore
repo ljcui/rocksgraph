@@ -1,5 +1,7 @@
 build/
+build-release/
 cmake-build-debug/
+log/
 .idea/
 AGENTS.md
 CLAUDE.md

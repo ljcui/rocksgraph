@@ -90,7 +90,7 @@ add_executable(
   graphdb/value_test.cc
   graphdb/vector_index_test.cc)
 target_link_libraries(graphdb_test PRIVATE GTest::gtest RocksGraph::graphdb
-                                           OpenMP::OpenMP_CXX)
+                                           ${ROCKSGRAPH_OPENMP_CXX})
 set_target_properties(graphdb_test PROPERTIES BUILD_RPATH "/usr/local/lib")
 add_test(NAME graphdb_test COMMAND graphdb_test)
 

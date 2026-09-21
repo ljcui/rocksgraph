@@ -6,7 +6,7 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.27")
 endif()
 
 add_library(
-  rocksgraph_ast SHARED
+  rocksgraph_ast
   ast_builder.cc
   ast_clone.cc
   ast_const_walker.cc
@@ -42,5 +42,5 @@ add_library(RocksGraph::ast ALIAS rocksgraph_ast)
 
 target_include_directories(rocksgraph_ast PUBLIC ${PROJECT_SOURCE_DIR})
 target_link_libraries(rocksgraph_ast PUBLIC ANTLR4Runtime::antlr4_runtime
-                                      RocksGraph::common)
+                                            RocksGraph::common)
 set_target_properties(rocksgraph_ast PROPERTIES BUILD_RPATH "/usr/local/lib")

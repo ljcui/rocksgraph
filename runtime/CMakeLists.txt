@@ -1,5 +1,5 @@
 add_library(
-  rocksgraph_runtime SHARED
+  rocksgraph_runtime
   builtin_function_evaluator.cc
   expression_evaluator.cc
   graphdb_access.cc
