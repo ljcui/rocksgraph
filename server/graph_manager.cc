@@ -28,49 +28,51 @@ std::string BuildGraphManagerMetaKey(GraphManagerMetadataType type) {
 void ValidateRaftNodeInfos(const meta::RaftNodeInfos &node_infos,
                            std::string_view graph_name) {
   if (node_infos.nodes().empty()) {
-    RG_THROW_CODE(InvalidParameter, "raft node infos should not be empty");
+    RG_THROW(common::ErrorCode::InvalidParameter,
+             "raft node infos should not be empty");
   }
   for (const auto &[node_id, node_info] : node_infos.nodes()) {
     if (node_id == 0) {
-      RG_THROW_CODE(InvalidParameter, "raft node_id should be greater than 0");
+      RG_THROW(common::ErrorCode::InvalidParameter,
+               "raft node_id should be greater than 0");
     }
     if (node_info.node_id() != node_id) {
-      RG_THROW_CODE(InvalidParameter,
-                    "raft node info key [{}] does not match node_id [{}]",
-                    node_id, node_info.node_id());
+      RG_THROW(common::ErrorCode::InvalidParameter,
+               "raft node info key [{}] does not match node_id [{}]", node_id,
+               node_info.node_id());
     }
     if (node_info.ip().empty()) {
-      RG_THROW_CODE(InvalidParameter, "raft node [{}] ip should not be empty",
-                    node_id);
+      RG_THROW(common::ErrorCode::InvalidParameter,
+               "raft node [{}] ip should not be empty", node_id);
     }
     if (node_info.bolt_port() <= 0) {
-      RG_THROW_CODE(InvalidParameter,
-                    "raft node [{}] bolt_port should be greater than 0",
-                    node_id);
+      RG_THROW(common::ErrorCode::InvalidParameter,
+               "raft node [{}] bolt_port should be greater than 0", node_id);
     }
     if (node_info.raft_poft() <= 0) {
-      RG_THROW_CODE(InvalidParameter,
-                    "raft node [{}] raft_port should be greater than 0",
-                    node_id);
+      RG_THROW(common::ErrorCode::InvalidParameter,
+               "raft node [{}] raft_port should be greater than 0", node_id);
     }
     if (node_info.graph().empty()) {
-      RG_THROW_CODE(InvalidParameter,
-                    "raft node [{}] graph should not be empty", node_id);
+      RG_THROW(common::ErrorCode::InvalidParameter,
+               "raft node [{}] graph should not be empty", node_id);
     }
     if (!graph_name.empty() && node_info.graph() != graph_name) {
-      RG_THROW_CODE(InvalidParameter,
-                    "raft node [{}] graph [{}] does not match graph [{}]",
-                    node_id, node_info.graph(), graph_name);
+      RG_THROW(common::ErrorCode::InvalidParameter,
+               "raft node [{}] graph [{}] does not match graph [{}]", node_id,
+               node_info.graph(), graph_name);
     }
   }
 }
 
 void ValidateGraphNameForCreate(std::string_view name) {
   if (name.empty()) {
-    RG_THROW_CODE(InvalidParameter, "graph name should not be empty");
+    RG_THROW(common::ErrorCode::InvalidParameter,
+             "graph name should not be empty");
   }
   if (name == kSystemGraphName) {
-    RG_THROW_CODE(InvalidParameter, "graph name [{}] is reserved", name);
+    RG_THROW(common::ErrorCode::InvalidParameter, "graph name [{}] is reserved",
+             name);
   }
 }
 
@@ -148,7 +150,7 @@ std::unique_ptr<GraphManager> GraphManager::Open(
   rocksdb::TransactionDB *db = nullptr;
   auto s =
       rocksdb::TransactionDB::Open(options, txn_db_options, meta_path, &db);
-  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
   auto graph_manager = std::make_unique<GraphManager>();
   graph_manager->path_ = path;
   raft::RaftManager::Configure(graph_manager_options.raft_scheduler_shards);
@@ -173,7 +175,7 @@ std::unique_ptr<GraphManager> GraphManager::Open(
     } else if (s.IsNotFound()) {
       graph_manager->next_graph_id_ = 1;
     } else {
-      RG_THROW_CODE(StorageEngineError, s.ToString());
+      RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
     }
   }
   std::unique_ptr<rocksdb::Iterator> iter(
@@ -216,7 +218,7 @@ std::shared_ptr<GraphDB> GraphManager::OpenGraph(const std::string &name) {
   if (iter != graphs_.end()) {
     return iter->second;
   } else {
-    RG_THROW_CODE(NoSuchGraph, "No such graph: {}", name);
+    RG_THROW(common::ErrorCode::NoSuchGraph, "No such graph: {}", name);
   }
 }
 
@@ -249,8 +251,8 @@ GraphDB *GraphManager::CreateGraphWithId(
   std::unique_lock<std::shared_mutex> write_lock(graphs_mutex_);
   auto iter = graphs_.find(meta.graph_name());
   if (iter != graphs_.end()) {
-    RG_THROW_CODE(GraphAlreadyExists, "The graph already exists: {}",
-                  meta.graph_name());
+    RG_THROW(common::ErrorCode::GraphAlreadyExists,
+             "The graph already exists: {}", meta.graph_name());
   }
 
   if (node_infos != nullptr) {
@@ -275,7 +277,7 @@ GraphDB *GraphManager::CreateGraphWithId(
   wb.Put(BuildGraphManagerMetaKey(GraphManagerMetadataType::NextGraphID),
          std::string((const char *)&next, sizeof(next)));
   auto s = meta_db_->Write({}, {}, &wb);
-  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
   uint64_t current_next = next_graph_id_.load();
   while (current_next < next &&
          !next_graph_id_.compare_exchange_weak(current_next, next)) {
@@ -314,9 +316,9 @@ void GraphManager::StartGraphRaft(GraphDB *graph_db,
 
   auto err = raft_driver->Run();
   if (err != nullptr) {
-    RG_THROW_CODE(StorageEngineError,
-                  "failed to run raft driver for graph [{}]: {}",
-                  graph_db->db_meta().graph_name(), err.String());
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "failed to run raft driver for graph [{}]: {}",
+             graph_db->db_meta().graph_name(), err.String());
   }
   graph_db->SetRaftDriver(std::move(raft_driver));
 }
@@ -326,7 +328,7 @@ GraphDB *GraphManager::ClearGraph(const std::string &name) {
   std::unique_lock<std::shared_mutex> write_lock(graphs_mutex_);
   auto iter = graphs_.find(name);
   if (iter == graphs_.end()) {
-    RG_THROW_CODE(NoSuchGraph, "No such graph: {}", name);
+    RG_THROW(common::ErrorCode::NoSuchGraph, "No such graph: {}", name);
   }
   LOG_INFO("Clear graph:{}, path:{}", name, iter->second->path());
   if (iter->second->db_meta().enable_raft()) {
@@ -342,7 +344,7 @@ void GraphManager::DeleteGraph(const std::string &name) {
   std::unique_lock<std::shared_mutex> write_lock(graphs_mutex_);
   auto iter = graphs_.find(name);
   if (iter == graphs_.end()) {
-    RG_THROW_CODE(NoSuchGraph, "No such graph: {}", name);
+    RG_THROW(common::ErrorCode::NoSuchGraph, "No such graph: {}", name);
   }
 
   if (iter->second->db_meta().enable_raft()) {
@@ -352,7 +354,7 @@ void GraphManager::DeleteGraph(const std::string &name) {
   rocksdb::WriteOptions wo;
   uint64_t graph_id = iter->second->db_meta().graph_id();
   auto s = meta_db_->Delete(wo, BuildGraphMetaKey(graph_id));
-  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
   iter->second->drop_on_close() = true;
   std::string graph_path = iter->second->path();
   LOG_INFO("Erase graph:{}, path:{}", name, graph_path);

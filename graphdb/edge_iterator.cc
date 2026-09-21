@@ -29,14 +29,14 @@ int64_t ReadEdgePropertyIndexEid(
     rocksdb::Slice value) {
   if (index->is_unique()) {
     if (value.size() != sizeof(int64_t)) {
-      RG_THROW_CODE(StorageEngineError,
-                    "edge unique index stores invalid eid size");
+      RG_THROW(common::ErrorCode::StorageEngineError,
+               "edge unique index stores invalid eid size");
     }
     return ReadBigEndianId<int64_t>(value.data());
   }
   if (key.size() < sizeof(uint32_t) + sizeof(int64_t)) {
-    RG_THROW_CODE(StorageEngineError,
-                  "edge non-unique index stores invalid key size");
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "edge non-unique index stores invalid key size");
   }
   return ReadBigEndianId<int64_t>(key.data() + key.size() - sizeof(int64_t));
 }
@@ -50,7 +50,8 @@ std::unique_ptr<Edge> LoadIndexedEdge(Transaction *txn,
 }  // namespace
 
 Edge &EmptyEdgeIterator::GetEdge() {
-  RG_THROW(common::InternalError, "empty edge iterator has no current value");
+  RG_THROW(common::ErrorCode::InternalError,
+           "empty edge iterator has no current value");
 }
 
 EdgeTypeScanIterator::EdgeTypeScanIterator(
@@ -79,14 +80,14 @@ void EdgeTypeScanIterator::LoadCurrent() {
   const rocksdb::Slice key = iterator_->key();
   const rocksdb::Slice value = iterator_->value();
   if (key.size() != sizeof(uint32_t) + sizeof(int64_t)) {
-    RG_THROW_CODE(StorageEngineError,
-                  "edge type/eid key has invalid size, expect {}, actual {}",
-                  sizeof(uint32_t) + sizeof(int64_t), key.size());
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "edge type/eid key has invalid size, expect {}, actual {}",
+             sizeof(uint32_t) + sizeof(int64_t), key.size());
   }
   if (value.size() != 2 * sizeof(int64_t)) {
-    RG_THROW_CODE(StorageEngineError,
-                  "edge type/eid value has invalid size, expect {}, actual {}",
-                  2 * sizeof(int64_t), value.size());
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "edge type/eid value has invalid size, expect {}, actual {}",
+             2 * sizeof(int64_t), value.size());
   }
 
   const char *key_data = key.data();
@@ -116,8 +117,8 @@ void EdgeTypeScanIterator::SeekToNextPrefix() {
 
 void EdgeTypeScanIterator::CheckIteratorStatus() const {
   if (!iterator_->status().ok()) {
-    RG_THROW_CODE(StorageEngineError, "edge scan iterator failed: {}",
-                  iterator_->status().ToString());
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "edge scan iterator failed: {}", iterator_->status().ToString());
   }
 }
 
@@ -361,7 +362,7 @@ EdgeIndexSeekIterator::EdgeIndexSeekIterator(
           ReadEdgePropertyIndexEid(index_, rocksdb::Slice(prefix_), index_val));
       valid_ = true;
     } else if (!s.IsNotFound()) {
-      RG_THROW_CODE(StorageEngineError, s.ToString());
+      RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
     }
     return;
   }
@@ -380,7 +381,8 @@ void EdgeIndexSeekIterator::SeekToNextValid() {
     valid_ = true;
   }
   if (iterator_ && !iterator_->status().ok()) {
-    RG_THROW_CODE(StorageEngineError, iterator_->status().ToString());
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             iterator_->status().ToString());
   }
 }
 
@@ -442,7 +444,8 @@ void EdgeIndexRangeIterator::SeekToNextValid() {
     return;
   }
   if (iterator_ && !iterator_->status().ok()) {
-    RG_THROW_CODE(StorageEngineError, iterator_->status().ToString());
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             iterator_->status().ToString());
   }
 }
 

@@ -18,7 +18,7 @@ void GraphDB::PersistVertexPropertyIndexMeta(
       {}, graph_cf_.meta_info,
       BuildMetaKey(MetadataType::VertexPropertyIndex, index->meta().name()),
       index->meta().SerializeAsString());
-  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
 }
 
 void GraphDB::PersistEdgePropertyIndexMeta(
@@ -27,7 +27,7 @@ void GraphDB::PersistEdgePropertyIndexMeta(
       {}, graph_cf_.meta_info,
       BuildMetaKey(MetadataType::EdgePropertyIndex, index->meta().name()),
       index->meta().SerializeAsString());
-  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
 }
 
 void GraphDB::PersistVertexFullTextIndexMeta(
@@ -36,7 +36,7 @@ void GraphDB::PersistVertexFullTextIndexMeta(
       {}, graph_cf_.meta_info,
       BuildMetaKey(MetadataType::VertexFullTextIndex, index->meta().name()),
       index->meta().SerializeAsString());
-  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
 }
 
 void GraphDB::PersistVertexVectorIndexMeta(
@@ -45,7 +45,7 @@ void GraphDB::PersistVertexVectorIndexMeta(
       {}, graph_cf_.meta_info,
       BuildMetaKey(MetadataType::VertexVectorIndex, index->meta().name()),
       index->meta().SerializeAsString());
-  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
 }
 
 void GraphDB::ResumeBackgroundIndexBuilds() {

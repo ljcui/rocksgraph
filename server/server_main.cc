@@ -163,7 +163,7 @@ class ServerDaemon : public Service {
     g_shutdown_signal = 0;
     try {
       if (!server.Start()) {
-        RG_THROW(common::InternalError, "failed to start rg-server");
+        RG_THROW(common::ErrorCode::InternalError, "failed to start rg-server");
       }
       while (g_shutdown_signal == 0 && server.Started()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -172,7 +172,8 @@ class ServerDaemon : public Service {
         LOG_INFO("Received signal {}, shutdown",
                  strsignal(static_cast<int>(g_shutdown_signal)));
       } else if (!server.Started()) {
-        RG_THROW(common::InternalError, "rg-server exited unexpectedly");
+        RG_THROW(common::ErrorCode::InternalError,
+                 "rg-server exited unexpectedly");
       }
       server.Stop();
       spdlog::shutdown();

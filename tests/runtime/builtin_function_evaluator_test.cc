@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "common/exception.h"
+#include "tests/common/exception_test_utils.h"
 
 namespace {
 
@@ -109,21 +110,21 @@ TEST(BuiltinFunctionEvaluatorTest, ReturnsNullForUnsupportedArgumentTypes) {
 }
 
 TEST(BuiltinFunctionEvaluatorTest, EnforcesFunctionContracts) {
-  EXPECT_THROW((void)EvaluateBuiltinFunction(BuiltinFunctionKind::kSize, {}),
-               common::InvalidArgumentError);
-  EXPECT_THROW((void)EvaluateBuiltinFunction(BuiltinFunctionKind::kRange,
-                                             {Value(1), Value(3), Value(0)}),
-               common::InvalidArgumentError);
-  EXPECT_THROW(
+  RG_EXPECT_ERROR((void)EvaluateBuiltinFunction(BuiltinFunctionKind::kSize, {}),
+                  common::ErrorCode::InvalidParameter);
+  RG_EXPECT_ERROR((void)EvaluateBuiltinFunction(BuiltinFunctionKind::kRange,
+                                                {Value(1), Value(3), Value(0)}),
+                  common::ErrorCode::InvalidParameter);
+  RG_EXPECT_ERROR(
       (void)EvaluateBuiltinFunction(BuiltinFunctionKind::kCount, {Value(1)}),
-      common::InvalidArgumentError);
-  EXPECT_THROW((void)EvaluateBuiltinFunction(
-                   BuiltinFunctionKind::kAbs,
-                   {Value(std::numeric_limits<std::int64_t>::min())}),
-               common::InvalidArgumentError);
-  EXPECT_THROW((void)EvaluateBuiltinFunction(BuiltinFunctionKind::kSubstring,
-                                             {Value("abc"), Value(-1)}),
-               common::InvalidArgumentError);
+      common::ErrorCode::InvalidParameter);
+  RG_EXPECT_ERROR((void)EvaluateBuiltinFunction(
+                      BuiltinFunctionKind::kAbs,
+                      {Value(std::numeric_limits<std::int64_t>::min())}),
+                  common::ErrorCode::InvalidParameter);
+  RG_EXPECT_ERROR((void)EvaluateBuiltinFunction(BuiltinFunctionKind::kSubstring,
+                                                {Value("abc"), Value(-1)}),
+                  common::ErrorCode::InvalidParameter);
 }
 
 TEST(BuiltinFunctionEvaluatorTest, ConstructsTemporalValuesFromStrings) {
@@ -179,12 +180,12 @@ TEST(BuiltinFunctionEvaluatorTest, ConstructsTemporalValuesFromMaps) {
 }
 
 TEST(BuiltinFunctionEvaluatorTest, RejectsInvalidTemporalValues) {
-  EXPECT_THROW((void)EvaluateBuiltinFunction(BuiltinFunctionKind::kDate,
-                                             {Value("2023-02-29")}),
-               common::InvalidArgumentError);
-  EXPECT_THROW((void)EvaluateBuiltinFunction(BuiltinFunctionKind::kTime,
-                                             {Value("12:00+18:01")}),
-               common::InvalidArgumentError);
+  RG_EXPECT_ERROR((void)EvaluateBuiltinFunction(BuiltinFunctionKind::kDate,
+                                                {Value("2023-02-29")}),
+                  common::ErrorCode::InvalidParameter);
+  RG_EXPECT_ERROR((void)EvaluateBuiltinFunction(BuiltinFunctionKind::kTime,
+                                                {Value("12:00+18:01")}),
+                  common::ErrorCode::InvalidParameter);
 }
 
 TEST(BuiltinFunctionEvaluatorTest, ComputesTemporalDifferences) {
@@ -282,10 +283,10 @@ TEST(BuiltinFunctionEvaluatorTest, ConstructsDateTimeFromEpoch) {
                 BuiltinFunctionKind::kDateTimeFromEpochMillis, {Value(-1)})
                 .ToString(),
             "1969-12-31T23:59:59.999Z");
-  EXPECT_THROW(
+  RG_EXPECT_ERROR(
       (void)EvaluateBuiltinFunction(BuiltinFunctionKind::kDateTimeFromEpoch,
                                     {Value(1), Value(1'000'000'000)}),
-      common::InvalidArgumentError);
+      common::ErrorCode::InvalidParameter);
 }
 
 TEST(BuiltinFunctionEvaluatorTest, TruncatesTemporalValues) {
@@ -310,9 +311,10 @@ TEST(BuiltinFunctionEvaluatorTest, TruncatesTemporalValues) {
   EXPECT_EQ(week.ToString(), "1984-10-09");
   EXPECT_EQ(milliseconds.ToString(), "1984-10-11T12:31:14.645000002");
   EXPECT_EQ(zoned.ToString(), "1984-10-11T12:00+01:00[Europe/Stockholm]");
-  EXPECT_THROW((void)EvaluateBuiltinFunction(BuiltinFunctionKind::kTimeTruncate,
-                                             {Value("year"), date_time}),
-               common::InvalidArgumentError);
+  RG_EXPECT_ERROR(
+      (void)EvaluateBuiltinFunction(BuiltinFunctionKind::kTimeTruncate,
+                                    {Value("year"), date_time}),
+      common::ErrorCode::InvalidParameter);
 }
 
 }  // namespace

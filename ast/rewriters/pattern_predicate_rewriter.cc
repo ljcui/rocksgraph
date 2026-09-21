@@ -17,7 +17,7 @@ void PatternPredicateRewriter::RewriteExpression(
   }
   auto *pattern_predicate = CastAst<PatternPredicateExpression>(expr.get());
   RG_CHECK(pattern_predicate->relationships_pattern != nullptr,
-           common::InvalidArgumentError,
+           common::ErrorCode::InvalidParameter,
            "pattern predicate relationships pattern is null");
 
   auto relationships = std::move(pattern_predicate->relationships_pattern);

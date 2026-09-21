@@ -21,13 +21,14 @@ EdgeSerializedProperties LoadEdgeSerializedProperties(Transaction* txn,
        iter->Next()) {
     auto key = iter->key();
     if (key.size() != sizeof(eid) + sizeof(uint32_t)) {
-      RG_THROW_CODE(StorageEngineError, "edge property key has invalid size");
+      RG_THROW(common::ErrorCode::StorageEngineError,
+               "edge property key has invalid size");
     }
     properties.emplace(ReadBigEndianId<uint32_t>(key.data() + sizeof(eid)),
                        iter->value().ToString());
   }
   if (!iter->status().ok()) {
-    RG_THROW_CODE(StorageEngineError, iter->status().ToString());
+    RG_THROW(common::ErrorCode::StorageEngineError, iter->status().ToString());
   }
   return properties;
 }

@@ -13,7 +13,7 @@ std::string ToCypherOrFail(const std::string &query) {
   try {
     auto statement = ast::ParseCypher(query);
     return ast::ToCypher(*statement);
-  } catch (const common::RocksGraphException &e) {
+  } catch (const common::Exception &e) {
     ADD_FAILURE() << "query error for query: " << query
                   << " message: " << e.what();
   }

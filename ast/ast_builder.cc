@@ -18,8 +18,6 @@
 
 namespace ast {
 
-using common::InternalError;
-
 namespace {
 
 class ErrorCollector : public antlr4::BaseErrorListener {
@@ -80,7 +78,7 @@ uint64_t ParseIntegerMagnitude(const std::string &text) {
   const auto result = std::from_chars(begin, end, value, base);
   if (result.ec == std::errc::result_out_of_range || result.ptr != end) {
     std::vector<std::string> errors = {"integer literal is out of range"};
-    RG_THROW_CODE(ParserException, std::move(errors));
+    RG_THROW(common::ErrorCode::ParseError, std::move(errors));
   }
   return value;
 }
@@ -89,7 +87,7 @@ int64_t ParseIntegerLiteral(const std::string &text) {
   const uint64_t value = ParseIntegerMagnitude(text);
   if (value > static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
     std::vector<std::string> errors = {"integer literal is out of range"};
-    RG_THROW_CODE(ParserException, std::move(errors));
+    RG_THROW(common::ErrorCode::ParseError, std::move(errors));
   }
   return static_cast<int64_t>(value);
 }
@@ -1384,17 +1382,17 @@ std::unique_ptr<Statement> ParseCypher(const std::string &input) {
 
   auto *tree = parser.oC_Cypher();
   if (!errors.errors.empty()) {
-    RG_THROW_CODE(ParserException, std::move(errors.errors));
+    RG_THROW(common::ErrorCode::ParseError, std::move(errors.errors));
   }
   if ((tree == nullptr) || (tree->oC_Statement() == nullptr)) {
     std::vector<std::string> parse_errors;
     parse_errors.emplace_back("failed to parse statement");
-    RG_THROW_CODE(ParserException, std::move(parse_errors));
+    RG_THROW(common::ErrorCode::ParseError, std::move(parse_errors));
   }
   ASTBuilder builder;
   auto statement = builder.BuildStatement(tree->oC_Statement());
   if (!statement) {
-    RG_THROW(InternalError, "failed to build AST");
+    RG_THROW(common::ErrorCode::InternalError, "failed to build AST");
   }
   ValidateStatement(*statement);
   return statement;

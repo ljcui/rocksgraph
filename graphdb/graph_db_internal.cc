@@ -66,10 +66,10 @@ uint64_t LoadVisibleMaxWalId(rocksdb::TransactionDB* db, GraphCF* graph_cf,
   }
   key.remove_prefix(sizeof(index_id));
   if (key.size() != sizeof(uint64_t)) {
-    RG_THROW_CODE(StorageEngineError,
-                  "index wal key has invalid size while loading max wal id, "
-                  "expect {}, actual {}",
-                  sizeof(uint64_t), key.size());
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "index wal key has invalid size while loading max wal id, "
+             "expect {}, actual {}",
+             sizeof(uint64_t), key.size());
   }
   ThrowIfIteratorError(iter.get(),
                        "index wal iterator failed while loading max wal id");
@@ -93,7 +93,7 @@ void DeletePropertyIndexRanges(rocksdb::TransactionDB* db, GraphCF* graph_cf,
   two.skip_concurrency_control = true;
   two.skip_duplicate_key_check = true;
   auto s = db->Write({}, two, &wb);
-  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
 }
 
 void DeletePropertyIndexWalRange(rocksdb::TransactionDB* db, GraphCF* graph_cf,
@@ -107,7 +107,7 @@ void DeletePropertyIndexWalRange(rocksdb::TransactionDB* db, GraphCF* graph_cf,
   two.skip_concurrency_control = true;
   two.skip_duplicate_key_check = true;
   auto s = db->Write({}, two, &wb);
-  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
 }
 
 void DeleteFullTextIndexRanges(rocksdb::TransactionDB* db, GraphCF* graph_cf,
@@ -126,7 +126,7 @@ void DeleteFullTextIndexRanges(rocksdb::TransactionDB* db, GraphCF* graph_cf,
   two.skip_concurrency_control = true;
   two.skip_duplicate_key_check = true;
   auto s = db->Write(wo, two, &wb);
-  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
 }
 
 void DeleteVectorIndexRanges(rocksdb::TransactionDB* db, GraphCF* graph_cf,
@@ -141,22 +141,22 @@ void DeleteVectorIndexRanges(rocksdb::TransactionDB* db, GraphCF* graph_cf,
   two.skip_concurrency_control = true;
   two.skip_duplicate_key_check = true;
   auto s = db->Write({}, two, &wb);
-  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
 }
 
 void ResetFullTextIndexPath(const std::string& path) {
   std::error_code ec;
   fs::remove_all(path, ec);
   if (ec) {
-    RG_THROW_CODE(StorageEngineError,
-                  "failed to remove stale fulltext index directory {}: {}",
-                  path, ec.message());
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "failed to remove stale fulltext index directory {}: {}", path,
+             ec.message());
   }
   fs::create_directories(path, ec);
   if (ec) {
-    RG_THROW_CODE(StorageEngineError,
-                  "failed to create fulltext index directory {}: {}", path,
-                  ec.message());
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "failed to create fulltext index directory {}: {}", path,
+             ec.message());
   }
 }
 
@@ -164,14 +164,14 @@ void ResetIndexPath(const std::string& path, const std::string& kind) {
   std::error_code ec;
   fs::remove_all(path, ec);
   if (ec) {
-    RG_THROW_CODE(StorageEngineError,
-                  "failed to remove stale {} directory {}: {}", kind, path,
-                  ec.message());
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "failed to remove stale {} directory {}: {}", kind, path,
+             ec.message());
   }
   fs::create_directories(path, ec);
   if (ec) {
-    RG_THROW_CODE(StorageEngineError, "failed to create {} directory {}: {}",
-                  kind, path, ec.message());
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "failed to create {} directory {}: {}", kind, path, ec.message());
   }
 }
 
@@ -202,10 +202,10 @@ void CheckNoVectorFieldForNormalIndex(MetaInfo& meta_info,
     for (auto pid : pids) {
       auto field = meta_info.GetVertexVectorField(lid, pid);
       if (field) {
-        RG_THROW_CODE(InvalidParameter,
-                      "normal index [{}] can not use vector field [label:{}, "
-                      "property:{}]",
-                      index_name, field->label(), field->property());
+        RG_THROW(common::ErrorCode::InvalidParameter,
+                 "normal index [{}] can not use vector field [label:{}, "
+                 "property:{}]",
+                 index_name, field->label(), field->property());
       }
     }
   }
@@ -216,18 +216,18 @@ void CheckNoNormalIndexForVectorField(MetaInfo& meta_info, uint32_t lid,
                                       const std::string& property) {
   for (const auto& index : meta_info.GetVertexPropertyIndexes()) {
     if (index->lid() == lid && index->ContainsProperty(pid)) {
-      RG_THROW_CODE(InvalidParameter,
-                    "vector field [label:{}, property:{}] can not use normal "
-                    "index [{}]",
-                    label, property, index->Name());
+      RG_THROW(common::ErrorCode::InvalidParameter,
+               "vector field [label:{}, property:{}] can not use normal "
+               "index [{}]",
+               label, property, index->Name());
     }
   }
   for (const auto& index : meta_info.GetVertexFullTextIndexes()) {
     if (index->LabelIds().count(lid) && index->PropertyIds().count(pid)) {
-      RG_THROW_CODE(InvalidParameter,
-                    "vector field [label:{}, property:{}] can not use normal "
-                    "index [{}]",
-                    label, property, index->Name());
+      RG_THROW(common::ErrorCode::InvalidParameter,
+               "vector field [label:{}, property:{}] can not use normal "
+               "index [{}]",
+               label, property, index->Name());
     }
   }
 }
@@ -235,7 +235,8 @@ void CheckNoNormalIndexForVectorField(MetaInfo& meta_info, uint32_t lid,
 void ThrowIfIteratorError(rocksdb::Iterator* iter, std::string_view action) {
   auto status = iter->status();
   if (!status.ok()) {
-    RG_THROW_CODE(StorageEngineError, "{}: {}", action, status.ToString());
+    RG_THROW(common::ErrorCode::StorageEngineError, "{}: {}", action,
+             status.ToString());
   }
 }
 

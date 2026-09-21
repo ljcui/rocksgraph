@@ -72,7 +72,7 @@ void log_fatal(const char* file, int line, const char* pattern, ...) {
   spdlog::log(spdlog::source_loc{file, line, ""}, spdlog::level::critical, "{}",
               message);
   spdlog::default_logger()->flush();
-  throw PanicException("panic");
+  RG_THROW(common::ErrorCode::InternalError, "panic");
 }
 
 }  // namespace eraft

@@ -15,7 +15,8 @@ using namespace internal;
 std::unique_ptr<GraphDB> GraphDB::Open(const std::string& path,
                                        const GraphDBOptions& graph_options) {
   if (!graph_options.assistant_pool) {
-    RG_THROW_CODE(InvalidParameter, "GraphDB assistant_pool must be provided");
+    RG_THROW(common::ErrorCode::InvalidParameter,
+             "GraphDB assistant_pool must be provided");
   }
   std::string rocksdb_path = path + "/data";
   std::filesystem::create_directories(rocksdb_path);
@@ -58,7 +59,7 @@ std::unique_ptr<GraphDB> GraphDB::Open(const std::string& path,
   rocksdb::TransactionDB* db;
   auto s = rocksdb::TransactionDB::Open(options, txn_db_options, rocksdb_path,
                                         cfs, &cf_handles, &db);
-  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
   auto graph_db = std::make_unique<GraphDB>();
   graph_db->db_ = db;
   graph_db->path_ = path;
@@ -126,10 +127,10 @@ std::unique_ptr<Transaction> GraphDB::BeginTransaction() {
 
 void GraphDB::ClearData() {
   if (db_meta_.enable_raft()) {
-    RG_THROW_CODE(InvalidParameter,
-                  "ClearData is not supported on raft graph [{}]; use "
-                  "GraphManager::ClearGraph instead",
-                  db_meta_.graph_name());
+    RG_THROW(common::ErrorCode::InvalidParameter,
+             "ClearData is not supported on raft graph [{}]; use "
+             "GraphManager::ClearGraph instead",
+             db_meta_.graph_name());
   }
   ClearDataInternal();
 }
@@ -182,7 +183,7 @@ void GraphDB::ClearDataInternal() {
   two.skip_concurrency_control = true;
   two.skip_duplicate_key_check = true;
   auto s = db_->Write(wo, two, &wb);
-  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
 
   for (const auto& index : property_indexes) {
     index->ResetForBuild();

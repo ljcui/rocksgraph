@@ -73,8 +73,9 @@ void VectorStore::Open() {
   std::error_code ec;
   fs::create_directories(path_, ec);
   if (ec) {
-    RG_THROW_CODE(IOException, "failed to create vector index directory {}: {}",
-                  path_, ec.message());
+    RG_THROW(common::ErrorCode::IOError,
+             "failed to create vector index directory {}: {}", path_,
+             ec.message());
   }
   auto db_path = path_ + "/" + kVectorStoreStateDbDir;
   rocksdb::Options options;
@@ -83,8 +84,8 @@ void VectorStore::Open() {
   options.OptimizeLevelStyleCompaction();
   auto s = rocksdb::DB::Open(options, db_path, &db_);
   if (!s.ok()) {
-    RG_THROW_CODE(StorageEngineError, "failed to open vector store {}: {}",
-                  db_path, s.ToString());
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "failed to open vector store {}: {}", db_path, s.ToString());
   }
 }
 
@@ -108,16 +109,15 @@ void VectorStore::LoadState() {
       db_->Get({}, BuildMetaKey(kCheckpointAppliedWalIdKey), &checkpoint_value);
   if (s.ok()) {
     if (checkpoint_value.size() != sizeof(uint64_t)) {
-      RG_THROW_CODE(
-          VectorIndexException,
-          "vector store checkpoint wal id has invalid size, expect {}, "
-          "actual {}",
-          sizeof(uint64_t), checkpoint_value.size());
+      RG_THROW(common::ErrorCode::VectorIndexError,
+               "vector store checkpoint wal id has invalid size, expect {}, "
+               "actual {}",
+               sizeof(uint64_t), checkpoint_value.size());
     }
     has_checkpoint_ = true;
     checkpoint_applied_wal_id_ = ReadValue<uint64_t>(checkpoint_value.data());
   } else if (!s.IsNotFound()) {
-    RG_THROW_CODE(StorageEngineError, s.ToString());
+    RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
   }
 
   int64_t max_vector_id = 0;
@@ -135,17 +135,17 @@ void VectorStore::LoadState() {
       continue;
     }
     if (key.size() != sizeof(int64_t)) {
-      RG_THROW_CODE(VectorIndexException,
-                    "vector store key has invalid size, expect {}, actual {}",
-                    sizeof(int64_t), key.size());
+      RG_THROW(common::ErrorCode::VectorIndexError,
+               "vector store key has invalid size, expect {}, actual {}",
+               sizeof(int64_t), key.size());
     }
     if (prefix == kVidPrefix) {
       int64_t id = ReadBigEndianId<int64_t>(key.data());
       if (value.size() != sizeof(int64_t)) {
-        RG_THROW_CODE(VectorIndexException,
-                      "vector store vid mapping has invalid value size, expect "
-                      "{}, actual {}",
-                      sizeof(int64_t), value.size());
+        RG_THROW(common::ErrorCode::VectorIndexError,
+                 "vector store vid mapping has invalid value size, expect "
+                 "{}, actual {}",
+                 sizeof(int64_t), value.size());
       }
       auto vector_id = ReadValue<int64_t>(value.data());
       max_vector_id = std::max(max_vector_id, vector_id);
@@ -155,20 +155,19 @@ void VectorStore::LoadState() {
     }
     if (prefix == kDeletePrefix) {
       if (!value.empty()) {
-        RG_THROW_CODE(
-            VectorIndexException,
-            "vector store delete marker has invalid value size, expect "
-            "0, actual {}",
-            value.size());
+        RG_THROW(common::ErrorCode::VectorIndexError,
+                 "vector store delete marker has invalid value size, expect "
+                 "0, actual {}",
+                 value.size());
       }
       int64_t vector_id = ReadValue<int64_t>(key.data());
       max_vector_id = std::max(max_vector_id, vector_id);
       deleted_vector_ids_.emplace(vector_id);
       continue;
     }
-    RG_THROW_CODE(VectorIndexException,
-                  "vector store entry has invalid prefix: {}",
-                  static_cast<int>(prefix));
+    RG_THROW(common::ErrorCode::VectorIndexError,
+             "vector store entry has invalid prefix: {}",
+             static_cast<int>(prefix));
   }
   next_vector_id_ = max_vector_id + 1;
 
@@ -177,9 +176,9 @@ void VectorStore::LoadState() {
   }
   auto checkpoint_path = FaissCheckpointPath(checkpoint_applied_wal_id_);
   if (!fs::exists(checkpoint_path)) {
-    RG_THROW_CODE(IOException,
-                  "vector store checkpoint file does not exist: {}",
-                  checkpoint_path);
+    RG_THROW(common::ErrorCode::IOError,
+             "vector store checkpoint file does not exist: {}",
+             checkpoint_path);
   }
   hnsw_index_ = FaissHnswIndex::Load(checkpoint_path, dim_, distance_type_,
                                      hnsw_m_, ef_construction_);
@@ -226,9 +225,9 @@ std::vector<std::pair<int64_t, float>> VectorStore::KnnSearch(
     }
     auto iter = vectorid_vid_.find(result.ids[i]);
     if (iter == vectorid_vid_.end()) {
-      RG_THROW_CODE(VectorIndexException,
-                    "vector id {} returned by faiss is missing in vid mapping",
-                    result.ids[i]);
+      RG_THROW(common::ErrorCode::VectorIndexError,
+               "vector id {} returned by faiss is missing in vid mapping",
+               result.ids[i]);
     }
     result_ids.emplace_back(iter->second, result.distances[i]);
   }
@@ -253,10 +252,10 @@ void VectorStore::Checkpoint(uint64_t applied_wal_id) {
             rocksdb::Slice(AsChars(applied_wal_id), sizeof(applied_wal_id)));
   auto s = db_->Write({}, &batch);
   if (!s.ok()) {
-    RG_THROW_CODE(StorageEngineError,
-                  "failed to persist vector checkpoint wal "
-                  "id: {}",
-                  s.ToString());
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "failed to persist vector checkpoint wal "
+             "id: {}",
+             s.ToString());
   }
 
   auto old_checkpoint_id = checkpoint_applied_wal_id_;

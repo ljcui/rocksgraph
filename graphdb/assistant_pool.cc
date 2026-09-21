@@ -9,8 +9,8 @@ namespace graphdb {
 AssistantPool::AssistantPool(size_t thread_num)
     : work_(std::make_unique<boost::asio::io_service::work>(service_)) {
   if (thread_num == 0) {
-    RG_THROW_CODE(InvalidParameter,
-                  "assistant thread num must be greater than 0");
+    RG_THROW(common::ErrorCode::InvalidParameter,
+             "assistant thread num must be greater than 0");
   }
   threads_.reserve(thread_num);
   for (size_t i = 0; i < thread_num; ++i) {

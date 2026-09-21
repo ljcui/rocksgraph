@@ -16,7 +16,8 @@ namespace rg::slotted {
 std::vector<Value> EvaluateGroupingValues(
     const std::vector<PhysicalGroupingItem> &items, const SlottedRow &row,
     RuntimeState *state) {
-  RG_CHECK(state != nullptr, common::InternalError, "runtime state is null");
+  RG_CHECK(state != nullptr, common::ErrorCode::InternalError,
+           "runtime state is null");
   std::vector<Value> values;
   values.reserve(items.size());
   for (const auto &item : items) {
@@ -28,7 +29,7 @@ std::vector<Value> EvaluateGroupingValues(
 std::int64_t CheckedCount(std::size_t size) {
   RG_CHECK(size <= static_cast<std::size_t>(
                        std::numeric_limits<std::int64_t>::max()),
-           common::InvalidArgumentError, "aggregation count overflow");
+           common::ErrorCode::InvalidParameter, "aggregation count overflow");
   return static_cast<std::int64_t>(size);
 }
 
@@ -68,7 +69,7 @@ struct AggregateAccumulator {
 AggregateAccumulator CreateAggregateAccumulator(
     const PhysicalAggregationItem &item) {
   const ast::Expression *expression = item.expression.Expression();
-  RG_CHECK(expression != nullptr, common::InvalidArgumentError,
+  RG_CHECK(expression != nullptr, common::ErrorCode::InvalidParameter,
            "aggregation expression is null");
   AggregateAccumulator accumulator{.item = &item};
   if (expression->Is(ast::ASTNodeType::kCountStarExpression)) {
@@ -77,15 +78,16 @@ AggregateAccumulator CreateAggregateAccumulator(
   }
 
   RG_CHECK(expression->Is(ast::ASTNodeType::kFunctionInvocation),
-           common::InvalidArgumentError, "unsupported aggregation expression");
+           common::ErrorCode::InvalidParameter,
+           "unsupported aggregation expression");
   const auto &function = ast::CastAst<ast::FunctionInvocation>(*expression);
   const ast::BuiltinFunction *builtin =
       ast::FindBuiltinFunction(function.function_name);
   RG_CHECK(builtin != nullptr && builtin->aggregate,
-           common::InvalidArgumentError,
+           common::ErrorCode::InvalidParameter,
            "function is not an aggregate: " + function.function_name);
   RG_CHECK(!function.arguments.empty() && function.arguments[0] != nullptr,
-           common::InvalidArgumentError,
+           common::ErrorCode::InvalidParameter,
            function.function_name + "() argument is null");
   accumulator.function = &function;
   accumulator.argument = function.arguments[0].get();
@@ -117,13 +119,13 @@ AggregateAccumulator CreateAggregateAccumulator(
       accumulator.kind = AggregateAccumulatorKind::kPercentileDiscrete;
       break;
     default:
-      RG_THROW(common::InternalError,
+      RG_THROW(common::ErrorCode::InternalError,
                "unsupported aggregate function: " + function.function_name);
   }
   if (accumulator.kind == AggregateAccumulatorKind::kPercentileContinuous ||
       accumulator.kind == AggregateAccumulatorKind::kPercentileDiscrete) {
     RG_CHECK(function.arguments.size() == 2 && function.arguments[1] != nullptr,
-             common::InvalidArgumentError,
+             common::ErrorCode::InvalidParameter,
              function.function_name + "() percentile argument is null");
     accumulator.percentile_argument = function.arguments[1].get();
   }
@@ -151,7 +153,8 @@ void ReleaseAccumulatorMemory(std::size_t *accumulator_bytes,
   RG_CHECK(accumulator_bytes != nullptr && state != nullptr &&
                reserved_bytes != nullptr &&
                *accumulator_bytes <= *reserved_bytes,
-           common::InternalError, "aggregate memory accounting is invalid");
+           common::ErrorCode::InternalError,
+           "aggregate memory accounting is invalid");
   state->memory_tracker.Release(*accumulator_bytes);
   *reserved_bytes -= *accumulator_bytes;
   *accumulator_bytes = 0;
@@ -161,7 +164,7 @@ void ReplaceAccumulatorValue(AggregateAccumulator *accumulator, Value value,
                              RuntimeState *state, std::size_t *reserved_bytes) {
   RG_CHECK(
       accumulator != nullptr && state != nullptr && reserved_bytes != nullptr,
-      common::InternalError, "aggregate accumulator state is null");
+      common::ErrorCode::InternalError, "aggregate accumulator state is null");
   const std::size_t old_bytes =
       accumulator->best.has_value()
           ? EstimatedStoredValueHeapUsage(*accumulator->best)
@@ -183,7 +186,8 @@ const Value *DistinctAggregateValue(AggregateAccumulator *accumulator,
                                     std::size_t *reserved_bytes) {
   RG_CHECK(accumulator != nullptr && value != nullptr && state != nullptr &&
                reserved_bytes != nullptr,
-           common::InternalError, "aggregate distinct state is null");
+           common::ErrorCode::InternalError,
+           "aggregate distinct state is null");
   if (!accumulator->distinct) {
     return value;
   }
@@ -204,7 +208,7 @@ void AppendAccumulatorValue(AggregateAccumulator *accumulator,
                             std::size_t *reserved_bytes) {
   RG_CHECK(
       accumulator != nullptr && state != nullptr && reserved_bytes != nullptr,
-      common::InternalError, "aggregate value buffer state is null");
+      common::ErrorCode::InternalError, "aggregate value buffer state is null");
   const std::size_t old_capacity = accumulator->values.capacity();
   accumulator->values.push_back(value);
   const std::size_t new_capacity = accumulator->values.capacity();
@@ -225,7 +229,8 @@ void UpdatePercentileParameter(AggregateAccumulator *accumulator,
                                const SlottedRow &row, RuntimeState *state) {
   RG_CHECK(accumulator != nullptr && accumulator->function != nullptr &&
                accumulator->percentile_argument != nullptr && state != nullptr,
-           common::InternalError, "percentile accumulator is incomplete");
+           common::ErrorCode::InternalError,
+           "percentile accumulator is incomplete");
   if (accumulator->percentile_null ||
       accumulator->percentile_error.has_value()) {
     return;
@@ -236,8 +241,11 @@ void UpdatePercentileParameter(AggregateAccumulator *accumulator,
     current = Evaluate(*accumulator->percentile_argument, row,
                        accumulator->item->expression.PrecomputedExpressions(),
                        *state);
-  } catch (const common::InvalidArgumentError &error) {
-    accumulator->percentile_error = error.Message();
+  } catch (const common::Exception &error) {
+    if (error.code() != common::ErrorCode::InvalidParameter) {
+      throw;
+    }
+    accumulator->percentile_error = error.message();
     return;
   }
   if (current.IsNull()) {
@@ -270,13 +278,14 @@ void UpdateAggregateAccumulator(AggregateAccumulator *accumulator,
                                 std::size_t *reserved_bytes) {
   RG_CHECK(accumulator != nullptr && accumulator->item != nullptr &&
                state != nullptr,
-           common::InternalError, "aggregate accumulator is incomplete");
+           common::ErrorCode::InternalError,
+           "aggregate accumulator is incomplete");
   if (accumulator->kind == AggregateAccumulatorKind::kCountStar) {
     ++accumulator->count;
     return;
   }
 
-  RG_CHECK(accumulator->argument != nullptr, common::InternalError,
+  RG_CHECK(accumulator->argument != nullptr, common::ErrorCode::InternalError,
            "aggregate accumulator argument is null");
   Value value =
       Evaluate(*accumulator->argument, row,
@@ -303,7 +312,7 @@ void UpdateAggregateAccumulator(AggregateAccumulator *accumulator,
       return;
     case AggregateAccumulatorKind::kSum: {
       RG_CHECK(
-          IsNumeric(*aggregate_value), common::InvalidArgumentError,
+          IsNumeric(*aggregate_value), common::ErrorCode::InvalidParameter,
           accumulator->function->function_name + "() expects numeric values");
       if (aggregate_value->IsInteger() && accumulator->integral_sum) {
         const std::int64_t addend = aggregate_value->AsInteger();
@@ -313,7 +322,7 @@ void UpdateAggregateAccumulator(AggregateAccumulator *accumulator,
                      (addend < 0 &&
                       accumulator->integer_sum >=
                           std::numeric_limits<std::int64_t>::min() - addend),
-                 common::InvalidArgumentError, "integer sum overflow");
+                 common::ErrorCode::InvalidParameter, "integer sum overflow");
         accumulator->integer_sum += addend;
         return;
       }
@@ -327,7 +336,7 @@ void UpdateAggregateAccumulator(AggregateAccumulator *accumulator,
     }
     case AggregateAccumulatorKind::kAverage:
       RG_CHECK(
-          IsNumeric(*aggregate_value), common::InvalidArgumentError,
+          IsNumeric(*aggregate_value), common::ErrorCode::InvalidParameter,
           accumulator->function->function_name + "() expects numeric values");
       accumulator->floating_sum += AsDoubleValue(*aggregate_value);
       ++accumulator->count;
@@ -347,7 +356,7 @@ void UpdateAggregateAccumulator(AggregateAccumulator *accumulator,
     case AggregateAccumulatorKind::kPercentileContinuous:
     case AggregateAccumulatorKind::kPercentileDiscrete:
       RG_CHECK(
-          IsNumeric(*aggregate_value), common::InvalidArgumentError,
+          IsNumeric(*aggregate_value), common::ErrorCode::InvalidParameter,
           accumulator->function->function_name + "() expects numeric values");
       AppendAccumulatorValue(accumulator, *aggregate_value, state,
                              reserved_bytes);
@@ -355,7 +364,8 @@ void UpdateAggregateAccumulator(AggregateAccumulator *accumulator,
     case AggregateAccumulatorKind::kCountStar:
       break;
   }
-  RG_THROW(common::InternalError, "unexpected aggregate accumulator kind");
+  RG_THROW(common::ErrorCode::InternalError,
+           "unexpected aggregate accumulator kind");
 }
 
 void ReleaseDistinctValues(AggregateAccumulator *accumulator,
@@ -403,13 +413,15 @@ Value FinalizePercentile(AggregateAccumulator *accumulator, RuntimeState *state,
     return Value::Null();
   }
   if (accumulator->percentile_error.has_value()) {
-    RG_THROW(common::InvalidArgumentError, *accumulator->percentile_error);
+    RG_THROW(common::ErrorCode::InvalidParameter,
+             *accumulator->percentile_error);
   }
   if (accumulator->percentile_null) {
     ReleaseAccumulatorValues(accumulator, state, reserved_bytes);
     return Value::Null();
   }
-  RG_CHECK(accumulator->percentile.has_value(), common::InternalError,
+  RG_CHECK(accumulator->percentile.has_value(),
+           common::ErrorCode::InternalError,
            "percentile accumulator parameter is missing");
 
   std::sort(accumulator->values.begin(), accumulator->values.end(), ValueLess);
@@ -440,7 +452,8 @@ Value FinalizeAggregateAccumulator(AggregateAccumulator *accumulator,
                                    std::size_t *reserved_bytes) {
   RG_CHECK(accumulator != nullptr && accumulator->item != nullptr &&
                state != nullptr && reserved_bytes != nullptr,
-           common::InternalError, "aggregate accumulator is incomplete");
+           common::ErrorCode::InternalError,
+           "aggregate accumulator is incomplete");
   Value result;
   switch (accumulator->kind) {
     case AggregateAccumulatorKind::kCountStar:
@@ -495,7 +508,8 @@ int CompareValues(const Value &left, const Value &right) {
 std::vector<Value> EvaluateSortKeys(const std::vector<PhysicalSortItem> &items,
                                     const SlottedRow &row,
                                     RuntimeState *state) {
-  RG_CHECK(state != nullptr, common::InternalError, "runtime state is null");
+  RG_CHECK(state != nullptr, common::ErrorCode::InternalError,
+           "runtime state is null");
   std::vector<Value> keys;
   keys.reserve(items.size());
   for (const auto &item : items) {
@@ -508,7 +522,7 @@ bool SortKeysHaveSamePrefix(const std::vector<Value> &left,
                             const std::vector<Value> &right,
                             std::size_t prefix) {
   RG_CHECK(prefix > 0 && prefix <= left.size() && prefix <= right.size(),
-           common::InternalError, "sort prefix is invalid");
+           common::ErrorCode::InternalError, "sort prefix is invalid");
   for (std::size_t index = 0; index < prefix; ++index) {
     if (CompareValues(left[index], right[index]) != 0) {
       return false;
@@ -523,7 +537,7 @@ bool SortKeysComeBefore(const std::vector<PhysicalSortItem> &items,
                         const std::vector<Value> &right,
                         std::uint64_t right_sequence) {
   RG_CHECK(left.size() == items.size() && right.size() == items.size(),
-           common::InternalError, "sort keys are incomplete");
+           common::ErrorCode::InternalError, "sort keys are incomplete");
   for (std::size_t index = 0; index < items.size(); ++index) {
     int order = CompareValues(left[index], right[index]);
     if (items[index].direction == PhysicalSortDirection::kDescending) {
@@ -548,14 +562,14 @@ std::size_t EstimatedSortEntryHeapUsage(const SlottedRow &row,
 
 SlottedRow CopyChildOutput(const PhysicalPlanNode &node, std::size_t child,
                            const SlottedRow &input) {
-  RG_CHECK(child < node.child_mappings.size(), common::InternalError,
+  RG_CHECK(child < node.child_mappings.size(), common::ErrorCode::InternalError,
            "physical operator child mapping is missing");
   return CopyMappedRow(input, node.output_slots, node.child_mappings[child]);
 }
 
 SlottedRow CopyUnaryOutput(const PhysicalPlanNode &node,
                            const SlottedRow &input) {
-  RG_CHECK(node.child_mappings.size() == 1, common::InternalError,
+  RG_CHECK(node.child_mappings.size() == 1, common::ErrorCode::InternalError,
            "unary physical operator mapping is missing");
   return CopyChildOutput(node, 0, input);
 }
@@ -574,7 +588,8 @@ bool HasSharedUnaryLayout(const PhysicalPlanNode &node) {
 
 void CopySlotDirect(const SlottedRow &source, SlottedRow *target,
                     std::size_t source_offset, std::size_t target_offset) {
-  RG_CHECK(target != nullptr, common::InternalError, "target row is null");
+  RG_CHECK(target != nullptr, common::ErrorCode::InternalError,
+           "target row is null");
   if (!source.IsInitialized(source_offset)) {
     return;
   }
@@ -584,12 +599,13 @@ void CopySlotDirect(const SlottedRow &source, SlottedRow *target,
 std::int64_t EvaluatePaginationCount(const PhysicalExpression &expression,
                                      const SlottedRow *row, RuntimeState *state,
                                      std::string_view name) {
-  RG_CHECK(state != nullptr, common::InternalError, "runtime state is null");
+  RG_CHECK(state != nullptr, common::ErrorCode::InternalError,
+           "runtime state is null");
   Value value = row != nullptr ? Evaluate(expression, *row, *state)
                                : EvaluateExpression(*expression.Expression(),
                                                     state->context);
   RG_CHECK(value.IsInteger() && value.AsInteger() >= 0,
-           common::InvalidArgumentError,
+           common::ErrorCode::InvalidParameter,
            std::string(name) + " requires a non-negative integer");
   return value.AsInteger();
 }
@@ -606,7 +622,7 @@ class FilterOperator final : public PullOperator {
   ~FilterOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
-    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+    RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
     if (closed_) {
@@ -661,7 +677,7 @@ class ProjectionOperator final : public PullOperator {
   ~ProjectionOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
-    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+    RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
     if (closed_) {
@@ -682,7 +698,7 @@ class ProjectionOperator final : public PullOperator {
     SlottedRow output(node_->output_slots);
     for (const auto &item : data_->items) {
       if (item.passthrough) {
-        RG_CHECK(item.source_slot.has_value(), common::InternalError,
+        RG_CHECK(item.source_slot.has_value(), common::ErrorCode::InternalError,
                  "passthrough projection source slot is missing");
         CopySlotDirect(input, &output, *item.source_slot, item.output_slot);
       } else {
@@ -726,7 +742,7 @@ class SkipOperator final : public PullOperator {
   ~SkipOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
-    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+    RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
     if (closed_) {
@@ -815,7 +831,7 @@ class LimitOperator final : public PullOperator {
   ~LimitOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
-    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+    RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
     if (closed_) {
@@ -933,7 +949,7 @@ class ProduceResultsOperator final : public PullOperator {
   ~ProduceResultsOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
-    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+    RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
     if (closed_) {
@@ -984,7 +1000,7 @@ class PathBuildOperator final : public PullOperator {
   ~PathBuildOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
-    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+    RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     while (!closed_) {
       state_->CheckCancelled();
@@ -1031,7 +1047,7 @@ class ProcedureCallOperator final : public PullOperator {
   ~ProcedureCallOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
-    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+    RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
     if (closed_) {
@@ -1077,7 +1093,7 @@ class ProcedureCallOperator final : public PullOperator {
         CopyMappings(input, &output, node_->child_mappings[0]);
         for (const auto &item : data_->yields) {
           const auto found = record.find(item.result_field);
-          RG_CHECK(found != record.end(), common::InvalidArgumentError,
+          RG_CHECK(found != record.end(), common::ErrorCode::InvalidParameter,
                    "unknown yield field for " + data_->procedure_name + ": " +
                        item.result_field);
           StoreEvaluatedValue(&output, item.output_slot, found->second,
@@ -1115,7 +1131,7 @@ class UnwindOperator final : public PullOperator {
   ~UnwindOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
-    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+    RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
     if (closed_) {
@@ -1197,7 +1213,7 @@ class AssertIsNodeOperator final : public PullOperator {
   ~AssertIsNodeOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
-    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+    RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
     if (closed_) {
@@ -1215,7 +1231,8 @@ class AssertIsNodeOperator final : public PullOperator {
     }
     for (const auto &assertion : data_->nodes) {
       const Value value = ReadRowValue(*input, assertion.input_slot);
-      RG_CHECK(value.IsNull() || value.IsNode(), common::InvalidArgumentError,
+      RG_CHECK(value.IsNull() || value.IsNode(),
+               common::ErrorCode::InvalidParameter,
                "expected node value: " + assertion.variable);
     }
     if (local_input.has_value()) {
@@ -1253,7 +1270,7 @@ class StreamingWriteOperator final : public PullOperator {
   ~StreamingWriteOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
-    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+    RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
     if (closed_) {
@@ -1298,7 +1315,7 @@ class OrderedDistinctOperator final : public PullOperator {
   ~OrderedDistinctOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
-    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+    RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
     if (closed_) {
@@ -1375,7 +1392,7 @@ class HashDistinctOperator final : public PullOperator {
   ~HashDistinctOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
-    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+    RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
     if (closed_) {
@@ -1457,7 +1474,7 @@ class HashAggregationOperator final : public PullOperator {
   ~HashAggregationOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
-    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+    RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
     if (closed_) {
@@ -1574,7 +1591,7 @@ class OrderedAggregationOperator final : public PullOperator {
   ~OrderedAggregationOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
-    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+    RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
     if (closed_ || finished_) {
@@ -1655,7 +1672,7 @@ class OrderedAggregationOperator final : public PullOperator {
   };
 
   bool TakeFirstInput(SlottedRow *row, CompositeValueKey *key) {
-    RG_CHECK(row != nullptr && key != nullptr, common::InternalError,
+    RG_CHECK(row != nullptr && key != nullptr, common::ErrorCode::InternalError,
              "ordered aggregation input is null");
     if (pending_.has_value()) {
       *row = std::move(pending_->row);
@@ -1705,7 +1722,7 @@ class FullSortOperator final : public PullOperator {
   ~FullSortOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
-    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+    RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
     if (closed_) {
@@ -1788,13 +1805,14 @@ class PartialSortOperator final : public PullOperator {
         state_(&state),
         source_(std::move(source)) {
     RG_CHECK(data_->prefix > 0 && data_->prefix <= data_->items.size(),
-             common::InternalError, "partial sort prefix is invalid");
+             common::ErrorCode::InternalError,
+             "partial sort prefix is invalid");
   }
 
   ~PartialSortOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
-    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+    RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
     if (closed_) {
@@ -1843,7 +1861,7 @@ class PartialSortOperator final : public PullOperator {
   }
 
   void Retain(Entry *entry) {
-    RG_CHECK(entry != nullptr, common::InternalError,
+    RG_CHECK(entry != nullptr, common::ErrorCode::InternalError,
              "partial sort entry is null");
     entry->reserved_bytes =
         EstimatedSortEntryHeapUsage(entry->row, entry->keys);
@@ -1918,7 +1936,7 @@ class PartialTopNOperator final : public PullOperator {
   ~PartialTopNOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
-    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+    RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
     if (closed_) {
@@ -1975,7 +1993,7 @@ class PartialTopNOperator final : public PullOperator {
   }
 
   void ReserveEntry(Entry *entry) {
-    RG_CHECK(entry != nullptr, common::InternalError,
+    RG_CHECK(entry != nullptr, common::ErrorCode::InternalError,
              "partial Top-N entry is null");
     entry->reserved_bytes = EstimatedEntryHeapUsage(*entry);
     state_->memory_tracker.Reserve(entry->reserved_bytes);
@@ -1983,7 +2001,7 @@ class PartialTopNOperator final : public PullOperator {
   }
 
   void ReplaceEntry(Entry entry, Entry *replaced) {
-    RG_CHECK(replaced != nullptr, common::InternalError,
+    RG_CHECK(replaced != nullptr, common::ErrorCode::InternalError,
              "partial Top-N replacement entry is null");
     const std::size_t old_bytes = replaced->reserved_bytes;
     if (entry.reserved_bytes == 0) {
@@ -2036,7 +2054,7 @@ class PartialTopNOperator final : public PullOperator {
     heapified_ = false;
     run_limit_ = static_cast<std::size_t>(std::min<std::uint64_t>(
         remaining_, std::numeric_limits<std::size_t>::max()));
-    RG_CHECK(run_limit_ > 0, common::InternalError,
+    RG_CHECK(run_limit_ > 0, common::ErrorCode::InternalError,
              "partial Top-N run limit is zero");
 
     if (pending_.has_value()) {
@@ -2075,9 +2093,9 @@ class PartialTopNOperator final : public PullOperator {
     RG_CHECK(node_->kind == PhysicalOperatorKind::kPartialTopN &&
                  node_->children.size() == 1 && data_->prefix > 0 &&
                  data_->prefix <= data_->items.size(),
-             common::InternalError,
+             common::ErrorCode::InternalError,
              "partial Top-N physical node is incomplete");
-    RG_CHECK(!data_->limit.RequiresInputRow(), common::InternalError,
+    RG_CHECK(!data_->limit.RequiresInputRow(), common::ErrorCode::InternalError,
              "partial Top-N LIMIT must not depend on an input row");
     remaining_ = static_cast<std::uint64_t>(
         EvaluatePaginationCount(data_->limit, nullptr, state_, "LIMIT"));
@@ -2114,7 +2132,7 @@ class WriteBarrierOperator final : public PullOperator {
   ~WriteBarrierOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
-    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+    RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
     if (closed_) {
@@ -2181,7 +2199,7 @@ class DeleteOperator final : public PullOperator {
   ~DeleteOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
-    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+    RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
     if (closed_) {
@@ -2235,7 +2253,7 @@ class DeleteOperator final : public PullOperator {
           continue;
         }
         RG_CHECK(entity.IsNode() || entity.IsRelationship() || entity.IsPath(),
-                 common::InvalidArgumentError,
+                 common::ErrorCode::InvalidParameter,
                  "DELETE expression is not a graph entity or path");
         if (entity.IsNode()) {
           node_ids.insert(entity.AsNode().id);
@@ -2249,12 +2267,12 @@ class DeleteOperator final : public PullOperator {
         } else {
           const Path &path = entity.AsPath();
           for (const auto &node : path.nodes) {
-            RG_CHECK(node != nullptr, common::InternalError,
+            RG_CHECK(node != nullptr, common::ErrorCode::InternalError,
                      "DELETE path contains a null node");
             node_ids.insert(node->id);
           }
           for (const auto &relationship : path.relationships) {
-            RG_CHECK(relationship != nullptr, common::InternalError,
+            RG_CHECK(relationship != nullptr, common::ErrorCode::InternalError,
                      "DELETE path contains a null relationship");
             relationship_ids.insert(relationship->id);
             graphdb_relationships.insert_or_assign(
@@ -2273,7 +2291,7 @@ class DeleteOperator final : public PullOperator {
             vertex.NewEdgeIterator(graphdb::EdgeDirection::BOTH, {}, {});
         while (relationships->Valid()) {
           RG_CHECK(relationship_ids.contains(relationships->GetEdge().GetId()),
-                   common::InvalidArgumentError,
+                   common::ErrorCode::InvalidParameter,
                    "DELETE node still has relationships");
           relationships->Next();
         }
@@ -2311,7 +2329,7 @@ class TopNOperator final : public PullOperator {
   ~TopNOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
-    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+    RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
     if (closed_) {
@@ -2372,7 +2390,7 @@ class TopNOperator final : public PullOperator {
   }
 
   void ReplaceEntry(Entry entry, Entry *replaced) {
-    RG_CHECK(replaced != nullptr, common::InternalError,
+    RG_CHECK(replaced != nullptr, common::ErrorCode::InternalError,
              "Top-N replacement entry is null");
     const std::size_t old_bytes = replaced->reserved_bytes;
     if (entry.reserved_bytes > old_bytes) {
@@ -2423,8 +2441,9 @@ class TopNOperator final : public PullOperator {
     initialized_ = true;
     RG_CHECK(node_->kind == PhysicalOperatorKind::kTopN &&
                  node_->children.size() == 1,
-             common::InternalError, "Top-N physical node is incomplete");
-    RG_CHECK(!data_->limit.RequiresInputRow(), common::InternalError,
+             common::ErrorCode::InternalError,
+             "Top-N physical node is incomplete");
+    RG_CHECK(!data_->limit.RequiresInputRow(), common::ErrorCode::InternalError,
              "Top-N LIMIT must not depend on an input row");
     limit_ = static_cast<std::uint64_t>(
         EvaluatePaginationCount(data_->limit, nullptr, state_, "LIMIT"));
@@ -2467,7 +2486,7 @@ std::unique_ptr<PullOperator> BuildUnaryOperator(
     const PhysicalPlanNode &node, RuntimeState &state,
     std::unique_ptr<PullOperator> source) {
   RG_CHECK(
-      node.children.size() == 1, common::InternalError,
+      node.children.size() == 1, common::ErrorCode::InternalError,
       std::string(ToString(node.kind)) + " physical node must have one child");
   switch (node.kind) {
     case PhysicalOperatorKind::kFilter:
@@ -2546,8 +2565,9 @@ std::unique_ptr<PullOperator> BuildUnaryOperator(
       return std::make_unique<StreamingWriteOperator<RemoveLabelsOp>>(
           node, state, std::move(source));
     default:
-      RG_THROW(common::InternalError, "not a unary physical operator: " +
-                                          std::string(ToString(node.kind)));
+      RG_THROW(
+          common::ErrorCode::InternalError,
+          "not a unary physical operator: " + std::string(ToString(node.kind)));
   }
 }
 

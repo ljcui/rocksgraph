@@ -25,7 +25,7 @@ std::unique_ptr<PullOperator> OperatorFactory::Build(
     case PhysicalOperatorKind::kOptionalExpand:
     case PhysicalOperatorKind::kExpand:
     case PhysicalOperatorKind::kExpandInto: {
-      RG_CHECK(node.children.size() == 1, common::InternalError,
+      RG_CHECK(node.children.size() == 1, common::ErrorCode::InternalError,
                std::string(ToString(node.kind)) +
                    " physical node must have one child");
       return BuildExpandOperator(node, *state_,
@@ -59,7 +59,7 @@ std::unique_ptr<PullOperator> OperatorFactory::Build(
     case PhysicalOperatorKind::kSetLabels:
     case PhysicalOperatorKind::kRemoveProperty:
     case PhysicalOperatorKind::kRemoveLabels: {
-      RG_CHECK(node.children.size() == 1, common::InternalError,
+      RG_CHECK(node.children.size() == 1, common::ErrorCode::InternalError,
                std::string(ToString(node.kind)) +
                    " physical node must have one child");
       return BuildUnaryOperator(node, *state_,
@@ -74,7 +74,7 @@ std::unique_ptr<PullOperator> OperatorFactory::Build(
     case PhysicalOperatorKind::kSelectOrSemiApply:
     case PhysicalOperatorKind::kRollUpApply:
     case PhysicalOperatorKind::kMerge: {
-      RG_CHECK(node.children.size() == 2, common::InternalError,
+      RG_CHECK(node.children.size() == 2, common::ErrorCode::InternalError,
                std::string(ToString(node.kind)) +
                    " physical node must have two children");
       return BuildCorrelatedOperator(
@@ -88,7 +88,7 @@ std::unique_ptr<PullOperator> OperatorFactory::Build(
     case PhysicalOperatorKind::kNodeHashJoin:
     case PhysicalOperatorKind::kCartesianProduct:
     case PhysicalOperatorKind::kPredicateJoin: {
-      RG_CHECK(node.children.size() == 2, common::InternalError,
+      RG_CHECK(node.children.size() == 2, common::ErrorCode::InternalError,
                std::string(ToString(node.kind)) +
                    " physical node must have two children");
       auto lhs = Build(*node.children[0], argument);
@@ -96,8 +96,9 @@ std::unique_ptr<PullOperator> OperatorFactory::Build(
       return BuildBinaryOperator(node, *state_, std::move(lhs), std::move(rhs));
     }
   }
-  RG_THROW(common::InternalError, "unsupported physical operator kind: " +
-                                      std::string(ToString(node.kind)));
+  RG_THROW(common::ErrorCode::InternalError,
+           "unsupported physical operator kind: " +
+               std::string(ToString(node.kind)));
 }
 
 }  // namespace rg::slotted

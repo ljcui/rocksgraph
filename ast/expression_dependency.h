@@ -27,7 +27,7 @@ class ExpressionDependencyCollector : public ASTConstWalker {
 
  protected:
   void Visit(const Variable &node) override {
-    RG_CHECK(!node.name.empty(), common::InvalidArgumentError,
+    RG_CHECK(!node.name.empty(), common::ErrorCode::InvalidParameter,
              "variable dependency name is empty");
     if (!IsLocal(node.name)) {
       dependencies_.insert(node.name);
@@ -140,7 +140,7 @@ class ExpressionDependencyCollector : public ASTConstWalker {
   }
 
   void PopScope() {
-    RG_CHECK(!local_scopes_.empty(), common::InternalError,
+    RG_CHECK(!local_scopes_.empty(), common::ErrorCode::InternalError,
              "expression dependency scope stack is empty");
     local_scopes_.pop_back();
   }
@@ -149,7 +149,7 @@ class ExpressionDependencyCollector : public ASTConstWalker {
     if (name.empty()) {
       return;
     }
-    RG_CHECK(!local_scopes_.empty(), common::InternalError,
+    RG_CHECK(!local_scopes_.empty(), common::ErrorCode::InternalError,
              "expression dependency local scope is missing");
     local_scopes_.back().insert(name);
   }

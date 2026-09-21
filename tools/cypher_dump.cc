@@ -88,7 +88,7 @@ int main(int argc, char **argv) {
           rg::PrintPhysicalPlan(physical_plan, std::cout);
         }
       } catch (const Exception &e) {
-        spdlog::error("Planning error: {}", e.Message());
+        spdlog::error("Planning error: {}", e.message());
         return 1;
       }
       return 0;
@@ -96,16 +96,14 @@ int main(int argc, char **argv) {
     spdlog::error("Unsupported dump mode: {}", FLAGS_mode);
     PrintMinimalUsage();
     return 1;
-  } catch (const common::RocksGraphException &e) {
-    if (e.code() == common::ErrorCode::ParserException) {
-      spdlog::error("Parse error: {}", e.msg());
-    } else if (e.code() == common::ErrorCode::CypherException) {
-      spdlog::error("Semantic error: {}", e.msg());
+  } catch (const common::Exception &e) {
+    if (e.code() == common::ErrorCode::ParseError) {
+      spdlog::error("Parse error: {}", e.message());
+    } else if (e.code() == common::ErrorCode::SemanticError) {
+      spdlog::error("Semantic error: {}", e.message());
     } else {
-      spdlog::error("Internal error: {}", e.msg());
+      spdlog::error("Internal error: {}", e.message());
     }
-  } catch (const Exception &e) {
-    spdlog::error("Internal error: {}", e.what());
   }
   return 1;
 }

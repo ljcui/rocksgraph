@@ -7,6 +7,7 @@
 
 #include "common/exception.h"
 #include "graphdb/graph_entity.h"
+#include "tests/common/exception_test_utils.h"
 #include "tests/runtime/graphdb_test_utils.h"
 
 TEST(SlottedRowTest, StoresGraphDBEntitiesAndValues) {
@@ -57,9 +58,10 @@ TEST(SlottedRowTest, RejectsOutOfRangeWrites) {
       std::vector<std::string>{"value"});
   rg::SlottedRow row(slots);
 
-  EXPECT_THROW(row.Set(slots->SlotCount(), rg::Value(42)),
-               common::InternalError);
-  EXPECT_THROW(row.SetNull(slots->SlotCount()), common::InternalError);
+  RG_EXPECT_ERROR(row.Set(slots->SlotCount(), rg::Value(42)),
+                  common::ErrorCode::InternalError);
+  RG_EXPECT_ERROR(row.SetNull(slots->SlotCount()),
+                  common::ErrorCode::InternalError);
 }
 
 TEST(SlottedRowTest, ResetsRowsWithoutChangingCompatibleStorage) {

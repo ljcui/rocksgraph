@@ -433,8 +433,8 @@ TEST(log, TestLogMaybeAppend) {
         EXPECT_EQ(err, nullptr);
         EXPECT_TRUE(VectorEquals(tt.ents, gents));
       }
-    } catch (std::exception& e) {
-      EXPECT_EQ(typeid(e), typeid(PanicException));
+    } catch (const common::Exception& e) {
+      EXPECT_EQ(e.code(), common::ErrorCode::InternalError);
       EXPECT_TRUE(tt.wpanic);
     }
   }
@@ -755,8 +755,8 @@ TEST(log, TestCommitTo) {
       raftLog->committed_ = commit;
       raftLog->commitTo(tt.commit);
       EXPECT_EQ(raftLog->committed_, tt.wcommit);
-    } catch (std::exception& e) {
-      EXPECT_EQ(typeid(e), typeid(PanicException));
+    } catch (const common::Exception& e) {
+      EXPECT_EQ(e.code(), common::ErrorCode::InternalError);
       EXPECT_TRUE(tt.wpanic);
     }
   }
@@ -872,8 +872,8 @@ TEST(log, TestCompaction) {
         }
         EXPECT_EQ(raftLog->allEntries().size(), tt.wleft[j]);
       }
-    } catch (const std::exception& e) {
-      EXPECT_EQ(typeid(e), typeid(PanicException));
+    } catch (const common::Exception& e) {
+      EXPECT_EQ(e.code(), common::ErrorCode::InternalError);
       EXPECT_FALSE(tt.wallow);
     }
   }
@@ -966,8 +966,8 @@ TEST(log, TestIsOutOfBounds) {
       EXPECT_FALSE(tt.wpanic);
       EXPECT_FALSE(tt.wErrCompacted && err != ErrCompacted);
       EXPECT_FALSE(!tt.wErrCompacted && err != nullptr);
-    } catch (const std::exception& e) {
-      EXPECT_EQ(typeid(e), typeid(PanicException));
+    } catch (const common::Exception& e) {
+      EXPECT_EQ(e.code(), common::ErrorCode::InternalError);
       EXPECT_TRUE(tt.wpanic);
     }
   }
@@ -1127,8 +1127,8 @@ TEST(log, TestSlice) {
     Error err;
     try {
       std::tie(g, err) = l->slice(tt.lo, tt.hi, tt.lim);
-    } catch (const std::exception& e) {
-      EXPECT_EQ(typeid(e), typeid(PanicException));
+    } catch (const common::Exception& e) {
+      EXPECT_EQ(e.code(), common::ErrorCode::InternalError);
       EXPECT_TRUE(tt.wpanic);
     }
     EXPECT_FALSE(tt.lo <= offset && err != ErrCompacted);

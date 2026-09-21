@@ -41,7 +41,7 @@ PhysicalSortDirection ToPhysicalSortDirection(
     case ir::LogicalOrderDirection::kDescending:
       return PhysicalSortDirection::kDescending;
   }
-  RG_THROW(common::InternalError, "unknown sort direction");
+  RG_THROW(common::ErrorCode::InternalError, "unknown sort direction");
 }
 
 PhysicalOrdering CopyPhysicalOrdering(
@@ -49,7 +49,7 @@ PhysicalOrdering CopyPhysicalOrdering(
   PhysicalOrdering copied;
   copied.reserve(items.size());
   for (const auto &item : items) {
-    RG_CHECK(item.expression != nullptr, common::InvalidArgumentError,
+    RG_CHECK(item.expression != nullptr, common::ErrorCode::InvalidParameter,
              "physical ordering expression is null");
     copied.push_back({.expression = std::shared_ptr<const ast::Expression>(
                           ast::CloneExpression(*item.expression)),
@@ -81,7 +81,7 @@ PhysicalOperatorTraits OperatorTraits(const PhysicalPlanNode &node) {
 }
 
 void BuildEffects(PhysicalPlanNode *node) {
-  RG_CHECK(node != nullptr, common::InternalError,
+  RG_CHECK(node != nullptr, common::ErrorCode::InternalError,
            "physical plan node is null");
   node->traits = OperatorTraits(*node);
   node->subtree_effects = {
@@ -284,12 +284,12 @@ std::vector<std::size_t> AllSlots(const SlotConfiguration &slots) {
 PhysicalExpression CopyPhysicalExpression(
     const ast::Expression *expression,
     const std::vector<ast::PrecomputedExpression> &precomputed) {
-  RG_CHECK(expression != nullptr, common::InvalidArgumentError,
+  RG_CHECK(expression != nullptr, common::ErrorCode::InvalidParameter,
            "physical expression is null");
   std::vector<PhysicalPrecomputedExpression> copied_precomputed;
   copied_precomputed.reserve(precomputed.size());
   for (const auto &entry : precomputed) {
-    RG_CHECK(entry.expression != nullptr, common::InvalidArgumentError,
+    RG_CHECK(entry.expression != nullptr, common::ErrorCode::InvalidParameter,
              "physical precomputed expression is null");
     copied_precomputed.push_back(
         {.expression = ast::CloneExpression(*entry.expression),
@@ -347,7 +347,7 @@ PhysicalMergeSetOperation CopyPhysicalMergeSetOperation(
       return SetLabelsOp{.entity = CopyPhysicalExpression(pattern.entity, {}),
                          .labels = pattern.labels};
   }
-  RG_THROW(common::InternalError, "unknown MERGE SET operation");
+  RG_THROW(common::ErrorCode::InternalError, "unknown MERGE SET operation");
 }
 
 MergeOp CopyPhysicalMerge(const ir::MergePattern &merge,
@@ -358,7 +358,7 @@ MergeOp CopyPhysicalMerge(const ir::MergePattern &merge,
     switch (command.kind) {
       case ir::CreateEntityKind::kNode: {
         RG_CHECK(command.index < merge.create_pattern.nodes.size(),
-                 common::InvalidArgumentError,
+                 common::ErrorCode::InvalidParameter,
                  "MERGE node command index is out of range");
         const ir::CreateNodePattern &node =
             merge.create_pattern.nodes[command.index];
@@ -370,7 +370,7 @@ MergeOp CopyPhysicalMerge(const ir::MergePattern &merge,
       }
       case ir::CreateEntityKind::kRelationship: {
         RG_CHECK(command.index < merge.create_pattern.relationships.size(),
-                 common::InvalidArgumentError,
+                 common::ErrorCode::InvalidParameter,
                  "MERGE relationship command index is out of range");
         const ir::CreateRelationshipPattern &relationship =
             merge.create_pattern.relationships[command.index];
@@ -412,7 +412,7 @@ PhysicalExpandDirection ToPhysicalExpandDirection(ir::Direction direction) {
     case ir::Direction::kBoth:
       return PhysicalExpandDirection::kBoth;
   }
-  RG_THROW(common::InternalError, "unknown relationship direction");
+  RG_THROW(common::ErrorCode::InternalError, "unknown relationship direction");
 }
 
 PhysicalExpandDirection ToPhysicalExpandDirection(
@@ -425,7 +425,7 @@ PhysicalExpandDirection ToPhysicalExpandDirection(
     case ir::ExpandDirection::kBoth:
       return PhysicalExpandDirection::kBoth;
   }
-  RG_THROW(common::InternalError, "unknown expand direction");
+  RG_THROW(common::ErrorCode::InternalError, "unknown expand direction");
 }
 
 std::vector<PhysicalSortItem> CopyPhysicalSortItems(
@@ -602,7 +602,7 @@ class PhysicalPlanBuilder final {
                    ? PhysicalOperatorKind::kUnionAll
                    : PhysicalOperatorKind::kUnionDistinct;
     }
-    RG_THROW(common::InternalError,
+    RG_THROW(common::ErrorCode::InternalError,
              "unsupported physical operator: " + std::string(plan.Name()));
   }
 
@@ -665,7 +665,7 @@ class PhysicalPlanBuilder final {
   }
 
   void SelectOperator(const ir::LogicalPlan &plan, PhysicalPlanNode *node) {
-    RG_CHECK(node != nullptr, common::InternalError,
+    RG_CHECK(node != nullptr, common::ErrorCode::InternalError,
              "physical plan node is null");
     node->provided_order = CopyPhysicalOrdering(plan.OrderingTrait());
     if (!node->children.empty()) {
@@ -705,7 +705,7 @@ class PhysicalPlanBuilder final {
       }
     }
     if (plan.Type() == ir::LogicalPlanNodeType::kSort) {
-      RG_CHECK(node->children.size() == 1, common::InternalError,
+      RG_CHECK(node->children.size() == 1, common::ErrorCode::InternalError,
                "Sort physical node must have one child");
       const auto &sort = static_cast<const ir::SortPlan &>(plan);
       PhysicalOrdering required_order = CopyPhysicalOrdering(sort.Items());
@@ -718,7 +718,7 @@ class PhysicalPlanBuilder final {
     }
 
     if (plan.Type() == ir::LogicalPlanNodeType::kTopN) {
-      RG_CHECK(node->children.size() == 1, common::InternalError,
+      RG_CHECK(node->children.size() == 1, common::ErrorCode::InternalError,
                "Top-N physical node must have one child");
       const auto &top_n = static_cast<const ir::TopNPlan &>(plan);
       PhysicalOrdering required_order = CopyPhysicalOrdering(top_n.Items());
@@ -731,7 +731,7 @@ class PhysicalPlanBuilder final {
     }
 
     if (plan.Type() == ir::LogicalPlanNodeType::kDistinct) {
-      RG_CHECK(node->children.size() == 1, common::InternalError,
+      RG_CHECK(node->children.size() == 1, common::ErrorCode::InternalError,
                "Distinct physical node must have one child");
       const auto &distinct = static_cast<const ir::DistinctPlan &>(plan);
       const auto output_order = OrderedGroupingOutput(
@@ -744,7 +744,7 @@ class PhysicalPlanBuilder final {
     }
 
     if (plan.Type() == ir::LogicalPlanNodeType::kAggregation) {
-      RG_CHECK(node->children.size() == 1, common::InternalError,
+      RG_CHECK(node->children.size() == 1, common::ErrorCode::InternalError,
                "Aggregation physical node must have one child");
       const auto &aggregation = static_cast<const ir::AggregationPlan &>(plan);
       const auto output_order = OrderedGroupingOutput(
@@ -759,7 +759,7 @@ class PhysicalPlanBuilder final {
   }
 
   void BuildOperatorData(const ir::LogicalPlan &plan, PhysicalPlanNode *node) {
-    RG_CHECK(node != nullptr, common::InternalError,
+    RG_CHECK(node != nullptr, common::ErrorCode::InternalError,
              "physical plan node is null");
     switch (node->kind) {
       case PhysicalOperatorKind::kArgument:
@@ -876,7 +876,7 @@ class PhysicalPlanBuilder final {
       }
       case PhysicalOperatorKind::kExpand: {
         const auto &expand = static_cast<const ir::ExpandPlan &>(plan);
-        RG_CHECK(node->children.size() == 1, common::InternalError,
+        RG_CHECK(node->children.size() == 1, common::ErrorCode::InternalError,
                  "Expand physical node must have one child");
         node->data = ExpandOp{
             .pattern = {.from_node = expand.FromNode(),
@@ -894,7 +894,7 @@ class PhysicalPlanBuilder final {
       }
       case PhysicalOperatorKind::kExpandInto: {
         const auto &expand = static_cast<const ir::ExpandIntoPlan &>(plan);
-        RG_CHECK(node->children.size() == 1, common::InternalError,
+        RG_CHECK(node->children.size() == 1, common::ErrorCode::InternalError,
                  "ExpandInto physical node must have one child");
         node->data = ExpandIntoOp{
             .pattern = {.from_node = expand.FromNode(),
@@ -913,7 +913,7 @@ class PhysicalPlanBuilder final {
       }
       case PhysicalOperatorKind::kVarExpand: {
         const auto &expand = static_cast<const ir::VarExpandPlan &>(plan);
-        RG_CHECK(node->children.size() == 1, common::InternalError,
+        RG_CHECK(node->children.size() == 1, common::ErrorCode::InternalError,
                  "VarExpand physical node must have one child");
         node->data = VarExpandOp{
             .pattern = {.from_node = expand.FromNode(),
@@ -939,7 +939,7 @@ class PhysicalPlanBuilder final {
         const auto &expand =
             static_cast<const ir::PruningVarExpandPlan &>(plan);
         const ir::PatternRelationship &pattern = expand.Pattern();
-        RG_CHECK(node->children.size() == 1, common::InternalError,
+        RG_CHECK(node->children.size() == 1, common::ErrorCode::InternalError,
                  "PruningVarExpand physical node must have one child");
         node->data = PruningVarExpandOp{
             .pattern = CopyPhysicalRelationshipPattern(pattern),
@@ -954,7 +954,7 @@ class PhysicalPlanBuilder final {
       case PhysicalOperatorKind::kOptionalExpand: {
         const auto &expand = static_cast<const ir::OptionalExpandPlan &>(plan);
         const ir::PatternRelationship &pattern = expand.Pattern();
-        RG_CHECK(node->children.size() == 1, common::InternalError,
+        RG_CHECK(node->children.size() == 1, common::ErrorCode::InternalError,
                  "OptionalExpand physical node must have one child");
         OptionalExpandOp data{
             .pattern = CopyPhysicalRelationshipPattern(pattern),
@@ -975,7 +975,7 @@ class PhysicalPlanBuilder final {
         const auto &project =
             static_cast<const ir::ProjectEndpointsPlan &>(plan);
         const ir::PatternRelationship &pattern = project.Pattern();
-        RG_CHECK(node->children.size() == 1, common::InternalError,
+        RG_CHECK(node->children.size() == 1, common::ErrorCode::InternalError,
                  "ProjectEndpoints physical node must have one child");
         node->data = ProjectEndpointsOp{
             .pattern = CopyPhysicalRelationshipPattern(pattern),
@@ -994,7 +994,7 @@ class PhysicalPlanBuilder final {
       }
       case PhysicalOperatorKind::kPathBuild: {
         const auto &build = static_cast<const ir::PathBuildPlan &>(plan);
-        RG_CHECK(node->children.size() == 1, common::InternalError,
+        RG_CHECK(node->children.size() == 1, common::ErrorCode::InternalError,
                  "PathBuild physical node must have one child");
         PathBuildOp data{
             .path = {.variable = build.Path().variable,
@@ -1032,12 +1032,14 @@ class PhysicalPlanBuilder final {
               .output_slot = node->output_slots->At(item.alias),
               .passthrough = item.passthrough};
           if (item.passthrough) {
-            RG_CHECK(node->children.size() == 1, common::InternalError,
+            RG_CHECK(node->children.size() == 1,
+                     common::ErrorCode::InternalError,
                      "passthrough projection must have one child");
             physical_item.source_slot =
                 node->children.front()->output_slots->Find(item.alias);
             RG_CHECK(
-                physical_item.source_slot.has_value(), common::InternalError,
+                physical_item.source_slot.has_value(),
+                common::ErrorCode::InternalError,
                 "passthrough projection source slot is missing: " + item.alias);
           }
           if (!item.passthrough) {
@@ -1121,7 +1123,7 @@ class PhysicalPlanBuilder final {
       }
       case PhysicalOperatorKind::kLimit: {
         const auto &limit = static_cast<const ir::LimitPlan &>(plan);
-        RG_CHECK(node->children.size() == 1, common::InternalError,
+        RG_CHECK(node->children.size() == 1, common::ErrorCode::InternalError,
                  "limit physical node must have one child");
         node->data =
             LimitOp{.count = CopyPhysicalExpression(
@@ -1138,7 +1140,7 @@ class PhysicalPlanBuilder final {
       }
       case PhysicalOperatorKind::kAssertIsNode: {
         const auto &assertion = static_cast<const ir::AssertIsNodePlan &>(plan);
-        RG_CHECK(node->children.size() == 1, common::InternalError,
+        RG_CHECK(node->children.size() == 1, common::ErrorCode::InternalError,
                  "assert-is-node physical node must have one child");
         AssertIsNodeOp data;
         data.nodes.reserve(assertion.Variables().size());
@@ -1179,7 +1181,7 @@ class PhysicalPlanBuilder final {
         return;
       case PhysicalOperatorKind::kNodeHashJoin: {
         const auto &join = static_cast<const ir::NodeHashJoinPlan &>(plan);
-        RG_CHECK(node->children.size() == 2, common::InternalError,
+        RG_CHECK(node->children.size() == 2, common::ErrorCode::InternalError,
                  "node hash join physical node must have two children");
         NodeHashJoinOp data{
             .join_keys = join.JoinKeys(),
@@ -1222,7 +1224,7 @@ class PhysicalPlanBuilder final {
       }
       case PhysicalOperatorKind::kLeftOuterHashJoin: {
         const auto &join = static_cast<const ir::LeftOuterHashJoinPlan &>(plan);
-        RG_CHECK(node->children.size() == 2, common::InternalError,
+        RG_CHECK(node->children.size() == 2, common::ErrorCode::InternalError,
                  "left outer hash join physical node must have two children");
         node->data = LeftOuterHashJoinOp{
             .join_keys = join.JoinKeys(),
@@ -1274,7 +1276,7 @@ class PhysicalPlanBuilder final {
       }
       case PhysicalOperatorKind::kRollUpApply: {
         const auto &apply = static_cast<const ir::RollUpApplyPlan &>(plan);
-        RG_CHECK(node->children.size() == 2, common::InternalError,
+        RG_CHECK(node->children.size() == 2, common::ErrorCode::InternalError,
                  "roll-up apply physical node must have two children");
         node->data = RollUpApplyOp{
             .collection_slot =
@@ -1300,7 +1302,7 @@ class PhysicalPlanBuilder final {
             static_cast<const ir::CreateRelationshipPlan &>(plan);
         const ir::CreateRelationshipPattern &relationship =
             create.Relationship();
-        RG_CHECK(node->children.size() == 1, common::InternalError,
+        RG_CHECK(node->children.size() == 1, common::ErrorCode::InternalError,
                  "create relationship physical node must have one child");
         const bool incoming =
             relationship.direction == ir::Direction::kIncoming;
@@ -1376,7 +1378,8 @@ class PhysicalPlanBuilder final {
 
   void BuildUnionLayout(const ir::UnionPlan &plan, PhysicalPlanNode *node) {
     RG_CHECK(node != nullptr && node->children.size() == 2,
-             common::InternalError, "union physical node is incomplete");
+             common::ErrorCode::InternalError,
+             "union physical node is incomplete");
     std::vector<std::pair<std::string, std::string>> left_names;
     std::vector<std::pair<std::string, std::string>> right_names;
     for (const auto &mapping : plan.Mappings()) {
@@ -1515,7 +1518,7 @@ std::string_view ToString(PhysicalOperatorKind kind) {
     case PhysicalOperatorKind::kUnionDistinct:
       return "UnionDistinct";
   }
-  RG_THROW(common::InternalError, "unknown physical operator kind");
+  RG_THROW(common::ErrorCode::InternalError, "unknown physical operator kind");
 }
 
 std::string_view ToString(PhysicalSortDirection direction) {
@@ -1525,13 +1528,13 @@ std::string_view ToString(PhysicalSortDirection direction) {
     case PhysicalSortDirection::kDescending:
       return "DESC";
   }
-  RG_THROW(common::InternalError, "unknown physical sort direction");
+  RG_THROW(common::ErrorCode::InternalError, "unknown physical sort direction");
 }
 
 PhysicalPlan::PhysicalPlan(std::unique_ptr<PhysicalPlanNode> root,
                            std::vector<std::string> result_columns)
     : root_(std::move(root)), result_columns_(std::move(result_columns)) {
-  RG_CHECK(root_ != nullptr, common::InvalidArgumentError,
+  RG_CHECK(root_ != nullptr, common::ErrorCode::InvalidParameter,
            "physical plan root is null");
 }
 

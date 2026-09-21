@@ -17,18 +17,18 @@ void ComparisonChainRewriter::RewriteExpression(
     return;
   }
   auto *chain = CastAst<ComparisonChainExpression>(expr.get());
-  RG_CHECK(!chain->rights.empty(), common::InvalidArgumentError,
+  RG_CHECK(!chain->rights.empty(), common::ErrorCode::InvalidParameter,
            "comparison chain has no right operand");
   auto left = std::move(chain->left);
   auto rights = std::move(chain->rights);
   std::unique_ptr<Expression> current_left = std::move(left);
   std::unique_ptr<Expression> combined;
-  RG_CHECK(current_left != nullptr, common::InvalidArgumentError,
+  RG_CHECK(current_left != nullptr, common::ErrorCode::InvalidParameter,
            "comparison chain left operand is null");
 
   for (size_t i = 0; i < rights.size(); ++i) {
     auto &entry = rights[i];
-    RG_CHECK(entry.second != nullptr, common::InvalidArgumentError,
+    RG_CHECK(entry.second != nullptr, common::ErrorCode::InvalidParameter,
              "comparison chain right operand is null");
     auto comparison = std::make_unique<ComparisonExpression>();
     comparison->left = std::move(current_left);

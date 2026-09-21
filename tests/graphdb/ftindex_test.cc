@@ -64,7 +64,7 @@ bool WaitUntilQueryCount(
       }
       txn->Commit();
       query_succeeded = true;
-    } catch (common::RocksGraphException& e) {
+    } catch (common::Exception& e) {
       txn->Rollback();
       if (e.code() != common::ErrorCode::IndexNotReady) {
         throw;

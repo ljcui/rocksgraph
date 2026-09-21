@@ -8,6 +8,7 @@
 
 #include "common/exception.h"
 #include "runtime/query_executor.h"
+#include "tests/common/exception_test_utils.h"
 #include "tests/runtime/graphdb_test_utils.h"
 
 TEST(SlottedRuntimeTest, ExhaustsWritesBelowLimit) {
@@ -53,8 +54,7 @@ TEST(SlottedRuntimeTest, KeepsDeletedRelationshipTypeAvailable) {
 
 TEST(SlottedRuntimeTest, DeletesAllEntitiesInAPath) {
   rg::test::GraphDBTestDatabase graph;
-  rg::test::ExecuteQueryAndCommit(
-      graph, "CREATE (:N)-[:R]->(:N)-[:R]->(:N)");
+  rg::test::ExecuteQueryAndCommit(graph, "CREATE (:N)-[:R]->(:N)-[:R]->(:N)");
 
   rg::test::ExecuteQueryAndCommit(
       graph, "MATCH p = (:N)-[:R]->(:N)-[:R]->(:N) DETACH DELETE p");
@@ -77,10 +77,9 @@ TEST(SlottedRuntimeTest, CopiesPropertiesFromGraphEntities) {
 TEST(SlottedRuntimeTest,
      KeepsVariableLengthRelationshipsInWrittenPatternOrder) {
   rg::test::GraphDBTestDatabase graph;
-  rg::test::ExecuteQueryAndCommit(
-      graph,
-      "CREATE (:Start)-[:R {position: 1}]->()"
-      "-[:R {position: 2}]->(:End)");
+  rg::test::ExecuteQueryAndCommit(graph,
+                                  "CREATE (:Start)-[:R {position: 1}]->()"
+                                  "-[:R {position: 2}]->(:End)");
 
   const rg::QueryResult result = graph.ExecuteQueryAndCommit(
       "MATCH (a)-[relationships:R*2..2]->(b:End) "
@@ -99,10 +98,9 @@ TEST(SlottedRuntimeTest,
 TEST(SlottedRuntimeTest,
      EvaluatesPatternComprehensionCorrelatedToListVariable) {
   rg::test::GraphDBTestDatabase graph;
-  rg::test::ExecuteQueryAndCommit(
-      graph,
-      "CREATE (n:X)-[:T]->(middle)-[:T]->(:Y), "
-      "(middle)-[:T]->(:Y)");
+  rg::test::ExecuteQueryAndCommit(graph,
+                                  "CREATE (n:X)-[:T]->(middle)-[:T]->(:Y), "
+                                  "(middle)-[:T]->(:Y)");
 
   const rg::QueryResult result = graph.ExecuteQueryAndCommit(
       "MATCH p = (n:X)-->() "
@@ -143,7 +141,7 @@ TEST(SlottedRuntimeTest, ObservesExternalCancellation) {
   options.execution.cancellation->Cancel();
 
   std::vector<rg::Value> row;
-  EXPECT_THROW((void)cursor->Next(&row), common::QueryCancelledError);
+  RG_EXPECT_ERROR((void)cursor->Next(&row), common::ErrorCode::QueryCancelled);
   EXPECT_EQ(transaction->GetState(), graphdb::Transaction::State::kActive);
   transaction->Rollback();
 }
@@ -174,7 +172,8 @@ TEST(SlottedRuntimeTest, EnforcesBlockingOperatorMemoryLimit) {
       options);
 
   std::vector<rg::Value> row;
-  EXPECT_THROW((void)cursor->Next(&row), common::MemoryLimitExceededError);
+  RG_EXPECT_ERROR((void)cursor->Next(&row),
+                  common::ErrorCode::MemoryLimitExceeded);
 }
 
 TEST(SlottedRuntimeTest, ReportsPeakMemoryForBlockingOperators) {
@@ -373,7 +372,8 @@ TEST(SlottedRuntimeTest, TracksOnlyRetainedAggregationValues) {
   std::unique_ptr<rg::QueryResultCursor> cursor = rg::ExecuteQueryCursor(
       *transaction, "MATCH (n:N) RETURN collect(n.large) AS values", options);
   std::vector<rg::Value> row;
-  EXPECT_THROW((void)cursor->Next(&row), common::MemoryLimitExceededError);
+  RG_EXPECT_ERROR((void)cursor->Next(&row),
+                  common::ErrorCode::MemoryLimitExceeded);
 }
 
 TEST(SlottedRuntimeTest, UsesTypedDistinctAggregationState) {
@@ -428,11 +428,11 @@ TEST(SlottedRuntimeTest, MaintainsPercentileParameterState) {
                        {{"value", rg::Value(1)}, {"p", rg::Value(0.25)}});
   varying.CreateVertex({"N"},
                        {{"value", rg::Value(2)}, {"p", rg::Value(0.75)}});
-  EXPECT_THROW(
+  RG_EXPECT_ERROR(
       (void)rg::test::ExecuteQueryAndCommit(
           varying,
           "MATCH (n:N) RETURN percentileDisc(n.value, n.p) AS percentile"),
-      common::InvalidArgumentError);
+      common::ErrorCode::InvalidParameter);
 
   rg::test::GraphDBTestDatabase null_parameter;
   null_parameter.CreateVertex(
@@ -554,5 +554,6 @@ TEST(SlottedRuntimeTest, EnforcesValueHashJoinMemoryLimit) {
       "MATCH (a:Small), (b:Large) WHERE a.key = b.key RETURN a, b", options);
 
   std::vector<rg::Value> row;
-  EXPECT_THROW((void)cursor->Next(&row), common::MemoryLimitExceededError);
+  RG_EXPECT_ERROR((void)cursor->Next(&row),
+                  common::ErrorCode::MemoryLimitExceeded);
 }

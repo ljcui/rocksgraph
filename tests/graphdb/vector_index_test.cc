@@ -73,7 +73,7 @@ bool WaitUntilVectorQueryCount(
       }
       txn->Commit();
       query_succeeded = true;
-    } catch (common::RocksGraphException& e) {
+    } catch (common::Exception& e) {
       txn->Rollback();
       if (e.code() != common::ErrorCode::IndexNotReady) {
         throw;
@@ -730,7 +730,7 @@ TEST(VectorIndex, corruptedWalIsRejected) {
   ASSERT_TRUE(s.ok());
   txn->Commit();
 
-  EXPECT_THROW_CODE(index->ApplyWAL(), VectorIndexException);
+  EXPECT_THROW_CODE(index->ApplyWAL(), VectorIndexError);
 }
 
 TEST(VectorIndex, periodicTimerSurvivesWalApplyFailure) {
@@ -965,7 +965,7 @@ TEST(VectorIndex, checkpointMetaWriteFailureIsReported) {
     ASSERT_TRUE(fs::create_directory(checkpoint_path));
     auto index = graphDB->meta_info().GetVertexVectorIndex(index_name);
     ASSERT_TRUE(index != nullptr);
-    EXPECT_THROW_CODE(index->ApplyWAL(), IOException);
+    EXPECT_THROW_CODE(index->ApplyWAL(), IOError);
   }
 
   fs::remove_all(checkpoint_path);

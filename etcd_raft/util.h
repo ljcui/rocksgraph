@@ -13,19 +13,9 @@
 #include <string>
 #include <utility>
 
+#include "common/exception.h"
 #include "raftpb/raft.pb.h"
 namespace eraft {
-class PanicException : public std::exception {
- public:
-  explicit PanicException(std::string msg) : msg_(std::move(msg)) {}
-  [[nodiscard]] const char *what() const noexcept override {
-    return msg_.c_str();
-  }
-
- private:
-  std::string msg_;
-};
-
 void log_debug(const char *file, int line, const char *pattern, ...);
 void log_info(const char *file, int line, const char *pattern, ...);
 void log_warn(const char *file, int line, const char *pattern, ...);
@@ -73,7 +63,7 @@ inline void logger(LOG_LEVEL log_level, const char *file, int line,
 
   std::cout << final_content << std::endl;
   if (log_level == LOG_LEVEL::FATAL) {
-    throw PanicException("panic");
+    RG_THROW(common::ErrorCode::InternalError, "panic");
   }
 }
 inline void log_debug(const char *file, int line, const char *pattern, ...) {
@@ -116,7 +106,7 @@ inline std::string format(const std::string &format, Args... args) {
   int size_s = std::snprintf(nullptr, 0, format.c_str(), args...) +
                1;  // Extra space for '\0'
   if (size_s <= 0) {
-    throw std::runtime_error("Error during formatting.");
+    RG_THROW(common::ErrorCode::InternalError, "Error during formatting.");
   }
   auto size = static_cast<size_t>(size_s);
   std::unique_ptr<char[]> buf(new char[size]);

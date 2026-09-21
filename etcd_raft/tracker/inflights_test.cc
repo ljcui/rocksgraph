@@ -207,8 +207,8 @@ TEST(tracker, TestInflightsFull) {
     bool panic = false;
     try {
       in->Add(100, 1024);
-    } catch (const std::exception& e) {
-      EXPECT_EQ(typeid(e), typeid(PanicException));
+    } catch (const common::Exception& e) {
+      EXPECT_EQ(e.code(), common::ErrorCode::InternalError);
       panic = true;
     }
     EXPECT_TRUE(panic);

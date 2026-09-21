@@ -56,10 +56,9 @@ bool TryParseVectorValue(const rg::Value& value, size_t dimensions,
 std::vector<float> ParseVectorValue(const rg::Value& value, size_t dimensions) {
   std::vector<float> vector;
   if (!TryParseVectorValue(value, dimensions, &vector)) {
-    RG_THROW_CODE(
-        InvalidParameter,
-        "vector field value should be a numeric list with dimension {}",
-        dimensions);
+    RG_THROW(common::ErrorCode::InvalidParameter,
+             "vector field value should be a numeric list with dimension {}",
+             dimensions);
   }
   return vector;
 }
@@ -84,9 +83,9 @@ std::string SerializeVector(const std::vector<float>& vector) {
 
 std::vector<float> DeserializeVector(rocksdb::Slice value, size_t dimensions) {
   if (value.size() != dimensions * sizeof(float)) {
-    RG_THROW_CODE(StorageEngineError,
-                  "vector field value has invalid size, expect {}, actual {}",
-                  dimensions * sizeof(float), value.size());
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "vector field value has invalid size, expect {}, actual {}",
+             dimensions * sizeof(float), value.size());
   }
   std::vector<float> vector;
   vector.reserve(dimensions);

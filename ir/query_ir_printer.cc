@@ -47,7 +47,8 @@ std::string DirectionToString(Direction direction) {
     case Direction::kBoth:
       return "both";
   }
-  RG_THROW(common::InternalError, "unknown pattern relationship direction");
+  RG_THROW(common::ErrorCode::InternalError,
+           "unknown pattern relationship direction");
 }
 
 std::string OrderDirectionToString(OrderDirection direction) {
@@ -57,7 +58,7 @@ std::string OrderDirectionToString(OrderDirection direction) {
     case OrderDirection::kDescending:
       return "descending";
   }
-  RG_THROW(common::InternalError, "unknown order direction");
+  RG_THROW(common::ErrorCode::InternalError, "unknown order direction");
 }
 
 std::string PredicateKindToString(PredicateKind kind) {
@@ -85,7 +86,7 @@ std::string PredicateKindToString(PredicateKind kind) {
     case PredicateKind::kNotExistsSubquery:
       return "not_exists_subquery";
   }
-  RG_THROW(common::InternalError, "unknown predicate kind");
+  RG_THROW(common::ErrorCode::InternalError, "unknown predicate kind");
 }
 
 std::string NestedIRExpressionKindToString(NestedIRExpressionKind kind) {
@@ -95,7 +96,8 @@ std::string NestedIRExpressionKindToString(NestedIRExpressionKind kind) {
     case NestedIRExpressionKind::kList:
       return "list";
   }
-  RG_THROW(common::InternalError, "unknown nested IR expression kind");
+  RG_THROW(common::ErrorCode::InternalError,
+           "unknown nested IR expression kind");
 }
 
 std::string MutatingPatternKindToString(MutatingPatternKind kind) {
@@ -111,7 +113,7 @@ std::string MutatingPatternKindToString(MutatingPatternKind kind) {
     case MutatingPatternKind::kRemove:
       return "remove";
   }
-  RG_THROW(common::InternalError, "unknown mutating pattern kind");
+  RG_THROW(common::ErrorCode::InternalError, "unknown mutating pattern kind");
 }
 
 std::string ExpressionText(const ast::Expression *expression) {
@@ -161,7 +163,7 @@ class QueryIRPrinter {
 
   void Indent() { ++indent_; }
   void Dedent() {
-    RG_CHECK(indent_ > 0, common::InternalError,
+    RG_CHECK(indent_ > 0, common::ErrorCode::InternalError,
              "query IR printer indent underflow");
     --indent_;
   }
@@ -175,7 +177,7 @@ class QueryIRPrinter {
         PrintUnion(query.RequireUnion());
         return;
     }
-    RG_THROW(common::InternalError, "unknown query IR kind");
+    RG_THROW(common::ErrorCode::InternalError, "unknown query IR kind");
   }
 
   void PrintSingle(const SingleQueryIR &query) {
@@ -202,7 +204,7 @@ class QueryIRPrinter {
     PrintUnionMappings(query.mappings);
     Line("lhs:");
     Indent();
-    RG_CHECK(query.lhs != nullptr, common::InvalidArgumentError,
+    RG_CHECK(query.lhs != nullptr, common::ErrorCode::InvalidParameter,
              "UNION lhs query IR is null");
     PrintQueryIRNode(*query.lhs);
     Dedent();
@@ -426,7 +428,7 @@ class QueryIRPrinter {
         Dedent();
         return;
     }
-    RG_THROW(common::InternalError, "unknown query horizon kind");
+    RG_THROW(common::ErrorCode::InternalError, "unknown query horizon kind");
   }
 
   void PrintRegularProjection(const RegularQueryProjection &projection) {

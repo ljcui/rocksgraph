@@ -25,7 +25,7 @@ namespace {
 std::unique_ptr<ast::Statement> ParseOrFail(const std::string &query) {
   try {
     return ast::ParseCypher(query);
-  } catch (const common::RocksGraphException &e) {
+  } catch (const common::Exception &e) {
     ADD_FAILURE() << "query error for query: " << query
                   << " message: " << e.what();
   }
@@ -473,8 +473,8 @@ TEST(RewriterPipelineTest, DefaultPipelineAddsUniquenessPredicates) {
 TEST(RewriterPipelineTest, RejectsRepeatedRelationshipBeforeRewrite) {
   EXPECT_THROW(
       (void)ast::ParseCypherAndRewrite("MATCH (a)-[r]->(b)-[r]->(c) RETURN *"),
-      common::RocksGraphException);
+      common::Exception);
   EXPECT_THROW((void)ast::ParseCypherAndRewrite(
                    "MATCH (a)-[r*1..2]->(b)-[r*1..2]->(c) RETURN *"),
-               common::RocksGraphException);
+               common::Exception);
 }

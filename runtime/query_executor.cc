@@ -36,7 +36,7 @@ void ValidateQueryParameters(const ast::Statement &statement,
 
     void Visit(const ast::Parameter &parameter) override {
       if (!parameters_->contains(parameter.name)) {
-        RG_THROW(common::InvalidArgumentError,
+        RG_THROW(common::ErrorCode::InvalidParameter,
                  "missing query parameter: " + parameter.name);
       }
     }
@@ -53,7 +53,7 @@ class QueryResultCursorImpl final : public QueryResultCursor {
       const ir::LogicalPlan &logical_plan, graphdb::Transaction &transaction,
       const QueryParameters &parameters, QueryExecutionOptions options) {
     RG_CHECK(transaction.GetState() == graphdb::Transaction::State::kActive,
-             common::InvalidArgumentError,
+             common::ErrorCode::InvalidParameter,
              "query execution requires an active transaction");
     auto cursor =
         std::unique_ptr<QueryResultCursorImpl>(new QueryResultCursorImpl(
@@ -72,12 +72,12 @@ class QueryResultCursorImpl final : public QueryResultCursor {
   }
 
   [[nodiscard]] bool Next(std::vector<Value> *row) override {
-    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+    RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "result row is null");
     if (closed_) {
       return false;
     }
-    RG_CHECK(IsActive(), common::InvalidArgumentError,
+    RG_CHECK(IsActive(), common::ErrorCode::InvalidParameter,
              "transaction is no longer active");
     try {
       if (physical_cursor_->Next(row)) {
@@ -166,7 +166,7 @@ QueryResult QueryExecutor::Execute(const ir::LogicalPlan &plan,
 std::unique_ptr<QueryResultCursor> QueryExecutor::ExecuteCursor(
     const ir::LogicalPlan &plan, const QueryParameters &parameters,
     QueryExecutionOptions options) const {
-  RG_CHECK(transaction_ != nullptr, common::InternalError,
+  RG_CHECK(transaction_ != nullptr, common::ErrorCode::InternalError,
            "transaction is null");
   return QueryResultCursorImpl::Create(plan, *transaction_, parameters,
                                        std::move(options));
@@ -182,7 +182,7 @@ std::unique_ptr<QueryResultCursor> ExecuteQueryCursor(
     graphdb::Transaction &transaction, std::string_view cypher,
     QueryOptions options) {
   RG_CHECK(transaction.GetState() == graphdb::Transaction::State::kActive,
-           common::InvalidArgumentError,
+           common::ErrorCode::InvalidParameter,
            "query execution requires an active transaction");
   GraphDBPlannerCatalog graphdb_catalog(*transaction.db());
   if (options.planner_catalog == nullptr) {

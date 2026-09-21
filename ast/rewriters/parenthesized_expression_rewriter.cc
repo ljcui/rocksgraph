@@ -12,7 +12,7 @@ void ParenthesizedExpressionRewriter::RewriteExpression(
   ASTRewriter::RewriteExpression(expr);
   while (expr && expr->Is(ASTNodeType::kParenthesizedExpression)) {
     auto *paren = CastAst<ParenthesizedExpression>(expr.get());
-    RG_CHECK(paren->expr != nullptr, common::InvalidArgumentError,
+    RG_CHECK(paren->expr != nullptr, common::ErrorCode::InvalidParameter,
              "parenthesized expression is null");
     expr = std::move(paren->expr);
   }

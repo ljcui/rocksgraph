@@ -80,7 +80,8 @@ struct FTUpdateBatch {
 void ThrowIfIteratorError(rocksdb::Iterator* iter, std::string_view action) {
   auto status = iter->status();
   if (!status.ok()) {
-    RG_THROW_CODE(StorageEngineError, "{}: {}", action, status.ToString());
+    RG_THROW(common::ErrorCode::StorageEngineError, "{}: {}", action,
+             status.ToString());
   }
 }
 
@@ -213,9 +214,9 @@ void AppendPropertyIndexValue(std::string& encoded, const rg::Value& value) {
     case rg::ValueType::kRelationship:
     case rg::ValueType::kPath:
     default: {
-      RG_THROW_CODE(ValueException,
-                    "Unsupported data type for property index, type: {}",
-                    static_cast<int>(value.Type()));
+      RG_THROW(common::ErrorCode::ValueError,
+               "Unsupported data type for property index, type: {}",
+               static_cast<int>(value.Type()));
     }
   }
 }
@@ -230,7 +231,8 @@ std::string EncodePropertyIndexValues(const std::vector<rg::Value>& values) {
 
 rg::Value DeserializeStoredPropertyValue(const std::string& value) {
   if (value.empty()) {
-    RG_THROW_CODE(InvalidParameter, "Indexed property value is invalid");
+    RG_THROW(common::ErrorCode::InvalidParameter,
+             "Indexed property value is invalid");
   }
   return DeserializeValue(value);
 }
@@ -254,10 +256,10 @@ uint64_t LoadVisibleMaxWalId(rocksdb::TransactionDB* db, GraphCF* graph_cf,
   }
   key.remove_prefix(sizeof(index_id));
   if (key.size() != sizeof(uint64_t)) {
-    RG_THROW_CODE(StorageEngineError,
-                  "index wal key has invalid size while loading max wal id, "
-                  "expect {}, actual {}",
-                  sizeof(uint64_t), key.size());
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "index wal key has invalid size while loading max wal id, "
+             "expect {}, actual {}",
+             sizeof(uint64_t), key.size());
   }
   return big_to_native(ReadValue<uint64_t>(key.data()));
 }
@@ -287,15 +289,15 @@ void VertexPropertyIndex::UpdateIndexDirect(
       auto s = txn->dbtxn()->GetForUpdate(ro, cf_, new_key, &tmp);
       if (s.ok()) {
         if (tmp.size() != sizeof(int64_t)) {
-          RG_THROW_CODE(StorageEngineError,
-                        "vertex unique index stores invalid vid size");
+          RG_THROW(common::ErrorCode::StorageEngineError,
+                   "vertex unique index stores invalid vid size");
         }
         if (ReadBigEndianId<int64_t>(tmp.data()) != vid) {
-          RG_THROW_CODE(IndexValueAlreadyExists);
+          RG_THROW(common::ErrorCode::IndexValueAlreadyExists);
         }
         keep_existing_entry = true;
       } else if (!s.IsNotFound()) {
-        RG_THROW_CODE(StorageEngineError, s.ToString());
+        RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
       }
     }
     if (old_values) {
@@ -304,15 +306,18 @@ void VertexPropertyIndex::UpdateIndexDirect(
     if (old_values && (!new_values || old_key != new_key)) {
       auto s = txn->dbtxn()->GetForUpdate(ro, cf_, old_key,
                                           static_cast<std::string*>(nullptr));
-      if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+      if (!s.ok())
+        RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
       s = txn->dbtxn()->GetWriteBatch()->SingleDelete(cf_, old_key);
-      if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+      if (!s.ok())
+        RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
       keep_existing_entry = false;
     }
     if (new_values && !keep_existing_entry) {
       auto s = txn->dbtxn()->GetWriteBatch()->Put(cf_, new_key,
                                                   EncodeBigEndianId(vid));
-      if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+      if (!s.ok())
+        RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
     }
   } else {
     if (new_values) {
@@ -323,11 +328,13 @@ void VertexPropertyIndex::UpdateIndexDirect(
     }
     if (old_values && (!new_values || old_key != new_key)) {
       auto s = txn->dbtxn()->GetWriteBatch()->Delete(cf_, old_key);
-      if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+      if (!s.ok())
+        RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
     }
     if (new_values && (!old_values || old_key != new_key)) {
       auto s = txn->dbtxn()->GetWriteBatch()->Put(cf_, new_key, {});
-      if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+      if (!s.ok())
+        RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
     }
   }
 }
@@ -390,16 +397,16 @@ void VertexPropertyIndex::ApplyBuildUpdate(
     if (update.type() == meta::UpdateType::Add) {
       if (s.ok()) {
         if (current_vid.size() != sizeof(int64_t)) {
-          RG_THROW_CODE(StorageEngineError,
-                        "vertex unique index stores invalid vid size");
+          RG_THROW(common::ErrorCode::StorageEngineError,
+                   "vertex unique index stores invalid vid size");
         }
         if (ReadBigEndianId<int64_t>(current_vid.data()) != update.vid()) {
-          RG_THROW_CODE(IndexValueAlreadyExists);
+          RG_THROW(common::ErrorCode::IndexValueAlreadyExists);
         }
         return;
       }
       if (!s.IsNotFound()) {
-        RG_THROW_CODE(StorageEngineError, s.ToString());
+        RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
       }
       s = db_->Put(wo, cf_, index_key, EncodeBigEndianId(update.vid()));
     } else if (update.type() == meta::UpdateType::Delete) {
@@ -407,20 +414,20 @@ void VertexPropertyIndex::ApplyBuildUpdate(
         return;
       }
       if (!s.ok()) {
-        RG_THROW_CODE(StorageEngineError, s.ToString());
+        RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
       }
       if (current_vid.size() != sizeof(int64_t)) {
-        RG_THROW_CODE(StorageEngineError,
-                      "vertex unique index stores invalid vid size");
+        RG_THROW(common::ErrorCode::StorageEngineError,
+                 "vertex unique index stores invalid vid size");
       }
       if (ReadBigEndianId<int64_t>(current_vid.data()) != update.vid()) {
         return;
       }
       s = db_->Delete(wo, cf_, index_key);
     } else {
-      RG_THROW_CODE(StorageEngineError,
-                    "property index wal has invalid update type: {}",
-                    static_cast<int>(update.type()));
+      RG_THROW(common::ErrorCode::StorageEngineError,
+               "property index wal has invalid update type: {}",
+               static_cast<int>(update.type()));
     }
   } else {
     auto entry_key = EntryKey(values, update.vid());
@@ -429,13 +436,13 @@ void VertexPropertyIndex::ApplyBuildUpdate(
     } else if (update.type() == meta::UpdateType::Delete) {
       s = db_->Delete(wo, cf_, entry_key);
     } else {
-      RG_THROW_CODE(StorageEngineError,
-                    "property index wal has invalid update type: {}",
-                    static_cast<int>(update.type()));
+      RG_THROW(common::ErrorCode::StorageEngineError,
+               "property index wal has invalid update type: {}",
+               static_cast<int>(update.type()));
     }
   }
   if (!s.ok()) {
-    RG_THROW_CODE(StorageEngineError, s.ToString());
+    RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
   }
 }
 
@@ -451,9 +458,9 @@ void VertexPropertyIndex::ApplyCommittedBuildUpdate(
   } else if (update.type() == meta::UpdateType::Delete) {
     UpdateIndexDirect(txn, update.vid(), std::nullopt, values);
   } else {
-    RG_THROW_CODE(StorageEngineError,
-                  "property index wal has invalid update type: {}",
-                  static_cast<int>(update.type()));
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "property index wal has invalid update type: {}",
+             static_cast<int>(update.type()));
   }
 }
 
@@ -483,7 +490,7 @@ void VertexPropertyIndex::Load(const rocksdb::Snapshot* snapshot,
         break;
       }
       if (!s.ok()) {
-        RG_THROW_CODE(StorageEngineError, s.ToString());
+        RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
       }
       values.push_back(DeserializeStoredPropertyValue(property_val));
     }
@@ -521,17 +528,16 @@ void VertexPropertyIndex::ApplyWAL() {
 
     key.remove_prefix(sizeof(index_id_));
     if (key.size() != sizeof(apply_id_)) {
-      RG_THROW_CODE(
-          StorageEngineError,
-          "property index wal key has invalid size, expect {}, actual {}",
-          sizeof(apply_id_), key.size());
+      RG_THROW(common::ErrorCode::StorageEngineError,
+               "property index wal key has invalid size, expect {}, actual {}",
+               sizeof(apply_id_), key.size());
     }
     consumed_wal_id = ReadValue<uint64_t>(key.data());
     meta::PropertyIndexUpdate update;
     auto val = iter->value();
     if (!update.ParseFromArray(val.data(), val.size())) {
-      RG_THROW_CODE(StorageEngineError,
-                    "failed to parse property index wal payload");
+      RG_THROW(common::ErrorCode::StorageEngineError,
+               "failed to parse property index wal payload");
     }
     ApplyBuildUpdate(update);
   }
@@ -544,7 +550,7 @@ void VertexPropertyIndex::ApplyWAL() {
     two.skip_duplicate_key_check = true;
     auto s = db_->Write(wo, two, &delete_batch);
     if (!s.ok()) {
-      RG_THROW_CODE(StorageEngineError, s.ToString());
+      RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
     }
     apply_id_ = consumed_wal_id;
     meta_.set_applied_wal_id(big_to_native(consumed_wal_id));
@@ -600,7 +606,7 @@ VertexPropertyIndex::LoadIndexedPropertyValues(
       return std::nullopt;
     }
     if (!s.ok()) {
-      RG_THROW_CODE(StorageEngineError, s.ToString());
+      RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
     }
     values.push_back(DeserializeStoredPropertyValue(property_val));
   }
@@ -663,15 +669,15 @@ void EdgePropertyIndex::UpdateIndexDirect(
       auto s = txn->dbtxn()->GetForUpdate(ro, cf_, new_key, &current_eid);
       if (s.ok()) {
         if (current_eid.size() != sizeof(int64_t)) {
-          RG_THROW_CODE(StorageEngineError,
-                        "edge unique index stores invalid eid size");
+          RG_THROW(common::ErrorCode::StorageEngineError,
+                   "edge unique index stores invalid eid size");
         }
         if (ReadBigEndianId<int64_t>(current_eid.data()) != eid) {
-          RG_THROW_CODE(IndexValueAlreadyExists);
+          RG_THROW(common::ErrorCode::IndexValueAlreadyExists);
         }
         keep_existing_entry = true;
       } else if (!s.IsNotFound()) {
-        RG_THROW_CODE(StorageEngineError, s.ToString());
+        RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
       }
     }
     if (old_values) {
@@ -681,18 +687,20 @@ void EdgePropertyIndex::UpdateIndexDirect(
       auto s = txn->dbtxn()->GetForUpdate(ro, cf_, old_key,
                                           static_cast<std::string*>(nullptr));
       if (!s.ok() && !s.IsNotFound()) {
-        RG_THROW_CODE(StorageEngineError, s.ToString());
+        RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
       }
       if (s.ok()) {
         s = txn->dbtxn()->GetWriteBatch()->SingleDelete(cf_, old_key);
-        if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+        if (!s.ok())
+          RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
       }
       keep_existing_entry = false;
     }
     if (new_values && !keep_existing_entry) {
       auto s = txn->dbtxn()->GetWriteBatch()->Put(cf_, new_key,
                                                   EncodeBigEndianId(eid));
-      if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+      if (!s.ok())
+        RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
     }
   } else {
     if (new_values) {
@@ -703,11 +711,13 @@ void EdgePropertyIndex::UpdateIndexDirect(
     }
     if (old_values && (!new_values || old_key != new_key)) {
       auto s = txn->dbtxn()->GetWriteBatch()->Delete(cf_, old_key);
-      if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+      if (!s.ok())
+        RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
     }
     if (new_values && (!old_values || old_key != new_key)) {
       auto s = txn->dbtxn()->GetWriteBatch()->Put(cf_, new_key, {});
-      if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+      if (!s.ok())
+        RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
     }
   }
 }
@@ -770,29 +780,31 @@ void EdgePropertyIndex::ApplyBuildUpdate(
     if (update.type() == meta::UpdateType::Add) {
       if (s.ok()) {
         if (current_eid.size() != sizeof(int64_t)) {
-          RG_THROW_CODE(StorageEngineError,
-                        "edge unique index stores invalid eid size");
+          RG_THROW(common::ErrorCode::StorageEngineError,
+                   "edge unique index stores invalid eid size");
         }
         if (ReadBigEndianId<int64_t>(current_eid.data()) != update.vid()) {
-          RG_THROW_CODE(IndexValueAlreadyExists);
+          RG_THROW(common::ErrorCode::IndexValueAlreadyExists);
         }
         return;
       }
-      if (!s.IsNotFound()) RG_THROW_CODE(StorageEngineError, s.ToString());
+      if (!s.IsNotFound())
+        RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
       s = db_->Put(wo, cf_, index_key, EncodeBigEndianId(update.vid()));
     } else if (update.type() == meta::UpdateType::Delete) {
       if (s.IsNotFound()) return;
-      if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+      if (!s.ok())
+        RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
       if (current_eid.size() != sizeof(int64_t)) {
-        RG_THROW_CODE(StorageEngineError,
-                      "edge unique index stores invalid eid size");
+        RG_THROW(common::ErrorCode::StorageEngineError,
+                 "edge unique index stores invalid eid size");
       }
       if (ReadBigEndianId<int64_t>(current_eid.data()) != update.vid()) return;
       s = db_->Delete(wo, cf_, index_key);
     } else {
-      RG_THROW_CODE(StorageEngineError,
-                    "edge property index wal has invalid update type: {}",
-                    static_cast<int>(update.type()));
+      RG_THROW(common::ErrorCode::StorageEngineError,
+               "edge property index wal has invalid update type: {}",
+               static_cast<int>(update.type()));
     }
   } else {
     auto entry_key = EntryKey(values, update.vid());
@@ -801,12 +813,12 @@ void EdgePropertyIndex::ApplyBuildUpdate(
     } else if (update.type() == meta::UpdateType::Delete) {
       s = db_->Delete(wo, cf_, entry_key);
     } else {
-      RG_THROW_CODE(StorageEngineError,
-                    "edge property index wal has invalid update type: {}",
-                    static_cast<int>(update.type()));
+      RG_THROW(common::ErrorCode::StorageEngineError,
+               "edge property index wal has invalid update type: {}",
+               static_cast<int>(update.type()));
     }
   }
-  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
 }
 
 void EdgePropertyIndex::ApplyCommittedBuildUpdate(
@@ -821,9 +833,9 @@ void EdgePropertyIndex::ApplyCommittedBuildUpdate(
   } else if (update.type() == meta::UpdateType::Delete) {
     UpdateIndexDirect(txn, update.vid(), std::nullopt, values);
   } else {
-    RG_THROW_CODE(StorageEngineError,
-                  "edge property index wal has invalid update type: {}",
-                  static_cast<int>(update.type()));
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "edge property index wal has invalid update type: {}",
+             static_cast<int>(update.type()));
   }
 }
 
@@ -838,7 +850,8 @@ void EdgePropertyIndex::Load(const rocksdb::Snapshot* snapshot,
        iter->Next()) {
     auto key = iter->key();
     if (key.size() != sizeof(tid_) + sizeof(int64_t)) {
-      RG_THROW_CODE(StorageEngineError, "edge type/eid key has invalid size");
+      RG_THROW(common::ErrorCode::StorageEngineError,
+               "edge type/eid key has invalid size");
     }
     key.remove_prefix(sizeof(tid_));
     int64_t eid = ReadBigEndianId<int64_t>(key.data());
@@ -855,7 +868,8 @@ void EdgePropertyIndex::Load(const rocksdb::Snapshot* snapshot,
         complete = false;
         break;
       }
-      if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+      if (!s.ok())
+        RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
       values.push_back(DeserializeStoredPropertyValue(property_val));
     }
     if (!complete) continue;
@@ -886,8 +900,8 @@ void EdgePropertyIndex::ApplyWAL() {
     delete_batch.Delete(graph_cf_->wal, key.ToString());
     key.remove_prefix(sizeof(index_id_));
     if (key.size() != sizeof(apply_id_)) {
-      RG_THROW_CODE(
-          StorageEngineError,
+      RG_THROW(
+          common::ErrorCode::StorageEngineError,
           "edge property index wal key has invalid size, expect {}, actual {}",
           sizeof(apply_id_), key.size());
     }
@@ -895,8 +909,8 @@ void EdgePropertyIndex::ApplyWAL() {
     meta::PropertyIndexUpdate update;
     auto val = iter->value();
     if (!update.ParseFromArray(val.data(), val.size())) {
-      RG_THROW_CODE(StorageEngineError,
-                    "failed to parse edge property index wal payload");
+      RG_THROW(common::ErrorCode::StorageEngineError,
+               "failed to parse edge property index wal payload");
     }
     ApplyBuildUpdate(update);
   }
@@ -907,7 +921,7 @@ void EdgePropertyIndex::ApplyWAL() {
     two.skip_concurrency_control = true;
     two.skip_duplicate_key_check = true;
     auto s = db_->Write(wo, two, &delete_batch);
-    if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+    if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
     apply_id_ = consumed_wal_id;
     meta_.set_applied_wal_id(big_to_native(consumed_wal_id));
   }
@@ -1128,11 +1142,10 @@ VertexFullTextIndex::VertexFullTextIndex(
     if (key.starts_with(index_prefix)) {
       key.remove_prefix(sizeof(index_id_));
       if (key.size() != sizeof(uint64_t)) {
-        RG_THROW_CODE(
-            StorageEngineError,
-            "fulltext index wal key has invalid size while loading next "
-            "wal id, expect {}, actual {}",
-            sizeof(uint64_t), key.size());
+        RG_THROW(common::ErrorCode::StorageEngineError,
+                 "fulltext index wal key has invalid size while loading next "
+                 "wal id, expect {}, actual {}",
+                 sizeof(uint64_t), key.size());
       }
       uint64_t wal_id = ReadValue<uint64_t>(key.data());
       next_wal_id_ = big_to_native(wal_id) + 1;
@@ -1210,7 +1223,7 @@ void VertexFullTextIndex::Load(const rocksdb::Snapshot* snapshot,
         if (s.IsNotFound()) {
           continue;
         } else if (!s.ok()) {
-          RG_THROW_CODE(StorageEngineError, s.ToString());
+          RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
         }
         rg::Value pv = DeserializeValue(property_val);
         if (!pv.IsString()) {
@@ -1309,18 +1322,17 @@ void VertexFullTextIndex::ApplyWAL() {
 
     key.remove_prefix(sizeof(index_id_));
     if (key.size() != sizeof(apply_id_)) {
-      RG_THROW_CODE(
-          StorageEngineError,
-          "fulltext index wal key has invalid size, expect {}, actual {}",
-          sizeof(apply_id_), key.size());
+      RG_THROW(common::ErrorCode::StorageEngineError,
+               "fulltext index wal key has invalid size, expect {}, actual {}",
+               sizeof(apply_id_), key.size());
     }
     consumed_wal_id = ReadValue<uint64_t>(key.data());
     meta::FullTextIndexUpdate update;
     auto val = iter->value();
     auto ret = update.ParseFromArray(val.data(), val.size());
     if (!ret) {
-      RG_THROW_CODE(StorageEngineError,
-                    "failed to parse fulltext index wal payload");
+      RG_THROW(common::ErrorCode::StorageEngineError,
+               "failed to parse fulltext index wal payload");
     }
     if (update.type() == meta::UpdateType::Add) {
       batch.AddDocument(update.vid(), update.mutable_fields(),
@@ -1328,9 +1340,9 @@ void VertexFullTextIndex::ApplyWAL() {
     } else if (update.type() == meta::UpdateType::Delete) {
       batch.AddDelete(update.vid());
     } else {
-      RG_THROW_CODE(StorageEngineError,
-                    "fulltext index wal has invalid update type: {}",
-                    static_cast<int>(update.type()));
+      RG_THROW(common::ErrorCode::StorageEngineError,
+               "fulltext index wal has invalid update type: {}",
+               static_cast<int>(update.type()));
     }
     if (++count == 1000) {
       ApplyUpdatesBatch(batch.ids, batch.ops, batch.field_counts, batch.fields,
@@ -1343,7 +1355,8 @@ void VertexFullTextIndex::ApplyWAL() {
       two.skip_concurrency_control = true;
       two.skip_duplicate_key_check = true;
       auto s = db_->Write(wo, two, &write_batch);
-      if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+      if (!s.ok())
+        RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
       write_batch.Clear();
       batch.Clear();
     }
@@ -1361,7 +1374,7 @@ void VertexFullTextIndex::ApplyWAL() {
     two.skip_concurrency_control = true;
     two.skip_duplicate_key_check = true;
     auto s = db_->Write(wo, two, &write_batch);
-    if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+    if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
     write_batch.Clear();
   }
   if (consumed_wal_id != 0) {
@@ -1393,8 +1406,8 @@ VertexVectorIndex::VertexVectorIndex(rocksdb::TransactionDB* db,
       timer_(service) {
   if (meta_.distance_type() != meta::VectorDistanceType::L2 &&
       meta_.distance_type() != meta::VectorDistanceType::IP) {
-    RG_THROW_CODE(VectorIndexException, "invalid metric_type: {}",
-                  meta::VectorDistanceType_Name(meta_.distance_type()));
+    RG_THROW(common::ErrorCode::VectorIndexError, "invalid metric_type: {}",
+             meta::VectorDistanceType_Name(meta_.distance_type()));
   }
   vector_store_ = std::make_unique<VectorStore>(
       meta_.path(), meta_.dimensions(), meta_.distance_type(), meta_.hnsw_m(),
@@ -1425,8 +1438,8 @@ VertexVectorIndex::VertexVectorIndex(rocksdb::TransactionDB* db,
       if (key.starts_with(index_prefix)) {
         key.remove_prefix(sizeof(index_id_));
         if (key.size() != sizeof(uint64_t)) {
-          RG_THROW_CODE(
-              VectorIndexException,
+          RG_THROW(
+              common::ErrorCode::VectorIndexError,
               "vector index wal key has invalid size while loading next wal "
               "id, expect {}, actual {}",
               sizeof(uint64_t), key.size());
@@ -1649,8 +1662,8 @@ void VertexVectorIndex::ApplyWAL() {
     if (!s.ok()) {
       apply_id_ = consumed_wal_id;
       meta_.set_applied_wal_id(applied_wal_id);
-      RG_THROW_CODE(StorageEngineError,
-                    "VertexVectorIndex db DeleteRange error: {}", s.ToString());
+      RG_THROW(common::ErrorCode::StorageEngineError,
+               "VertexVectorIndex db DeleteRange error: {}", s.ToString());
     }
   };
   for (iter->Seek(start_key); iter->Valid() && iter->key().starts_with(prefix);
@@ -1659,18 +1672,17 @@ void VertexVectorIndex::ApplyWAL() {
     rocksdb::Slice tmp = key;
     tmp.remove_prefix(sizeof(index_id_));
     if (tmp.size() != sizeof(apply_id_)) {
-      RG_THROW_CODE(
-          VectorIndexException,
-          "vector index wal key has invalid size, expect {}, actual {}",
-          sizeof(apply_id_), tmp.size());
+      RG_THROW(common::ErrorCode::VectorIndexError,
+               "vector index wal key has invalid size, expect {}, actual {}",
+               sizeof(apply_id_), tmp.size());
     }
     consumed_wal_id = ReadValue<uint64_t>(tmp.data());
     meta::VectorIndexUpdate update;
     auto val = iter->value();
     auto ret = update.ParseFromArray(val.data(), val.size());
     if (!ret) {
-      RG_THROW_CODE(VectorIndexException,
-                    "failed to parse vector index wal payload");
+      RG_THROW(common::ErrorCode::VectorIndexError,
+               "failed to parse vector index wal payload");
     }
     if (update.type() == meta::UpdateType::Delete) {
       std::unique_lock write(mutex_);
@@ -1685,9 +1697,9 @@ void VertexVectorIndex::ApplyWAL() {
         vector_store_->Add(update.vid(), embedding.get());
       }
     } else {
-      RG_THROW_CODE(VectorIndexException,
-                    "vector index wal has invalid update type: {}",
-                    static_cast<int>(update.type()));
+      RG_THROW(common::ErrorCode::VectorIndexError,
+               "vector index wal has invalid update type: {}",
+               static_cast<int>(update.type()));
     }
     maybe_checkpoint(key);
   }
@@ -1718,8 +1730,8 @@ void VertexVectorIndex::Load(const rocksdb::Snapshot* snapshot,
     auto key = iter->key();
     key.remove_prefix(prefix.size());
     if (key.size() != sizeof(int64_t)) {
-      RG_THROW_CODE(StorageEngineError,
-                    "vertex vector property key has invalid vid size");
+      RG_THROW(common::ErrorCode::StorageEngineError,
+               "vertex vector property key has invalid vid size");
     }
     int64_t vid = ReadBigEndianId<int64_t>(key.data());
     auto embedding = DeserializeVector(iter->value(), meta_.dimensions());

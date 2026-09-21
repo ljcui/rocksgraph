@@ -52,8 +52,8 @@ class Decoder {
   std::string ReadString() {
     const std::uint64_t size = Read<std::uint64_t>();
     if (size > input_.size()) {
-      RG_THROW_CODE(StorageEngineError,
-                    "stored value contains a truncated string");
+      RG_THROW(common::ErrorCode::StorageEngineError,
+               "stored value contains a truncated string");
     }
     std::string value(input_.substr(0, static_cast<std::size_t>(size)));
     input_.remove_prefix(static_cast<std::size_t>(size));
@@ -66,7 +66,8 @@ class Decoder {
  private:
   void Require(std::size_t size) const {
     if (input_.size() < size) {
-      RG_THROW_CODE(StorageEngineError, "stored value is truncated");
+      RG_THROW(common::ErrorCode::StorageEngineError,
+               "stored value is truncated");
     }
   }
 
@@ -167,11 +168,11 @@ void EncodeValue(std::string* output, const rg::Value& value) {
     case rg::ValueType::kNode:
     case rg::ValueType::kRelationship:
     case rg::ValueType::kPath:
-      RG_THROW_CODE(ValueException,
-                    "value type {} cannot be stored as a graph property",
-                    static_cast<int>(value.Type()));
+      RG_THROW(common::ErrorCode::ValueError,
+               "value type {} cannot be stored as a graph property",
+               static_cast<int>(value.Type()));
   }
-  RG_THROW_CODE(ValueException, "unknown graph property value type");
+  RG_THROW(common::ErrorCode::ValueError, "unknown graph property value type");
 }
 
 rg::LocalTime DecodeLocalTime(Decoder* decoder) {
@@ -198,7 +199,8 @@ rg::Value DecodeValue(Decoder* decoder) {
     case StoredValueType::kList: {
       const std::uint64_t size = decoder->Read<std::uint64_t>();
       if (size > static_cast<std::uint64_t>(decoder->Remaining())) {
-        RG_THROW_CODE(StorageEngineError, "stored list is too large");
+        RG_THROW(common::ErrorCode::StorageEngineError,
+                 "stored list is too large");
       }
       rg::Value::List list;
       list.reserve(static_cast<std::size_t>(size));
@@ -216,8 +218,8 @@ rg::Value DecodeValue(Decoder* decoder) {
     case StoredValueType::kTime: {
       rg::Value local_time = DecodeValue(decoder);
       if (!local_time.IsLocalTime()) {
-        RG_THROW_CODE(StorageEngineError,
-                      "stored time has an invalid local time");
+        RG_THROW(common::ErrorCode::StorageEngineError,
+                 "stored time has an invalid local time");
       }
       return rg::Value(rg::Time{local_time.AsLocalTime(),
                                 decoder->Read<std::int32_t>(),
@@ -227,16 +229,16 @@ rg::Value DecodeValue(Decoder* decoder) {
       rg::Value date = DecodeValue(decoder);
       rg::Value time = DecodeValue(decoder);
       if (!date.IsDate() || !time.IsLocalTime()) {
-        RG_THROW_CODE(StorageEngineError,
-                      "stored local datetime has invalid components");
+        RG_THROW(common::ErrorCode::StorageEngineError,
+                 "stored local datetime has invalid components");
       }
       return rg::Value(rg::LocalDateTime{date.AsDate(), time.AsLocalTime()});
     }
     case StoredValueType::kDateTime: {
       rg::Value local = DecodeValue(decoder);
       if (!local.IsLocalDateTime()) {
-        RG_THROW_CODE(StorageEngineError,
-                      "stored datetime has an invalid local datetime");
+        RG_THROW(common::ErrorCode::StorageEngineError,
+                 "stored datetime has an invalid local datetime");
       }
       return rg::Value(rg::DateTime{local.AsLocalDateTime(),
                                     decoder->Read<std::int32_t>(),
@@ -252,7 +254,8 @@ rg::Value DecodeValue(Decoder* decoder) {
       const std::uint64_t size = decoder->Read<std::uint64_t>();
       if (size >
           static_cast<std::uint64_t>(decoder->Remaining() / sizeof(double))) {
-        RG_THROW_CODE(StorageEngineError, "stored point is too large");
+        RG_THROW(common::ErrorCode::StorageEngineError,
+                 "stored point is too large");
       }
       point.coordinates.reserve(static_cast<std::size_t>(size));
       for (std::uint64_t i = 0; i < size; ++i) {
@@ -261,7 +264,8 @@ rg::Value DecodeValue(Decoder* decoder) {
       return rg::Value(std::move(point));
     }
   }
-  RG_THROW_CODE(StorageEngineError, "stored value has an unknown type tag");
+  RG_THROW(common::ErrorCode::StorageEngineError,
+           "stored value has an unknown type tag");
 }
 
 }  // namespace
@@ -274,12 +278,13 @@ std::string SerializeValue(const rg::Value& value) {
 
 rg::Value DeserializeValue(std::string_view data) {
   if (data.empty()) {
-    RG_THROW_CODE(StorageEngineError, "stored value is empty");
+    RG_THROW(common::ErrorCode::StorageEngineError, "stored value is empty");
   }
   Decoder decoder(data);
   rg::Value value = DecodeValue(&decoder);
   if (!decoder.Empty()) {
-    RG_THROW_CODE(StorageEngineError, "stored value contains trailing bytes");
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "stored value contains trailing bytes");
   }
   return value;
 }

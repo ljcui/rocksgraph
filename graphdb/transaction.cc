@@ -35,8 +35,8 @@ std::shared_ptr<VertexPropertyIndex> ResolveVertexPropertyIndexOrThrow(
             txn->db()->meta_info().GetVertexPropertyIndex(index_name)) {
       ThrowIfIndexUnavailable(building_index, index_name, "Vertex");
     }
-    RG_THROW_CODE(VertexUniqueIndexNotFound, "No such vertex index [{}]",
-                  index_name);
+    RG_THROW(common::ErrorCode::VertexUniqueIndexNotFound,
+             "No such vertex index [{}]", index_name);
   }
   return index;
 }
@@ -49,8 +49,8 @@ std::shared_ptr<EdgePropertyIndex> ResolveEdgePropertyIndexOrThrow(
             txn->db()->meta_info().GetEdgePropertyIndex(index_name)) {
       ThrowIfIndexUnavailable(building_index, index_name, "Edge");
     }
-    RG_THROW_CODE(EdgePropertyIndexNotFound, "No such edge property index [{}]",
-                  index_name);
+    RG_THROW(common::ErrorCode::EdgePropertyIndexNotFound,
+             "No such edge property index [{}]", index_name);
   }
   return index;
 }
@@ -66,15 +66,15 @@ std::vector<rg::Value> BuildPropertyIndexQueryValues(
   }
 
   if (!query.IsList()) {
-    RG_THROW_CODE(InvalidIndexQuery,
-                  "{} type should be List for composite index {}", arg_name,
-                  index->meta().name());
+    RG_THROW(common::ErrorCode::InvalidIndexQuery,
+             "{} type should be List for composite index {}", arg_name,
+             index->meta().name());
   }
   const auto& items = query.AsList();
   if (items.size() != index->PropertyCount()) {
-    RG_THROW_CODE(InvalidIndexQuery,
-                  "{} element count should be {}, but {} are given", arg_name,
-                  index->PropertyCount(), items.size());
+    RG_THROW(common::ErrorCode::InvalidIndexQuery,
+             "{} element count should be {}, but {} are given", arg_name,
+             index->PropertyCount(), items.size());
   }
   return {items.begin(), items.end()};
 }
@@ -89,8 +89,8 @@ std::optional<std::string> BuildPropertyIndexRangeKey(
   auto values = BuildPropertyIndexQueryValues(index, *bound, arg_name);
   for (const auto& value : values) {
     if (!IsRangeComparableValue(value)) {
-      RG_THROW_CODE(InvalidIndexQuery,
-                    "{} does not support LIST or MAP component", arg_name);
+      RG_THROW(common::ErrorCode::InvalidIndexQuery,
+               "{} does not support LIST or MAP component", arg_name);
     }
   }
   return index->IndexKey(values);
@@ -132,7 +132,7 @@ Vertex Transaction::CreateVertex(
     AppendBigEndianId(buffer, vid);
     s = txn_->GetWriteBatch()->Put(db_->graph_cf().vertex_label_vid, buffer,
                                    {});
-    if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+    if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
   }
   buffer.clear();
   for (auto lid : lids) {
@@ -141,7 +141,7 @@ Vertex Transaction::CreateVertex(
   const std::string vertex_key = EncodeBigEndianId(vid);
   s = txn_->GetWriteBatch()->Put(db_->graph_cf().graph_topology, vertex_key,
                                  buffer);
-  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
   VertexSerializedProperties serialized_values;
   VertexVectorProperties vector_values;
   std::unordered_set<uint32_t> pids;
@@ -160,7 +160,8 @@ Vertex Transaction::CreateVertex(
       auto val = SerializeVector(vector_values.at(pid));
       s = txn_->GetWriteBatch()->Put(db_->graph_cf().vertex_vector_property,
                                      key, val);
-      if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+      if (!s.ok())
+        RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
     }
     if (!is_vector_property) {
       serialized_values.emplace(pid, SerializeValue(value));
@@ -172,7 +173,7 @@ Vertex Transaction::CreateVertex(
     AppendBigEndianId(buffer, pid);
     s = txn_->GetWriteBatch()->Put(db_->graph_cf().vertex_property, buffer,
                                    val);
-    if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+    if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
   }
   std::unordered_set<uint32_t> empty_lids;
   VertexSerializedProperties empty_properties;
@@ -193,10 +194,10 @@ Edge Transaction::CreateEdge(
     rocksdb::ReadOptions ro;
     s = txn_->GetForUpdate(ro, db_->graph_cf().graph_topology, start_key,
                            (std::string*)nullptr);
-    if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+    if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
     s = txn_->GetForUpdate(ro, db_->graph_cf().graph_topology, end_key,
                            (std::string*)nullptr);
-    if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+    if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
   }
 
   int64_t eid = db_->id_generator().GetNextEid();
@@ -209,7 +210,7 @@ Edge Transaction::CreateEdge(
   key.append(end_key);
   AppendBigEndianId(key, eid);
   s = txn_->GetWriteBatch()->Put(db_->graph_cf().graph_topology, key, {});
-  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
   // in key
   key.clear();
   key.append(end_key);
@@ -218,7 +219,7 @@ Edge Transaction::CreateEdge(
   key.append(start_key);
   AppendBigEndianId(key, eid);
   s = txn_->GetWriteBatch()->Put(db_->graph_cf().graph_topology, key, {});
-  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
   // type
   key.clear();
   AppendBigEndianId(key, tid);
@@ -226,7 +227,7 @@ Edge Transaction::CreateEdge(
   val.append(start_key);
   val.append(end_key);
   s = txn_->GetWriteBatch()->Put(db_->graph_cf().edge_type_eid, key, val);
-  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
   // properties
   EdgeSerializedProperties serialized_properties;
   for (const auto& [name, value] : values) {
@@ -237,7 +238,7 @@ Edge Transaction::CreateEdge(
     val = SerializeValue(value);
     serialized_properties.emplace(pid, val);
     s = txn_->GetWriteBatch()->Put(db_->graph_cf().edge_property, key, val);
-    if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+    if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
   }
   UpdateEdgeIndexes(this, eid, tid, {}, serialized_properties);
   return {this, eid, start.GetId(), end.GetId(), tid};
@@ -251,9 +252,10 @@ Vertex Transaction::GetVertexById(int64_t vid) {
   if (s.ok()) {
     return {this, vid};
   } else if (s.IsNotFound()) {
-    RG_THROW_CODE(VertexIdNotFound, "Vertex id {} not found", vid);
+    RG_THROW(common::ErrorCode::VertexIdNotFound, "Vertex id {} not found",
+             vid);
   } else {
-    RG_THROW_CODE(StorageEngineError, s.ToString());
+    RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
   }
 }
 
@@ -271,9 +273,10 @@ Edge Transaction::GetEdgeById(uint32_t etid, int64_t eid) {
     int64_t endId = ReadBigEndianId<int64_t>(p);
     return {this, eid, startId, endId, etid};
   } else if (s.IsNotFound()) {
-    RG_THROW_CODE(EdgeIdNotFound, "Edge [etid:{},eid:{}] not found", etid, eid);
+    RG_THROW(common::ErrorCode::EdgeIdNotFound,
+             "Edge [etid:{},eid:{}] not found", etid, eid);
   } else {
-    RG_THROW_CODE(StorageEngineError, s.ToString());
+    RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
   }
 }
 
@@ -449,7 +452,7 @@ void Transaction::AppendEdgePropertyIndexWAL(
 
 void Transaction::Commit() {
   if (state_ != State::kActive) {
-    RG_THROW_CODE(InvalidParameter, "transaction is not active");
+    RG_THROW(common::ErrorCode::InvalidParameter, "transaction is not active");
   }
   {
     std::unique_lock<std::mutex> property_commit_lock(
@@ -481,9 +484,9 @@ void Transaction::Commit() {
       auto* write_batch = txn_->GetWriteBatch();
       for (const auto& wal : pending_property_wals_) {
         if (wal.index->IsDeleted()) {
-          RG_THROW_CODE(VertexUniqueIndexNotFound,
-                        "Vertex index [{}] was deleted during transaction",
-                        wal.index->Name());
+          RG_THROW(common::ErrorCode::VertexUniqueIndexNotFound,
+                   "Vertex index [{}] was deleted during transaction",
+                   wal.index->Name());
         }
         if (wal.index->IsReady()) {
           wal.index->ApplyCommittedBuildUpdate(this, wal.update);
@@ -491,14 +494,14 @@ void Transaction::Commit() {
         }
         auto s = write_batch->Put(db_->graph_cf().wal, wal.index->NextWALKey(),
                                   wal.update.SerializeAsString());
-        if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+        if (!s.ok())
+          RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
       }
       for (const auto& wal : pending_edge_property_wals_) {
         if (wal.index->IsDeleted()) {
-          RG_THROW_CODE(
-              EdgePropertyIndexNotFound,
-              "Edge property index [{}] was deleted during transaction",
-              wal.index->Name());
+          RG_THROW(common::ErrorCode::EdgePropertyIndexNotFound,
+                   "Edge property index [{}] was deleted during transaction",
+                   wal.index->Name());
         }
         if (wal.index->IsReady()) {
           wal.index->ApplyCommittedBuildUpdate(this, wal.update);
@@ -506,39 +509,44 @@ void Transaction::Commit() {
         }
         auto s = write_batch->Put(db_->graph_cf().wal, wal.index->NextWALKey(),
                                   wal.update.SerializeAsString());
-        if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+        if (!s.ok())
+          RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
       }
       for (const auto& wal : pending_fulltext_wals_) {
         if (wal.index->IsDeleted()) {
-          RG_THROW_CODE(FullTextIndexNotFound,
-                        "Fulltext index [{}] was deleted during transaction",
-                        wal.index->Name());
+          RG_THROW(common::ErrorCode::FullTextIndexNotFound,
+                   "Fulltext index [{}] was deleted during transaction",
+                   wal.index->Name());
         }
         auto s = write_batch->Put(db_->graph_cf().wal, wal.index->NextWALKey(),
                                   wal.update.SerializeAsString());
-        if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+        if (!s.ok())
+          RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
       }
       for (const auto& wal : pending_vector_wals_) {
         if (wal.index->IsDeleted()) {
-          RG_THROW_CODE(VectorIndexNotFound,
-                        "Vector index [{}] was deleted during transaction",
-                        wal.index->meta().name());
+          RG_THROW(common::ErrorCode::VectorIndexNotFound,
+                   "Vector index [{}] was deleted during transaction",
+                   wal.index->meta().name());
         }
         auto s = write_batch->Put(db_->graph_cf().wal, wal.index->NextWALKey(),
                                   wal.update.SerializeAsString());
-        if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+        if (!s.ok())
+          RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
       }
     }
     auto* raft_driver = db_->raft_driver();
     if (raft_driver == nullptr) {
       auto s = txn_->Commit();
-      if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+      if (!s.ok())
+        RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
     } else {
       auto* write_batch_with_index = txn_->GetWriteBatch();
       auto* write_batch = write_batch_with_index->GetWriteBatch();
       if (write_batch->Count() == 0) {
         auto s = txn_->Commit();
-        if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+        if (!s.ok())
+          RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
       } else {
         auto apply_result = raft_driver->ProposeWriteBatch(
             meta::WriteBatchKind::GRAPH_WRITE, *write_batch);
@@ -550,7 +558,8 @@ void Transaction::Commit() {
                 rollback_status.ToString());
           }
           state_ = State::kRolledBack;
-          RG_THROW_CODE(StorageEngineError, apply_result.err.String());
+          RG_THROW(common::ErrorCode::StorageEngineError,
+                   apply_result.err.String());
         }
         write_batch_with_index->Clear();
         auto s = txn_->Commit();
@@ -570,10 +579,10 @@ void Transaction::Commit() {
 
 void Transaction::Rollback() {
   if (state_ != State::kActive) {
-    RG_THROW_CODE(InvalidParameter, "transaction is not active");
+    RG_THROW(common::ErrorCode::InvalidParameter, "transaction is not active");
   }
   auto s = txn_->Rollback();
-  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
   pending_property_wals_.clear();
   pending_edge_property_wals_.clear();
   pending_fulltext_wals_.clear();
@@ -602,8 +611,8 @@ Transaction::QueryVertexByPropertyIndex(const std::vector<std::string>& labels,
                                         const std::string& property_key,
                                         const rg::Value& query) {
   if (labels.size() != 1) {
-    RG_THROW_CODE(InvalidParameter,
-                  "GraphDB vertex property indexes require exactly one label");
+    RG_THROW(common::ErrorCode::InvalidParameter,
+             "GraphDB vertex property indexes require exactly one label");
   }
   auto lid = db_->id_generator().GetLid(labels.front());
   auto pid = db_->id_generator().GetPid(property_key);
@@ -616,10 +625,9 @@ Transaction::QueryVertexByPropertyIndex(const std::vector<std::string>& labels,
             db_->meta_info().GetVertexPropertyIndex(*lid, *pid)) {
       ThrowIfIndexUnavailable(unavailable, property_key, "Vertex");
     }
-    RG_THROW_CODE(
-        VertexUniqueIndexNotFound,
-        "No ready vertex property index for label [{}] and property [{}]",
-        labels.front(), property_key);
+    RG_THROW(common::ErrorCode::VertexUniqueIndexNotFound,
+             "No ready vertex property index for label [{}] and property [{}]",
+             labels.front(), property_key);
   }
   return QueryVertexByPropertyIndex(index->Name(), query);
 }
@@ -637,8 +645,8 @@ std::unique_ptr<graphdb::EdgeIterator> Transaction::QueryEdgeByPropertyIndex(
     const std::vector<std::string>& types, const std::string& property_key,
     const rg::Value& query) {
   if (types.size() != 1) {
-    RG_THROW_CODE(InvalidParameter,
-                  "GraphDB edge property indexes require exactly one type");
+    RG_THROW(common::ErrorCode::InvalidParameter,
+             "GraphDB edge property indexes require exactly one type");
   }
   auto tid = db_->id_generator().GetTid(types.front());
   auto pid = db_->id_generator().GetPid(property_key);
@@ -650,10 +658,9 @@ std::unique_ptr<graphdb::EdgeIterator> Transaction::QueryEdgeByPropertyIndex(
     if (auto unavailable = db_->meta_info().GetEdgePropertyIndex(*tid, *pid)) {
       ThrowIfIndexUnavailable(unavailable, property_key, "Edge");
     }
-    RG_THROW_CODE(
-        EdgePropertyIndexNotFound,
-        "No ready edge property index for type [{}] and property [{}]",
-        types.front(), property_key);
+    RG_THROW(common::ErrorCode::EdgePropertyIndexNotFound,
+             "No ready edge property index for type [{}] and property [{}]",
+             types.front(), property_key);
   }
   return QueryEdgeByPropertyIndex(index->Name(), query);
 }
@@ -680,8 +687,8 @@ std::unique_ptr<graphdb::EdgeIterator> Transaction::QueryEdgeByPropertyRange(
     const std::optional<rg::Value>& upper, bool left_closed,
     bool right_closed) {
   if (types.size() != 1) {
-    RG_THROW_CODE(InvalidParameter,
-                  "GraphDB edge property indexes require exactly one type");
+    RG_THROW(common::ErrorCode::InvalidParameter,
+             "GraphDB edge property indexes require exactly one type");
   }
   auto tid = db_->id_generator().GetTid(types.front());
   auto pid = db_->id_generator().GetPid(property_key);
@@ -693,10 +700,9 @@ std::unique_ptr<graphdb::EdgeIterator> Transaction::QueryEdgeByPropertyRange(
     if (auto unavailable = db_->meta_info().GetEdgePropertyIndex(*tid, *pid)) {
       ThrowIfIndexUnavailable(unavailable, property_key, "Edge");
     }
-    RG_THROW_CODE(
-        EdgePropertyIndexNotFound,
-        "No ready edge property index for type [{}] and property [{}]",
-        types.front(), property_key);
+    RG_THROW(common::ErrorCode::EdgePropertyIndexNotFound,
+             "No ready edge property index for type [{}] and property [{}]",
+             types.front(), property_key);
   }
   return QueryEdgeByPropertyRange(index->Name(), lower, upper, left_closed,
                                   right_closed);
@@ -726,8 +732,8 @@ Transaction::QueryVertexByPropertyRange(const std::vector<std::string>& labels,
                                         const std::optional<rg::Value>& upper,
                                         bool left_closed, bool right_closed) {
   if (labels.size() != 1) {
-    RG_THROW_CODE(InvalidParameter,
-                  "GraphDB vertex property indexes require exactly one label");
+    RG_THROW(common::ErrorCode::InvalidParameter,
+             "GraphDB vertex property indexes require exactly one label");
   }
   auto lid = db_->id_generator().GetLid(labels.front());
   auto pid = db_->id_generator().GetPid(property_key);
@@ -740,10 +746,9 @@ Transaction::QueryVertexByPropertyRange(const std::vector<std::string>& labels,
             db_->meta_info().GetVertexPropertyIndex(*lid, *pid)) {
       ThrowIfIndexUnavailable(unavailable, property_key, "Vertex");
     }
-    RG_THROW_CODE(
-        VertexUniqueIndexNotFound,
-        "No ready vertex property index for label [{}] and property [{}]",
-        labels.front(), property_key);
+    RG_THROW(common::ErrorCode::VertexUniqueIndexNotFound,
+             "No ready vertex property index for label [{}] and property [{}]",
+             labels.front(), property_key);
   }
   return QueryVertexByPropertyRange(index->Name(), lower, upper, left_closed,
                                     right_closed);

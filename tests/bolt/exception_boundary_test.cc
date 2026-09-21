@@ -7,18 +7,20 @@
 #include "bolt/to_string.h"
 #include "common/exception.h"
 #include "common/io_service_pool.h"
+#include "tests/common/exception_test_utils.h"
 
 TEST(ExceptionBoundaryTest, IoServicePoolRejectsZeroSize) {
-  EXPECT_THROW(
-      { common::IOServicePool pool(0); }, common::InvalidArgumentError);
+  RG_EXPECT_ERROR(
+      { common::IOServicePool pool(0); }, common::ErrorCode::InvalidParameter);
 }
 
 TEST(ExceptionBoundaryTest, BoltValuePrinterRejectsOutOfRangeDate) {
-  EXPECT_THROW(bolt::Print(std::any(bolt::Date{.days = 1'000'000'000'000LL})),
-               common::InvalidArgumentError);
+  RG_EXPECT_ERROR(
+      bolt::Print(std::any(bolt::Date{.days = 1'000'000'000'000LL})),
+      common::ErrorCode::InvalidParameter);
 }
 
 TEST(ExceptionBoundaryTest, BoltValuePrinterRejectsUnsupportedType) {
-  EXPECT_THROW(bolt::Print(std::any(std::int32_t{7})),
-               common::InvalidArgumentError);
+  RG_EXPECT_ERROR(bolt::Print(std::any(std::int32_t{7})),
+                  common::ErrorCode::InvalidParameter);
 }

@@ -86,13 +86,13 @@ uint64_t GraphDB::GetRaftApplyIndex() const {
     return 0;
   }
   if (!s.ok()) {
-    RG_THROW_CODE(StorageEngineError, "failed to load raft apply index: {}",
-                  s.ToString());
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "failed to load raft apply index: {}", s.ToString());
   }
   if (val.size() != sizeof(uint64_t)) {
-    RG_THROW_CODE(StorageEngineError,
-                  "raft apply index has invalid size, expect {}, actual {}",
-                  sizeof(uint64_t), val.size());
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "raft apply index has invalid size, expect {}, actual {}",
+             sizeof(uint64_t), val.size());
   }
   return ReadValue<uint64_t>(val.data());
 }
@@ -107,26 +107,24 @@ void GraphDB::ApplyRaftRequest(uint64_t index,
     case meta::WriteBatchKind::GRAPH_INDEX_DDL: {
       meta::GraphIndexDdlRequest ddl_request;
       if (!ddl_request.ParseFromString(request.wb_data())) {
-        RG_THROW_CODE(
-            InvalidParameter,
-            "failed to parse graph index ddl request for graph [{}] at "
-            "index {}",
-            db_meta_.graph_name(), index);
+        RG_THROW(common::ErrorCode::InvalidParameter,
+                 "failed to parse graph index ddl request for graph [{}] at "
+                 "index {}",
+                 db_meta_.graph_name(), index);
       }
       ApplyGraphIndexDdlRequest(index, ddl_request);
       return;
     }
     case meta::WriteBatchKind::UNKNOWN:
-      RG_THROW_CODE(
-          InvalidParameter,
-          "write batch kind must be specified for graph [{}] at index "
-          "{}",
-          db_meta_.graph_name(), index);
+      RG_THROW(common::ErrorCode::InvalidParameter,
+               "write batch kind must be specified for graph [{}] at index "
+               "{}",
+               db_meta_.graph_name(), index);
     default:
-      RG_THROW_CODE(
-          InvalidParameter,
-          "unsupported write batch kind {} for graph [{}] at index {}",
-          static_cast<int>(request.wb_kind()), db_meta_.graph_name(), index);
+      RG_THROW(common::ErrorCode::InvalidParameter,
+               "unsupported write batch kind {} for graph [{}] at index {}",
+               static_cast<int>(request.wb_kind()), db_meta_.graph_name(),
+               index);
   }
 }
 
@@ -136,25 +134,24 @@ void GraphDB::ApplyRaftWriteBatch(uint64_t index,
 
   auto s = SetRaftApplyIndex(index, &wb);
   if (!s.ok()) {
-    RG_THROW_CODE(
-        StorageEngineError,
-        "failed to persist raft apply index for graph [{}] at index {}: "
-        "{}",
-        db_meta_.graph_name(), index, s.ToString());
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "failed to persist raft apply index for graph [{}] at index {}: "
+             "{}",
+             db_meta_.graph_name(), index, s.ToString());
   }
 
   auto* base_db = db_->GetBaseDB();
   if (!base_db) {
-    RG_THROW_CODE(StorageEngineError,
-                  "failed to access base rocksdb::DB for graph [{}]",
-                  db_meta_.graph_name());
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "failed to access base rocksdb::DB for graph [{}]",
+             db_meta_.graph_name());
   }
 
   s = base_db->Write({}, &wb);
   if (!s.ok()) {
-    RG_THROW_CODE(StorageEngineError,
-                  "failed to apply raft request for graph [{}] at index {}: {}",
-                  db_meta_.graph_name(), index, s.ToString());
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "failed to apply raft request for graph [{}] at index {}: {}",
+             db_meta_.graph_name(), index, s.ToString());
   }
 
   switch (request.wb_kind()) {
@@ -164,11 +161,11 @@ void GraphDB::ApplyRaftWriteBatch(uint64_t index,
       SyncIdGeneratorFromRaftBatch(wb);
       return;
     default:
-      RG_THROW_CODE(
-          InvalidParameter,
-          "unsupported write batch kind {} for graph write batch [{}] "
-          "at index {}",
-          static_cast<int>(request.wb_kind()), db_meta_.graph_name(), index);
+      RG_THROW(common::ErrorCode::InvalidParameter,
+               "unsupported write batch kind {} for graph write batch [{}] "
+               "at index {}",
+               static_cast<int>(request.wb_kind()), db_meta_.graph_name(),
+               index);
   }
 }
 
@@ -182,10 +179,10 @@ void GraphDB::SyncIdGeneratorFromRaftBatch(const rocksdb::WriteBatch& wb) {
   IdGeneratorMetaBatchHandler handler(this);
   auto s = wb.Iterate(&handler);
   if (!s.ok()) {
-    RG_THROW_CODE(StorageEngineError,
-                  "failed to sync id generator cache from raft batch for graph "
-                  "[{}]: {}",
-                  db_meta_.graph_name(), s.ToString());
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "failed to sync id generator cache from raft batch for graph "
+             "[{}]: {}",
+             db_meta_.graph_name(), s.ToString());
   }
 }
 
@@ -193,9 +190,9 @@ void GraphDB::ProposeGraphIndexDdl(
     meta::GraphIndexDdlRequest::Operation operation, std::string payload) {
   auto* driver = raft_driver();
   if (driver == nullptr) {
-    RG_THROW_CODE(StorageEngineError,
-                  "raft driver is required to propose index ddl for graph [{}]",
-                  db_meta_.graph_name());
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "raft driver is required to propose index ddl for graph [{}]",
+             db_meta_.graph_name());
   }
   meta::GraphIndexDdlRequest ddl_request;
   ddl_request.set_operation(operation);
@@ -207,7 +204,7 @@ void GraphDB::ProposeGraphIndexDdl(
   auto apply_result =
       driver->ProposeRaftRequestAndWait(std::move(raft_request));
   if (apply_result.err != nullptr) {
-    RG_THROW_CODE(StorageEngineError, apply_result.err.String());
+    RG_THROW(common::ErrorCode::StorageEngineError, apply_result.err.String());
   }
 }
 
@@ -217,11 +214,10 @@ void GraphDB::ApplyGraphIndexDdlRequest(
     case meta::GraphIndexDdlRequest::CREATE_VERTEX_PROPERTY_INDEX: {
       meta::VertexPropertyIndex meta;
       if (!meta.ParseFromString(request.payload())) {
-        RG_THROW_CODE(
-            InvalidParameter,
-            "failed to parse create vertex property index request for "
-            "graph [{}] at index {}",
-            db_meta_.graph_name(), index);
+        RG_THROW(common::ErrorCode::InvalidParameter,
+                 "failed to parse create vertex property index request for "
+                 "graph [{}] at index {}",
+                 db_meta_.graph_name(), index);
       }
       ApplyCreateVertexPropertyIndex(index, std::move(meta));
       return;
@@ -229,11 +225,10 @@ void GraphDB::ApplyGraphIndexDdlRequest(
     case meta::GraphIndexDdlRequest::DELETE_VERTEX_PROPERTY_INDEX: {
       meta::VertexPropertyIndex meta;
       if (!meta.ParseFromString(request.payload())) {
-        RG_THROW_CODE(
-            InvalidParameter,
-            "failed to parse delete vertex property index request for "
-            "graph [{}] at index {}",
-            db_meta_.graph_name(), index);
+        RG_THROW(common::ErrorCode::InvalidParameter,
+                 "failed to parse delete vertex property index request for "
+                 "graph [{}] at index {}",
+                 db_meta_.graph_name(), index);
       }
       ApplyDeleteVertexPropertyIndex(index, meta);
       return;
@@ -241,10 +236,10 @@ void GraphDB::ApplyGraphIndexDdlRequest(
     case meta::GraphIndexDdlRequest::CREATE_EDGE_PROPERTY_INDEX: {
       meta::EdgePropertyIndex meta;
       if (!meta.ParseFromString(request.payload())) {
-        RG_THROW_CODE(InvalidParameter,
-                      "failed to parse create edge property index request for "
-                      "graph [{}] at index {}",
-                      db_meta_.graph_name(), index);
+        RG_THROW(common::ErrorCode::InvalidParameter,
+                 "failed to parse create edge property index request for "
+                 "graph [{}] at index {}",
+                 db_meta_.graph_name(), index);
       }
       ApplyCreateEdgePropertyIndex(index, std::move(meta));
       return;
@@ -252,10 +247,10 @@ void GraphDB::ApplyGraphIndexDdlRequest(
     case meta::GraphIndexDdlRequest::DELETE_EDGE_PROPERTY_INDEX: {
       meta::EdgePropertyIndex meta;
       if (!meta.ParseFromString(request.payload())) {
-        RG_THROW_CODE(InvalidParameter,
-                      "failed to parse delete edge property index request for "
-                      "graph [{}] at index {}",
-                      db_meta_.graph_name(), index);
+        RG_THROW(common::ErrorCode::InvalidParameter,
+                 "failed to parse delete edge property index request for "
+                 "graph [{}] at index {}",
+                 db_meta_.graph_name(), index);
       }
       ApplyDeleteEdgePropertyIndex(index, meta);
       return;
@@ -263,11 +258,10 @@ void GraphDB::ApplyGraphIndexDdlRequest(
     case meta::GraphIndexDdlRequest::CREATE_VERTEX_FULLTEXT_INDEX: {
       meta::VertexFullTextIndex meta;
       if (!meta.ParseFromString(request.payload())) {
-        RG_THROW_CODE(
-            InvalidParameter,
-            "failed to parse create vertex fulltext index request for "
-            "graph [{}] at index {}",
-            db_meta_.graph_name(), index);
+        RG_THROW(common::ErrorCode::InvalidParameter,
+                 "failed to parse create vertex fulltext index request for "
+                 "graph [{}] at index {}",
+                 db_meta_.graph_name(), index);
       }
       ApplyCreateVertexFullTextIndex(index, std::move(meta));
       return;
@@ -275,11 +269,10 @@ void GraphDB::ApplyGraphIndexDdlRequest(
     case meta::GraphIndexDdlRequest::DELETE_VERTEX_FULLTEXT_INDEX: {
       meta::VertexFullTextIndex meta;
       if (!meta.ParseFromString(request.payload())) {
-        RG_THROW_CODE(
-            InvalidParameter,
-            "failed to parse delete vertex fulltext index request for "
-            "graph [{}] at index {}",
-            db_meta_.graph_name(), index);
+        RG_THROW(common::ErrorCode::InvalidParameter,
+                 "failed to parse delete vertex fulltext index request for "
+                 "graph [{}] at index {}",
+                 db_meta_.graph_name(), index);
       }
       ApplyDeleteVertexFullTextIndex(index, meta);
       return;
@@ -287,10 +280,10 @@ void GraphDB::ApplyGraphIndexDdlRequest(
     case meta::GraphIndexDdlRequest::CREATE_VERTEX_VECTOR_INDEX: {
       meta::VertexVectorIndex meta;
       if (!meta.ParseFromString(request.payload())) {
-        RG_THROW_CODE(InvalidParameter,
-                      "failed to parse create vertex vector index request for "
-                      "graph [{}] at index {}",
-                      db_meta_.graph_name(), index);
+        RG_THROW(common::ErrorCode::InvalidParameter,
+                 "failed to parse create vertex vector index request for "
+                 "graph [{}] at index {}",
+                 db_meta_.graph_name(), index);
       }
       ApplyCreateVertexVectorIndex(index, std::move(meta));
       return;
@@ -298,10 +291,10 @@ void GraphDB::ApplyGraphIndexDdlRequest(
     case meta::GraphIndexDdlRequest::DELETE_VERTEX_VECTOR_INDEX: {
       meta::VertexVectorIndex meta;
       if (!meta.ParseFromString(request.payload())) {
-        RG_THROW_CODE(InvalidParameter,
-                      "failed to parse delete vertex vector index request for "
-                      "graph [{}] at index {}",
-                      db_meta_.graph_name(), index);
+        RG_THROW(common::ErrorCode::InvalidParameter,
+                 "failed to parse delete vertex vector index request for "
+                 "graph [{}] at index {}",
+                 db_meta_.graph_name(), index);
       }
       ApplyDeleteVertexVectorIndex(index, meta);
       return;
@@ -309,20 +302,20 @@ void GraphDB::ApplyGraphIndexDdlRequest(
     case meta::GraphIndexDdlRequest::CREATE_VERTEX_VECTOR_FIELD: {
       meta::VertexVectorField meta;
       if (!meta.ParseFromString(request.payload())) {
-        RG_THROW_CODE(InvalidParameter,
-                      "failed to parse create vertex vector field request for "
-                      "graph [{}] at index {}",
-                      db_meta_.graph_name(), index);
+        RG_THROW(common::ErrorCode::InvalidParameter,
+                 "failed to parse create vertex vector field request for "
+                 "graph [{}] at index {}",
+                 db_meta_.graph_name(), index);
       }
       ApplyCreateVertexVectorField(index, std::move(meta));
       return;
     }
     default:
-      RG_THROW_CODE(
-          InvalidParameter,
-          "unsupported graph index ddl operation {} for graph [{}] at "
-          "index {}",
-          static_cast<int>(request.operation()), db_meta_.graph_name(), index);
+      RG_THROW(common::ErrorCode::InvalidParameter,
+               "unsupported graph index ddl operation {} for graph [{}] at "
+               "index {}",
+               static_cast<int>(request.operation()), db_meta_.graph_name(),
+               index);
   }
 }
 

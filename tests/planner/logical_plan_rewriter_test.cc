@@ -12,6 +12,7 @@
 #include "common/exception.h"
 #include "ir/query_ir.h"
 #include "planner/logical_plan_builder.h"
+#include "tests/common/exception_test_utils.h"
 
 namespace {
 
@@ -73,8 +74,9 @@ TEST(LogicalPlanRewriterTest, RejectsRulesThatChangeThePlanSchema) {
   planner::LogicalPlanRewritePipeline pipeline;
   pipeline.Add(std::make_unique<ChangeSchemaRule>());
 
-  EXPECT_THROW((void)pipeline.Run(std::make_unique<ir::AllNodeScanPlan>("n")),
-               common::InternalError);
+  RG_EXPECT_ERROR(
+      (void)pipeline.Run(std::make_unique<ir::AllNodeScanPlan>("n")),
+      common::ErrorCode::InternalError);
 }
 
 TEST(LogicalPlanRewriterTest, DefaultPipelinePrunesDistinctVarExpand) {

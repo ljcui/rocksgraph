@@ -21,7 +21,7 @@
     try {                                                       \
       statement;                                                \
       FAIL() << "Expecting exception, but nothing is thrown.";  \
-    } catch (common::RocksGraphException & e) {                 \
+    } catch (common::Exception & e) {                           \
       if (e.code() != common::ErrorCode::error_code) {          \
         FAIL() << "Unexpected exception message: " << e.what(); \
       } else {                                                  \
@@ -37,7 +37,7 @@
     try {                                                       \
       statement;                                                \
       FAIL() << "Expecting exception, but nothing is thrown.";  \
-    } catch (common::RocksGraphException & e) {                 \
+    } catch (common::Exception & e) {                           \
       if (e.code() != common::ErrorCode::error_code) {          \
         FAIL() << "Unexpected exception message: " << e.what(); \
       } else {                                                  \

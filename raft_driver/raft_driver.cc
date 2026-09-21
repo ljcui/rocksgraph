@@ -946,7 +946,8 @@ PromiseContext::ApplyResult RaftDriver::ProposeRaftRequestAndWait(
 std::shared_ptr<PromiseContext> RaftDriver::ProposeRaftRequest(
     meta::RaftRequest request) {
   if (request.wb_kind() == meta::WriteBatchKind::UNKNOWN) {
-    RG_THROW_CODE(InvalidParameter, "write batch kind must be specified");
+    RG_THROW(common::ErrorCode::InvalidParameter,
+             "write batch kind must be specified");
   }
   request.set_id(id_generator_.Next());
   raftpb::Message msg;

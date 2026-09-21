@@ -8,6 +8,7 @@
 
 #include "ast/ast_node.h"
 #include "common/exception.h"
+#include "tests/common/exception_test_utils.h"
 
 namespace {
 
@@ -40,21 +41,21 @@ TEST(ExpressionEvaluatorTest, ExecutesRegisteredFunctionCaseInsensitively) {
 TEST(ExpressionEvaluatorTest, RejectsInvalidFunctionContracts) {
   ast::FunctionInvocation unknown = Function("unknown");
   unknown.arguments.push_back(String("value"));
-  EXPECT_THROW((void)EvaluateWithoutBindings(unknown),
-               common::InvalidArgumentError);
+  RG_EXPECT_ERROR((void)EvaluateWithoutBindings(unknown),
+                  common::ErrorCode::InvalidParameter);
 
   ast::FunctionInvocation invalid_arity = Function("size");
-  EXPECT_THROW((void)EvaluateWithoutBindings(invalid_arity),
-               common::InvalidArgumentError);
+  RG_EXPECT_ERROR((void)EvaluateWithoutBindings(invalid_arity),
+                  common::ErrorCode::InvalidParameter);
 
   ast::FunctionInvocation aggregate = Function("count");
   aggregate.arguments.push_back(String("value"));
-  EXPECT_THROW((void)EvaluateWithoutBindings(aggregate),
-               common::InvalidArgumentError);
+  RG_EXPECT_ERROR((void)EvaluateWithoutBindings(aggregate),
+                  common::ErrorCode::InvalidParameter);
 
   ast::FunctionInvocation distinct = Function("size");
   distinct.arguments.push_back(String("value"));
   distinct.distinct = true;
-  EXPECT_THROW((void)EvaluateWithoutBindings(distinct),
-               common::InvalidArgumentError);
+  RG_EXPECT_ERROR((void)EvaluateWithoutBindings(distinct),
+                  common::ErrorCode::InvalidParameter);
 }

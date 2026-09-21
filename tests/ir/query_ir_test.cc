@@ -21,7 +21,7 @@ namespace {
 std::unique_ptr<ast::Statement> ParseOrFail(const std::string &query) {
   try {
     return ast::ParseCypherAndRewrite(query);
-  } catch (const common::RocksGraphException &e) {
+  } catch (const common::Exception &e) {
     ADD_FAILURE() << "query error for query: " << query
                   << " message: " << e.what();
   }
@@ -31,7 +31,7 @@ std::unique_ptr<ast::Statement> ParseOrFail(const std::string &query) {
 std::unique_ptr<ast::Statement> ParseRawOrFail(const std::string &query) {
   try {
     return ast::ParseCypher(query);
-  } catch (const common::RocksGraphException &e) {
+  } catch (const common::Exception &e) {
     ADD_FAILURE() << "query error for query: " << query
                   << " message: " << e.what();
   }
@@ -47,7 +47,8 @@ std::unordered_map<std::string, std::unordered_set<std::string>>
 SelectionDependenciesByExpression(const ir::Selections &selections) {
   std::unordered_map<std::string, std::unordered_set<std::string>> result;
   for (const auto &predicate : selections.predicates) {
-    RG_CHECK(predicate.expression != nullptr, common::InvalidArgumentError,
+    RG_CHECK(predicate.expression != nullptr,
+             common::ErrorCode::InvalidParameter,
              "null selection predicate in QueryGraph");
     result.emplace(ast::ExpressionToString(*predicate.expression),
                    predicate.dependencies);
@@ -75,9 +76,10 @@ void ExpectQueryIRContractError(const std::string &query,
   try {
     (void)ir::CreateQueryIR(*statement);
     FAIL() << "expected query IR input contract error";
-  } catch (const common::InvalidArgumentError &e) {
-    EXPECT_NE(e.Message().find(expected_message), std::string::npos)
-        << "actual message: " << e.Message();
+  } catch (const common::Exception &e) {
+    EXPECT_EQ(e.code(), common::ErrorCode::InvalidParameter);
+    EXPECT_NE(e.message().find(expected_message), std::string::npos)
+        << "actual message: " << e.message();
   }
 }
 

@@ -16,7 +16,7 @@ namespace {
 std::unique_ptr<ast::Statement> ParseOrFail(const std::string &query) {
   try {
     return ast::ParseCypherAndRewrite(query);
-  } catch (const common::RocksGraphException &e) {
+  } catch (const common::Exception &e) {
     ADD_FAILURE() << "query error for query: " << query
                   << " message: " << e.what();
   }

@@ -12,6 +12,7 @@
 #include "graphdb/transaction.h"
 #include "runtime/graphdb_planner_catalog.h"
 #include "runtime/query_executor.h"
+#include "tests/common/exception_test_utils.h"
 #include "tests/planner/fake_planner_statistics.h"
 
 namespace {
@@ -279,7 +280,7 @@ TEST_F(GraphDBQueryExecutorTest,
   try {
     (void)transaction->GetEdgeById(*rare_type, knows_);
     FAIL() << "lookup with a mismatched relationship type should fail";
-  } catch (const common::RocksGraphException &error) {
+  } catch (const common::Exception &error) {
     EXPECT_EQ(error.code(), common::ErrorCode::EdgeIdNotFound);
   }
 
@@ -823,12 +824,12 @@ TEST_F(GraphDBQueryExecutorTest, RollsBackNativeWrites) {
 
 TEST_F(GraphDBQueryExecutorTest, LeavesRollbackAfterExecutionFailureToCaller) {
   auto transaction = graph_->BeginTransaction();
-  EXPECT_THROW(
+  RG_EXPECT_ERROR(
       (void)rg::ExecuteQuery(
           *transaction,
           "CREATE (n:RolledBack {name: 'temporary'}) SET n.value = 1 / 0 "
           "RETURN n"),
-      common::InvalidArgumentError);
+      common::ErrorCode::InvalidParameter);
   EXPECT_EQ(transaction->GetState(), graphdb::Transaction::State::kActive);
   transaction->Rollback();
   EXPECT_EQ(transaction->GetState(), graphdb::Transaction::State::kRolledBack);

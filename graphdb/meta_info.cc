@@ -700,15 +700,14 @@ void MetaInfo::Init(rocksdb::TransactionDB* db,
     if (prefix == MetadataType::NextVertexId ||
         prefix == MetadataType::NextEdgeId) {
       if (val.size() != sizeof(int64_t)) {
-        RG_THROW_CODE(
-            StorageEngineError,
-            "entity id metadata has invalid size, expect {}, actual {}",
-            sizeof(int64_t), val.size());
+        RG_THROW(common::ErrorCode::StorageEngineError,
+                 "entity id metadata has invalid size, expect {}, actual {}",
+                 sizeof(int64_t), val.size());
       }
       int64_t next_id = ReadBigEndianId<int64_t>(val.data());
       if (next_id < 1) {
-        RG_THROW_CODE(StorageEngineError,
-                      "entity id metadata must be positive");
+        RG_THROW(common::ErrorCode::StorageEngineError,
+                 "entity id metadata must be positive");
       }
       if (prefix == MetadataType::NextVertexId) {
         next_vid = next_id;

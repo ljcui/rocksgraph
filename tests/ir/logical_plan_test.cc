@@ -10,6 +10,7 @@
 
 #include "ast/ast_node.h"
 #include "common/exception.h"
+#include "tests/common/exception_test_utils.h"
 
 namespace {
 
@@ -547,5 +548,5 @@ TEST(LogicalPlanTest, MutatingUpdatePlansPreserveInputs) {
 
 TEST(LogicalPlanTest, InvalidChildAccessThrows) {
   ir::AllNodeScanPlan scan("n");
-  EXPECT_THROW((void)scan.Child(0), common::InvalidArgumentError);
+  RG_EXPECT_ERROR((void)scan.Child(0), common::ErrorCode::InvalidParameter);
 }

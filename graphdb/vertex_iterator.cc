@@ -37,14 +37,14 @@ int64_t ReadPropertyIndexVid(const std::shared_ptr<VertexPropertyIndex> &index,
                              rocksdb::Slice key, rocksdb::Slice value) {
   if (index->is_unique()) {
     if (value.size() != sizeof(int64_t)) {
-      RG_THROW_CODE(StorageEngineError,
-                    "vertex unique index stores invalid vid size");
+      RG_THROW(common::ErrorCode::StorageEngineError,
+               "vertex unique index stores invalid vid size");
     }
     return ReadBigEndianId<int64_t>(value.data());
   }
   if (key.size() < sizeof(uint32_t) + sizeof(int64_t)) {
-    RG_THROW_CODE(StorageEngineError,
-                  "vertex non-unique index stores invalid key size");
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "vertex non-unique index stores invalid key size");
   }
   return ReadBigEndianId<int64_t>(key.data() + key.size() - sizeof(int64_t));
 }
@@ -52,7 +52,8 @@ int64_t ReadPropertyIndexVid(const std::shared_ptr<VertexPropertyIndex> &index,
 }  // namespace
 
 Vertex &EmptyVertexIterator::GetVertex() {
-  RG_THROW(common::InternalError, "empty vertex iterator has no current value");
+  RG_THROW(common::ErrorCode::InternalError,
+           "empty vertex iterator has no current value");
 }
 
 VertexLabelScanIterator::VertexLabelScanIterator(Transaction *txn,
@@ -180,7 +181,7 @@ VertexUniqueIndexIterator::VertexUniqueIndexIterator(
     vertex_ = std::make_unique<Vertex>(txn_, vid);
     valid_ = true;
   } else if (!s.IsNotFound()) {
-    RG_THROW_CODE(StorageEngineError, s.ToString());
+    RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
   }
 }
 
@@ -205,7 +206,7 @@ VertexIndexSeekIterator::VertexIndexSeekIterator(
                                      rocksdb::Slice(index_val)));
       valid_ = true;
     } else if (!s.IsNotFound()) {
-      RG_THROW_CODE(StorageEngineError, s.ToString());
+      RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
     }
     return;
   }
@@ -225,7 +226,8 @@ void VertexIndexSeekIterator::SeekToNextValid() {
     return;
   }
   if (iterator_ && !iterator_->status().ok()) {
-    RG_THROW_CODE(StorageEngineError, iterator_->status().ToString());
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             iterator_->status().ToString());
   }
 }
 
@@ -289,7 +291,8 @@ void VertexIndexRangeIterator::SeekToNextValid() {
     return;
   }
   if (iterator_ && !iterator_->status().ok()) {
-    RG_THROW_CODE(StorageEngineError, iterator_->status().ToString());
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             iterator_->status().ToString());
   }
 }
 
@@ -315,8 +318,8 @@ VertexFullTextSearchIterator::VertexFullTextSearchIterator(
             txn->db()->meta_info().GetVertexFullTextIndex(ft_index_name)) {
       ThrowIfIndexUnavailable(building_index, ft_index_name, "Fulltext");
     }
-    RG_THROW_CODE(FullTextIndexNotFound, "No such fulltext index: {}",
-                  ft_index_name);
+    RG_THROW(common::ErrorCode::FullTextIndexNotFound,
+             "No such fulltext index: {}", ft_index_name);
   }
   result_ = ft->Query(query, top_n);
   if (!result_.empty()) {
@@ -352,8 +355,8 @@ VertexKnnSearchIterator::VertexKnnSearchIterator(
             txn->db()->meta_info().GetVertexVectorIndex(vector_index)) {
       ThrowIfIndexUnavailable(building_index, vector_index, "Vector");
     }
-    RG_THROW_CODE(VectorIndexException, "No such vector index:{}",
-                  vector_index);
+    RG_THROW(common::ErrorCode::VectorIndexError, "No such vector index:{}",
+             vector_index);
   }
   result_ = index->KnnSearch(query.data(), top_k, ef_search);
   if (!result_.empty()) {

@@ -17,11 +17,11 @@ PlannedQuery::PlannedQuery(std::unique_ptr<ast::Statement> statement,
     : statement_(std::move(statement)),
       query_ir_(std::move(query_ir)),
       logical_plan_(std::move(logical_plan)) {
-  RG_CHECK(statement_ != nullptr, common::InternalError,
+  RG_CHECK(statement_ != nullptr, common::ErrorCode::InternalError,
            "planned query statement is null");
-  RG_CHECK(query_ir_ != nullptr, common::InternalError,
+  RG_CHECK(query_ir_ != nullptr, common::ErrorCode::InternalError,
            "planned query IR is null");
-  RG_CHECK(logical_plan_ != nullptr, common::InternalError,
+  RG_CHECK(logical_plan_ != nullptr, common::ErrorCode::InternalError,
            "planned query logical plan is null");
 }
 

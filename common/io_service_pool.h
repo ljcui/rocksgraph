@@ -17,8 +17,8 @@ namespace common {
 class IOServicePool : private boost::asio::noncopyable {
  public:
   explicit IOServicePool(std::size_t pool_size) : next_io_service_(0) {
-    RG_THROW_IF(pool_size == 0, InvalidArgumentError,
-                "io_service_pool size is 0");
+    RG_CHECK(pool_size != 0, ErrorCode::InvalidParameter,
+             "io_service_pool size is 0");
     for (std::size_t i = 0; i < pool_size; ++i) {
       auto io_service = std::make_unique<boost::asio::io_service>(1);
       auto work = std::make_unique<boost::asio::io_service::work>(*io_service);

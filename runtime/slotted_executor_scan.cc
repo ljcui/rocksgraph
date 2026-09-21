@@ -89,30 +89,33 @@ IndexRange EvaluateIndexRange(const std::vector<PhysicalExpression> &predicates,
   IndexRange range;
   for (const auto &predicate : predicates) {
     const auto *expression = ir::UnwrapParenthesized(predicate.Expression());
-    RG_CHECK(expression != nullptr, common::InternalError,
+    RG_CHECK(expression != nullptr, common::ErrorCode::InternalError,
              "index range predicate is null");
     if (expression->Is(ast::ASTNodeType::kStringPredicateExpression)) {
       const auto &prefix =
           *ast::CastAst<ast::StringPredicateExpression>(expression);
       RG_CHECK(prefix.op == "STARTS WITH" && is_property(prefix.left.get()) &&
                    prefix.right != nullptr,
-               common::InternalError, "invalid index prefix predicate");
+               common::ErrorCode::InternalError,
+               "invalid index prefix predicate");
       range.prefix = Evaluate(*prefix.right, argument,
                               predicate.PrecomputedExpressions(), state);
       continue;
     }
     RG_CHECK(expression->Is(ast::ASTNodeType::kComparisonExpression),
-             common::InternalError, "invalid index range predicate");
+             common::ErrorCode::InternalError, "invalid index range predicate");
     const auto &comparison =
         *ast::CastAst<ast::ComparisonExpression>(expression);
     const bool reversed = !is_property(comparison.left.get());
     RG_CHECK((!reversed || is_property(comparison.right.get())) &&
                  (comparison.op == "<" || comparison.op == "<=" ||
                   comparison.op == ">" || comparison.op == ">="),
-             common::InternalError, "invalid index range comparison");
+             common::ErrorCode::InternalError,
+             "invalid index range comparison");
     const auto *bound =
         reversed ? comparison.left.get() : comparison.right.get();
-    RG_CHECK(bound != nullptr, common::InternalError, "index bound is null");
+    RG_CHECK(bound != nullptr, common::ErrorCode::InternalError,
+             "index bound is null");
     auto &bounds = (comparison.op.front() == '>') != reversed
                        ? range.lower_bounds
                        : range.upper_bounds;
@@ -140,7 +143,7 @@ class AllNodeScanOperator final : public PullOperator {
   ~AllNodeScanOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
-    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+    RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
     if (closed_) {
@@ -192,7 +195,7 @@ class ArgumentOperator final : public PullOperator {
   }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
-    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+    RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
     if (closed_) {
@@ -229,7 +232,7 @@ class NodeScanOperator : public PullOperator {
   ~NodeScanOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
-    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+    RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
     if (closed_) {
@@ -417,7 +420,7 @@ class IdSeekValues final {
     state_->memory_tracker.Reserve(bytes);
     reserved_bytes_ += bytes;
     if (many_ && !value.IsNull()) {
-      RG_CHECK(value.IsList(), common::InvalidArgumentError,
+      RG_CHECK(value.IsList(), common::ErrorCode::InvalidParameter,
                "IN requires a list");
       values_ = value.AsList();
     } else if (!many_) {
@@ -449,7 +452,7 @@ class NodeByIdSeekOperator final : public PullOperator {
   ~NodeByIdSeekOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
-    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+    RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
     if (closed_) {
@@ -464,7 +467,7 @@ class NodeByIdSeekOperator final : public PullOperator {
           *row = std::move(output);
           return true;
         }
-      } catch (const common::RocksGraphException &error) {
+      } catch (const common::Exception &error) {
         if (error.code() == common::ErrorCode::VertexIdNotFound) {
           continue;
         }
@@ -501,7 +504,7 @@ std::optional<graphdb::Edge> FindGraphDBRelationshipById(
       try {
         const RelationshipReference reference{.id = id, .type_id = *type_id};
         return GraphDBEdgeById(transaction, reference);
-      } catch (const common::RocksGraphException &error) {
+      } catch (const common::Exception &error) {
         if (error.code() != common::ErrorCode::EdgeIdNotFound) {
           throw;
         }
@@ -602,7 +605,7 @@ class RelationshipScanOperator : public PullOperator {
   ~RelationshipScanOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
-    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+    RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
     if (closed_) {
@@ -754,7 +757,7 @@ class RelationshipByIdSeekOperator final : public PullOperator {
   ~RelationshipByIdSeekOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
-    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+    RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
     if (closed_) {
@@ -822,7 +825,7 @@ class FixedExpandOperatorBase : public PullOperator {
   ~FixedExpandOperatorBase() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
-    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+    RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     while (!closed_) {
       state_->CheckCancelled();
@@ -941,12 +944,13 @@ class VarExpandOperator final : public PullOperator {
         source_(std::move(source)) {
     RG_CHECK(data_->length.min.value_or(1) >= 0 &&
                  data_->length.max.value_or(0) >= 0,
-             common::InvalidArgumentError, "negative variable path length");
+             common::ErrorCode::InvalidParameter,
+             "negative variable path length");
   }
   ~VarExpandOperator() override { Close(); }
 
   bool Next(SlottedRow *row) override {
-    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+    RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     return NextGraphDB(row);
   }
@@ -1126,18 +1130,18 @@ class PruningVarExpandOperator final : public PullOperator {
         state_(&state),
         source_(std::move(source)) {
     RG_CHECK(data_->pattern.direction != PhysicalExpandDirection::kBoth,
-             common::InternalError,
+             common::ErrorCode::InternalError,
              "pruning variable expand cannot be undirected");
     RG_CHECK(data_->length.min.value_or(1) >= 0 &&
                  data_->length.min.value_or(1) <= 1 &&
                  data_->length.max.value_or(0) >= 0,
-             common::InvalidArgumentError,
+             common::ErrorCode::InvalidParameter,
              "unsupported pruning variable path length");
   }
   ~PruningVarExpandOperator() override { Close(); }
 
   bool Next(SlottedRow *row) override {
-    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+    RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     return NextGraphDB(row);
   }
@@ -1278,7 +1282,7 @@ class OptionalExpandOperator final : public PullOperator {
   ~OptionalExpandOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
-    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+    RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     return NextGraphDB(row);
   }
@@ -1392,7 +1396,7 @@ class ProjectEndpointsOperator final : public PullOperator {
   ~ProjectEndpointsOperator() override { Close(); }
 
   [[nodiscard]] bool Next(SlottedRow *row) override {
-    RG_CHECK(row != nullptr, common::InvalidArgumentError,
+    RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     while (!closed_) {
       state_->CheckCancelled();
@@ -1441,7 +1445,7 @@ class ProjectEndpointsOperator final : public PullOperator {
 
     std::vector<const Relationship *> relationships;
     if (data_->length.variable) {
-      RG_CHECK(value.IsList(), common::InvalidArgumentError,
+      RG_CHECK(value.IsList(), common::ErrorCode::InvalidParameter,
                "expected a relationship list");
       for (const Value &item : value.AsList()) {
         if (!item.IsRelationship()) {
@@ -1456,7 +1460,7 @@ class ProjectEndpointsOperator final : public PullOperator {
         return;
       }
     } else {
-      RG_CHECK(value.IsRelationship(), common::InvalidArgumentError,
+      RG_CHECK(value.IsRelationship(), common::ErrorCode::InvalidParameter,
                "expected a relationship");
       relationships.push_back(&value.AsRelationship());
     }
@@ -1468,7 +1472,7 @@ class ProjectEndpointsOperator final : public PullOperator {
         (void)GraphDBEdgeById(
             *state_->transaction,
             {.id = relationship->id, .type_id = relationship->type_id});
-      } catch (const common::RocksGraphException &error) {
+      } catch (const common::Exception &error) {
         if (error.code() == common::ErrorCode::EdgeIdNotFound) {
           return;
         }
@@ -1531,7 +1535,7 @@ class ProjectEndpointsOperator final : public PullOperator {
 std::unique_ptr<PullOperator> BuildLeafOperator(
     const PhysicalPlanNode &node, RuntimeState &state,
     std::optional<SlottedRow> argument) {
-  RG_CHECK(node.children.empty(), common::InternalError,
+  RG_CHECK(node.children.empty(), common::ErrorCode::InternalError,
            std::string(ToString(node.kind)) +
                " physical node must not have children");
   switch (node.kind) {
@@ -1566,8 +1570,9 @@ std::unique_ptr<PullOperator> BuildLeafOperator(
       return std::make_unique<RelationshipByIdSeekOperator>(
           node, state, std::move(argument));
     default:
-      RG_THROW(common::InternalError, "not a leaf physical operator: " +
-                                          std::string(ToString(node.kind)));
+      RG_THROW(
+          common::ErrorCode::InternalError,
+          "not a leaf physical operator: " + std::string(ToString(node.kind)));
   }
 }
 
@@ -1575,7 +1580,7 @@ std::unique_ptr<PullOperator> BuildExpandOperator(
     const PhysicalPlanNode &node, RuntimeState &state,
     std::unique_ptr<PullOperator> source) {
   RG_CHECK(
-      node.children.size() == 1, common::InternalError,
+      node.children.size() == 1, common::ErrorCode::InternalError,
       std::string(ToString(node.kind)) + " physical node must have one child");
   switch (node.kind) {
     case PhysicalOperatorKind::kVarExpand:
@@ -1596,8 +1601,9 @@ std::unique_ptr<PullOperator> BuildExpandOperator(
       return std::make_unique<ExpandIntoOperator>(node, state,
                                                   std::move(source));
     default:
-      RG_THROW(common::InternalError, "not an expand physical operator: " +
-                                          std::string(ToString(node.kind)));
+      RG_THROW(common::ErrorCode::InternalError,
+               "not an expand physical operator: " +
+                   std::string(ToString(node.kind)));
   }
 }
 

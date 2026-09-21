@@ -117,11 +117,11 @@ std::optional<std::vector<float>> BuildVectorValues(
     return std::nullopt;
   }
   if (iter->second.size() != index->meta().dimensions()) {
-    RG_THROW_CODE(InvalidParameter,
-                  "vector field [label:{}, property:{}] dimension mismatch, "
-                  "expect {}, actual {}",
-                  index->meta().label(), index->meta().property(),
-                  index->meta().dimensions(), iter->second.size());
+    RG_THROW(common::ErrorCode::InvalidParameter,
+             "vector field [label:{}, property:{}] dimension mismatch, "
+             "expect {}, actual {}",
+             index->meta().label(), index->meta().property(),
+             index->meta().dimensions(), iter->second.size());
   }
   return iter->second;
 }

@@ -861,9 +861,9 @@ namespace {
 void RequireServerStructureLength(uint8_t tag, uint32_t actual,
                                   uint32_t expected) {
   if (actual != expected) {
-    RG_THROW_CODE(BoltDataException,
-                  "PackStream structure {} expected {} fields, got {}",
-                  static_cast<char>(tag), expected, actual);
+    RG_THROW(common::ErrorCode::BoltDataError,
+             "PackStream structure {} expected {} fields, got {}",
+             static_cast<char>(tag), expected, actual);
   }
 }
 
@@ -871,9 +871,9 @@ void NextServerField(Unpacker& unpacker, PackType expected, uint8_t tag,
                      uint32_t field) {
   unpacker.Next();
   if (unpacker.CurrentType() != expected) {
-    RG_THROW_CODE(BoltDataException,
-                  "PackStream structure {} field {} has an invalid type",
-                  static_cast<char>(tag), field);
+    RG_THROW(common::ErrorCode::BoltDataError,
+             "PackStream structure {} field {} has an invalid type",
+             static_cast<char>(tag), field);
   }
 }
 
@@ -896,7 +896,8 @@ uint32_t ReadServerSpatialRefId(Unpacker& unpacker, uint8_t tag) {
   const int64_t srid = ReadServerInteger(unpacker, tag, 0);
   if (srid < 0 ||
       static_cast<uint64_t>(srid) > std::numeric_limits<uint32_t>::max()) {
-    RG_THROW_CODE(BoltDataException, "PackStream point SRID is out of range");
+    RG_THROW(common::ErrorCode::BoltDataError,
+             "PackStream point SRID is out of range");
   }
   return static_cast<uint32_t>(srid);
 }
@@ -963,9 +964,9 @@ std::any HydrateServerStructure(Unpacker& unpacker) {
                       .seconds = ReadServerInteger(unpacker, tag, 2),
                       .nanos = ReadServerInteger(unpacker, tag, 3)};
     default:
-      RG_THROW_CODE(BoltDataException,
-                    "Unsupported PackStream structure parameter tag: {}",
-                    static_cast<char>(tag));
+      RG_THROW(common::ErrorCode::BoltDataError,
+               "Unsupported PackStream structure parameter tag: {}",
+               static_cast<char>(tag));
   }
 }
 
@@ -1011,8 +1012,9 @@ std::any ServerHydrator(Unpacker& unpacker) {
     case PackType::False:
       return false;
     default: {
-      RG_THROW_CODE(BoltDataException, "Unsupported type to unpack: {}",
-                    static_cast<int>(unpacker.CurrentType()));
+      RG_THROW(common::ErrorCode::BoltDataError,
+               "Unsupported type to unpack: {}",
+               static_cast<int>(unpacker.CurrentType()));
     }
   }
 }

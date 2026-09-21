@@ -30,7 +30,7 @@ constexpr int kMinimumYear = -999'999'999;
 constexpr int kMaximumYear = 999'999'999;
 
 [[noreturn]] void InvalidTemporal(std::string message) {
-  RG_THROW(common::InvalidArgumentError, std::move(message));
+  RG_THROW(common::ErrorCode::InvalidParameter, std::move(message));
 }
 
 std::int64_t ParseInteger(std::string_view text, std::string_view context) {

@@ -14,6 +14,7 @@
 #include "planner/planned_query.h"
 #include "runtime/graphdb_planner_catalog.h"
 #include "runtime/query_executor.h"
+#include "tests/common/exception_test_utils.h"
 #include "tests/runtime/graphdb_test_utils.h"
 
 namespace {
@@ -369,9 +370,9 @@ TEST(OpenCypherOptimizerTest, EnforcesMemoryLimitsForNewStatefulOperators) {
         "MATCH (a),(d) OPTIONAL MATCH (a)-[:R]->(b)-[:S]->(c) RETURN c"}) {
     SCOPED_TRACE(text);
     planner::PlannedQuery query = planner::PlanCypher(text);
-    EXPECT_THROW((void)rg::test::ExecutePlanAndCommit(
-                     graph, query.LogicalPlan(), {}, options),
-                 common::MemoryLimitExceededError);
+    RG_EXPECT_ERROR((void)rg::test::ExecutePlanAndCommit(
+                        graph, query.LogicalPlan(), {}, options),
+                    common::ErrorCode::MemoryLimitExceeded);
   }
 }
 
@@ -404,9 +405,9 @@ TEST(OpenCypherOptimizerTest, KeepsRuntimeNodeAssertionsInOptionalMatches) {
   graph.CreateNode({});
   rg::QueryParameters parameters{
       {"values", rg::Value(rg::Value::List{rg::Value(1)})}};
-  EXPECT_THROW((void)rg::test::ExecutePlanAndCommit(graph, query.LogicalPlan(),
-                                                    parameters),
-               common::InvalidArgumentError);
+  RG_EXPECT_ERROR((void)rg::test::ExecutePlanAndCommit(
+                      graph, query.LogicalPlan(), parameters),
+                  common::ErrorCode::InvalidParameter);
 }
 
 TEST(OpenCypherOptimizerTest, UsesLabelAndTypeCursorsWithoutFullScans) {

@@ -14,9 +14,10 @@ void ExpectSemanticError(const std::string &query,
   try {
     (void)ast::ParseCypher(query);
     FAIL() << "expected semantic error";
-  } catch (const common::RocksGraphException &e) {
-    EXPECT_EQ(e.code(), common::ErrorCode::CypherException);
-    EXPECT_NE(e.msg().find(expected_error), std::string::npos) << e.msg();
+  } catch (const common::Exception &e) {
+    EXPECT_EQ(e.code(), common::ErrorCode::SemanticError);
+    EXPECT_NE(e.message().find(expected_error), std::string::npos)
+        << e.message();
   }
 }
 
@@ -25,9 +26,10 @@ void ExpectParserError(const std::string &query,
   try {
     (void)ast::ParseCypher(query);
     FAIL() << "expected parser error";
-  } catch (const common::RocksGraphException &e) {
-    EXPECT_EQ(e.code(), common::ErrorCode::ParserException);
-    EXPECT_NE(e.msg().find(expected_error), std::string::npos) << e.msg();
+  } catch (const common::Exception &e) {
+    EXPECT_EQ(e.code(), common::ErrorCode::ParseError);
+    EXPECT_NE(e.message().find(expected_error), std::string::npos)
+        << e.message();
   }
 }
 
@@ -65,13 +67,13 @@ TEST(SemanticValidatorTest, RejectsUnionMismatchAfterReturnStarRewrite) {
     (void)ast::ParseCypherAndRewrite(
         "MATCH (n) RETURN * UNION MATCH (m) RETURN m AS x");
     FAIL() << "expected semantic error";
-  } catch (const common::RocksGraphException &e) {
-    EXPECT_EQ(e.code(), common::ErrorCode::CypherException);
+  } catch (const common::Exception &e) {
+    EXPECT_EQ(e.code(), common::ErrorCode::SemanticError);
     EXPECT_NE(
-        e.msg().find(
+        e.message().find(
             "UNION branches must return the same column names by position"),
         std::string::npos)
-        << e.msg();
+        << e.message();
   }
 }
 

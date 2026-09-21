@@ -31,7 +31,7 @@ rg::Date DateFromEpochDays(std::int64_t days) {
   year += month <= 2;
   if (year < std::numeric_limits<std::int32_t>::min() ||
       year > std::numeric_limits<std::int32_t>::max()) {
-    RG_THROW(common::InvalidArgumentError,
+    RG_THROW(common::ErrorCode::InvalidParameter,
              "Bolt date is outside the supported year range");
   }
   return {static_cast<std::int32_t>(year), static_cast<std::int32_t>(month),
@@ -154,7 +154,7 @@ nlohmann::json ToJsonObj(const std::any& item) {
   } else {
     auto err = std::string("Unsupported type: ") + item.type().name();
     LOG_ERROR(err);
-    RG_THROW(common::InvalidArgumentError, err);
+    RG_THROW(common::ErrorCode::InvalidParameter, err);
   }
 }
 

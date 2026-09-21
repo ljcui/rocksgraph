@@ -12,6 +12,7 @@
 
 #include "common/exception.h"
 #include "planner/planned_query.h"
+#include "tests/common/exception_test_utils.h"
 #include "tests/runtime/graphdb_test_utils.h"
 
 namespace {
@@ -167,7 +168,8 @@ TEST(QueryExecutorTest, CursorLeavesTransactionActiveAfterExecutionFailure) {
       rg::ExecuteQueryCursor(*transaction, "RETURN 1 / 0 AS value");
 
   std::vector<rg::Value> row;
-  EXPECT_THROW((void)cursor->Next(&row), common::InvalidArgumentError);
+  RG_EXPECT_ERROR((void)cursor->Next(&row),
+                  common::ErrorCode::InvalidParameter);
   EXPECT_EQ(transaction->GetState(), graphdb::Transaction::State::kActive);
   transaction->Rollback();
   EXPECT_EQ(transaction->GetState(), graphdb::Transaction::State::kRolledBack);
@@ -184,7 +186,7 @@ TEST(QueryExecutorTest, PlanningFailureLeavesTransactionActive) {
 
   EXPECT_THROW(
       (void)rg::ExecuteQueryCursor(*transaction, "RETURN NOT 1 AS value"),
-      common::RocksGraphException);
+      common::Exception);
   EXPECT_EQ(transaction->GetState(), graphdb::Transaction::State::kActive);
   transaction->Rollback();
   EXPECT_EQ(transaction->GetState(), graphdb::Transaction::State::kRolledBack);
@@ -244,8 +246,8 @@ TEST(QueryExecutorTest, RollbackUndoesAllStatementsInTransaction) {
   EXPECT_EQ(graph.Nodes().front()->properties.at("name"),
             rg::Value("Original"));
   EXPECT_ANY_THROW(transaction->Commit());
-  EXPECT_THROW((void)rg::ExecuteQuery(*transaction, "RETURN 1"),
-               common::InvalidArgumentError);
+  RG_EXPECT_ERROR((void)rg::ExecuteQuery(*transaction, "RETURN 1"),
+                  common::ErrorCode::InvalidParameter);
 }
 
 TEST(QueryExecutorTest, ExecutesGraphEndpointAndListFunctions) {
@@ -298,15 +300,15 @@ TEST(QueryExecutorTest, ExecutesQueriesWithParameters) {
 TEST(QueryExecutorTest, RejectsMissingQueryParameters) {
   rg::test::GraphDBTestDatabase graph;
 
-  EXPECT_THROW(
+  RG_EXPECT_ERROR(
       (void)rg::test::ExecuteQueryAndCommit(graph, "RETURN $missing AS value"),
-      common::InvalidArgumentError);
+      common::ErrorCode::InvalidParameter);
 
-  EXPECT_THROW((void)rg::test::ExecuteQueryAndCommit(
-                   graph,
-                   "MATCH (n:DefinitelyMissing) WHERE n.value = $missing "
-                   "RETURN n"),
-               common::InvalidArgumentError);
+  RG_EXPECT_ERROR((void)rg::test::ExecuteQueryAndCommit(
+                      graph,
+                      "MATCH (n:DefinitelyMissing) WHERE n.value = $missing "
+                      "RETURN n"),
+                  common::ErrorCode::InvalidParameter);
 }
 
 TEST(QueryExecutorTest, ImplementsThreeValuedBooleanLogic) {
@@ -451,29 +453,29 @@ TEST(QueryExecutorTest, RejectsInvalidPredicatesAndUnsafeIntegerArithmetic) {
 
   EXPECT_THROW(
       (void)rg::test::ExecuteQueryAndCommit(graph, "RETURN NOT 1 AS value"),
-      common::RocksGraphException);
-  EXPECT_THROW((void)rg::test::ExecuteQueryAndCommit(
-                   graph, "RETURN 9223372036854775807 + 1 AS value"),
-               common::InvalidArgumentError);
-  EXPECT_THROW((void)rg::test::ExecuteQueryAndCommit(
-                   graph, "RETURN -9223372036854775807 - 2 AS value"),
-               common::InvalidArgumentError);
-  EXPECT_THROW((void)rg::test::ExecuteQueryAndCommit(
-                   graph, "RETURN 3037000500 * 3037000500 AS value"),
-               common::InvalidArgumentError);
-  EXPECT_THROW(
+      common::Exception);
+  RG_EXPECT_ERROR((void)rg::test::ExecuteQueryAndCommit(
+                      graph, "RETURN 9223372036854775807 + 1 AS value"),
+                  common::ErrorCode::InvalidParameter);
+  RG_EXPECT_ERROR((void)rg::test::ExecuteQueryAndCommit(
+                      graph, "RETURN -9223372036854775807 - 2 AS value"),
+                  common::ErrorCode::InvalidParameter);
+  RG_EXPECT_ERROR((void)rg::test::ExecuteQueryAndCommit(
+                      graph, "RETURN 3037000500 * 3037000500 AS value"),
+                  common::ErrorCode::InvalidParameter);
+  RG_EXPECT_ERROR(
       (void)rg::test::ExecuteQueryAndCommit(graph, "RETURN 1 / 0 AS value"),
-      common::InvalidArgumentError);
-  EXPECT_THROW(
+      common::ErrorCode::InvalidParameter);
+  RG_EXPECT_ERROR(
       (void)rg::test::ExecuteQueryAndCommit(graph, "RETURN 1 % 0 AS value"),
-      common::InvalidArgumentError);
-  EXPECT_THROW((void)rg::test::ExecuteQueryAndCommit(
-                   graph, "RETURN (-9223372036854775807 - 1) % -1 AS value"),
-               common::InvalidArgumentError);
-  EXPECT_THROW(
+      common::ErrorCode::InvalidParameter);
+  RG_EXPECT_ERROR((void)rg::test::ExecuteQueryAndCommit(
+                      graph, "RETURN (-9223372036854775807 - 1) % -1 AS value"),
+                  common::ErrorCode::InvalidParameter);
+  RG_EXPECT_ERROR(
       (void)rg::test::ExecuteQueryAndCommit(
           graph, "UNWIND [9223372036854775807, 1] AS x RETURN sum(x) AS value"),
-      common::InvalidArgumentError);
+      common::ErrorCode::InvalidParameter);
 
   rg::QueryResult conversion = rg::test::ExecuteQueryAndCommit(
       graph, "RETURN toInteger(9.223372036854776e18) AS value");
@@ -578,13 +580,13 @@ TEST(QueryExecutorTest, RejectsInvalidSkipAndLimitCounts) {
 
   EXPECT_THROW(
       (void)rg::test::ExecuteQueryAndCommit(graph, "RETURN 1 AS x SKIP -1"),
-      common::RocksGraphException);
+      common::Exception);
   EXPECT_THROW(
       (void)rg::test::ExecuteQueryAndCommit(graph, "RETURN 1 AS x LIMIT 1.5"),
-      common::RocksGraphException);
-  EXPECT_THROW((void)rg::test::ExecuteQueryAndCommit(
-                   graph, "MATCH (n:Missing) RETURN n LIMIT null"),
-               common::InvalidArgumentError);
+      common::Exception);
+  RG_EXPECT_ERROR((void)rg::test::ExecuteQueryAndCommit(
+                      graph, "MATCH (n:Missing) RETURN n LIMIT null"),
+                  common::ErrorCode::InvalidParameter);
 }
 
 TEST(QueryExecutorTest, OrdersByPreProjectionExpression) {
@@ -1015,19 +1017,19 @@ TEST(QueryExecutorTest, ExecutesIndexProceduresThroughCypher) {
 
 TEST(QueryExecutorTest, RejectsInvalidIndexProcedureArguments) {
   rg::test::GraphDBTestDatabase graph;
-  EXPECT_THROW(
+  RG_EXPECT_ERROR(
       (void)rg::test::ExecuteQueryAndCommit(
           graph, "CALL db.index.createNodeIndex('bad', 'Person', 'name', {})"),
-      common::InvalidArgumentError);
-  EXPECT_THROW(
+      common::ErrorCode::InvalidParameter);
+  RG_EXPECT_ERROR(
       (void)rg::test::ExecuteQueryAndCommit(
           graph,
           "CALL db.index.vector.createNodeField('Person', 'embedding', {})"),
-      common::InvalidArgumentError);
-  EXPECT_THROW(
+      common::ErrorCode::InvalidParameter);
+  RG_EXPECT_ERROR(
       (void)rg::test::ExecuteQueryAndCommit(
           graph, "CALL db.index.vector.knnSearchNodes('missing', ['bad'], {})"),
-      common::InvalidArgumentError);
+      common::ErrorCode::InvalidParameter);
 }
 
 TEST(QueryExecutorTest, ExecutesNamedPath) {
@@ -1789,11 +1791,12 @@ TEST(QueryExecutorTest, WriteBarrierStabilizesTailDeleteInput) {
 TEST(QueryExecutorTest, RollsBackWritesWhenALaterRowFails) {
   rg::test::GraphDBTestDatabase graph;
 
-  EXPECT_THROW((void)rg::test::ExecuteQueryAndCommit(
-                   graph,
-                   "UNWIND [1, 0] AS divisor CREATE (n {value: 1 / divisor}) "
-                   "RETURN n"),
-               common::InvalidArgumentError);
+  RG_EXPECT_ERROR(
+      (void)rg::test::ExecuteQueryAndCommit(
+          graph,
+          "UNWIND [1, 0] AS divisor CREATE (n {value: 1 / divisor}) "
+          "RETURN n"),
+      common::ErrorCode::InvalidParameter);
   EXPECT_TRUE(graph.Nodes().empty());
   EXPECT_TRUE(graph.Relationships().empty());
 }
@@ -1801,10 +1804,11 @@ TEST(QueryExecutorTest, RollsBackWritesWhenALaterRowFails) {
 TEST(QueryExecutorTest, RollsBackWritesWhenAWriteExpressionFails) {
   rg::test::GraphDBTestDatabase graph;
 
-  EXPECT_THROW(rg::test::ExecuteQueryAndCommit(graph,
-                                               "CREATE (n) SET n.value = 1 / 0 "
-                                               "RETURN n"),
-               common::InvalidArgumentError);
+  RG_EXPECT_ERROR(
+      rg::test::ExecuteQueryAndCommit(graph,
+                                      "CREATE (n) SET n.value = 1 / 0 "
+                                      "RETURN n"),
+      common::ErrorCode::InvalidParameter);
   EXPECT_TRUE(graph.Nodes().empty());
   EXPECT_TRUE(graph.Relationships().empty());
 }
@@ -1814,11 +1818,11 @@ TEST(QueryExecutorTest, RollsBackExistingEntityMutationsAndIndexes) {
   auto node = graph.CreateNode({"Person"}, {{"name", rg::Value("Ada")}});
   graph.AddNodeIndex({"Person"}, "name");
 
-  EXPECT_THROW((void)rg::test::ExecuteQueryAndCommit(
-                   graph,
-                   "MATCH (n:Person {name: 'Ada'}) "
-                   "SET n.name = 'Bob', n.value = 1 / 0 RETURN n"),
-               common::InvalidArgumentError);
+  RG_EXPECT_ERROR((void)rg::test::ExecuteQueryAndCommit(
+                      graph,
+                      "MATCH (n:Person {name: 'Ada'}) "
+                      "SET n.name = 'Bob', n.value = 1 / 0 RETURN n"),
+                  common::ErrorCode::InvalidParameter);
 
   const auto nodes = graph.Nodes();
   ASSERT_EQ(nodes.size(), 1U);

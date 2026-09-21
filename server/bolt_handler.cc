@@ -112,7 +112,8 @@ int64_t LocalDateTimeToEpochSeconds(const rg::LocalDateTime& value) {
 
 int32_t ParameterNanosecond(int64_t value) {
   if (value < 0 || value >= 1'000'000'000) {
-    RG_THROW_CODE(InputError, "parameter nanosecond is out of range");
+    RG_THROW(common::ErrorCode::InputError,
+             "parameter nanosecond is out of range");
   }
   return static_cast<int32_t>(value);
 }
@@ -120,7 +121,8 @@ int32_t ParameterNanosecond(int64_t value) {
 int32_t ParameterUtcOffset(int64_t value) {
   constexpr int64_t kMaximumUtcOffsetSeconds = 18 * 60 * 60;
   if (value < -kMaximumUtcOffsetSeconds || value > kMaximumUtcOffsetSeconds) {
-    RG_THROW_CODE(InputError, "parameter UTC offset is out of range");
+    RG_THROW(common::ErrorCode::InputError,
+             "parameter UTC offset is out of range");
   }
   return static_cast<int32_t>(value);
 }
@@ -128,7 +130,8 @@ int32_t ParameterUtcOffset(int64_t value) {
 int64_t AddParameterUtcOffset(int64_t seconds, int32_t offset) {
   if ((offset > 0 && seconds > std::numeric_limits<int64_t>::max() - offset) ||
       (offset < 0 && seconds < std::numeric_limits<int64_t>::min() - offset)) {
-    RG_THROW_CODE(InputError, "datetime parameter seconds are out of range");
+    RG_THROW(common::ErrorCode::InputError,
+             "datetime parameter seconds are out of range");
   }
   return seconds + offset;
 }
@@ -137,7 +140,8 @@ rg::Value NamedZoneDateTimeParameter(int64_t seconds, int64_t nanoseconds,
                                      const std::string& timezone,
                                      bool seconds_are_utc) {
   if (timezone.empty()) {
-    RG_THROW_CODE(InputError, "datetime parameter timezone is empty");
+    RG_THROW(common::ErrorCode::InputError,
+             "datetime parameter timezone is empty");
   }
   const int32_t fraction = ParameterNanosecond(nanoseconds);
   try {
@@ -149,8 +153,8 @@ rg::Value NamedZoneDateTimeParameter(int64_t seconds, int64_t nanoseconds,
                                           {"timezone", rg::Value(timezone)}});
     return rg::ConstructDateTime(&fields);
   } catch (const common::Exception& error) {
-    RG_THROW_CODE(InputError, "invalid datetime parameter: {}",
-                  error.Message());
+    RG_THROW(common::ErrorCode::InputError, "invalid datetime parameter: {}",
+             error.message());
   }
 }
 
@@ -166,7 +170,8 @@ rg::Duration DurationParameter(const bolt::Duration& input) {
        input.seconds > std::numeric_limits<int64_t>::max() - carry) ||
       (carry < 0 &&
        input.seconds < std::numeric_limits<int64_t>::min() - carry)) {
-    RG_THROW_CODE(InputError, "duration parameter seconds are out of range");
+    RG_THROW(common::ErrorCode::InputError,
+             "duration parameter seconds are out of range");
   }
   return {input.months, input.days, input.seconds + carry,
           static_cast<int32_t>(fraction)};
@@ -178,7 +183,8 @@ rg::Value ConvertParameter(const std::any& data) {
   }
   const std::type_info& type = data.type();
   if (type == typeid(bolt::ByteArray)) {
-    RG_THROW_CODE(InputError, "Cypher byte-array parameters are not supported");
+    RG_THROW(common::ErrorCode::InputError,
+             "Cypher byte-array parameters are not supported");
   }
   if (type == typeid(std::string)) {
     return rg::Value(std::any_cast<const std::string&>(data));
@@ -225,7 +231,8 @@ rg::Value ConvertParameter(const std::any& data) {
     constexpr int64_t kSecondsPerHour = 3600;
     constexpr int64_t kNanosPerDay = 86'400 * kNanosPerSecond;
     if (nanos < 0 || nanos >= kNanosPerDay) {
-      RG_THROW_CODE(InputError, "local time parameter is out of range");
+      RG_THROW(common::ErrorCode::InputError,
+               "local time parameter is out of range");
     }
     const int64_t seconds = nanos / kNanosPerSecond;
     return rg::Value(
@@ -281,7 +288,8 @@ rg::Value ConvertParameter(const std::any& data) {
     const auto& input = std::any_cast<const bolt::Point2D&>(data);
     if (input.spatialRefId >
         static_cast<uint32_t>(std::numeric_limits<int32_t>::max())) {
-      RG_THROW_CODE(InputError, "point parameter SRID is out of range");
+      RG_THROW(common::ErrorCode::InputError,
+               "point parameter SRID is out of range");
     }
     return rg::Value(rg::Point{static_cast<int32_t>(input.spatialRefId),
                                {input.x, input.y}});
@@ -290,13 +298,14 @@ rg::Value ConvertParameter(const std::any& data) {
     const auto& input = std::any_cast<const bolt::Point3D&>(data);
     if (input.spatialRefId >
         static_cast<uint32_t>(std::numeric_limits<int32_t>::max())) {
-      RG_THROW_CODE(InputError, "point parameter SRID is out of range");
+      RG_THROW(common::ErrorCode::InputError,
+               "point parameter SRID is out of range");
     }
     return rg::Value(rg::Point{static_cast<int32_t>(input.spatialRefId),
                                {input.x, input.y, input.z}});
   }
-  RG_THROW_CODE(InputError, "Unexpected cypher parameter type: {}",
-                type.name());
+  RG_THROW(common::ErrorCode::InputError,
+           "Unexpected cypher parameter type: {}", type.name());
 }
 
 std::unordered_map<std::string, std::any> ConvertMap(
@@ -349,7 +358,7 @@ std::any ConvertValue(const rg::Value& value) {
       result.nodes.reserve(path.nodes.size());
       for (const auto& node : path.nodes) {
         if (!node) {
-          RG_THROW_CODE(ValueException, "Path contains a null node");
+          RG_THROW(common::ErrorCode::ValueError, "Path contains a null node");
         }
         result.nodes.push_back(
             std::any_cast<bolt::Node>(ConvertValue(rg::Value(node))));
@@ -359,7 +368,8 @@ std::any ConvertValue(const rg::Value& value) {
       for (size_t i = 0; i < path.relationships.size(); ++i) {
         const auto& relationship = path.relationships[i];
         if (!relationship || i + 1 >= path.nodes.size()) {
-          RG_THROW_CODE(ValueException, "Path has an invalid relationship");
+          RG_THROW(common::ErrorCode::ValueError,
+                   "Path has an invalid relationship");
         }
         result.rels.push_back({.id = relationship->id,
                                .elementId = std::to_string(relationship->id),
@@ -427,10 +437,11 @@ std::any ConvertValue(const rg::Value& value) {
                              point.coordinates[2],
                              static_cast<uint32_t>(point.srid)};
       }
-      RG_THROW_CODE(ValueException, "Point should have 2 or 3 coordinates");
+      RG_THROW(common::ErrorCode::ValueError,
+               "Point should have 2 or 3 coordinates");
     }
   }
-  RG_THROW_CODE(ValueException, "Unexpected query result value type");
+  RG_THROW(common::ErrorCode::ValueError, "Unexpected query result value type");
 }
 
 std::unordered_map<std::string, std::any> ConvertMap(
@@ -583,27 +594,29 @@ static void FailUnsupportedRequest(const std::shared_ptr<BoltConnection>& conn,
 static int64_t ExtractPullOrDiscardN(BoltMsg type,
                                      const std::vector<std::any>& fields) {
   if (fields.size() != 1) {
-    RG_THROW_CODE(InputError, "{} msg fields size error, size: {}",
-                  bolt::ToString(type), fields.size());
+    RG_THROW(common::ErrorCode::InputError,
+             "{} msg fields size error, size: {}", bolt::ToString(type),
+             fields.size());
   }
   auto* metadata =
       std::any_cast<std::unordered_map<std::string, std::any>>(&fields[0]);
   if (metadata == nullptr) {
-    RG_THROW_CODE(InputError, "{} metadata should be a map",
-                  bolt::ToString(type));
+    RG_THROW(common::ErrorCode::InputError, "{} metadata should be a map",
+             bolt::ToString(type));
   }
   auto iter = metadata->find("n");
   if (iter == metadata->end()) {
-    RG_THROW_CODE(InputError, "{} metadata should contain n",
-                  bolt::ToString(type));
+    RG_THROW(common::ErrorCode::InputError, "{} metadata should contain n",
+             bolt::ToString(type));
   }
   auto* n = std::any_cast<int64_t>(&iter->second);
   if (n == nullptr) {
-    RG_THROW_CODE(InputError, "{} n should be an integer",
-                  bolt::ToString(type));
+    RG_THROW(common::ErrorCode::InputError, "{} n should be an integer",
+             bolt::ToString(type));
   }
   if (*n == 0) {
-    RG_THROW_CODE(InputError, "{} n should not be 0", bolt::ToString(type));
+    RG_THROW(common::ErrorCode::InputError, "{} n should not be 0",
+             bolt::ToString(type));
   }
   return *n;
 }
@@ -613,8 +626,8 @@ static void ProcessPullOrDiscard(const std::shared_ptr<BoltConnection>& conn,
                                  const std::vector<std::any>& fields) {
   try {
     if (!session->active_query || !session->active_query->result) {
-      RG_THROW_CODE(InputError, "{} requires an active result stream",
-                    bolt::ToString(type));
+      RG_THROW(common::ErrorCode::InputError,
+               "{} requires an active result stream", bolt::ToString(type));
     }
 
     const int64_t n = ExtractPullOrDiscardN(type, fields);
@@ -676,12 +689,9 @@ static void ProcessPullOrDiscard(const std::shared_ptr<BoltConnection>& conn,
     FlushSessionBuffer(conn, session);
     LOG_DEBUG("Cypher execution completed");
     QUERY_LOG("{} {} {}", graph_name, elapsed, cypher.substr(0, 256));
-  } catch (const common::RocksGraphException& e) {
-    LOG_ERROR("{}", e.msg());
-    FailSession(conn, session, e.code(), e.msg());
-  } catch (const common::InvalidArgumentError& e) {
-    LOG_ERROR("{}", e.what());
-    FailSession(conn, session, common::ErrorCode::InputError, e.what());
+  } catch (const common::Exception& e) {
+    LOG_ERROR("{}", e.message());
+    FailSession(conn, session, e.code(), e.message());
   } catch (std::exception& e) {
     LOG_ERROR("{}", e.what());
     FailSession(conn, session, common::ErrorCode::UnknownError, e.what());
@@ -693,8 +703,8 @@ static void ProcessRun(GraphManager* graph_manager,
                        BoltSession* session, std::vector<std::any>& fields) {
   try {
     if (fields.size() != 3) {
-      RG_THROW_CODE(InputError, "Run msg fields size error, size: {}",
-                    fields.size());
+      RG_THROW(common::ErrorCode::InputError,
+               "Run msg fields size error, size: {}", fields.size());
     }
     auto* cypher = std::any_cast<std::string>(&fields[0]);
     auto* params =
@@ -702,11 +712,11 @@ static void ProcessRun(GraphManager* graph_manager,
     auto* extra =
         std::any_cast<std::unordered_map<std::string, std::any>>(&fields[2]);
     if (cypher == nullptr || params == nullptr || extra == nullptr) {
-      RG_THROW_CODE(InputError,
-                    "Run msg fields should be (string, map, map), got ({}, {}, "
-                    "{})",
-                    fields[0].type().name(), fields[1].type().name(),
-                    fields[2].type().name());
+      RG_THROW(common::ErrorCode::InputError,
+               "Run msg fields should be (string, map, map), got ({}, {}, "
+               "{})",
+               fields[0].type().name(), fields[1].type().name(),
+               fields[2].type().name());
     }
 
     std::string graph;
@@ -714,7 +724,8 @@ static void ProcessRun(GraphManager* graph_manager,
     if (db_iter != extra->end()) {
       auto* db = std::any_cast<std::string>(&db_iter->second);
       if (db == nullptr) {
-        RG_THROW_CODE(InputError, "Run msg db metadata should be a string");
+        RG_THROW(common::ErrorCode::InputError,
+                 "Run msg db metadata should be a string");
       }
       graph = *db;
     }
@@ -742,12 +753,9 @@ static void ProcessRun(GraphManager* graph_manager,
     conn->PostResponse(std::move(ps.MutableBuffer()));
     session->active_query = std::move(active_query);
     session->state = bolt::SessionState::STREAMING;
-  } catch (const common::RocksGraphException& e) {
-    LOG_ERROR("{}", e.msg());
-    FailSession(conn, session, e.code(), e.msg());
-  } catch (const common::InvalidArgumentError& e) {
-    LOG_ERROR("{}", e.what());
-    FailSession(conn, session, common::ErrorCode::InputError, e.what());
+  } catch (const common::Exception& e) {
+    LOG_ERROR("{}", e.message());
+    FailSession(conn, session, e.code(), e.message());
   } catch (std::exception& e) {
     LOG_ERROR("{}", e.what());
     FailSession(conn, session, common::ErrorCode::UnknownError, e.what());

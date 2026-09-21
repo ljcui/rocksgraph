@@ -67,7 +67,7 @@ std::vector<std::string> InternalSingleQueryIROutputAliases(
     case QueryHorizonKind::kPassthrough:
       return SortedSymbolList(QueryGraphAvailableSymbols(last->query_graph));
   }
-  RG_THROW(common::InternalError, "unknown query horizon kind");
+  RG_THROW(common::ErrorCode::InternalError, "unknown query horizon kind");
 }
 
 class QueryIRArgumentFinalizer {
@@ -79,7 +79,7 @@ class QueryIRArgumentFinalizer {
 
  private:
   [[nodiscard]] const ast::SemanticTable &SemanticTableRef() const {
-    RG_CHECK(semantic_table_ != nullptr, common::InternalError,
+    RG_CHECK(semantic_table_ != nullptr, common::ErrorCode::InternalError,
              "semantic table is null");
     return *semantic_table_;
   }
@@ -94,20 +94,22 @@ class QueryIRArgumentFinalizer {
         return;
       case QueryIRKind::kUnion: {
         UnionQueryIR &union_query = query.RequireUnion();
-        RG_CHECK(union_query.lhs != nullptr, common::InvalidArgumentError,
+        RG_CHECK(union_query.lhs != nullptr,
+                 common::ErrorCode::InvalidParameter,
                  "UNION lhs query IR is null");
         FinalizeQueryIRArguments(*union_query.lhs, available_symbols);
         FinalizeSingleQueryIRArguments(&union_query.rhs, available_symbols);
         return;
       }
     }
-    RG_THROW(common::InternalError, "unknown query IR kind");
+    RG_THROW(common::ErrorCode::InternalError, "unknown query IR kind");
   }
 
   void FinalizeSingleQueryIRArguments(
       SingleQueryIR *query,
       std::unordered_set<std::string> available_symbols) const {
-    RG_CHECK(query != nullptr, common::InternalError, "query IR is null");
+    RG_CHECK(query != nullptr, common::ErrorCode::InternalError,
+             "query IR is null");
     SingleQueryIR *segment = query;
     while (segment != nullptr) {
       const std::unordered_set<std::string> dependencies =
@@ -133,7 +135,7 @@ class QueryIRArgumentFinalizer {
   }
 
   void FinalizeQueryGraphArguments(QueryGraph *query_graph) const {
-    RG_CHECK(query_graph != nullptr, common::InternalError,
+    RG_CHECK(query_graph != nullptr, common::ErrorCode::InternalError,
              "query graph is null");
     std::unordered_set<std::string> available_symbols =
         query_graph->IdsWithoutOptionalMatchesOrUpdates();
@@ -154,7 +156,7 @@ class QueryIRArgumentFinalizer {
   void FinalizeSelectionSubqueries(
       Selections *selections,
       const std::unordered_set<std::string> &available_symbols) const {
-    RG_CHECK(selections != nullptr, common::InternalError,
+    RG_CHECK(selections != nullptr, common::ErrorCode::InternalError,
              "selections is null");
     for (auto &predicate : selections->predicates) {
       for (auto &nested : predicate.nested_expressions) {
@@ -163,7 +165,7 @@ class QueryIRArgumentFinalizer {
       }
       if (predicate.subquery == nullptr &&
           predicate.kind == PredicateKind::kExistsSubquery) {
-        RG_THROW(common::InvalidArgumentError,
+        RG_THROW(common::ErrorCode::InvalidParameter,
                  Missing("EXISTS nested IR expression"));
       }
     }
@@ -172,9 +174,9 @@ class QueryIRArgumentFinalizer {
   void FinalizeNestedIRExpression(
       NestedIRExpression *nested,
       const std::unordered_set<std::string> &available_symbols) const {
-    RG_CHECK(nested != nullptr, common::InternalError,
+    RG_CHECK(nested != nullptr, common::ErrorCode::InternalError,
              "nested IR expression is null");
-    RG_CHECK(nested->query != nullptr, common::InvalidArgumentError,
+    RG_CHECK(nested->query != nullptr, common::ErrorCode::InvalidParameter,
              "nested IR expression query is null");
     FinalizeQueryIRArguments(*nested->query, available_symbols);
   }
@@ -182,7 +184,7 @@ class QueryIRArgumentFinalizer {
   void FinalizeNestedIRExpressions(
       std::vector<NestedIRExpression> *nested_expressions,
       const std::unordered_set<std::string> &available_symbols) const {
-    RG_CHECK(nested_expressions != nullptr, common::InternalError,
+    RG_CHECK(nested_expressions != nullptr, common::ErrorCode::InternalError,
              "nested IR expression list is null");
     for (auto &nested : *nested_expressions) {
       FinalizeNestedIRExpression(
@@ -193,7 +195,7 @@ class QueryIRArgumentFinalizer {
   void FinalizeQueryHorizonArguments(
       QueryHorizon *horizon,
       const std::unordered_set<std::string> &available_symbols) const {
-    RG_CHECK(horizon != nullptr, common::InternalError,
+    RG_CHECK(horizon != nullptr, common::ErrorCode::InternalError,
              "query horizon is null");
     switch (horizon->kind) {
       case QueryHorizonKind::kRegularProjection:
@@ -228,7 +230,7 @@ class QueryIRArgumentFinalizer {
       case QueryHorizonKind::kPassthrough:
         return;
     }
-    RG_THROW(common::InternalError, "unknown query horizon kind");
+    RG_THROW(common::ErrorCode::InternalError, "unknown query horizon kind");
   }
 
   [[nodiscard]] std::unordered_set<std::string> SingleQueryIRDependencies(
@@ -263,7 +265,7 @@ class QueryIRArgumentFinalizer {
 
   void AddExpressionDependencies(std::unordered_set<std::string> *dependencies,
                                  const ast::Expression *expression) const {
-    RG_CHECK(dependencies != nullptr, common::InternalError,
+    RG_CHECK(dependencies != nullptr, common::ErrorCode::InternalError,
              "dependency set is null");
     if (expression == nullptr) {
       return;
@@ -275,7 +277,7 @@ class QueryIRArgumentFinalizer {
   void AddProjectionTailDependencies(
       std::unordered_set<std::string> *dependencies,
       const QueryProjection &projection) const {
-    RG_CHECK(dependencies != nullptr, common::InternalError,
+    RG_CHECK(dependencies != nullptr, common::ErrorCode::InternalError,
              "dependency set is null");
     for (const auto &item : projection.required_order.items) {
       AddExpressionDependencies(dependencies, item.expression);
@@ -288,7 +290,7 @@ class QueryIRArgumentFinalizer {
   void AddProcedureCallDependencies(
       std::unordered_set<std::string> *dependencies,
       const ProcedureCallHorizon &procedure_call) const {
-    RG_CHECK(dependencies != nullptr, common::InternalError,
+    RG_CHECK(dependencies != nullptr, common::ErrorCode::InternalError,
              "dependency set is null");
     for (const ast::Expression *argument : procedure_call.arguments) {
       AddExpressionDependencies(dependencies, argument);
@@ -299,7 +301,7 @@ class QueryIRArgumentFinalizer {
   static void AddSelectionDependencies(
       std::unordered_set<std::string> *dependencies,
       const Selections &selections) {
-    RG_CHECK(dependencies != nullptr, common::InternalError,
+    RG_CHECK(dependencies != nullptr, common::ErrorCode::InternalError,
              "dependency set is null");
     for (const auto &predicate : selections.predicates) {
       AddSymbols(dependencies, predicate.dependencies);
@@ -309,7 +311,7 @@ class QueryIRArgumentFinalizer {
   void AddProjectionItemDependencies(
       std::unordered_set<std::string> *dependencies,
       const std::vector<ProjectionItem> &items) const {
-    RG_CHECK(dependencies != nullptr, common::InternalError,
+    RG_CHECK(dependencies != nullptr, common::ErrorCode::InternalError,
              "dependency set is null");
     for (const auto &item : items) {
       AddExpressionDependencies(dependencies, item.expression);
@@ -319,7 +321,7 @@ class QueryIRArgumentFinalizer {
   void AddMutatingPatternDependencies(
       std::unordered_set<std::string> *dependencies,
       const MutatingPattern &mutating_pattern) const {
-    RG_CHECK(dependencies != nullptr, common::InternalError,
+    RG_CHECK(dependencies != nullptr, common::ErrorCode::InternalError,
              "dependency set is null");
     AddSymbols(dependencies, MutatingPatternDependencies(mutating_pattern));
   }
@@ -362,7 +364,7 @@ class QueryIRArgumentFinalizer {
       case QueryHorizonKind::kPassthrough:
         return dependencies;
     }
-    RG_THROW(common::InternalError, "unknown query horizon kind");
+    RG_THROW(common::ErrorCode::InternalError, "unknown query horizon kind");
   }
 
   const ast::SemanticTable *semantic_table_ = nullptr;
@@ -407,7 +409,7 @@ std::unordered_set<std::string> SingleQueryIROutputSymbols(
     case QueryHorizonKind::kPassthrough:
       return QueryGraphAvailableSymbols(query.query_graph);
   }
-  RG_THROW(common::InternalError, "unknown query horizon kind");
+  RG_THROW(common::ErrorCode::InternalError, "unknown query horizon kind");
 }
 
 std::vector<std::string> SingleQueryIROutputAliases(
@@ -432,14 +434,14 @@ std::vector<std::string> QueryIROutputAliases(const QueryIR &query) {
       return SingleQueryIROutputAliases(union_query.rhs);
     }
   }
-  RG_THROW(common::InternalError, "unknown query IR kind");
+  RG_THROW(common::ErrorCode::InternalError, "unknown query IR kind");
 }
 
 std::vector<UnionQueryIR::UnionMapping> BuildUnionMappings(
     const std::vector<std::string> &lhs_columns,
     const std::vector<std::string> &rhs_columns) {
   RG_CHECK(lhs_columns.size() == rhs_columns.size(),
-           common::InvalidArgumentError,
+           common::ErrorCode::InvalidParameter,
            "UNION branches have different output column counts");
   std::vector<UnionQueryIR::UnionMapping> mappings;
   mappings.reserve(lhs_columns.size());

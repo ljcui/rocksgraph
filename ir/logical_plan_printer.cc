@@ -51,7 +51,7 @@ class LogicalPlanPrinter {
 
   void Indent() { ++indent_; }
   void Dedent() {
-    RG_CHECK(indent_ > 0, common::InternalError,
+    RG_CHECK(indent_ > 0, common::ErrorCode::InternalError,
              "logical plan printer indent underflow");
     --indent_;
   }
@@ -71,7 +71,7 @@ class LogicalPlanPrinter {
 
     Indent();
     for (const auto &child : plan.Children()) {
-      RG_CHECK(child != nullptr, common::InternalError,
+      RG_CHECK(child != nullptr, common::ErrorCode::InternalError,
                "logical plan child is null");
       PrintPlan(*child);
     }
@@ -79,7 +79,7 @@ class LogicalPlanPrinter {
   }
 
   void AppendMetadata(const LogicalPlan &plan, std::string *line) const {
-    RG_CHECK(line != nullptr, common::InternalError,
+    RG_CHECK(line != nullptr, common::ErrorCode::InternalError,
              "logical plan printer line is null");
     const LogicalPlanMetadata &metadata = plan.Metadata();
     if (!metadata.estimated_rows.has_value() && !metadata.cost.has_value() &&

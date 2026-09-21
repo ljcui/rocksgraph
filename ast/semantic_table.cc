@@ -124,10 +124,10 @@ std::string ProjectionItemName(const ProjectionItem &item) {
   if (!item.alias.empty()) {
     return item.alias;
   }
-  RG_CHECK(item.expression != nullptr, common::InternalError,
+  RG_CHECK(item.expression != nullptr, common::ErrorCode::InternalError,
            "projection item expression is null");
   std::string name = ExpressionToString(*item.expression);
-  RG_CHECK(!name.empty(), common::InternalError,
+  RG_CHECK(!name.empty(), common::ErrorCode::InternalError,
            "projection item name stringify failed");
   return name;
 }
@@ -250,7 +250,8 @@ class SemanticTableAnalyzer final : public ASTConstWalker {
   }
 
   void Visit(const With &node) override {
-    RG_CHECK(node.body != nullptr, common::InternalError, "WITH body is null");
+    RG_CHECK(node.body != nullptr, common::ErrorCode::InternalError,
+             "WITH body is null");
     const Scope pre = CurrentScope();
     const Scope projected = AnalyzeProjectionBody(*node.body, pre);
     ReplaceCurrentScope(projected);
@@ -259,7 +260,7 @@ class SemanticTableAnalyzer final : public ASTConstWalker {
   }
 
   void Visit(const Return &node) override {
-    RG_CHECK(node.body != nullptr, common::InternalError,
+    RG_CHECK(node.body != nullptr, common::ErrorCode::InternalError,
              "RETURN body is null");
     RecordScope(node);
     AnalyzeProjectionBody(*node.body, CurrentScope());
@@ -356,7 +357,7 @@ class SemanticTableAnalyzer final : public ASTConstWalker {
   void PushScope(Scope scope) { scope_stack_.push_back(std::move(scope)); }
 
   void PopScope() {
-    RG_CHECK(!scope_stack_.empty(), common::InternalError,
+    RG_CHECK(!scope_stack_.empty(), common::ErrorCode::InternalError,
              "semantic table scope stack is empty");
     scope_stack_.pop_back();
   }

@@ -25,7 +25,7 @@
 namespace rg {
 
 Value ExpressionBindings::Lookup(std::string_view name) const {
-  RG_THROW(common::InvalidArgumentError,
+  RG_THROW(common::ErrorCode::InvalidParameter,
            "variable is not bound: " + std::string(name));
 }
 
@@ -144,7 +144,7 @@ TruthValue ToTruthValue(const Value &value) {
   if (value.IsNull()) {
     return TruthValue::kNull;
   }
-  RG_CHECK(value.IsBool(), common::InvalidArgumentError,
+  RG_CHECK(value.IsBool(), common::ErrorCode::InvalidParameter,
            "predicate requires a boolean value");
   return value.AsBool() ? TruthValue::kTrue : TruthValue::kFalse;
 }
@@ -158,7 +158,7 @@ Value FromTruthValue(TruthValue value) {
     case TruthValue::kNull:
       return Value::Null();
   }
-  RG_THROW(common::InternalError, "unknown truth value");
+  RG_THROW(common::ErrorCode::InternalError, "unknown truth value");
 }
 
 TruthValue And(TruthValue left, TruthValue right) {
@@ -332,22 +332,22 @@ Value EvaluateFunction(
     ExecutionContext context) {
   const ast::BuiltinFunction *builtin =
       ast::FindBuiltinFunction(function.function_name);
-  RG_CHECK(builtin != nullptr, common::InvalidArgumentError,
+  RG_CHECK(builtin != nullptr, common::ErrorCode::InvalidParameter,
            "unknown function: " + function.function_name);
   RG_CHECK(
-      !builtin->aggregate, common::InvalidArgumentError,
+      !builtin->aggregate, common::ErrorCode::InvalidParameter,
       "aggregate function requires aggregation execution: " + builtin->name);
   RG_CHECK(ast::BuiltinFunctionAcceptsArgumentCount(*builtin,
                                                     function.arguments.size()),
-           common::InvalidArgumentError,
+           common::ErrorCode::InvalidParameter,
            ast::BuiltinFunctionArgumentCountError(*builtin));
-  RG_CHECK(!function.distinct, common::InvalidArgumentError,
+  RG_CHECK(!function.distinct, common::ErrorCode::InvalidParameter,
            "DISTINCT is only supported for aggregate functions");
 
   std::vector<Value> arguments;
   arguments.reserve(function.arguments.size());
   for (const auto &argument : function.arguments) {
-    RG_CHECK(argument != nullptr, common::InvalidArgumentError,
+    RG_CHECK(argument != nullptr, common::ErrorCode::InvalidParameter,
              "function argument is null");
     arguments.push_back(
         EvaluateExpression(*argument, row, precomputed, context));
@@ -361,7 +361,8 @@ Value EvaluateListIndex(
     const std::vector<ast::PrecomputedExpression> &precomputed,
     ExecutionContext context) {
   RG_CHECK(expression.list != nullptr && expression.index != nullptr,
-           common::InvalidArgumentError, "list index expression is incomplete");
+           common::ErrorCode::InvalidParameter,
+           "list index expression is incomplete");
   Value list = EvaluateExpression(*expression.list, row, precomputed, context);
   Value index_value =
       EvaluateExpression(*expression.index, row, precomputed, context);
@@ -369,7 +370,7 @@ Value EvaluateListIndex(
     return Value::Null();
   }
   if (list.IsList()) {
-    RG_CHECK(index_value.IsInteger(), common::InvalidArgumentError,
+    RG_CHECK(index_value.IsInteger(), common::ErrorCode::InvalidParameter,
              "list index must be an integer");
     const auto &items = list.AsList();
     const std::int64_t normalized =
@@ -381,12 +382,12 @@ Value EvaluateListIndex(
     return items[static_cast<std::size_t>(normalized)];
   }
   if (list.IsMap() || list.IsNode() || list.IsRelationship()) {
-    RG_CHECK(index_value.IsString(), common::InvalidArgumentError,
+    RG_CHECK(index_value.IsString(), common::ErrorCode::InvalidParameter,
              "map property index must be a string");
     const Value *value = FindProperty(list, index_value.AsString());
     return value != nullptr ? *value : Value::Null();
   }
-  RG_THROW(common::InvalidArgumentError,
+  RG_THROW(common::ErrorCode::InvalidParameter,
            "indexed expression must be a list, map, node, or relationship");
 }
 
@@ -394,7 +395,7 @@ Value EvaluateListSlice(
     const ast::ListSliceExpression &expression, const ExpressionBindings &row,
     const std::vector<ast::PrecomputedExpression> &precomputed,
     ExecutionContext context) {
-  RG_CHECK(expression.list != nullptr, common::InvalidArgumentError,
+  RG_CHECK(expression.list != nullptr, common::ErrorCode::InvalidParameter,
            "list slice base expression is null");
   Value list = EvaluateExpression(*expression.list, row, precomputed, context);
   if (!list.IsList()) {
@@ -434,7 +435,8 @@ Value EvaluateCaseExpression(
   for (const auto &[when_expression, then_expression] :
        expression.alternatives) {
     RG_CHECK(when_expression != nullptr && then_expression != nullptr,
-             common::InvalidArgumentError, "CASE alternative is incomplete");
+             common::ErrorCode::InvalidParameter,
+             "CASE alternative is incomplete");
     bool matched = false;
     if (test.has_value()) {
       const Value candidate =
@@ -459,7 +461,8 @@ Value EvaluateListComprehension(
     const std::vector<ast::PrecomputedExpression> &precomputed,
     ExecutionContext context) {
   RG_CHECK(!expression.variable.empty() && expression.list_expr != nullptr,
-           common::InvalidArgumentError, "list comprehension is incomplete");
+           common::ErrorCode::InvalidParameter,
+           "list comprehension is incomplete");
   Value list =
       EvaluateExpression(*expression.list_expr, row, precomputed, context);
   if (!list.IsList()) {
@@ -487,15 +490,16 @@ Value EvaluateLocallyCorrelatedPatternComprehension(
     ExecutionContext context) {
   RG_CHECK(expression.relationships_pattern != nullptr &&
                expression.eval_expr != nullptr,
-           common::InvalidArgumentError, "pattern comprehension is incomplete");
+           common::ErrorCode::InvalidParameter,
+           "pattern comprehension is incomplete");
   const ast::RelationshipsPattern &pattern = *expression.relationships_pattern;
   RG_CHECK(pattern.node_pattern != nullptr && pattern.chain.size() == 1,
-           common::InvalidArgumentError,
+           common::ErrorCode::InvalidParameter,
            "locally correlated pattern comprehension supports one hop");
   const ast::NodePattern &start_pattern = *pattern.node_pattern;
   RG_CHECK(
       !start_pattern.variable.empty() && start_pattern.properties == nullptr,
-      common::InvalidArgumentError,
+      common::ErrorCode::InvalidParameter,
       "locally correlated pattern comprehension requires a bound start "
       "node without inline properties");
 
@@ -503,7 +507,7 @@ Value EvaluateLocallyCorrelatedPatternComprehension(
   if (start.IsNull()) {
     return Value(Value::List{});
   }
-  RG_CHECK(start.IsNode(), common::InvalidArgumentError,
+  RG_CHECK(start.IsNode(), common::ErrorCode::InvalidParameter,
            "pattern comprehension start must be a node");
   if (!NodeHasLabels(start.AsNode(), start_pattern.labels)) {
     return Value(Value::List{});
@@ -511,14 +515,14 @@ Value EvaluateLocallyCorrelatedPatternComprehension(
 
   const auto &[relationship_ptr, next_node_ptr] = pattern.chain.front();
   RG_CHECK(relationship_ptr != nullptr && next_node_ptr != nullptr,
-           common::InvalidArgumentError,
+           common::ErrorCode::InvalidParameter,
            "pattern comprehension relationship is incomplete");
   const ast::RelationshipPattern &relationship_pattern = *relationship_ptr;
   const ast::RelationshipDetail *detail = relationship_pattern.detail.get();
   RG_CHECK((detail == nullptr ||
             (detail->range == std::nullopt && detail->properties == nullptr)) &&
                next_node_ptr->properties == nullptr,
-           common::InvalidArgumentError,
+           common::ErrorCode::InvalidParameter,
            "locally correlated pattern comprehension does not support variable "
            "length or inline properties");
 
@@ -547,7 +551,7 @@ Value EvaluateLocallyCorrelatedPatternComprehension(
     if (edge.GetStartId() != start_id) {
       RG_CHECK(direction != graphdb::EdgeDirection::OUTGOING &&
                    edge.GetEndId() == start_id,
-               common::InternalError,
+               common::ErrorCode::InternalError,
                "edge iterator returned an unrelated relationship");
       next_id = edge.GetStartId();
     }
@@ -590,13 +594,13 @@ Value EvaluateQuantifier(
     ExecutionContext context) {
   RG_CHECK(!quantifier.variable.empty() && quantifier.list_expr != nullptr &&
                quantifier.predicate != nullptr,
-           common::InvalidArgumentError, "quantifier is incomplete");
+           common::ErrorCode::InvalidParameter, "quantifier is incomplete");
   Value list =
       EvaluateExpression(*quantifier.list_expr, row, precomputed, context);
   if (list.IsNull()) {
     return Value::Null();
   }
-  RG_CHECK(list.IsList(), common::InvalidArgumentError,
+  RG_CHECK(list.IsList(), common::ErrorCode::InvalidParameter,
            "quantifier requires a list value");
   std::size_t matches = 0;
   bool saw_null = false;
@@ -631,7 +635,7 @@ Value EvaluateQuantifier(
     case QuantifierMode::kSingle:
       return Value(matches == 1);
   }
-  RG_THROW(common::InternalError, "unknown quantifier mode");
+  RG_THROW(common::ErrorCode::InternalError, "unknown quantifier mode");
 }
 
 Value EvaluateArithmetic(
@@ -640,7 +644,8 @@ Value EvaluateArithmetic(
     ExecutionContext context) {
   const auto &binary = ast::CastAst<ast::BinaryExpression>(expression);
   RG_CHECK(binary.left != nullptr && binary.right != nullptr,
-           common::InvalidArgumentError, "arithmetic expression is incomplete");
+           common::ErrorCode::InvalidParameter,
+           "arithmetic expression is incomplete");
   Value left = EvaluateExpression(*binary.left, row, precomputed, context);
   Value right = EvaluateExpression(*binary.right, row, precomputed, context);
   if (expression.Is(ast::ASTNodeType::kAddExpression) && left.IsList()) {
@@ -687,43 +692,49 @@ Value EvaluateArithmetic(
   }
   if (divide && left.IsDuration() && IsNumeric(right)) {
     const double divisor = AsDoubleValue(right);
-    RG_CHECK(divisor != 0.0, common::InvalidArgumentError, "division by zero");
+    RG_CHECK(divisor != 0.0, common::ErrorCode::InvalidParameter,
+             "division by zero");
     return ScaleDuration(left.AsDuration(), 1.0 / divisor);
   }
   if (expression.Is(ast::ASTNodeType::kAddExpression) && left.IsString() &&
       right.IsString()) {
     return Value(left.AsString() + right.AsString());
   }
-  RG_CHECK(IsNumeric(left) && IsNumeric(right), common::InvalidArgumentError,
+  RG_CHECK(IsNumeric(left) && IsNumeric(right),
+           common::ErrorCode::InvalidParameter,
            "arithmetic expression requires numeric values");
   if (left.IsInteger() && right.IsInteger() &&
       !expression.Is(ast::ASTNodeType::kPowerExpression)) {
     const auto lhs = left.AsInteger();
     const auto rhs = right.AsInteger();
     if (expression.Is(ast::ASTNodeType::kAddExpression)) {
-      RG_CHECK(!AddWouldOverflow(lhs, rhs), common::InvalidArgumentError,
+      RG_CHECK(!AddWouldOverflow(lhs, rhs), common::ErrorCode::InvalidParameter,
                "integer addition overflow");
       return Value(lhs + rhs);
     }
     if (expression.Is(ast::ASTNodeType::kSubtractExpression)) {
-      RG_CHECK(!SubtractWouldOverflow(lhs, rhs), common::InvalidArgumentError,
+      RG_CHECK(!SubtractWouldOverflow(lhs, rhs),
+               common::ErrorCode::InvalidParameter,
                "integer subtraction overflow");
       return Value(lhs - rhs);
     }
     if (expression.Is(ast::ASTNodeType::kMultiplyExpression)) {
-      RG_CHECK(!MultiplyWouldOverflow(lhs, rhs), common::InvalidArgumentError,
+      RG_CHECK(!MultiplyWouldOverflow(lhs, rhs),
+               common::ErrorCode::InvalidParameter,
                "integer multiplication overflow");
       return Value(lhs * rhs);
     }
     if (expression.Is(ast::ASTNodeType::kDivideExpression)) {
-      RG_CHECK(rhs != 0, common::InvalidArgumentError, "division by zero");
+      RG_CHECK(rhs != 0, common::ErrorCode::InvalidParameter,
+               "division by zero");
       RG_CHECK(!(lhs == std::numeric_limits<std::int64_t>::min() && rhs == -1),
-               common::InvalidArgumentError, "integer division overflow");
+               common::ErrorCode::InvalidParameter,
+               "integer division overflow");
       return Value(lhs / rhs);
     }
-    RG_CHECK(rhs != 0, common::InvalidArgumentError, "modulo by zero");
+    RG_CHECK(rhs != 0, common::ErrorCode::InvalidParameter, "modulo by zero");
     RG_CHECK(!(lhs == std::numeric_limits<std::int64_t>::min() && rhs == -1),
-             common::InvalidArgumentError, "integer modulo overflow");
+             common::ErrorCode::InvalidParameter, "integer modulo overflow");
     return Value(lhs % rhs);
   }
   const double lhs = AsDoubleValue(left);
@@ -779,7 +790,7 @@ Value EvaluateOrderingComparison(const Value &left, const Value &right,
   if (op == ">=") {
     return Value(equal || ValueLess(right, left));
   }
-  RG_THROW(common::InvalidArgumentError,
+  RG_THROW(common::ErrorCode::InvalidParameter,
            "unsupported comparison operator: " + std::string(op));
 }
 
@@ -797,7 +808,7 @@ double AsDoubleValue(const Value &value) {
   if (value.IsInteger()) {
     return static_cast<double>(value.AsInteger());
   }
-  RG_CHECK(value.IsDouble(), common::InvalidArgumentError,
+  RG_CHECK(value.IsDouble(), common::ErrorCode::InvalidParameter,
            "expected numeric value");
   return value.AsDouble();
 }
@@ -831,13 +842,13 @@ Value EvaluateExpression(
         return slotted_value;
       }
       const Value *value = context.FindParameter(parameter.name);
-      RG_CHECK(value != nullptr, common::InvalidArgumentError,
+      RG_CHECK(value != nullptr, common::ErrorCode::InvalidParameter,
                "missing query parameter: " + parameter.name);
       return *value;
     }
     case ast::ASTNodeType::kPropertyExpression: {
       const auto &property = ast::CastAst<ast::PropertyExpression>(expression);
-      RG_CHECK(property.object != nullptr, common::InvalidArgumentError,
+      RG_CHECK(property.object != nullptr, common::ErrorCode::InvalidParameter,
                "property object is null");
       if (property.object->Is(ast::ASTNodeType::kVariable)) {
         Value value;
@@ -867,7 +878,7 @@ Value EvaluateExpression(
       Value::List values;
       for (const auto &element :
            ast::CastAst<ast::ListLiteral>(expression).elements) {
-        RG_CHECK(element != nullptr, common::InvalidArgumentError,
+        RG_CHECK(element != nullptr, common::ErrorCode::InvalidParameter,
                  "list element is null");
         values.push_back(
             EvaluateExpression(*element, row, precomputed, context));
@@ -878,7 +889,7 @@ Value EvaluateExpression(
       Value::Map values;
       for (const auto &[key, value] :
            ast::CastAst<ast::MapLiteral>(expression).entries) {
-        RG_CHECK(value != nullptr, common::InvalidArgumentError,
+        RG_CHECK(value != nullptr, common::ErrorCode::InvalidParameter,
                  "map value is null");
         values[key] = EvaluateExpression(*value, row, precomputed, context);
       }
@@ -889,7 +900,7 @@ Value EvaluateExpression(
     case ast::ASTNodeType::kXorExpression: {
       const auto &binary = ast::CastAst<ast::BinaryExpression>(expression);
       RG_CHECK(binary.left != nullptr && binary.right != nullptr,
-               common::InvalidArgumentError,
+               common::ErrorCode::InvalidParameter,
                "boolean expression is incomplete");
       const TruthValue left = ToTruthValue(
           EvaluateExpression(*binary.left, row, precomputed, context));
@@ -916,7 +927,7 @@ Value EvaluateExpression(
     }
     case ast::ASTNodeType::kNotExpression: {
       const auto &unary = ast::CastAst<ast::NotExpression>(expression);
-      RG_CHECK(unary.operand != nullptr, common::InvalidArgumentError,
+      RG_CHECK(unary.operand != nullptr, common::ErrorCode::InvalidParameter,
                "NOT expression operand is null");
       return FromTruthValue(Not(ToTruthValue(
           EvaluateExpression(*unary.operand, row, precomputed, context))));
@@ -924,14 +935,14 @@ Value EvaluateExpression(
     case ast::ASTNodeType::kUnaryPlusExpression:
     case ast::ASTNodeType::kUnaryMinusExpression: {
       const auto &unary = ast::CastAst<ast::UnaryExpression>(expression);
-      RG_CHECK(unary.operand != nullptr, common::InvalidArgumentError,
+      RG_CHECK(unary.operand != nullptr, common::ErrorCode::InvalidParameter,
                "unary expression operand is null");
       Value value =
           EvaluateExpression(*unary.operand, row, precomputed, context);
       if (value.IsNull()) {
         return Value::Null();
       }
-      RG_CHECK(IsNumeric(value), common::InvalidArgumentError,
+      RG_CHECK(IsNumeric(value), common::ErrorCode::InvalidParameter,
                "unary arithmetic requires a numeric value");
       if (expression.Is(ast::ASTNodeType::kUnaryPlusExpression)) {
         return value;
@@ -940,7 +951,8 @@ Value EvaluateExpression(
         return Value(-value.AsDouble());
       }
       RG_CHECK(value.AsInteger() != std::numeric_limits<std::int64_t>::min(),
-               common::InvalidArgumentError, "integer negation overflow");
+               common::ErrorCode::InvalidParameter,
+               "integer negation overflow");
       return Value(-value.AsInteger());
     }
     case ast::ASTNodeType::kAddExpression:
@@ -954,7 +966,7 @@ Value EvaluateExpression(
       const auto &comparison =
           ast::CastAst<ast::ComparisonExpression>(expression);
       RG_CHECK(comparison.left != nullptr && comparison.right != nullptr,
-               common::InvalidArgumentError,
+               common::ErrorCode::InvalidParameter,
                "comparison expression is incomplete");
       Value left =
           EvaluateExpression(*comparison.left, row, precomputed, context);
@@ -981,14 +993,14 @@ Value EvaluateExpression(
       if (comparison.op == ">=") {
         return EvaluateOrderingComparison(left, right, comparison.op);
       }
-      RG_THROW(common::InvalidArgumentError,
+      RG_THROW(common::ErrorCode::InvalidParameter,
                "unsupported comparison operator: " + comparison.op);
     }
     case ast::ASTNodeType::kStringPredicateExpression: {
       const auto &predicate =
           ast::CastAst<ast::StringPredicateExpression>(expression);
       RG_CHECK(predicate.left != nullptr && predicate.right != nullptr,
-               common::InvalidArgumentError,
+               common::ErrorCode::InvalidParameter,
                "string predicate expression is incomplete");
       Value left =
           EvaluateExpression(*predicate.left, row, precomputed, context);
@@ -1013,14 +1025,14 @@ Value EvaluateExpression(
         return Value(left.AsString().find(right.AsString()) !=
                      std::string::npos);
       }
-      RG_THROW(common::InvalidArgumentError,
+      RG_THROW(common::ErrorCode::InvalidParameter,
                "unsupported string predicate: " + predicate.op);
     }
     case ast::ASTNodeType::kListPredicateExpression: {
       const auto &predicate =
           ast::CastAst<ast::ListPredicateExpression>(expression);
       RG_CHECK(predicate.element != nullptr && predicate.list != nullptr,
-               common::InvalidArgumentError,
+               common::ErrorCode::InvalidParameter,
                "list predicate expression is incomplete");
       Value element =
           EvaluateExpression(*predicate.element, row, precomputed, context);
@@ -1029,7 +1041,7 @@ Value EvaluateExpression(
       if (list.IsNull()) {
         return Value::Null();
       }
-      RG_CHECK(list.IsList(), common::InvalidArgumentError,
+      RG_CHECK(list.IsList(), common::ErrorCode::InvalidParameter,
                "IN requires a list value");
       bool saw_null = false;
       for (const Value &candidate : list.AsList()) {
@@ -1044,7 +1056,7 @@ Value EvaluateExpression(
     case ast::ASTNodeType::kLabelPredicateExpression: {
       const auto &predicate =
           ast::CastAst<ast::LabelPredicateExpression>(expression);
-      RG_CHECK(predicate.expr != nullptr, common::InvalidArgumentError,
+      RG_CHECK(predicate.expr != nullptr, common::ErrorCode::InvalidParameter,
                "label predicate expression is incomplete");
       Value value =
           EvaluateExpression(*predicate.expr, row, precomputed, context);
@@ -1058,13 +1070,14 @@ Value EvaluateExpression(
         return Value(
             RelationshipHasAnyType(value.AsRelationship(), predicate.labels));
       }
-      RG_CHECK(false, common::InvalidArgumentError,
+      RG_CHECK(false, common::ErrorCode::InvalidParameter,
                "label predicate requires a graph entity");
     }
     case ast::ASTNodeType::kNullPredicateExpression: {
       const auto &predicate =
           ast::CastAst<ast::NullPredicateExpression>(expression);
-      RG_CHECK(predicate.operand != nullptr, common::InvalidArgumentError,
+      RG_CHECK(predicate.operand != nullptr,
+               common::ErrorCode::InvalidParameter,
                "null predicate operand is null");
       return Value(
           EvaluateExpression(*predicate.operand, row, precomputed, context)
@@ -1104,12 +1117,13 @@ Value EvaluateExpression(
     case ast::ASTNodeType::kParenthesizedExpression: {
       const auto &parenthesized =
           ast::CastAst<ast::ParenthesizedExpression>(expression);
-      RG_CHECK(parenthesized.expr != nullptr, common::InvalidArgumentError,
+      RG_CHECK(parenthesized.expr != nullptr,
+               common::ErrorCode::InvalidParameter,
                "parenthesized expression is empty");
       return EvaluateExpression(*parenthesized.expr, row, precomputed, context);
     }
     default:
-      RG_THROW(common::InvalidArgumentError,
+      RG_THROW(common::ErrorCode::InvalidParameter,
                "unsupported expression in executor: " +
                    std::string(ast::ToString(expression.node_type)));
   }

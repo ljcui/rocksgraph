@@ -1980,8 +1980,8 @@ TEST(raft, TestStateTransition) {
       }
       EXPECT_EQ(sm->term_, tt.wterm);
       EXPECT_EQ(sm->lead_, tt.wlead);
-    } catch (const std::exception& e) {
-      EXPECT_EQ(typeid(e), typeid(PanicException));
+    } catch (const common::Exception& e) {
+      EXPECT_EQ(e.code(), common::ErrorCode::InternalError);
       EXPECT_FALSE(tt.wallow);
     }
   }
@@ -3664,8 +3664,8 @@ TEST(raft, TestRemoveNode) {
     cc.set_type(raftpb::ConfChangeRemoveNode);
     raftpb::ConfChangeWrap ccw(cc);
     r->applyConfChange(ccw.AsV2());
-  } catch (const std::exception& e) {
-    EXPECT_EQ(typeid(e), typeid(PanicException));
+  } catch (const common::Exception& e) {
+    EXPECT_EQ(e.code(), common::ErrorCode::InternalError);
     panic = true;
   }
   EXPECT_TRUE(panic);
@@ -3698,8 +3698,8 @@ TEST(raft, TestRemoveLearner) {
     cc.set_type(raftpb::ConfChangeRemoveNode);
     raftpb::ConfChangeWrap ccw(cc);
     r->applyConfChange(ccw.AsV2());
-  } catch (std::exception& e) {
-    EXPECT_EQ(typeid(e), typeid(PanicException));
+  } catch (const common::Exception& e) {
+    EXPECT_EQ(e.code(), common::ErrorCode::InternalError);
     panic = true;
   }
   EXPECT_TRUE(panic);

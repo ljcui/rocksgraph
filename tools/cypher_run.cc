@@ -96,7 +96,7 @@ int main(int argc, char **argv) {
     transaction->Commit();
   } catch (const common::Exception &e) {
     RollbackIfActive(transaction.get());
-    spdlog::error("Query error: {}", e.Message());
+    spdlog::error("Query error: {}", e.message());
     return 1;
   } catch (const std::exception &e) {
     RollbackIfActive(transaction.get());

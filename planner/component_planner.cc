@@ -149,7 +149,8 @@ std::vector<const ast::Expression *> PredicateExpressions(
   expressions.reserve(predicates.size());
   for (const Predicate *predicate : predicates) {
     RG_CHECK(predicate != nullptr && predicate->expression != nullptr,
-             common::InvalidArgumentError, "predicate expression is null");
+             common::ErrorCode::InvalidParameter,
+             "predicate expression is null");
     expressions.push_back(predicate->expression);
   }
   return expressions;
@@ -182,21 +183,22 @@ std::vector<ast::PrecomputedExpression> PrecomputedExpressions(
 }
 
 const ast::Expression *PredicateValueExpression(const Predicate &predicate) {
-  RG_CHECK(predicate.property_value != nullptr, common::InvalidArgumentError,
+  RG_CHECK(predicate.property_value != nullptr,
+           common::ErrorCode::InvalidParameter,
            "index seek predicate value is null");
   return predicate.property_value;
 }
 
 void AddRangePredicateGroup(std::vector<std::vector<const Predicate *>> *groups,
                             std::vector<const Predicate *> predicates) {
-  RG_CHECK(groups != nullptr, common::InternalError,
+  RG_CHECK(groups != nullptr, common::ErrorCode::InternalError,
            "range predicate groups are null");
   if (predicates.empty()) {
     return;
   }
   const std::string &property_key = predicates.front()->property_key;
   for (auto &group : *groups) {
-    RG_CHECK(!group.empty(), common::InternalError,
+    RG_CHECK(!group.empty(), common::ErrorCode::InternalError,
              "range predicate group is empty");
     if (group.front()->property_key == property_key) {
       group.insert(group.end(), predicates.begin(), predicates.end());
@@ -210,7 +212,8 @@ std::vector<std::string> LabelsFromPredicates(
     const std::vector<const Predicate *> &predicates) {
   std::vector<std::string> labels;
   for (const Predicate *predicate : predicates) {
-    RG_CHECK(predicate != nullptr, common::InternalError, "predicate is null");
+    RG_CHECK(predicate != nullptr, common::ErrorCode::InternalError,
+             "predicate is null");
     labels.insert(labels.end(), predicate->labels.begin(),
                   predicate->labels.end());
   }
@@ -234,11 +237,11 @@ ExpandDirection ToExpandDirection(Direction direction) {
     case Direction::kBoth:
       return ExpandDirection::kBoth;
   }
-  RG_THROW(common::InternalError, "unknown relationship direction");
+  RG_THROW(common::ErrorCode::InternalError, "unknown relationship direction");
 }
 
 LogicalVariableLength ToLogicalVariableLength(const PatternLength &length) {
-  RG_CHECK(length.variable, common::InvalidArgumentError,
+  RG_CHECK(length.variable, common::ErrorCode::InvalidParameter,
            "relationship length is not variable");
   return {.min = length.min, .max = length.max};
 }
@@ -252,7 +255,7 @@ Direction Reverse(Direction direction) {
     case Direction::kBoth:
       return Direction::kBoth;
   }
-  RG_THROW(common::InternalError, "unknown relationship direction");
+  RG_THROW(common::ErrorCode::InternalError, "unknown relationship direction");
 }
 
 bool RelationshipSetsDisjoint(const std::vector<std::size_t> &lhs,
@@ -350,7 +353,7 @@ CostEstimate EstimateLeafPlan(const LogicalPlan &plan,
           seek.Types(), seek.PropertyKey(), seek.Predicates().size());
     }
     default:
-      RG_THROW(common::InternalError,
+      RG_THROW(common::ErrorCode::InternalError,
                "unsupported leaf estimate: " + std::string(plan.Name()));
   }
 }
@@ -364,7 +367,7 @@ class IdpComponentPlanner final : public ComponentPlanner {
         max_candidates_per_relationship_count_(
             max_candidates_per_relationship_count) {
     RG_CHECK(max_candidates_per_relationship_count_ > 0,
-             common::InvalidArgumentError,
+             common::ErrorCode::InvalidParameter,
              "max IDP candidates per relationship count must be positive");
   }
 
@@ -372,14 +375,14 @@ class IdpComponentPlanner final : public ComponentPlanner {
       const QueryGraph &query_graph, const QueryGraphComponent &component,
       QueryGraphPlanningContext *context,
       const std::vector<LogicalSortItem> &interesting_order) const override {
-    RG_CHECK(context != nullptr, common::InternalError,
+    RG_CHECK(context != nullptr, common::ErrorCode::InternalError,
              "query graph planning context is null");
 
     const std::unordered_set<const Predicate *> base_predicates =
         context->Snapshot();
     if (component.pattern_relationship_indices.empty()) {
       const std::vector<std::string> nodes = SortedComponentNodes(component);
-      RG_CHECK(nodes.size() == 1, common::InvalidArgumentError,
+      RG_CHECK(nodes.size() == 1, common::ErrorCode::InvalidParameter,
                UnsupportedInStage(kLogicalPlanStage,
                                   "multi-node disconnected component"));
       PlanTable plan_table;
@@ -455,10 +458,11 @@ class IdpComponentPlanner final : public ComponentPlanner {
         best_ordered_cost = candidate->cost;
       }
     }
-    RG_CHECK(found, common::InternalError, "missing final plan candidate");
+    RG_CHECK(found, common::ErrorCode::InternalError,
+             "missing final plan candidate");
     if (found_ordered && !interesting_order.empty()) {
       const PlanCandidate *best = plan_table.Best(best_key);
-      RG_CHECK(best != nullptr, common::InternalError,
+      RG_CHECK(best != nullptr, common::ErrorCode::InternalError,
                "missing cheapest final plan candidate");
       const double cost_with_final_sort =
           cost_model_
@@ -474,7 +478,7 @@ class IdpComponentPlanner final : public ComponentPlanner {
   void PutCandidate(PlanCandidate candidate,
                     const std::vector<LogicalSortItem> &interesting_order,
                     PlanTable *plan_table) const {
-    RG_CHECK(plan_table != nullptr, common::InternalError,
+    RG_CHECK(plan_table != nullptr, common::ErrorCode::InternalError,
              "plan table is null");
     std::optional<PlanCandidate> ordered_candidate;
     if (!interesting_order.empty() &&
@@ -498,7 +502,7 @@ class IdpComponentPlanner final : public ComponentPlanner {
 
   void PruneCandidates(std::size_t relationship_count,
                        PlanTable *plan_table) const {
-    RG_CHECK(plan_table != nullptr, common::InternalError,
+    RG_CHECK(plan_table != nullptr, common::ErrorCode::InternalError,
              "plan table is null");
     plan_table->PruneRelationshipCount(relationship_count,
                                        max_candidates_per_relationship_count_);
@@ -509,9 +513,9 @@ class IdpComponentPlanner final : public ComponentPlanner {
       std::size_t input_relationship_count, QueryGraphPlanningContext *context,
       const std::vector<LogicalSortItem> &interesting_order,
       PlanTable *plan_table) const {
-    RG_CHECK(context != nullptr, common::InternalError,
+    RG_CHECK(context != nullptr, common::ErrorCode::InternalError,
              "query graph planning context is null");
-    RG_CHECK(plan_table != nullptr, common::InternalError,
+    RG_CHECK(plan_table != nullptr, common::ErrorCode::InternalError,
              "plan table is null");
 
     const std::vector<PlanKey> keys =
@@ -544,9 +548,9 @@ class IdpComponentPlanner final : public ComponentPlanner {
                          QueryGraphPlanningContext *context,
                          const std::vector<LogicalSortItem> &interesting_order,
                          PlanTable *plan_table) const {
-    RG_CHECK(context != nullptr, common::InternalError,
+    RG_CHECK(context != nullptr, common::ErrorCode::InternalError,
              "query graph planning context is null");
-    RG_CHECK(plan_table != nullptr, common::InternalError,
+    RG_CHECK(plan_table != nullptr, common::ErrorCode::InternalError,
              "plan table is null");
 
     for (std::size_t left_count = 1; left_count < target_relationship_count;
@@ -590,9 +594,9 @@ class IdpComponentPlanner final : public ComponentPlanner {
       QueryGraphPlanningContext *context,
       const std::vector<LogicalSortItem> &interesting_order,
       PlanTable *plan_table) const {
-    RG_CHECK(context != nullptr, common::InternalError,
+    RG_CHECK(context != nullptr, common::ErrorCode::InternalError,
              "query graph planning context is null");
-    RG_CHECK(plan_table != nullptr, common::InternalError,
+    RG_CHECK(plan_table != nullptr, common::ErrorCode::InternalError,
              "plan table is null");
 
     context->Restore(base_predicates);
@@ -614,18 +618,18 @@ class IdpComponentPlanner final : public ComponentPlanner {
       QueryGraphPlanningContext *context,
       const std::vector<LogicalSortItem> &interesting_order,
       PlanTable *plan_table) const {
-    RG_CHECK(context != nullptr, common::InternalError,
+    RG_CHECK(context != nullptr, common::ErrorCode::InternalError,
              "query graph planning context is null");
-    RG_CHECK(plan_table != nullptr, common::InternalError,
+    RG_CHECK(plan_table != nullptr, common::ErrorCode::InternalError,
              "plan table is null");
 
     context->Restore(base_predicates);
     std::vector<LeafPlanCandidate> leaf_candidates =
         context->BuildNodeLeafCandidates(query_graph, node);
-    RG_CHECK(!leaf_candidates.empty(), common::InternalError,
+    RG_CHECK(!leaf_candidates.empty(), common::ErrorCode::InternalError,
              "missing node leaf candidate");
     for (auto &leaf_candidate : leaf_candidates) {
-      RG_CHECK(leaf_candidate.plan != nullptr, common::InternalError,
+      RG_CHECK(leaf_candidate.plan != nullptr, common::ErrorCode::InternalError,
                "node leaf candidate plan is null");
       context->Restore(std::move(leaf_candidate.planned_predicates));
       CostEstimate estimate =
@@ -646,9 +650,9 @@ class IdpComponentPlanner final : public ComponentPlanner {
       QueryGraphPlanningContext *context,
       const std::vector<LogicalSortItem> &interesting_order,
       PlanTable *plan_table) const {
-    RG_CHECK(context != nullptr, common::InternalError,
+    RG_CHECK(context != nullptr, common::ErrorCode::InternalError,
              "query graph planning context is null");
-    RG_CHECK(plan_table != nullptr, common::InternalError,
+    RG_CHECK(plan_table != nullptr, common::ErrorCode::InternalError,
              "plan table is null");
 
     for (std::size_t relationship_index :
@@ -658,7 +662,8 @@ class IdpComponentPlanner final : public ComponentPlanner {
           context->BuildRelationshipLeafCandidates(query_graph,
                                                    relationship_index);
       for (auto &leaf_candidate : leaf_candidates) {
-        RG_CHECK(leaf_candidate.plan != nullptr, common::InternalError,
+        RG_CHECK(leaf_candidate.plan != nullptr,
+                 common::ErrorCode::InternalError,
                  "relationship leaf candidate plan is null");
         context->Restore(std::move(leaf_candidate.planned_predicates));
         CostEstimate estimate =
@@ -685,7 +690,7 @@ class IdpComponentPlanner final : public ComponentPlanner {
                                 const PlanCandidate &input,
                                 std::size_t relationship_index,
                                 QueryGraphPlanningContext *context) const {
-    RG_CHECK(context != nullptr, common::InternalError,
+    RG_CHECK(context != nullptr, common::ErrorCode::InternalError,
              "query graph planning context is null");
     PlanCandidate candidate = CloneCandidate(input);
     context->Restore(candidate.planned_predicates);
@@ -696,7 +701,7 @@ class IdpComponentPlanner final : public ComponentPlanner {
         candidate.covered_symbols.contains(relationship.left_node);
     const bool right_solved =
         candidate.covered_symbols.contains(relationship.right_node);
-    RG_CHECK(left_solved || right_solved, common::InternalError,
+    RG_CHECK(left_solved || right_solved, common::ErrorCode::InternalError,
              "relationship is not expandable");
     const std::vector<std::string> relationship_types =
         context->ConsumeRelationshipTypes(query_graph.selections, relationship);
@@ -754,7 +759,7 @@ class IdpComponentPlanner final : public ComponentPlanner {
                                const PlanCandidate &right_input,
                                const std::vector<std::string> &join_keys,
                                QueryGraphPlanningContext *context) const {
-    RG_CHECK(context != nullptr, common::InternalError,
+    RG_CHECK(context != nullptr, common::ErrorCode::InternalError,
              "query graph planning context is null");
     PlanCandidate left = CloneCandidate(left_input);
     PlanCandidate right = CloneCandidate(right_input);
@@ -786,16 +791,16 @@ QueryGraphPlanningContext::QueryGraphPlanningContext(
     std::unordered_set<const Predicate *> *planned_predicates,
     const LogicalPlanBuilderOptions *options)
     : planned_predicates_(planned_predicates), options_(options) {
-  RG_CHECK(planned_predicates_ != nullptr, common::InternalError,
+  RG_CHECK(planned_predicates_ != nullptr, common::ErrorCode::InternalError,
            "planned predicate set is null");
-  RG_CHECK(options_ != nullptr, common::InternalError,
+  RG_CHECK(options_ != nullptr, common::ErrorCode::InternalError,
            "logical plan builder options are null");
 }
 
 std::vector<LeafPlanCandidate>
 QueryGraphPlanningContext::BuildNodeLeafCandidates(
     const QueryGraph &query_graph, std::string_view variable) {
-  RG_CHECK(!variable.empty(), common::InvalidArgumentError,
+  RG_CHECK(!variable.empty(), common::ErrorCode::InvalidParameter,
            "node leaf variable is empty");
   const std::unordered_set<const Predicate *> base_predicates = Snapshot();
   std::vector<LeafPlanCandidate> candidates;
@@ -823,7 +828,7 @@ QueryGraphPlanningContext::BuildNodeLeafCandidates(
 
   for (const IndexedPredicate &seek : IndexSeekPredicates(
            query_graph.selections, variable, IndexEntityKind::kNode, labels)) {
-    RG_CHECK(seek.predicate != nullptr, common::InternalError,
+    RG_CHECK(seek.predicate != nullptr, common::ErrorCode::InternalError,
              "node index seek predicate is null");
     Restore(base_predicates);
     MarkPlanned(label_predicates);
@@ -868,7 +873,7 @@ std::vector<LeafPlanCandidate>
 QueryGraphPlanningContext::BuildRelationshipLeafCandidates(
     const QueryGraph &query_graph, std::size_t relationship_index) {
   RG_CHECK(relationship_index < query_graph.pattern_relationships.size(),
-           common::InvalidArgumentError,
+           common::ErrorCode::InvalidParameter,
            "relationship leaf index out of range");
   std::vector<LeafPlanCandidate> candidates;
   const PatternRelationship &relationship =
@@ -912,7 +917,7 @@ QueryGraphPlanningContext::BuildRelationshipLeafCandidates(
   for (const IndexedPredicate &seek :
        IndexSeekPredicates(query_graph.selections, relationship.variable,
                            IndexEntityKind::kRelationship, types)) {
-    RG_CHECK(seek.predicate != nullptr, common::InternalError,
+    RG_CHECK(seek.predicate != nullptr, common::ErrorCode::InternalError,
              "relationship index seek predicate is null");
     Restore(type_predicates);
     planned_predicates_->insert(seek.predicate);
@@ -958,7 +963,8 @@ std::vector<std::string> QueryGraphPlanningContext::ConsumeRelationshipTypes(
 
   for (const Predicate *predicate : ConsumableRelationshipTypePredicates(
            selections, relationship.variable)) {
-    RG_CHECK(predicate != nullptr, common::InternalError, "predicate is null");
+    RG_CHECK(predicate != nullptr, common::ErrorCode::InternalError,
+             "predicate is null");
     std::vector<std::string> predicate_types =
         SortedUniqueStrings(predicate->relationship_types);
     if (predicate_types.empty()) {
@@ -982,8 +988,8 @@ std::vector<std::string> QueryGraphPlanningContext::ConsumeRelationshipTypes(
 
 std::size_t QueryGraphPlanningContext::ApplyAvailableFilters(
     const Selections &selections, std::unique_ptr<LogicalPlan> *plan) {
-  RG_CHECK(plan != nullptr && *plan != nullptr, common::InternalError,
-           "logical plan is null");
+  RG_CHECK(plan != nullptr && *plan != nullptr,
+           common::ErrorCode::InternalError, "logical plan is null");
   std::size_t applied_count = 0;
   bool changed = true;
   while (changed) {
@@ -995,15 +1001,18 @@ std::size_t QueryGraphPlanningContext::ApplyAvailableFilters(
       if (!DependenciesMet(predicate.dependencies, (*plan)->SolvedSymbols())) {
         continue;
       }
-      RG_CHECK(predicate.expression != nullptr, common::InvalidArgumentError,
+      RG_CHECK(predicate.expression != nullptr,
+               common::ErrorCode::InvalidParameter,
                "selection predicate expression is null");
       if (predicate.kind == PredicateKind::kExistsSubquery) {
-        RG_CHECK(predicate.subquery != nullptr, common::InvalidArgumentError,
+        RG_CHECK(predicate.subquery != nullptr,
+                 common::ErrorCode::InvalidParameter,
                  "EXISTS predicate subquery is null");
         *plan = std::make_unique<SemiApplyPlan>(
             std::move(*plan), BuildNestedPlan(*predicate.subquery));
       } else if (predicate.kind == PredicateKind::kNotExistsSubquery) {
-        RG_CHECK(predicate.subquery != nullptr, common::InvalidArgumentError,
+        RG_CHECK(predicate.subquery != nullptr,
+                 common::ErrorCode::InvalidParameter,
                  "NOT EXISTS predicate subquery is null");
         *plan = std::make_unique<AntiSemiApplyPlan>(
             std::move(*plan), BuildNestedPlan(*predicate.subquery));
@@ -1060,14 +1069,15 @@ std::size_t QueryGraphPlanningContext::ApplyAvailableFilters(
 void QueryGraphPlanningContext::ApplyNestedExpressions(
     const std::vector<NestedIRExpression> &nested_expressions,
     std::unique_ptr<LogicalPlan> *plan) const {
-  RG_CHECK(plan != nullptr && *plan != nullptr, common::InternalError,
-           "logical plan is null");
+  RG_CHECK(plan != nullptr && *plan != nullptr,
+           common::ErrorCode::InternalError, "logical plan is null");
   for (const auto &nested : nested_expressions) {
-    RG_CHECK(nested.query != nullptr, common::InvalidArgumentError,
+    RG_CHECK(nested.query != nullptr, common::ErrorCode::InvalidParameter,
              "nested IR expression query is null");
     switch (nested.kind) {
       case NestedIRExpressionKind::kExists:
-        RG_CHECK(!nested.value_variable.empty(), common::InvalidArgumentError,
+        RG_CHECK(!nested.value_variable.empty(),
+                 common::ErrorCode::InvalidParameter,
                  "EXISTS nested value variable is empty");
         *plan = std::make_unique<LetSemiApplyPlan>(
             std::move(*plan), BuildNestedPlan(*nested.query),
@@ -1075,9 +1085,10 @@ void QueryGraphPlanningContext::ApplyNestedExpressions(
         break;
       case NestedIRExpressionKind::kList:
         RG_CHECK(!nested.collection_variable.empty(),
-                 common::InvalidArgumentError,
+                 common::ErrorCode::InvalidParameter,
                  "list nested collection variable is empty");
-        RG_CHECK(!nested.value_variable.empty(), common::InvalidArgumentError,
+        RG_CHECK(!nested.value_variable.empty(),
+                 common::ErrorCode::InvalidParameter,
                  "list nested value variable is empty");
         *plan = std::make_unique<RollUpApplyPlan>(
             std::move(*plan), BuildNestedPlan(*nested.query),
@@ -1091,7 +1102,7 @@ void QueryGraphPlanningContext::ValidateAllPredicatesPlanned(
     const Selections &selections) const {
   for (const auto &predicate : selections.predicates) {
     RG_CHECK(planned_predicates_->contains(&predicate),
-             common::InvalidArgumentError,
+             common::ErrorCode::InvalidParameter,
              UnsupportedInStage(kLogicalPlanStage,
                                 "selection predicate with unmet dependencies"));
   }
@@ -1168,7 +1179,7 @@ QueryGraphPlanningContext::FindIndex(IndexEntityKind entity_kind,
                              .supports_range = descriptor->supports_range};
     }
   }
-  RG_THROW(common::InternalError, "unknown index entity kind");
+  RG_THROW(common::ErrorCode::InternalError, "unknown index entity kind");
 }
 
 std::vector<QueryGraphPlanningContext::IndexedPredicate>
@@ -1198,7 +1209,8 @@ QueryGraphPlanningContext::IndexSeekPredicates(
       out.begin(), out.end(),
       [](const IndexedPredicate &lhs, const IndexedPredicate &rhs) {
         RG_CHECK(lhs.predicate != nullptr && rhs.predicate != nullptr,
-                 common::InternalError, "index seek predicate is null");
+                 common::ErrorCode::InternalError,
+                 "index seek predicate is null");
         return lhs.predicate->property_key < rhs.predicate->property_key;
       });
   return out;
@@ -1259,7 +1271,7 @@ QueryGraphPlanningContext::IndexRangePredicateGroups(
       groups.begin(), groups.end(),
       [](const std::vector<const Predicate *> &lhs,
          const std::vector<const Predicate *> &rhs) {
-        RG_CHECK(!lhs.empty() && !rhs.empty(), common::InternalError,
+        RG_CHECK(!lhs.empty() && !rhs.empty(), common::ErrorCode::InternalError,
                  "index range predicate group is empty");
         return lhs.front()->property_key < rhs.front()->property_key;
       });
@@ -1277,7 +1289,7 @@ void QueryGraphPlanningContext::MarkPlanned(
 
 std::unique_ptr<LogicalPlan> QueryGraphPlanningContext::BuildNestedPlan(
     const QueryIR &query) const {
-  RG_CHECK(options_ != nullptr, common::InternalError,
+  RG_CHECK(options_ != nullptr, common::ErrorCode::InternalError,
            "logical plan builder options are null");
   return CreateLogicalPlan(query, *options_);
 }

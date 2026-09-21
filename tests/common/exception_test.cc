@@ -7,8 +7,7 @@
 #include <type_traits>
 
 static_assert(std::is_base_of_v<std::runtime_error, common::Exception>);
-static_assert(
-    std::is_base_of_v<common::Exception, common::RocksGraphException>);
+static_assert(std::is_final_v<common::Exception>);
 
 TEST(ExceptionTest, ErrorCodeNamesAndDescriptionsAreConsistent) {
   EXPECT_STREQ(
@@ -18,47 +17,35 @@ TEST(ExceptionTest, ErrorCodeNamesAndDescriptionsAreConsistent) {
                "Invalid index query.");
 }
 
-TEST(ExceptionTest, ThrowCodeFormatsMessageAndCapturesSourceLocation) {
+TEST(ExceptionTest, ThrowFormatsMessageAndCapturesSourceLocation) {
   try {
-    RG_THROW_CODE(InvalidParameter, "invalid value {}", 7);
-  } catch (const common::RocksGraphException &error) {
+    RG_THROW(common::ErrorCode::InvalidParameter, "invalid value {}", 7);
+  } catch (const common::Exception &error) {
     EXPECT_EQ(error.code(), common::ErrorCode::InvalidParameter);
-    EXPECT_EQ(error.Type(), "InvalidParameter");
-    EXPECT_EQ(error.msg(), "invalid value 7");
-    EXPECT_NE(error.File().find("exception_test.cc"), std::string::npos);
-    EXPECT_EQ(error.Function(), "TestBody");
-    EXPECT_GT(error.Line(), 0);
+    EXPECT_STREQ(common::ErrorCodeToString(error.code()), "InvalidParameter");
+    EXPECT_EQ(error.message(), "invalid value 7");
+    EXPECT_NE(error.file().find("exception_test.cc"), std::string::npos);
+    EXPECT_EQ(error.function(), "TestBody");
+    EXPECT_GT(error.line(), 0);
     EXPECT_NE(std::string(error.what()).find("InvalidParameter"),
               std::string::npos);
     return;
   }
-  FAIL() << "expected common::RocksGraphException";
+  FAIL() << "expected common::Exception";
 }
 
-TEST(ExceptionTest, ThrowCodeUsesDefaultDescription) {
+TEST(ExceptionTest, ThrowUsesDefaultDescription) {
   try {
-    RG_THROW_CODE(IndexNotReady);
-  } catch (const common::RocksGraphException &error) {
-    EXPECT_EQ(error.code(), common::ErrorCode::IndexNotReady);
-    EXPECT_EQ(error.msg(), "Index is still building.");
-    return;
-  }
-  FAIL() << "expected common::RocksGraphException";
-}
-
-TEST(ExceptionTest, TypedExceptionsCarryErrorCodes) {
-  try {
-    RG_THROW(common::InvalidArgumentError, "invalid argument");
+    RG_THROW(common::ErrorCode::IndexNotReady);
   } catch (const common::Exception &error) {
-    EXPECT_EQ(error.code(), common::ErrorCode::InvalidParameter);
-    EXPECT_EQ(error.msg(), "invalid argument");
-    EXPECT_EQ(error.Type(), "InvalidArgumentError");
+    EXPECT_EQ(error.code(), common::ErrorCode::IndexNotReady);
+    EXPECT_EQ(error.message(), "Index is still building.");
     return;
   }
-  FAIL() << "expected common::InvalidArgumentError";
+  FAIL() << "expected common::Exception";
 }
 
-TEST(ExceptionTest, TypedExceptionCodesHaveDescriptions) {
+TEST(ExceptionTest, ErrorCodesHaveDescriptions) {
   EXPECT_STREQ(common::ErrorCodeToString(common::ErrorCode::InternalError),
                "InternalError");
   EXPECT_STREQ(common::ErrorCodeDesc(common::ErrorCode::QueryCancelled),

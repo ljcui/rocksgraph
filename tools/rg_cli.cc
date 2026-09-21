@@ -29,7 +29,6 @@
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <tabulate/table.hpp>
@@ -42,6 +41,7 @@
 #include "bolt/pack_stream.h"
 #include "bolt/record.h"
 #include "bolt/to_string.h"
+#include "common/exception.h"
 #include "tools/linenoise/linenoise.h"
 
 DEFINE_string(format, "table", "Output format: table, csv, or json");
@@ -95,8 +95,8 @@ std::any ReadMessage(boost::asio::ip::tcp::socket& socket,
   const auto [message, error] = hydrator.Hydrate(
       {reinterpret_cast<const char*>(buffer.data()), buffer.size()});
   if (error) {
-    throw std::runtime_error(
-        fmt::format("Failed to parse Bolt message: {}", *error));
+    RG_THROW(common::ErrorCode::BoltDataError,
+             "Failed to parse Bolt message: {}", *error);
   }
   return message;
 }
@@ -155,7 +155,8 @@ bool FetchRecords(boost::asio::ip::tcp::socket& socket,
       const auto& record =
           std::any_cast<const std::optional<bolt::Record>&>(message);
       if (!record || !header) {
-        throw std::runtime_error("Received a Bolt record before its header");
+        RG_THROW(common::ErrorCode::BoltDataError,
+                 "Received a Bolt record before its header");
       }
 
       nlohmann::json values = nlohmann::json::array();
@@ -163,9 +164,9 @@ bool FetchRecords(boost::asio::ip::tcp::socket& socket,
         values.push_back(bolt::ToJson(item));
       }
       if (values.size() != header->size()) {
-        throw std::runtime_error(fmt::format(
-            "Mismatched Bolt record: expected {} columns, received {}",
-            header->size(), values.size()));
+        RG_THROW(common::ErrorCode::BoltDataError,
+                 "Mismatched Bolt record: expected {} columns, received {}",
+                 header->size(), values.size());
       }
 
       if (output_format == OutputFormat::kJson) {
@@ -229,8 +230,8 @@ bool FetchRecords(boost::asio::ip::tcp::socket& socket,
     if (message.type() == typeid(bolt::Ignored*)) {
       continue;
     }
-    throw std::runtime_error(
-        fmt::format("Unexpected Bolt message: {}", message.type().name()));
+    RG_THROW(common::ErrorCode::BoltDataError, "Unexpected Bolt message: {}",
+             message.type().name());
   }
 }
 
@@ -297,7 +298,8 @@ void ResetConnection(boost::asio::ip::tcp::socket& socket,
     if (message.type() == typeid(bolt::Ignored*)) {
       continue;
     }
-    throw std::runtime_error("Unexpected Bolt message after RESET");
+    RG_THROW(common::ErrorCode::BoltDataError,
+             "Unexpected Bolt message after RESET");
   }
 }
 
@@ -312,9 +314,9 @@ void Authenticate(boost::asio::ip::tcp::socket& socket,
   uint8_t accepted_version[4] = {};
   boost::asio::read(socket, boost::asio::buffer(accepted_version));
   if (accepted_version[2] != 4 || accepted_version[3] != 4) {
-    throw std::runtime_error(
-        fmt::format("Server selected unsupported Bolt version {}.{}",
-                    accepted_version[3], accepted_version[2]));
+    RG_THROW(common::ErrorCode::BoltDataError,
+             "Server selected unsupported Bolt version {}.{}",
+             accepted_version[3], accepted_version[2]);
   }
 
   std::unordered_map<std::string, std::any> metadata = {
@@ -332,8 +334,8 @@ void Authenticate(boost::asio::ip::tcp::socket& socket,
   if (message.type() == typeid(bolt::Success*)) {
     const auto* success = std::any_cast<bolt::Success*>(message);
     if (success->server.find("rocksgraph") == std::string::npos) {
-      throw std::runtime_error(
-          fmt::format("The server is not RocksGraph: {}", success->server));
+      RG_THROW(common::ErrorCode::BoltDataError,
+               "The server is not RocksGraph: {}", success->server);
     }
     if (success->patches.size() == 1 && success->patches[0] == "utc") {
       hydrator.UseUtc(true);
@@ -343,9 +345,11 @@ void Authenticate(boost::asio::ip::tcp::socket& socket,
   if (message.type() == typeid(std::optional<bolt::Neo4jError>)) {
     const auto& error =
         std::any_cast<const std::optional<bolt::Neo4jError>&>(message);
-    throw std::runtime_error(error ? error->msg : "Authentication failed");
+    RG_THROW(common::ErrorCode::BoltDataError,
+             error ? error->msg : "Authentication failed");
   }
-  throw std::runtime_error("Unexpected Bolt message during authentication");
+  RG_THROW(common::ErrorCode::BoltDataError,
+           "Unexpected Bolt message during authentication");
 }
 
 }  // namespace

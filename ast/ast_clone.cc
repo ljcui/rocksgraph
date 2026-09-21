@@ -6,8 +6,6 @@
 
 namespace ast {
 
-using common::InternalError;
-
 namespace {
 
 template <typename T, typename CloneFunc>
@@ -332,7 +330,8 @@ std::unique_ptr<Expression> CloneExpressionImpl(const Expression &expr) {
       return cloned;
     }
     default:
-      RG_THROW(InternalError, "Unsupported Expression type for clone");
+      RG_THROW(common::ErrorCode::InternalError,
+               "Unsupported Expression type for clone");
   }
 }
 
@@ -455,7 +454,8 @@ std::unique_ptr<ReadingClause> CloneReadingClause(const ReadingClause &clause) {
     case ASTNodeType::kInQueryCall:
       return CloneInQueryCall(CastAst<InQueryCall>(clause));
     default:
-      RG_THROW(InternalError, "Unsupported ReadingClause type for clone");
+      RG_THROW(common::ErrorCode::InternalError,
+               "Unsupported ReadingClause type for clone");
   }
 }
 
@@ -527,7 +527,8 @@ std::unique_ptr<UpdatingClause> CloneUpdatingClause(
     case ASTNodeType::kRemove:
       return CloneRemove(CastAst<Remove>(clause));
     default:
-      RG_THROW(InternalError, "Unsupported UpdatingClause type for clone");
+      RG_THROW(common::ErrorCode::InternalError,
+               "Unsupported UpdatingClause type for clone");
   }
 }
 
@@ -608,7 +609,8 @@ std::unique_ptr<SingleQuery> CloneSingleQuery(const SingleQuery &query) {
     case ASTNodeType::kMultiPartQuery:
       return CloneMultiPartQuery(CastAst<MultiPartQuery>(query));
     default:
-      RG_THROW(InternalError, "Unsupported SingleQuery type for clone");
+      RG_THROW(common::ErrorCode::InternalError,
+               "Unsupported SingleQuery type for clone");
   }
 }
 

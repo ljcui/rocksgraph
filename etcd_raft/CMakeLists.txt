@@ -7,7 +7,8 @@ target_compile_features(rocksgraph_etcd_raft PUBLIC cxx_std_20)
 target_include_directories(
   rocksgraph_etcd_raft PUBLIC ${PROJECT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}
                               ${CMAKE_CURRENT_SOURCE_DIR}/raftpb)
-target_link_libraries(rocksgraph_etcd_raft PUBLIC protobuf::libprotobuf)
+target_link_libraries(rocksgraph_etcd_raft PUBLIC protobuf::libprotobuf
+                                                  RocksGraph::common)
 
 option(ROCKSGRAPH_BUILD_RAFT_TESTS "Build etcd-raft-cpp tests" OFF)
 if(ROCKSGRAPH_BUILD_RAFT_TESTS)

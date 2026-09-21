@@ -51,7 +51,7 @@ std::optional<std::size_t> SlotConfiguration::Find(
 
 std::size_t SlotConfiguration::At(std::string_view name) const {
   const std::optional<std::size_t> offset = Find(name);
-  RG_CHECK(offset.has_value(), common::InvalidArgumentError,
+  RG_CHECK(offset.has_value(), common::ErrorCode::InvalidParameter,
            "slot is not allocated: " + std::string(name));
   return *offset;
 }
@@ -61,7 +61,7 @@ bool SlotConfiguration::Contains(std::string_view name) const {
 }
 
 SlottedRow::SlottedRow(SlotConfigurationPtr slots) : slots_(std::move(slots)) {
-  RG_CHECK(slots_ != nullptr, common::InvalidArgumentError,
+  RG_CHECK(slots_ != nullptr, common::ErrorCode::InvalidParameter,
            "slot configuration is null");
   values_.resize(slots_->SlotCount());
 }
@@ -73,7 +73,7 @@ void SlottedRow::Reset() {
 }
 
 void SlottedRow::Reset(SlotConfigurationPtr slots) {
-  RG_CHECK(slots != nullptr, common::InvalidArgumentError,
+  RG_CHECK(slots != nullptr, common::ErrorCode::InvalidParameter,
            "slot configuration is null");
   if (slots_ != slots) {
     slots_ = std::move(slots);
@@ -85,13 +85,13 @@ void SlottedRow::Reset(SlotConfigurationPtr slots) {
 }
 
 bool SlottedRow::IsInitialized(std::size_t offset) const {
-  RG_CHECK(offset < values_.size(), common::InternalError,
+  RG_CHECK(offset < values_.size(), common::ErrorCode::InternalError,
            "slot offset is out of range");
   return !std::holds_alternative<UninitializedSlot>(values_[offset]);
 }
 
 std::int64_t SlottedRow::EntityIdAt(std::size_t offset) const {
-  RG_CHECK(IsInitialized(offset), common::InvalidArgumentError,
+  RG_CHECK(IsInitialized(offset), common::ErrorCode::InvalidParameter,
            "entity slot is not initialized");
   const SlotValue &stored = values_[offset];
   if (const auto *vertex = std::get_if<graphdb::Vertex>(&stored)) {
@@ -101,7 +101,7 @@ std::int64_t SlottedRow::EntityIdAt(std::size_t offset) const {
     return edge->GetId();
   }
   const auto *value = std::get_if<Value>(&stored);
-  RG_CHECK(value != nullptr, common::InternalError,
+  RG_CHECK(value != nullptr, common::ErrorCode::InternalError,
            "initialized slot contains no value");
   if (value->IsNull()) {
     return -1;
@@ -112,42 +112,43 @@ std::int64_t SlottedRow::EntityIdAt(std::size_t offset) const {
   if (value->IsRelationship()) {
     return value->AsRelationship().id;
   }
-  RG_THROW(common::InvalidArgumentError,
+  RG_THROW(common::ErrorCode::InvalidParameter,
            "slot does not contain a graph entity");
 }
 
 const graphdb::Vertex &SlottedRow::VertexAt(std::size_t offset) const {
-  RG_CHECK(IsInitialized(offset), common::InvalidArgumentError,
+  RG_CHECK(IsInitialized(offset), common::ErrorCode::InvalidParameter,
            "node slot is not initialized");
   const auto *vertex = std::get_if<graphdb::Vertex>(&values_[offset]);
-  RG_CHECK(vertex != nullptr, common::InvalidArgumentError,
+  RG_CHECK(vertex != nullptr, common::ErrorCode::InvalidParameter,
            "node slot is null");
   return *vertex;
 }
 
 const graphdb::Edge &SlottedRow::EdgeAt(std::size_t offset) const {
-  RG_CHECK(IsInitialized(offset), common::InvalidArgumentError,
+  RG_CHECK(IsInitialized(offset), common::ErrorCode::InvalidParameter,
            "relationship slot is not initialized");
   const auto *edge = std::get_if<graphdb::Edge>(&values_[offset]);
-  RG_CHECK(edge != nullptr, common::InvalidArgumentError,
+  RG_CHECK(edge != nullptr, common::ErrorCode::InvalidParameter,
            "relationship slot is null");
   return *edge;
 }
 
 const Value &SlottedRow::ValueAt(std::size_t offset) const {
-  RG_CHECK(IsInitialized(offset), common::InvalidArgumentError,
+  RG_CHECK(IsInitialized(offset), common::ErrorCode::InvalidParameter,
            "value slot is not initialized");
   const auto *value = std::get_if<Value>(&values_[offset]);
-  RG_CHECK(value != nullptr, common::InternalError,
+  RG_CHECK(value != nullptr, common::ErrorCode::InternalError,
            "slot does not contain a Value");
   return *value;
 }
 
 bool SlottedRow::SlotEquals(std::size_t offset, const SlottedRow &other,
                             std::size_t other_offset) const {
-  RG_CHECK(IsInitialized(offset), common::InvalidArgumentError,
+  RG_CHECK(IsInitialized(offset), common::ErrorCode::InvalidParameter,
            "left slot is not initialized");
-  RG_CHECK(other.IsInitialized(other_offset), common::InvalidArgumentError,
+  RG_CHECK(other.IsInitialized(other_offset),
+           common::ErrorCode::InvalidParameter,
            "right slot is not initialized");
   const SlotValue &left = values_[offset];
   const SlotValue &right = other.values_[other_offset];
@@ -190,15 +191,16 @@ bool SlottedRow::SlotEquals(std::size_t offset, const SlottedRow &other,
   const auto *left_value = std::get_if<Value>(&left);
   const auto *right_value = std::get_if<Value>(&right);
   RG_CHECK(left_value != nullptr && right_value != nullptr,
-           common::InternalError,
+           common::ErrorCode::InternalError,
            "initialized slots contain no comparable values");
   return ValuesEqual(*left_value, *right_value);
 }
 
 bool SlottedRow::ReadProperty(std::size_t offset, std::string_view property_key,
                               Value *value) const {
-  RG_CHECK(value != nullptr, common::InternalError, "property output is null");
-  RG_CHECK(IsInitialized(offset), common::InvalidArgumentError,
+  RG_CHECK(value != nullptr, common::ErrorCode::InternalError,
+           "property output is null");
+  RG_CHECK(IsInitialized(offset), common::ErrorCode::InvalidParameter,
            "slot is not initialized");
   const SlotValue &stored = values_[offset];
   if (const auto *vertex = std::get_if<graphdb::Vertex>(&stored)) {
@@ -227,7 +229,7 @@ void SlottedRow::Set(std::size_t offset, Value value) {
 }
 
 void SlottedRow::SetSlotValue(std::size_t offset, SlotValue value) {
-  RG_CHECK(offset < values_.size(), common::InternalError,
+  RG_CHECK(offset < values_.size(), common::ErrorCode::InternalError,
            "slot offset is out of range");
   values_[offset] = std::move(value);
 }
@@ -237,7 +239,8 @@ void SlottedRow::SetNull(std::size_t offset) { Set(offset, Value::Null()); }
 void SlottedRow::CopySlotFrom(const SlottedRow &source,
                               std::size_t source_offset,
                               std::size_t target_offset) {
-  RG_CHECK(source.IsInitialized(source_offset), common::InvalidArgumentError,
+  RG_CHECK(source.IsInitialized(source_offset),
+           common::ErrorCode::InvalidParameter,
            "source slot is not initialized");
   values_[target_offset] = source.values_[source_offset];
 }
@@ -253,7 +256,7 @@ void SlottedRow::MaterializeGraphEntities() {
 }
 
 Value SlottedRow::Get(std::size_t offset) const {
-  RG_CHECK(IsInitialized(offset), common::InvalidArgumentError,
+  RG_CHECK(IsInitialized(offset), common::ErrorCode::InvalidParameter,
            "slot is not initialized");
   const SlotValue &stored = values_[offset];
   if (const auto *value = std::get_if<Value>(&stored)) {
@@ -263,7 +266,7 @@ Value SlottedRow::Get(std::size_t offset) const {
     return Value(MaterializeGraphDBVertex(*vertex));
   }
   const auto *edge = std::get_if<graphdb::Edge>(&stored);
-  RG_CHECK(edge != nullptr, common::InternalError,
+  RG_CHECK(edge != nullptr, common::ErrorCode::InternalError,
            "initialized slot contains no value");
   return Value(MaterializeGraphDBEdge(*edge));
 }
@@ -288,7 +291,8 @@ SlottedRow SlottedRow::CopyTo(SlotConfigurationPtr target,
 
 void CopySlots(const SlottedRow &source, SlottedRow *target,
                const std::vector<SlotMapping> &mappings) {
-  RG_CHECK(target != nullptr, common::InternalError, "target row is null");
+  RG_CHECK(target != nullptr, common::ErrorCode::InternalError,
+           "target row is null");
   for (const auto &mapping : mappings) {
     if (!source.IsInitialized(mapping.source_offset)) {
       continue;
@@ -298,7 +302,8 @@ void CopySlots(const SlottedRow &source, SlottedRow *target,
 }
 
 bool TryBindSlot(SlottedRow *row, std::size_t offset, Value value) {
-  RG_CHECK(row != nullptr, common::InternalError, "query row is null");
+  RG_CHECK(row != nullptr, common::ErrorCode::InternalError,
+           "query row is null");
   if (!row->IsInitialized(offset)) {
     row->Set(offset, std::move(value));
     return true;
@@ -307,7 +312,8 @@ bool TryBindSlot(SlottedRow *row, std::size_t offset, Value value) {
 }
 
 bool TryBindEdge(SlottedRow *row, std::size_t offset, graphdb::Edge edge) {
-  RG_CHECK(row != nullptr, common::InternalError, "query row is null");
+  RG_CHECK(row != nullptr, common::ErrorCode::InternalError,
+           "query row is null");
   if (!row->IsInitialized(offset)) {
     row->Set(offset, std::move(edge));
     return true;

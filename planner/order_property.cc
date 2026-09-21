@@ -43,7 +43,7 @@ LogicalOrderDirection ToLogicalDirection(OrderDirection direction) {
     case OrderDirection::kDescending:
       return LogicalOrderDirection::kDescending;
   }
-  RG_THROW(common::InternalError, "unknown order direction");
+  RG_THROW(common::ErrorCode::InternalError, "unknown order direction");
 }
 
 const ast::Expression *ResolveProjectionAlias(
@@ -90,7 +90,7 @@ std::vector<OrderingKeyItem> OrderingKey(
   std::vector<OrderingKeyItem> key;
   key.reserve(ordering.size());
   for (const auto &item : ordering) {
-    RG_CHECK(item.expression != nullptr, common::InternalError,
+    RG_CHECK(item.expression != nullptr, common::ErrorCode::InternalError,
              "ordering expression is null");
     key.push_back({.expression = ast::ExpressionToString(*item.expression),
                    .direction = item.direction});
@@ -151,7 +151,7 @@ std::vector<LogicalSortItem> PlanningOrder(
   for (const auto &item : interesting_order.candidates) {
     const ast::Expression *expression = ResolveProjectionAlias(
         item.expression, interesting_order.reverse_projection);
-    RG_CHECK(expression != nullptr, common::InvalidArgumentError,
+    RG_CHECK(expression != nullptr, common::ErrorCode::InvalidParameter,
              "interesting order expression is null");
     ordering.push_back({.expression = expression,
                         .direction = ToLogicalDirection(item.direction)});

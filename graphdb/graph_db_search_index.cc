@@ -18,11 +18,11 @@ void GraphDB::AddVertexFullTextIndex(
     const std::vector<std::string>& properties) {
   std::lock_guard<std::mutex> propose_lock(index_ddl_propose_mutex_);
   if (index_name.empty() || labels.empty() || properties.empty()) {
-    RG_THROW_CODE(InvalidParameter);
+    RG_THROW(common::ErrorCode::InvalidParameter);
   }
   if (meta_info_.GetVertexFullTextIndex(index_name)) {
-    RG_THROW_CODE(VertexFullTextIndexAlreadyExists,
-                  "Vertex fulltext index [{}] already exists", index_name);
+    RG_THROW(common::ErrorCode::VertexFullTextIndexAlreadyExists,
+             "Vertex fulltext index [{}] already exists", index_name);
   }
   std::unordered_set<uint32_t> lids;
   std::unordered_set<uint32_t> pids;
@@ -64,26 +64,28 @@ void GraphDB::ApplyCreateVertexFullTextIndex(uint64_t apply_index,
   std::lock_guard<std::mutex> ddl_lock(index_ddl_mutex_);
   if (meta.name().empty() || meta.labels().empty() ||
       meta.properties().empty()) {
-    RG_THROW_CODE(InvalidParameter);
+    RG_THROW(common::ErrorCode::InvalidParameter);
   }
   if (meta_info_.GetVertexFullTextIndex(meta.name())) {
     if (apply_index > 0) {
       rocksdb::WriteBatch wb;
       auto s = SetRaftApplyIndex(apply_index, &wb);
-      if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+      if (!s.ok())
+        RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
       s = db_->Write({}, {}, &wb);
-      if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+      if (!s.ok())
+        RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
       return;
     }
-    RG_THROW_CODE(VertexFullTextIndexAlreadyExists,
-                  "Vertex fulltext index [{}] already exists", meta.name());
+    RG_THROW(common::ErrorCode::VertexFullTextIndexAlreadyExists,
+             "Vertex fulltext index [{}] already exists", meta.name());
   }
   if (meta.label_ids_size() != meta.labels_size() ||
       meta.property_ids_size() != meta.properties_size()) {
-    RG_THROW_CODE(InvalidParameter,
-                  "vertex fulltext index [{}] id counts do not match label or "
-                  "property counts",
-                  meta.name());
+    RG_THROW(common::ErrorCode::InvalidParameter,
+             "vertex fulltext index [{}] id counts do not match label or "
+             "property counts",
+             meta.name());
   }
   uint32_t index_id = meta.index_id();
   id_generator().ReserveIndexId(meta.index_id());
@@ -112,13 +114,13 @@ void GraphDB::ApplyCreateVertexFullTextIndex(uint64_t apply_index,
   auto s = wb.Put(graph_cf_.meta_info,
                   BuildMetaKey(MetadataType::VertexFullTextIndex, meta.name()),
                   meta.SerializeAsString());
-  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
   if (apply_index > 0) {
     s = SetRaftApplyIndex(apply_index, &wb);
-    if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+    if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
   }
   s = db_->Write({}, {}, &wb);
-  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
   meta_info_.AddVertexFullTextIndex(v_ft_index);
   LOG_INFO("Begin online build vertex full text index: [lids:{}, pids:{}]",
            lids, pids);
@@ -132,8 +134,8 @@ void GraphDB::DeleteVertexFullTextIndex(const std::string& index_name) {
     std::lock_guard<std::mutex> ddl_lock(index_ddl_mutex_);
     auto ft_index = meta_info_.GetVertexFullTextIndex(index_name);
     if (!ft_index) {
-      RG_THROW_CODE(FullTextIndexNotFound, "No such vertex fulltext index [{}]",
-                    index_name);
+      RG_THROW(common::ErrorCode::FullTextIndexNotFound,
+               "No such vertex fulltext index [{}]", index_name);
     }
     meta = ft_index->meta();
   }
@@ -158,13 +160,15 @@ void GraphDB::ApplyDeleteVertexFullTextIndex(
     if (apply_index > 0) {
       rocksdb::WriteBatch wb;
       auto s = SetRaftApplyIndex(apply_index, &wb);
-      if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+      if (!s.ok())
+        RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
       s = db_->Write({}, {}, &wb);
-      if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+      if (!s.ok())
+        RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
       return;
     }
-    RG_THROW_CODE(FullTextIndexNotFound, "No such vertex fulltext index [{}]",
-                  index_name);
+    RG_THROW(common::ErrorCode::FullTextIndexNotFound,
+             "No such vertex fulltext index [{}]", index_name);
   }
   std::string path = ft_index->meta().path();
   uint32_t index_id = ft_index->index_id();
@@ -185,14 +189,14 @@ void GraphDB::ApplyDeleteVertexFullTextIndex(
   wb.DeleteRange(graph_cf_.wal, start_key, end_key);
   if (apply_index > 0) {
     auto s = SetRaftApplyIndex(apply_index, &wb);
-    if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+    if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
   }
 
   rocksdb::TransactionDBWriteOptimizations two;
   two.skip_concurrency_control = true;
   two.skip_duplicate_key_check = true;
   auto s = db_->Write({}, two, &wb);
-  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
   try {
     std::filesystem::remove_all(path);
     LOG_INFO("remove fulltext index data {}", path);
@@ -209,19 +213,19 @@ void GraphDB::AddVertexVectorIndex(const std::string& index_name,
                                    int hnsw_ef_construction) {
   std::lock_guard<std::mutex> propose_lock(index_ddl_propose_mutex_);
   if (index_name.empty() || label.empty() || property.empty()) {
-    RG_THROW_CODE(InvalidParameter);
+    RG_THROW(common::ErrorCode::InvalidParameter);
   }
   if (dimension < 1 || dimension > 4096) {
-    RG_THROW_CODE(InvalidParameter,
-                  "dimension should be an integer in the range [1, 4096]");
+    RG_THROW(common::ErrorCode::InvalidParameter,
+             "dimension should be an integer in the range [1, 4096]");
   }
   if (hnsw_m < 5 || hnsw_m > 64) {
-    RG_THROW_CODE(InvalidParameter,
-                  "hnsw.m should be an integer in the range [5, 64]");
+    RG_THROW(common::ErrorCode::InvalidParameter,
+             "hnsw.m should be an integer in the range [5, 64]");
   }
   if (hnsw_ef_construction < hnsw_m || hnsw_ef_construction > 1000) {
-    RG_THROW_CODE(
-        InvalidParameter,
+    RG_THROW(
+        common::ErrorCode::InvalidParameter,
         "hnsw.efConstruction should be an integer in the range [hnsw.m,1000]");
   }
   meta::VectorDistanceType dist_type;
@@ -230,38 +234,38 @@ void GraphDB::AddVertexVectorIndex(const std::string& index_name,
   } else if (distance_type == "ip") {
     dist_type = meta::VectorDistanceType::IP;
   } else {
-    RG_THROW_CODE(InvalidParameter, "Distance Type {} not supported",
-                  distance_type);
+    RG_THROW(common::ErrorCode::InvalidParameter,
+             "Distance Type {} not supported", distance_type);
   }
   if (meta_info_.GetVertexVectorIndex(index_name)) {
-    RG_THROW_CODE(VertexVectorIndexAlreadyExists,
-                  "Vertex vector index [{}] already exists", index_name);
+    RG_THROW(common::ErrorCode::VertexVectorIndexAlreadyExists,
+             "Vertex vector index [{}] already exists", index_name);
   }
   auto lid_opt = id_generator().GetLid(label);
   auto pid_opt = id_generator().GetPid(property);
   if (!lid_opt || !pid_opt) {
-    RG_THROW_CODE(InvalidParameter,
-                  "Vector field [label:{}, property:{}] is not defined", label,
-                  property);
+    RG_THROW(common::ErrorCode::InvalidParameter,
+             "Vector field [label:{}, property:{}] is not defined", label,
+             property);
   }
   auto lid = lid_opt.value();
   auto pid = pid_opt.value();
   auto vector_field = meta_info_.GetVertexVectorField(lid, pid);
   if (!vector_field) {
-    RG_THROW_CODE(InvalidParameter,
-                  "Vector field [label:{}, property:{}] is not defined", label,
-                  property);
+    RG_THROW(common::ErrorCode::InvalidParameter,
+             "Vector field [label:{}, property:{}] is not defined", label,
+             property);
   }
   if (vector_field->dimensions() != static_cast<uint32_t>(dimension)) {
-    RG_THROW_CODE(InvalidParameter,
-                  "Vector field [label:{}, property:{}] dimension mismatch, "
-                  "expect {}, actual {}",
-                  label, property, vector_field->dimensions(), dimension);
+    RG_THROW(common::ErrorCode::InvalidParameter,
+             "Vector field [label:{}, property:{}] dimension mismatch, "
+             "expect {}, actual {}",
+             label, property, vector_field->dimensions(), dimension);
   }
   if (meta_info_.GetVertexVectorIndex(lid, pid)) {
-    RG_THROW_CODE(VertexVectorIndexAlreadyExists,
-                  "Vertex vector index [label:{}, property:{}] already exists",
-                  lid, pid);
+    RG_THROW(common::ErrorCode::VertexVectorIndexAlreadyExists,
+             "Vertex vector index [label:{}, property:{}] already exists", lid,
+             pid);
   }
   CheckNoNormalIndexForVectorField(meta_info_, lid, pid, label, property);
   uint32_t index_id = id_generator().GetNextIndexId();
@@ -296,19 +300,19 @@ void GraphDB::AddVertexVectorField(const std::string& label,
                                    const std::string& property, int dimension) {
   std::lock_guard<std::mutex> propose_lock(index_ddl_propose_mutex_);
   if (label.empty() || property.empty()) {
-    RG_THROW_CODE(InvalidParameter);
+    RG_THROW(common::ErrorCode::InvalidParameter);
   }
   if (dimension < 1 || dimension > 4096) {
-    RG_THROW_CODE(InvalidParameter,
-                  "dimension should be an integer in the range [1, 4096]");
+    RG_THROW(common::ErrorCode::InvalidParameter,
+             "dimension should be an integer in the range [1, 4096]");
   }
 
   auto lid = id_generator().GetOrCreateLid(label);
   auto pid = id_generator().GetOrCreatePid(property);
   if (meta_info_.GetVertexVectorField(lid, pid)) {
-    RG_THROW_CODE(InvalidParameter,
-                  "Vector field [label:{}, property:{}] already exists", label,
-                  property);
+    RG_THROW(common::ErrorCode::InvalidParameter,
+             "Vector field [label:{}, property:{}] already exists", label,
+             property);
   }
   CheckNoNormalIndexForVectorField(meta_info_, lid, pid, label, property);
 
@@ -333,11 +337,11 @@ void GraphDB::ApplyCreateVertexVectorField(uint64_t apply_index,
   std::lock_guard<std::mutex> clear_lock(clear_data_mutex_);
   std::lock_guard<std::mutex> ddl_lock(index_ddl_mutex_);
   if (meta.label().empty() || meta.property().empty()) {
-    RG_THROW_CODE(InvalidParameter);
+    RG_THROW(common::ErrorCode::InvalidParameter);
   }
   if (meta.dimensions() < 1 || meta.dimensions() > 4096) {
-    RG_THROW_CODE(InvalidParameter,
-                  "dimension should be an integer in the range [1, 4096]");
+    RG_THROW(common::ErrorCode::InvalidParameter,
+             "dimension should be an integer in the range [1, 4096]");
   }
 
   auto lid = meta.label_id();
@@ -347,14 +351,16 @@ void GraphDB::ApplyCreateVertexVectorField(uint64_t apply_index,
     if (apply_index > 0 && existing_field->dimensions() == meta.dimensions()) {
       rocksdb::WriteBatch wb;
       auto s = SetRaftApplyIndex(apply_index, &wb);
-      if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+      if (!s.ok())
+        RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
       s = db_->Write({}, {}, &wb);
-      if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+      if (!s.ok())
+        RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
       return;
     }
-    RG_THROW_CODE(InvalidParameter,
-                  "Vector field [label:{}, property:{}] already exists",
-                  meta.label(), meta.property());
+    RG_THROW(common::ErrorCode::InvalidParameter,
+             "Vector field [label:{}, property:{}] already exists",
+             meta.label(), meta.property());
   }
   CheckNoNormalIndexForVectorField(meta_info_, lid, pid, meta.label(),
                                    meta.property());
@@ -368,13 +374,13 @@ void GraphDB::ApplyCreateVertexVectorField(uint64_t apply_index,
                           BuildVectorFieldMetaKey(vector_field->label(),
                                                   vector_field->property())),
              vector_field->SerializeAsString());
-  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
   if (apply_index > 0) {
     s = SetRaftApplyIndex(apply_index, &wb);
-    if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+    if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
   }
   s = db_->Write({}, {}, &wb);
-  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
   meta_info_.AddVertexVectorField(vector_field);
 }
 
@@ -383,42 +389,44 @@ void GraphDB::ApplyCreateVertexVectorIndex(uint64_t apply_index,
   std::lock_guard<std::mutex> clear_lock(clear_data_mutex_);
   std::lock_guard<std::mutex> ddl_lock(index_ddl_mutex_);
   if (meta.name().empty() || meta.label().empty() || meta.property().empty()) {
-    RG_THROW_CODE(InvalidParameter);
+    RG_THROW(common::ErrorCode::InvalidParameter);
   }
   if (meta_info_.GetVertexVectorIndex(meta.name())) {
     if (apply_index > 0) {
       rocksdb::WriteBatch wb;
       auto s = SetRaftApplyIndex(apply_index, &wb);
-      if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+      if (!s.ok())
+        RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
       s = db_->Write({}, {}, &wb);
-      if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+      if (!s.ok())
+        RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
       return;
     }
-    RG_THROW_CODE(VertexVectorIndexAlreadyExists,
-                  "Vertex vector index [{}] already exists", meta.name());
+    RG_THROW(common::ErrorCode::VertexVectorIndexAlreadyExists,
+             "Vertex vector index [{}] already exists", meta.name());
   }
   auto lid = meta.label_id();
   auto pid = meta.property_id();
   if (meta_info_.GetVertexVectorIndex(lid, pid)) {
-    RG_THROW_CODE(VertexVectorIndexAlreadyExists,
-                  "Vertex vector index [label:{}, property:{}] already exists",
-                  meta.label_id(), meta.property_id());
+    RG_THROW(common::ErrorCode::VertexVectorIndexAlreadyExists,
+             "Vertex vector index [label:{}, property:{}] already exists",
+             meta.label_id(), meta.property_id());
   }
   CheckNoNormalIndexForVectorField(meta_info_, lid, pid, meta.label(),
                                    meta.property());
   auto existing_field = meta_info_.GetVertexVectorField(lid, pid);
   if (existing_field) {
     if (existing_field->dimensions() != meta.dimensions()) {
-      RG_THROW_CODE(InvalidParameter,
-                    "Vector field [label:{}, property:{}] dimension mismatch, "
-                    "expect {}, actual {}",
-                    meta.label(), meta.property(), existing_field->dimensions(),
-                    meta.dimensions());
+      RG_THROW(common::ErrorCode::InvalidParameter,
+               "Vector field [label:{}, property:{}] dimension mismatch, "
+               "expect {}, actual {}",
+               meta.label(), meta.property(), existing_field->dimensions(),
+               meta.dimensions());
     }
   } else {
-    RG_THROW_CODE(InvalidParameter,
-                  "Vector field [label:{}, property:{}] is not defined",
-                  meta.label(), meta.property());
+    RG_THROW(common::ErrorCode::InvalidParameter,
+             "Vector field [label:{}, property:{}] is not defined",
+             meta.label(), meta.property());
   }
   uint32_t index_id = meta.index_id();
   id_generator().ReserveIndexId(meta.index_id());
@@ -437,13 +445,13 @@ void GraphDB::ApplyCreateVertexVectorIndex(uint64_t apply_index,
   auto s = wb.Put(graph_cf_.meta_info,
                   BuildMetaKey(MetadataType::VertexVectorIndex, meta.name()),
                   meta.SerializeAsString());
-  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
   if (apply_index > 0) {
     s = SetRaftApplyIndex(apply_index, &wb);
-    if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+    if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
   }
   s = db_->Write({}, {}, &wb);
-  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
   meta_info_.AddVertexVectorIndex(vvi);
   LOG_INFO("Begin online build vertex vector index: [lid:{}, pid:{}]",
            meta.label_id(), meta.property_id());
@@ -457,8 +465,8 @@ void GraphDB::DeleteVertexVectorIndex(const std::string& index_name) {
     std::lock_guard<std::mutex> ddl_lock(index_ddl_mutex_);
     auto index = meta_info_.GetVertexVectorIndex(index_name);
     if (!index) {
-      RG_THROW_CODE(VectorIndexNotFound, "No such vertex vector index [{}]",
-                    index_name);
+      RG_THROW(common::ErrorCode::VectorIndexNotFound,
+               "No such vertex vector index [{}]", index_name);
     }
     meta = index->meta();
   }
@@ -482,13 +490,15 @@ void GraphDB::ApplyDeleteVertexVectorIndex(
     if (apply_index > 0) {
       rocksdb::WriteBatch wb;
       auto s = SetRaftApplyIndex(apply_index, &wb);
-      if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+      if (!s.ok())
+        RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
       s = db_->Write({}, {}, &wb);
-      if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+      if (!s.ok())
+        RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
       return;
     }
-    RG_THROW_CODE(VectorIndexNotFound, "No such vertex vector index [{}]",
-                  index_name);
+    RG_THROW(common::ErrorCode::VectorIndexNotFound,
+             "No such vertex vector index [{}]", index_name);
   }
   auto path = index->meta().path();
   uint32_t index_id = index->index_id();
@@ -506,14 +516,14 @@ void GraphDB::ApplyDeleteVertexVectorIndex(
   wb.DeleteRange(graph_cf_.wal, wal_start, wal_end);
   if (apply_index > 0) {
     auto s = SetRaftApplyIndex(apply_index, &wb);
-    if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+    if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
   }
 
   rocksdb::TransactionDBWriteOptimizations two;
   two.skip_concurrency_control = true;
   two.skip_duplicate_key_check = true;
   auto s = db_->Write({}, two, &wb);
-  if (!s.ok()) RG_THROW_CODE(StorageEngineError, s.ToString());
+  if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
 
   try {
     std::filesystem::remove_all(path);

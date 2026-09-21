@@ -1,10 +1,11 @@
+#include "value/value.h"
+
 #include <gtest/gtest.h>
 
 #include <boost/endian/conversion.hpp>
 
 #include "common/exception.h"
 #include "graphdb/value_codec.h"
-#include "value/value.h"
 
 using graphdb::DeserializeValue;
 using graphdb::SerializeValue;
@@ -43,14 +44,14 @@ TEST(Value, storageCodecRoundTrip) {
 }
 
 TEST(Value, storageCodecRejectsInvalidData) {
-  EXPECT_THROW(DeserializeValue({}), common::RocksGraphException);
+  EXPECT_THROW(DeserializeValue({}), common::Exception);
 
   std::string encoded = SerializeValue(Value(1));
   encoded.push_back('\0');
-  EXPECT_THROW(DeserializeValue(encoded), common::RocksGraphException);
+  EXPECT_THROW(DeserializeValue(encoded), common::Exception);
 
   EXPECT_THROW(SerializeValue(Value(Value::Map{{"key", Value(1)}})),
-               common::RocksGraphException);
+               common::Exception);
 }
 
 TEST(Endian, big) {

@@ -88,7 +88,7 @@ class FakePlannerCatalog final : public planner::PlannerCatalog {
 std::unique_ptr<ast::Statement> ParseOrFail(const std::string &query) {
   try {
     return ast::ParseCypherAndRewrite(query);
-  } catch (const common::RocksGraphException &e) {
+  } catch (const common::Exception &e) {
     ADD_FAILURE() << "query error for query: " << query
                   << " message: " << e.what();
   }
@@ -146,11 +146,12 @@ void ExpectLogicalPlanInvalidArgument(const ir::SingleQueryIR &query,
                                       const std::string &message_substring) {
   try {
     (void)planner::CreateLogicalPlan(query);
-    FAIL() << "expected InvalidArgumentError";
-  } catch (const common::InvalidArgumentError &e) {
-    EXPECT_NE(e.Message().find(message_substring), std::string::npos)
-        << e.Message();
-    EXPECT_EQ(e.Message().find("logical plan"), 0U) << e.Message();
+    FAIL() << "expected InvalidParameter error";
+  } catch (const common::Exception &e) {
+    EXPECT_EQ(e.code(), common::ErrorCode::InvalidParameter);
+    EXPECT_NE(e.message().find(message_substring), std::string::npos)
+        << e.message();
+    EXPECT_EQ(e.message().find("logical plan"), 0U) << e.message();
   }
 }
 
