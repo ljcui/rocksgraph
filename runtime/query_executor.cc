@@ -14,9 +14,9 @@
 #include "graphdb/transaction.h"
 #include "planner/planned_query.h"
 #include "runtime/graphdb_planner_catalog.h"
+#include "runtime/physical_executor.h"
 #include "runtime/physical_plan.h"
 #include "runtime/plan_cache.h"
-#include "runtime/slotted_executor.h"
 
 namespace rg {
 namespace {

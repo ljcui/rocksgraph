@@ -1,11 +1,11 @@
 #include <utility>
 
-#include "runtime/slotted_executor_internal.h"
+#include "runtime/physical_executor_internal.h"
 
-namespace rg::slotted {
+namespace rg::execution {
 
 std::unique_ptr<PullOperator> OperatorFactory::Build(
-    const PhysicalPlanNode &node, std::optional<SlottedRow> argument) {
+    const PhysicalPlanNode &node, std::optional<ExecutionRow> argument) {
   switch (node.kind) {
     case PhysicalOperatorKind::kArgument:
     case PhysicalOperatorKind::kAllNodeScan:
@@ -101,4 +101,4 @@ std::unique_ptr<PullOperator> OperatorFactory::Build(
                std::string(ToString(node.kind)));
 }
 
-}  // namespace rg::slotted
+}  // namespace rg::execution

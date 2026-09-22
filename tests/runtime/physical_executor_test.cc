@@ -13,10 +13,10 @@
 #include "tests/common/exception_test_utils.h"
 #include "tests/runtime/graphdb_test_utils.h"
 
-TEST(SlottedRuntimeTest, HashesCompositeKeysInColumnOrder) {
-  std::unordered_set<rg::slotted::CompositeValueKey,
-                     rg::slotted::CompositeValueKeyHash,
-                     rg::slotted::CompositeValueKeyEqual>
+TEST(PhysicalExecutorTest, HashesCompositeKeysInColumnOrder) {
+  std::unordered_set<rg::execution::CompositeValueKey,
+                     rg::execution::CompositeValueKeyHash,
+                     rg::execution::CompositeValueKeyEqual>
       keys;
   keys.insert({.values = {rg::Value(1), rg::Value("x")}});
   keys.insert({.values = {rg::Value(1.0), rg::Value("x")}});
@@ -25,7 +25,7 @@ TEST(SlottedRuntimeTest, HashesCompositeKeysInColumnOrder) {
   EXPECT_EQ(keys.size(), 2U);
 }
 
-TEST(SlottedRuntimeTest, ExhaustsWritesBelowLimit) {
+TEST(PhysicalExecutorTest, ExhaustsWritesBelowLimit) {
   rg::test::GraphDBTestDatabase graph;
   graph.CreateVertex({"N"});
   graph.CreateVertex({"N"});
@@ -45,7 +45,7 @@ TEST(SlottedRuntimeTest, ExhaustsWritesBelowLimit) {
   }
 }
 
-TEST(SlottedRuntimeTest, RejectsPropertyAccessOnDeletedNodes) {
+TEST(PhysicalExecutorTest, RejectsPropertyAccessOnDeletedNodes) {
   rg::test::GraphDBTestDatabase graph;
   graph.CreateVertex({"N"}, {{"name", rg::Value("deleted node")}});
 
@@ -55,7 +55,7 @@ TEST(SlottedRuntimeTest, RejectsPropertyAccessOnDeletedNodes) {
   EXPECT_EQ(graph.VertexCount(), 1U);
 }
 
-TEST(SlottedRuntimeTest, KeepsDeletedRelationshipTypeAvailable) {
+TEST(PhysicalExecutorTest, KeepsDeletedRelationshipTypeAvailable) {
   rg::test::GraphDBTestDatabase graph;
   rg::test::ExecuteQueryAndCommit(graph, "CREATE ()-[:T]->()");
 
@@ -66,7 +66,7 @@ TEST(SlottedRuntimeTest, KeepsDeletedRelationshipTypeAvailable) {
   EXPECT_EQ(result.rows[0][0], rg::Value("T"));
 }
 
-TEST(SlottedRuntimeTest, DeletesAllEntitiesInAPath) {
+TEST(PhysicalExecutorTest, DeletesAllEntitiesInAPath) {
   rg::test::GraphDBTestDatabase graph;
   rg::test::ExecuteQueryAndCommit(graph, "CREATE (:N)-[:R]->(:N)-[:R]->(:N)");
 
@@ -76,7 +76,7 @@ TEST(SlottedRuntimeTest, DeletesAllEntitiesInAPath) {
   EXPECT_EQ(graph.VertexCount(), 0U);
 }
 
-TEST(SlottedRuntimeTest, CopiesPropertiesFromGraphEntities) {
+TEST(PhysicalExecutorTest, CopiesPropertiesFromGraphEntities) {
   rg::test::GraphDBTestDatabase graph;
   const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
@@ -88,7 +88,7 @@ TEST(SlottedRuntimeTest, CopiesPropertiesFromGraphEntities) {
   EXPECT_EQ(result.rows[0][1], rg::Value(7));
 }
 
-TEST(SlottedRuntimeTest,
+TEST(PhysicalExecutorTest,
      KeepsVariableLengthRelationshipsInWrittenPatternOrder) {
   rg::test::GraphDBTestDatabase graph;
   rg::test::ExecuteQueryAndCommit(graph,
@@ -109,7 +109,7 @@ TEST(SlottedRuntimeTest,
             rg::Value(2));
 }
 
-TEST(SlottedRuntimeTest,
+TEST(PhysicalExecutorTest,
      EvaluatesPatternComprehensionCorrelatedToListVariable) {
   rg::test::GraphDBTestDatabase graph;
   rg::test::ExecuteQueryAndCommit(graph,
@@ -126,7 +126,7 @@ TEST(SlottedRuntimeTest,
             rg::Value(rg::Value::List{rg::Value(0), rg::Value(2)}));
 }
 
-TEST(SlottedRuntimeTest, StreamsRowsAndCanCloseEarly) {
+TEST(PhysicalExecutorTest, StreamsRowsAndCanCloseEarly) {
   rg::test::GraphDBTestDatabase graph;
   graph.CreateVertex({"N"}, {{"value", rg::Value(1)}});
   graph.CreateVertex({"N"}, {{"value", rg::Value(2)}});
@@ -143,7 +143,7 @@ TEST(SlottedRuntimeTest, StreamsRowsAndCanCloseEarly) {
   EXPECT_FALSE(cursor->Next(&row));
 }
 
-TEST(SlottedRuntimeTest, ObservesExternalCancellation) {
+TEST(PhysicalExecutorTest, ObservesExternalCancellation) {
   rg::test::GraphDBTestDatabase graph;
   graph.CreateVertex({"N"});
   rg::QueryOptions options;
@@ -160,7 +160,7 @@ TEST(SlottedRuntimeTest, ObservesExternalCancellation) {
   transaction->Rollback();
 }
 
-TEST(SlottedRuntimeTest, KeepsWritesWhenCursorClosesEarly) {
+TEST(PhysicalExecutorTest, KeepsWritesWhenCursorClosesEarly) {
   rg::test::GraphDBTestDatabase graph;
   auto transaction = graph.BeginTransaction();
   std::unique_ptr<rg::QueryResultCursor> cursor = rg::ExecuteQueryCursor(
@@ -176,7 +176,7 @@ TEST(SlottedRuntimeTest, KeepsWritesWhenCursorClosesEarly) {
   EXPECT_EQ(graph.VertexCount(), pending_vertices);
 }
 
-TEST(SlottedRuntimeTest, EnforcesBlockingOperatorMemoryLimit) {
+TEST(PhysicalExecutorTest, EnforcesBlockingOperatorMemoryLimit) {
   rg::test::GraphDBTestDatabase graph;
   rg::QueryOptions options;
   options.execution.memory_limit_bytes = 1;
@@ -190,7 +190,7 @@ TEST(SlottedRuntimeTest, EnforcesBlockingOperatorMemoryLimit) {
                   common::ErrorCode::MemoryLimitExceeded);
 }
 
-TEST(SlottedRuntimeTest, ReportsPeakMemoryForBlockingOperators) {
+TEST(PhysicalExecutorTest, ReportsPeakMemoryForBlockingOperators) {
   rg::test::GraphDBTestDatabase graph;
   const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph, "UNWIND [3, 1, 2] AS x RETURN x ORDER BY x");
@@ -198,7 +198,7 @@ TEST(SlottedRuntimeTest, ReportsPeakMemoryForBlockingOperators) {
   EXPECT_GT(result.peak_memory_bytes, 0U);
 }
 
-TEST(SlottedRuntimeTest, ExecutesStableMultiKeyTopN) {
+TEST(PhysicalExecutorTest, ExecutesStableMultiKeyTopN) {
   rg::test::GraphDBTestDatabase graph;
   const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
@@ -217,7 +217,7 @@ TEST(SlottedRuntimeTest, ExecutesStableMultiKeyTopN) {
   EXPECT_EQ(result.rows[3][0], rg::Value("other"));
 }
 
-TEST(SlottedRuntimeTest, SupportsParameterizedAndZeroTopNLimits) {
+TEST(PhysicalExecutorTest, SupportsParameterizedAndZeroTopNLimits) {
   rg::test::GraphDBTestDatabase graph;
   rg::QueryOptions options;
   options.parameters = {{"l", rg::Value(2)}};
@@ -233,7 +233,7 @@ TEST(SlottedRuntimeTest, SupportsParameterizedAndZeroTopNLimits) {
   EXPECT_TRUE(empty.rows.empty());
 }
 
-TEST(SlottedRuntimeTest, ExecutesStableTopOne) {
+TEST(PhysicalExecutorTest, ExecutesStableTopOne) {
   rg::test::GraphDBTestDatabase graph;
   const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
@@ -245,7 +245,7 @@ TEST(SlottedRuntimeTest, ExecutesStableTopOne) {
   EXPECT_EQ(result.rows[0][0], rg::Value("first"));
 }
 
-TEST(SlottedRuntimeTest, ExecutesPartialTopNByOrderingPrefix) {
+TEST(PhysicalExecutorTest, ExecutesPartialTopNByOrderingPrefix) {
   rg::test::GraphDBTestDatabase graph;
   const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
@@ -264,7 +264,7 @@ TEST(SlottedRuntimeTest, ExecutesPartialTopNByOrderingPrefix) {
             (std::vector<rg::Value>{rg::Value(2), rg::Value(0)}));
 }
 
-TEST(SlottedRuntimeTest, KeepsOnlyTopNRowsInMemory) {
+TEST(PhysicalExecutorTest, KeepsOnlyTopNRowsInMemory) {
   rg::test::GraphDBTestDatabase graph;
   for (std::int64_t value = 1; value <= 256; ++value) {
     graph.CreateVertex({"N"}, {{"value", rg::Value(value)}});
@@ -284,7 +284,7 @@ TEST(SlottedRuntimeTest, KeepsOnlyTopNRowsInMemory) {
   EXPECT_LE(result.peak_memory_bytes, options.execution.memory_limit_bytes);
 }
 
-TEST(SlottedRuntimeTest, ExecutesOrderedGroupingAndPartialSort) {
+TEST(PhysicalExecutorTest, ExecutesOrderedGroupingAndPartialSort) {
   rg::test::GraphDBTestDatabase graph;
 
   const rg::QueryResult distinct =
@@ -332,7 +332,7 @@ TEST(SlottedRuntimeTest, ExecutesOrderedGroupingAndPartialSort) {
             (std::vector<rg::Value>{rg::Value(2), rg::Value(1)}));
 }
 
-TEST(SlottedRuntimeTest, KeepsBasicAggregationMemoryBounded) {
+TEST(PhysicalExecutorTest, KeepsBasicAggregationMemoryBounded) {
   rg::test::GraphDBTestDatabase graph;
   for (std::int64_t value = 1; value <= 256; ++value) {
     graph.CreateVertex({"N"}, {{"value", rg::Value(value)}});
@@ -359,7 +359,7 @@ TEST(SlottedRuntimeTest, KeepsBasicAggregationMemoryBounded) {
   EXPECT_LE(result.peak_memory_bytes, options.execution.memory_limit_bytes);
 }
 
-TEST(SlottedRuntimeTest, TracksOnlyRetainedAggregationValues) {
+TEST(PhysicalExecutorTest, TracksOnlyRetainedAggregationValues) {
   rg::test::GraphDBTestDatabase graph;
   const std::string large(1024, 'x');
   for (std::int64_t value = 1; value <= 64; ++value) {
@@ -390,7 +390,7 @@ TEST(SlottedRuntimeTest, TracksOnlyRetainedAggregationValues) {
                   common::ErrorCode::MemoryLimitExceeded);
 }
 
-TEST(SlottedRuntimeTest, UsesTypedDistinctAggregationState) {
+TEST(PhysicalExecutorTest, UsesTypedDistinctAggregationState) {
   rg::test::GraphDBTestDatabase graph;
   const double nan = std::numeric_limits<double>::quiet_NaN();
   const rg::Value list(rg::Value::List{rg::Value(1), rg::Value::Null()});
@@ -423,7 +423,7 @@ TEST(SlottedRuntimeTest, UsesTypedDistinctAggregationState) {
   EXPECT_TRUE(rg::ValueEqual{}(values[3], rg::Value(nan)));
 }
 
-TEST(SlottedRuntimeTest, MaintainsPercentileParameterState) {
+TEST(PhysicalExecutorTest, MaintainsPercentileParameterState) {
   rg::test::GraphDBTestDatabase valid;
   valid.CreateVertex({"N"}, {{"value", rg::Value(10)}, {"p", rg::Value(0.5)}});
   valid.CreateVertex({"N"},
@@ -468,7 +468,7 @@ TEST(SlottedRuntimeTest, MaintainsPercentileParameterState) {
   EXPECT_TRUE(all_null_result.rows[0][0].IsNull());
 }
 
-TEST(SlottedRuntimeTest, UsesTypedKeysAcrossSetOperators) {
+TEST(PhysicalExecutorTest, UsesTypedKeysAcrossSetOperators) {
   rg::test::GraphDBTestDatabase graph;
 
   const rg::QueryResult distinct = rg::test::ExecuteQueryAndCommit(
@@ -495,7 +495,7 @@ TEST(SlottedRuntimeTest, UsesTypedKeysAcrossSetOperators) {
   EXPECT_EQ(union_distinct.rows.size(), 1U);
 }
 
-TEST(SlottedRuntimeTest, ValueHashJoinUsesTypedCompositeKeys) {
+TEST(PhysicalExecutorTest, ValueHashJoinUsesTypedCompositeKeys) {
   rg::test::GraphDBTestDatabase graph;
   graph.CreateVertex({"Small"}, {{"first", rg::Value(1)},
                                  {"second", rg::Value("x")},
@@ -527,7 +527,7 @@ TEST(SlottedRuntimeTest, ValueHashJoinUsesTypedCompositeKeys) {
   EXPECT_EQ(result.rows[1][1], rg::Value("second"));
 }
 
-TEST(SlottedRuntimeTest, ValueHashJoinRechecksCandidatePredicates) {
+TEST(PhysicalExecutorTest, ValueHashJoinRechecksCandidatePredicates) {
   rg::test::GraphDBTestDatabase graph;
   const double nan = std::numeric_limits<double>::quiet_NaN();
   const rg::Value nested_null(rg::Value::List{rg::Value(1), rg::Value::Null()});
@@ -554,7 +554,7 @@ TEST(SlottedRuntimeTest, ValueHashJoinRechecksCandidatePredicates) {
   EXPECT_EQ(result.rows[0][0], rg::Value("valid"));
 }
 
-TEST(SlottedRuntimeTest, EnforcesValueHashJoinMemoryLimit) {
+TEST(PhysicalExecutorTest, EnforcesValueHashJoinMemoryLimit) {
   rg::test::GraphDBTestDatabase graph;
   graph.CreateVertex({"Small"}, {{"key", rg::Value(1)}});
   graph.CreateVertex({"Large"}, {{"key", rg::Value(1)}});

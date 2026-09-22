@@ -1,4 +1,4 @@
-#include "runtime/slotted_row.h"
+#include "runtime/execution_row.h"
 
 #include <utility>
 
@@ -28,7 +28,7 @@ std::size_t EstimatedValueHeapUsage(const Value &value) {
   return sizeof(Value);
 }
 
-SlotConfiguration::SlotConfiguration(std::vector<std::string> columns) {
+RowLayout::RowLayout(std::vector<std::string> columns) {
   columns_.reserve(columns.size());
   for (auto &column : columns) {
     if (column.empty() || offsets_.contains(column)) {
@@ -40,8 +40,7 @@ SlotConfiguration::SlotConfiguration(std::vector<std::string> columns) {
   }
 }
 
-std::optional<std::size_t> SlotConfiguration::Find(
-    std::string_view name) const {
+std::optional<std::size_t> RowLayout::Find(std::string_view name) const {
   const auto found = offsets_.find(name);
   if (found == offsets_.end()) {
     return std::nullopt;
@@ -49,51 +48,51 @@ std::optional<std::size_t> SlotConfiguration::Find(
   return found->second;
 }
 
-std::size_t SlotConfiguration::At(std::string_view name) const {
+std::size_t RowLayout::At(std::string_view name) const {
   const std::optional<std::size_t> offset = Find(name);
   RG_CHECK(offset.has_value(), common::ErrorCode::InvalidParameter,
-           "slot is not allocated: " + std::string(name));
+           "column is not allocated: " + std::string(name));
   return *offset;
 }
 
-bool SlotConfiguration::Contains(std::string_view name) const {
+bool RowLayout::Contains(std::string_view name) const {
   return Find(name).has_value();
 }
 
-SlottedRow::SlottedRow(SlotConfigurationPtr slots) : slots_(std::move(slots)) {
-  RG_CHECK(slots_ != nullptr, common::ErrorCode::InvalidParameter,
-           "slot configuration is null");
-  values_.resize(slots_->SlotCount());
+ExecutionRow::ExecutionRow(RowLayoutPtr layout) : layout_(std::move(layout)) {
+  RG_CHECK(layout_ != nullptr, common::ErrorCode::InvalidParameter,
+           "row layout is null");
+  values_.resize(layout_->CellCount());
 }
 
-void SlottedRow::Reset() {
+void ExecutionRow::Reset() {
   for (auto &value : values_) {
-    value = UninitializedSlot{};
+    value = UninitializedCell{};
   }
 }
 
-void SlottedRow::Reset(SlotConfigurationPtr slots) {
-  RG_CHECK(slots != nullptr, common::ErrorCode::InvalidParameter,
-           "slot configuration is null");
-  if (slots_ != slots) {
-    slots_ = std::move(slots);
+void ExecutionRow::Reset(RowLayoutPtr layout) {
+  RG_CHECK(layout != nullptr, common::ErrorCode::InvalidParameter,
+           "row layout is null");
+  if (layout_ != layout) {
+    layout_ = std::move(layout);
     values_.clear();
-    values_.resize(slots_->SlotCount());
+    values_.resize(layout_->CellCount());
     return;
   }
   Reset();
 }
 
-bool SlottedRow::IsInitialized(std::size_t offset) const {
+bool ExecutionRow::IsInitialized(std::size_t offset) const {
   RG_CHECK(offset < values_.size(), common::ErrorCode::InternalError,
-           "slot offset is out of range");
-  return !std::holds_alternative<UninitializedSlot>(values_[offset]);
+           "row offset is out of range");
+  return !std::holds_alternative<UninitializedCell>(values_[offset]);
 }
 
-std::int64_t SlottedRow::EntityIdAt(std::size_t offset) const {
+std::int64_t ExecutionRow::EntityIdAt(std::size_t offset) const {
   RG_CHECK(IsInitialized(offset), common::ErrorCode::InvalidParameter,
-           "entity slot is not initialized");
-  const SlotValue &stored = values_[offset];
+           "entity offset is not initialized");
+  const RowCell &stored = values_[offset];
   if (const auto *vertex = std::get_if<graphdb::Vertex>(&stored)) {
     return vertex->GetId();
   }
@@ -102,7 +101,7 @@ std::int64_t SlottedRow::EntityIdAt(std::size_t offset) const {
   }
   const auto *value = std::get_if<Value>(&stored);
   RG_CHECK(value != nullptr, common::ErrorCode::InternalError,
-           "initialized slot contains no value");
+           "initialized offset contains no value");
   if (value->IsNull()) {
     return -1;
   }
@@ -113,47 +112,47 @@ std::int64_t SlottedRow::EntityIdAt(std::size_t offset) const {
     return value->AsRelationship().id;
   }
   RG_THROW(common::ErrorCode::InvalidParameter,
-           "slot does not contain a graph entity");
+           "offset does not contain a graph entity");
 }
 
-const graphdb::Vertex &SlottedRow::VertexAt(std::size_t offset) const {
+const graphdb::Vertex &ExecutionRow::VertexAt(std::size_t offset) const {
   RG_CHECK(IsInitialized(offset), common::ErrorCode::InvalidParameter,
-           "node slot is not initialized");
+           "node offset is not initialized");
   const auto *vertex = std::get_if<graphdb::Vertex>(&values_[offset]);
   RG_CHECK(vertex != nullptr, common::ErrorCode::InvalidParameter,
-           "node slot is null");
+           "node offset is null");
   return *vertex;
 }
 
-const graphdb::Edge &SlottedRow::EdgeAt(std::size_t offset) const {
+const graphdb::Edge &ExecutionRow::EdgeAt(std::size_t offset) const {
   RG_CHECK(IsInitialized(offset), common::ErrorCode::InvalidParameter,
-           "relationship slot is not initialized");
+           "relationship offset is not initialized");
   const auto *edge = std::get_if<graphdb::Edge>(&values_[offset]);
   RG_CHECK(edge != nullptr, common::ErrorCode::InvalidParameter,
-           "relationship slot is null");
+           "relationship offset is null");
   return *edge;
 }
 
-const Value &SlottedRow::ValueAt(std::size_t offset) const {
+const Value &ExecutionRow::ValueAt(std::size_t offset) const {
   RG_CHECK(IsInitialized(offset), common::ErrorCode::InvalidParameter,
-           "value slot is not initialized");
+           "value offset is not initialized");
   const auto *value = std::get_if<Value>(&values_[offset]);
   RG_CHECK(value != nullptr, common::ErrorCode::InternalError,
-           "slot does not contain a Value");
+           "offset does not contain a Value");
   return *value;
 }
 
-bool SlottedRow::SlotEquals(std::size_t offset, const SlottedRow &other,
-                            std::size_t other_offset) const {
+bool ExecutionRow::CellEquals(std::size_t offset, const ExecutionRow &other,
+                              std::size_t other_offset) const {
   RG_CHECK(IsInitialized(offset), common::ErrorCode::InvalidParameter,
-           "left slot is not initialized");
+           "left offset is not initialized");
   RG_CHECK(other.IsInitialized(other_offset),
            common::ErrorCode::InvalidParameter,
-           "right slot is not initialized");
-  const SlotValue &left = values_[offset];
-  const SlotValue &right = other.values_[other_offset];
+           "right offset is not initialized");
+  const RowCell &left = values_[offset];
+  const RowCell &right = other.values_[other_offset];
 
-  auto node_id = [](const SlotValue &stored) -> std::optional<std::int64_t> {
+  auto node_id = [](const RowCell &stored) -> std::optional<std::int64_t> {
     if (const auto *vertex = std::get_if<graphdb::Vertex>(&stored)) {
       return vertex->GetId();
     }
@@ -171,7 +170,7 @@ bool SlottedRow::SlotEquals(std::size_t offset, const SlottedRow &other,
   }
 
   auto relationship_id =
-      [](const SlotValue &stored) -> std::optional<std::int64_t> {
+      [](const RowCell &stored) -> std::optional<std::int64_t> {
     if (const auto *edge = std::get_if<graphdb::Edge>(&stored)) {
       return edge->GetId();
     }
@@ -192,17 +191,18 @@ bool SlottedRow::SlotEquals(std::size_t offset, const SlottedRow &other,
   const auto *right_value = std::get_if<Value>(&right);
   RG_CHECK(left_value != nullptr && right_value != nullptr,
            common::ErrorCode::InternalError,
-           "initialized slots contain no comparable values");
+           "initialized cells contain no comparable values");
   return ValuesEqual(*left_value, *right_value);
 }
 
-bool SlottedRow::ReadProperty(std::size_t offset, std::string_view property_key,
-                              Value *value) const {
+bool ExecutionRow::ReadProperty(std::size_t offset,
+                                std::string_view property_key,
+                                Value *value) const {
   RG_CHECK(value != nullptr, common::ErrorCode::InternalError,
            "property output is null");
   RG_CHECK(IsInitialized(offset), common::ErrorCode::InvalidParameter,
-           "slot is not initialized");
-  const SlotValue &stored = values_[offset];
+           "offset is not initialized");
+  const RowCell &stored = values_[offset];
   if (const auto *vertex = std::get_if<graphdb::Vertex>(&stored)) {
     auto copy = *vertex;
     *value = copy.GetProperty(std::string(property_key));
@@ -216,37 +216,37 @@ bool SlottedRow::ReadProperty(std::size_t offset, std::string_view property_key,
   return false;
 }
 
-void SlottedRow::Set(std::size_t offset, graphdb::Vertex vertex) {
-  SetSlotValue(offset, std::move(vertex));
+void ExecutionRow::Set(std::size_t offset, graphdb::Vertex vertex) {
+  SetRowCell(offset, std::move(vertex));
 }
 
-void SlottedRow::Set(std::size_t offset, graphdb::Edge edge) {
-  SetSlotValue(offset, std::move(edge));
+void ExecutionRow::Set(std::size_t offset, graphdb::Edge edge) {
+  SetRowCell(offset, std::move(edge));
 }
 
-void SlottedRow::Set(std::size_t offset, Value value) {
-  SetSlotValue(offset, std::move(value));
+void ExecutionRow::Set(std::size_t offset, Value value) {
+  SetRowCell(offset, std::move(value));
 }
 
-void SlottedRow::SetSlotValue(std::size_t offset, SlotValue value) {
+void ExecutionRow::SetRowCell(std::size_t offset, RowCell value) {
   RG_CHECK(offset < values_.size(), common::ErrorCode::InternalError,
-           "slot offset is out of range");
+           "row offset is out of range");
   values_[offset] = std::move(value);
 }
 
-void SlottedRow::SetNull(std::size_t offset) { Set(offset, Value::Null()); }
+void ExecutionRow::SetNull(std::size_t offset) { Set(offset, Value::Null()); }
 
-void SlottedRow::CopySlotFrom(const SlottedRow &source,
-                              std::size_t source_offset,
-                              std::size_t target_offset) {
+void ExecutionRow::CopyCellFrom(const ExecutionRow &source,
+                                std::size_t source_offset,
+                                std::size_t target_offset) {
   RG_CHECK(source.IsInitialized(source_offset),
            common::ErrorCode::InvalidParameter,
-           "source slot is not initialized");
+           "source offset is not initialized");
   values_[target_offset] = source.values_[source_offset];
 }
 
-void SlottedRow::MaterializeGraphEntities() {
-  for (SlotValue &stored : values_) {
+void ExecutionRow::MaterializeGraphEntities() {
+  for (RowCell &stored : values_) {
     if (const auto *vertex = std::get_if<graphdb::Vertex>(&stored)) {
       stored = Value(MaterializeGraphDBVertex(*vertex));
     } else if (const auto *edge = std::get_if<graphdb::Edge>(&stored)) {
@@ -255,10 +255,10 @@ void SlottedRow::MaterializeGraphEntities() {
   }
 }
 
-Value SlottedRow::Get(std::size_t offset) const {
+Value ExecutionRow::Get(std::size_t offset) const {
   RG_CHECK(IsInitialized(offset), common::ErrorCode::InvalidParameter,
-           "slot is not initialized");
-  const SlotValue &stored = values_[offset];
+           "offset is not initialized");
+  const RowCell &stored = values_[offset];
   if (const auto *value = std::get_if<Value>(&stored)) {
     return *value;
   }
@@ -267,41 +267,41 @@ Value SlottedRow::Get(std::size_t offset) const {
   }
   const auto *edge = std::get_if<graphdb::Edge>(&stored);
   RG_CHECK(edge != nullptr, common::ErrorCode::InternalError,
-           "initialized slot contains no value");
+           "initialized offset contains no value");
   return Value(MaterializeGraphDBEdge(*edge));
 }
 
-std::size_t SlottedRow::EstimatedHeapUsage() const {
+std::size_t ExecutionRow::EstimatedHeapUsage() const {
   std::size_t bytes =
-      sizeof(SlottedRow) + values_.capacity() * sizeof(SlotValue);
-  for (const auto &slot : values_) {
-    if (const auto *value = std::get_if<Value>(&slot)) {
+      sizeof(ExecutionRow) + values_.capacity() * sizeof(RowCell);
+  for (const auto &cell : values_) {
+    if (const auto *value = std::get_if<Value>(&cell)) {
       bytes += EstimatedValueHeapUsage(*value);
     }
   }
   return bytes;
 }
 
-SlottedRow SlottedRow::CopyTo(SlotConfigurationPtr target,
-                              const std::vector<SlotMapping> &mappings) const {
-  SlottedRow out(std::move(target));
-  CopySlots(*this, &out, mappings);
+ExecutionRow ExecutionRow::CopyTo(
+    RowLayoutPtr target, const std::vector<RowMapping> &mappings) const {
+  ExecutionRow out(std::move(target));
+  CopyCells(*this, &out, mappings);
   return out;
 }
 
-void CopySlots(const SlottedRow &source, SlottedRow *target,
-               const std::vector<SlotMapping> &mappings) {
+void CopyCells(const ExecutionRow &source, ExecutionRow *target,
+               const std::vector<RowMapping> &mappings) {
   RG_CHECK(target != nullptr, common::ErrorCode::InternalError,
            "target row is null");
   for (const auto &mapping : mappings) {
     if (!source.IsInitialized(mapping.source_offset)) {
       continue;
     }
-    target->CopySlotFrom(source, mapping.source_offset, mapping.target_offset);
+    target->CopyCellFrom(source, mapping.source_offset, mapping.target_offset);
   }
 }
 
-bool TryBindSlot(SlottedRow *row, std::size_t offset, Value value) {
+bool TryBindAt(ExecutionRow *row, std::size_t offset, Value value) {
   RG_CHECK(row != nullptr, common::ErrorCode::InternalError,
            "query row is null");
   if (!row->IsInitialized(offset)) {
@@ -311,7 +311,7 @@ bool TryBindSlot(SlottedRow *row, std::size_t offset, Value value) {
   return ValuesEqual(row->Get(offset), value);
 }
 
-bool TryBindEdge(SlottedRow *row, std::size_t offset, graphdb::Edge edge) {
+bool TryBindEdge(ExecutionRow *row, std::size_t offset, graphdb::Edge edge) {
   RG_CHECK(row != nullptr, common::ErrorCode::InternalError,
            "query row is null");
   if (!row->IsInitialized(offset)) {

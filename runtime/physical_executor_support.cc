@@ -11,20 +11,20 @@
 #include "graphdb/graph_db.h"
 #include "runtime/expression_evaluator.h"
 #include "runtime/graphdb_access.h"
-#include "runtime/slotted_executor_internal.h"
+#include "runtime/physical_executor_internal.h"
 
-namespace rg::slotted {
+namespace rg::execution {
 
 class RuntimeExpressionCompiler final : public ast::ASTConstWalker {
  public:
-  RuntimeExpressionCompiler(const SlotConfiguration &slots,
+  RuntimeExpressionCompiler(const RowLayout &layout,
                             const BoundQueryParameters &parameters)
-      : slots_(&slots), parameters_(&parameters) {}
+      : layout_(&layout), parameters_(&parameters) {}
 
   RuntimeExpressionProgram Compile(const ast::Expression &expression) {
-    program_.named_variables.reserve(slots_->SlotCount());
-    for (std::size_t offset = 0; offset < slots_->SlotCount(); ++offset) {
-      program_.named_variables.emplace_back(slots_->Columns()[offset], offset);
+    program_.named_variables.reserve(layout_->CellCount());
+    for (std::size_t offset = 0; offset < layout_->CellCount(); ++offset) {
+      program_.named_variables.emplace_back(layout_->Columns()[offset], offset);
     }
     Walk(expression);
     return std::move(program_);
@@ -32,7 +32,7 @@ class RuntimeExpressionCompiler final : public ast::ASTConstWalker {
 
  protected:
   void Visit(const ast::Variable &variable) override {
-    if (const std::optional<std::size_t> offset = slots_->Find(variable.name);
+    if (const std::optional<std::size_t> offset = layout_->Find(variable.name);
         offset.has_value()) {
       program_.variables.emplace_back(&variable, *offset);
     }
@@ -46,7 +46,7 @@ class RuntimeExpressionCompiler final : public ast::ASTConstWalker {
   }
 
  private:
-  const SlotConfiguration *slots_ = nullptr;
+  const RowLayout *layout_ = nullptr;
   const BoundQueryParameters *parameters_ = nullptr;
   RuntimeExpressionProgram program_;
 };
@@ -70,33 +70,33 @@ RuntimeState::RuntimeState(graphdb::Transaction &graphdb_transaction,
 void RuntimeState::CheckCancelled() const { context.CheckCancelled(); }
 
 const RuntimeExpressionProgram &RuntimeState::ExpressionProgram(
-    const ast::Expression &expression, const SlotConfiguration &slots) {
+    const ast::Expression &expression, const RowLayout &layout) {
   if (last_expression_index_.has_value()) {
     const auto &cached = expressions[*last_expression_index_];
-    if (cached.expression == &expression && cached.slots == &slots) {
+    if (cached.expression == &expression && cached.layout == &layout) {
       return cached.program;
     }
   }
   for (const auto &cached : expressions) {
-    if (cached.expression == &expression && cached.slots == &slots) {
+    if (cached.expression == &expression && cached.layout == &layout) {
       last_expression_index_ = &cached - expressions.data();
       return cached.program;
     }
   }
   expressions.push_back(
       {.expression = &expression,
-       .slots = &slots,
-       .program = RuntimeExpressionCompiler(slots, bound_parameters)
+       .layout = &layout,
+       .program = RuntimeExpressionCompiler(layout, bound_parameters)
                       .Compile(expression)});
   last_expression_index_ = expressions.size() - 1;
   return expressions.back().program;
 }
 
-class SlottedExpressionBindings final : public ExpressionBindings {
+class ExecutionExpressionBindings final : public ExpressionBindings {
  public:
-  SlottedExpressionBindings(const SlottedRow &row,
-                            const BoundQueryParameters &parameters,
-                            const RuntimeExpressionProgram &program)
+  ExecutionExpressionBindings(const ExecutionRow &row,
+                              const BoundQueryParameters &parameters,
+                              const RuntimeExpressionProgram &program)
       : row_(&row), parameters_(&parameters), program_(&program) {}
 
   [[nodiscard]] Value Lookup(std::string_view name) const override {
@@ -155,46 +155,46 @@ class SlottedExpressionBindings final : public ExpressionBindings {
   }
 
  private:
-  const SlottedRow *row_ = nullptr;
+  const ExecutionRow *row_ = nullptr;
   const BoundQueryParameters *parameters_ = nullptr;
   const RuntimeExpressionProgram *program_ = nullptr;
 };
 
-Value Evaluate(const ast::Expression &expression, const SlottedRow &row,
+Value Evaluate(const ast::Expression &expression, const ExecutionRow &row,
                const std::vector<ast::PrecomputedExpression> &precomputed,
                RuntimeState &state) {
   const RuntimeExpressionProgram &program =
-      state.ExpressionProgram(expression, *row.Slots());
-  SlottedExpressionBindings bindings(row, state.bound_parameters, program);
+      state.ExpressionProgram(expression, *row.Layout());
+  ExecutionExpressionBindings bindings(row, state.bound_parameters, program);
   return EvaluateExpression(expression, bindings, precomputed, state.context);
 }
 
-Value Evaluate(const PhysicalExpression &expression, const SlottedRow &row,
+Value Evaluate(const PhysicalExpression &expression, const ExecutionRow &row,
                RuntimeState &state) {
   RG_CHECK(expression.Expression() != nullptr, common::ErrorCode::InternalError,
            "physical expression is null");
   return Evaluate(*expression.Expression(), row,
                   expression.PrecomputedExpressions(), state);
 }
-SlottedRow EmptyArgument(SlotConfigurationPtr slots) {
-  return SlottedRow(std::move(slots));
+ExecutionRow EmptyArgument(RowLayoutPtr layout) {
+  return ExecutionRow(std::move(layout));
 }
 
-void CopyMappings(const SlottedRow &source, SlottedRow *target,
-                  const std::vector<SlotMapping> &mappings) {
-  CopySlots(source, target, mappings);
+void CopyMappings(const ExecutionRow &source, ExecutionRow *target,
+                  const std::vector<RowMapping> &mappings) {
+  CopyCells(source, target, mappings);
 }
 
-SlottedRow CopyMappedRow(const SlottedRow &source, SlotConfigurationPtr target,
-                         const std::vector<SlotMapping> &mappings) {
+ExecutionRow CopyMappedRow(const ExecutionRow &source, RowLayoutPtr target,
+                           const std::vector<RowMapping> &mappings) {
   return source.CopyTo(std::move(target), mappings);
 }
 
-Value ReadRowValue(const SlottedRow &row, std::size_t offset) {
+Value ReadRowValue(const ExecutionRow &row, std::size_t offset) {
   return row.Get(offset);
 }
 
-void StoreEvaluatedValue(SlottedRow *row, std::size_t offset, Value value,
+void StoreEvaluatedValue(ExecutionRow *row, std::size_t offset, Value value,
                          RuntimeState &state) {
   RG_CHECK(row != nullptr, common::ErrorCode::InternalError,
            "query row is null");
@@ -224,7 +224,8 @@ void StoreEvaluatedValue(SlottedRow *row, std::size_t offset, Value value,
   row->Set(offset, std::move(value));
 }
 
-bool TryBindNode(SlottedRow *row, std::size_t offset, graphdb::Vertex vertex) {
+bool TryBindNode(ExecutionRow *row, std::size_t offset,
+                 graphdb::Vertex vertex) {
   RG_CHECK(row != nullptr, common::ErrorCode::InternalError,
            "query row is null");
   if (!row->IsInitialized(offset)) {
@@ -235,7 +236,7 @@ bool TryBindNode(SlottedRow *row, std::size_t offset, graphdb::Vertex vertex) {
   return existing.IsNode() && existing.AsNode().id == vertex.GetId();
 }
 
-bool TryBindNode(SlottedRow *row, std::optional<std::size_t> offset,
+bool TryBindNode(ExecutionRow *row, std::optional<std::size_t> offset,
                  graphdb::Vertex vertex) {
   if (!offset.has_value()) {
     return true;
@@ -243,7 +244,7 @@ bool TryBindNode(SlottedRow *row, std::optional<std::size_t> offset,
   return TryBindNode(row, *offset, std::move(vertex));
 }
 
-bool TryBindOptionalEdge(SlottedRow *row, std::optional<std::size_t> offset,
+bool TryBindOptionalEdge(ExecutionRow *row, std::optional<std::size_t> offset,
                          graphdb::Edge edge) {
   if (!offset.has_value()) {
     return true;
@@ -251,15 +252,15 @@ bool TryBindOptionalEdge(SlottedRow *row, std::optional<std::size_t> offset,
   return TryBindEdge(row, *offset, std::move(edge));
 }
 
-bool TryBindNode(SlottedRow *row, std::size_t offset, std::int64_t id,
+bool TryBindNode(ExecutionRow *row, std::size_t offset, std::int64_t id,
                  RuntimeState &state) {
   if (id < 0) {
-    return TryBindSlot(row, offset, Value::Null());
+    return TryBindAt(row, offset, Value::Null());
   }
   return TryBindNode(row, offset, GraphDBVertexById(*state.transaction, id));
 }
 
-bool TryBindNode(SlottedRow *row, std::optional<std::size_t> offset,
+bool TryBindNode(ExecutionRow *row, std::optional<std::size_t> offset,
                  std::int64_t id, RuntimeState &state) {
   if (!offset.has_value()) {
     return true;
@@ -267,12 +268,12 @@ bool TryBindNode(SlottedRow *row, std::optional<std::size_t> offset,
   return TryBindNode(row, *offset, id, state);
 }
 
-void SetScannedNode(SlottedRow *row, std::size_t offset,
+void SetScannedNode(ExecutionRow *row, std::size_t offset,
                     graphdb::Vertex vertex) {
   RG_CHECK(row != nullptr, common::ErrorCode::InternalError,
            "query row is null");
   RG_CHECK(!row->IsInitialized(offset), common::ErrorCode::InternalError,
-           "node scan slot is already initialized");
+           "node scan offset is already initialized");
   row->Set(offset, std::move(vertex));
 }
 
@@ -285,18 +286,18 @@ graphdb::Vertex Endpoint(const graphdb::Edge &edge, std::int64_t id) {
   return edge.GetEnd();
 }
 
-bool MergeMappings(const SlottedRow &source, SlottedRow *target,
-                   const std::vector<SlotMapping> &mappings) {
+bool MergeMappings(const ExecutionRow &source, ExecutionRow *target,
+                   const std::vector<RowMapping> &mappings) {
   for (const auto &mapping : mappings) {
     if (!source.IsInitialized(mapping.source_offset)) {
       continue;
     }
     if (!target->IsInitialized(mapping.target_offset)) {
-      target->CopySlotFrom(source, mapping.source_offset,
+      target->CopyCellFrom(source, mapping.source_offset,
                            mapping.target_offset);
       continue;
     }
-    if (!source.SlotEquals(mapping.source_offset, *target,
+    if (!source.CellEquals(mapping.source_offset, *target,
                            mapping.target_offset)) {
       return false;
     }
@@ -304,7 +305,7 @@ bool MergeMappings(const SlottedRow &source, SlottedRow *target,
   return true;
 }
 
-std::int64_t NodeId(const SlottedRow &row, std::size_t offset) {
+std::int64_t NodeId(const ExecutionRow &row, std::size_t offset) {
   const Value value = ReadRowValue(row, offset);
   if (value.IsNull()) {
     return -1;
@@ -356,7 +357,7 @@ bool CanTraverse(const std::vector<Value::RelationshipPtr> &relationships,
   return from == target;
 }
 
-Value BuildPathValue(const PathBuildOp &data, const SlottedRow &row,
+Value BuildPathValue(const PathBuildOp &data, const ExecutionRow &row,
                      RuntimeState *state) {
   const PhysicalPathPattern &pattern = data.path;
   RG_CHECK(state != nullptr && !pattern.nodes.empty(),
@@ -366,19 +367,20 @@ Value BuildPathValue(const PathBuildOp &data, const SlottedRow &row,
       pattern.nodes.size() == pattern.relationships.size() + 1,
       common::ErrorCode::InvalidParameter,
       "path node and relationship counts do not match: " + pattern.variable);
-  RG_CHECK(
-      data.node_input_slots.size() == pattern.nodes.size() &&
-          data.relationship_input_slots.size() == pattern.relationships.size(),
-      common::ErrorCode::InternalError,
-      "path input slot bindings do not match pattern");
+  RG_CHECK(data.node_input_offsets.size() == pattern.nodes.size() &&
+               data.relationship_input_offsets.size() ==
+                   pattern.relationships.size(),
+           common::ErrorCode::InternalError,
+           "path input offset bindings do not match pattern");
   auto path = std::make_shared<Path>();
-  std::int64_t current = NodeId(row, data.node_input_slots.front());
+  std::int64_t current = NodeId(row, data.node_input_offsets.front());
   RG_CHECK(current >= 0, common::ErrorCode::InvalidParameter,
            "path starts with a null node");
   path->nodes.push_back(MaterializePathNode(*state, current));
   for (std::size_t index = 0; index < pattern.relationships.size(); ++index) {
     state->CheckCancelled();
-    const Value value = ReadRowValue(row, data.relationship_input_slots[index]);
+    const Value value =
+        ReadRowValue(row, data.relationship_input_offsets[index]);
     std::vector<Value::RelationshipPtr> relationships;
     if (value.IsList()) {
       for (const auto &item : value.AsList()) {
@@ -393,7 +395,7 @@ Value BuildPathValue(const PathBuildOp &data, const SlottedRow &row,
       relationships.push_back(
           MaterializePathRelationship(*state, value.AsRelationship()));
     }
-    const std::int64_t target = NodeId(row, data.node_input_slots[index + 1]);
+    const std::int64_t target = NodeId(row, data.node_input_offsets[index + 1]);
     if (!CanTraverse(relationships, current, target)) {
       std::reverse(relationships.begin(), relationships.end());
       RG_CHECK(CanTraverse(relationships, current, target),
@@ -542,7 +544,7 @@ ProcedureRecord NodeRecord(graphdb::Vertex vertex) {
 }  // namespace
 
 std::vector<ProcedureRecord> ExecuteProcedure(const ProcedureCallOp &data,
-                                              const SlottedRow &row,
+                                              const ExecutionRow &row,
                                               RuntimeState *state) {
   RG_CHECK(state != nullptr, common::ErrorCode::InternalError,
            "runtime state is null");
@@ -823,7 +825,7 @@ std::vector<ProcedureRecord> ExecuteProcedure(const ProcedureCallOp &data,
 }
 
 Value::Map EvaluatePropertyMap(const PhysicalPropertyMap &property_map,
-                               const SlottedRow &row,
+                               const ExecutionRow &row,
                                std::string_view operation,
                                RuntimeState *state) {
   if (property_map.parameter.has_value()) {
@@ -839,22 +841,23 @@ Value::Map EvaluatePropertyMap(const PhysicalPropertyMap &property_map,
   return properties;
 }
 
-void ExecuteStreamingWrite(const CreateNodeOp &data, const SlottedRow &input,
-                           SlottedRow *output, RuntimeState *state) {
+void ExecuteStreamingWrite(const CreateNodeOp &data, const ExecutionRow &input,
+                           ExecutionRow *output, RuntimeState *state) {
   Value::Map properties =
       EvaluatePropertyMap(data.properties, input, "CREATE node", state);
   const Value::NodePtr node = CreateGraphDBVertex(
       *state->transaction, data.labels, std::move(properties));
   RG_CHECK(node != nullptr, common::ErrorCode::InternalError,
            "storage returned a null created node");
-  output->Set(data.node_slot, GraphDBVertexById(*state->transaction, node->id));
+  output->Set(data.node_offset,
+              GraphDBVertexById(*state->transaction, node->id));
 }
 
 void ExecuteStreamingWrite(const CreateRelationshipOp &data,
-                           const SlottedRow &input, SlottedRow *output,
+                           const ExecutionRow &input, ExecutionRow *output,
                            RuntimeState *state) {
-  const std::int64_t left = NodeId(input, data.left_node_slot);
-  const std::int64_t right = NodeId(input, data.right_node_slot);
+  const std::int64_t left = NodeId(input, data.left_node_offset);
+  const std::int64_t right = NodeId(input, data.right_node_offset);
   RG_CHECK(left >= 0 && right >= 0, common::ErrorCode::InvalidParameter,
            "CREATE relationship endpoints must be nodes");
   Value::Map properties =
@@ -864,13 +867,13 @@ void ExecuteStreamingWrite(const CreateRelationshipOp &data,
   RG_CHECK(relationship != nullptr, common::ErrorCode::InternalError,
            "storage returned a null created relationship");
   output->Set(
-      data.relationship_slot,
+      data.relationship_offset,
       GraphDBEdgeById(*state->transaction, {.id = relationship->id,
                                             .type_id = relationship->type_id}));
 }
 
 Value::Map EvaluateMergeProperties(const PhysicalPropertyMap &properties,
-                                   const SlottedRow &row,
+                                   const ExecutionRow &row,
                                    std::string_view entity,
                                    RuntimeState *state) {
   const std::string operation = "MERGE " + std::string(entity);
@@ -883,7 +886,7 @@ Value::Map EvaluateMergeProperties(const PhysicalPropertyMap &properties,
   return values;
 }
 
-void ExecuteMergeCreate(const CreateNodeOp &data, SlottedRow *row,
+void ExecuteMergeCreate(const CreateNodeOp &data, ExecutionRow *row,
                         RuntimeState *state) {
   Value::Map properties =
       EvaluateMergeProperties(data.properties, *row, "node", state);
@@ -891,13 +894,13 @@ void ExecuteMergeCreate(const CreateNodeOp &data, SlottedRow *row,
       *state->transaction, data.labels, std::move(properties));
   RG_CHECK(node != nullptr, common::ErrorCode::InternalError,
            "storage returned a null created node");
-  row->Set(data.node_slot, GraphDBVertexById(*state->transaction, node->id));
+  row->Set(data.node_offset, GraphDBVertexById(*state->transaction, node->id));
 }
 
-void ExecuteMergeCreate(const CreateRelationshipOp &data, SlottedRow *row,
+void ExecuteMergeCreate(const CreateRelationshipOp &data, ExecutionRow *row,
                         RuntimeState *state) {
-  const std::int64_t left = NodeId(*row, data.left_node_slot);
-  const std::int64_t right = NodeId(*row, data.right_node_slot);
+  const std::int64_t left = NodeId(*row, data.left_node_offset);
+  const std::int64_t right = NodeId(*row, data.right_node_offset);
   RG_CHECK(left >= 0 && right >= 0, common::ErrorCode::InvalidParameter,
            "MERGE relationship endpoints must be nodes");
   Value::Map properties =
@@ -907,13 +910,13 @@ void ExecuteMergeCreate(const CreateRelationshipOp &data, SlottedRow *row,
   RG_CHECK(relationship != nullptr, common::ErrorCode::InternalError,
            "storage returned a null created relationship");
   row->Set(
-      data.relationship_slot,
+      data.relationship_offset,
       GraphDBEdgeById(*state->transaction, {.id = relationship->id,
                                             .type_id = relationship->type_id}));
 }
 
-void ExecuteStreamingWrite(const SetPropertyOp &data, const SlottedRow &,
-                           SlottedRow *output, RuntimeState *state) {
+void ExecuteStreamingWrite(const SetPropertyOp &data, const ExecutionRow &,
+                           ExecutionRow *output, RuntimeState *state) {
   const Value entity = Evaluate(data.entity, *output, *state);
   if (entity.IsNull()) {
     return;
@@ -933,8 +936,8 @@ void ExecuteStreamingWrite(const SetPropertyOp &data, const SlottedRow &,
   }
 }
 
-void ExecuteStreamingWrite(const SetPropertiesOp &data, const SlottedRow &,
-                           SlottedRow *output, RuntimeState *state) {
+void ExecuteStreamingWrite(const SetPropertiesOp &data, const ExecutionRow &,
+                           ExecutionRow *output, RuntimeState *state) {
   const Value entity = Evaluate(data.entity, *output, *state);
   if (entity.IsNull()) {
     return;
@@ -965,8 +968,8 @@ void ExecuteStreamingWrite(const SetPropertiesOp &data, const SlottedRow &,
   }
 }
 
-void ExecuteStreamingWrite(const SetLabelsOp &data, const SlottedRow &,
-                           SlottedRow *output, RuntimeState *state) {
+void ExecuteStreamingWrite(const SetLabelsOp &data, const ExecutionRow &,
+                           ExecutionRow *output, RuntimeState *state) {
   const Value entity = Evaluate(data.entity, *output, *state);
   if (entity.IsNull()) {
     return;
@@ -976,7 +979,7 @@ void ExecuteStreamingWrite(const SetLabelsOp &data, const SlottedRow &,
   AddGraphDBVertexLabels(*state->transaction, entity.AsNode().id, data.labels);
 }
 
-void ExecuteMergeActions(const MergeOp &data, bool on_match, SlottedRow *row,
+void ExecuteMergeActions(const MergeOp &data, bool on_match, ExecutionRow *row,
                          RuntimeState *state) {
   for (const auto &action : data.actions) {
     if (action.on_match != on_match) {
@@ -992,8 +995,8 @@ void ExecuteMergeActions(const MergeOp &data, bool on_match, SlottedRow *row,
   }
 }
 
-void ExecuteStreamingWrite(const RemovePropertyOp &data, const SlottedRow &,
-                           SlottedRow *output, RuntimeState *state) {
+void ExecuteStreamingWrite(const RemovePropertyOp &data, const ExecutionRow &,
+                           ExecutionRow *output, RuntimeState *state) {
   const Value entity = Evaluate(data.entity, *output, *state);
   if (entity.IsNode()) {
     RemoveGraphDBVertexProperty(*state->transaction, entity.AsNode().id,
@@ -1009,8 +1012,8 @@ void ExecuteStreamingWrite(const RemovePropertyOp &data, const SlottedRow &,
   }
 }
 
-void ExecuteStreamingWrite(const RemoveLabelsOp &data, const SlottedRow &,
-                           SlottedRow *output, RuntimeState *state) {
+void ExecuteStreamingWrite(const RemoveLabelsOp &data, const ExecutionRow &,
+                           ExecutionRow *output, RuntimeState *state) {
   const Value entity = Evaluate(data.entity, *output, *state);
   if (!entity.IsNull()) {
     RG_CHECK(entity.IsNode(), common::ErrorCode::InvalidParameter,
@@ -1030,11 +1033,11 @@ std::size_t EstimatedKeyHeapUsage(const CompositeValueKey &key) {
 }
 
 std::optional<CompositeValueKey> NodeJoinKey(
-    const SlottedRow &row, const std::vector<std::size_t> &key_slots) {
+    const ExecutionRow &row, const std::vector<std::size_t> &key_offsets) {
   CompositeValueKey result;
-  result.values.reserve(key_slots.size());
-  for (const std::size_t slot : key_slots) {
-    Value value = ReadRowValue(row, slot);
+  result.values.reserve(key_offsets.size());
+  for (const std::size_t offset : key_offsets) {
+    Value value = ReadRowValue(row, offset);
     if (value.IsNull()) {
       return std::nullopt;
     }
@@ -1043,4 +1046,4 @@ std::optional<CompositeValueKey> NodeJoinKey(
   return result;
 }
 
-}  // namespace rg::slotted
+}  // namespace rg::execution

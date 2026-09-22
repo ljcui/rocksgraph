@@ -5,7 +5,7 @@
 
 #include "value/value.h"
 
-namespace rg::slotted {
+namespace rg::execution {
 
 struct CompositeValueKey {
   std::vector<Value> values;
@@ -23,4 +23,4 @@ struct CompositeValueKeyEqual {
                                 const CompositeValueKey &right) const noexcept;
 };
 
-}  // namespace rg::slotted
+}  // namespace rg::execution

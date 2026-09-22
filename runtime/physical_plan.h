@@ -10,7 +10,7 @@
 
 #include "ast/ast_node.h"
 #include "ast/precomputed_expression.h"
-#include "runtime/slotted_row.h"
+#include "runtime/execution_row.h"
 
 namespace ir {
 class LogicalPlan;
@@ -126,20 +126,20 @@ class PhysicalExpression final {
 
 struct AllNodeScanOp {
   std::string variable;
-  std::size_t output_slot = 0;
+  std::size_t output_offset = 0;
 };
 
 struct ArgumentOp {};
 
 struct NodeByLabelScanOp {
   std::string variable;
-  std::size_t output_slot = 0;
+  std::size_t output_offset = 0;
   std::vector<std::string> labels;
 };
 
 struct NodeIndexSeekOp {
   std::string variable;
-  std::size_t output_slot = 0;
+  std::size_t output_offset = 0;
   std::vector<std::string> labels;
   std::string property_key;
   PhysicalExpression value;
@@ -148,7 +148,7 @@ struct NodeIndexSeekOp {
 
 struct NodeIndexRangeSeekOp {
   std::string variable;
-  std::size_t output_slot = 0;
+  std::size_t output_offset = 0;
   std::vector<std::string> labels;
   std::string property_key;
   std::vector<PhysicalExpression> predicates;
@@ -162,10 +162,10 @@ struct PhysicalRelationshipPattern {
   std::vector<std::string> types;
 };
 
-struct PhysicalRelationshipSlots {
-  std::optional<std::size_t> from_node_output_slot;
-  std::optional<std::size_t> relationship_output_slot;
-  std::optional<std::size_t> to_node_output_slot;
+struct PhysicalRelationshipOffsets {
+  std::optional<std::size_t> from_node_output_offset;
+  std::optional<std::size_t> relationship_output_offset;
+  std::optional<std::size_t> to_node_output_offset;
 };
 
 struct PhysicalRelationshipLength {
@@ -176,12 +176,12 @@ struct PhysicalRelationshipLength {
 
 struct RelationshipTypeScanOp {
   PhysicalRelationshipPattern pattern;
-  PhysicalRelationshipSlots slots;
+  PhysicalRelationshipOffsets offsets;
 };
 
 struct RelationshipIndexSeekOp {
   PhysicalRelationshipPattern pattern;
-  PhysicalRelationshipSlots slots;
+  PhysicalRelationshipOffsets offsets;
   std::string property_key;
   PhysicalExpression value;
   bool unique = false;
@@ -189,63 +189,63 @@ struct RelationshipIndexSeekOp {
 
 struct RelationshipIndexRangeSeekOp {
   PhysicalRelationshipPattern pattern;
-  PhysicalRelationshipSlots slots;
+  PhysicalRelationshipOffsets offsets;
   std::string property_key;
   std::vector<PhysicalExpression> predicates;
 };
 
 struct NodeByIdSeekOp {
   std::string variable;
-  std::size_t output_slot = 0;
+  std::size_t output_offset = 0;
   PhysicalExpression ids;
   bool many = false;
 };
 
 struct RelationshipByIdSeekOp {
   PhysicalRelationshipPattern pattern;
-  PhysicalRelationshipSlots slots;
+  PhysicalRelationshipOffsets offsets;
   PhysicalExpression ids;
   bool many = false;
 };
 
 struct ExpandOp {
   PhysicalRelationshipPattern pattern;
-  std::size_t from_node_input_slot = 0;
-  std::size_t relationship_output_slot = 0;
-  std::size_t to_node_output_slot = 0;
+  std::size_t from_node_input_offset = 0;
+  std::size_t relationship_output_offset = 0;
+  std::size_t to_node_output_offset = 0;
 };
 
 struct ExpandIntoOp {
   PhysicalRelationshipPattern pattern;
-  std::size_t from_node_input_slot = 0;
-  std::size_t to_node_input_slot = 0;
-  std::size_t relationship_output_slot = 0;
+  std::size_t from_node_input_offset = 0;
+  std::size_t to_node_input_offset = 0;
+  std::size_t relationship_output_offset = 0;
 };
 
 struct VarExpandOp {
   PhysicalRelationshipPattern pattern;
   PhysicalRelationshipLength length;
-  std::size_t from_node_input_slot = 0;
-  std::optional<std::size_t> to_node_input_slot;
-  std::size_t relationship_output_slot = 0;
-  std::size_t to_node_output_slot = 0;
+  std::size_t from_node_input_offset = 0;
+  std::optional<std::size_t> to_node_input_offset;
+  std::size_t relationship_output_offset = 0;
+  std::size_t to_node_output_offset = 0;
   bool reverse_relationships = false;
 };
 
 struct PruningVarExpandOp {
   PhysicalRelationshipPattern pattern;
   PhysicalRelationshipLength length;
-  std::size_t from_node_input_slot = 0;
-  std::size_t to_node_output_slot = 0;
+  std::size_t from_node_input_offset = 0;
+  std::size_t to_node_output_offset = 0;
 };
 
 struct OptionalExpandOp {
   PhysicalRelationshipPattern pattern;
   std::vector<PhysicalExpression> predicates;
-  std::size_t from_node_input_slot = 0;
-  std::size_t relationship_output_slot = 0;
-  std::size_t to_node_output_slot = 0;
-  std::vector<std::size_t> output_slots;
+  std::size_t from_node_input_offset = 0;
+  std::size_t relationship_output_offset = 0;
+  std::size_t to_node_output_offset = 0;
+  std::vector<std::size_t> output_offsets;
 };
 
 struct PhysicalPathPattern {
@@ -256,19 +256,19 @@ struct PhysicalPathPattern {
 
 struct PathBuildOp {
   PhysicalPathPattern path;
-  std::vector<std::size_t> node_input_slots;
-  std::vector<std::size_t> relationship_input_slots;
-  std::size_t path_output_slot = 0;
+  std::vector<std::size_t> node_input_offsets;
+  std::vector<std::size_t> relationship_input_offsets;
+  std::size_t path_output_offset = 0;
 };
 
 struct ProjectEndpointsOp {
   PhysicalRelationshipPattern pattern;
   PhysicalRelationshipLength length;
-  std::size_t relationship_input_slot = 0;
-  std::optional<std::size_t> from_node_input_slot;
-  std::optional<std::size_t> to_node_input_slot;
-  std::size_t from_node_output_slot = 0;
-  std::size_t to_node_output_slot = 0;
+  std::size_t relationship_input_offset = 0;
+  std::optional<std::size_t> from_node_input_offset;
+  std::optional<std::size_t> to_node_input_offset;
+  std::size_t from_node_output_offset = 0;
+  std::size_t to_node_output_offset = 0;
 };
 
 struct FilterOp {
@@ -277,13 +277,13 @@ struct FilterOp {
 
 struct PhysicalProjectionItem {
   std::string alias;
-  std::size_t output_slot = 0;
+  std::size_t output_offset = 0;
   PhysicalExpression expression;
   bool passthrough = false;
   // Resolved during physical-plan construction for passthrough projections.
-  // This lets the runtime copy the slot representation directly instead of
+  // This lets the runtime copy the offset representation directly instead of
   // materializing an entity into Value and immediately extracting its id.
-  std::optional<std::size_t> source_slot;
+  std::optional<std::size_t> source_offset;
 };
 
 struct ProjectionOp {
@@ -292,7 +292,7 @@ struct ProjectionOp {
 
 struct PhysicalGroupingItem {
   std::string alias;
-  std::size_t output_slot = 0;
+  std::size_t output_offset = 0;
   PhysicalExpression expression;
 };
 
@@ -306,7 +306,7 @@ struct OrderedDistinctOp {
 
 struct PhysicalAggregationItem {
   std::string alias;
-  std::size_t output_slot = 0;
+  std::size_t output_offset = 0;
   PhysicalExpression expression;
 };
 
@@ -380,12 +380,12 @@ struct LimitOp {
 
 struct ProduceResultsOp {
   std::vector<std::string> columns;
-  std::vector<std::size_t> output_slots;
+  std::vector<std::size_t> output_offsets;
 };
 
 struct PhysicalAssertedNode {
   std::string variable;
-  std::size_t input_slot = 0;
+  std::size_t input_offset = 0;
 };
 
 struct AssertIsNodeOp {
@@ -394,12 +394,12 @@ struct AssertIsNodeOp {
 
 struct UnwindOp {
   PhysicalExpression expression;
-  std::size_t value_slot = 0;
+  std::size_t value_offset = 0;
 };
 
 struct PhysicalProcedureYield {
   std::string result_field;
-  std::size_t output_slot = 0;
+  std::size_t output_offset = 0;
 };
 
 struct ProcedureCallOp {
@@ -422,16 +422,16 @@ struct ValueHashJoinOp {
 
 struct NodeHashJoinOp {
   std::vector<std::string> join_keys;
-  std::vector<std::size_t> left_key_slots;
-  std::vector<std::size_t> right_key_slots;
+  std::vector<std::size_t> left_key_offsets;
+  std::vector<std::size_t> right_key_offsets;
   std::size_t build_child = 1;
 };
 
 struct LeftOuterHashJoinOp {
   std::vector<std::string> join_keys;
-  std::vector<std::size_t> left_key_slots;
-  std::vector<std::size_t> right_key_slots;
-  std::vector<std::size_t> nullable_output_slots;
+  std::vector<std::size_t> left_key_offsets;
+  std::vector<std::size_t> right_key_offsets;
+  std::vector<std::size_t> nullable_output_offsets;
 };
 
 struct CartesianProductOp {
@@ -446,13 +446,13 @@ struct PredicateJoinOp {
 struct UnionAllOp {};
 
 struct UnionDistinctOp {
-  std::vector<std::size_t> key_slots;
+  std::vector<std::size_t> key_offsets;
 };
 
 struct ApplyOp {};
 
 struct OptionalApplyOp {
-  std::vector<std::size_t> nullable_output_slots;
+  std::vector<std::size_t> nullable_output_offsets;
 };
 
 struct SemiApplyOp {};
@@ -460,7 +460,7 @@ struct SemiApplyOp {};
 struct AntiSemiApplyOp {};
 
 struct LetSemiApplyOp {
-  std::size_t value_slot = 0;
+  std::size_t value_offset = 0;
 };
 
 struct SelectOrSemiApplyOp {
@@ -469,8 +469,8 @@ struct SelectOrSemiApplyOp {
 };
 
 struct RollUpApplyOp {
-  std::size_t collection_slot = 0;
-  std::size_t value_slot = 0;
+  std::size_t collection_offset = 0;
+  std::size_t value_offset = 0;
 };
 
 struct PhysicalPropertyMapEntry {
@@ -486,15 +486,15 @@ struct PhysicalPropertyMap {
 struct WriteBarrierOp {};
 
 struct CreateNodeOp {
-  std::size_t node_slot = 0;
+  std::size_t node_offset = 0;
   std::vector<std::string> labels;
   PhysicalPropertyMap properties;
 };
 
 struct CreateRelationshipOp {
-  std::size_t relationship_slot = 0;
-  std::size_t left_node_slot = 0;
-  std::size_t right_node_slot = 0;
+  std::size_t relationship_offset = 0;
+  std::size_t left_node_offset = 0;
+  std::size_t right_node_offset = 0;
   std::string type;
   PhysicalPropertyMap properties;
 };
@@ -575,13 +575,13 @@ struct PhysicalPlanNode {
   std::string details;
   std::optional<double> estimated_rows;
   std::optional<double> cost;
-  SlotConfigurationPtr argument_slots;
-  SlotConfigurationPtr output_slots;
+  RowLayoutPtr argument_layout;
+  RowLayoutPtr output_layout;
   PhysicalOrdering provided_order;
   PhysicalOperatorTraits traits;
   PhysicalPlanEffects subtree_effects;
-  std::vector<SlotMapping> argument_mapping;
-  std::vector<std::vector<SlotMapping>> child_mappings;
+  std::vector<RowMapping> argument_mapping;
+  std::vector<std::vector<RowMapping>> child_mappings;
   std::vector<std::unique_ptr<PhysicalPlanNode>> children;
 };
 

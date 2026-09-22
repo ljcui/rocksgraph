@@ -2,7 +2,7 @@
 
 #include <functional>
 
-namespace rg::slotted {
+namespace rg::execution {
 
 namespace {
 
@@ -42,4 +42,4 @@ bool CompositeValueKeyEqual::operator()(
   return true;
 }
 
-}  // namespace rg::slotted
+}  // namespace rg::execution

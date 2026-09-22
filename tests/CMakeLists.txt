@@ -48,12 +48,12 @@ target_link_libraries(plan_cache_test PRIVATE RocksGraph::graphdb)
 rocksgraph_add_test(query_executor_test runtime/query_executor_test.cc
                     RocksGraph::runtime)
 target_link_libraries(query_executor_test PRIVATE RocksGraph::graphdb)
-rocksgraph_add_test(slotted_row_test runtime/slotted_row_test.cc
+rocksgraph_add_test(execution_row_test runtime/execution_row_test.cc
                     RocksGraph::runtime)
-target_link_libraries(slotted_row_test PRIVATE RocksGraph::graphdb)
-rocksgraph_add_test(slotted_runtime_test runtime/slotted_runtime_test.cc
+target_link_libraries(execution_row_test PRIVATE RocksGraph::graphdb)
+rocksgraph_add_test(physical_executor_test runtime/physical_executor_test.cc
                     RocksGraph::runtime)
-target_link_libraries(slotted_runtime_test PRIVATE RocksGraph::graphdb)
+target_link_libraries(physical_executor_test PRIVATE RocksGraph::graphdb)
 rocksgraph_add_test(open_cypher_optimizer_test
                     runtime/open_cypher_optimizer_test.cc RocksGraph::runtime)
 target_link_libraries(open_cypher_optimizer_test PRIVATE RocksGraph::graphdb)

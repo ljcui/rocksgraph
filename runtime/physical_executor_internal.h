@@ -14,9 +14,9 @@
 #include "graphdb/graph_entity.h"
 #include "graphdb/transaction.h"
 #include "runtime/composite_value_key.h"
-#include "runtime/slotted_executor.h"
+#include "runtime/physical_executor.h"
 
-namespace rg::slotted {
+namespace rg::execution {
 
 class PullOperator {
  public:
@@ -25,7 +25,7 @@ class PullOperator {
   PullOperator &operator=(const PullOperator &) = delete;
   virtual ~PullOperator() = default;
 
-  [[nodiscard]] virtual bool Next(SlottedRow *row) = 0;
+  [[nodiscard]] virtual bool Next(ExecutionRow *row) = 0;
   virtual void Close() noexcept = 0;
 };
 
@@ -42,7 +42,7 @@ struct RuntimeState {
 
   void CheckCancelled() const;
   [[nodiscard]] const RuntimeExpressionProgram &ExpressionProgram(
-      const ast::Expression &expression, const SlotConfiguration &slots);
+      const ast::Expression &expression, const RowLayout &layout);
 
   graphdb::Transaction *transaction = nullptr;
   BoundQueryParameters bound_parameters;
@@ -53,7 +53,7 @@ struct RuntimeState {
  private:
   struct CachedExpression {
     const ast::Expression *expression = nullptr;
-    const SlotConfiguration *slots = nullptr;
+    const RowLayout *layout = nullptr;
     RuntimeExpressionProgram program;
   };
   std::vector<CachedExpression> expressions;
@@ -66,7 +66,7 @@ class OperatorFactory final {
 
   [[nodiscard]] std::unique_ptr<PullOperator> Build(
       const PhysicalPlanNode &node,
-      std::optional<SlottedRow> argument = std::nullopt);
+      std::optional<ExecutionRow> argument = std::nullopt);
 
  private:
   RuntimeState *state_ = nullptr;
@@ -82,86 +82,90 @@ const T &OperatorData(const PhysicalPlanNode &node) {
 }
 
 [[nodiscard]] Value Evaluate(
-    const ast::Expression &expression, const SlottedRow &row,
+    const ast::Expression &expression, const ExecutionRow &row,
     const std::vector<ast::PrecomputedExpression> &precomputed,
     RuntimeState &state);
 [[nodiscard]] Value Evaluate(const PhysicalExpression &expression,
-                             const SlottedRow &row, RuntimeState &state);
+                             const ExecutionRow &row, RuntimeState &state);
 
-[[nodiscard]] SlottedRow EmptyArgument(SlotConfigurationPtr slots);
-void CopyMappings(const SlottedRow &source, SlottedRow *target,
-                  const std::vector<SlotMapping> &mappings);
-[[nodiscard]] SlottedRow CopyMappedRow(
-    const SlottedRow &source, SlotConfigurationPtr target,
-    const std::vector<SlotMapping> &mappings);
-[[nodiscard]] Value ReadRowValue(const SlottedRow &row, std::size_t offset);
-[[nodiscard]] SlottedRow CopyChildOutput(const PhysicalPlanNode &node,
-                                         std::size_t child,
-                                         const SlottedRow &input);
-void StoreEvaluatedValue(SlottedRow *row, std::size_t offset, Value value,
+[[nodiscard]] ExecutionRow EmptyArgument(RowLayoutPtr layout);
+void CopyMappings(const ExecutionRow &source, ExecutionRow *target,
+                  const std::vector<RowMapping> &mappings);
+[[nodiscard]] ExecutionRow CopyMappedRow(
+    const ExecutionRow &source, RowLayoutPtr target,
+    const std::vector<RowMapping> &mappings);
+[[nodiscard]] Value ReadRowValue(const ExecutionRow &row, std::size_t offset);
+[[nodiscard]] ExecutionRow CopyChildOutput(const PhysicalPlanNode &node,
+                                           std::size_t child,
+                                           const ExecutionRow &input);
+void StoreEvaluatedValue(ExecutionRow *row, std::size_t offset, Value value,
                          RuntimeState &state);
 
-[[nodiscard]] bool TryBindNode(SlottedRow *row, std::size_t offset,
+[[nodiscard]] bool TryBindNode(ExecutionRow *row, std::size_t offset,
                                graphdb::Vertex vertex);
-[[nodiscard]] bool TryBindNode(SlottedRow *row,
+[[nodiscard]] bool TryBindNode(ExecutionRow *row,
                                std::optional<std::size_t> offset,
                                graphdb::Vertex vertex);
-[[nodiscard]] bool TryBindOptionalEdge(SlottedRow *row,
+[[nodiscard]] bool TryBindOptionalEdge(ExecutionRow *row,
                                        std::optional<std::size_t> offset,
                                        graphdb::Edge edge);
-[[nodiscard]] bool TryBindNode(SlottedRow *row, std::size_t offset,
+[[nodiscard]] bool TryBindNode(ExecutionRow *row, std::size_t offset,
                                std::int64_t id, RuntimeState &state);
-[[nodiscard]] bool TryBindNode(SlottedRow *row,
+[[nodiscard]] bool TryBindNode(ExecutionRow *row,
                                std::optional<std::size_t> offset,
                                std::int64_t id, RuntimeState &state);
-void SetScannedNode(SlottedRow *row, std::size_t offset,
+void SetScannedNode(ExecutionRow *row, std::size_t offset,
                     graphdb::Vertex vertex);
 [[nodiscard]] graphdb::Vertex Endpoint(const graphdb::Edge &edge,
                                        std::int64_t id);
-[[nodiscard]] bool MergeMappings(const SlottedRow &source, SlottedRow *target,
-                                 const std::vector<SlotMapping> &mappings);
-[[nodiscard]] std::int64_t NodeId(const SlottedRow &row, std::size_t offset);
+[[nodiscard]] bool MergeMappings(const ExecutionRow &source,
+                                 ExecutionRow *target,
+                                 const std::vector<RowMapping> &mappings);
+[[nodiscard]] std::int64_t NodeId(const ExecutionRow &row, std::size_t offset);
 [[nodiscard]] bool NodeHasAllLabels(const Node &node,
                                     const std::vector<std::string> &labels);
 [[nodiscard]] bool RelationshipHasType(const Relationship &relationship,
                                        const std::vector<std::string> &types);
 
 [[nodiscard]] Value BuildPathValue(const PathBuildOp &data,
-                                   const SlottedRow &row, RuntimeState *state);
+                                   const ExecutionRow &row,
+                                   RuntimeState *state);
 using ProcedureRecord = Value::Map;
 [[nodiscard]] std::vector<ProcedureRecord> ExecuteProcedure(
-    const ProcedureCallOp &data, const SlottedRow &row, RuntimeState *state);
+    const ProcedureCallOp &data, const ExecutionRow &row, RuntimeState *state);
 
-void ExecuteStreamingWrite(const CreateNodeOp &data, const SlottedRow &input,
-                           SlottedRow *output, RuntimeState *state);
+void ExecuteStreamingWrite(const CreateNodeOp &data, const ExecutionRow &input,
+                           ExecutionRow *output, RuntimeState *state);
 void ExecuteStreamingWrite(const CreateRelationshipOp &data,
-                           const SlottedRow &input, SlottedRow *output,
+                           const ExecutionRow &input, ExecutionRow *output,
                            RuntimeState *state);
-void ExecuteStreamingWrite(const SetPropertyOp &data, const SlottedRow &input,
-                           SlottedRow *output, RuntimeState *state);
-void ExecuteStreamingWrite(const SetPropertiesOp &data, const SlottedRow &input,
-                           SlottedRow *output, RuntimeState *state);
-void ExecuteStreamingWrite(const SetLabelsOp &data, const SlottedRow &input,
-                           SlottedRow *output, RuntimeState *state);
+void ExecuteStreamingWrite(const SetPropertyOp &data, const ExecutionRow &input,
+                           ExecutionRow *output, RuntimeState *state);
+void ExecuteStreamingWrite(const SetPropertiesOp &data,
+                           const ExecutionRow &input, ExecutionRow *output,
+                           RuntimeState *state);
+void ExecuteStreamingWrite(const SetLabelsOp &data, const ExecutionRow &input,
+                           ExecutionRow *output, RuntimeState *state);
 void ExecuteStreamingWrite(const RemovePropertyOp &data,
-                           const SlottedRow &input, SlottedRow *output,
+                           const ExecutionRow &input, ExecutionRow *output,
                            RuntimeState *state);
-void ExecuteStreamingWrite(const RemoveLabelsOp &data, const SlottedRow &input,
-                           SlottedRow *output, RuntimeState *state);
-void ExecuteMergeCreate(const CreateNodeOp &data, SlottedRow *row,
+void ExecuteStreamingWrite(const RemoveLabelsOp &data,
+                           const ExecutionRow &input, ExecutionRow *output,
+                           RuntimeState *state);
+void ExecuteMergeCreate(const CreateNodeOp &data, ExecutionRow *row,
                         RuntimeState *state);
-void ExecuteMergeCreate(const CreateRelationshipOp &data, SlottedRow *row,
+void ExecuteMergeCreate(const CreateRelationshipOp &data, ExecutionRow *row,
                         RuntimeState *state);
-void ExecuteMergeActions(const MergeOp &data, bool on_match, SlottedRow *row,
+void ExecuteMergeActions(const MergeOp &data, bool on_match, ExecutionRow *row,
                          RuntimeState *state);
 
 [[nodiscard]] std::size_t EstimatedKeyHeapUsage(const CompositeValueKey &key);
 [[nodiscard]] std::optional<CompositeValueKey> NodeJoinKey(
-    const SlottedRow &row, const std::vector<std::size_t> &slots);
+    const ExecutionRow &row, const std::vector<std::size_t> &layout);
 
 [[nodiscard]] std::unique_ptr<PullOperator> BuildLeafOperator(
     const PhysicalPlanNode &node, RuntimeState &state,
-    std::optional<SlottedRow> argument);
+    std::optional<ExecutionRow> argument);
 [[nodiscard]] std::unique_ptr<PullOperator> BuildExpandOperator(
     const PhysicalPlanNode &node, RuntimeState &state,
     std::unique_ptr<PullOperator> source);
@@ -175,4 +179,4 @@ void ExecuteMergeActions(const MergeOp &data, bool on_match, SlottedRow *row,
     const PhysicalPlanNode &node, RuntimeState &state, OperatorFactory &factory,
     std::unique_ptr<PullOperator> lhs);
 
-}  // namespace rg::slotted
+}  // namespace rg::execution

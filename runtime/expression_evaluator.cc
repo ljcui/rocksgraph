@@ -842,9 +842,9 @@ Value EvaluateExpression(
       return row.LookupVariable(ast::CastAst<ast::Variable>(expression));
     case ast::ASTNodeType::kParameter: {
       const auto &parameter = ast::CastAst<ast::Parameter>(expression);
-      Value slotted_value;
-      if (row.ReadParameter(parameter, &slotted_value)) {
-        return slotted_value;
+      Value row_value;
+      if (row.ReadParameter(parameter, &row_value)) {
+        return row_value;
       }
       const Value *value = context.FindParameter(parameter.name);
       RG_CHECK(value != nullptr, common::ErrorCode::InvalidParameter,

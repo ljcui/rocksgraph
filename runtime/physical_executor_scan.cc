@@ -10,9 +10,9 @@
 #include "ir/query_ir_internal.h"
 #include "runtime/expression_evaluator.h"
 #include "runtime/graphdb_access.h"
-#include "runtime/slotted_executor_internal.h"
+#include "runtime/physical_executor_internal.h"
 
-namespace rg::slotted {
+namespace rg::execution {
 
 graphdb::EdgeDirection GraphDBDirection(PhysicalExpandDirection direction) {
   if (direction == PhysicalExpandDirection::kOutgoing) {
@@ -77,7 +77,8 @@ std::optional<std::int64_t> SeekId(const Value &value) {
 IndexRange EvaluateIndexRange(const std::vector<PhysicalExpression> &predicates,
                               std::string_view variable,
                               std::string_view property_key,
-                              const SlottedRow &argument, RuntimeState &state) {
+                              const ExecutionRow &argument,
+                              RuntimeState &state) {
   auto is_property = [&](const ast::Expression *expression) {
     const auto *property = ir::AsPropertyExpression(expression);
     const auto *owner = property == nullptr
@@ -130,19 +131,19 @@ IndexRange EvaluateIndexRange(const std::vector<PhysicalExpression> &predicates,
 class AllNodeScanOperator final : public PullOperator {
  public:
   AllNodeScanOperator(const PhysicalPlanNode &node, RuntimeState &state,
-                      std::optional<SlottedRow> argument)
+                      std::optional<ExecutionRow> argument)
       : node_(&node),
         data_(&OperatorData<AllNodeScanOp>(node)),
         state_(&state),
         argument_(std::move(argument)) {
     if (!argument_.has_value()) {
-      argument_.emplace(EmptyArgument(node.argument_slots));
+      argument_.emplace(EmptyArgument(node.argument_layout));
     }
   }
 
   ~AllNodeScanOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override {
+  [[nodiscard]] bool Next(ExecutionRow *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
@@ -155,9 +156,9 @@ class AllNodeScanOperator final : public PullOperator {
     while (graphdb_cursor_->Valid()) {
       graphdb::Vertex vertex = graphdb_cursor_->GetVertex();
       graphdb_cursor_->Next();
-      row->Reset(node_->output_slots);
+      row->Reset(node_->output_layout);
       CopyMappings(*argument_, row, node_->argument_mapping);
-      SetScannedNode(row, data_->output_slot, std::move(vertex));
+      SetScannedNode(row, data_->output_offset, std::move(vertex));
       return true;
     }
     Close();
@@ -173,28 +174,28 @@ class AllNodeScanOperator final : public PullOperator {
   const PhysicalPlanNode *node_ = nullptr;
   const AllNodeScanOp *data_ = nullptr;
   RuntimeState *state_ = nullptr;
-  std::optional<SlottedRow> argument_;
+  std::optional<ExecutionRow> argument_;
   std::unique_ptr<graphdb::VertexIterator> graphdb_cursor_;
   bool closed_ = false;
 };
 
-SlottedRow LeafArgument(const PhysicalPlanNode &node,
-                        std::optional<SlottedRow> argument) {
+ExecutionRow LeafArgument(const PhysicalPlanNode &node,
+                          std::optional<ExecutionRow> argument) {
   return argument.has_value() ? std::move(*argument)
-                              : EmptyArgument(node.argument_slots);
+                              : EmptyArgument(node.argument_layout);
 }
 
 class ArgumentOperator final : public PullOperator {
  public:
   ArgumentOperator(const PhysicalPlanNode &node, RuntimeState &state,
-                   std::optional<SlottedRow> argument)
+                   std::optional<ExecutionRow> argument)
       : node_(&node),
         state_(&state),
         argument_(LeafArgument(node, std::move(argument))) {
     (void)OperatorData<ArgumentOp>(node);
   }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override {
+  [[nodiscard]] bool Next(ExecutionRow *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
@@ -203,7 +204,7 @@ class ArgumentOperator final : public PullOperator {
     }
     closed_ = true;
     *row =
-        CopyMappedRow(argument_, node_->output_slots, node_->argument_mapping);
+        CopyMappedRow(argument_, node_->output_layout, node_->argument_mapping);
     return true;
   }
 
@@ -212,26 +213,27 @@ class ArgumentOperator final : public PullOperator {
  private:
   const PhysicalPlanNode *node_ = nullptr;
   RuntimeState *state_ = nullptr;
-  SlottedRow argument_;
+  ExecutionRow argument_;
   bool closed_ = false;
 };
 
 class NodeScanOperator : public PullOperator {
  public:
   NodeScanOperator(const PhysicalPlanNode &node, RuntimeState &state,
-                   std::optional<SlottedRow> argument, std::size_t output_slot,
+                   std::optional<ExecutionRow> argument,
+                   std::size_t output_offset,
                    const std::vector<std::string> *labels_to_verify,
                    const std::vector<PhysicalExpression> *predicates)
       : node_(&node),
         state_(&state),
         argument_(LeafArgument(node, std::move(argument))),
-        output_slot_(output_slot),
+        output_offset_(output_offset),
         labels_to_verify_(labels_to_verify),
         predicates_(predicates) {}
 
   ~NodeScanOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override {
+  [[nodiscard]] bool Next(ExecutionRow *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
@@ -253,9 +255,9 @@ class NodeScanOperator : public PullOperator {
           continue;
         }
       }
-      row->Reset(node_->output_slots);
+      row->Reset(node_->output_layout);
       CopyMappings(argument_, row, node_->argument_mapping);
-      SetScannedNode(row, output_slot_, std::move(vertex));
+      SetScannedNode(row, output_offset_, std::move(vertex));
       if (predicates_ != nullptr &&
           !std::all_of(predicates_->begin(), predicates_->end(),
                        [&](const PhysicalExpression &predicate) {
@@ -278,7 +280,7 @@ class NodeScanOperator : public PullOperator {
  protected:
   [[nodiscard]] virtual std::unique_ptr<graphdb::VertexIterator>
   OpenGraphDBCursor() = 0;
-  [[nodiscard]] const SlottedRow &Argument() const noexcept {
+  [[nodiscard]] const ExecutionRow &Argument() const noexcept {
     return argument_;
   }
   [[nodiscard]] RuntimeState &State() const noexcept { return *state_; }
@@ -286,8 +288,8 @@ class NodeScanOperator : public PullOperator {
  private:
   const PhysicalPlanNode *node_ = nullptr;
   RuntimeState *state_ = nullptr;
-  SlottedRow argument_;
-  std::size_t output_slot_ = 0;
+  ExecutionRow argument_;
+  std::size_t output_offset_ = 0;
   const std::vector<std::string> *labels_to_verify_ = nullptr;
   const std::vector<PhysicalExpression> *predicates_ = nullptr;
   std::unique_ptr<graphdb::VertexIterator> graphdb_cursor_;
@@ -297,9 +299,9 @@ class NodeScanOperator : public PullOperator {
 class NodeByLabelScanOperator final : public NodeScanOperator {
  public:
   NodeByLabelScanOperator(const PhysicalPlanNode &node, RuntimeState &state,
-                          std::optional<SlottedRow> argument)
+                          std::optional<ExecutionRow> argument)
       : NodeScanOperator(node, state, std::move(argument),
-                         OperatorData<NodeByLabelScanOp>(node).output_slot,
+                         OperatorData<NodeByLabelScanOp>(node).output_offset,
                          &OperatorData<NodeByLabelScanOp>(node).labels,
                          nullptr),
         data_(&OperatorData<NodeByLabelScanOp>(node)) {}
@@ -319,9 +321,9 @@ class NodeByLabelScanOperator final : public NodeScanOperator {
 class NodeIndexSeekOperator final : public NodeScanOperator {
  public:
   NodeIndexSeekOperator(const PhysicalPlanNode &node, RuntimeState &state,
-                        std::optional<SlottedRow> argument)
+                        std::optional<ExecutionRow> argument)
       : NodeScanOperator(node, state, std::move(argument),
-                         OperatorData<NodeIndexSeekOp>(node).output_slot,
+                         OperatorData<NodeIndexSeekOp>(node).output_offset,
                          nullptr, nullptr),
         data_(&OperatorData<NodeIndexSeekOp>(node)) {}
 
@@ -339,9 +341,9 @@ class NodeIndexSeekOperator final : public NodeScanOperator {
 class NodeIndexRangeSeekOperator final : public NodeScanOperator {
  public:
   NodeIndexRangeSeekOperator(const PhysicalPlanNode &node, RuntimeState &state,
-                             std::optional<SlottedRow> argument)
+                             std::optional<ExecutionRow> argument)
       : NodeScanOperator(node, state, std::move(argument),
-                         OperatorData<NodeIndexRangeSeekOp>(node).output_slot,
+                         OperatorData<NodeIndexRangeSeekOp>(node).output_offset,
                          nullptr,
                          &OperatorData<NodeIndexRangeSeekOp>(node).predicates),
         data_(&OperatorData<NodeIndexRangeSeekOp>(node)) {}
@@ -375,7 +377,7 @@ class NodeIndexRangeSeekOperator final : public NodeScanOperator {
 class IdSeekValues final {
  public:
   IdSeekValues(const PhysicalExpression &expression, bool many,
-               const SlottedRow &argument, RuntimeState &state)
+               const ExecutionRow &argument, RuntimeState &state)
       : expression_(&expression),
         many_(many),
         argument_(&argument),
@@ -430,7 +432,7 @@ class IdSeekValues final {
 
   const PhysicalExpression *expression_ = nullptr;
   bool many_ = false;
-  const SlottedRow *argument_ = nullptr;
+  const ExecutionRow *argument_ = nullptr;
   RuntimeState *state_ = nullptr;
   Value::List values_;
   std::unordered_set<std::int64_t> seen_;
@@ -442,7 +444,7 @@ class IdSeekValues final {
 class NodeByIdSeekOperator final : public PullOperator {
  public:
   NodeByIdSeekOperator(const PhysicalPlanNode &node, RuntimeState &state,
-                       std::optional<SlottedRow> argument)
+                       std::optional<ExecutionRow> argument)
       : node_(&node),
         data_(&OperatorData<NodeByIdSeekOp>(node)),
         state_(&state),
@@ -451,7 +453,7 @@ class NodeByIdSeekOperator final : public PullOperator {
 
   ~NodeByIdSeekOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override {
+  [[nodiscard]] bool Next(ExecutionRow *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
@@ -461,9 +463,9 @@ class NodeByIdSeekOperator final : public PullOperator {
     while (const std::optional<std::int64_t> id = values_.Next()) {
       try {
         graphdb::Vertex vertex = GraphDBVertexById(*state_->transaction, *id);
-        SlottedRow output = CopyMappedRow(argument_, node_->output_slots,
-                                          node_->argument_mapping);
-        if (TryBindNode(&output, data_->output_slot, std::move(vertex))) {
+        ExecutionRow output = CopyMappedRow(argument_, node_->output_layout,
+                                            node_->argument_mapping);
+        if (TryBindNode(&output, data_->output_offset, std::move(vertex))) {
           *row = std::move(output);
           return true;
         }
@@ -487,7 +489,7 @@ class NodeByIdSeekOperator final : public PullOperator {
   const PhysicalPlanNode *node_ = nullptr;
   const NodeByIdSeekOp *data_ = nullptr;
   RuntimeState *state_ = nullptr;
-  SlottedRow argument_;
+  ExecutionRow argument_;
   IdSeekValues values_;
   bool closed_ = false;
 };
@@ -526,12 +528,12 @@ std::optional<graphdb::Edge> FindGraphDBRelationshipById(
 
 bool EmitGraphDBRelationship(const PhysicalPlanNode &node,
                              const PhysicalRelationshipPattern &pattern,
-                             const PhysicalRelationshipSlots &slots,
+                             const PhysicalRelationshipOffsets &offsets,
                              const std::vector<PhysicalExpression> *predicates,
-                             const SlottedRow &argument, graphdb::Edge edge,
+                             const ExecutionRow &argument, graphdb::Edge edge,
                              bool reverse,
                              std::optional<graphdb::Edge> *pending_reverse,
-                             SlottedRow *row, RuntimeState &state) {
+                             ExecutionRow *row, RuntimeState &state) {
   Relationship relationship{.id = edge.GetId(),
                             .start_node_id = edge.GetStartId(),
                             .end_node_id = edge.GetEndId(),
@@ -554,12 +556,12 @@ bool EmitGraphDBRelationship(const PhysicalPlanNode &node,
           : (reverse ? relationship.start_node_id : relationship.end_node_id);
   graphdb::Vertex from = Endpoint(edge, from_id);
   graphdb::Vertex to = Endpoint(edge, to_id);
-  row->Reset(node.output_slots);
+  row->Reset(node.output_layout);
   CopyMappings(argument, row, node.argument_mapping);
-  if (!TryBindNode(row, slots.from_node_output_slot, std::move(from)) ||
-      !TryBindOptionalEdge(row, slots.relationship_output_slot,
+  if (!TryBindNode(row, offsets.from_node_output_offset, std::move(from)) ||
+      !TryBindOptionalEdge(row, offsets.relationship_output_offset,
                            std::move(edge)) ||
-      !TryBindNode(row, slots.to_node_output_slot, std::move(to))) {
+      !TryBindNode(row, offsets.to_node_output_offset, std::move(to))) {
     return false;
   }
   if (predicates != nullptr &&
@@ -574,16 +576,16 @@ bool EmitGraphDBRelationship(const PhysicalPlanNode &node,
 
 bool EmitPendingGraphDBRelationship(
     const PhysicalPlanNode &node, const PhysicalRelationshipPattern &pattern,
-    const PhysicalRelationshipSlots &slots,
+    const PhysicalRelationshipOffsets &offsets,
     const std::vector<PhysicalExpression> *predicates,
-    const SlottedRow &argument, std::optional<graphdb::Edge> *pending_reverse,
-    SlottedRow *row, RuntimeState &state) {
+    const ExecutionRow &argument, std::optional<graphdb::Edge> *pending_reverse,
+    ExecutionRow *row, RuntimeState &state) {
   if (!pending_reverse->has_value()) {
     return false;
   }
   graphdb::Edge edge = std::move(**pending_reverse);
   pending_reverse->reset();
-  return EmitGraphDBRelationship(node, pattern, slots, predicates, argument,
+  return EmitGraphDBRelationship(node, pattern, offsets, predicates, argument,
                                  std::move(edge), true, pending_reverse, row,
                                  state);
 }
@@ -591,20 +593,20 @@ bool EmitPendingGraphDBRelationship(
 class RelationshipScanOperator : public PullOperator {
  public:
   RelationshipScanOperator(const PhysicalPlanNode &node, RuntimeState &state,
-                           std::optional<SlottedRow> argument,
+                           std::optional<ExecutionRow> argument,
                            const PhysicalRelationshipPattern &pattern,
-                           const PhysicalRelationshipSlots &slots,
+                           const PhysicalRelationshipOffsets &offsets,
                            const std::vector<PhysicalExpression> *predicates)
       : node_(&node),
         state_(&state),
         argument_(LeafArgument(node, std::move(argument))),
         pattern_(&pattern),
-        slots_(&slots),
+        offsets_(&offsets),
         predicates_(predicates) {}
 
   ~RelationshipScanOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override {
+  [[nodiscard]] bool Next(ExecutionRow *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
@@ -614,19 +616,19 @@ class RelationshipScanOperator : public PullOperator {
     if (graphdb_cursor_ == nullptr) {
       graphdb_cursor_ = OpenGraphDBCursor();
     }
-    if (EmitPendingGraphDBRelationship(*node_, *pattern_, *slots_, predicates_,
-                                       argument_, &graphdb_pending_reverse_,
-                                       row, *state_)) {
+    if (EmitPendingGraphDBRelationship(
+            *node_, *pattern_, *offsets_, predicates_, argument_,
+            &graphdb_pending_reverse_, row, *state_)) {
       return true;
     }
     while (graphdb_cursor_->Valid()) {
       graphdb::Edge edge = graphdb_cursor_->GetEdge();
       graphdb_cursor_->Next();
-      if (EmitGraphDBRelationship(*node_, *pattern_, *slots_, predicates_,
+      if (EmitGraphDBRelationship(*node_, *pattern_, *offsets_, predicates_,
                                   argument_, std::move(edge), false,
                                   &graphdb_pending_reverse_, row, *state_) ||
           EmitPendingGraphDBRelationship(
-              *node_, *pattern_, *slots_, predicates_, argument_,
+              *node_, *pattern_, *offsets_, predicates_, argument_,
               &graphdb_pending_reverse_, row, *state_)) {
         return true;
       }
@@ -644,7 +646,7 @@ class RelationshipScanOperator : public PullOperator {
  protected:
   [[nodiscard]] virtual std::unique_ptr<graphdb::EdgeIterator>
   OpenGraphDBCursor() = 0;
-  [[nodiscard]] const SlottedRow &Argument() const noexcept {
+  [[nodiscard]] const ExecutionRow &Argument() const noexcept {
     return argument_;
   }
   [[nodiscard]] RuntimeState &State() const noexcept { return *state_; }
@@ -652,9 +654,9 @@ class RelationshipScanOperator : public PullOperator {
  private:
   const PhysicalPlanNode *node_ = nullptr;
   RuntimeState *state_ = nullptr;
-  SlottedRow argument_;
+  ExecutionRow argument_;
   const PhysicalRelationshipPattern *pattern_ = nullptr;
-  const PhysicalRelationshipSlots *slots_ = nullptr;
+  const PhysicalRelationshipOffsets *offsets_ = nullptr;
   const std::vector<PhysicalExpression> *predicates_ = nullptr;
   std::unique_ptr<graphdb::EdgeIterator> graphdb_cursor_;
   std::optional<graphdb::Edge> graphdb_pending_reverse_;
@@ -665,11 +667,11 @@ class RelationshipTypeScanOperator final : public RelationshipScanOperator {
  public:
   RelationshipTypeScanOperator(const PhysicalPlanNode &node,
                                RuntimeState &state,
-                               std::optional<SlottedRow> argument)
+                               std::optional<ExecutionRow> argument)
       : RelationshipScanOperator(
             node, state, std::move(argument),
             OperatorData<RelationshipTypeScanOp>(node).pattern,
-            OperatorData<RelationshipTypeScanOp>(node).slots, nullptr),
+            OperatorData<RelationshipTypeScanOp>(node).offsets, nullptr),
         data_(&OperatorData<RelationshipTypeScanOp>(node)) {}
 
  private:
@@ -686,11 +688,11 @@ class RelationshipIndexSeekOperator final : public RelationshipScanOperator {
  public:
   RelationshipIndexSeekOperator(const PhysicalPlanNode &node,
                                 RuntimeState &state,
-                                std::optional<SlottedRow> argument)
+                                std::optional<ExecutionRow> argument)
       : RelationshipScanOperator(
             node, state, std::move(argument),
             OperatorData<RelationshipIndexSeekOp>(node).pattern,
-            OperatorData<RelationshipIndexSeekOp>(node).slots, nullptr),
+            OperatorData<RelationshipIndexSeekOp>(node).offsets, nullptr),
         data_(&OperatorData<RelationshipIndexSeekOp>(node)) {}
 
  private:
@@ -709,11 +711,11 @@ class RelationshipIndexRangeSeekOperator final
  public:
   RelationshipIndexRangeSeekOperator(const PhysicalPlanNode &node,
                                      RuntimeState &state,
-                                     std::optional<SlottedRow> argument)
+                                     std::optional<ExecutionRow> argument)
       : RelationshipScanOperator(
             node, state, std::move(argument),
             OperatorData<RelationshipIndexRangeSeekOp>(node).pattern,
-            OperatorData<RelationshipIndexRangeSeekOp>(node).slots,
+            OperatorData<RelationshipIndexRangeSeekOp>(node).offsets,
             &OperatorData<RelationshipIndexRangeSeekOp>(node).predicates),
         data_(&OperatorData<RelationshipIndexRangeSeekOp>(node)) {}
 
@@ -747,7 +749,7 @@ class RelationshipByIdSeekOperator final : public PullOperator {
  public:
   RelationshipByIdSeekOperator(const PhysicalPlanNode &node,
                                RuntimeState &state,
-                               std::optional<SlottedRow> argument)
+                               std::optional<ExecutionRow> argument)
       : node_(&node),
         data_(&OperatorData<RelationshipByIdSeekOp>(node)),
         state_(&state),
@@ -756,7 +758,7 @@ class RelationshipByIdSeekOperator final : public PullOperator {
 
   ~RelationshipByIdSeekOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override {
+  [[nodiscard]] bool Next(ExecutionRow *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
@@ -764,7 +766,7 @@ class RelationshipByIdSeekOperator final : public PullOperator {
       return false;
     }
     if (EmitPendingGraphDBRelationship(
-            *node_, data_->pattern, data_->slots, nullptr, argument_,
+            *node_, data_->pattern, data_->offsets, nullptr, argument_,
             &graphdb_pending_reverse_, row, *state_)) {
       return true;
     }
@@ -774,11 +776,12 @@ class RelationshipByIdSeekOperator final : public PullOperator {
       if (!relationship.has_value()) {
         continue;
       }
-      if (EmitGraphDBRelationship(*node_, data_->pattern, data_->slots, nullptr,
-                                  argument_, std::move(*relationship), false,
-                                  &graphdb_pending_reverse_, row, *state_) ||
+      if (EmitGraphDBRelationship(*node_, data_->pattern, data_->offsets,
+                                  nullptr, argument_, std::move(*relationship),
+                                  false, &graphdb_pending_reverse_, row,
+                                  *state_) ||
           EmitPendingGraphDBRelationship(
-              *node_, data_->pattern, data_->slots, nullptr, argument_,
+              *node_, data_->pattern, data_->offsets, nullptr, argument_,
               &graphdb_pending_reverse_, row, *state_)) {
         return true;
       }
@@ -797,7 +800,7 @@ class RelationshipByIdSeekOperator final : public PullOperator {
   const PhysicalPlanNode *node_ = nullptr;
   const RelationshipByIdSeekOp *data_ = nullptr;
   RuntimeState *state_ = nullptr;
-  SlottedRow argument_;
+  ExecutionRow argument_;
   IdSeekValues values_;
   std::optional<graphdb::Edge> graphdb_pending_reverse_;
   bool closed_ = false;
@@ -808,23 +811,23 @@ class FixedExpandOperatorBase : public PullOperator {
   FixedExpandOperatorBase(const PhysicalPlanNode &node, RuntimeState &state,
                           std::unique_ptr<PullOperator> source,
                           const PhysicalRelationshipPattern &pattern,
-                          std::size_t from_node_input_slot,
-                          std::optional<std::size_t> to_node_input_slot,
-                          std::size_t relationship_output_slot,
-                          std::optional<std::size_t> to_node_output_slot)
+                          std::size_t from_node_input_offset,
+                          std::optional<std::size_t> to_node_input_offset,
+                          std::size_t relationship_output_offset,
+                          std::optional<std::size_t> to_node_output_offset)
       : node_(&node),
         state_(&state),
         source_(std::move(source)),
         pattern_(&pattern),
-        from_node_input_slot_(from_node_input_slot),
-        to_node_input_slot_(to_node_input_slot),
-        relationship_output_slot_(relationship_output_slot),
-        to_node_output_slot_(to_node_output_slot) {}
+        from_node_input_offset_(from_node_input_offset),
+        to_node_input_offset_(to_node_input_offset),
+        relationship_output_offset_(relationship_output_offset),
+        to_node_output_offset_(to_node_output_offset) {}
 
  public:
   ~FixedExpandOperatorBase() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override {
+  [[nodiscard]] bool Next(ExecutionRow *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     while (!closed_) {
@@ -840,16 +843,16 @@ class FixedExpandOperatorBase : public PullOperator {
           const std::optional<std::int64_t> to = NextPhysicalExpandNode(
               relationship, from_id_, pattern_->direction);
           if (!to.has_value() ||
-              (to_node_input_slot_.has_value() && *to != to_id_)) {
+              (to_node_input_offset_.has_value() && *to != to_id_)) {
             continue;
           }
-          SlottedRow output = CopyMappedRow(*input_, node_->output_slots,
-                                            node_->child_mappings.front());
+          ExecutionRow output = CopyMappedRow(*input_, node_->output_layout,
+                                              node_->child_mappings.front());
           graphdb::Vertex to_vertex = Endpoint(edge, *to);
-          if (!TryBindEdge(&output, relationship_output_slot_,
+          if (!TryBindEdge(&output, relationship_output_offset_,
                            std::move(edge)) ||
-              (to_node_output_slot_.has_value() &&
-               !TryBindNode(&output, *to_node_output_slot_,
+              (to_node_output_offset_.has_value() &&
+               !TryBindNode(&output, *to_node_output_offset_,
                             std::move(to_vertex)))) {
             continue;
           }
@@ -860,16 +863,16 @@ class FixedExpandOperatorBase : public PullOperator {
         input_.reset();
       }
 
-      SlottedRow input(node_->children[0]->output_slots);
+      ExecutionRow input(node_->children[0]->output_layout);
       if (!source_->Next(&input)) {
         Close();
         return false;
       }
-      from_id_ = NodeId(input, from_node_input_slot_);
-      to_id_ = to_node_input_slot_.has_value()
-                   ? NodeId(input, *to_node_input_slot_)
+      from_id_ = NodeId(input, from_node_input_offset_);
+      to_id_ = to_node_input_offset_.has_value()
+                   ? NodeId(input, *to_node_input_offset_)
                    : -1;
-      if (from_id_ < 0 || (to_node_input_slot_.has_value() && to_id_ < 0)) {
+      if (from_id_ < 0 || (to_node_input_offset_.has_value() && to_id_ < 0)) {
         continue;
       }
       input_.emplace(std::move(input));
@@ -898,11 +901,11 @@ class FixedExpandOperatorBase : public PullOperator {
   RuntimeState *state_ = nullptr;
   std::unique_ptr<PullOperator> source_;
   const PhysicalRelationshipPattern *pattern_ = nullptr;
-  std::size_t from_node_input_slot_ = 0;
-  std::optional<std::size_t> to_node_input_slot_;
-  std::size_t relationship_output_slot_ = 0;
-  std::optional<std::size_t> to_node_output_slot_;
-  std::optional<SlottedRow> input_;
+  std::size_t from_node_input_offset_ = 0;
+  std::optional<std::size_t> to_node_input_offset_;
+  std::size_t relationship_output_offset_ = 0;
+  std::optional<std::size_t> to_node_output_offset_;
+  std::optional<ExecutionRow> input_;
   std::unique_ptr<graphdb::EdgeIterator> graphdb_cursor_;
   std::int64_t from_id_ = -1;
   std::int64_t to_id_ = -1;
@@ -916,9 +919,9 @@ class ExpandOperator final : public FixedExpandOperatorBase {
       : FixedExpandOperatorBase(
             node, state, std::move(source),
             OperatorData<ExpandOp>(node).pattern,
-            OperatorData<ExpandOp>(node).from_node_input_slot, std::nullopt,
-            OperatorData<ExpandOp>(node).relationship_output_slot,
-            OperatorData<ExpandOp>(node).to_node_output_slot) {}
+            OperatorData<ExpandOp>(node).from_node_input_offset, std::nullopt,
+            OperatorData<ExpandOp>(node).relationship_output_offset,
+            OperatorData<ExpandOp>(node).to_node_output_offset) {}
 };
 
 class ExpandIntoOperator final : public FixedExpandOperatorBase {
@@ -928,9 +931,9 @@ class ExpandIntoOperator final : public FixedExpandOperatorBase {
       : FixedExpandOperatorBase(
             node, state, std::move(source),
             OperatorData<ExpandIntoOp>(node).pattern,
-            OperatorData<ExpandIntoOp>(node).from_node_input_slot,
-            OperatorData<ExpandIntoOp>(node).to_node_input_slot,
-            OperatorData<ExpandIntoOp>(node).relationship_output_slot,
+            OperatorData<ExpandIntoOp>(node).from_node_input_offset,
+            OperatorData<ExpandIntoOp>(node).to_node_input_offset,
+            OperatorData<ExpandIntoOp>(node).relationship_output_offset,
             std::nullopt) {}
 };
 
@@ -949,30 +952,30 @@ class VarExpandOperator final : public PullOperator {
   }
   ~VarExpandOperator() override { Close(); }
 
-  bool Next(SlottedRow *row) override {
+  bool Next(ExecutionRow *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     return NextGraphDB(row);
   }
 
-  bool NextGraphDB(SlottedRow *row) {
+  bool NextGraphDB(ExecutionRow *row) {
     while (!closed_) {
       state_->CheckCancelled();
       if (frames_.empty()) {
         input_.reset();
-        SlottedRow input(node_->children[0]->output_slots);
+        ExecutionRow input(node_->children[0]->output_layout);
         if (!source_->Next(&input)) {
           Close();
           return false;
         }
-        const std::int64_t from = NodeId(input, data_->from_node_input_slot);
+        const std::int64_t from = NodeId(input, data_->from_node_input_offset);
         if (from < 0) {
           continue;
         }
         bound_to_.reset();
-        if (data_->to_node_input_slot.has_value() &&
-            input.IsInitialized(*data_->to_node_input_slot)) {
-          const std::int64_t to = NodeId(input, *data_->to_node_input_slot);
+        if (data_->to_node_input_offset.has_value() &&
+            input.IsInitialized(*data_->to_node_input_offset)) {
+          const std::int64_t to = NodeId(input, *data_->to_node_input_offset);
           if (to < 0) {
             continue;
           }
@@ -1004,11 +1007,11 @@ class VarExpandOperator final : public PullOperator {
             relationships.emplace_back(Value(
                 MaterializeGraphDBEdge(*state_->transaction, relationship)));
           }
-          auto output = CopyMappedRow(*input_, node_->output_slots,
+          auto output = CopyMappedRow(*input_, node_->output_layout,
                                       node_->child_mappings.front());
-          if (TryBindSlot(&output, data_->relationship_output_slot,
-                          Value(std::move(relationships))) &&
-              TryBindNode(&output, data_->to_node_output_slot, frame.node,
+          if (TryBindAt(&output, data_->relationship_output_offset,
+                        Value(std::move(relationships))) &&
+              TryBindNode(&output, data_->to_node_output_offset, frame.node,
                           *state_)) {
             *row = std::move(output);
             return true;
@@ -1109,7 +1112,7 @@ class VarExpandOperator final : public PullOperator {
   const VarExpandOp *data_;
   RuntimeState *state_;
   std::unique_ptr<PullOperator> source_;
-  std::optional<SlottedRow> input_;
+  std::optional<ExecutionRow> input_;
   std::optional<std::int64_t> bound_to_;
   std::vector<Frame> frames_;
   std::vector<std::int64_t> path_;
@@ -1140,7 +1143,7 @@ class PruningVarExpandOperator final : public PullOperator {
   }
   ~PruningVarExpandOperator() override { Close(); }
 
-  bool Next(SlottedRow *row) override {
+  bool Next(ExecutionRow *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     return NextGraphDB(row);
@@ -1164,10 +1167,10 @@ class PruningVarExpandOperator final : public PullOperator {
     visited_.insert(node);
     queue_.emplace_back(node, depth);
   }
-  bool Emit(std::int64_t node, SlottedRow *row) {
-    auto output = CopyMappedRow(*input_, node_->output_slots,
+  bool Emit(std::int64_t node, ExecutionRow *row) {
+    auto output = CopyMappedRow(*input_, node_->output_layout,
                                 node_->child_mappings.front());
-    if (!TryBindNode(&output, data_->to_node_output_slot, node, *state_)) {
+    if (!TryBindNode(&output, data_->to_node_output_offset, node, *state_)) {
       return false;
     }
     *row = std::move(output);
@@ -1182,16 +1185,16 @@ class PruningVarExpandOperator final : public PullOperator {
     reserved_bytes_ = 0;
   }
 
-  bool NextGraphDB(SlottedRow *row) {
+  bool NextGraphDB(ExecutionRow *row) {
     while (!closed_) {
       state_->CheckCancelled();
       if (!input_.has_value()) {
-        SlottedRow input(node_->children[0]->output_slots);
+        ExecutionRow input(node_->children[0]->output_layout);
         if (!source_->Next(&input)) {
           Close();
           return false;
         }
-        start_ = NodeId(input, data_->from_node_input_slot);
+        start_ = NodeId(input, data_->from_node_input_offset);
         if (start_ < 0) {
           continue;
         }
@@ -1258,7 +1261,7 @@ class PruningVarExpandOperator final : public PullOperator {
   const PruningVarExpandOp *data_;
   RuntimeState *state_;
   std::unique_ptr<PullOperator> source_;
-  std::optional<SlottedRow> input_;
+  std::optional<ExecutionRow> input_;
   std::vector<std::pair<std::int64_t, std::size_t>> queue_;
   std::unordered_set<std::int64_t> visited_;
   std::unique_ptr<graphdb::EdgeIterator> graphdb_cursor_;
@@ -1281,24 +1284,24 @@ class OptionalExpandOperator final : public PullOperator {
 
   ~OptionalExpandOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override {
+  [[nodiscard]] bool Next(ExecutionRow *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     return NextGraphDB(row);
   }
 
-  bool NextGraphDB(SlottedRow *row) {
+  bool NextGraphDB(ExecutionRow *row) {
     while (!closed_) {
       state_->CheckCancelled();
       if (!input_.has_value()) {
-        SlottedRow input(node_->children[0]->output_slots);
+        ExecutionRow input(node_->children[0]->output_layout);
         if (!source_->Next(&input)) {
           Close();
           return false;
         }
         input_.emplace(std::move(input));
         matched_ = false;
-        from_id_ = NodeId(*input_, data_->from_node_input_slot);
+        from_id_ = NodeId(*input_, data_->from_node_input_offset);
         if (from_id_ >= 0) {
           auto vertex = GraphDBVertexById(*state_->transaction, from_id_);
           graphdb_cursor_ = vertex.NewEdgeIterator(
@@ -1324,12 +1327,12 @@ class OptionalExpandOperator final : public PullOperator {
         if (!to.has_value()) {
           continue;
         }
-        SlottedRow output = CopyMappedRow(*input_, node_->output_slots,
-                                          node_->child_mappings.front());
+        ExecutionRow output = CopyMappedRow(*input_, node_->output_layout,
+                                            node_->child_mappings.front());
         graphdb::Vertex to_vertex = Endpoint(edge, *to);
-        if (!TryBindEdge(&output, data_->relationship_output_slot,
+        if (!TryBindEdge(&output, data_->relationship_output_offset,
                          std::move(edge)) ||
-            !TryBindNode(&output, data_->to_node_output_slot,
+            !TryBindNode(&output, data_->to_node_output_offset,
                          std::move(to_vertex))) {
           continue;
         }
@@ -1346,9 +1349,9 @@ class OptionalExpandOperator final : public PullOperator {
       }
       graphdb_cursor_.reset();
       if (!matched_) {
-        SlottedRow output = CopyMappedRow(*input_, node_->output_slots,
-                                          node_->child_mappings.front());
-        for (const std::size_t offset : data_->output_slots) {
+        ExecutionRow output = CopyMappedRow(*input_, node_->output_layout,
+                                            node_->child_mappings.front());
+        for (const std::size_t offset : data_->output_offsets) {
           if (!output.IsInitialized(offset)) {
             output.SetNull(offset);
           }
@@ -1377,7 +1380,7 @@ class OptionalExpandOperator final : public PullOperator {
   const OptionalExpandOp *data_ = nullptr;
   RuntimeState *state_ = nullptr;
   std::unique_ptr<PullOperator> source_;
-  std::optional<SlottedRow> input_;
+  std::optional<ExecutionRow> input_;
   std::unique_ptr<graphdb::EdgeIterator> graphdb_cursor_;
   std::int64_t from_id_ = -1;
   bool matched_ = false;
@@ -1395,13 +1398,13 @@ class ProjectEndpointsOperator final : public PullOperator {
 
   ~ProjectEndpointsOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override {
+  [[nodiscard]] bool Next(ExecutionRow *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     while (!closed_) {
       state_->CheckCancelled();
       if (!input_.has_value()) {
-        SlottedRow input(node_->children[0]->output_slots);
+        ExecutionRow input(node_->children[0]->output_layout);
         if (!source_->Next(&input)) {
           Close();
           return false;
@@ -1411,10 +1414,11 @@ class ProjectEndpointsOperator final : public PullOperator {
       }
       while (next_endpoint_ < endpoints_.size()) {
         const auto [from, to] = endpoints_[next_endpoint_++];
-        SlottedRow output = CopyMappedRow(*input_, node_->output_slots,
-                                          node_->child_mappings.front());
-        if (TryBindNode(&output, data_->from_node_output_slot, from, *state_) &&
-            TryBindNode(&output, data_->to_node_output_slot, to, *state_)) {
+        ExecutionRow output = CopyMappedRow(*input_, node_->output_layout,
+                                            node_->child_mappings.front());
+        if (TryBindNode(&output, data_->from_node_output_offset, from,
+                        *state_) &&
+            TryBindNode(&output, data_->to_node_output_offset, to, *state_)) {
           *row = std::move(output);
           return true;
         }
@@ -1438,7 +1442,7 @@ class ProjectEndpointsOperator final : public PullOperator {
   void PrepareEndpoints() {
     endpoints_.clear();
     next_endpoint_ = 0;
-    const Value value = ReadRowValue(*input_, data_->relationship_input_slot);
+    const Value value = ReadRowValue(*input_, data_->relationship_input_offset);
     if (value.IsNull()) {
       return;
     }
@@ -1486,7 +1490,7 @@ class ProjectEndpointsOperator final : public PullOperator {
 
     if (relationships.empty()) {
       for (const std::optional<std::size_t> &offset :
-           {data_->from_node_input_slot, data_->to_node_input_slot}) {
+           {data_->from_node_input_offset, data_->to_node_input_offset}) {
         if (offset.has_value() && input_->IsInitialized(*offset)) {
           const std::int64_t id = NodeId(*input_, *offset);
           if (id >= 0) {
@@ -1526,7 +1530,7 @@ class ProjectEndpointsOperator final : public PullOperator {
   const ProjectEndpointsOp *data_ = nullptr;
   RuntimeState *state_ = nullptr;
   std::unique_ptr<PullOperator> source_;
-  std::optional<SlottedRow> input_;
+  std::optional<ExecutionRow> input_;
   std::vector<std::pair<std::int64_t, std::int64_t>> endpoints_;
   std::size_t next_endpoint_ = 0;
   bool closed_ = false;
@@ -1534,7 +1538,7 @@ class ProjectEndpointsOperator final : public PullOperator {
 
 std::unique_ptr<PullOperator> BuildLeafOperator(
     const PhysicalPlanNode &node, RuntimeState &state,
-    std::optional<SlottedRow> argument) {
+    std::optional<ExecutionRow> argument) {
   RG_CHECK(node.children.empty(), common::ErrorCode::InternalError,
            std::string(ToString(node.kind)) +
                " physical node must not have children");
@@ -1607,4 +1611,4 @@ std::unique_ptr<PullOperator> BuildExpandOperator(
   }
 }
 
-}  // namespace rg::slotted
+}  // namespace rg::execution

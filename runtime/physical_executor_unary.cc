@@ -9,12 +9,12 @@
 #include "common/exception.h"
 #include "runtime/expression_evaluator.h"
 #include "runtime/graphdb_access.h"
-#include "runtime/slotted_executor_internal.h"
+#include "runtime/physical_executor_internal.h"
 
-namespace rg::slotted {
+namespace rg::execution {
 
 std::vector<Value> EvaluateGroupingValues(
-    const std::vector<PhysicalGroupingItem> &items, const SlottedRow &row,
+    const std::vector<PhysicalGroupingItem> &items, const ExecutionRow &row,
     RuntimeState *state) {
   RG_CHECK(state != nullptr, common::ErrorCode::InternalError,
            "runtime state is null");
@@ -226,7 +226,7 @@ bool IsPercentile(const AggregateAccumulator &accumulator) {
 }
 
 void UpdatePercentileParameter(AggregateAccumulator *accumulator,
-                               const SlottedRow &row, RuntimeState *state) {
+                               const ExecutionRow &row, RuntimeState *state) {
   RG_CHECK(accumulator != nullptr && accumulator->function != nullptr &&
                accumulator->percentile_argument != nullptr && state != nullptr,
            common::ErrorCode::InternalError,
@@ -274,7 +274,7 @@ void UpdatePercentileParameter(AggregateAccumulator *accumulator,
 }
 
 void UpdateAggregateAccumulator(AggregateAccumulator *accumulator,
-                                const SlottedRow &row, RuntimeState *state,
+                                const ExecutionRow &row, RuntimeState *state,
                                 std::size_t *reserved_bytes) {
   RG_CHECK(accumulator != nullptr && accumulator->item != nullptr &&
                state != nullptr,
@@ -506,7 +506,7 @@ int CompareValues(const Value &left, const Value &right) {
 }
 
 std::vector<Value> EvaluateSortKeys(const std::vector<PhysicalSortItem> &items,
-                                    const SlottedRow &row,
+                                    const ExecutionRow &row,
                                     RuntimeState *state) {
   RG_CHECK(state != nullptr, common::ErrorCode::InternalError,
            "runtime state is null");
@@ -550,7 +550,7 @@ bool SortKeysComeBefore(const std::vector<PhysicalSortItem> &items,
   return left_sequence < right_sequence;
 }
 
-std::size_t EstimatedSortEntryHeapUsage(const SlottedRow &row,
+std::size_t EstimatedSortEntryHeapUsage(const ExecutionRow &row,
                                         const std::vector<Value> &keys) {
   std::size_t bytes =
       row.EstimatedHeapUsage() + keys.capacity() * sizeof(Value);
@@ -560,22 +560,23 @@ std::size_t EstimatedSortEntryHeapUsage(const SlottedRow &row,
   return bytes;
 }
 
-SlottedRow CopyChildOutput(const PhysicalPlanNode &node, std::size_t child,
-                           const SlottedRow &input) {
+ExecutionRow CopyChildOutput(const PhysicalPlanNode &node, std::size_t child,
+                             const ExecutionRow &input) {
   RG_CHECK(child < node.child_mappings.size(), common::ErrorCode::InternalError,
            "physical operator child mapping is missing");
-  return CopyMappedRow(input, node.output_slots, node.child_mappings[child]);
+  return CopyMappedRow(input, node.output_layout, node.child_mappings[child]);
 }
 
-SlottedRow CopyUnaryOutput(const PhysicalPlanNode &node,
-                           const SlottedRow &input) {
+ExecutionRow CopyUnaryOutput(const PhysicalPlanNode &node,
+                             const ExecutionRow &input) {
   RG_CHECK(node.child_mappings.size() == 1, common::ErrorCode::InternalError,
            "unary physical operator mapping is missing");
   return CopyChildOutput(node, 0, input);
 }
 
-SlottedRow ForwardUnaryOutput(const PhysicalPlanNode &node, SlottedRow input) {
-  if (input.Slots() == node.output_slots) {
+ExecutionRow ForwardUnaryOutput(const PhysicalPlanNode &node,
+                                ExecutionRow input) {
+  if (input.Layout() == node.output_layout) {
     return input;
   }
   return CopyUnaryOutput(node, input);
@@ -583,21 +584,22 @@ SlottedRow ForwardUnaryOutput(const PhysicalPlanNode &node, SlottedRow input) {
 
 bool HasSharedUnaryLayout(const PhysicalPlanNode &node) {
   return node.children.size() == 1 &&
-         node.children.front()->output_slots == node.output_slots;
+         node.children.front()->output_layout == node.output_layout;
 }
 
-void CopySlotDirect(const SlottedRow &source, SlottedRow *target,
+void CopyCellDirect(const ExecutionRow &source, ExecutionRow *target,
                     std::size_t source_offset, std::size_t target_offset) {
   RG_CHECK(target != nullptr, common::ErrorCode::InternalError,
            "target row is null");
   if (!source.IsInitialized(source_offset)) {
     return;
   }
-  target->CopySlotFrom(source, source_offset, target_offset);
+  target->CopyCellFrom(source, source_offset, target_offset);
 }
 
 std::int64_t EvaluatePaginationCount(const PhysicalExpression &expression,
-                                     const SlottedRow *row, RuntimeState *state,
+                                     const ExecutionRow *row,
+                                     RuntimeState *state,
                                      std::string_view name) {
   RG_CHECK(state != nullptr, common::ErrorCode::InternalError,
            "runtime state is null");
@@ -621,7 +623,7 @@ class FilterOperator final : public PullOperator {
 
   ~FilterOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override {
+  [[nodiscard]] bool Next(ExecutionRow *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
@@ -636,7 +638,7 @@ class FilterOperator final : public PullOperator {
         state_->CheckCancelled();
       }
     } else {
-      SlottedRow input(node_->children[0]->output_slots);
+      ExecutionRow input(node_->children[0]->output_layout);
       while (source_->Next(&input)) {
         if (PredicateIsTrue(Evaluate(data_->predicate, input, *state_))) {
           *row = ForwardUnaryOutput(*node_, std::move(input));
@@ -676,7 +678,7 @@ class ProjectionOperator final : public PullOperator {
 
   ~ProjectionOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override {
+  [[nodiscard]] bool Next(ExecutionRow *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
@@ -690,20 +692,21 @@ class ProjectionOperator final : public PullOperator {
       }
       return true;
     }
-    SlottedRow input(node_->children[0]->output_slots);
+    ExecutionRow input(node_->children[0]->output_layout);
     if (!source_->Next(&input)) {
       Close();
       return false;
     }
-    SlottedRow output(node_->output_slots);
+    ExecutionRow output(node_->output_layout);
     for (const auto &item : data_->items) {
       if (item.passthrough) {
-        RG_CHECK(item.source_slot.has_value(), common::ErrorCode::InternalError,
-                 "passthrough projection source slot is missing");
-        CopySlotDirect(input, &output, *item.source_slot, item.output_slot);
+        RG_CHECK(item.source_offset.has_value(),
+                 common::ErrorCode::InternalError,
+                 "passthrough projection source offset is missing");
+        CopyCellDirect(input, &output, *item.source_offset, item.output_offset);
       } else {
         Value value = Evaluate(item.expression, input, *state_);
-        StoreEvaluatedValue(&output, item.output_slot, std::move(value),
+        StoreEvaluatedValue(&output, item.output_offset, std::move(value),
                             *state_);
       }
     }
@@ -741,7 +744,7 @@ class SkipOperator final : public PullOperator {
 
   ~SkipOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override {
+  [[nodiscard]] bool Next(ExecutionRow *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
@@ -753,7 +756,7 @@ class SkipOperator final : public PullOperator {
       return false;
     }
     while (seen_ < count_) {
-      SlottedRow ignored(node_->children[0]->output_slots);
+      ExecutionRow ignored(node_->children[0]->output_layout);
       if (pending_.has_value()) {
         ignored = std::move(*pending_);
         pending_.reset();
@@ -772,7 +775,7 @@ class SkipOperator final : public PullOperator {
         return false;
       }
     } else {
-      SlottedRow input(node_->children[0]->output_slots);
+      ExecutionRow input(node_->children[0]->output_layout);
       if (!source_->Next(&input)) {
         Close();
         return false;
@@ -794,9 +797,9 @@ class SkipOperator final : public PullOperator {
  private:
   bool Initialize() {
     initialized_ = true;
-    const SlottedRow *expression_row = nullptr;
+    const ExecutionRow *expression_row = nullptr;
     if (data_->count.RequiresInputRow()) {
-      SlottedRow first(node_->children[0]->output_slots);
+      ExecutionRow first(node_->children[0]->output_layout);
       if (!source_->Next(&first)) {
         return false;
       }
@@ -812,7 +815,7 @@ class SkipOperator final : public PullOperator {
   const SkipOp *data_ = nullptr;
   RuntimeState *state_ = nullptr;
   std::unique_ptr<PullOperator> source_;
-  std::optional<SlottedRow> pending_;
+  std::optional<ExecutionRow> pending_;
   std::uint64_t count_ = 0;
   std::uint64_t seen_ = 0;
   bool initialized_ = false;
@@ -830,7 +833,7 @@ class LimitOperator final : public PullOperator {
 
   ~LimitOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override {
+  [[nodiscard]] bool Next(ExecutionRow *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
@@ -863,7 +866,7 @@ class LimitOperator final : public PullOperator {
         return false;
       }
     } else {
-      SlottedRow input(node_->children[0]->output_slots);
+      ExecutionRow input(node_->children[0]->output_layout);
       if (!source_->Next(&input)) {
         Close();
         return false;
@@ -890,9 +893,9 @@ class LimitOperator final : public PullOperator {
   bool Initialize() {
     initialized_ = true;
     if (data_->exhaust_child) {
-      SlottedRow input(node_->children[0]->output_slots);
+      ExecutionRow input(node_->children[0]->output_layout);
       while (source_->Next(&input)) {
-        SlottedRow output = CopyUnaryOutput(*node_, input);
+        ExecutionRow output = CopyUnaryOutput(*node_, input);
         const std::size_t bytes = output.EstimatedHeapUsage();
         state_->memory_tracker.Reserve(bytes);
         reserved_bytes_ += bytes;
@@ -903,16 +906,16 @@ class LimitOperator final : public PullOperator {
       if (buffered_rows_.empty() && data_->count.RequiresInputRow()) {
         return false;
       }
-      const SlottedRow *expression_row =
+      const ExecutionRow *expression_row =
           data_->count.RequiresInputRow() ? &buffered_rows_.front() : nullptr;
       count_ = static_cast<std::uint64_t>(EvaluatePaginationCount(
           data_->count, expression_row, state_, "LIMIT"));
       return true;
     }
 
-    const SlottedRow *expression_row = nullptr;
+    const ExecutionRow *expression_row = nullptr;
     if (data_->count.RequiresInputRow()) {
-      SlottedRow first(node_->children[0]->output_slots);
+      ExecutionRow first(node_->children[0]->output_layout);
       if (!source_->Next(&first)) {
         return false;
       }
@@ -928,8 +931,8 @@ class LimitOperator final : public PullOperator {
   const LimitOp *data_ = nullptr;
   RuntimeState *state_ = nullptr;
   std::unique_ptr<PullOperator> source_;
-  std::optional<SlottedRow> pending_;
-  std::vector<SlottedRow> buffered_rows_;
+  std::optional<ExecutionRow> pending_;
+  std::vector<ExecutionRow> buffered_rows_;
   std::uint64_t count_ = 0;
   std::uint64_t emitted_ = 0;
   std::size_t reserved_bytes_ = 0;
@@ -948,7 +951,7 @@ class ProduceResultsOperator final : public PullOperator {
 
   ~ProduceResultsOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override {
+  [[nodiscard]] bool Next(ExecutionRow *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
@@ -963,7 +966,7 @@ class ProduceResultsOperator final : public PullOperator {
       }
       return true;
     }
-    SlottedRow input(node_->children[0]->output_slots);
+    ExecutionRow input(node_->children[0]->output_layout);
     if (!source_->Next(&input)) {
       Close();
       return false;
@@ -999,19 +1002,19 @@ class PathBuildOperator final : public PullOperator {
 
   ~PathBuildOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override {
+  [[nodiscard]] bool Next(ExecutionRow *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     while (!closed_) {
       state_->CheckCancelled();
-      SlottedRow input(node_->children[0]->output_slots);
+      ExecutionRow input(node_->children[0]->output_layout);
       if (!source_->Next(&input)) {
         Close();
         return false;
       }
-      SlottedRow output = CopyUnaryOutput(*node_, input);
-      if (TryBindSlot(&output, data_->path_output_slot,
-                      BuildPathValue(*data_, input, state_))) {
+      ExecutionRow output = CopyUnaryOutput(*node_, input);
+      if (TryBindAt(&output, data_->path_output_offset,
+                    BuildPathValue(*data_, input, state_))) {
         *row = std::move(output);
         return true;
       }
@@ -1046,7 +1049,7 @@ class ProcedureCallOperator final : public PullOperator {
 
   ~ProcedureCallOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override {
+  [[nodiscard]] bool Next(ExecutionRow *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
@@ -1073,7 +1076,7 @@ class ProcedureCallOperator final : public PullOperator {
     buffer_index_ = 0;
   }
 
-  bool PullInput(SlottedRow *input) {
+  bool PullInput(ExecutionRow *input) {
     if (!source_->Next(input)) {
       Close();
       return false;
@@ -1081,22 +1084,22 @@ class ProcedureCallOperator final : public PullOperator {
     return true;
   }
 
-  bool NextProcedure(SlottedRow *row) {
+  bool NextProcedure(ExecutionRow *row) {
     while (buffer_index_ >= buffer_.size()) {
       ReleaseBuffer();
-      SlottedRow input(node_->children[0]->output_slots);
+      ExecutionRow input(node_->children[0]->output_layout);
       if (!PullInput(&input)) {
         return false;
       }
       for (const auto &record : ExecuteProcedure(*data_, input, state_)) {
-        SlottedRow output(node_->output_slots);
+        ExecutionRow output(node_->output_layout);
         CopyMappings(input, &output, node_->child_mappings[0]);
         for (const auto &item : data_->yields) {
           const auto found = record.find(item.result_field);
           RG_CHECK(found != record.end(), common::ErrorCode::InvalidParameter,
                    "unknown yield field for " + data_->procedure_name + ": " +
                        item.result_field);
-          StoreEvaluatedValue(&output, item.output_slot, found->second,
+          StoreEvaluatedValue(&output, item.output_offset, found->second,
                               *state_);
         }
         const std::size_t bytes = output.EstimatedHeapUsage();
@@ -1113,7 +1116,7 @@ class ProcedureCallOperator final : public PullOperator {
   const ProcedureCallOp *data_ = nullptr;
   RuntimeState *state_ = nullptr;
   std::unique_ptr<PullOperator> source_;
-  std::vector<SlottedRow> buffer_;
+  std::vector<ExecutionRow> buffer_;
   std::size_t buffer_index_ = 0;
   std::size_t buffer_reserved_bytes_ = 0;
   bool closed_ = false;
@@ -1130,7 +1133,7 @@ class UnwindOperator final : public PullOperator {
 
   ~UnwindOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override {
+  [[nodiscard]] bool Next(ExecutionRow *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
@@ -1139,16 +1142,16 @@ class UnwindOperator final : public PullOperator {
     }
     while (true) {
       if (input_.has_value() && value_index_ < values_.size()) {
-        SlottedRow output(node_->output_slots);
+        ExecutionRow output(node_->output_layout);
         CopyMappings(*input_, &output, node_->child_mappings[0]);
-        StoreEvaluatedValue(&output, data_->value_slot, values_[value_index_++],
-                            *state_);
+        StoreEvaluatedValue(&output, data_->value_offset,
+                            values_[value_index_++], *state_);
         *row = std::move(output);
         return true;
       }
 
       ReleaseValues();
-      SlottedRow input(node_->children[0]->output_slots);
+      ExecutionRow input(node_->children[0]->output_layout);
       if (!source_->Next(&input)) {
         Close();
         return false;
@@ -1194,7 +1197,7 @@ class UnwindOperator final : public PullOperator {
   const UnwindOp *data_ = nullptr;
   RuntimeState *state_ = nullptr;
   std::unique_ptr<PullOperator> source_;
-  std::optional<SlottedRow> input_;
+  std::optional<ExecutionRow> input_;
   std::vector<Value> values_;
   std::size_t value_index_ = 0;
   std::size_t reserved_bytes_ = 0;
@@ -1212,17 +1215,17 @@ class AssertIsNodeOperator final : public PullOperator {
 
   ~AssertIsNodeOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override {
+  [[nodiscard]] bool Next(ExecutionRow *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
     if (closed_) {
       return false;
     }
-    std::optional<SlottedRow> local_input;
-    SlottedRow *input = row;
+    std::optional<ExecutionRow> local_input;
+    ExecutionRow *input = row;
     if (!HasSharedUnaryLayout(*node_)) {
-      local_input.emplace(node_->children[0]->output_slots);
+      local_input.emplace(node_->children[0]->output_layout);
       input = &*local_input;
     }
     if (!source_->Next(input)) {
@@ -1230,7 +1233,7 @@ class AssertIsNodeOperator final : public PullOperator {
       return false;
     }
     for (const auto &assertion : data_->nodes) {
-      const Value value = ReadRowValue(*input, assertion.input_slot);
+      const Value value = ReadRowValue(*input, assertion.input_offset);
       RG_CHECK(value.IsNull() || value.IsNode(),
                common::ErrorCode::InvalidParameter,
                "expected node value: " + assertion.variable);
@@ -1269,19 +1272,19 @@ class StreamingWriteOperator final : public PullOperator {
 
   ~StreamingWriteOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override {
+  [[nodiscard]] bool Next(ExecutionRow *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
     if (closed_) {
       return false;
     }
-    SlottedRow input(node_->children[0]->output_slots);
+    ExecutionRow input(node_->children[0]->output_layout);
     if (!source_->Next(&input)) {
       Close();
       return false;
     }
-    SlottedRow output = CopyUnaryOutput(*node_, input);
+    ExecutionRow output = CopyUnaryOutput(*node_, input);
     ExecuteStreamingWrite(*data_, input, &output, state_);
     *row = std::move(output);
     return true;
@@ -1314,7 +1317,7 @@ class OrderedDistinctOperator final : public PullOperator {
 
   ~OrderedDistinctOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override {
+  [[nodiscard]] bool Next(ExecutionRow *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
@@ -1322,7 +1325,7 @@ class OrderedDistinctOperator final : public PullOperator {
       return false;
     }
 
-    SlottedRow input(node_->children[0]->output_slots);
+    ExecutionRow input(node_->children[0]->output_layout);
     while (source_->Next(&input)) {
       state_->CheckCancelled();
       std::vector<Value> values =
@@ -1333,9 +1336,9 @@ class OrderedDistinctOperator final : public PullOperator {
       }
       ReplaceLastKey(std::move(key));
 
-      SlottedRow output(node_->output_slots);
+      ExecutionRow output(node_->output_layout);
       for (std::size_t index = 0; index < values.size(); ++index) {
-        StoreEvaluatedValue(&output, data_->grouping_items[index].output_slot,
+        StoreEvaluatedValue(&output, data_->grouping_items[index].output_offset,
                             std::move(values[index]), *state_);
       }
       *row = std::move(output);
@@ -1391,7 +1394,7 @@ class HashDistinctOperator final : public PullOperator {
 
   ~HashDistinctOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override {
+  [[nodiscard]] bool Next(ExecutionRow *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
@@ -1420,7 +1423,7 @@ class HashDistinctOperator final : public PullOperator {
   }
 
  private:
-  void BufferRow(SlottedRow row) {
+  void BufferRow(ExecutionRow row) {
     const std::size_t bytes = row.EstimatedHeapUsage();
     state_->memory_tracker.Reserve(bytes);
     reserved_bytes_ += bytes;
@@ -1432,7 +1435,7 @@ class HashDistinctOperator final : public PullOperator {
     std::unordered_set<CompositeValueKey, CompositeValueKeyHash,
                        CompositeValueKeyEqual>
         seen;
-    SlottedRow input(node_->children[0]->output_slots);
+    ExecutionRow input(node_->children[0]->output_layout);
     while (source_->Next(&input)) {
       state_->CheckCancelled();
       std::vector<Value> values =
@@ -1444,9 +1447,9 @@ class HashDistinctOperator final : public PullOperator {
       const std::size_t key_bytes = EstimatedKeyHeapUsage(*key);
       state_->memory_tracker.Reserve(key_bytes);
       reserved_bytes_ += key_bytes;
-      SlottedRow output(node_->output_slots);
+      ExecutionRow output(node_->output_layout);
       for (std::size_t index = 0; index < values.size(); ++index) {
-        StoreEvaluatedValue(&output, data_->grouping_items[index].output_slot,
+        StoreEvaluatedValue(&output, data_->grouping_items[index].output_offset,
                             std::move(values[index]), *state_);
       }
       BufferRow(std::move(output));
@@ -1457,7 +1460,7 @@ class HashDistinctOperator final : public PullOperator {
   const HashDistinctOp *data_ = nullptr;
   RuntimeState *state_ = nullptr;
   std::unique_ptr<PullOperator> source_;
-  std::vector<SlottedRow> rows_;
+  std::vector<ExecutionRow> rows_;
   std::size_t reserved_bytes_ = 0;
   std::size_t next_ = 0;
   bool initialized_ = false;
@@ -1475,7 +1478,7 @@ class HashAggregationOperator final : public PullOperator {
 
   ~HashAggregationOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override {
+  [[nodiscard]] bool Next(ExecutionRow *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
@@ -1505,15 +1508,15 @@ class HashAggregationOperator final : public PullOperator {
 
  private:
   struct Group {
-    Group(SlottedRow projected,
+    Group(ExecutionRow projected,
           const std::vector<AggregateAccumulator> &templates)
         : output(std::move(projected)), accumulators(templates) {}
 
-    SlottedRow output;
+    ExecutionRow output;
     std::vector<AggregateAccumulator> accumulators;
   };
 
-  void BufferRow(SlottedRow row) {
+  void BufferRow(ExecutionRow row) {
     const std::size_t bytes = row.EstimatedHeapUsage();
     state_->memory_tracker.Reserve(bytes);
     reserved_bytes_ += bytes;
@@ -1528,7 +1531,7 @@ class HashAggregationOperator final : public PullOperator {
     std::unordered_map<CompositeValueKey, std::size_t, CompositeValueKeyHash,
                        CompositeValueKeyEqual>
         group_indexes;
-    SlottedRow input(node_->children[0]->output_slots);
+    ExecutionRow input(node_->children[0]->output_layout);
     while (source_->Next(&input)) {
       state_->CheckCancelled();
       std::vector<Value> values =
@@ -1536,10 +1539,10 @@ class HashAggregationOperator final : public PullOperator {
       auto [group, inserted] = group_indexes.emplace(
           CompositeValueKey{.values = values}, groups.size());
       if (inserted) {
-        SlottedRow projected(node_->output_slots);
+        ExecutionRow projected(node_->output_layout);
         for (std::size_t index = 0; index < values.size(); ++index) {
           StoreEvaluatedValue(&projected,
-                              data_->grouping_items[index].output_slot,
+                              data_->grouping_items[index].output_offset,
                               std::move(values[index]), *state_);
         }
         groups.push_back(std::make_unique<Group>(std::move(projected),
@@ -1556,13 +1559,13 @@ class HashAggregationOperator final : public PullOperator {
     }
     if (data_->grouping_items.empty() && groups.empty()) {
       group_indexes.emplace(CompositeValueKey{}, 0U);
-      groups.push_back(std::make_unique<Group>(SlottedRow(node_->output_slots),
-                                               accumulator_templates));
+      groups.push_back(std::make_unique<Group>(
+          ExecutionRow(node_->output_layout), accumulator_templates));
     }
     for (auto &group : groups) {
       state_->CheckCancelled();
       for (auto &accumulator : group->accumulators) {
-        StoreEvaluatedValue(&group->output, accumulator.item->output_slot,
+        StoreEvaluatedValue(&group->output, accumulator.item->output_offset,
                             FinalizeAggregateAccumulator(&accumulator, state_,
                                                          &reserved_bytes_),
                             *state_);
@@ -1575,7 +1578,7 @@ class HashAggregationOperator final : public PullOperator {
   const HashAggregationOp *data_ = nullptr;
   RuntimeState *state_ = nullptr;
   std::unique_ptr<PullOperator> source_;
-  std::vector<SlottedRow> rows_;
+  std::vector<ExecutionRow> rows_;
   std::size_t reserved_bytes_ = 0;
   std::size_t next_ = 0;
   bool initialized_ = false;
@@ -1593,7 +1596,7 @@ class OrderedAggregationOperator final : public PullOperator {
 
   ~OrderedAggregationOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override {
+  [[nodiscard]] bool Next(ExecutionRow *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
@@ -1601,7 +1604,7 @@ class OrderedAggregationOperator final : public PullOperator {
       return false;
     }
 
-    SlottedRow input(node_->children[0]->output_slots);
+    ExecutionRow input(node_->children[0]->output_layout);
     CompositeValueKey key;
     if (!TakeFirstInput(&input, &key)) {
       finished_ = true;
@@ -1615,9 +1618,9 @@ class OrderedAggregationOperator final : public PullOperator {
     std::vector<AggregateAccumulator> accumulators =
         CreateAggregateAccumulators(data_->aggregation_items);
 
-    SlottedRow output(node_->output_slots);
+    ExecutionRow output(node_->output_layout);
     for (std::size_t index = 0; index < key.values.size(); ++index) {
-      StoreEvaluatedValue(&output, data_->grouping_items[index].output_slot,
+      StoreEvaluatedValue(&output, data_->grouping_items[index].output_offset,
                           key.values[index], *state_);
     }
 
@@ -1628,7 +1631,7 @@ class OrderedAggregationOperator final : public PullOperator {
                                    &reserved_bytes_);
       }
 
-      SlottedRow next(node_->children[0]->output_slots);
+      ExecutionRow next(node_->children[0]->output_layout);
       if (!source_->Next(&next)) {
         source_exhausted_ = true;
         break;
@@ -1644,7 +1647,7 @@ class OrderedAggregationOperator final : public PullOperator {
 
     for (auto &accumulator : accumulators) {
       StoreEvaluatedValue(
-          &output, accumulator.item->output_slot,
+          &output, accumulator.item->output_offset,
           FinalizeAggregateAccumulator(&accumulator, state_, &reserved_bytes_),
           *state_);
     }
@@ -1669,12 +1672,12 @@ class OrderedAggregationOperator final : public PullOperator {
 
  private:
   struct PendingInput {
-    SlottedRow row;
+    ExecutionRow row;
     CompositeValueKey key;
     std::size_t reserved_bytes = 0;
   };
 
-  bool TakeFirstInput(SlottedRow *row, CompositeValueKey *key) {
+  bool TakeFirstInput(ExecutionRow *row, CompositeValueKey *key) {
     RG_CHECK(row != nullptr && key != nullptr, common::ErrorCode::InternalError,
              "ordered aggregation input is null");
     if (pending_.has_value()) {
@@ -1693,7 +1696,7 @@ class OrderedAggregationOperator final : public PullOperator {
     return true;
   }
 
-  void BufferPending(SlottedRow row, CompositeValueKey key) {
+  void BufferPending(ExecutionRow row, CompositeValueKey key) {
     const std::size_t bytes =
         row.EstimatedHeapUsage() + EstimatedKeyHeapUsage(key);
     state_->memory_tracker.Reserve(bytes);
@@ -1724,7 +1727,7 @@ class FullSortOperator final : public PullOperator {
 
   ~FullSortOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override {
+  [[nodiscard]] bool Next(ExecutionRow *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
@@ -1760,7 +1763,7 @@ class FullSortOperator final : public PullOperator {
 
  private:
   struct Entry {
-    SlottedRow row;
+    ExecutionRow row;
     std::vector<Value> keys;
     std::uint64_t sequence = 0;
     std::size_t reserved_bytes = 0;
@@ -1768,7 +1771,7 @@ class FullSortOperator final : public PullOperator {
 
   void Initialize() {
     initialized_ = true;
-    SlottedRow input(node_->children[0]->output_slots);
+    ExecutionRow input(node_->children[0]->output_layout);
     while (source_->Next(&input)) {
       state_->CheckCancelled();
       Entry entry{.row = CopyUnaryOutput(*node_, input),
@@ -1814,7 +1817,7 @@ class PartialSortOperator final : public PullOperator {
 
   ~PartialSortOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override {
+  [[nodiscard]] bool Next(ExecutionRow *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
@@ -1851,13 +1854,13 @@ class PartialSortOperator final : public PullOperator {
 
  private:
   struct Entry {
-    SlottedRow row;
+    ExecutionRow row;
     std::vector<Value> keys;
     std::uint64_t sequence = 0;
     std::size_t reserved_bytes = 0;
   };
 
-  [[nodiscard]] Entry ReadEntry(const SlottedRow &input) {
+  [[nodiscard]] Entry ReadEntry(const ExecutionRow &input) {
     return {.row = CopyUnaryOutput(*node_, input),
             .keys = EvaluateSortKeys(data_->items, input, state_),
             .sequence = sequence_++};
@@ -1888,7 +1891,7 @@ class PartialSortOperator final : public PullOperator {
       entries_.push_back(std::move(*pending_));
       pending_.reset();
     } else {
-      SlottedRow input(node_->children[0]->output_slots);
+      ExecutionRow input(node_->children[0]->output_layout);
       if (!source_->Next(&input)) {
         return false;
       }
@@ -1897,7 +1900,7 @@ class PartialSortOperator final : public PullOperator {
       entries_.push_back(std::move(first));
     }
 
-    SlottedRow input(node_->children[0]->output_slots);
+    ExecutionRow input(node_->children[0]->output_layout);
     while (source_->Next(&input)) {
       state_->CheckCancelled();
       Entry entry = ReadEntry(input);
@@ -1938,7 +1941,7 @@ class PartialTopNOperator final : public PullOperator {
 
   ~PartialTopNOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override {
+  [[nodiscard]] bool Next(ExecutionRow *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
@@ -1979,13 +1982,13 @@ class PartialTopNOperator final : public PullOperator {
 
  private:
   struct Entry {
-    SlottedRow row;
+    ExecutionRow row;
     std::vector<Value> keys;
     std::uint64_t sequence = 0;
     std::size_t reserved_bytes = 0;
   };
 
-  [[nodiscard]] Entry ReadEntry(const SlottedRow &input) {
+  [[nodiscard]] Entry ReadEntry(const ExecutionRow &input) {
     return {.row = CopyUnaryOutput(*node_, input),
             .keys = EvaluateSortKeys(data_->items, input, state_),
             .sequence = sequence_++};
@@ -2064,7 +2067,7 @@ class PartialTopNOperator final : public PullOperator {
       entries_.push_back(std::move(*pending_));
       pending_.reset();
     } else {
-      SlottedRow input(node_->children[0]->output_slots);
+      ExecutionRow input(node_->children[0]->output_layout);
       if (!source_->Next(&input)) {
         return false;
       }
@@ -2073,7 +2076,7 @@ class PartialTopNOperator final : public PullOperator {
       entries_.push_back(std::move(first));
     }
 
-    SlottedRow input(node_->children[0]->output_slots);
+    ExecutionRow input(node_->children[0]->output_layout);
     while (source_->Next(&input)) {
       state_->CheckCancelled();
       Entry entry = ReadEntry(input);
@@ -2134,7 +2137,7 @@ class WriteBarrierOperator final : public PullOperator {
 
   ~WriteBarrierOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override {
+  [[nodiscard]] bool Next(ExecutionRow *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
@@ -2167,10 +2170,10 @@ class WriteBarrierOperator final : public PullOperator {
   void Initialize() {
     initialized_ = true;
     (void)data_;
-    SlottedRow input(node_->children[0]->output_slots);
+    ExecutionRow input(node_->children[0]->output_layout);
     while (source_->Next(&input)) {
       state_->CheckCancelled();
-      SlottedRow output = CopyUnaryOutput(*node_, input);
+      ExecutionRow output = CopyUnaryOutput(*node_, input);
       const std::size_t bytes = output.EstimatedHeapUsage();
       state_->memory_tracker.Reserve(bytes);
       reserved_bytes_ += bytes;
@@ -2182,7 +2185,7 @@ class WriteBarrierOperator final : public PullOperator {
   const WriteBarrierOp *data_ = nullptr;
   RuntimeState *state_ = nullptr;
   std::unique_ptr<PullOperator> source_;
-  std::vector<SlottedRow> rows_;
+  std::vector<ExecutionRow> rows_;
   std::size_t reserved_bytes_ = 0;
   std::size_t next_ = 0;
   bool initialized_ = false;
@@ -2201,7 +2204,7 @@ class DeleteOperator final : public PullOperator {
 
   ~DeleteOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override {
+  [[nodiscard]] bool Next(ExecutionRow *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
@@ -2232,7 +2235,7 @@ class DeleteOperator final : public PullOperator {
   }
 
  private:
-  void BufferRow(SlottedRow row) {
+  void BufferRow(ExecutionRow row) {
     const std::size_t bytes = row.EstimatedHeapUsage();
     state_->memory_tracker.Reserve(bytes);
     reserved_bytes_ += bytes;
@@ -2245,10 +2248,10 @@ class DeleteOperator final : public PullOperator {
     std::set<std::int64_t> relationship_ids;
     std::unordered_map<std::int64_t, RelationshipReference>
         graphdb_relationships;
-    SlottedRow input(node_->children[0]->output_slots);
+    ExecutionRow input(node_->children[0]->output_layout);
     while (source_->Next(&input)) {
       state_->CheckCancelled();
-      SlottedRow output = CopyUnaryOutput(*node_, input);
+      ExecutionRow output = CopyUnaryOutput(*node_, input);
       BufferRow(std::move(output));
       for (const PhysicalExpression &expression : data_->expressions) {
         const Value entity = Evaluate(expression, input, *state_);
@@ -2313,7 +2316,7 @@ class DeleteOperator final : public PullOperator {
   const Data *data_ = nullptr;
   RuntimeState *state_ = nullptr;
   std::unique_ptr<PullOperator> source_;
-  std::vector<SlottedRow> rows_;
+  std::vector<ExecutionRow> rows_;
   std::size_t reserved_bytes_ = 0;
   std::size_t next_ = 0;
   bool initialized_ = false;
@@ -2331,7 +2334,7 @@ class TopNOperator final : public PullOperator {
 
   ~TopNOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override {
+  [[nodiscard]] bool Next(ExecutionRow *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
@@ -2364,7 +2367,7 @@ class TopNOperator final : public PullOperator {
 
  private:
   struct Entry {
-    SlottedRow row;
+    ExecutionRow row;
     std::vector<Value> keys;
     std::uint64_t sequence = 0;
     std::size_t reserved_bytes = 0;
@@ -2379,7 +2382,7 @@ class TopNOperator final : public PullOperator {
     return EstimatedSortEntryHeapUsage(entry.row, entry.keys);
   }
 
-  [[nodiscard]] Entry CreateEntry(const SlottedRow &input) {
+  [[nodiscard]] Entry CreateEntry(const ExecutionRow &input) {
     Entry entry{.row = CopyUnaryOutput(*node_, input),
                 .keys = EvaluateSortKeys(data_->items, input, state_),
                 .sequence = sequence_++};
@@ -2455,7 +2458,7 @@ class TopNOperator final : public PullOperator {
       return;
     }
 
-    SlottedRow input(node_->children[0]->output_slots);
+    ExecutionRow input(node_->children[0]->output_layout);
     while (source_->Next(&input)) {
       state_->CheckCancelled();
       Entry entry = CreateEntry(input);
@@ -2574,4 +2577,4 @@ std::unique_ptr<PullOperator> BuildUnaryOperator(
   }
 }
 
-}  // namespace rg::slotted
+}  // namespace rg::execution

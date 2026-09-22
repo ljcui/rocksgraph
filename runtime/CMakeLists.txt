@@ -9,13 +9,13 @@ add_library(
   physical_plan.cc
   physical_plan_printer.cc
   query_executor.cc
-  slotted_executor.cc
-  slotted_executor_factory.cc
-  slotted_executor_join.cc
-  slotted_executor_scan.cc
-  slotted_executor_support.cc
-  slotted_executor_unary.cc
-  slotted_row.cc)
+  physical_executor.cc
+  physical_executor_factory.cc
+  physical_executor_join.cc
+  physical_executor_scan.cc
+  physical_executor_support.cc
+  physical_executor_unary.cc
+  execution_row.cc)
 add_library(RocksGraph::runtime ALIAS rocksgraph_runtime)
 
 target_include_directories(rocksgraph_runtime PUBLIC ${PROJECT_SOURCE_DIR})

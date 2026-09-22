@@ -1,4 +1,4 @@
-#include "runtime/slotted_executor.h"
+#include "runtime/physical_executor.h"
 
 #include <cstddef>
 #include <memory>
@@ -7,7 +7,7 @@
 #include <vector>
 
 #include "common/exception.h"
-#include "runtime/slotted_executor_internal.h"
+#include "runtime/physical_executor_internal.h"
 
 namespace rg {
 namespace {
@@ -22,11 +22,11 @@ class PhysicalResultCursorImpl final : public PhysicalResultCursor {
       : state_(transaction, parameters, std::move(options)),
         factory_(state_),
         root_(factory_.Build(plan.Root())),
-        output_slots_(plan.Root().output_slots),
-        slotted_(output_slots_) {
-    result_slots_.reserve(result_columns.size());
+        output_layout_(plan.Root().output_layout),
+        row_(output_layout_) {
+    result_offsets_.reserve(result_columns.size());
     for (const auto &column : result_columns) {
-      result_slots_.push_back(output_slots_->At(column));
+      result_offsets_.push_back(output_layout_->At(column));
     }
   }
 
@@ -40,16 +40,16 @@ class PhysicalResultCursorImpl final : public PhysicalResultCursor {
     }
     try {
       state_.CheckCancelled();
-      slotted_.Reset();
-      if (!root_->Next(&slotted_)) {
+      row_.Reset();
+      if (!root_->Next(&row_)) {
         Close();
         return false;
       }
       row->clear();
-      row->reserve(result_slots_.size());
-      for (const std::size_t slot : result_slots_) {
-        row->push_back(slotted_.IsInitialized(slot)
-                           ? slotted::ReadRowValue(slotted_, slot)
+      row->reserve(result_offsets_.size());
+      for (const std::size_t offset : result_offsets_) {
+        row->push_back(row_.IsInitialized(offset)
+                           ? execution::ReadRowValue(row_, offset)
                            : Value::Null());
       }
       return true;
@@ -77,12 +77,12 @@ class PhysicalResultCursorImpl final : public PhysicalResultCursor {
   }
 
  private:
-  slotted::RuntimeState state_;
-  slotted::OperatorFactory factory_;
-  std::unique_ptr<slotted::PullOperator> root_;
-  SlotConfigurationPtr output_slots_;
-  SlottedRow slotted_;
-  std::vector<std::size_t> result_slots_;
+  execution::RuntimeState state_;
+  execution::OperatorFactory factory_;
+  std::unique_ptr<execution::PullOperator> root_;
+  RowLayoutPtr output_layout_;
+  ExecutionRow row_;
+  std::vector<std::size_t> result_offsets_;
   std::size_t peak_memory_bytes_ = 0;
   bool closed_ = false;
 };

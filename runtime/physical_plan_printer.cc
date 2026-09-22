@@ -33,14 +33,14 @@ std::string FormatOrdering(const PhysicalOrdering &items) {
   return out.str();
 }
 
-std::string FormatSlots(const SlotConfiguration &slots) {
+std::string FormatLayout(const RowLayout &layout) {
   std::ostringstream out;
-  for (std::size_t index = 0; index < slots.Columns().size(); ++index) {
+  for (std::size_t index = 0; index < layout.Columns().size(); ++index) {
     if (index > 0) {
       out << ", ";
     }
-    const std::string &column = slots.Columns()[index];
-    out << column << '@' << slots.At(column);
+    const std::string &column = layout.Columns()[index];
+    out << column << '@' << layout.At(column);
   }
   return out.str();
 }
@@ -53,7 +53,7 @@ class PhysicalPlanPrinter final {
 
  private:
   void PrintNode(const PhysicalPlanNode &node) {
-    RG_CHECK(node.output_slots != nullptr, common::ErrorCode::InternalError,
+    RG_CHECK(node.output_layout != nullptr, common::ErrorCode::InternalError,
              "physical plan node is incomplete");
     const std::string kind(ToString(node.kind));
     std::string line = kind;
@@ -109,7 +109,7 @@ class PhysicalPlanPrinter final {
       metadata.push_back(std::string("cache=") +
                          (join->cached_child == 0 ? "left" : "right"));
     }
-    metadata.push_back("slots=[" + FormatSlots(*node.output_slots) + "]");
+    metadata.push_back("layout=[" + FormatLayout(*node.output_layout) + "]");
 
     line.append(" {");
     for (std::size_t index = 0; index < metadata.size(); ++index) {

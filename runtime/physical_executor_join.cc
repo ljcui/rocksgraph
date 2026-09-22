@@ -3,9 +3,9 @@
 #include <unordered_set>
 
 #include "runtime/expression_evaluator.h"
-#include "runtime/slotted_executor_internal.h"
+#include "runtime/physical_executor_internal.h"
 
-namespace rg::slotted {
+namespace rg::execution {
 
 class LeftOuterHashJoinOperator final : public PullOperator {
  public:
@@ -19,7 +19,7 @@ class LeftOuterHashJoinOperator final : public PullOperator {
         rhs_(std::move(rhs)) {}
   ~LeftOuterHashJoinOperator() override { Close(); }
 
-  bool Next(SlottedRow *row) override {
+  bool Next(ExecutionRow *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
@@ -32,7 +32,7 @@ class LeftOuterHashJoinOperator final : public PullOperator {
     while (true) {
       state_->CheckCancelled();
       if (!left_.has_value()) {
-        SlottedRow left(node_->children[0]->output_slots);
+        ExecutionRow left(node_->children[0]->output_layout);
         if (!lhs_->Next(&left)) {
           Close();
           return false;
@@ -41,7 +41,7 @@ class LeftOuterHashJoinOperator final : public PullOperator {
         matches_ = nullptr;
         index_ = 0;
         matched_ = false;
-        if (auto key = NodeJoinKey(*left_, data_->left_key_slots);
+        if (auto key = NodeJoinKey(*left_, data_->left_key_offsets);
             key.has_value()) {
           const auto found = buckets_.find(*key);
           if (found != buckets_.end()) {
@@ -50,7 +50,7 @@ class LeftOuterHashJoinOperator final : public PullOperator {
         }
       }
       while (matches_ != nullptr && index_ < matches_->size()) {
-        SlottedRow output(node_->output_slots);
+        ExecutionRow output(node_->output_layout);
         CopyMappings(*left_, &output, node_->child_mappings[0]);
         if (MergeMappings(build_rows_[(*matches_)[index_++]], &output,
                           node_->child_mappings[1])) {
@@ -60,11 +60,11 @@ class LeftOuterHashJoinOperator final : public PullOperator {
         }
       }
       if (!matched_) {
-        SlottedRow output(node_->output_slots);
+        ExecutionRow output(node_->output_layout);
         CopyMappings(*left_, &output, node_->child_mappings[0]);
-        for (const std::size_t slot : data_->nullable_output_slots) {
-          if (!output.IsInitialized(slot)) {
-            output.SetNull(slot);
+        for (const std::size_t offset : data_->nullable_output_offsets) {
+          if (!output.IsInitialized(offset)) {
+            output.SetNull(offset);
           }
         }
         left_.reset();
@@ -100,14 +100,14 @@ class LeftOuterHashJoinOperator final : public PullOperator {
   void Initialize() {
     initialized_ = true;
     while (true) {
-      SlottedRow right(node_->children[1]->output_slots);
+      ExecutionRow right(node_->children[1]->output_layout);
       if (!rhs_->Next(&right)) {
         rhs_->Close();
         return;
       }
       state_->CheckCancelled();
       std::optional<CompositeValueKey> key =
-          NodeJoinKey(right, data_->right_key_slots);
+          NodeJoinKey(right, data_->right_key_offsets);
       if (!key.has_value()) {
         continue;
       }
@@ -144,8 +144,8 @@ class LeftOuterHashJoinOperator final : public PullOperator {
   std::unordered_map<CompositeValueKey, Bucket, CompositeValueKeyHash,
                      CompositeValueKeyEqual>
       buckets_;
-  std::vector<SlottedRow> build_rows_;
-  std::optional<SlottedRow> left_;
+  std::vector<ExecutionRow> build_rows_;
+  std::optional<ExecutionRow> left_;
   const Bucket *matches_ = nullptr;
   std::size_t index_ = 0;
   std::size_t reserved_bytes_ = 0;
@@ -168,7 +168,7 @@ class CachedNestedLoopState final {
 
   ~CachedNestedLoopState() { Close(); }
 
-  [[nodiscard]] bool Next(const SlottedRow **lhs, const SlottedRow **rhs) {
+  [[nodiscard]] bool Next(const ExecutionRow **lhs, const ExecutionRow **rhs) {
     RG_CHECK(lhs != nullptr && rhs != nullptr,
              common::ErrorCode::InvalidParameter,
              "nested-loop output rows are null");
@@ -186,7 +186,7 @@ class CachedNestedLoopState final {
 
     while (true) {
       if (!probe_row_.has_value()) {
-        SlottedRow probe(node_->children[ProbeChild()]->output_slots);
+        ExecutionRow probe(node_->children[ProbeChild()]->output_layout);
         if (!Source(ProbeChild())->Next(&probe)) {
           Close();
           return false;
@@ -195,7 +195,7 @@ class CachedNestedLoopState final {
         cached_offset_ = 0;
       }
       if (cached_offset_ < cached_rows_.size()) {
-        const SlottedRow &cached = cached_rows_[cached_offset_++];
+        const ExecutionRow &cached = cached_rows_[cached_offset_++];
         *lhs = CachedChild() == 0 ? &cached : &*probe_row_;
         *rhs = CachedChild() == 0 ? &*probe_row_ : &cached;
         return true;
@@ -236,7 +236,7 @@ class CachedNestedLoopState final {
              "invalid nested-loop cached child");
     PullOperator *source = Source(CachedChild());
     while (true) {
-      SlottedRow input(node_->children[CachedChild()]->output_slots);
+      ExecutionRow input(node_->children[CachedChild()]->output_layout);
       if (!source->Next(&input)) {
         source->Close();
         return;
@@ -253,8 +253,8 @@ class CachedNestedLoopState final {
   RuntimeState *state_ = nullptr;
   std::unique_ptr<PullOperator> lhs_;
   std::unique_ptr<PullOperator> rhs_;
-  std::vector<SlottedRow> cached_rows_;
-  std::optional<SlottedRow> probe_row_;
+  std::vector<ExecutionRow> cached_rows_;
+  std::optional<ExecutionRow> probe_row_;
   std::size_t cached_child_ = 1;
   std::size_t cached_offset_ = 0;
   std::size_t reserved_bytes_ = 0;
@@ -275,13 +275,13 @@ class CartesianProductOperator final : public PullOperator {
 
   ~CartesianProductOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override {
+  [[nodiscard]] bool Next(ExecutionRow *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
-    const SlottedRow *lhs = nullptr;
-    const SlottedRow *rhs = nullptr;
+    const ExecutionRow *lhs = nullptr;
+    const ExecutionRow *rhs = nullptr;
     while (loop_.Next(&lhs, &rhs)) {
-      SlottedRow output(node_->output_slots);
+      ExecutionRow output(node_->output_layout);
       if (!MergeMappings(*lhs, &output, node_->child_mappings[0]) ||
           !MergeMappings(*rhs, &output, node_->child_mappings[1])) {
         continue;
@@ -314,13 +314,13 @@ class PredicateJoinOperator final : public PullOperator {
 
   ~PredicateJoinOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override {
+  [[nodiscard]] bool Next(ExecutionRow *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
-    const SlottedRow *lhs = nullptr;
-    const SlottedRow *rhs = nullptr;
+    const ExecutionRow *lhs = nullptr;
+    const ExecutionRow *rhs = nullptr;
     while (loop_.Next(&lhs, &rhs)) {
-      SlottedRow output(node_->output_slots);
+      ExecutionRow output(node_->output_layout);
       if (!MergeMappings(*lhs, &output, node_->child_mappings[0]) ||
           !MergeMappings(*rhs, &output, node_->child_mappings[1])) {
         continue;
@@ -363,7 +363,7 @@ class NodeHashJoinOperator final : public PullOperator {
 
   ~NodeHashJoinOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override {
+  [[nodiscard]] bool Next(ExecutionRow *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
@@ -377,10 +377,11 @@ class NodeHashJoinOperator final : public PullOperator {
     while (true) {
       while (bucket_ != nullptr && bucket_offset_ < bucket_->size()) {
         state_->CheckCancelled();
-        const SlottedRow &build_row = build_rows_[(*bucket_)[bucket_offset_++]];
-        const SlottedRow &lhs = BuildChild() == 0 ? build_row : *probe_row_;
-        const SlottedRow &rhs = BuildChild() == 0 ? *probe_row_ : build_row;
-        SlottedRow output(node_->output_slots);
+        const ExecutionRow &build_row =
+            build_rows_[(*bucket_)[bucket_offset_++]];
+        const ExecutionRow &lhs = BuildChild() == 0 ? build_row : *probe_row_;
+        const ExecutionRow &rhs = BuildChild() == 0 ? *probe_row_ : build_row;
+        ExecutionRow output(node_->output_layout);
         if (!MergeMappings(lhs, &output, node_->child_mappings[0]) ||
             !MergeMappings(rhs, &output, node_->child_mappings[1])) {
           continue;
@@ -392,14 +393,14 @@ class NodeHashJoinOperator final : public PullOperator {
       bucket_ = nullptr;
       bucket_offset_ = 0;
       probe_row_.reset();
-      SlottedRow probe(node_->children[ProbeChild()]->output_slots);
+      ExecutionRow probe(node_->children[ProbeChild()]->output_layout);
       if (!Source(ProbeChild())->Next(&probe)) {
         Close();
         return false;
       }
       state_->CheckCancelled();
       std::optional<CompositeValueKey> key =
-          NodeJoinKey(probe, KeySlots(ProbeChild()));
+          NodeJoinKey(probe, KeyOffsets(ProbeChild()));
       if (!key.has_value()) {
         continue;
       }
@@ -442,8 +443,8 @@ class NodeHashJoinOperator final : public PullOperator {
     return child == 0 ? lhs_.get() : rhs_.get();
   }
 
-  const std::vector<std::size_t> &KeySlots(std::size_t child) const {
-    return child == 0 ? data_->left_key_slots : data_->right_key_slots;
+  const std::vector<std::size_t> &KeyOffsets(std::size_t child) const {
+    return child == 0 ? data_->left_key_offsets : data_->right_key_offsets;
   }
 
   void Initialize() {
@@ -452,14 +453,14 @@ class NodeHashJoinOperator final : public PullOperator {
              "invalid node hash join build child");
     PullOperator *source = Source(BuildChild());
     while (true) {
-      SlottedRow input(node_->children[BuildChild()]->output_slots);
+      ExecutionRow input(node_->children[BuildChild()]->output_layout);
       if (!source->Next(&input)) {
         source->Close();
         return;
       }
       state_->CheckCancelled();
       std::optional<CompositeValueKey> key =
-          NodeJoinKey(input, KeySlots(BuildChild()));
+          NodeJoinKey(input, KeyOffsets(BuildChild()));
       if (!key.has_value()) {
         continue;
       }
@@ -496,8 +497,8 @@ class NodeHashJoinOperator final : public PullOperator {
   std::unordered_map<CompositeValueKey, Bucket, CompositeValueKeyHash,
                      CompositeValueKeyEqual>
       buckets_;
-  std::vector<SlottedRow> build_rows_;
-  std::optional<SlottedRow> probe_row_;
+  std::vector<ExecutionRow> build_rows_;
+  std::optional<ExecutionRow> probe_row_;
   const Bucket *bucket_ = nullptr;
   std::size_t bucket_offset_ = 0;
   std::size_t reserved_bytes_ = 0;
@@ -518,7 +519,7 @@ class ValueHashJoinOperator final : public PullOperator {
 
   ~ValueHashJoinOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override {
+  [[nodiscard]] bool Next(ExecutionRow *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
@@ -532,10 +533,11 @@ class ValueHashJoinOperator final : public PullOperator {
     while (true) {
       while (bucket_ != nullptr && bucket_offset_ < bucket_->size()) {
         state_->CheckCancelled();
-        const SlottedRow &build_row = build_rows_[(*bucket_)[bucket_offset_++]];
-        const SlottedRow &lhs = BuildChild() == 0 ? build_row : *probe_row_;
-        const SlottedRow &rhs = BuildChild() == 0 ? *probe_row_ : build_row;
-        SlottedRow output(node_->output_slots);
+        const ExecutionRow &build_row =
+            build_rows_[(*bucket_)[bucket_offset_++]];
+        const ExecutionRow &lhs = BuildChild() == 0 ? build_row : *probe_row_;
+        const ExecutionRow &rhs = BuildChild() == 0 ? *probe_row_ : build_row;
+        ExecutionRow output(node_->output_layout);
         if (!MergeMappings(lhs, &output, node_->child_mappings[0]) ||
             !MergeMappings(rhs, &output, node_->child_mappings[1])) {
           continue;
@@ -550,7 +552,7 @@ class ValueHashJoinOperator final : public PullOperator {
       bucket_ = nullptr;
       bucket_offset_ = 0;
       probe_row_.reset();
-      SlottedRow probe(node_->children[ProbeChild()]->output_slots);
+      ExecutionRow probe(node_->children[ProbeChild()]->output_layout);
       if (!Source(ProbeChild())->Next(&probe)) {
         Close();
         return false;
@@ -599,7 +601,7 @@ class ValueHashJoinOperator final : public PullOperator {
     return child == 0 ? lhs_.get() : rhs_.get();
   }
 
-  std::optional<CompositeValueKey> JoinKey(const SlottedRow &row,
+  std::optional<CompositeValueKey> JoinKey(const ExecutionRow &row,
                                            std::size_t child) const {
     CompositeValueKey result;
     result.values.reserve(data_->keys.size());
@@ -614,7 +616,7 @@ class ValueHashJoinOperator final : public PullOperator {
     return result;
   }
 
-  bool PredicatesMatch(const SlottedRow &row) const {
+  bool PredicatesMatch(const ExecutionRow &row) const {
     for (const auto &predicate : data_->predicates) {
       if (!PredicateIsTrue(Evaluate(predicate, row, *state_))) {
         return false;
@@ -629,7 +631,7 @@ class ValueHashJoinOperator final : public PullOperator {
              "invalid value hash join build child");
     PullOperator *source = Source(BuildChild());
     while (true) {
-      SlottedRow input(node_->children[BuildChild()]->output_slots);
+      ExecutionRow input(node_->children[BuildChild()]->output_layout);
       if (!source->Next(&input)) {
         source->Close();
         return;
@@ -672,8 +674,8 @@ class ValueHashJoinOperator final : public PullOperator {
   std::unordered_map<CompositeValueKey, Bucket, CompositeValueKeyHash,
                      CompositeValueKeyEqual>
       buckets_;
-  std::vector<SlottedRow> build_rows_;
-  std::optional<SlottedRow> probe_row_;
+  std::vector<ExecutionRow> build_rows_;
+  std::optional<ExecutionRow> probe_row_;
   const Bucket *bucket_ = nullptr;
   std::size_t bucket_offset_ = 0;
   std::size_t reserved_bytes_ = 0;
@@ -693,7 +695,7 @@ class UnionInputState final {
 
   ~UnionInputState() { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) {
+  [[nodiscard]] bool Next(ExecutionRow *row) {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     state_->CheckCancelled();
@@ -703,13 +705,13 @@ class UnionInputState final {
     while (side_ < 2) {
       PullOperator *source = side_ == 0 ? lhs_.get() : rhs_.get();
       const PhysicalPlanNode &child = *node_->children[side_];
-      SlottedRow input(child.output_slots);
+      ExecutionRow input(child.output_layout);
       if (!source->Next(&input)) {
         source->Close();
         ++side_;
         continue;
       }
-      SlottedRow output(node_->output_slots);
+      ExecutionRow output(node_->output_layout);
       CopyMappings(input, &output, node_->child_mappings[side_]);
       *row = std::move(output);
       return true;
@@ -751,7 +753,9 @@ class UnionAllOperator final : public PullOperator {
 
   ~UnionAllOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override { return input_.Next(row); }
+  [[nodiscard]] bool Next(ExecutionRow *row) override {
+    return input_.Next(row);
+  }
 
   void Close() noexcept override { input_.Close(); }
 
@@ -771,17 +775,17 @@ class UnionDistinctOperator final : public PullOperator {
 
   ~UnionDistinctOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override {
+  [[nodiscard]] bool Next(ExecutionRow *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "output row is null");
     if (closed_) {
       return false;
     }
-    SlottedRow input(node_->output_slots);
+    ExecutionRow input(node_->output_layout);
     while (input_.Next(&input)) {
       CompositeValueKey key;
-      key.values.reserve(data_->key_slots.size());
-      for (const std::size_t offset : data_->key_slots) {
+      key.values.reserve(data_->key_offsets.size());
+      for (const std::size_t offset : data_->key_offsets) {
         key.values.push_back(ReadRowValue(input, offset));
       }
       auto [seen, inserted] = seen_.insert(std::move(key));
@@ -835,11 +839,11 @@ class CorrelatedRightState final {
 
   [[nodiscard]] bool NextLeft();
   void OpenRight();
-  [[nodiscard]] bool NextRight(SlottedRow *row);
+  [[nodiscard]] bool NextRight(ExecutionRow *row);
   [[nodiscard]] bool HasLeft() const noexcept {
     return current_left_.has_value();
   }
-  [[nodiscard]] const SlottedRow &Left() const;
+  [[nodiscard]] const ExecutionRow &Left() const;
   void FinishLeft() noexcept;
   void Close() noexcept;
 
@@ -849,7 +853,7 @@ class CorrelatedRightState final {
   OperatorFactory *factory_ = nullptr;
   std::unique_ptr<PullOperator> lhs_;
   std::unique_ptr<PullOperator> rhs_;
-  std::optional<SlottedRow> current_left_;
+  std::optional<ExecutionRow> current_left_;
   bool closed_ = false;
 };
 
@@ -865,7 +869,7 @@ class ApplyOperator final : public PullOperator {
 
   ~ApplyOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override;
+  [[nodiscard]] bool Next(ExecutionRow *row) override;
   void Close() noexcept override { correlated_.Close(); }
 
  private:
@@ -886,7 +890,7 @@ class OptionalApplyOperator final : public PullOperator {
 
   ~OptionalApplyOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override;
+  [[nodiscard]] bool Next(ExecutionRow *row) override;
   void Close() noexcept override { correlated_.Close(); }
 
  private:
@@ -909,7 +913,7 @@ class SemiApplyOperator final : public PullOperator {
 
   ~SemiApplyOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override;
+  [[nodiscard]] bool Next(ExecutionRow *row) override;
   void Close() noexcept override { correlated_.Close(); }
 
  private:
@@ -931,7 +935,7 @@ class AntiSemiApplyOperator final : public PullOperator {
 
   ~AntiSemiApplyOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override;
+  [[nodiscard]] bool Next(ExecutionRow *row) override;
   void Close() noexcept override { correlated_.Close(); }
 
  private:
@@ -952,7 +956,7 @@ class LetSemiApplyOperator final : public PullOperator {
 
   ~LetSemiApplyOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override;
+  [[nodiscard]] bool Next(ExecutionRow *row) override;
   void Close() noexcept override { correlated_.Close(); }
 
  private:
@@ -974,7 +978,7 @@ class SelectOrSemiApplyOperator final : public PullOperator {
 
   ~SelectOrSemiApplyOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override;
+  [[nodiscard]] bool Next(ExecutionRow *row) override;
   void Close() noexcept override { correlated_.Close(); }
 
  private:
@@ -996,7 +1000,7 @@ class RollUpApplyOperator final : public PullOperator {
 
   ~RollUpApplyOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override;
+  [[nodiscard]] bool Next(ExecutionRow *row) override;
   void Close() noexcept override { correlated_.Close(); }
 
  private:
@@ -1018,12 +1022,12 @@ class MergeOperator final : public PullOperator {
 
   ~MergeOperator() override { Close(); }
 
-  [[nodiscard]] bool Next(SlottedRow *row) override;
+  [[nodiscard]] bool Next(ExecutionRow *row) override;
   void Close() noexcept override;
 
  private:
   void Initialize();
-  void BufferRow(SlottedRow row) {
+  void BufferRow(ExecutionRow row) {
     const std::size_t bytes = row.EstimatedHeapUsage();
     state_->memory_tracker.Reserve(bytes);
     reserved_bytes_ += bytes;
@@ -1035,7 +1039,7 @@ class MergeOperator final : public PullOperator {
   RuntimeState *state_ = nullptr;
   OperatorFactory *factory_ = nullptr;
   std::unique_ptr<PullOperator> source_;
-  std::vector<SlottedRow> rows_;
+  std::vector<ExecutionRow> rows_;
   std::size_t next_ = 0;
   std::size_t reserved_bytes_ = 0;
   bool initialized_ = false;
@@ -1122,7 +1126,7 @@ bool CorrelatedRightState::NextLeft() {
   RG_CHECK(!current_left_.has_value() && rhs_ == nullptr,
            common::ErrorCode::InternalError,
            "correlated right state still has an active left row");
-  SlottedRow lhs_row(node_->children[0]->output_slots);
+  ExecutionRow lhs_row(node_->children[0]->output_layout);
   if (!lhs_->Next(&lhs_row)) {
     Close();
     return false;
@@ -1139,7 +1143,7 @@ void CorrelatedRightState::OpenRight() {
   rhs_ = factory_->Build(*node_->children[1], *current_left_);
 }
 
-bool CorrelatedRightState::NextRight(SlottedRow *row) {
+bool CorrelatedRightState::NextRight(ExecutionRow *row) {
   RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
            "right row is null");
   RG_CHECK(current_left_.has_value() && rhs_ != nullptr,
@@ -1149,7 +1153,7 @@ bool CorrelatedRightState::NextRight(SlottedRow *row) {
   return rhs_->Next(row);
 }
 
-const SlottedRow &CorrelatedRightState::Left() const {
+const ExecutionRow &CorrelatedRightState::Left() const {
   RG_CHECK(current_left_.has_value(), common::ErrorCode::InternalError,
            "correlated right state has no active left row");
   return *current_left_;
@@ -1174,7 +1178,7 @@ void CorrelatedRightState::Close() noexcept {
   closed_ = true;
 }
 
-bool ApplyOperator::Next(SlottedRow *row) {
+bool ApplyOperator::Next(ExecutionRow *row) {
   RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
            "output row is null");
   while (true) {
@@ -1186,9 +1190,9 @@ bool ApplyOperator::Next(SlottedRow *row) {
       correlated_.OpenRight();
     }
 
-    SlottedRow rhs(node_->children[1]->output_slots);
+    ExecutionRow rhs(node_->children[1]->output_layout);
     while (correlated_.NextRight(&rhs)) {
-      SlottedRow output(node_->output_slots);
+      ExecutionRow output(node_->output_layout);
       if (!MergeMappings(correlated_.Left(), &output,
                          node_->child_mappings[0]) ||
           !MergeMappings(rhs, &output, node_->child_mappings[1])) {
@@ -1201,7 +1205,7 @@ bool ApplyOperator::Next(SlottedRow *row) {
   }
 }
 
-bool OptionalApplyOperator::Next(SlottedRow *row) {
+bool OptionalApplyOperator::Next(ExecutionRow *row) {
   RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
            "output row is null");
   while (true) {
@@ -1214,10 +1218,10 @@ bool OptionalApplyOperator::Next(SlottedRow *row) {
       rhs_produced_ = false;
     }
 
-    SlottedRow rhs(node_->children[1]->output_slots);
+    ExecutionRow rhs(node_->children[1]->output_layout);
     while (correlated_.NextRight(&rhs)) {
       rhs_produced_ = true;
-      SlottedRow output(node_->output_slots);
+      ExecutionRow output(node_->output_layout);
       if (MergeMappings(correlated_.Left(), &output,
                         node_->child_mappings[0]) &&
           MergeMappings(rhs, &output, node_->child_mappings[1])) {
@@ -1227,11 +1231,11 @@ bool OptionalApplyOperator::Next(SlottedRow *row) {
     }
 
     if (!rhs_produced_) {
-      SlottedRow output(node_->output_slots);
+      ExecutionRow output(node_->output_layout);
       CopyMappings(correlated_.Left(), &output, node_->child_mappings[0]);
-      for (const std::size_t slot : data_->nullable_output_slots) {
-        if (!output.IsInitialized(slot)) {
-          output.SetNull(slot);
+      for (const std::size_t offset : data_->nullable_output_offsets) {
+        if (!output.IsInitialized(offset)) {
+          output.SetNull(offset);
         }
       }
       correlated_.FinishLeft();
@@ -1241,15 +1245,15 @@ bool OptionalApplyOperator::Next(SlottedRow *row) {
     correlated_.FinishLeft();
   }
 }
-bool SemiApplyOperator::Next(SlottedRow *row) {
+bool SemiApplyOperator::Next(ExecutionRow *row) {
   RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
            "output row is null");
   while (correlated_.NextLeft()) {
     correlated_.OpenRight();
-    SlottedRow rhs(node_->children[1]->output_slots);
+    ExecutionRow rhs(node_->children[1]->output_layout);
     const bool exists = correlated_.NextRight(&rhs);
     if (exists) {
-      SlottedRow output = CopyChildOutput(*node_, 0, correlated_.Left());
+      ExecutionRow output = CopyChildOutput(*node_, 0, correlated_.Left());
       correlated_.FinishLeft();
       *row = std::move(output);
       return true;
@@ -1259,15 +1263,15 @@ bool SemiApplyOperator::Next(SlottedRow *row) {
   return false;
 }
 
-bool AntiSemiApplyOperator::Next(SlottedRow *row) {
+bool AntiSemiApplyOperator::Next(ExecutionRow *row) {
   RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
            "output row is null");
   while (correlated_.NextLeft()) {
     correlated_.OpenRight();
-    SlottedRow rhs(node_->children[1]->output_slots);
+    ExecutionRow rhs(node_->children[1]->output_layout);
     const bool exists = correlated_.NextRight(&rhs);
     if (!exists) {
-      SlottedRow output = CopyChildOutput(*node_, 0, correlated_.Left());
+      ExecutionRow output = CopyChildOutput(*node_, 0, correlated_.Left());
       correlated_.FinishLeft();
       *row = std::move(output);
       return true;
@@ -1277,23 +1281,23 @@ bool AntiSemiApplyOperator::Next(SlottedRow *row) {
   return false;
 }
 
-bool LetSemiApplyOperator::Next(SlottedRow *row) {
+bool LetSemiApplyOperator::Next(ExecutionRow *row) {
   RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
            "output row is null");
   if (!correlated_.NextLeft()) {
     return false;
   }
   correlated_.OpenRight();
-  SlottedRow rhs(node_->children[1]->output_slots);
+  ExecutionRow rhs(node_->children[1]->output_layout);
   const bool exists = correlated_.NextRight(&rhs);
-  SlottedRow output = CopyChildOutput(*node_, 0, correlated_.Left());
-  StoreEvaluatedValue(&output, data_->value_slot, Value(exists), *state_);
+  ExecutionRow output = CopyChildOutput(*node_, 0, correlated_.Left());
+  StoreEvaluatedValue(&output, data_->value_offset, Value(exists), *state_);
   correlated_.FinishLeft();
   *row = std::move(output);
   return true;
 }
 
-bool SelectOrSemiApplyOperator::Next(SlottedRow *row) {
+bool SelectOrSemiApplyOperator::Next(ExecutionRow *row) {
   RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
            "output row is null");
   while (correlated_.NextLeft()) {
@@ -1305,10 +1309,10 @@ bool SelectOrSemiApplyOperator::Next(SlottedRow *row) {
     }
 
     correlated_.OpenRight();
-    SlottedRow rhs(node_->children[1]->output_slots);
+    ExecutionRow rhs(node_->children[1]->output_layout);
     const bool exists = correlated_.NextRight(&rhs);
     if (exists != data_->anti) {
-      SlottedRow output = CopyChildOutput(*node_, 0, correlated_.Left());
+      ExecutionRow output = CopyChildOutput(*node_, 0, correlated_.Left());
       correlated_.FinishLeft();
       *row = std::move(output);
       return true;
@@ -1318,7 +1322,7 @@ bool SelectOrSemiApplyOperator::Next(SlottedRow *row) {
   return false;
 }
 
-bool RollUpApplyOperator::Next(SlottedRow *row) {
+bool RollUpApplyOperator::Next(ExecutionRow *row) {
   RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
            "output row is null");
   if (!correlated_.NextLeft()) {
@@ -1328,16 +1332,16 @@ bool RollUpApplyOperator::Next(SlottedRow *row) {
   Value::List values;
   std::size_t reserved_bytes = 0;
   try {
-    SlottedRow rhs(node_->children[1]->output_slots);
+    ExecutionRow rhs(node_->children[1]->output_layout);
     while (correlated_.NextRight(&rhs)) {
-      Value value = ReadRowValue(rhs, data_->value_slot);
+      Value value = ReadRowValue(rhs, data_->value_offset);
       const std::size_t bytes = EstimatedValueHeapUsage(value);
       state_->memory_tracker.Reserve(bytes);
       reserved_bytes += bytes;
       values.push_back(std::move(value));
     }
-    SlottedRow output = CopyChildOutput(*node_, 0, correlated_.Left());
-    StoreEvaluatedValue(&output, data_->collection_slot,
+    ExecutionRow output = CopyChildOutput(*node_, 0, correlated_.Left());
+    StoreEvaluatedValue(&output, data_->collection_offset,
                         Value(std::move(values)), *state_);
     state_->memory_tracker.Release(reserved_bytes);
     correlated_.FinishLeft();
@@ -1352,15 +1356,15 @@ bool RollUpApplyOperator::Next(SlottedRow *row) {
 
 void MergeOperator::Initialize() {
   initialized_ = true;
-  SlottedRow input(node_->children[0]->output_slots);
+  ExecutionRow input(node_->children[0]->output_layout);
   while (source_->Next(&input)) {
     state_->CheckCancelled();
     std::unique_ptr<PullOperator> rhs =
         factory_->Build(*node_->children[1], input);
     bool matched = false;
-    SlottedRow rhs_row(node_->children[1]->output_slots);
+    ExecutionRow rhs_row(node_->children[1]->output_layout);
     while (rhs->Next(&rhs_row)) {
-      SlottedRow output(node_->output_slots);
+      ExecutionRow output(node_->output_layout);
       if (!MergeMappings(input, &output, node_->child_mappings[0]) ||
           !MergeMappings(rhs_row, &output, node_->child_mappings[1])) {
         continue;
@@ -1373,7 +1377,7 @@ void MergeOperator::Initialize() {
     if (matched) {
       continue;
     }
-    SlottedRow output = CopyChildOutput(*node_, 0, input);
+    ExecutionRow output = CopyChildOutput(*node_, 0, input);
     for (const auto &command : data_->create_commands) {
       state_->CheckCancelled();
       std::visit(
@@ -1387,7 +1391,7 @@ void MergeOperator::Initialize() {
   }
 }
 
-bool MergeOperator::Next(SlottedRow *row) {
+bool MergeOperator::Next(ExecutionRow *row) {
   state_->CheckCancelled();
   if (!initialized_) {
     Initialize();
@@ -1408,4 +1412,4 @@ void MergeOperator::Close() noexcept {
   reserved_bytes_ = 0;
 }
 
-}  // namespace rg::slotted
+}  // namespace rg::execution
