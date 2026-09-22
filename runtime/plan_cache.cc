@@ -82,9 +82,11 @@ class PlanCache::Impl final {
 };
 
 CachedPlan::CachedPlan(std::shared_ptr<const PhysicalPlan> physical_plan,
-                       std::vector<std::string> required_parameters)
+                       std::vector<std::string> required_parameters,
+                       std::optional<std::string> explain_plan)
     : physical_plan_(std::move(physical_plan)),
-      required_parameters_(std::move(required_parameters)) {
+      required_parameters_(std::move(required_parameters)),
+      explain_plan_(std::move(explain_plan)) {
   RG_CHECK(physical_plan_ != nullptr, common::ErrorCode::InternalError,
            "cached physical plan is null");
 }

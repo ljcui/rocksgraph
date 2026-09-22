@@ -1,6 +1,7 @@
 #include "runtime/query_executor.h"
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_set>
@@ -12,6 +13,7 @@
 #include "common/exception.h"
 #include "graphdb/graph_db.h"
 #include "graphdb/transaction.h"
+#include "ir/logical_plan_printer.h"
 #include "planner/planned_query.h"
 #include "runtime/graphdb_planner_catalog.h"
 #include "runtime/physical_executor.h"
@@ -20,6 +22,8 @@
 
 namespace rg {
 namespace {
+
+bool IsExplain(const ast::Statement &statement);
 
 planner::LogicalPlanBuilderOptions PlannerOptionsFor(
     const QueryOptions &options) {
@@ -89,9 +93,60 @@ std::shared_ptr<const CachedPlan> CompileCachedPlan(
   auto required_parameters = CollectQueryParameters(planned_query.Ast());
   auto physical_plan = std::make_shared<PhysicalPlan>(
       CreatePhysicalPlan(planned_query.LogicalPlan()));
+  std::optional<std::string> explain_plan;
+  if (IsExplain(planned_query.Ast())) {
+    explain_plan = ir::LogicalPlanToString(planned_query.LogicalPlan(),
+                                           {.include_metadata = true});
+  }
   return std::make_shared<CachedPlan>(std::move(physical_plan),
-                                      std::move(required_parameters));
+                                      std::move(required_parameters),
+                                      std::move(explain_plan));
 }
+
+bool IsExplain(const ast::Statement &statement) {
+  switch (statement.node_type) {
+    case ast::ASTNodeType::kRegularQuery:
+      return ast::CastAst<ast::RegularQuery>(statement).explain;
+    case ast::ASTNodeType::kStandaloneCall:
+      return ast::CastAst<ast::StandaloneCall>(statement).explain;
+    default:
+      return false;
+  }
+}
+
+class ExplainResultCursor final : public QueryResultCursor {
+ public:
+  explicit ExplainResultCursor(std::string plan) : plan_(std::move(plan)) {}
+
+  [[nodiscard]] const std::vector<std::string> &Columns()
+      const noexcept override {
+    return columns_;
+  }
+
+  [[nodiscard]] bool Next(std::vector<Value> *row) override {
+    RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
+             "query result row is null");
+    if (closed_ || emitted_) {
+      return false;
+    }
+    row->clear();
+    row->emplace_back(plan_);
+    emitted_ = true;
+    return true;
+  }
+
+  void Cancel() noexcept override { Close(); }
+  void Close() noexcept override { closed_ = true; }
+  [[nodiscard]] std::size_t PeakMemoryBytes() const noexcept override {
+    return 0;
+  }
+
+ private:
+  std::string plan_;
+  std::vector<std::string> columns_{"plan"};
+  bool emitted_ = false;
+  bool closed_ = false;
+};
 
 class QueryResultCursorImpl final : public QueryResultCursor {
  public:
@@ -270,6 +325,9 @@ std::unique_ptr<QueryResultCursor> ExecuteQueryCursor(
         key, [&] { return CompileCachedPlan(cypher, options); });
     ValidateQueryParameters(cached_plan->RequiredParameters(),
                             options.parameters);
+    if (cached_plan->IsExplain()) {
+      return std::make_unique<ExplainResultCursor>(cached_plan->ExplainPlan());
+    }
     return QueryResultCursorImpl::Create(cached_plan->PhysicalPlanPtr(),
                                          transaction, options.parameters,
                                          std::move(options.execution));
@@ -278,6 +336,10 @@ std::unique_ptr<QueryResultCursor> ExecuteQueryCursor(
   planner::PlannedQuery planned_query =
       planner::PlanCypher(cypher, PlannerOptionsFor(options));
   ValidateQueryParameters(planned_query.Ast(), options.parameters);
+  if (IsExplain(planned_query.Ast())) {
+    return std::make_unique<ExplainResultCursor>(ir::LogicalPlanToString(
+        planned_query.LogicalPlan(), {.include_metadata = true}));
+  }
   return QueryResultCursorImpl::Create(planned_query.LogicalPlan(), transaction,
                                        options.parameters,
                                        std::move(options.execution));

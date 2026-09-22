@@ -1,9 +1,11 @@
 
 // Generated from Cypher.g4 by ANTLR 4.13.2
 
-#include "CypherParser.h"
 
 #include "CypherVisitor.h"
+
+#include "CypherParser.h"
+
 
 using namespace antlrcpp;
 
@@ -13,17 +15,16 @@ namespace {
 
 struct CypherParserStaticData final {
   CypherParserStaticData(std::vector<std::string> ruleNames,
-                         std::vector<std::string> literalNames,
-                         std::vector<std::string> symbolicNames)
-      : ruleNames(std::move(ruleNames)),
-        literalNames(std::move(literalNames)),
+                        std::vector<std::string> literalNames,
+                        std::vector<std::string> symbolicNames)
+      : ruleNames(std::move(ruleNames)), literalNames(std::move(literalNames)),
         symbolicNames(std::move(symbolicNames)),
         vocabulary(this->literalNames, this->symbolicNames) {}
 
-  CypherParserStaticData(const CypherParserStaticData &) = delete;
-  CypherParserStaticData(CypherParserStaticData &&) = delete;
-  CypherParserStaticData &operator=(const CypherParserStaticData &) = delete;
-  CypherParserStaticData &operator=(CypherParserStaticData &&) = delete;
+  CypherParserStaticData(const CypherParserStaticData&) = delete;
+  CypherParserStaticData(CypherParserStaticData&&) = delete;
+  CypherParserStaticData& operator=(const CypherParserStaticData&) = delete;
+  CypherParserStaticData& operator=(CypherParserStaticData&&) = delete;
 
   std::vector<antlr4::dfa::DFA> decisionToDFA;
   antlr4::atn::PredictionContextCache sharedContextCache;
@@ -39,8 +40,7 @@ struct CypherParserStaticData final {
 #if ANTLR4_USE_THREAD_LOCAL_CACHE
 static thread_local
 #endif
-    std::unique_ptr<CypherParserStaticData>
-        cypherParserStaticData = nullptr;
+std::unique_ptr<CypherParserStaticData> cypherParserStaticData = nullptr;
 
 void cypherParserInitialize() {
 #if ANTLR4_USE_THREAD_LOCAL_CACHE
@@ -51,1528 +51,711 @@ void cypherParserInitialize() {
   assert(cypherParserStaticData == nullptr);
 #endif
   auto staticData = std::make_unique<CypherParserStaticData>(
-      std::vector<std::string>{"oC_Cypher",
-                               "oC_Statement",
-                               "oC_Query",
-                               "oC_RegularQuery",
-                               "oC_Union",
-                               "oC_SingleQuery",
-                               "oC_SinglePartQuery",
-                               "oC_MultiPartQuery",
-                               "oC_UpdatingClause",
-                               "oC_ReadingClause",
-                               "oC_Match",
-                               "oC_Unwind",
-                               "oC_Merge",
-                               "oC_MergeAction",
-                               "oC_Create",
-                               "oC_Set",
-                               "oC_SetItem",
-                               "oC_Delete",
-                               "oC_Remove",
-                               "oC_RemoveItem",
-                               "oC_InQueryCall",
-                               "oC_StandaloneCall",
-                               "oC_YieldItems",
-                               "oC_YieldItem",
-                               "oC_With",
-                               "oC_Return",
-                               "oC_ProjectionBody",
-                               "oC_ProjectionItems",
-                               "oC_ProjectionItem",
-                               "oC_Order",
-                               "oC_Skip",
-                               "oC_Limit",
-                               "oC_SortItem",
-                               "oC_Where",
-                               "oC_Pattern",
-                               "oC_PatternPart",
-                               "oC_AnonymousPatternPart",
-                               "oC_PatternElement",
-                               "oC_RelationshipsPattern",
-                               "oC_NodePattern",
-                               "oC_PatternElementChain",
-                               "oC_RelationshipPattern",
-                               "oC_RelationshipDetail",
-                               "oC_Properties",
-                               "oC_RelationshipTypes",
-                               "oC_NodeLabels",
-                               "oC_NodeLabel",
-                               "oC_RangeLiteral",
-                               "oC_LabelName",
-                               "oC_RelTypeName",
-                               "oC_PropertyExpression",
-                               "oC_Expression",
-                               "oC_OrExpression",
-                               "oC_XorExpression",
-                               "oC_AndExpression",
-                               "oC_NotExpression",
-                               "oC_ComparisonExpression",
-                               "oC_PartialComparisonExpression",
-                               "oC_StringListNullPredicateExpression",
-                               "oC_StringPredicateExpression",
-                               "oC_ListPredicateExpression",
-                               "oC_NullPredicateExpression",
-                               "oC_AddOrSubtractExpression",
-                               "oC_MultiplyDivideModuloExpression",
-                               "oC_PowerOfExpression",
-                               "oC_UnaryAddOrSubtractExpression",
-                               "oC_NonArithmeticOperatorExpression",
-                               "oC_ListOperatorExpression",
-                               "oC_PropertyLookup",
-                               "oC_Atom",
-                               "oC_CaseExpression",
-                               "oC_CaseAlternative",
-                               "oC_ListComprehension",
-                               "oC_PatternComprehension",
-                               "oC_Quantifier",
-                               "oC_FilterExpression",
-                               "oC_PatternPredicate",
-                               "oC_ParenthesizedExpression",
-                               "oC_IdInColl",
-                               "oC_FunctionInvocation",
-                               "oC_FunctionName",
-                               "oC_ExistentialSubquery",
-                               "oC_ExplicitProcedureInvocation",
-                               "oC_ImplicitProcedureInvocation",
-                               "oC_ProcedureResultField",
-                               "oC_ProcedureName",
-                               "oC_Namespace",
-                               "oC_Variable",
-                               "oC_Literal",
-                               "oC_BooleanLiteral",
-                               "oC_NumberLiteral",
-                               "oC_IntegerLiteral",
-                               "oC_DoubleLiteral",
-                               "oC_ListLiteral",
-                               "oC_MapLiteral",
-                               "oC_PropertyKeyName",
-                               "oC_Parameter",
-                               "oC_SchemaName",
-                               "oC_ReservedWord",
-                               "oC_SymbolicName",
-                               "oC_LeftArrowHead",
-                               "oC_RightArrowHead",
-                               "oC_Dash"},
-      std::vector<std::string>{
-          "",          "';'",       "','",       "'='",       "'+='",
-          "'*'",       "'('",       "')'",       "'['",       "']'",
-          "':'",       "'|'",       "'..'",      "'<>'",      "'<'",
-          "'>'",       "'<='",      "'>='",      "'+'",       "'-'",
-          "'/'",       "'%'",       "'^'",       "'.'",       "'{'",
-          "'}'",       "'$'",       "'\\u27E8'", "'\\u3008'", "'\\uFE64'",
-          "'\\uFF1C'", "'\\u27E9'", "'\\u3009'", "'\\uFE65'", "'\\uFF1E'",
-          "'\\u00AD'", "'\\u2010'", "'\\u2011'", "'\\u2012'", "'\\u2013'",
-          "'\\u2014'", "'\\u2015'", "'\\u2212'", "'\\uFE58'", "'\\uFE63'",
-          "'\\uFF0D'", "",          "",          "",          "",
-          "",          "",          "",          "",          "",
-          "",          "",          "",          "",          "",
-          "",          "",          "",          "",          "",
-          "",          "",          "",          "",          "",
-          "",          "",          "",          "",          "",
-          "",          "",          "",          "",          "",
-          "",          "",          "",          "",          "",
-          "",          "",          "",          "",          "",
-          "",          "",          "",          "",          "",
-          "",          "",          "",          "",          "",
-          "",          "",          "",          "",          "'0'"},
-      std::vector<std::string>{"",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "",
-                               "UNION",
-                               "ALL",
-                               "OPTIONAL",
-                               "MATCH",
-                               "UNWIND",
-                               "AS",
-                               "MERGE",
-                               "ON",
-                               "CREATE",
-                               "SET",
-                               "DETACH",
-                               "DELETE",
-                               "REMOVE",
-                               "CALL",
-                               "YIELD",
-                               "WITH",
-                               "RETURN",
-                               "DISTINCT",
-                               "ORDER",
-                               "BY",
-                               "L_SKIP",
-                               "LIMIT",
-                               "ASCENDING",
-                               "ASC",
-                               "DESCENDING",
-                               "DESC",
-                               "WHERE",
-                               "OR",
-                               "XOR",
-                               "AND",
-                               "NOT",
-                               "STARTS",
-                               "ENDS",
-                               "CONTAINS",
-                               "IN",
-                               "IS",
-                               "NULL",
-                               "COUNT",
-                               "CASE",
-                               "ELSE",
-                               "END",
-                               "WHEN",
-                               "THEN",
-                               "ANY",
-                               "NONE",
-                               "SINGLE",
-                               "EXISTS",
-                               "TRUE",
-                               "FALSE",
-                               "HexInteger",
-                               "DecimalInteger",
-                               "OctalInteger",
-                               "HexLetter",
-                               "HexDigit",
-                               "Digit",
-                               "NonZeroDigit",
-                               "NonZeroOctDigit",
-                               "OctDigit",
-                               "ZeroDigit",
-                               "ExponentDecimalReal",
-                               "RegularDecimalReal",
-                               "StringLiteral",
-                               "EscapedChar",
-                               "CONSTRAINT",
-                               "DO",
-                               "FOR",
-                               "REQUIRE",
-                               "UNIQUE",
-                               "MANDATORY",
-                               "SCALAR",
-                               "OF",
-                               "ADD",
-                               "DROP",
-                               "FILTER",
-                               "EXTRACT",
-                               "UnescapedSymbolicName",
-                               "IdentifierStart",
-                               "IdentifierPart",
-                               "EscapedSymbolicName",
-                               "SP",
-                               "WHITESPACE",
-                               "Comment"});
+    std::vector<std::string>{
+      "oC_Cypher", "oC_Statement", "oC_Query", "oC_RegularQuery", "oC_Union", 
+      "oC_SingleQuery", "oC_SinglePartQuery", "oC_MultiPartQuery", "oC_UpdatingClause", 
+      "oC_ReadingClause", "oC_Match", "oC_Unwind", "oC_Merge", "oC_MergeAction", 
+      "oC_Create", "oC_Set", "oC_SetItem", "oC_Delete", "oC_Remove", "oC_RemoveItem", 
+      "oC_InQueryCall", "oC_StandaloneCall", "oC_YieldItems", "oC_YieldItem", 
+      "oC_With", "oC_Return", "oC_ProjectionBody", "oC_ProjectionItems", 
+      "oC_ProjectionItem", "oC_Order", "oC_Skip", "oC_Limit", "oC_SortItem", 
+      "oC_Where", "oC_Pattern", "oC_PatternPart", "oC_AnonymousPatternPart", 
+      "oC_PatternElement", "oC_RelationshipsPattern", "oC_NodePattern", 
+      "oC_PatternElementChain", "oC_RelationshipPattern", "oC_RelationshipDetail", 
+      "oC_Properties", "oC_RelationshipTypes", "oC_NodeLabels", "oC_NodeLabel", 
+      "oC_RangeLiteral", "oC_LabelName", "oC_RelTypeName", "oC_PropertyExpression", 
+      "oC_Expression", "oC_OrExpression", "oC_XorExpression", "oC_AndExpression", 
+      "oC_NotExpression", "oC_ComparisonExpression", "oC_PartialComparisonExpression", 
+      "oC_StringListNullPredicateExpression", "oC_StringPredicateExpression", 
+      "oC_ListPredicateExpression", "oC_NullPredicateExpression", "oC_AddOrSubtractExpression", 
+      "oC_MultiplyDivideModuloExpression", "oC_PowerOfExpression", "oC_UnaryAddOrSubtractExpression", 
+      "oC_NonArithmeticOperatorExpression", "oC_ListOperatorExpression", 
+      "oC_PropertyLookup", "oC_Atom", "oC_CaseExpression", "oC_CaseAlternative", 
+      "oC_ListComprehension", "oC_PatternComprehension", "oC_Quantifier", 
+      "oC_FilterExpression", "oC_PatternPredicate", "oC_ParenthesizedExpression", 
+      "oC_IdInColl", "oC_FunctionInvocation", "oC_FunctionName", "oC_ExistentialSubquery", 
+      "oC_ExplicitProcedureInvocation", "oC_ImplicitProcedureInvocation", 
+      "oC_ProcedureResultField", "oC_ProcedureName", "oC_Namespace", "oC_Variable", 
+      "oC_Literal", "oC_BooleanLiteral", "oC_NumberLiteral", "oC_IntegerLiteral", 
+      "oC_DoubleLiteral", "oC_ListLiteral", "oC_MapLiteral", "oC_PropertyKeyName", 
+      "oC_Parameter", "oC_SchemaName", "oC_ReservedWord", "oC_SymbolicName", 
+      "oC_LeftArrowHead", "oC_RightArrowHead", "oC_Dash"
+    },
+    std::vector<std::string>{
+      "", "';'", "','", "'='", "'+='", "'*'", "'('", "')'", "'['", "']'", 
+      "':'", "'|'", "'..'", "'<>'", "'<'", "'>'", "'<='", "'>='", "'+'", 
+      "'-'", "'/'", "'%'", "'^'", "'.'", "'{'", "'}'", "'$'", "'\\u27E8'", 
+      "'\\u3008'", "'\\uFE64'", "'\\uFF1C'", "'\\u27E9'", "'\\u3009'", "'\\uFE65'", 
+      "'\\uFF1E'", "'\\u00AD'", "'\\u2010'", "'\\u2011'", "'\\u2012'", "'\\u2013'", 
+      "'\\u2014'", "'\\u2015'", "'\\u2212'", "'\\uFE58'", "'\\uFE63'", "'\\uFF0D'", 
+      "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", 
+      "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", 
+      "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", 
+      "", "", "", "", "", "", "", "", "'0'"
+    },
+    std::vector<std::string>{
+      "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", 
+      "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", 
+      "", "", "", "", "", "", "", "", "", "", "", "", "UNION", "ALL", "OPTIONAL", 
+      "MATCH", "UNWIND", "AS", "MERGE", "ON", "CREATE", "SET", "DETACH", 
+      "DELETE", "REMOVE", "CALL", "YIELD", "WITH", "RETURN", "DISTINCT", 
+      "ORDER", "BY", "L_SKIP", "LIMIT", "ASCENDING", "ASC", "DESCENDING", 
+      "DESC", "WHERE", "OR", "XOR", "AND", "NOT", "STARTS", "ENDS", "CONTAINS", 
+      "IN", "IS", "NULL", "COUNT", "CASE", "ELSE", "END", "WHEN", "THEN", 
+      "ANY", "NONE", "SINGLE", "EXISTS", "EXPLAIN", "TRUE", "FALSE", "HexInteger", 
+      "DecimalInteger", "OctalInteger", "HexLetter", "HexDigit", "Digit", 
+      "NonZeroDigit", "NonZeroOctDigit", "OctDigit", "ZeroDigit", "ExponentDecimalReal", 
+      "RegularDecimalReal", "StringLiteral", "EscapedChar", "CONSTRAINT", 
+      "DO", "FOR", "REQUIRE", "UNIQUE", "MANDATORY", "SCALAR", "OF", "ADD", 
+      "DROP", "FILTER", "EXTRACT", "UnescapedSymbolicName", "IdentifierStart", 
+      "IdentifierPart", "EscapedSymbolicName", "SP", "WHITESPACE", "Comment"
+    }
+  );
   static const int32_t serializedATNSegment[] = {
-      4,    1,    127,  1575, 2,    0,    7,    0,    2,    1,    7,    1,
-      2,    2,    7,    2,    2,    3,    7,    3,    2,    4,    7,    4,
-      2,    5,    7,    5,    2,    6,    7,    6,    2,    7,    7,    7,
-      2,    8,    7,    8,    2,    9,    7,    9,    2,    10,   7,    10,
-      2,    11,   7,    11,   2,    12,   7,    12,   2,    13,   7,    13,
-      2,    14,   7,    14,   2,    15,   7,    15,   2,    16,   7,    16,
-      2,    17,   7,    17,   2,    18,   7,    18,   2,    19,   7,    19,
-      2,    20,   7,    20,   2,    21,   7,    21,   2,    22,   7,    22,
-      2,    23,   7,    23,   2,    24,   7,    24,   2,    25,   7,    25,
-      2,    26,   7,    26,   2,    27,   7,    27,   2,    28,   7,    28,
-      2,    29,   7,    29,   2,    30,   7,    30,   2,    31,   7,    31,
-      2,    32,   7,    32,   2,    33,   7,    33,   2,    34,   7,    34,
-      2,    35,   7,    35,   2,    36,   7,    36,   2,    37,   7,    37,
-      2,    38,   7,    38,   2,    39,   7,    39,   2,    40,   7,    40,
-      2,    41,   7,    41,   2,    42,   7,    42,   2,    43,   7,    43,
-      2,    44,   7,    44,   2,    45,   7,    45,   2,    46,   7,    46,
-      2,    47,   7,    47,   2,    48,   7,    48,   2,    49,   7,    49,
-      2,    50,   7,    50,   2,    51,   7,    51,   2,    52,   7,    52,
-      2,    53,   7,    53,   2,    54,   7,    54,   2,    55,   7,    55,
-      2,    56,   7,    56,   2,    57,   7,    57,   2,    58,   7,    58,
-      2,    59,   7,    59,   2,    60,   7,    60,   2,    61,   7,    61,
-      2,    62,   7,    62,   2,    63,   7,    63,   2,    64,   7,    64,
-      2,    65,   7,    65,   2,    66,   7,    66,   2,    67,   7,    67,
-      2,    68,   7,    68,   2,    69,   7,    69,   2,    70,   7,    70,
-      2,    71,   7,    71,   2,    72,   7,    72,   2,    73,   7,    73,
-      2,    74,   7,    74,   2,    75,   7,    75,   2,    76,   7,    76,
-      2,    77,   7,    77,   2,    78,   7,    78,   2,    79,   7,    79,
-      2,    80,   7,    80,   2,    81,   7,    81,   2,    82,   7,    82,
-      2,    83,   7,    83,   2,    84,   7,    84,   2,    85,   7,    85,
-      2,    86,   7,    86,   2,    87,   7,    87,   2,    88,   7,    88,
-      2,    89,   7,    89,   2,    90,   7,    90,   2,    91,   7,    91,
-      2,    92,   7,    92,   2,    93,   7,    93,   2,    94,   7,    94,
-      2,    95,   7,    95,   2,    96,   7,    96,   2,    97,   7,    97,
-      2,    98,   7,    98,   2,    99,   7,    99,   2,    100,  7,    100,
-      2,    101,  7,    101,  2,    102,  7,    102,  1,    0,    3,    0,
-      208,  8,    0,    1,    0,    1,    0,    3,    0,    212,  8,    0,
-      1,    0,    3,    0,    215,  8,    0,    1,    0,    3,    0,    218,
-      8,    0,    1,    0,    1,    0,    1,    1,    1,    1,    1,    2,
-      1,    2,    3,    2,    226,  8,    2,    1,    3,    1,    3,    3,
-      3,    230,  8,    3,    1,    3,    5,    3,    233,  8,    3,    10,
-      3,    12,   3,    236,  9,    3,    1,    4,    1,    4,    1,    4,
-      1,    4,    3,    4,    242,  8,    4,    1,    4,    1,    4,    1,
-      4,    3,    4,    247,  8,    4,    1,    4,    3,    4,    250,  8,
-      4,    1,    5,    1,    5,    3,    5,    254,  8,    5,    1,    6,
-      1,    6,    3,    6,    258,  8,    6,    5,    6,    260,  8,    6,
-      10,   6,    12,   6,    263,  9,    6,    1,    6,    1,    6,    1,
-      6,    3,    6,    268,  8,    6,    5,    6,    270,  8,    6,    10,
-      6,    12,   6,    273,  9,    6,    1,    6,    1,    6,    3,    6,
-      277,  8,    6,    1,    6,    5,    6,    280,  8,    6,    10,   6,
-      12,   6,    283,  9,    6,    1,    6,    3,    6,    286,  8,    6,
-      1,    6,    3,    6,    289,  8,    6,    3,    6,    291,  8,    6,
-      1,    7,    1,    7,    3,    7,    295,  8,    7,    5,    7,    297,
-      8,    7,    10,   7,    12,   7,    300,  9,    7,    1,    7,    1,
-      7,    3,    7,    304,  8,    7,    5,    7,    306,  8,    7,    10,
-      7,    12,   7,    309,  9,    7,    1,    7,    1,    7,    3,    7,
-      313,  8,    7,    4,    7,    315,  8,    7,    11,   7,    12,   7,
-      316,  1,    7,    1,    7,    1,    8,    1,    8,    1,    8,    1,
-      8,    1,    8,    3,    8,    326,  8,    8,    1,    9,    1,    9,
-      1,    9,    3,    9,    331,  8,    9,    1,    10,   1,    10,   3,
-      10,   335,  8,    10,   1,    10,   1,    10,   3,    10,   339,  8,
-      10,   1,    10,   1,    10,   3,    10,   343,  8,    10,   1,    10,
-      3,    10,   346,  8,    10,   1,    11,   1,    11,   3,    11,   350,
-      8,    11,   1,    11,   1,    11,   1,    11,   1,    11,   1,    11,
-      1,    11,   1,    12,   1,    12,   3,    12,   360,  8,    12,   1,
-      12,   1,    12,   1,    12,   5,    12,   365,  8,    12,   10,   12,
-      12,   12,   368,  9,    12,   1,    13,   1,    13,   1,    13,   1,
-      13,   1,    13,   1,    13,   1,    13,   1,    13,   1,    13,   1,
-      13,   3,    13,   380,  8,    13,   1,    14,   1,    14,   3,    14,
-      384,  8,    14,   1,    14,   1,    14,   1,    15,   1,    15,   3,
-      15,   390,  8,    15,   1,    15,   1,    15,   3,    15,   394,  8,
-      15,   1,    15,   1,    15,   3,    15,   398,  8,    15,   1,    15,
-      5,    15,   401,  8,    15,   10,   15,   12,   15,   404,  9,    15,
-      1,    16,   1,    16,   3,    16,   408,  8,    16,   1,    16,   1,
-      16,   3,    16,   412,  8,    16,   1,    16,   1,    16,   1,    16,
-      1,    16,   3,    16,   418,  8,    16,   1,    16,   1,    16,   3,
-      16,   422,  8,    16,   1,    16,   1,    16,   1,    16,   1,    16,
-      3,    16,   428,  8,    16,   1,    16,   1,    16,   3,    16,   432,
-      8,    16,   1,    16,   1,    16,   1,    16,   1,    16,   3,    16,
-      438,  8,    16,   1,    16,   1,    16,   3,    16,   442,  8,    16,
-      1,    17,   1,    17,   3,    17,   446,  8,    17,   1,    17,   1,
-      17,   3,    17,   450,  8,    17,   1,    17,   1,    17,   3,    17,
-      454,  8,    17,   1,    17,   1,    17,   3,    17,   458,  8,    17,
-      1,    17,   5,    17,   461,  8,    17,   10,   17,   12,   17,   464,
-      9,    17,   1,    18,   1,    18,   1,    18,   1,    18,   3,    18,
-      470,  8,    18,   1,    18,   1,    18,   3,    18,   474,  8,    18,
-      1,    18,   5,    18,   477,  8,    18,   10,   18,   12,   18,   480,
-      9,    18,   1,    19,   1,    19,   1,    19,   1,    19,   3,    19,
-      486,  8,    19,   1,    20,   1,    20,   1,    20,   1,    20,   3,
-      20,   492,  8,    20,   1,    20,   1,    20,   1,    20,   3,    20,
-      497,  8,    20,   1,    21,   1,    21,   1,    21,   1,    21,   3,
-      21,   503,  8,    21,   1,    21,   3,    21,   506,  8,    21,   1,
-      21,   1,    21,   1,    21,   1,    21,   3,    21,   512,  8,    21,
-      3,    21,   514,  8,    21,   1,    22,   1,    22,   3,    22,   518,
-      8,    22,   1,    22,   1,    22,   3,    22,   522,  8,    22,   1,
-      22,   5,    22,   525,  8,    22,   10,   22,   12,   22,   528,  9,
-      22,   1,    22,   3,    22,   531,  8,    22,   1,    22,   3,    22,
-      534,  8,    22,   1,    23,   1,    23,   1,    23,   1,    23,   1,
-      23,   3,    23,   541,  8,    23,   1,    23,   1,    23,   1,    24,
-      1,    24,   1,    24,   3,    24,   548,  8,    24,   1,    24,   3,
-      24,   551,  8,    24,   1,    25,   1,    25,   1,    25,   1,    26,
-      3,    26,   557,  8,    26,   1,    26,   3,    26,   560,  8,    26,
-      1,    26,   1,    26,   1,    26,   1,    26,   3,    26,   566,  8,
-      26,   1,    26,   1,    26,   3,    26,   570,  8,    26,   1,    26,
-      1,    26,   3,    26,   574,  8,    26,   1,    27,   1,    27,   3,
-      27,   578,  8,    27,   1,    27,   1,    27,   3,    27,   582,  8,
-      27,   1,    27,   5,    27,   585,  8,    27,   10,   27,   12,   27,
-      588,  9,    27,   1,    27,   1,    27,   3,    27,   592,  8,    27,
-      1,    27,   1,    27,   3,    27,   596,  8,    27,   1,    27,   5,
-      27,   599,  8,    27,   10,   27,   12,   27,   602,  9,    27,   3,
-      27,   604,  8,    27,   1,    28,   1,    28,   1,    28,   1,    28,
-      1,    28,   1,    28,   1,    28,   3,    28,   613,  8,    28,   1,
-      29,   1,    29,   1,    29,   1,    29,   1,    29,   1,    29,   1,
-      29,   3,    29,   622,  8,    29,   1,    29,   5,    29,   625,  8,
-      29,   10,   29,   12,   29,   628,  9,    29,   1,    30,   1,    30,
-      1,    30,   1,    30,   1,    31,   1,    31,   1,    31,   1,    31,
-      1,    32,   1,    32,   3,    32,   640,  8,    32,   1,    32,   3,
-      32,   643,  8,    32,   1,    33,   1,    33,   1,    33,   1,    33,
-      1,    34,   1,    34,   3,    34,   651,  8,    34,   1,    34,   1,
-      34,   3,    34,   655,  8,    34,   1,    34,   5,    34,   658,  8,
-      34,   10,   34,   12,   34,   661,  9,    34,   1,    35,   1,    35,
-      3,    35,   665,  8,    35,   1,    35,   1,    35,   3,    35,   669,
-      8,    35,   1,    35,   1,    35,   1,    35,   3,    35,   674,  8,
-      35,   1,    36,   1,    36,   1,    37,   1,    37,   3,    37,   680,
-      8,    37,   1,    37,   5,    37,   683,  8,    37,   10,   37,   12,
-      37,   686,  9,    37,   1,    37,   1,    37,   1,    37,   1,    37,
-      3,    37,   692,  8,    37,   1,    38,   1,    38,   3,    38,   696,
-      8,    38,   1,    38,   4,    38,   699,  8,    38,   11,   38,   12,
-      38,   700,  1,    39,   1,    39,   3,    39,   705,  8,    39,   1,
-      39,   1,    39,   3,    39,   709,  8,    39,   3,    39,   711,  8,
-      39,   1,    39,   1,    39,   3,    39,   715,  8,    39,   3,    39,
-      717,  8,    39,   1,    39,   1,    39,   3,    39,   721,  8,    39,
-      3,    39,   723,  8,    39,   1,    39,   1,    39,   1,    40,   1,
-      40,   3,    40,   729,  8,    40,   1,    40,   1,    40,   1,    41,
-      1,    41,   3,    41,   735,  8,    41,   1,    41,   1,    41,   3,
-      41,   739,  8,    41,   1,    41,   3,    41,   742,  8,    41,   1,
-      41,   3,    41,   745,  8,    41,   1,    41,   1,    41,   3,    41,
-      749,  8,    41,   1,    41,   1,    41,   1,    41,   1,    41,   3,
-      41,   755,  8,    41,   1,    41,   1,    41,   3,    41,   759,  8,
-      41,   1,    41,   3,    41,   762,  8,    41,   1,    41,   3,    41,
-      765,  8,    41,   1,    41,   1,    41,   1,    41,   1,    41,   3,
-      41,   771,  8,    41,   1,    41,   3,    41,   774,  8,    41,   1,
-      41,   3,    41,   777,  8,    41,   1,    41,   1,    41,   3,    41,
-      781,  8,    41,   1,    41,   1,    41,   1,    41,   1,    41,   3,
-      41,   787,  8,    41,   1,    41,   3,    41,   790,  8,    41,   1,
-      41,   3,    41,   793,  8,    41,   1,    41,   1,    41,   3,    41,
-      797,  8,    41,   1,    42,   1,    42,   3,    42,   801,  8,    42,
-      1,    42,   1,    42,   3,    42,   805,  8,    42,   3,    42,   807,
-      8,    42,   1,    42,   1,    42,   3,    42,   811,  8,    42,   3,
-      42,   813,  8,    42,   1,    42,   3,    42,   816,  8,    42,   1,
-      42,   1,    42,   3,    42,   820,  8,    42,   3,    42,   822,  8,
-      42,   1,    42,   1,    42,   1,    43,   1,    43,   3,    43,   828,
-      8,    43,   1,    44,   1,    44,   3,    44,   832,  8,    44,   1,
-      44,   1,    44,   3,    44,   836,  8,    44,   1,    44,   1,    44,
-      3,    44,   840,  8,    44,   1,    44,   3,    44,   843,  8,    44,
-      1,    44,   5,    44,   846,  8,    44,   10,   44,   12,   44,   849,
-      9,    44,   1,    45,   1,    45,   3,    45,   853,  8,    45,   1,
-      45,   5,    45,   856,  8,    45,   10,   45,   12,   45,   859,  9,
-      45,   1,    46,   1,    46,   3,    46,   863,  8,    46,   1,    46,
-      1,    46,   1,    47,   1,    47,   3,    47,   869,  8,    47,   1,
-      47,   1,    47,   3,    47,   873,  8,    47,   3,    47,   875,  8,
-      47,   1,    47,   1,    47,   3,    47,   879,  8,    47,   1,    47,
-      1,    47,   3,    47,   883,  8,    47,   3,    47,   885,  8,    47,
-      3,    47,   887,  8,    47,   1,    48,   1,    48,   1,    49,   1,
-      49,   1,    50,   1,    50,   3,    50,   895,  8,    50,   1,    50,
-      4,    50,   898,  8,    50,   11,   50,   12,   50,   899,  1,    51,
-      1,    51,   1,    52,   1,    52,   1,    52,   1,    52,   1,    52,
-      5,    52,   909,  8,    52,   10,   52,   12,   52,   912,  9,    52,
-      1,    53,   1,    53,   1,    53,   1,    53,   1,    53,   5,    53,
-      919,  8,    53,   10,   53,   12,   53,   922,  9,    53,   1,    54,
-      1,    54,   1,    54,   1,    54,   1,    54,   5,    54,   929,  8,
-      54,   10,   54,   12,   54,   932,  9,    54,   1,    55,   1,    55,
-      3,    55,   936,  8,    55,   5,    55,   938,  8,    55,   10,   55,
-      12,   55,   941,  9,    55,   1,    55,   1,    55,   1,    56,   1,
-      56,   3,    56,   947,  8,    56,   1,    56,   5,    56,   950,  8,
-      56,   10,   56,   12,   56,   953,  9,    56,   1,    57,   1,    57,
-      3,    57,   957,  8,    57,   1,    57,   1,    57,   1,    57,   3,
-      57,   962,  8,    57,   1,    57,   1,    57,   1,    57,   3,    57,
-      967,  8,    57,   1,    57,   1,    57,   1,    57,   3,    57,   972,
-      8,    57,   1,    57,   1,    57,   1,    57,   3,    57,   977,  8,
-      57,   1,    57,   1,    57,   1,    57,   3,    57,   982,  8,    57,
-      1,    57,   3,    57,   985,  8,    57,   1,    58,   1,    58,   1,
-      58,   1,    58,   5,    58,   991,  8,    58,   10,   58,   12,   58,
-      994,  9,    58,   1,    59,   1,    59,   1,    59,   1,    59,   1,
-      59,   1,    59,   1,    59,   1,    59,   1,    59,   1,    59,   3,
-      59,   1006, 8,    59,   1,    59,   3,    59,   1009, 8,    59,   1,
-      59,   1,    59,   1,    60,   1,    60,   1,    60,   3,    60,   1016,
-      8,    60,   1,    60,   1,    60,   1,    61,   1,    61,   1,    61,
-      1,    61,   1,    61,   1,    61,   1,    61,   1,    61,   1,    61,
-      1,    61,   3,    61,   1030, 8,    61,   1,    62,   1,    62,   3,
-      62,   1034, 8,    62,   1,    62,   1,    62,   3,    62,   1038, 8,
-      62,   1,    62,   1,    62,   3,    62,   1042, 8,    62,   1,    62,
-      1,    62,   3,    62,   1046, 8,    62,   1,    62,   5,    62,   1049,
-      8,    62,   10,   62,   12,   62,   1052, 9,    62,   1,    63,   1,
-      63,   3,    63,   1056, 8,    63,   1,    63,   1,    63,   3,    63,
-      1060, 8,    63,   1,    63,   1,    63,   3,    63,   1064, 8,    63,
-      1,    63,   1,    63,   3,    63,   1068, 8,    63,   1,    63,   1,
-      63,   3,    63,   1072, 8,    63,   1,    63,   1,    63,   3,    63,
-      1076, 8,    63,   1,    63,   5,    63,   1079, 8,    63,   10,   63,
-      12,   63,   1082, 9,    63,   1,    64,   1,    64,   3,    64,   1086,
-      8,    64,   1,    64,   1,    64,   3,    64,   1090, 8,    64,   1,
-      64,   5,    64,   1093, 8,    64,   10,   64,   12,   64,   1096, 9,
-      64,   1,    65,   1,    65,   1,    65,   3,    65,   1101, 8,    65,
-      1,    65,   3,    65,   1104, 8,    65,   1,    66,   1,    66,   3,
-      66,   1108, 8,    66,   1,    66,   1,    66,   3,    66,   1112, 8,
-      66,   1,    66,   5,    66,   1115, 8,    66,   10,   66,   12,   66,
-      1118, 9,    66,   1,    66,   3,    66,   1121, 8,    66,   1,    66,
-      3,    66,   1124, 8,    66,   1,    67,   1,    67,   1,    67,   1,
-      67,   1,    67,   1,    67,   3,    67,   1132, 8,    67,   1,    67,
-      1,    67,   3,    67,   1136, 8,    67,   1,    67,   3,    67,   1139,
-      8,    67,   1,    68,   1,    68,   3,    68,   1143, 8,    68,   1,
-      68,   1,    68,   1,    69,   1,    69,   1,    69,   1,    69,   1,
-      69,   3,    69,   1152, 8,    69,   1,    69,   1,    69,   3,    69,
-      1156, 8,    69,   1,    69,   1,    69,   3,    69,   1160, 8,    69,
-      1,    69,   1,    69,   1,    69,   1,    69,   1,    69,   1,    69,
-      1,    69,   1,    69,   1,    69,   3,    69,   1171, 8,    69,   1,
-      70,   1,    70,   3,    70,   1175, 8,    70,   1,    70,   4,    70,
-      1178, 8,    70,   11,   70,   12,   70,   1179, 1,    70,   1,    70,
-      3,    70,   1184, 8,    70,   1,    70,   1,    70,   3,    70,   1188,
-      8,    70,   1,    70,   4,    70,   1191, 8,    70,   11,   70,   12,
-      70,   1192, 3,    70,   1195, 8,    70,   1,    70,   3,    70,   1198,
-      8,    70,   1,    70,   1,    70,   3,    70,   1202, 8,    70,   1,
-      70,   3,    70,   1205, 8,    70,   1,    70,   3,    70,   1208, 8,
-      70,   1,    70,   1,    70,   1,    71,   1,    71,   3,    71,   1214,
-      8,    71,   1,    71,   1,    71,   3,    71,   1218, 8,    71,   1,
-      71,   1,    71,   3,    71,   1222, 8,    71,   1,    71,   1,    71,
-      1,    72,   1,    72,   3,    72,   1228, 8,    72,   1,    72,   1,
-      72,   3,    72,   1232, 8,    72,   1,    72,   1,    72,   3,    72,
-      1236, 8,    72,   1,    72,   3,    72,   1239, 8,    72,   1,    72,
-      3,    72,   1242, 8,    72,   1,    72,   1,    72,   1,    73,   1,
-      73,   3,    73,   1248, 8,    73,   1,    73,   1,    73,   3,    73,
-      1252, 8,    73,   1,    73,   1,    73,   3,    73,   1256, 8,    73,
-      3,    73,   1258, 8,    73,   1,    73,   1,    73,   3,    73,   1262,
-      8,    73,   1,    73,   1,    73,   3,    73,   1266, 8,    73,   3,
-      73,   1268, 8,    73,   1,    73,   1,    73,   3,    73,   1272, 8,
-      73,   1,    73,   1,    73,   3,    73,   1276, 8,    73,   1,    73,
-      1,    73,   1,    74,   1,    74,   3,    74,   1282, 8,    74,   1,
-      74,   1,    74,   3,    74,   1286, 8,    74,   1,    74,   1,    74,
-      3,    74,   1290, 8,    74,   1,    74,   1,    74,   1,    74,   1,
-      74,   3,    74,   1296, 8,    74,   1,    74,   1,    74,   3,    74,
-      1300, 8,    74,   1,    74,   1,    74,   3,    74,   1304, 8,    74,
-      1,    74,   1,    74,   1,    74,   1,    74,   3,    74,   1310, 8,
-      74,   1,    74,   1,    74,   3,    74,   1314, 8,    74,   1,    74,
-      1,    74,   3,    74,   1318, 8,    74,   1,    74,   1,    74,   1,
-      74,   1,    74,   3,    74,   1324, 8,    74,   1,    74,   1,    74,
-      3,    74,   1328, 8,    74,   1,    74,   1,    74,   3,    74,   1332,
-      8,    74,   1,    74,   1,    74,   3,    74,   1336, 8,    74,   1,
-      75,   1,    75,   3,    75,   1340, 8,    75,   1,    75,   3,    75,
-      1343, 8,    75,   1,    76,   1,    76,   1,    77,   1,    77,   3,
-      77,   1349, 8,    77,   1,    77,   1,    77,   3,    77,   1353, 8,
-      77,   1,    77,   1,    77,   1,    78,   1,    78,   1,    78,   1,
-      78,   1,    78,   1,    78,   1,    79,   1,    79,   3,    79,   1365,
-      8,    79,   1,    79,   1,    79,   3,    79,   1369, 8,    79,   1,
-      79,   1,    79,   3,    79,   1373, 8,    79,   3,    79,   1375, 8,
-      79,   1,    79,   1,    79,   3,    79,   1379, 8,    79,   1,    79,
-      1,    79,   3,    79,   1383, 8,    79,   1,    79,   1,    79,   3,
-      79,   1387, 8,    79,   5,    79,   1389, 8,    79,   10,   79,   12,
-      79,   1392, 9,    79,   3,    79,   1394, 8,    79,   1,    79,   1,
-      79,   1,    80,   1,    80,   1,    80,   1,    81,   1,    81,   3,
-      81,   1403, 8,    81,   1,    81,   1,    81,   3,    81,   1407, 8,
-      81,   1,    81,   1,    81,   1,    81,   3,    81,   1412, 8,    81,
-      1,    81,   3,    81,   1415, 8,    81,   3,    81,   1417, 8,    81,
-      1,    81,   3,    81,   1420, 8,    81,   1,    81,   1,    81,   1,
-      82,   1,    82,   3,    82,   1426, 8,    82,   1,    82,   1,    82,
-      3,    82,   1430, 8,    82,   1,    82,   1,    82,   3,    82,   1434,
-      8,    82,   1,    82,   1,    82,   3,    82,   1438, 8,    82,   1,
-      82,   1,    82,   3,    82,   1442, 8,    82,   5,    82,   1444, 8,
-      82,   10,   82,   12,   82,   1447, 9,    82,   3,    82,   1449, 8,
-      82,   1,    82,   1,    82,   1,    83,   1,    83,   1,    84,   1,
-      84,   1,    85,   1,    85,   1,    85,   1,    86,   1,    86,   1,
-      86,   5,    86,   1463, 8,    86,   10,   86,   12,   86,   1466, 9,
-      86,   1,    87,   1,    87,   1,    88,   1,    88,   1,    88,   1,
-      88,   1,    88,   1,    88,   3,    88,   1476, 8,    88,   1,    89,
-      1,    89,   1,    90,   1,    90,   3,    90,   1482, 8,    90,   1,
-      91,   1,    91,   1,    92,   1,    92,   1,    93,   1,    93,   3,
-      93,   1490, 8,    93,   1,    93,   1,    93,   3,    93,   1494, 8,
-      93,   1,    93,   1,    93,   3,    93,   1498, 8,    93,   1,    93,
-      1,    93,   3,    93,   1502, 8,    93,   5,    93,   1504, 8,    93,
-      10,   93,   12,   93,   1507, 9,    93,   3,    93,   1509, 8,    93,
-      1,    93,   1,    93,   1,    94,   1,    94,   3,    94,   1515, 8,
-      94,   1,    94,   1,    94,   3,    94,   1519, 8,    94,   1,    94,
-      1,    94,   3,    94,   1523, 8,    94,   1,    94,   1,    94,   3,
-      94,   1527, 8,    94,   1,    94,   1,    94,   3,    94,   1531, 8,
-      94,   1,    94,   1,    94,   3,    94,   1535, 8,    94,   1,    94,
-      1,    94,   3,    94,   1539, 8,    94,   1,    94,   1,    94,   3,
-      94,   1543, 8,    94,   5,    94,   1545, 8,    94,   10,   94,   12,
-      94,   1548, 9,    94,   3,    94,   1550, 8,    94,   1,    94,   1,
-      94,   1,    95,   1,    95,   1,    96,   1,    96,   1,    96,   3,
-      96,   1559, 8,    96,   1,    97,   1,    97,   3,    97,   1563, 8,
-      97,   1,    98,   1,    98,   1,    99,   1,    99,   1,    100,  1,
-      100,  1,    101,  1,    101,  1,    102,  1,    102,  1,    102,  0,
-      0,    103,  0,    2,    4,    6,    8,    10,   12,   14,   16,   18,
-      20,   22,   24,   26,   28,   30,   32,   34,   36,   38,   40,   42,
-      44,   46,   48,   50,   52,   54,   56,   58,   60,   62,   64,   66,
-      68,   70,   72,   74,   76,   78,   80,   82,   84,   86,   88,   90,
-      92,   94,   96,   98,   100,  102,  104,  106,  108,  110,  112,  114,
-      116,  118,  120,  122,  124,  126,  128,  130,  132,  134,  136,  138,
-      140,  142,  144,  146,  148,  150,  152,  154,  156,  158,  160,  162,
-      164,  166,  168,  170,  172,  174,  176,  178,  180,  182,  184,  186,
-      188,  190,  192,  194,  196,  198,  200,  202,  204,  0,    10,   1,
-      0,    68,   71,   1,    0,    18,   19,   1,    0,    93,   94,   1,
-      0,    95,   97,   1,    0,    105,  106,  5,    0,    46,   58,   61,
-      82,   84,   88,   92,   94,   109,  118,  5,    0,    83,   83,   89,
-      91,   98,   98,   119,  121,  124,  124,  2,    0,    14,   14,   27,
-      30,   2,    0,    15,   15,   31,   34,   2,    0,    19,   19,   35,
-      45,   1793, 0,    207,  1,    0,    0,    0,    2,    221,  1,    0,
-      0,    0,    4,    225,  1,    0,    0,    0,    6,    227,  1,    0,
-      0,    0,    8,    249,  1,    0,    0,    0,    10,   253,  1,    0,
-      0,    0,    12,   290,  1,    0,    0,    0,    14,   314,  1,    0,
-      0,    0,    16,   325,  1,    0,    0,    0,    18,   330,  1,    0,
-      0,    0,    20,   334,  1,    0,    0,    0,    22,   347,  1,    0,
-      0,    0,    24,   357,  1,    0,    0,    0,    26,   379,  1,    0,
-      0,    0,    28,   381,  1,    0,    0,    0,    30,   387,  1,    0,
-      0,    0,    32,   441,  1,    0,    0,    0,    34,   445,  1,    0,
-      0,    0,    36,   465,  1,    0,    0,    0,    38,   485,  1,    0,
-      0,    0,    40,   487,  1,    0,    0,    0,    42,   498,  1,    0,
-      0,    0,    44,   515,  1,    0,    0,    0,    46,   540,  1,    0,
-      0,    0,    48,   544,  1,    0,    0,    0,    50,   552,  1,    0,
-      0,    0,    52,   559,  1,    0,    0,    0,    54,   603,  1,    0,
-      0,    0,    56,   612,  1,    0,    0,    0,    58,   614,  1,    0,
-      0,    0,    60,   629,  1,    0,    0,    0,    62,   633,  1,    0,
-      0,    0,    64,   637,  1,    0,    0,    0,    66,   644,  1,    0,
-      0,    0,    68,   648,  1,    0,    0,    0,    70,   673,  1,    0,
-      0,    0,    72,   675,  1,    0,    0,    0,    74,   691,  1,    0,
-      0,    0,    76,   693,  1,    0,    0,    0,    78,   702,  1,    0,
-      0,    0,    80,   726,  1,    0,    0,    0,    82,   796,  1,    0,
-      0,    0,    84,   798,  1,    0,    0,    0,    86,   827,  1,    0,
-      0,    0,    88,   829,  1,    0,    0,    0,    90,   850,  1,    0,
-      0,    0,    92,   860,  1,    0,    0,    0,    94,   866,  1,    0,
-      0,    0,    96,   888,  1,    0,    0,    0,    98,   890,  1,    0,
-      0,    0,    100,  892,  1,    0,    0,    0,    102,  901,  1,    0,
-      0,    0,    104,  903,  1,    0,    0,    0,    106,  913,  1,    0,
-      0,    0,    108,  923,  1,    0,    0,    0,    110,  939,  1,    0,
-      0,    0,    112,  944,  1,    0,    0,    0,    114,  984,  1,    0,
-      0,    0,    116,  986,  1,    0,    0,    0,    118,  1005, 1,    0,
-      0,    0,    120,  1012, 1,    0,    0,    0,    122,  1029, 1,    0,
-      0,    0,    124,  1031, 1,    0,    0,    0,    126,  1053, 1,    0,
-      0,    0,    128,  1083, 1,    0,    0,    0,    130,  1103, 1,    0,
-      0,    0,    132,  1105, 1,    0,    0,    0,    134,  1138, 1,    0,
-      0,    0,    136,  1140, 1,    0,    0,    0,    138,  1170, 1,    0,
-      0,    0,    140,  1194, 1,    0,    0,    0,    142,  1211, 1,    0,
-      0,    0,    144,  1225, 1,    0,    0,    0,    146,  1245, 1,    0,
-      0,    0,    148,  1335, 1,    0,    0,    0,    150,  1337, 1,    0,
-      0,    0,    152,  1344, 1,    0,    0,    0,    154,  1346, 1,    0,
-      0,    0,    156,  1356, 1,    0,    0,    0,    158,  1362, 1,    0,
-      0,    0,    160,  1397, 1,    0,    0,    0,    162,  1400, 1,    0,
-      0,    0,    164,  1423, 1,    0,    0,    0,    166,  1452, 1,    0,
-      0,    0,    168,  1454, 1,    0,    0,    0,    170,  1456, 1,    0,
-      0,    0,    172,  1464, 1,    0,    0,    0,    174,  1467, 1,    0,
-      0,    0,    176,  1475, 1,    0,    0,    0,    178,  1477, 1,    0,
-      0,    0,    180,  1481, 1,    0,    0,    0,    182,  1483, 1,    0,
-      0,    0,    184,  1485, 1,    0,    0,    0,    186,  1487, 1,    0,
-      0,    0,    188,  1512, 1,    0,    0,    0,    190,  1553, 1,    0,
-      0,    0,    192,  1555, 1,    0,    0,    0,    194,  1562, 1,    0,
-      0,    0,    196,  1564, 1,    0,    0,    0,    198,  1566, 1,    0,
-      0,    0,    200,  1568, 1,    0,    0,    0,    202,  1570, 1,    0,
-      0,    0,    204,  1572, 1,    0,    0,    0,    206,  208,  5,    125,
-      0,    0,    207,  206,  1,    0,    0,    0,    207,  208,  1,    0,
-      0,    0,    208,  209,  1,    0,    0,    0,    209,  214,  3,    2,
-      1,    0,    210,  212,  5,    125,  0,    0,    211,  210,  1,    0,
-      0,    0,    211,  212,  1,    0,    0,    0,    212,  213,  1,    0,
-      0,    0,    213,  215,  5,    1,    0,    0,    214,  211,  1,    0,
-      0,    0,    214,  215,  1,    0,    0,    0,    215,  217,  1,    0,
-      0,    0,    216,  218,  5,    125,  0,    0,    217,  216,  1,    0,
-      0,    0,    217,  218,  1,    0,    0,    0,    218,  219,  1,    0,
-      0,    0,    219,  220,  5,    0,    0,    1,    220,  1,    1,    0,
-      0,    0,    221,  222,  3,    4,    2,    0,    222,  3,    1,    0,
-      0,    0,    223,  226,  3,    6,    3,    0,    224,  226,  3,    42,
-      21,   0,    225,  223,  1,    0,    0,    0,    225,  224,  1,    0,
-      0,    0,    226,  5,    1,    0,    0,    0,    227,  234,  3,    10,
-      5,    0,    228,  230,  5,    125,  0,    0,    229,  228,  1,    0,
-      0,    0,    229,  230,  1,    0,    0,    0,    230,  231,  1,    0,
-      0,    0,    231,  233,  3,    8,    4,    0,    232,  229,  1,    0,
-      0,    0,    233,  236,  1,    0,    0,    0,    234,  232,  1,    0,
-      0,    0,    234,  235,  1,    0,    0,    0,    235,  7,    1,    0,
-      0,    0,    236,  234,  1,    0,    0,    0,    237,  238,  5,    46,
-      0,    0,    238,  239,  5,    125,  0,    0,    239,  241,  5,    47,
-      0,    0,    240,  242,  5,    125,  0,    0,    241,  240,  1,    0,
-      0,    0,    241,  242,  1,    0,    0,    0,    242,  243,  1,    0,
-      0,    0,    243,  250,  3,    10,   5,    0,    244,  246,  5,    46,
-      0,    0,    245,  247,  5,    125,  0,    0,    246,  245,  1,    0,
-      0,    0,    246,  247,  1,    0,    0,    0,    247,  248,  1,    0,
-      0,    0,    248,  250,  3,    10,   5,    0,    249,  237,  1,    0,
-      0,    0,    249,  244,  1,    0,    0,    0,    250,  9,    1,    0,
-      0,    0,    251,  254,  3,    12,   6,    0,    252,  254,  3,    14,
-      7,    0,    253,  251,  1,    0,    0,    0,    253,  252,  1,    0,
-      0,    0,    254,  11,   1,    0,    0,    0,    255,  257,  3,    18,
-      9,    0,    256,  258,  5,    125,  0,    0,    257,  256,  1,    0,
-      0,    0,    257,  258,  1,    0,    0,    0,    258,  260,  1,    0,
-      0,    0,    259,  255,  1,    0,    0,    0,    260,  263,  1,    0,
-      0,    0,    261,  259,  1,    0,    0,    0,    261,  262,  1,    0,
-      0,    0,    262,  264,  1,    0,    0,    0,    263,  261,  1,    0,
-      0,    0,    264,  291,  3,    50,   25,   0,    265,  267,  3,    18,
-      9,    0,    266,  268,  5,    125,  0,    0,    267,  266,  1,    0,
-      0,    0,    267,  268,  1,    0,    0,    0,    268,  270,  1,    0,
-      0,    0,    269,  265,  1,    0,    0,    0,    270,  273,  1,    0,
-      0,    0,    271,  269,  1,    0,    0,    0,    271,  272,  1,    0,
-      0,    0,    272,  274,  1,    0,    0,    0,    273,  271,  1,    0,
-      0,    0,    274,  281,  3,    16,   8,    0,    275,  277,  5,    125,
-      0,    0,    276,  275,  1,    0,    0,    0,    276,  277,  1,    0,
-      0,    0,    277,  278,  1,    0,    0,    0,    278,  280,  3,    16,
-      8,    0,    279,  276,  1,    0,    0,    0,    280,  283,  1,    0,
-      0,    0,    281,  279,  1,    0,    0,    0,    281,  282,  1,    0,
-      0,    0,    282,  288,  1,    0,    0,    0,    283,  281,  1,    0,
-      0,    0,    284,  286,  5,    125,  0,    0,    285,  284,  1,    0,
-      0,    0,    285,  286,  1,    0,    0,    0,    286,  287,  1,    0,
-      0,    0,    287,  289,  3,    50,   25,   0,    288,  285,  1,    0,
-      0,    0,    288,  289,  1,    0,    0,    0,    289,  291,  1,    0,
-      0,    0,    290,  261,  1,    0,    0,    0,    290,  271,  1,    0,
-      0,    0,    291,  13,   1,    0,    0,    0,    292,  294,  3,    18,
-      9,    0,    293,  295,  5,    125,  0,    0,    294,  293,  1,    0,
-      0,    0,    294,  295,  1,    0,    0,    0,    295,  297,  1,    0,
-      0,    0,    296,  292,  1,    0,    0,    0,    297,  300,  1,    0,
-      0,    0,    298,  296,  1,    0,    0,    0,    298,  299,  1,    0,
-      0,    0,    299,  307,  1,    0,    0,    0,    300,  298,  1,    0,
-      0,    0,    301,  303,  3,    16,   8,    0,    302,  304,  5,    125,
-      0,    0,    303,  302,  1,    0,    0,    0,    303,  304,  1,    0,
-      0,    0,    304,  306,  1,    0,    0,    0,    305,  301,  1,    0,
-      0,    0,    306,  309,  1,    0,    0,    0,    307,  305,  1,    0,
-      0,    0,    307,  308,  1,    0,    0,    0,    308,  310,  1,    0,
-      0,    0,    309,  307,  1,    0,    0,    0,    310,  312,  3,    48,
-      24,   0,    311,  313,  5,    125,  0,    0,    312,  311,  1,    0,
-      0,    0,    312,  313,  1,    0,    0,    0,    313,  315,  1,    0,
-      0,    0,    314,  298,  1,    0,    0,    0,    315,  316,  1,    0,
-      0,    0,    316,  314,  1,    0,    0,    0,    316,  317,  1,    0,
-      0,    0,    317,  318,  1,    0,    0,    0,    318,  319,  3,    12,
-      6,    0,    319,  15,   1,    0,    0,    0,    320,  326,  3,    28,
-      14,   0,    321,  326,  3,    24,   12,   0,    322,  326,  3,    34,
-      17,   0,    323,  326,  3,    30,   15,   0,    324,  326,  3,    36,
-      18,   0,    325,  320,  1,    0,    0,    0,    325,  321,  1,    0,
-      0,    0,    325,  322,  1,    0,    0,    0,    325,  323,  1,    0,
-      0,    0,    325,  324,  1,    0,    0,    0,    326,  17,   1,    0,
-      0,    0,    327,  331,  3,    20,   10,   0,    328,  331,  3,    22,
-      11,   0,    329,  331,  3,    40,   20,   0,    330,  327,  1,    0,
-      0,    0,    330,  328,  1,    0,    0,    0,    330,  329,  1,    0,
-      0,    0,    331,  19,   1,    0,    0,    0,    332,  333,  5,    48,
-      0,    0,    333,  335,  5,    125,  0,    0,    334,  332,  1,    0,
-      0,    0,    334,  335,  1,    0,    0,    0,    335,  336,  1,    0,
-      0,    0,    336,  338,  5,    49,   0,    0,    337,  339,  5,    125,
-      0,    0,    338,  337,  1,    0,    0,    0,    338,  339,  1,    0,
-      0,    0,    339,  340,  1,    0,    0,    0,    340,  345,  3,    68,
-      34,   0,    341,  343,  5,    125,  0,    0,    342,  341,  1,    0,
-      0,    0,    342,  343,  1,    0,    0,    0,    343,  344,  1,    0,
-      0,    0,    344,  346,  3,    66,   33,   0,    345,  342,  1,    0,
-      0,    0,    345,  346,  1,    0,    0,    0,    346,  21,   1,    0,
-      0,    0,    347,  349,  5,    50,   0,    0,    348,  350,  5,    125,
-      0,    0,    349,  348,  1,    0,    0,    0,    349,  350,  1,    0,
-      0,    0,    350,  351,  1,    0,    0,    0,    351,  352,  3,    102,
-      51,   0,    352,  353,  5,    125,  0,    0,    353,  354,  5,    51,
-      0,    0,    354,  355,  5,    125,  0,    0,    355,  356,  3,    174,
-      87,   0,    356,  23,   1,    0,    0,    0,    357,  359,  5,    52,
-      0,    0,    358,  360,  5,    125,  0,    0,    359,  358,  1,    0,
-      0,    0,    359,  360,  1,    0,    0,    0,    360,  361,  1,    0,
-      0,    0,    361,  366,  3,    70,   35,   0,    362,  363,  5,    125,
-      0,    0,    363,  365,  3,    26,   13,   0,    364,  362,  1,    0,
-      0,    0,    365,  368,  1,    0,    0,    0,    366,  364,  1,    0,
-      0,    0,    366,  367,  1,    0,    0,    0,    367,  25,   1,    0,
-      0,    0,    368,  366,  1,    0,    0,    0,    369,  370,  5,    53,
-      0,    0,    370,  371,  5,    125,  0,    0,    371,  372,  5,    49,
-      0,    0,    372,  373,  5,    125,  0,    0,    373,  380,  3,    30,
-      15,   0,    374,  375,  5,    53,   0,    0,    375,  376,  5,    125,
-      0,    0,    376,  377,  5,    54,   0,    0,    377,  378,  5,    125,
-      0,    0,    378,  380,  3,    30,   15,   0,    379,  369,  1,    0,
-      0,    0,    379,  374,  1,    0,    0,    0,    380,  27,   1,    0,
-      0,    0,    381,  383,  5,    54,   0,    0,    382,  384,  5,    125,
-      0,    0,    383,  382,  1,    0,    0,    0,    383,  384,  1,    0,
-      0,    0,    384,  385,  1,    0,    0,    0,    385,  386,  3,    68,
-      34,   0,    386,  29,   1,    0,    0,    0,    387,  389,  5,    55,
-      0,    0,    388,  390,  5,    125,  0,    0,    389,  388,  1,    0,
-      0,    0,    389,  390,  1,    0,    0,    0,    390,  391,  1,    0,
-      0,    0,    391,  402,  3,    32,   16,   0,    392,  394,  5,    125,
-      0,    0,    393,  392,  1,    0,    0,    0,    393,  394,  1,    0,
-      0,    0,    394,  395,  1,    0,    0,    0,    395,  397,  5,    2,
-      0,    0,    396,  398,  5,    125,  0,    0,    397,  396,  1,    0,
-      0,    0,    397,  398,  1,    0,    0,    0,    398,  399,  1,    0,
-      0,    0,    399,  401,  3,    32,   16,   0,    400,  393,  1,    0,
-      0,    0,    401,  404,  1,    0,    0,    0,    402,  400,  1,    0,
-      0,    0,    402,  403,  1,    0,    0,    0,    403,  31,   1,    0,
-      0,    0,    404,  402,  1,    0,    0,    0,    405,  407,  3,    100,
-      50,   0,    406,  408,  5,    125,  0,    0,    407,  406,  1,    0,
-      0,    0,    407,  408,  1,    0,    0,    0,    408,  409,  1,    0,
-      0,    0,    409,  411,  5,    3,    0,    0,    410,  412,  5,    125,
-      0,    0,    411,  410,  1,    0,    0,    0,    411,  412,  1,    0,
-      0,    0,    412,  413,  1,    0,    0,    0,    413,  414,  3,    102,
-      51,   0,    414,  442,  1,    0,    0,    0,    415,  417,  3,    174,
-      87,   0,    416,  418,  5,    125,  0,    0,    417,  416,  1,    0,
-      0,    0,    417,  418,  1,    0,    0,    0,    418,  419,  1,    0,
-      0,    0,    419,  421,  5,    3,    0,    0,    420,  422,  5,    125,
-      0,    0,    421,  420,  1,    0,    0,    0,    421,  422,  1,    0,
-      0,    0,    422,  423,  1,    0,    0,    0,    423,  424,  3,    102,
-      51,   0,    424,  442,  1,    0,    0,    0,    425,  427,  3,    174,
-      87,   0,    426,  428,  5,    125,  0,    0,    427,  426,  1,    0,
-      0,    0,    427,  428,  1,    0,    0,    0,    428,  429,  1,    0,
-      0,    0,    429,  431,  5,    4,    0,    0,    430,  432,  5,    125,
-      0,    0,    431,  430,  1,    0,    0,    0,    431,  432,  1,    0,
-      0,    0,    432,  433,  1,    0,    0,    0,    433,  434,  3,    102,
-      51,   0,    434,  442,  1,    0,    0,    0,    435,  437,  3,    174,
-      87,   0,    436,  438,  5,    125,  0,    0,    437,  436,  1,    0,
-      0,    0,    437,  438,  1,    0,    0,    0,    438,  439,  1,    0,
-      0,    0,    439,  440,  3,    90,   45,   0,    440,  442,  1,    0,
-      0,    0,    441,  405,  1,    0,    0,    0,    441,  415,  1,    0,
-      0,    0,    441,  425,  1,    0,    0,    0,    441,  435,  1,    0,
-      0,    0,    442,  33,   1,    0,    0,    0,    443,  444,  5,    56,
-      0,    0,    444,  446,  5,    125,  0,    0,    445,  443,  1,    0,
-      0,    0,    445,  446,  1,    0,    0,    0,    446,  447,  1,    0,
-      0,    0,    447,  449,  5,    57,   0,    0,    448,  450,  5,    125,
-      0,    0,    449,  448,  1,    0,    0,    0,    449,  450,  1,    0,
-      0,    0,    450,  451,  1,    0,    0,    0,    451,  462,  3,    102,
-      51,   0,    452,  454,  5,    125,  0,    0,    453,  452,  1,    0,
-      0,    0,    453,  454,  1,    0,    0,    0,    454,  455,  1,    0,
-      0,    0,    455,  457,  5,    2,    0,    0,    456,  458,  5,    125,
-      0,    0,    457,  456,  1,    0,    0,    0,    457,  458,  1,    0,
-      0,    0,    458,  459,  1,    0,    0,    0,    459,  461,  3,    102,
-      51,   0,    460,  453,  1,    0,    0,    0,    461,  464,  1,    0,
-      0,    0,    462,  460,  1,    0,    0,    0,    462,  463,  1,    0,
-      0,    0,    463,  35,   1,    0,    0,    0,    464,  462,  1,    0,
-      0,    0,    465,  466,  5,    58,   0,    0,    466,  467,  5,    125,
-      0,    0,    467,  478,  3,    38,   19,   0,    468,  470,  5,    125,
-      0,    0,    469,  468,  1,    0,    0,    0,    469,  470,  1,    0,
-      0,    0,    470,  471,  1,    0,    0,    0,    471,  473,  5,    2,
-      0,    0,    472,  474,  5,    125,  0,    0,    473,  472,  1,    0,
-      0,    0,    473,  474,  1,    0,    0,    0,    474,  475,  1,    0,
-      0,    0,    475,  477,  3,    38,   19,   0,    476,  469,  1,    0,
-      0,    0,    477,  480,  1,    0,    0,    0,    478,  476,  1,    0,
-      0,    0,    478,  479,  1,    0,    0,    0,    479,  37,   1,    0,
-      0,    0,    480,  478,  1,    0,    0,    0,    481,  482,  3,    174,
-      87,   0,    482,  483,  3,    90,   45,   0,    483,  486,  1,    0,
-      0,    0,    484,  486,  3,    100,  50,   0,    485,  481,  1,    0,
-      0,    0,    485,  484,  1,    0,    0,    0,    486,  39,   1,    0,
-      0,    0,    487,  488,  5,    59,   0,    0,    488,  489,  5,    125,
-      0,    0,    489,  496,  3,    164,  82,   0,    490,  492,  5,    125,
-      0,    0,    491,  490,  1,    0,    0,    0,    491,  492,  1,    0,
-      0,    0,    492,  493,  1,    0,    0,    0,    493,  494,  5,    60,
-      0,    0,    494,  495,  5,    125,  0,    0,    495,  497,  3,    44,
-      22,   0,    496,  491,  1,    0,    0,    0,    496,  497,  1,    0,
-      0,    0,    497,  41,   1,    0,    0,    0,    498,  499,  5,    59,
-      0,    0,    499,  502,  5,    125,  0,    0,    500,  503,  3,    164,
-      82,   0,    501,  503,  3,    166,  83,   0,    502,  500,  1,    0,
-      0,    0,    502,  501,  1,    0,    0,    0,    503,  513,  1,    0,
-      0,    0,    504,  506,  5,    125,  0,    0,    505,  504,  1,    0,
-      0,    0,    505,  506,  1,    0,    0,    0,    506,  507,  1,    0,
-      0,    0,    507,  508,  5,    60,   0,    0,    508,  511,  5,    125,
-      0,    0,    509,  512,  5,    5,    0,    0,    510,  512,  3,    44,
-      22,   0,    511,  509,  1,    0,    0,    0,    511,  510,  1,    0,
-      0,    0,    512,  514,  1,    0,    0,    0,    513,  505,  1,    0,
-      0,    0,    513,  514,  1,    0,    0,    0,    514,  43,   1,    0,
-      0,    0,    515,  526,  3,    46,   23,   0,    516,  518,  5,    125,
-      0,    0,    517,  516,  1,    0,    0,    0,    517,  518,  1,    0,
-      0,    0,    518,  519,  1,    0,    0,    0,    519,  521,  5,    2,
-      0,    0,    520,  522,  5,    125,  0,    0,    521,  520,  1,    0,
-      0,    0,    521,  522,  1,    0,    0,    0,    522,  523,  1,    0,
-      0,    0,    523,  525,  3,    46,   23,   0,    524,  517,  1,    0,
-      0,    0,    525,  528,  1,    0,    0,    0,    526,  524,  1,    0,
-      0,    0,    526,  527,  1,    0,    0,    0,    527,  533,  1,    0,
-      0,    0,    528,  526,  1,    0,    0,    0,    529,  531,  5,    125,
-      0,    0,    530,  529,  1,    0,    0,    0,    530,  531,  1,    0,
-      0,    0,    531,  532,  1,    0,    0,    0,    532,  534,  3,    66,
-      33,   0,    533,  530,  1,    0,    0,    0,    533,  534,  1,    0,
-      0,    0,    534,  45,   1,    0,    0,    0,    535,  536,  3,    168,
-      84,   0,    536,  537,  5,    125,  0,    0,    537,  538,  5,    51,
-      0,    0,    538,  539,  5,    125,  0,    0,    539,  541,  1,    0,
-      0,    0,    540,  535,  1,    0,    0,    0,    540,  541,  1,    0,
-      0,    0,    541,  542,  1,    0,    0,    0,    542,  543,  3,    174,
-      87,   0,    543,  47,   1,    0,    0,    0,    544,  545,  5,    61,
-      0,    0,    545,  550,  3,    52,   26,   0,    546,  548,  5,    125,
-      0,    0,    547,  546,  1,    0,    0,    0,    547,  548,  1,    0,
-      0,    0,    548,  549,  1,    0,    0,    0,    549,  551,  3,    66,
-      33,   0,    550,  547,  1,    0,    0,    0,    550,  551,  1,    0,
-      0,    0,    551,  49,   1,    0,    0,    0,    552,  553,  5,    62,
-      0,    0,    553,  554,  3,    52,   26,   0,    554,  51,   1,    0,
-      0,    0,    555,  557,  5,    125,  0,    0,    556,  555,  1,    0,
-      0,    0,    556,  557,  1,    0,    0,    0,    557,  558,  1,    0,
-      0,    0,    558,  560,  5,    63,   0,    0,    559,  556,  1,    0,
-      0,    0,    559,  560,  1,    0,    0,    0,    560,  561,  1,    0,
-      0,    0,    561,  562,  5,    125,  0,    0,    562,  565,  3,    54,
-      27,   0,    563,  564,  5,    125,  0,    0,    564,  566,  3,    58,
-      29,   0,    565,  563,  1,    0,    0,    0,    565,  566,  1,    0,
-      0,    0,    566,  569,  1,    0,    0,    0,    567,  568,  5,    125,
-      0,    0,    568,  570,  3,    60,   30,   0,    569,  567,  1,    0,
-      0,    0,    569,  570,  1,    0,    0,    0,    570,  573,  1,    0,
-      0,    0,    571,  572,  5,    125,  0,    0,    572,  574,  3,    62,
-      31,   0,    573,  571,  1,    0,    0,    0,    573,  574,  1,    0,
-      0,    0,    574,  53,   1,    0,    0,    0,    575,  586,  5,    5,
-      0,    0,    576,  578,  5,    125,  0,    0,    577,  576,  1,    0,
-      0,    0,    577,  578,  1,    0,    0,    0,    578,  579,  1,    0,
-      0,    0,    579,  581,  5,    2,    0,    0,    580,  582,  5,    125,
-      0,    0,    581,  580,  1,    0,    0,    0,    581,  582,  1,    0,
-      0,    0,    582,  583,  1,    0,    0,    0,    583,  585,  3,    56,
-      28,   0,    584,  577,  1,    0,    0,    0,    585,  588,  1,    0,
-      0,    0,    586,  584,  1,    0,    0,    0,    586,  587,  1,    0,
-      0,    0,    587,  604,  1,    0,    0,    0,    588,  586,  1,    0,
-      0,    0,    589,  600,  3,    56,   28,   0,    590,  592,  5,    125,
-      0,    0,    591,  590,  1,    0,    0,    0,    591,  592,  1,    0,
-      0,    0,    592,  593,  1,    0,    0,    0,    593,  595,  5,    2,
-      0,    0,    594,  596,  5,    125,  0,    0,    595,  594,  1,    0,
-      0,    0,    595,  596,  1,    0,    0,    0,    596,  597,  1,    0,
-      0,    0,    597,  599,  3,    56,   28,   0,    598,  591,  1,    0,
-      0,    0,    599,  602,  1,    0,    0,    0,    600,  598,  1,    0,
-      0,    0,    600,  601,  1,    0,    0,    0,    601,  604,  1,    0,
-      0,    0,    602,  600,  1,    0,    0,    0,    603,  575,  1,    0,
-      0,    0,    603,  589,  1,    0,    0,    0,    604,  55,   1,    0,
-      0,    0,    605,  606,  3,    102,  51,   0,    606,  607,  5,    125,
-      0,    0,    607,  608,  5,    51,   0,    0,    608,  609,  5,    125,
-      0,    0,    609,  610,  3,    174,  87,   0,    610,  613,  1,    0,
-      0,    0,    611,  613,  3,    102,  51,   0,    612,  605,  1,    0,
-      0,    0,    612,  611,  1,    0,    0,    0,    613,  57,   1,    0,
-      0,    0,    614,  615,  5,    64,   0,    0,    615,  616,  5,    125,
-      0,    0,    616,  617,  5,    65,   0,    0,    617,  618,  5,    125,
-      0,    0,    618,  626,  3,    64,   32,   0,    619,  621,  5,    2,
-      0,    0,    620,  622,  5,    125,  0,    0,    621,  620,  1,    0,
-      0,    0,    621,  622,  1,    0,    0,    0,    622,  623,  1,    0,
-      0,    0,    623,  625,  3,    64,   32,   0,    624,  619,  1,    0,
-      0,    0,    625,  628,  1,    0,    0,    0,    626,  624,  1,    0,
-      0,    0,    626,  627,  1,    0,    0,    0,    627,  59,   1,    0,
-      0,    0,    628,  626,  1,    0,    0,    0,    629,  630,  5,    66,
-      0,    0,    630,  631,  5,    125,  0,    0,    631,  632,  3,    102,
-      51,   0,    632,  61,   1,    0,    0,    0,    633,  634,  5,    67,
-      0,    0,    634,  635,  5,    125,  0,    0,    635,  636,  3,    102,
-      51,   0,    636,  63,   1,    0,    0,    0,    637,  642,  3,    102,
-      51,   0,    638,  640,  5,    125,  0,    0,    639,  638,  1,    0,
-      0,    0,    639,  640,  1,    0,    0,    0,    640,  641,  1,    0,
-      0,    0,    641,  643,  7,    0,    0,    0,    642,  639,  1,    0,
-      0,    0,    642,  643,  1,    0,    0,    0,    643,  65,   1,    0,
-      0,    0,    644,  645,  5,    72,   0,    0,    645,  646,  5,    125,
-      0,    0,    646,  647,  3,    102,  51,   0,    647,  67,   1,    0,
-      0,    0,    648,  659,  3,    70,   35,   0,    649,  651,  5,    125,
-      0,    0,    650,  649,  1,    0,    0,    0,    650,  651,  1,    0,
-      0,    0,    651,  652,  1,    0,    0,    0,    652,  654,  5,    2,
-      0,    0,    653,  655,  5,    125,  0,    0,    654,  653,  1,    0,
-      0,    0,    654,  655,  1,    0,    0,    0,    655,  656,  1,    0,
-      0,    0,    656,  658,  3,    70,   35,   0,    657,  650,  1,    0,
-      0,    0,    658,  661,  1,    0,    0,    0,    659,  657,  1,    0,
-      0,    0,    659,  660,  1,    0,    0,    0,    660,  69,   1,    0,
-      0,    0,    661,  659,  1,    0,    0,    0,    662,  664,  3,    174,
-      87,   0,    663,  665,  5,    125,  0,    0,    664,  663,  1,    0,
-      0,    0,    664,  665,  1,    0,    0,    0,    665,  666,  1,    0,
-      0,    0,    666,  668,  5,    3,    0,    0,    667,  669,  5,    125,
-      0,    0,    668,  667,  1,    0,    0,    0,    668,  669,  1,    0,
-      0,    0,    669,  670,  1,    0,    0,    0,    670,  671,  3,    72,
-      36,   0,    671,  674,  1,    0,    0,    0,    672,  674,  3,    72,
-      36,   0,    673,  662,  1,    0,    0,    0,    673,  672,  1,    0,
-      0,    0,    674,  71,   1,    0,    0,    0,    675,  676,  3,    74,
-      37,   0,    676,  73,   1,    0,    0,    0,    677,  684,  3,    78,
-      39,   0,    678,  680,  5,    125,  0,    0,    679,  678,  1,    0,
-      0,    0,    679,  680,  1,    0,    0,    0,    680,  681,  1,    0,
-      0,    0,    681,  683,  3,    80,   40,   0,    682,  679,  1,    0,
-      0,    0,    683,  686,  1,    0,    0,    0,    684,  682,  1,    0,
-      0,    0,    684,  685,  1,    0,    0,    0,    685,  692,  1,    0,
-      0,    0,    686,  684,  1,    0,    0,    0,    687,  688,  5,    6,
-      0,    0,    688,  689,  3,    74,   37,   0,    689,  690,  5,    7,
-      0,    0,    690,  692,  1,    0,    0,    0,    691,  677,  1,    0,
-      0,    0,    691,  687,  1,    0,    0,    0,    692,  75,   1,    0,
-      0,    0,    693,  698,  3,    78,   39,   0,    694,  696,  5,    125,
-      0,    0,    695,  694,  1,    0,    0,    0,    695,  696,  1,    0,
-      0,    0,    696,  697,  1,    0,    0,    0,    697,  699,  3,    80,
-      40,   0,    698,  695,  1,    0,    0,    0,    699,  700,  1,    0,
-      0,    0,    700,  698,  1,    0,    0,    0,    700,  701,  1,    0,
-      0,    0,    701,  77,   1,    0,    0,    0,    702,  704,  5,    6,
-      0,    0,    703,  705,  5,    125,  0,    0,    704,  703,  1,    0,
-      0,    0,    704,  705,  1,    0,    0,    0,    705,  710,  1,    0,
-      0,    0,    706,  708,  3,    174,  87,   0,    707,  709,  5,    125,
-      0,    0,    708,  707,  1,    0,    0,    0,    708,  709,  1,    0,
-      0,    0,    709,  711,  1,    0,    0,    0,    710,  706,  1,    0,
-      0,    0,    710,  711,  1,    0,    0,    0,    711,  716,  1,    0,
-      0,    0,    712,  714,  3,    90,   45,   0,    713,  715,  5,    125,
-      0,    0,    714,  713,  1,    0,    0,    0,    714,  715,  1,    0,
-      0,    0,    715,  717,  1,    0,    0,    0,    716,  712,  1,    0,
-      0,    0,    716,  717,  1,    0,    0,    0,    717,  722,  1,    0,
-      0,    0,    718,  720,  3,    86,   43,   0,    719,  721,  5,    125,
-      0,    0,    720,  719,  1,    0,    0,    0,    720,  721,  1,    0,
-      0,    0,    721,  723,  1,    0,    0,    0,    722,  718,  1,    0,
-      0,    0,    722,  723,  1,    0,    0,    0,    723,  724,  1,    0,
-      0,    0,    724,  725,  5,    7,    0,    0,    725,  79,   1,    0,
-      0,    0,    726,  728,  3,    82,   41,   0,    727,  729,  5,    125,
-      0,    0,    728,  727,  1,    0,    0,    0,    728,  729,  1,    0,
-      0,    0,    729,  730,  1,    0,    0,    0,    730,  731,  3,    78,
-      39,   0,    731,  81,   1,    0,    0,    0,    732,  734,  3,    200,
-      100,  0,    733,  735,  5,    125,  0,    0,    734,  733,  1,    0,
-      0,    0,    734,  735,  1,    0,    0,    0,    735,  736,  1,    0,
-      0,    0,    736,  738,  3,    204,  102,  0,    737,  739,  5,    125,
-      0,    0,    738,  737,  1,    0,    0,    0,    738,  739,  1,    0,
-      0,    0,    739,  741,  1,    0,    0,    0,    740,  742,  3,    84,
-      42,   0,    741,  740,  1,    0,    0,    0,    741,  742,  1,    0,
-      0,    0,    742,  744,  1,    0,    0,    0,    743,  745,  5,    125,
-      0,    0,    744,  743,  1,    0,    0,    0,    744,  745,  1,    0,
-      0,    0,    745,  746,  1,    0,    0,    0,    746,  748,  3,    204,
-      102,  0,    747,  749,  5,    125,  0,    0,    748,  747,  1,    0,
-      0,    0,    748,  749,  1,    0,    0,    0,    749,  750,  1,    0,
-      0,    0,    750,  751,  3,    202,  101,  0,    751,  797,  1,    0,
-      0,    0,    752,  754,  3,    200,  100,  0,    753,  755,  5,    125,
-      0,    0,    754,  753,  1,    0,    0,    0,    754,  755,  1,    0,
-      0,    0,    755,  756,  1,    0,    0,    0,    756,  758,  3,    204,
-      102,  0,    757,  759,  5,    125,  0,    0,    758,  757,  1,    0,
-      0,    0,    758,  759,  1,    0,    0,    0,    759,  761,  1,    0,
-      0,    0,    760,  762,  3,    84,   42,   0,    761,  760,  1,    0,
-      0,    0,    761,  762,  1,    0,    0,    0,    762,  764,  1,    0,
-      0,    0,    763,  765,  5,    125,  0,    0,    764,  763,  1,    0,
-      0,    0,    764,  765,  1,    0,    0,    0,    765,  766,  1,    0,
-      0,    0,    766,  767,  3,    204,  102,  0,    767,  797,  1,    0,
-      0,    0,    768,  770,  3,    204,  102,  0,    769,  771,  5,    125,
-      0,    0,    770,  769,  1,    0,    0,    0,    770,  771,  1,    0,
-      0,    0,    771,  773,  1,    0,    0,    0,    772,  774,  3,    84,
-      42,   0,    773,  772,  1,    0,    0,    0,    773,  774,  1,    0,
-      0,    0,    774,  776,  1,    0,    0,    0,    775,  777,  5,    125,
-      0,    0,    776,  775,  1,    0,    0,    0,    776,  777,  1,    0,
-      0,    0,    777,  778,  1,    0,    0,    0,    778,  780,  3,    204,
-      102,  0,    779,  781,  5,    125,  0,    0,    780,  779,  1,    0,
-      0,    0,    780,  781,  1,    0,    0,    0,    781,  782,  1,    0,
-      0,    0,    782,  783,  3,    202,  101,  0,    783,  797,  1,    0,
-      0,    0,    784,  786,  3,    204,  102,  0,    785,  787,  5,    125,
-      0,    0,    786,  785,  1,    0,    0,    0,    786,  787,  1,    0,
-      0,    0,    787,  789,  1,    0,    0,    0,    788,  790,  3,    84,
-      42,   0,    789,  788,  1,    0,    0,    0,    789,  790,  1,    0,
-      0,    0,    790,  792,  1,    0,    0,    0,    791,  793,  5,    125,
-      0,    0,    792,  791,  1,    0,    0,    0,    792,  793,  1,    0,
-      0,    0,    793,  794,  1,    0,    0,    0,    794,  795,  3,    204,
-      102,  0,    795,  797,  1,    0,    0,    0,    796,  732,  1,    0,
-      0,    0,    796,  752,  1,    0,    0,    0,    796,  768,  1,    0,
-      0,    0,    796,  784,  1,    0,    0,    0,    797,  83,   1,    0,
-      0,    0,    798,  800,  5,    8,    0,    0,    799,  801,  5,    125,
-      0,    0,    800,  799,  1,    0,    0,    0,    800,  801,  1,    0,
-      0,    0,    801,  806,  1,    0,    0,    0,    802,  804,  3,    174,
-      87,   0,    803,  805,  5,    125,  0,    0,    804,  803,  1,    0,
-      0,    0,    804,  805,  1,    0,    0,    0,    805,  807,  1,    0,
-      0,    0,    806,  802,  1,    0,    0,    0,    806,  807,  1,    0,
-      0,    0,    807,  812,  1,    0,    0,    0,    808,  810,  3,    88,
-      44,   0,    809,  811,  5,    125,  0,    0,    810,  809,  1,    0,
-      0,    0,    810,  811,  1,    0,    0,    0,    811,  813,  1,    0,
-      0,    0,    812,  808,  1,    0,    0,    0,    812,  813,  1,    0,
-      0,    0,    813,  815,  1,    0,    0,    0,    814,  816,  3,    94,
-      47,   0,    815,  814,  1,    0,    0,    0,    815,  816,  1,    0,
-      0,    0,    816,  821,  1,    0,    0,    0,    817,  819,  3,    86,
-      43,   0,    818,  820,  5,    125,  0,    0,    819,  818,  1,    0,
-      0,    0,    819,  820,  1,    0,    0,    0,    820,  822,  1,    0,
-      0,    0,    821,  817,  1,    0,    0,    0,    821,  822,  1,    0,
-      0,    0,    822,  823,  1,    0,    0,    0,    823,  824,  5,    9,
-      0,    0,    824,  85,   1,    0,    0,    0,    825,  828,  3,    188,
-      94,   0,    826,  828,  3,    192,  96,   0,    827,  825,  1,    0,
-      0,    0,    827,  826,  1,    0,    0,    0,    828,  87,   1,    0,
-      0,    0,    829,  831,  5,    10,   0,    0,    830,  832,  5,    125,
-      0,    0,    831,  830,  1,    0,    0,    0,    831,  832,  1,    0,
-      0,    0,    832,  833,  1,    0,    0,    0,    833,  847,  3,    98,
-      49,   0,    834,  836,  5,    125,  0,    0,    835,  834,  1,    0,
-      0,    0,    835,  836,  1,    0,    0,    0,    836,  837,  1,    0,
-      0,    0,    837,  839,  5,    11,   0,    0,    838,  840,  5,    10,
-      0,    0,    839,  838,  1,    0,    0,    0,    839,  840,  1,    0,
-      0,    0,    840,  842,  1,    0,    0,    0,    841,  843,  5,    125,
-      0,    0,    842,  841,  1,    0,    0,    0,    842,  843,  1,    0,
-      0,    0,    843,  844,  1,    0,    0,    0,    844,  846,  3,    98,
-      49,   0,    845,  835,  1,    0,    0,    0,    846,  849,  1,    0,
-      0,    0,    847,  845,  1,    0,    0,    0,    847,  848,  1,    0,
-      0,    0,    848,  89,   1,    0,    0,    0,    849,  847,  1,    0,
-      0,    0,    850,  857,  3,    92,   46,   0,    851,  853,  5,    125,
-      0,    0,    852,  851,  1,    0,    0,    0,    852,  853,  1,    0,
-      0,    0,    853,  854,  1,    0,    0,    0,    854,  856,  3,    92,
-      46,   0,    855,  852,  1,    0,    0,    0,    856,  859,  1,    0,
-      0,    0,    857,  855,  1,    0,    0,    0,    857,  858,  1,    0,
-      0,    0,    858,  91,   1,    0,    0,    0,    859,  857,  1,    0,
-      0,    0,    860,  862,  5,    10,   0,    0,    861,  863,  5,    125,
-      0,    0,    862,  861,  1,    0,    0,    0,    862,  863,  1,    0,
-      0,    0,    863,  864,  1,    0,    0,    0,    864,  865,  3,    96,
-      48,   0,    865,  93,   1,    0,    0,    0,    866,  868,  5,    5,
-      0,    0,    867,  869,  5,    125,  0,    0,    868,  867,  1,    0,
-      0,    0,    868,  869,  1,    0,    0,    0,    869,  874,  1,    0,
-      0,    0,    870,  872,  3,    182,  91,   0,    871,  873,  5,    125,
-      0,    0,    872,  871,  1,    0,    0,    0,    872,  873,  1,    0,
-      0,    0,    873,  875,  1,    0,    0,    0,    874,  870,  1,    0,
-      0,    0,    874,  875,  1,    0,    0,    0,    875,  886,  1,    0,
-      0,    0,    876,  878,  5,    12,   0,    0,    877,  879,  5,    125,
-      0,    0,    878,  877,  1,    0,    0,    0,    878,  879,  1,    0,
-      0,    0,    879,  884,  1,    0,    0,    0,    880,  882,  3,    182,
-      91,   0,    881,  883,  5,    125,  0,    0,    882,  881,  1,    0,
-      0,    0,    882,  883,  1,    0,    0,    0,    883,  885,  1,    0,
-      0,    0,    884,  880,  1,    0,    0,    0,    884,  885,  1,    0,
-      0,    0,    885,  887,  1,    0,    0,    0,    886,  876,  1,    0,
-      0,    0,    886,  887,  1,    0,    0,    0,    887,  95,   1,    0,
-      0,    0,    888,  889,  3,    194,  97,   0,    889,  97,   1,    0,
-      0,    0,    890,  891,  3,    194,  97,   0,    891,  99,   1,    0,
-      0,    0,    892,  897,  3,    138,  69,   0,    893,  895,  5,    125,
-      0,    0,    894,  893,  1,    0,    0,    0,    894,  895,  1,    0,
-      0,    0,    895,  896,  1,    0,    0,    0,    896,  898,  3,    136,
-      68,   0,    897,  894,  1,    0,    0,    0,    898,  899,  1,    0,
-      0,    0,    899,  897,  1,    0,    0,    0,    899,  900,  1,    0,
-      0,    0,    900,  101,  1,    0,    0,    0,    901,  902,  3,    104,
-      52,   0,    902,  103,  1,    0,    0,    0,    903,  910,  3,    106,
-      53,   0,    904,  905,  5,    125,  0,    0,    905,  906,  5,    73,
-      0,    0,    906,  907,  5,    125,  0,    0,    907,  909,  3,    106,
-      53,   0,    908,  904,  1,    0,    0,    0,    909,  912,  1,    0,
-      0,    0,    910,  908,  1,    0,    0,    0,    910,  911,  1,    0,
-      0,    0,    911,  105,  1,    0,    0,    0,    912,  910,  1,    0,
-      0,    0,    913,  920,  3,    108,  54,   0,    914,  915,  5,    125,
-      0,    0,    915,  916,  5,    74,   0,    0,    916,  917,  5,    125,
-      0,    0,    917,  919,  3,    108,  54,   0,    918,  914,  1,    0,
-      0,    0,    919,  922,  1,    0,    0,    0,    920,  918,  1,    0,
-      0,    0,    920,  921,  1,    0,    0,    0,    921,  107,  1,    0,
-      0,    0,    922,  920,  1,    0,    0,    0,    923,  930,  3,    110,
-      55,   0,    924,  925,  5,    125,  0,    0,    925,  926,  5,    75,
-      0,    0,    926,  927,  5,    125,  0,    0,    927,  929,  3,    110,
-      55,   0,    928,  924,  1,    0,    0,    0,    929,  932,  1,    0,
-      0,    0,    930,  928,  1,    0,    0,    0,    930,  931,  1,    0,
-      0,    0,    931,  109,  1,    0,    0,    0,    932,  930,  1,    0,
-      0,    0,    933,  935,  5,    76,   0,    0,    934,  936,  5,    125,
-      0,    0,    935,  934,  1,    0,    0,    0,    935,  936,  1,    0,
-      0,    0,    936,  938,  1,    0,    0,    0,    937,  933,  1,    0,
-      0,    0,    938,  941,  1,    0,    0,    0,    939,  937,  1,    0,
-      0,    0,    939,  940,  1,    0,    0,    0,    940,  942,  1,    0,
-      0,    0,    941,  939,  1,    0,    0,    0,    942,  943,  3,    112,
-      56,   0,    943,  111,  1,    0,    0,    0,    944,  951,  3,    116,
-      58,   0,    945,  947,  5,    125,  0,    0,    946,  945,  1,    0,
-      0,    0,    946,  947,  1,    0,    0,    0,    947,  948,  1,    0,
-      0,    0,    948,  950,  3,    114,  57,   0,    949,  946,  1,    0,
-      0,    0,    950,  953,  1,    0,    0,    0,    951,  949,  1,    0,
-      0,    0,    951,  952,  1,    0,    0,    0,    952,  113,  1,    0,
-      0,    0,    953,  951,  1,    0,    0,    0,    954,  956,  5,    3,
-      0,    0,    955,  957,  5,    125,  0,    0,    956,  955,  1,    0,
-      0,    0,    956,  957,  1,    0,    0,    0,    957,  958,  1,    0,
-      0,    0,    958,  985,  3,    116,  58,   0,    959,  961,  5,    13,
-      0,    0,    960,  962,  5,    125,  0,    0,    961,  960,  1,    0,
-      0,    0,    961,  962,  1,    0,    0,    0,    962,  963,  1,    0,
-      0,    0,    963,  985,  3,    116,  58,   0,    964,  966,  5,    14,
-      0,    0,    965,  967,  5,    125,  0,    0,    966,  965,  1,    0,
-      0,    0,    966,  967,  1,    0,    0,    0,    967,  968,  1,    0,
-      0,    0,    968,  985,  3,    116,  58,   0,    969,  971,  5,    15,
-      0,    0,    970,  972,  5,    125,  0,    0,    971,  970,  1,    0,
-      0,    0,    971,  972,  1,    0,    0,    0,    972,  973,  1,    0,
-      0,    0,    973,  985,  3,    116,  58,   0,    974,  976,  5,    16,
-      0,    0,    975,  977,  5,    125,  0,    0,    976,  975,  1,    0,
-      0,    0,    976,  977,  1,    0,    0,    0,    977,  978,  1,    0,
-      0,    0,    978,  985,  3,    116,  58,   0,    979,  981,  5,    17,
-      0,    0,    980,  982,  5,    125,  0,    0,    981,  980,  1,    0,
-      0,    0,    981,  982,  1,    0,    0,    0,    982,  983,  1,    0,
-      0,    0,    983,  985,  3,    116,  58,   0,    984,  954,  1,    0,
-      0,    0,    984,  959,  1,    0,    0,    0,    984,  964,  1,    0,
-      0,    0,    984,  969,  1,    0,    0,    0,    984,  974,  1,    0,
-      0,    0,    984,  979,  1,    0,    0,    0,    985,  115,  1,    0,
-      0,    0,    986,  992,  3,    124,  62,   0,    987,  991,  3,    118,
-      59,   0,    988,  991,  3,    120,  60,   0,    989,  991,  3,    122,
-      61,   0,    990,  987,  1,    0,    0,    0,    990,  988,  1,    0,
-      0,    0,    990,  989,  1,    0,    0,    0,    991,  994,  1,    0,
-      0,    0,    992,  990,  1,    0,    0,    0,    992,  993,  1,    0,
-      0,    0,    993,  117,  1,    0,    0,    0,    994,  992,  1,    0,
-      0,    0,    995,  996,  5,    125,  0,    0,    996,  997,  5,    77,
-      0,    0,    997,  998,  5,    125,  0,    0,    998,  1006, 5,    61,
-      0,    0,    999,  1000, 5,    125,  0,    0,    1000, 1001, 5,    78,
-      0,    0,    1001, 1002, 5,    125,  0,    0,    1002, 1006, 5,    61,
-      0,    0,    1003, 1004, 5,    125,  0,    0,    1004, 1006, 5,    79,
-      0,    0,    1005, 995,  1,    0,    0,    0,    1005, 999,  1,    0,
-      0,    0,    1005, 1003, 1,    0,    0,    0,    1006, 1008, 1,    0,
-      0,    0,    1007, 1009, 5,    125,  0,    0,    1008, 1007, 1,    0,
-      0,    0,    1008, 1009, 1,    0,    0,    0,    1009, 1010, 1,    0,
-      0,    0,    1010, 1011, 3,    124,  62,   0,    1011, 119,  1,    0,
-      0,    0,    1012, 1013, 5,    125,  0,    0,    1013, 1015, 5,    80,
-      0,    0,    1014, 1016, 5,    125,  0,    0,    1015, 1014, 1,    0,
-      0,    0,    1015, 1016, 1,    0,    0,    0,    1016, 1017, 1,    0,
-      0,    0,    1017, 1018, 3,    124,  62,   0,    1018, 121,  1,    0,
-      0,    0,    1019, 1020, 5,    125,  0,    0,    1020, 1021, 5,    81,
-      0,    0,    1021, 1022, 5,    125,  0,    0,    1022, 1030, 5,    82,
-      0,    0,    1023, 1024, 5,    125,  0,    0,    1024, 1025, 5,    81,
-      0,    0,    1025, 1026, 5,    125,  0,    0,    1026, 1027, 5,    76,
-      0,    0,    1027, 1028, 5,    125,  0,    0,    1028, 1030, 5,    82,
-      0,    0,    1029, 1019, 1,    0,    0,    0,    1029, 1023, 1,    0,
-      0,    0,    1030, 123,  1,    0,    0,    0,    1031, 1050, 3,    126,
-      63,   0,    1032, 1034, 5,    125,  0,    0,    1033, 1032, 1,    0,
-      0,    0,    1033, 1034, 1,    0,    0,    0,    1034, 1035, 1,    0,
-      0,    0,    1035, 1037, 5,    18,   0,    0,    1036, 1038, 5,    125,
-      0,    0,    1037, 1036, 1,    0,    0,    0,    1037, 1038, 1,    0,
-      0,    0,    1038, 1039, 1,    0,    0,    0,    1039, 1049, 3,    126,
-      63,   0,    1040, 1042, 5,    125,  0,    0,    1041, 1040, 1,    0,
-      0,    0,    1041, 1042, 1,    0,    0,    0,    1042, 1043, 1,    0,
-      0,    0,    1043, 1045, 5,    19,   0,    0,    1044, 1046, 5,    125,
-      0,    0,    1045, 1044, 1,    0,    0,    0,    1045, 1046, 1,    0,
-      0,    0,    1046, 1047, 1,    0,    0,    0,    1047, 1049, 3,    126,
-      63,   0,    1048, 1033, 1,    0,    0,    0,    1048, 1041, 1,    0,
-      0,    0,    1049, 1052, 1,    0,    0,    0,    1050, 1048, 1,    0,
-      0,    0,    1050, 1051, 1,    0,    0,    0,    1051, 125,  1,    0,
-      0,    0,    1052, 1050, 1,    0,    0,    0,    1053, 1080, 3,    128,
-      64,   0,    1054, 1056, 5,    125,  0,    0,    1055, 1054, 1,    0,
-      0,    0,    1055, 1056, 1,    0,    0,    0,    1056, 1057, 1,    0,
-      0,    0,    1057, 1059, 5,    5,    0,    0,    1058, 1060, 5,    125,
-      0,    0,    1059, 1058, 1,    0,    0,    0,    1059, 1060, 1,    0,
-      0,    0,    1060, 1061, 1,    0,    0,    0,    1061, 1079, 3,    128,
-      64,   0,    1062, 1064, 5,    125,  0,    0,    1063, 1062, 1,    0,
-      0,    0,    1063, 1064, 1,    0,    0,    0,    1064, 1065, 1,    0,
-      0,    0,    1065, 1067, 5,    20,   0,    0,    1066, 1068, 5,    125,
-      0,    0,    1067, 1066, 1,    0,    0,    0,    1067, 1068, 1,    0,
-      0,    0,    1068, 1069, 1,    0,    0,    0,    1069, 1079, 3,    128,
-      64,   0,    1070, 1072, 5,    125,  0,    0,    1071, 1070, 1,    0,
-      0,    0,    1071, 1072, 1,    0,    0,    0,    1072, 1073, 1,    0,
-      0,    0,    1073, 1075, 5,    21,   0,    0,    1074, 1076, 5,    125,
-      0,    0,    1075, 1074, 1,    0,    0,    0,    1075, 1076, 1,    0,
-      0,    0,    1076, 1077, 1,    0,    0,    0,    1077, 1079, 3,    128,
-      64,   0,    1078, 1055, 1,    0,    0,    0,    1078, 1063, 1,    0,
-      0,    0,    1078, 1071, 1,    0,    0,    0,    1079, 1082, 1,    0,
-      0,    0,    1080, 1078, 1,    0,    0,    0,    1080, 1081, 1,    0,
-      0,    0,    1081, 127,  1,    0,    0,    0,    1082, 1080, 1,    0,
-      0,    0,    1083, 1094, 3,    130,  65,   0,    1084, 1086, 5,    125,
-      0,    0,    1085, 1084, 1,    0,    0,    0,    1085, 1086, 1,    0,
-      0,    0,    1086, 1087, 1,    0,    0,    0,    1087, 1089, 5,    22,
-      0,    0,    1088, 1090, 5,    125,  0,    0,    1089, 1088, 1,    0,
-      0,    0,    1089, 1090, 1,    0,    0,    0,    1090, 1091, 1,    0,
-      0,    0,    1091, 1093, 3,    130,  65,   0,    1092, 1085, 1,    0,
-      0,    0,    1093, 1096, 1,    0,    0,    0,    1094, 1092, 1,    0,
-      0,    0,    1094, 1095, 1,    0,    0,    0,    1095, 129,  1,    0,
-      0,    0,    1096, 1094, 1,    0,    0,    0,    1097, 1104, 3,    132,
-      66,   0,    1098, 1100, 7,    1,    0,    0,    1099, 1101, 5,    125,
-      0,    0,    1100, 1099, 1,    0,    0,    0,    1100, 1101, 1,    0,
-      0,    0,    1101, 1102, 1,    0,    0,    0,    1102, 1104, 3,    132,
-      66,   0,    1103, 1097, 1,    0,    0,    0,    1103, 1098, 1,    0,
-      0,    0,    1104, 131,  1,    0,    0,    0,    1105, 1116, 3,    138,
-      69,   0,    1106, 1108, 5,    125,  0,    0,    1107, 1106, 1,    0,
-      0,    0,    1107, 1108, 1,    0,    0,    0,    1108, 1109, 1,    0,
-      0,    0,    1109, 1115, 3,    134,  67,   0,    1110, 1112, 5,    125,
-      0,    0,    1111, 1110, 1,    0,    0,    0,    1111, 1112, 1,    0,
-      0,    0,    1112, 1113, 1,    0,    0,    0,    1113, 1115, 3,    136,
-      68,   0,    1114, 1107, 1,    0,    0,    0,    1114, 1111, 1,    0,
-      0,    0,    1115, 1118, 1,    0,    0,    0,    1116, 1114, 1,    0,
-      0,    0,    1116, 1117, 1,    0,    0,    0,    1117, 1123, 1,    0,
-      0,    0,    1118, 1116, 1,    0,    0,    0,    1119, 1121, 5,    125,
-      0,    0,    1120, 1119, 1,    0,    0,    0,    1120, 1121, 1,    0,
-      0,    0,    1121, 1122, 1,    0,    0,    0,    1122, 1124, 3,    90,
-      45,   0,    1123, 1120, 1,    0,    0,    0,    1123, 1124, 1,    0,
-      0,    0,    1124, 133,  1,    0,    0,    0,    1125, 1126, 5,    8,
-      0,    0,    1126, 1127, 3,    102,  51,   0,    1127, 1128, 5,    9,
-      0,    0,    1128, 1139, 1,    0,    0,    0,    1129, 1131, 5,    8,
-      0,    0,    1130, 1132, 3,    102,  51,   0,    1131, 1130, 1,    0,
-      0,    0,    1131, 1132, 1,    0,    0,    0,    1132, 1133, 1,    0,
-      0,    0,    1133, 1135, 5,    12,   0,    0,    1134, 1136, 3,    102,
-      51,   0,    1135, 1134, 1,    0,    0,    0,    1135, 1136, 1,    0,
-      0,    0,    1136, 1137, 1,    0,    0,    0,    1137, 1139, 5,    9,
-      0,    0,    1138, 1125, 1,    0,    0,    0,    1138, 1129, 1,    0,
-      0,    0,    1139, 135,  1,    0,    0,    0,    1140, 1142, 5,    23,
-      0,    0,    1141, 1143, 5,    125,  0,    0,    1142, 1141, 1,    0,
-      0,    0,    1142, 1143, 1,    0,    0,    0,    1143, 1144, 1,    0,
-      0,    0,    1144, 1145, 3,    190,  95,   0,    1145, 137,  1,    0,
-      0,    0,    1146, 1171, 3,    176,  88,   0,    1147, 1171, 3,    192,
-      96,   0,    1148, 1171, 3,    140,  70,   0,    1149, 1151, 5,    83,
-      0,    0,    1150, 1152, 5,    125,  0,    0,    1151, 1150, 1,    0,
-      0,    0,    1151, 1152, 1,    0,    0,    0,    1152, 1153, 1,    0,
-      0,    0,    1153, 1155, 5,    6,    0,    0,    1154, 1156, 5,    125,
-      0,    0,    1155, 1154, 1,    0,    0,    0,    1155, 1156, 1,    0,
-      0,    0,    1156, 1157, 1,    0,    0,    0,    1157, 1159, 5,    5,
-      0,    0,    1158, 1160, 5,    125,  0,    0,    1159, 1158, 1,    0,
-      0,    0,    1159, 1160, 1,    0,    0,    0,    1160, 1161, 1,    0,
-      0,    0,    1161, 1171, 5,    7,    0,    0,    1162, 1171, 3,    144,
-      72,   0,    1163, 1171, 3,    146,  73,   0,    1164, 1171, 3,    148,
-      74,   0,    1165, 1171, 3,    152,  76,   0,    1166, 1171, 3,    154,
-      77,   0,    1167, 1171, 3,    158,  79,   0,    1168, 1171, 3,    162,
-      81,   0,    1169, 1171, 3,    174,  87,   0,    1170, 1146, 1,    0,
-      0,    0,    1170, 1147, 1,    0,    0,    0,    1170, 1148, 1,    0,
-      0,    0,    1170, 1149, 1,    0,    0,    0,    1170, 1162, 1,    0,
-      0,    0,    1170, 1163, 1,    0,    0,    0,    1170, 1164, 1,    0,
-      0,    0,    1170, 1165, 1,    0,    0,    0,    1170, 1166, 1,    0,
-      0,    0,    1170, 1167, 1,    0,    0,    0,    1170, 1168, 1,    0,
-      0,    0,    1170, 1169, 1,    0,    0,    0,    1171, 139,  1,    0,
-      0,    0,    1172, 1177, 5,    84,   0,    0,    1173, 1175, 5,    125,
-      0,    0,    1174, 1173, 1,    0,    0,    0,    1174, 1175, 1,    0,
-      0,    0,    1175, 1176, 1,    0,    0,    0,    1176, 1178, 3,    142,
-      71,   0,    1177, 1174, 1,    0,    0,    0,    1178, 1179, 1,    0,
-      0,    0,    1179, 1177, 1,    0,    0,    0,    1179, 1180, 1,    0,
-      0,    0,    1180, 1195, 1,    0,    0,    0,    1181, 1183, 5,    84,
-      0,    0,    1182, 1184, 5,    125,  0,    0,    1183, 1182, 1,    0,
-      0,    0,    1183, 1184, 1,    0,    0,    0,    1184, 1185, 1,    0,
-      0,    0,    1185, 1190, 3,    102,  51,   0,    1186, 1188, 5,    125,
-      0,    0,    1187, 1186, 1,    0,    0,    0,    1187, 1188, 1,    0,
-      0,    0,    1188, 1189, 1,    0,    0,    0,    1189, 1191, 3,    142,
-      71,   0,    1190, 1187, 1,    0,    0,    0,    1191, 1192, 1,    0,
-      0,    0,    1192, 1190, 1,    0,    0,    0,    1192, 1193, 1,    0,
-      0,    0,    1193, 1195, 1,    0,    0,    0,    1194, 1172, 1,    0,
-      0,    0,    1194, 1181, 1,    0,    0,    0,    1195, 1204, 1,    0,
-      0,    0,    1196, 1198, 5,    125,  0,    0,    1197, 1196, 1,    0,
-      0,    0,    1197, 1198, 1,    0,    0,    0,    1198, 1199, 1,    0,
-      0,    0,    1199, 1201, 5,    85,   0,    0,    1200, 1202, 5,    125,
-      0,    0,    1201, 1200, 1,    0,    0,    0,    1201, 1202, 1,    0,
-      0,    0,    1202, 1203, 1,    0,    0,    0,    1203, 1205, 3,    102,
-      51,   0,    1204, 1197, 1,    0,    0,    0,    1204, 1205, 1,    0,
-      0,    0,    1205, 1207, 1,    0,    0,    0,    1206, 1208, 5,    125,
-      0,    0,    1207, 1206, 1,    0,    0,    0,    1207, 1208, 1,    0,
-      0,    0,    1208, 1209, 1,    0,    0,    0,    1209, 1210, 5,    86,
-      0,    0,    1210, 141,  1,    0,    0,    0,    1211, 1213, 5,    87,
-      0,    0,    1212, 1214, 5,    125,  0,    0,    1213, 1212, 1,    0,
-      0,    0,    1213, 1214, 1,    0,    0,    0,    1214, 1215, 1,    0,
-      0,    0,    1215, 1217, 3,    102,  51,   0,    1216, 1218, 5,    125,
-      0,    0,    1217, 1216, 1,    0,    0,    0,    1217, 1218, 1,    0,
-      0,    0,    1218, 1219, 1,    0,    0,    0,    1219, 1221, 5,    88,
-      0,    0,    1220, 1222, 5,    125,  0,    0,    1221, 1220, 1,    0,
-      0,    0,    1221, 1222, 1,    0,    0,    0,    1222, 1223, 1,    0,
-      0,    0,    1223, 1224, 3,    102,  51,   0,    1224, 143,  1,    0,
-      0,    0,    1225, 1227, 5,    8,    0,    0,    1226, 1228, 5,    125,
-      0,    0,    1227, 1226, 1,    0,    0,    0,    1227, 1228, 1,    0,
-      0,    0,    1228, 1229, 1,    0,    0,    0,    1229, 1238, 3,    150,
-      75,   0,    1230, 1232, 5,    125,  0,    0,    1231, 1230, 1,    0,
-      0,    0,    1231, 1232, 1,    0,    0,    0,    1232, 1233, 1,    0,
-      0,    0,    1233, 1235, 5,    11,   0,    0,    1234, 1236, 5,    125,
-      0,    0,    1235, 1234, 1,    0,    0,    0,    1235, 1236, 1,    0,
-      0,    0,    1236, 1237, 1,    0,    0,    0,    1237, 1239, 3,    102,
-      51,   0,    1238, 1231, 1,    0,    0,    0,    1238, 1239, 1,    0,
-      0,    0,    1239, 1241, 1,    0,    0,    0,    1240, 1242, 5,    125,
-      0,    0,    1241, 1240, 1,    0,    0,    0,    1241, 1242, 1,    0,
-      0,    0,    1242, 1243, 1,    0,    0,    0,    1243, 1244, 5,    9,
-      0,    0,    1244, 145,  1,    0,    0,    0,    1245, 1247, 5,    8,
-      0,    0,    1246, 1248, 5,    125,  0,    0,    1247, 1246, 1,    0,
-      0,    0,    1247, 1248, 1,    0,    0,    0,    1248, 1257, 1,    0,
-      0,    0,    1249, 1251, 3,    174,  87,   0,    1250, 1252, 5,    125,
-      0,    0,    1251, 1250, 1,    0,    0,    0,    1251, 1252, 1,    0,
-      0,    0,    1252, 1253, 1,    0,    0,    0,    1253, 1255, 5,    3,
-      0,    0,    1254, 1256, 5,    125,  0,    0,    1255, 1254, 1,    0,
-      0,    0,    1255, 1256, 1,    0,    0,    0,    1256, 1258, 1,    0,
-      0,    0,    1257, 1249, 1,    0,    0,    0,    1257, 1258, 1,    0,
-      0,    0,    1258, 1259, 1,    0,    0,    0,    1259, 1261, 3,    76,
-      38,   0,    1260, 1262, 5,    125,  0,    0,    1261, 1260, 1,    0,
-      0,    0,    1261, 1262, 1,    0,    0,    0,    1262, 1267, 1,    0,
-      0,    0,    1263, 1265, 3,    66,   33,   0,    1264, 1266, 5,    125,
-      0,    0,    1265, 1264, 1,    0,    0,    0,    1265, 1266, 1,    0,
-      0,    0,    1266, 1268, 1,    0,    0,    0,    1267, 1263, 1,    0,
-      0,    0,    1267, 1268, 1,    0,    0,    0,    1268, 1269, 1,    0,
-      0,    0,    1269, 1271, 5,    11,   0,    0,    1270, 1272, 5,    125,
-      0,    0,    1271, 1270, 1,    0,    0,    0,    1271, 1272, 1,    0,
-      0,    0,    1272, 1273, 1,    0,    0,    0,    1273, 1275, 3,    102,
-      51,   0,    1274, 1276, 5,    125,  0,    0,    1275, 1274, 1,    0,
-      0,    0,    1275, 1276, 1,    0,    0,    0,    1276, 1277, 1,    0,
-      0,    0,    1277, 1278, 5,    9,    0,    0,    1278, 147,  1,    0,
-      0,    0,    1279, 1281, 5,    47,   0,    0,    1280, 1282, 5,    125,
-      0,    0,    1281, 1280, 1,    0,    0,    0,    1281, 1282, 1,    0,
-      0,    0,    1282, 1283, 1,    0,    0,    0,    1283, 1285, 5,    6,
-      0,    0,    1284, 1286, 5,    125,  0,    0,    1285, 1284, 1,    0,
-      0,    0,    1285, 1286, 1,    0,    0,    0,    1286, 1287, 1,    0,
-      0,    0,    1287, 1289, 3,    150,  75,   0,    1288, 1290, 5,    125,
-      0,    0,    1289, 1288, 1,    0,    0,    0,    1289, 1290, 1,    0,
-      0,    0,    1290, 1291, 1,    0,    0,    0,    1291, 1292, 5,    7,
-      0,    0,    1292, 1336, 1,    0,    0,    0,    1293, 1295, 5,    89,
-      0,    0,    1294, 1296, 5,    125,  0,    0,    1295, 1294, 1,    0,
-      0,    0,    1295, 1296, 1,    0,    0,    0,    1296, 1297, 1,    0,
-      0,    0,    1297, 1299, 5,    6,    0,    0,    1298, 1300, 5,    125,
-      0,    0,    1299, 1298, 1,    0,    0,    0,    1299, 1300, 1,    0,
-      0,    0,    1300, 1301, 1,    0,    0,    0,    1301, 1303, 3,    150,
-      75,   0,    1302, 1304, 5,    125,  0,    0,    1303, 1302, 1,    0,
-      0,    0,    1303, 1304, 1,    0,    0,    0,    1304, 1305, 1,    0,
-      0,    0,    1305, 1306, 5,    7,    0,    0,    1306, 1336, 1,    0,
-      0,    0,    1307, 1309, 5,    90,   0,    0,    1308, 1310, 5,    125,
-      0,    0,    1309, 1308, 1,    0,    0,    0,    1309, 1310, 1,    0,
-      0,    0,    1310, 1311, 1,    0,    0,    0,    1311, 1313, 5,    6,
-      0,    0,    1312, 1314, 5,    125,  0,    0,    1313, 1312, 1,    0,
-      0,    0,    1313, 1314, 1,    0,    0,    0,    1314, 1315, 1,    0,
-      0,    0,    1315, 1317, 3,    150,  75,   0,    1316, 1318, 5,    125,
-      0,    0,    1317, 1316, 1,    0,    0,    0,    1317, 1318, 1,    0,
-      0,    0,    1318, 1319, 1,    0,    0,    0,    1319, 1320, 5,    7,
-      0,    0,    1320, 1336, 1,    0,    0,    0,    1321, 1323, 5,    91,
-      0,    0,    1322, 1324, 5,    125,  0,    0,    1323, 1322, 1,    0,
-      0,    0,    1323, 1324, 1,    0,    0,    0,    1324, 1325, 1,    0,
-      0,    0,    1325, 1327, 5,    6,    0,    0,    1326, 1328, 5,    125,
-      0,    0,    1327, 1326, 1,    0,    0,    0,    1327, 1328, 1,    0,
-      0,    0,    1328, 1329, 1,    0,    0,    0,    1329, 1331, 3,    150,
-      75,   0,    1330, 1332, 5,    125,  0,    0,    1331, 1330, 1,    0,
-      0,    0,    1331, 1332, 1,    0,    0,    0,    1332, 1333, 1,    0,
-      0,    0,    1333, 1334, 5,    7,    0,    0,    1334, 1336, 1,    0,
-      0,    0,    1335, 1279, 1,    0,    0,    0,    1335, 1293, 1,    0,
-      0,    0,    1335, 1307, 1,    0,    0,    0,    1335, 1321, 1,    0,
-      0,    0,    1336, 149,  1,    0,    0,    0,    1337, 1342, 3,    156,
-      78,   0,    1338, 1340, 5,    125,  0,    0,    1339, 1338, 1,    0,
-      0,    0,    1339, 1340, 1,    0,    0,    0,    1340, 1341, 1,    0,
-      0,    0,    1341, 1343, 3,    66,   33,   0,    1342, 1339, 1,    0,
-      0,    0,    1342, 1343, 1,    0,    0,    0,    1343, 151,  1,    0,
-      0,    0,    1344, 1345, 3,    76,   38,   0,    1345, 153,  1,    0,
-      0,    0,    1346, 1348, 5,    6,    0,    0,    1347, 1349, 5,    125,
-      0,    0,    1348, 1347, 1,    0,    0,    0,    1348, 1349, 1,    0,
-      0,    0,    1349, 1350, 1,    0,    0,    0,    1350, 1352, 3,    102,
-      51,   0,    1351, 1353, 5,    125,  0,    0,    1352, 1351, 1,    0,
-      0,    0,    1352, 1353, 1,    0,    0,    0,    1353, 1354, 1,    0,
-      0,    0,    1354, 1355, 5,    7,    0,    0,    1355, 155,  1,    0,
-      0,    0,    1356, 1357, 3,    174,  87,   0,    1357, 1358, 5,    125,
-      0,    0,    1358, 1359, 5,    80,   0,    0,    1359, 1360, 5,    125,
-      0,    0,    1360, 1361, 3,    102,  51,   0,    1361, 157,  1,    0,
-      0,    0,    1362, 1364, 3,    160,  80,   0,    1363, 1365, 5,    125,
-      0,    0,    1364, 1363, 1,    0,    0,    0,    1364, 1365, 1,    0,
-      0,    0,    1365, 1366, 1,    0,    0,    0,    1366, 1368, 5,    6,
-      0,    0,    1367, 1369, 5,    125,  0,    0,    1368, 1367, 1,    0,
-      0,    0,    1368, 1369, 1,    0,    0,    0,    1369, 1374, 1,    0,
-      0,    0,    1370, 1372, 5,    63,   0,    0,    1371, 1373, 5,    125,
-      0,    0,    1372, 1371, 1,    0,    0,    0,    1372, 1373, 1,    0,
-      0,    0,    1373, 1375, 1,    0,    0,    0,    1374, 1370, 1,    0,
-      0,    0,    1374, 1375, 1,    0,    0,    0,    1375, 1393, 1,    0,
-      0,    0,    1376, 1378, 3,    102,  51,   0,    1377, 1379, 5,    125,
-      0,    0,    1378, 1377, 1,    0,    0,    0,    1378, 1379, 1,    0,
-      0,    0,    1379, 1390, 1,    0,    0,    0,    1380, 1382, 5,    2,
-      0,    0,    1381, 1383, 5,    125,  0,    0,    1382, 1381, 1,    0,
-      0,    0,    1382, 1383, 1,    0,    0,    0,    1383, 1384, 1,    0,
-      0,    0,    1384, 1386, 3,    102,  51,   0,    1385, 1387, 5,    125,
-      0,    0,    1386, 1385, 1,    0,    0,    0,    1386, 1387, 1,    0,
-      0,    0,    1387, 1389, 1,    0,    0,    0,    1388, 1380, 1,    0,
-      0,    0,    1389, 1392, 1,    0,    0,    0,    1390, 1388, 1,    0,
-      0,    0,    1390, 1391, 1,    0,    0,    0,    1391, 1394, 1,    0,
-      0,    0,    1392, 1390, 1,    0,    0,    0,    1393, 1376, 1,    0,
-      0,    0,    1393, 1394, 1,    0,    0,    0,    1394, 1395, 1,    0,
-      0,    0,    1395, 1396, 5,    7,    0,    0,    1396, 159,  1,    0,
-      0,    0,    1397, 1398, 3,    172,  86,   0,    1398, 1399, 3,    198,
-      99,   0,    1399, 161,  1,    0,    0,    0,    1400, 1402, 5,    92,
-      0,    0,    1401, 1403, 5,    125,  0,    0,    1402, 1401, 1,    0,
-      0,    0,    1402, 1403, 1,    0,    0,    0,    1403, 1404, 1,    0,
-      0,    0,    1404, 1406, 5,    24,   0,    0,    1405, 1407, 5,    125,
-      0,    0,    1406, 1405, 1,    0,    0,    0,    1406, 1407, 1,    0,
-      0,    0,    1407, 1416, 1,    0,    0,    0,    1408, 1417, 3,    6,
-      3,    0,    1409, 1414, 3,    68,   34,   0,    1410, 1412, 5,    125,
-      0,    0,    1411, 1410, 1,    0,    0,    0,    1411, 1412, 1,    0,
-      0,    0,    1412, 1413, 1,    0,    0,    0,    1413, 1415, 3,    66,
-      33,   0,    1414, 1411, 1,    0,    0,    0,    1414, 1415, 1,    0,
-      0,    0,    1415, 1417, 1,    0,    0,    0,    1416, 1408, 1,    0,
-      0,    0,    1416, 1409, 1,    0,    0,    0,    1417, 1419, 1,    0,
-      0,    0,    1418, 1420, 5,    125,  0,    0,    1419, 1418, 1,    0,
-      0,    0,    1419, 1420, 1,    0,    0,    0,    1420, 1421, 1,    0,
-      0,    0,    1421, 1422, 5,    25,   0,    0,    1422, 163,  1,    0,
-      0,    0,    1423, 1425, 3,    170,  85,   0,    1424, 1426, 5,    125,
-      0,    0,    1425, 1424, 1,    0,    0,    0,    1425, 1426, 1,    0,
-      0,    0,    1426, 1427, 1,    0,    0,    0,    1427, 1429, 5,    6,
-      0,    0,    1428, 1430, 5,    125,  0,    0,    1429, 1428, 1,    0,
-      0,    0,    1429, 1430, 1,    0,    0,    0,    1430, 1448, 1,    0,
-      0,    0,    1431, 1433, 3,    102,  51,   0,    1432, 1434, 5,    125,
-      0,    0,    1433, 1432, 1,    0,    0,    0,    1433, 1434, 1,    0,
-      0,    0,    1434, 1445, 1,    0,    0,    0,    1435, 1437, 5,    2,
-      0,    0,    1436, 1438, 5,    125,  0,    0,    1437, 1436, 1,    0,
-      0,    0,    1437, 1438, 1,    0,    0,    0,    1438, 1439, 1,    0,
-      0,    0,    1439, 1441, 3,    102,  51,   0,    1440, 1442, 5,    125,
-      0,    0,    1441, 1440, 1,    0,    0,    0,    1441, 1442, 1,    0,
-      0,    0,    1442, 1444, 1,    0,    0,    0,    1443, 1435, 1,    0,
-      0,    0,    1444, 1447, 1,    0,    0,    0,    1445, 1443, 1,    0,
-      0,    0,    1445, 1446, 1,    0,    0,    0,    1446, 1449, 1,    0,
-      0,    0,    1447, 1445, 1,    0,    0,    0,    1448, 1431, 1,    0,
-      0,    0,    1448, 1449, 1,    0,    0,    0,    1449, 1450, 1,    0,
-      0,    0,    1450, 1451, 5,    7,    0,    0,    1451, 165,  1,    0,
-      0,    0,    1452, 1453, 3,    170,  85,   0,    1453, 167,  1,    0,
-      0,    0,    1454, 1455, 3,    198,  99,   0,    1455, 169,  1,    0,
-      0,    0,    1456, 1457, 3,    172,  86,   0,    1457, 1458, 3,    198,
-      99,   0,    1458, 171,  1,    0,    0,    0,    1459, 1460, 3,    198,
-      99,   0,    1460, 1461, 5,    23,   0,    0,    1461, 1463, 1,    0,
-      0,    0,    1462, 1459, 1,    0,    0,    0,    1463, 1466, 1,    0,
-      0,    0,    1464, 1462, 1,    0,    0,    0,    1464, 1465, 1,    0,
-      0,    0,    1465, 173,  1,    0,    0,    0,    1466, 1464, 1,    0,
-      0,    0,    1467, 1468, 3,    198,  99,   0,    1468, 175,  1,    0,
-      0,    0,    1469, 1476, 3,    178,  89,   0,    1470, 1476, 5,    82,
-      0,    0,    1471, 1476, 3,    180,  90,   0,    1472, 1476, 5,    107,
-      0,    0,    1473, 1476, 3,    186,  93,   0,    1474, 1476, 3,    188,
-      94,   0,    1475, 1469, 1,    0,    0,    0,    1475, 1470, 1,    0,
-      0,    0,    1475, 1471, 1,    0,    0,    0,    1475, 1472, 1,    0,
-      0,    0,    1475, 1473, 1,    0,    0,    0,    1475, 1474, 1,    0,
-      0,    0,    1476, 177,  1,    0,    0,    0,    1477, 1478, 7,    2,
-      0,    0,    1478, 179,  1,    0,    0,    0,    1479, 1482, 3,    184,
-      92,   0,    1480, 1482, 3,    182,  91,   0,    1481, 1479, 1,    0,
-      0,    0,    1481, 1480, 1,    0,    0,    0,    1482, 181,  1,    0,
-      0,    0,    1483, 1484, 7,    3,    0,    0,    1484, 183,  1,    0,
-      0,    0,    1485, 1486, 7,    4,    0,    0,    1486, 185,  1,    0,
-      0,    0,    1487, 1489, 5,    8,    0,    0,    1488, 1490, 5,    125,
-      0,    0,    1489, 1488, 1,    0,    0,    0,    1489, 1490, 1,    0,
-      0,    0,    1490, 1508, 1,    0,    0,    0,    1491, 1493, 3,    102,
-      51,   0,    1492, 1494, 5,    125,  0,    0,    1493, 1492, 1,    0,
-      0,    0,    1493, 1494, 1,    0,    0,    0,    1494, 1505, 1,    0,
-      0,    0,    1495, 1497, 5,    2,    0,    0,    1496, 1498, 5,    125,
-      0,    0,    1497, 1496, 1,    0,    0,    0,    1497, 1498, 1,    0,
-      0,    0,    1498, 1499, 1,    0,    0,    0,    1499, 1501, 3,    102,
-      51,   0,    1500, 1502, 5,    125,  0,    0,    1501, 1500, 1,    0,
-      0,    0,    1501, 1502, 1,    0,    0,    0,    1502, 1504, 1,    0,
-      0,    0,    1503, 1495, 1,    0,    0,    0,    1504, 1507, 1,    0,
-      0,    0,    1505, 1503, 1,    0,    0,    0,    1505, 1506, 1,    0,
-      0,    0,    1506, 1509, 1,    0,    0,    0,    1507, 1505, 1,    0,
-      0,    0,    1508, 1491, 1,    0,    0,    0,    1508, 1509, 1,    0,
-      0,    0,    1509, 1510, 1,    0,    0,    0,    1510, 1511, 5,    9,
-      0,    0,    1511, 187,  1,    0,    0,    0,    1512, 1514, 5,    24,
-      0,    0,    1513, 1515, 5,    125,  0,    0,    1514, 1513, 1,    0,
-      0,    0,    1514, 1515, 1,    0,    0,    0,    1515, 1549, 1,    0,
-      0,    0,    1516, 1518, 3,    190,  95,   0,    1517, 1519, 5,    125,
-      0,    0,    1518, 1517, 1,    0,    0,    0,    1518, 1519, 1,    0,
-      0,    0,    1519, 1520, 1,    0,    0,    0,    1520, 1522, 5,    10,
-      0,    0,    1521, 1523, 5,    125,  0,    0,    1522, 1521, 1,    0,
-      0,    0,    1522, 1523, 1,    0,    0,    0,    1523, 1524, 1,    0,
-      0,    0,    1524, 1526, 3,    102,  51,   0,    1525, 1527, 5,    125,
-      0,    0,    1526, 1525, 1,    0,    0,    0,    1526, 1527, 1,    0,
-      0,    0,    1527, 1546, 1,    0,    0,    0,    1528, 1530, 5,    2,
-      0,    0,    1529, 1531, 5,    125,  0,    0,    1530, 1529, 1,    0,
-      0,    0,    1530, 1531, 1,    0,    0,    0,    1531, 1532, 1,    0,
-      0,    0,    1532, 1534, 3,    190,  95,   0,    1533, 1535, 5,    125,
-      0,    0,    1534, 1533, 1,    0,    0,    0,    1534, 1535, 1,    0,
-      0,    0,    1535, 1536, 1,    0,    0,    0,    1536, 1538, 5,    10,
-      0,    0,    1537, 1539, 5,    125,  0,    0,    1538, 1537, 1,    0,
-      0,    0,    1538, 1539, 1,    0,    0,    0,    1539, 1540, 1,    0,
-      0,    0,    1540, 1542, 3,    102,  51,   0,    1541, 1543, 5,    125,
-      0,    0,    1542, 1541, 1,    0,    0,    0,    1542, 1543, 1,    0,
-      0,    0,    1543, 1545, 1,    0,    0,    0,    1544, 1528, 1,    0,
-      0,    0,    1545, 1548, 1,    0,    0,    0,    1546, 1544, 1,    0,
-      0,    0,    1546, 1547, 1,    0,    0,    0,    1547, 1550, 1,    0,
-      0,    0,    1548, 1546, 1,    0,    0,    0,    1549, 1516, 1,    0,
-      0,    0,    1549, 1550, 1,    0,    0,    0,    1550, 1551, 1,    0,
-      0,    0,    1551, 1552, 5,    25,   0,    0,    1552, 189,  1,    0,
-      0,    0,    1553, 1554, 3,    194,  97,   0,    1554, 191,  1,    0,
-      0,    0,    1555, 1558, 5,    26,   0,    0,    1556, 1559, 3,    198,
-      99,   0,    1557, 1559, 5,    96,   0,    0,    1558, 1556, 1,    0,
-      0,    0,    1558, 1557, 1,    0,    0,    0,    1559, 193,  1,    0,
-      0,    0,    1560, 1563, 3,    198,  99,   0,    1561, 1563, 3,    196,
-      98,   0,    1562, 1560, 1,    0,    0,    0,    1562, 1561, 1,    0,
-      0,    0,    1563, 195,  1,    0,    0,    0,    1564, 1565, 7,    5,
-      0,    0,    1565, 197,  1,    0,    0,    0,    1566, 1567, 7,    6,
-      0,    0,    1567, 199,  1,    0,    0,    0,    1568, 1569, 7,    7,
-      0,    0,    1569, 201,  1,    0,    0,    0,    1570, 1571, 7,    8,
-      0,    0,    1571, 203,  1,    0,    0,    0,    1572, 1573, 7,    9,
-      0,    0,    1573, 205,  1,    0,    0,    0,    291,  207,  211,  214,
-      217,  225,  229,  234,  241,  246,  249,  253,  257,  261,  267,  271,
-      276,  281,  285,  288,  290,  294,  298,  303,  307,  312,  316,  325,
-      330,  334,  338,  342,  345,  349,  359,  366,  379,  383,  389,  393,
-      397,  402,  407,  411,  417,  421,  427,  431,  437,  441,  445,  449,
-      453,  457,  462,  469,  473,  478,  485,  491,  496,  502,  505,  511,
-      513,  517,  521,  526,  530,  533,  540,  547,  550,  556,  559,  565,
-      569,  573,  577,  581,  586,  591,  595,  600,  603,  612,  621,  626,
-      639,  642,  650,  654,  659,  664,  668,  673,  679,  684,  691,  695,
-      700,  704,  708,  710,  714,  716,  720,  722,  728,  734,  738,  741,
-      744,  748,  754,  758,  761,  764,  770,  773,  776,  780,  786,  789,
-      792,  796,  800,  804,  806,  810,  812,  815,  819,  821,  827,  831,
-      835,  839,  842,  847,  852,  857,  862,  868,  872,  874,  878,  882,
-      884,  886,  894,  899,  910,  920,  930,  935,  939,  946,  951,  956,
-      961,  966,  971,  976,  981,  984,  990,  992,  1005, 1008, 1015, 1029,
-      1033, 1037, 1041, 1045, 1048, 1050, 1055, 1059, 1063, 1067, 1071, 1075,
-      1078, 1080, 1085, 1089, 1094, 1100, 1103, 1107, 1111, 1114, 1116, 1120,
-      1123, 1131, 1135, 1138, 1142, 1151, 1155, 1159, 1170, 1174, 1179, 1183,
-      1187, 1192, 1194, 1197, 1201, 1204, 1207, 1213, 1217, 1221, 1227, 1231,
-      1235, 1238, 1241, 1247, 1251, 1255, 1257, 1261, 1265, 1267, 1271, 1275,
-      1281, 1285, 1289, 1295, 1299, 1303, 1309, 1313, 1317, 1323, 1327, 1331,
-      1335, 1339, 1342, 1348, 1352, 1364, 1368, 1372, 1374, 1378, 1382, 1386,
-      1390, 1393, 1402, 1406, 1411, 1414, 1416, 1419, 1425, 1429, 1433, 1437,
-      1441, 1445, 1448, 1464, 1475, 1481, 1489, 1493, 1497, 1501, 1505, 1508,
-      1514, 1518, 1522, 1526, 1530, 1534, 1538, 1542, 1546, 1549, 1558, 1562};
-  staticData->serializedATN = antlr4::atn::SerializedATNView(
-      serializedATNSegment,
-      sizeof(serializedATNSegment) / sizeof(serializedATNSegment[0]));
+  	4,1,128,1579,2,0,7,0,2,1,7,1,2,2,7,2,2,3,7,3,2,4,7,4,2,5,7,5,2,6,7,6,
+  	2,7,7,7,2,8,7,8,2,9,7,9,2,10,7,10,2,11,7,11,2,12,7,12,2,13,7,13,2,14,
+  	7,14,2,15,7,15,2,16,7,16,2,17,7,17,2,18,7,18,2,19,7,19,2,20,7,20,2,21,
+  	7,21,2,22,7,22,2,23,7,23,2,24,7,24,2,25,7,25,2,26,7,26,2,27,7,27,2,28,
+  	7,28,2,29,7,29,2,30,7,30,2,31,7,31,2,32,7,32,2,33,7,33,2,34,7,34,2,35,
+  	7,35,2,36,7,36,2,37,7,37,2,38,7,38,2,39,7,39,2,40,7,40,2,41,7,41,2,42,
+  	7,42,2,43,7,43,2,44,7,44,2,45,7,45,2,46,7,46,2,47,7,47,2,48,7,48,2,49,
+  	7,49,2,50,7,50,2,51,7,51,2,52,7,52,2,53,7,53,2,54,7,54,2,55,7,55,2,56,
+  	7,56,2,57,7,57,2,58,7,58,2,59,7,59,2,60,7,60,2,61,7,61,2,62,7,62,2,63,
+  	7,63,2,64,7,64,2,65,7,65,2,66,7,66,2,67,7,67,2,68,7,68,2,69,7,69,2,70,
+  	7,70,2,71,7,71,2,72,7,72,2,73,7,73,2,74,7,74,2,75,7,75,2,76,7,76,2,77,
+  	7,77,2,78,7,78,2,79,7,79,2,80,7,80,2,81,7,81,2,82,7,82,2,83,7,83,2,84,
+  	7,84,2,85,7,85,2,86,7,86,2,87,7,87,2,88,7,88,2,89,7,89,2,90,7,90,2,91,
+  	7,91,2,92,7,92,2,93,7,93,2,94,7,94,2,95,7,95,2,96,7,96,2,97,7,97,2,98,
+  	7,98,2,99,7,99,2,100,7,100,2,101,7,101,2,102,7,102,1,0,3,0,208,8,0,1,
+  	0,1,0,3,0,212,8,0,1,0,3,0,215,8,0,1,0,3,0,218,8,0,1,0,1,0,1,1,1,1,1,1,
+  	1,1,3,1,226,8,1,1,2,1,2,3,2,230,8,2,1,3,1,3,3,3,234,8,3,1,3,5,3,237,8,
+  	3,10,3,12,3,240,9,3,1,4,1,4,1,4,1,4,3,4,246,8,4,1,4,1,4,1,4,3,4,251,8,
+  	4,1,4,3,4,254,8,4,1,5,1,5,3,5,258,8,5,1,6,1,6,3,6,262,8,6,5,6,264,8,6,
+  	10,6,12,6,267,9,6,1,6,1,6,1,6,3,6,272,8,6,5,6,274,8,6,10,6,12,6,277,9,
+  	6,1,6,1,6,3,6,281,8,6,1,6,5,6,284,8,6,10,6,12,6,287,9,6,1,6,3,6,290,8,
+  	6,1,6,3,6,293,8,6,3,6,295,8,6,1,7,1,7,3,7,299,8,7,5,7,301,8,7,10,7,12,
+  	7,304,9,7,1,7,1,7,3,7,308,8,7,5,7,310,8,7,10,7,12,7,313,9,7,1,7,1,7,3,
+  	7,317,8,7,4,7,319,8,7,11,7,12,7,320,1,7,1,7,1,8,1,8,1,8,1,8,1,8,3,8,330,
+  	8,8,1,9,1,9,1,9,3,9,335,8,9,1,10,1,10,3,10,339,8,10,1,10,1,10,3,10,343,
+  	8,10,1,10,1,10,3,10,347,8,10,1,10,3,10,350,8,10,1,11,1,11,3,11,354,8,
+  	11,1,11,1,11,1,11,1,11,1,11,1,11,1,12,1,12,3,12,364,8,12,1,12,1,12,1,
+  	12,5,12,369,8,12,10,12,12,12,372,9,12,1,13,1,13,1,13,1,13,1,13,1,13,1,
+  	13,1,13,1,13,1,13,3,13,384,8,13,1,14,1,14,3,14,388,8,14,1,14,1,14,1,15,
+  	1,15,3,15,394,8,15,1,15,1,15,3,15,398,8,15,1,15,1,15,3,15,402,8,15,1,
+  	15,5,15,405,8,15,10,15,12,15,408,9,15,1,16,1,16,3,16,412,8,16,1,16,1,
+  	16,3,16,416,8,16,1,16,1,16,1,16,1,16,3,16,422,8,16,1,16,1,16,3,16,426,
+  	8,16,1,16,1,16,1,16,1,16,3,16,432,8,16,1,16,1,16,3,16,436,8,16,1,16,1,
+  	16,1,16,1,16,3,16,442,8,16,1,16,1,16,3,16,446,8,16,1,17,1,17,3,17,450,
+  	8,17,1,17,1,17,3,17,454,8,17,1,17,1,17,3,17,458,8,17,1,17,1,17,3,17,462,
+  	8,17,1,17,5,17,465,8,17,10,17,12,17,468,9,17,1,18,1,18,1,18,1,18,3,18,
+  	474,8,18,1,18,1,18,3,18,478,8,18,1,18,5,18,481,8,18,10,18,12,18,484,9,
+  	18,1,19,1,19,1,19,1,19,3,19,490,8,19,1,20,1,20,1,20,1,20,3,20,496,8,20,
+  	1,20,1,20,1,20,3,20,501,8,20,1,21,1,21,1,21,1,21,3,21,507,8,21,1,21,3,
+  	21,510,8,21,1,21,1,21,1,21,1,21,3,21,516,8,21,3,21,518,8,21,1,22,1,22,
+  	3,22,522,8,22,1,22,1,22,3,22,526,8,22,1,22,5,22,529,8,22,10,22,12,22,
+  	532,9,22,1,22,3,22,535,8,22,1,22,3,22,538,8,22,1,23,1,23,1,23,1,23,1,
+  	23,3,23,545,8,23,1,23,1,23,1,24,1,24,1,24,3,24,552,8,24,1,24,3,24,555,
+  	8,24,1,25,1,25,1,25,1,26,3,26,561,8,26,1,26,3,26,564,8,26,1,26,1,26,1,
+  	26,1,26,3,26,570,8,26,1,26,1,26,3,26,574,8,26,1,26,1,26,3,26,578,8,26,
+  	1,27,1,27,3,27,582,8,27,1,27,1,27,3,27,586,8,27,1,27,5,27,589,8,27,10,
+  	27,12,27,592,9,27,1,27,1,27,3,27,596,8,27,1,27,1,27,3,27,600,8,27,1,27,
+  	5,27,603,8,27,10,27,12,27,606,9,27,3,27,608,8,27,1,28,1,28,1,28,1,28,
+  	1,28,1,28,1,28,3,28,617,8,28,1,29,1,29,1,29,1,29,1,29,1,29,1,29,3,29,
+  	626,8,29,1,29,5,29,629,8,29,10,29,12,29,632,9,29,1,30,1,30,1,30,1,30,
+  	1,31,1,31,1,31,1,31,1,32,1,32,3,32,644,8,32,1,32,3,32,647,8,32,1,33,1,
+  	33,1,33,1,33,1,34,1,34,3,34,655,8,34,1,34,1,34,3,34,659,8,34,1,34,5,34,
+  	662,8,34,10,34,12,34,665,9,34,1,35,1,35,3,35,669,8,35,1,35,1,35,3,35,
+  	673,8,35,1,35,1,35,1,35,3,35,678,8,35,1,36,1,36,1,37,1,37,3,37,684,8,
+  	37,1,37,5,37,687,8,37,10,37,12,37,690,9,37,1,37,1,37,1,37,1,37,3,37,696,
+  	8,37,1,38,1,38,3,38,700,8,38,1,38,4,38,703,8,38,11,38,12,38,704,1,39,
+  	1,39,3,39,709,8,39,1,39,1,39,3,39,713,8,39,3,39,715,8,39,1,39,1,39,3,
+  	39,719,8,39,3,39,721,8,39,1,39,1,39,3,39,725,8,39,3,39,727,8,39,1,39,
+  	1,39,1,40,1,40,3,40,733,8,40,1,40,1,40,1,41,1,41,3,41,739,8,41,1,41,1,
+  	41,3,41,743,8,41,1,41,3,41,746,8,41,1,41,3,41,749,8,41,1,41,1,41,3,41,
+  	753,8,41,1,41,1,41,1,41,1,41,3,41,759,8,41,1,41,1,41,3,41,763,8,41,1,
+  	41,3,41,766,8,41,1,41,3,41,769,8,41,1,41,1,41,1,41,1,41,3,41,775,8,41,
+  	1,41,3,41,778,8,41,1,41,3,41,781,8,41,1,41,1,41,3,41,785,8,41,1,41,1,
+  	41,1,41,1,41,3,41,791,8,41,1,41,3,41,794,8,41,1,41,3,41,797,8,41,1,41,
+  	1,41,3,41,801,8,41,1,42,1,42,3,42,805,8,42,1,42,1,42,3,42,809,8,42,3,
+  	42,811,8,42,1,42,1,42,3,42,815,8,42,3,42,817,8,42,1,42,3,42,820,8,42,
+  	1,42,1,42,3,42,824,8,42,3,42,826,8,42,1,42,1,42,1,43,1,43,3,43,832,8,
+  	43,1,44,1,44,3,44,836,8,44,1,44,1,44,3,44,840,8,44,1,44,1,44,3,44,844,
+  	8,44,1,44,3,44,847,8,44,1,44,5,44,850,8,44,10,44,12,44,853,9,44,1,45,
+  	1,45,3,45,857,8,45,1,45,5,45,860,8,45,10,45,12,45,863,9,45,1,46,1,46,
+  	3,46,867,8,46,1,46,1,46,1,47,1,47,3,47,873,8,47,1,47,1,47,3,47,877,8,
+  	47,3,47,879,8,47,1,47,1,47,3,47,883,8,47,1,47,1,47,3,47,887,8,47,3,47,
+  	889,8,47,3,47,891,8,47,1,48,1,48,1,49,1,49,1,50,1,50,3,50,899,8,50,1,
+  	50,4,50,902,8,50,11,50,12,50,903,1,51,1,51,1,52,1,52,1,52,1,52,1,52,5,
+  	52,913,8,52,10,52,12,52,916,9,52,1,53,1,53,1,53,1,53,1,53,5,53,923,8,
+  	53,10,53,12,53,926,9,53,1,54,1,54,1,54,1,54,1,54,5,54,933,8,54,10,54,
+  	12,54,936,9,54,1,55,1,55,3,55,940,8,55,5,55,942,8,55,10,55,12,55,945,
+  	9,55,1,55,1,55,1,56,1,56,3,56,951,8,56,1,56,5,56,954,8,56,10,56,12,56,
+  	957,9,56,1,57,1,57,3,57,961,8,57,1,57,1,57,1,57,3,57,966,8,57,1,57,1,
+  	57,1,57,3,57,971,8,57,1,57,1,57,1,57,3,57,976,8,57,1,57,1,57,1,57,3,57,
+  	981,8,57,1,57,1,57,1,57,3,57,986,8,57,1,57,3,57,989,8,57,1,58,1,58,1,
+  	58,1,58,5,58,995,8,58,10,58,12,58,998,9,58,1,59,1,59,1,59,1,59,1,59,1,
+  	59,1,59,1,59,1,59,1,59,3,59,1010,8,59,1,59,3,59,1013,8,59,1,59,1,59,1,
+  	60,1,60,1,60,3,60,1020,8,60,1,60,1,60,1,61,1,61,1,61,1,61,1,61,1,61,1,
+  	61,1,61,1,61,1,61,3,61,1034,8,61,1,62,1,62,3,62,1038,8,62,1,62,1,62,3,
+  	62,1042,8,62,1,62,1,62,3,62,1046,8,62,1,62,1,62,3,62,1050,8,62,1,62,5,
+  	62,1053,8,62,10,62,12,62,1056,9,62,1,63,1,63,3,63,1060,8,63,1,63,1,63,
+  	3,63,1064,8,63,1,63,1,63,3,63,1068,8,63,1,63,1,63,3,63,1072,8,63,1,63,
+  	1,63,3,63,1076,8,63,1,63,1,63,3,63,1080,8,63,1,63,5,63,1083,8,63,10,63,
+  	12,63,1086,9,63,1,64,1,64,3,64,1090,8,64,1,64,1,64,3,64,1094,8,64,1,64,
+  	5,64,1097,8,64,10,64,12,64,1100,9,64,1,65,1,65,1,65,3,65,1105,8,65,1,
+  	65,3,65,1108,8,65,1,66,1,66,3,66,1112,8,66,1,66,1,66,3,66,1116,8,66,1,
+  	66,5,66,1119,8,66,10,66,12,66,1122,9,66,1,66,3,66,1125,8,66,1,66,3,66,
+  	1128,8,66,1,67,1,67,1,67,1,67,1,67,1,67,3,67,1136,8,67,1,67,1,67,3,67,
+  	1140,8,67,1,67,3,67,1143,8,67,1,68,1,68,3,68,1147,8,68,1,68,1,68,1,69,
+  	1,69,1,69,1,69,1,69,3,69,1156,8,69,1,69,1,69,3,69,1160,8,69,1,69,1,69,
+  	3,69,1164,8,69,1,69,1,69,1,69,1,69,1,69,1,69,1,69,1,69,1,69,3,69,1175,
+  	8,69,1,70,1,70,3,70,1179,8,70,1,70,4,70,1182,8,70,11,70,12,70,1183,1,
+  	70,1,70,3,70,1188,8,70,1,70,1,70,3,70,1192,8,70,1,70,4,70,1195,8,70,11,
+  	70,12,70,1196,3,70,1199,8,70,1,70,3,70,1202,8,70,1,70,1,70,3,70,1206,
+  	8,70,1,70,3,70,1209,8,70,1,70,3,70,1212,8,70,1,70,1,70,1,71,1,71,3,71,
+  	1218,8,71,1,71,1,71,3,71,1222,8,71,1,71,1,71,3,71,1226,8,71,1,71,1,71,
+  	1,72,1,72,3,72,1232,8,72,1,72,1,72,3,72,1236,8,72,1,72,1,72,3,72,1240,
+  	8,72,1,72,3,72,1243,8,72,1,72,3,72,1246,8,72,1,72,1,72,1,73,1,73,3,73,
+  	1252,8,73,1,73,1,73,3,73,1256,8,73,1,73,1,73,3,73,1260,8,73,3,73,1262,
+  	8,73,1,73,1,73,3,73,1266,8,73,1,73,1,73,3,73,1270,8,73,3,73,1272,8,73,
+  	1,73,1,73,3,73,1276,8,73,1,73,1,73,3,73,1280,8,73,1,73,1,73,1,74,1,74,
+  	3,74,1286,8,74,1,74,1,74,3,74,1290,8,74,1,74,1,74,3,74,1294,8,74,1,74,
+  	1,74,1,74,1,74,3,74,1300,8,74,1,74,1,74,3,74,1304,8,74,1,74,1,74,3,74,
+  	1308,8,74,1,74,1,74,1,74,1,74,3,74,1314,8,74,1,74,1,74,3,74,1318,8,74,
+  	1,74,1,74,3,74,1322,8,74,1,74,1,74,1,74,1,74,3,74,1328,8,74,1,74,1,74,
+  	3,74,1332,8,74,1,74,1,74,3,74,1336,8,74,1,74,1,74,3,74,1340,8,74,1,75,
+  	1,75,3,75,1344,8,75,1,75,3,75,1347,8,75,1,76,1,76,1,77,1,77,3,77,1353,
+  	8,77,1,77,1,77,3,77,1357,8,77,1,77,1,77,1,78,1,78,1,78,1,78,1,78,1,78,
+  	1,79,1,79,3,79,1369,8,79,1,79,1,79,3,79,1373,8,79,1,79,1,79,3,79,1377,
+  	8,79,3,79,1379,8,79,1,79,1,79,3,79,1383,8,79,1,79,1,79,3,79,1387,8,79,
+  	1,79,1,79,3,79,1391,8,79,5,79,1393,8,79,10,79,12,79,1396,9,79,3,79,1398,
+  	8,79,1,79,1,79,1,80,1,80,1,80,1,81,1,81,3,81,1407,8,81,1,81,1,81,3,81,
+  	1411,8,81,1,81,1,81,1,81,3,81,1416,8,81,1,81,3,81,1419,8,81,3,81,1421,
+  	8,81,1,81,3,81,1424,8,81,1,81,1,81,1,82,1,82,3,82,1430,8,82,1,82,1,82,
+  	3,82,1434,8,82,1,82,1,82,3,82,1438,8,82,1,82,1,82,3,82,1442,8,82,1,82,
+  	1,82,3,82,1446,8,82,5,82,1448,8,82,10,82,12,82,1451,9,82,3,82,1453,8,
+  	82,1,82,1,82,1,83,1,83,1,84,1,84,1,85,1,85,1,85,1,86,1,86,1,86,5,86,1467,
+  	8,86,10,86,12,86,1470,9,86,1,87,1,87,1,88,1,88,1,88,1,88,1,88,1,88,3,
+  	88,1480,8,88,1,89,1,89,1,90,1,90,3,90,1486,8,90,1,91,1,91,1,92,1,92,1,
+  	93,1,93,3,93,1494,8,93,1,93,1,93,3,93,1498,8,93,1,93,1,93,3,93,1502,8,
+  	93,1,93,1,93,3,93,1506,8,93,5,93,1508,8,93,10,93,12,93,1511,9,93,3,93,
+  	1513,8,93,1,93,1,93,1,94,1,94,3,94,1519,8,94,1,94,1,94,3,94,1523,8,94,
+  	1,94,1,94,3,94,1527,8,94,1,94,1,94,3,94,1531,8,94,1,94,1,94,3,94,1535,
+  	8,94,1,94,1,94,3,94,1539,8,94,1,94,1,94,3,94,1543,8,94,1,94,1,94,3,94,
+  	1547,8,94,5,94,1549,8,94,10,94,12,94,1552,9,94,3,94,1554,8,94,1,94,1,
+  	94,1,95,1,95,1,96,1,96,1,96,3,96,1563,8,96,1,97,1,97,3,97,1567,8,97,1,
+  	98,1,98,1,99,1,99,1,100,1,100,1,101,1,101,1,102,1,102,1,102,0,0,103,0,
+  	2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,
+  	52,54,56,58,60,62,64,66,68,70,72,74,76,78,80,82,84,86,88,90,92,94,96,
+  	98,100,102,104,106,108,110,112,114,116,118,120,122,124,126,128,130,132,
+  	134,136,138,140,142,144,146,148,150,152,154,156,158,160,162,164,166,168,
+  	170,172,174,176,178,180,182,184,186,188,190,192,194,196,198,200,202,204,
+  	0,10,1,0,68,71,1,0,18,19,1,0,94,95,1,0,96,98,1,0,106,107,5,0,46,58,61,
+  	82,84,88,92,95,110,119,5,0,83,83,89,91,99,99,120,122,125,125,2,0,14,14,
+  	27,30,2,0,15,15,31,34,2,0,19,19,35,45,1798,0,207,1,0,0,0,2,225,1,0,0,
+  	0,4,229,1,0,0,0,6,231,1,0,0,0,8,253,1,0,0,0,10,257,1,0,0,0,12,294,1,0,
+  	0,0,14,318,1,0,0,0,16,329,1,0,0,0,18,334,1,0,0,0,20,338,1,0,0,0,22,351,
+  	1,0,0,0,24,361,1,0,0,0,26,383,1,0,0,0,28,385,1,0,0,0,30,391,1,0,0,0,32,
+  	445,1,0,0,0,34,449,1,0,0,0,36,469,1,0,0,0,38,489,1,0,0,0,40,491,1,0,0,
+  	0,42,502,1,0,0,0,44,519,1,0,0,0,46,544,1,0,0,0,48,548,1,0,0,0,50,556,
+  	1,0,0,0,52,563,1,0,0,0,54,607,1,0,0,0,56,616,1,0,0,0,58,618,1,0,0,0,60,
+  	633,1,0,0,0,62,637,1,0,0,0,64,641,1,0,0,0,66,648,1,0,0,0,68,652,1,0,0,
+  	0,70,677,1,0,0,0,72,679,1,0,0,0,74,695,1,0,0,0,76,697,1,0,0,0,78,706,
+  	1,0,0,0,80,730,1,0,0,0,82,800,1,0,0,0,84,802,1,0,0,0,86,831,1,0,0,0,88,
+  	833,1,0,0,0,90,854,1,0,0,0,92,864,1,0,0,0,94,870,1,0,0,0,96,892,1,0,0,
+  	0,98,894,1,0,0,0,100,896,1,0,0,0,102,905,1,0,0,0,104,907,1,0,0,0,106,
+  	917,1,0,0,0,108,927,1,0,0,0,110,943,1,0,0,0,112,948,1,0,0,0,114,988,1,
+  	0,0,0,116,990,1,0,0,0,118,1009,1,0,0,0,120,1016,1,0,0,0,122,1033,1,0,
+  	0,0,124,1035,1,0,0,0,126,1057,1,0,0,0,128,1087,1,0,0,0,130,1107,1,0,0,
+  	0,132,1109,1,0,0,0,134,1142,1,0,0,0,136,1144,1,0,0,0,138,1174,1,0,0,0,
+  	140,1198,1,0,0,0,142,1215,1,0,0,0,144,1229,1,0,0,0,146,1249,1,0,0,0,148,
+  	1339,1,0,0,0,150,1341,1,0,0,0,152,1348,1,0,0,0,154,1350,1,0,0,0,156,1360,
+  	1,0,0,0,158,1366,1,0,0,0,160,1401,1,0,0,0,162,1404,1,0,0,0,164,1427,1,
+  	0,0,0,166,1456,1,0,0,0,168,1458,1,0,0,0,170,1460,1,0,0,0,172,1468,1,0,
+  	0,0,174,1471,1,0,0,0,176,1479,1,0,0,0,178,1481,1,0,0,0,180,1485,1,0,0,
+  	0,182,1487,1,0,0,0,184,1489,1,0,0,0,186,1491,1,0,0,0,188,1516,1,0,0,0,
+  	190,1557,1,0,0,0,192,1559,1,0,0,0,194,1566,1,0,0,0,196,1568,1,0,0,0,198,
+  	1570,1,0,0,0,200,1572,1,0,0,0,202,1574,1,0,0,0,204,1576,1,0,0,0,206,208,
+  	5,126,0,0,207,206,1,0,0,0,207,208,1,0,0,0,208,209,1,0,0,0,209,214,3,2,
+  	1,0,210,212,5,126,0,0,211,210,1,0,0,0,211,212,1,0,0,0,212,213,1,0,0,0,
+  	213,215,5,1,0,0,214,211,1,0,0,0,214,215,1,0,0,0,215,217,1,0,0,0,216,218,
+  	5,126,0,0,217,216,1,0,0,0,217,218,1,0,0,0,218,219,1,0,0,0,219,220,5,0,
+  	0,1,220,1,1,0,0,0,221,222,5,93,0,0,222,223,5,126,0,0,223,226,3,4,2,0,
+  	224,226,3,4,2,0,225,221,1,0,0,0,225,224,1,0,0,0,226,3,1,0,0,0,227,230,
+  	3,6,3,0,228,230,3,42,21,0,229,227,1,0,0,0,229,228,1,0,0,0,230,5,1,0,0,
+  	0,231,238,3,10,5,0,232,234,5,126,0,0,233,232,1,0,0,0,233,234,1,0,0,0,
+  	234,235,1,0,0,0,235,237,3,8,4,0,236,233,1,0,0,0,237,240,1,0,0,0,238,236,
+  	1,0,0,0,238,239,1,0,0,0,239,7,1,0,0,0,240,238,1,0,0,0,241,242,5,46,0,
+  	0,242,243,5,126,0,0,243,245,5,47,0,0,244,246,5,126,0,0,245,244,1,0,0,
+  	0,245,246,1,0,0,0,246,247,1,0,0,0,247,254,3,10,5,0,248,250,5,46,0,0,249,
+  	251,5,126,0,0,250,249,1,0,0,0,250,251,1,0,0,0,251,252,1,0,0,0,252,254,
+  	3,10,5,0,253,241,1,0,0,0,253,248,1,0,0,0,254,9,1,0,0,0,255,258,3,12,6,
+  	0,256,258,3,14,7,0,257,255,1,0,0,0,257,256,1,0,0,0,258,11,1,0,0,0,259,
+  	261,3,18,9,0,260,262,5,126,0,0,261,260,1,0,0,0,261,262,1,0,0,0,262,264,
+  	1,0,0,0,263,259,1,0,0,0,264,267,1,0,0,0,265,263,1,0,0,0,265,266,1,0,0,
+  	0,266,268,1,0,0,0,267,265,1,0,0,0,268,295,3,50,25,0,269,271,3,18,9,0,
+  	270,272,5,126,0,0,271,270,1,0,0,0,271,272,1,0,0,0,272,274,1,0,0,0,273,
+  	269,1,0,0,0,274,277,1,0,0,0,275,273,1,0,0,0,275,276,1,0,0,0,276,278,1,
+  	0,0,0,277,275,1,0,0,0,278,285,3,16,8,0,279,281,5,126,0,0,280,279,1,0,
+  	0,0,280,281,1,0,0,0,281,282,1,0,0,0,282,284,3,16,8,0,283,280,1,0,0,0,
+  	284,287,1,0,0,0,285,283,1,0,0,0,285,286,1,0,0,0,286,292,1,0,0,0,287,285,
+  	1,0,0,0,288,290,5,126,0,0,289,288,1,0,0,0,289,290,1,0,0,0,290,291,1,0,
+  	0,0,291,293,3,50,25,0,292,289,1,0,0,0,292,293,1,0,0,0,293,295,1,0,0,0,
+  	294,265,1,0,0,0,294,275,1,0,0,0,295,13,1,0,0,0,296,298,3,18,9,0,297,299,
+  	5,126,0,0,298,297,1,0,0,0,298,299,1,0,0,0,299,301,1,0,0,0,300,296,1,0,
+  	0,0,301,304,1,0,0,0,302,300,1,0,0,0,302,303,1,0,0,0,303,311,1,0,0,0,304,
+  	302,1,0,0,0,305,307,3,16,8,0,306,308,5,126,0,0,307,306,1,0,0,0,307,308,
+  	1,0,0,0,308,310,1,0,0,0,309,305,1,0,0,0,310,313,1,0,0,0,311,309,1,0,0,
+  	0,311,312,1,0,0,0,312,314,1,0,0,0,313,311,1,0,0,0,314,316,3,48,24,0,315,
+  	317,5,126,0,0,316,315,1,0,0,0,316,317,1,0,0,0,317,319,1,0,0,0,318,302,
+  	1,0,0,0,319,320,1,0,0,0,320,318,1,0,0,0,320,321,1,0,0,0,321,322,1,0,0,
+  	0,322,323,3,12,6,0,323,15,1,0,0,0,324,330,3,28,14,0,325,330,3,24,12,0,
+  	326,330,3,34,17,0,327,330,3,30,15,0,328,330,3,36,18,0,329,324,1,0,0,0,
+  	329,325,1,0,0,0,329,326,1,0,0,0,329,327,1,0,0,0,329,328,1,0,0,0,330,17,
+  	1,0,0,0,331,335,3,20,10,0,332,335,3,22,11,0,333,335,3,40,20,0,334,331,
+  	1,0,0,0,334,332,1,0,0,0,334,333,1,0,0,0,335,19,1,0,0,0,336,337,5,48,0,
+  	0,337,339,5,126,0,0,338,336,1,0,0,0,338,339,1,0,0,0,339,340,1,0,0,0,340,
+  	342,5,49,0,0,341,343,5,126,0,0,342,341,1,0,0,0,342,343,1,0,0,0,343,344,
+  	1,0,0,0,344,349,3,68,34,0,345,347,5,126,0,0,346,345,1,0,0,0,346,347,1,
+  	0,0,0,347,348,1,0,0,0,348,350,3,66,33,0,349,346,1,0,0,0,349,350,1,0,0,
+  	0,350,21,1,0,0,0,351,353,5,50,0,0,352,354,5,126,0,0,353,352,1,0,0,0,353,
+  	354,1,0,0,0,354,355,1,0,0,0,355,356,3,102,51,0,356,357,5,126,0,0,357,
+  	358,5,51,0,0,358,359,5,126,0,0,359,360,3,174,87,0,360,23,1,0,0,0,361,
+  	363,5,52,0,0,362,364,5,126,0,0,363,362,1,0,0,0,363,364,1,0,0,0,364,365,
+  	1,0,0,0,365,370,3,70,35,0,366,367,5,126,0,0,367,369,3,26,13,0,368,366,
+  	1,0,0,0,369,372,1,0,0,0,370,368,1,0,0,0,370,371,1,0,0,0,371,25,1,0,0,
+  	0,372,370,1,0,0,0,373,374,5,53,0,0,374,375,5,126,0,0,375,376,5,49,0,0,
+  	376,377,5,126,0,0,377,384,3,30,15,0,378,379,5,53,0,0,379,380,5,126,0,
+  	0,380,381,5,54,0,0,381,382,5,126,0,0,382,384,3,30,15,0,383,373,1,0,0,
+  	0,383,378,1,0,0,0,384,27,1,0,0,0,385,387,5,54,0,0,386,388,5,126,0,0,387,
+  	386,1,0,0,0,387,388,1,0,0,0,388,389,1,0,0,0,389,390,3,68,34,0,390,29,
+  	1,0,0,0,391,393,5,55,0,0,392,394,5,126,0,0,393,392,1,0,0,0,393,394,1,
+  	0,0,0,394,395,1,0,0,0,395,406,3,32,16,0,396,398,5,126,0,0,397,396,1,0,
+  	0,0,397,398,1,0,0,0,398,399,1,0,0,0,399,401,5,2,0,0,400,402,5,126,0,0,
+  	401,400,1,0,0,0,401,402,1,0,0,0,402,403,1,0,0,0,403,405,3,32,16,0,404,
+  	397,1,0,0,0,405,408,1,0,0,0,406,404,1,0,0,0,406,407,1,0,0,0,407,31,1,
+  	0,0,0,408,406,1,0,0,0,409,411,3,100,50,0,410,412,5,126,0,0,411,410,1,
+  	0,0,0,411,412,1,0,0,0,412,413,1,0,0,0,413,415,5,3,0,0,414,416,5,126,0,
+  	0,415,414,1,0,0,0,415,416,1,0,0,0,416,417,1,0,0,0,417,418,3,102,51,0,
+  	418,446,1,0,0,0,419,421,3,174,87,0,420,422,5,126,0,0,421,420,1,0,0,0,
+  	421,422,1,0,0,0,422,423,1,0,0,0,423,425,5,3,0,0,424,426,5,126,0,0,425,
+  	424,1,0,0,0,425,426,1,0,0,0,426,427,1,0,0,0,427,428,3,102,51,0,428,446,
+  	1,0,0,0,429,431,3,174,87,0,430,432,5,126,0,0,431,430,1,0,0,0,431,432,
+  	1,0,0,0,432,433,1,0,0,0,433,435,5,4,0,0,434,436,5,126,0,0,435,434,1,0,
+  	0,0,435,436,1,0,0,0,436,437,1,0,0,0,437,438,3,102,51,0,438,446,1,0,0,
+  	0,439,441,3,174,87,0,440,442,5,126,0,0,441,440,1,0,0,0,441,442,1,0,0,
+  	0,442,443,1,0,0,0,443,444,3,90,45,0,444,446,1,0,0,0,445,409,1,0,0,0,445,
+  	419,1,0,0,0,445,429,1,0,0,0,445,439,1,0,0,0,446,33,1,0,0,0,447,448,5,
+  	56,0,0,448,450,5,126,0,0,449,447,1,0,0,0,449,450,1,0,0,0,450,451,1,0,
+  	0,0,451,453,5,57,0,0,452,454,5,126,0,0,453,452,1,0,0,0,453,454,1,0,0,
+  	0,454,455,1,0,0,0,455,466,3,102,51,0,456,458,5,126,0,0,457,456,1,0,0,
+  	0,457,458,1,0,0,0,458,459,1,0,0,0,459,461,5,2,0,0,460,462,5,126,0,0,461,
+  	460,1,0,0,0,461,462,1,0,0,0,462,463,1,0,0,0,463,465,3,102,51,0,464,457,
+  	1,0,0,0,465,468,1,0,0,0,466,464,1,0,0,0,466,467,1,0,0,0,467,35,1,0,0,
+  	0,468,466,1,0,0,0,469,470,5,58,0,0,470,471,5,126,0,0,471,482,3,38,19,
+  	0,472,474,5,126,0,0,473,472,1,0,0,0,473,474,1,0,0,0,474,475,1,0,0,0,475,
+  	477,5,2,0,0,476,478,5,126,0,0,477,476,1,0,0,0,477,478,1,0,0,0,478,479,
+  	1,0,0,0,479,481,3,38,19,0,480,473,1,0,0,0,481,484,1,0,0,0,482,480,1,0,
+  	0,0,482,483,1,0,0,0,483,37,1,0,0,0,484,482,1,0,0,0,485,486,3,174,87,0,
+  	486,487,3,90,45,0,487,490,1,0,0,0,488,490,3,100,50,0,489,485,1,0,0,0,
+  	489,488,1,0,0,0,490,39,1,0,0,0,491,492,5,59,0,0,492,493,5,126,0,0,493,
+  	500,3,164,82,0,494,496,5,126,0,0,495,494,1,0,0,0,495,496,1,0,0,0,496,
+  	497,1,0,0,0,497,498,5,60,0,0,498,499,5,126,0,0,499,501,3,44,22,0,500,
+  	495,1,0,0,0,500,501,1,0,0,0,501,41,1,0,0,0,502,503,5,59,0,0,503,506,5,
+  	126,0,0,504,507,3,164,82,0,505,507,3,166,83,0,506,504,1,0,0,0,506,505,
+  	1,0,0,0,507,517,1,0,0,0,508,510,5,126,0,0,509,508,1,0,0,0,509,510,1,0,
+  	0,0,510,511,1,0,0,0,511,512,5,60,0,0,512,515,5,126,0,0,513,516,5,5,0,
+  	0,514,516,3,44,22,0,515,513,1,0,0,0,515,514,1,0,0,0,516,518,1,0,0,0,517,
+  	509,1,0,0,0,517,518,1,0,0,0,518,43,1,0,0,0,519,530,3,46,23,0,520,522,
+  	5,126,0,0,521,520,1,0,0,0,521,522,1,0,0,0,522,523,1,0,0,0,523,525,5,2,
+  	0,0,524,526,5,126,0,0,525,524,1,0,0,0,525,526,1,0,0,0,526,527,1,0,0,0,
+  	527,529,3,46,23,0,528,521,1,0,0,0,529,532,1,0,0,0,530,528,1,0,0,0,530,
+  	531,1,0,0,0,531,537,1,0,0,0,532,530,1,0,0,0,533,535,5,126,0,0,534,533,
+  	1,0,0,0,534,535,1,0,0,0,535,536,1,0,0,0,536,538,3,66,33,0,537,534,1,0,
+  	0,0,537,538,1,0,0,0,538,45,1,0,0,0,539,540,3,168,84,0,540,541,5,126,0,
+  	0,541,542,5,51,0,0,542,543,5,126,0,0,543,545,1,0,0,0,544,539,1,0,0,0,
+  	544,545,1,0,0,0,545,546,1,0,0,0,546,547,3,174,87,0,547,47,1,0,0,0,548,
+  	549,5,61,0,0,549,554,3,52,26,0,550,552,5,126,0,0,551,550,1,0,0,0,551,
+  	552,1,0,0,0,552,553,1,0,0,0,553,555,3,66,33,0,554,551,1,0,0,0,554,555,
+  	1,0,0,0,555,49,1,0,0,0,556,557,5,62,0,0,557,558,3,52,26,0,558,51,1,0,
+  	0,0,559,561,5,126,0,0,560,559,1,0,0,0,560,561,1,0,0,0,561,562,1,0,0,0,
+  	562,564,5,63,0,0,563,560,1,0,0,0,563,564,1,0,0,0,564,565,1,0,0,0,565,
+  	566,5,126,0,0,566,569,3,54,27,0,567,568,5,126,0,0,568,570,3,58,29,0,569,
+  	567,1,0,0,0,569,570,1,0,0,0,570,573,1,0,0,0,571,572,5,126,0,0,572,574,
+  	3,60,30,0,573,571,1,0,0,0,573,574,1,0,0,0,574,577,1,0,0,0,575,576,5,126,
+  	0,0,576,578,3,62,31,0,577,575,1,0,0,0,577,578,1,0,0,0,578,53,1,0,0,0,
+  	579,590,5,5,0,0,580,582,5,126,0,0,581,580,1,0,0,0,581,582,1,0,0,0,582,
+  	583,1,0,0,0,583,585,5,2,0,0,584,586,5,126,0,0,585,584,1,0,0,0,585,586,
+  	1,0,0,0,586,587,1,0,0,0,587,589,3,56,28,0,588,581,1,0,0,0,589,592,1,0,
+  	0,0,590,588,1,0,0,0,590,591,1,0,0,0,591,608,1,0,0,0,592,590,1,0,0,0,593,
+  	604,3,56,28,0,594,596,5,126,0,0,595,594,1,0,0,0,595,596,1,0,0,0,596,597,
+  	1,0,0,0,597,599,5,2,0,0,598,600,5,126,0,0,599,598,1,0,0,0,599,600,1,0,
+  	0,0,600,601,1,0,0,0,601,603,3,56,28,0,602,595,1,0,0,0,603,606,1,0,0,0,
+  	604,602,1,0,0,0,604,605,1,0,0,0,605,608,1,0,0,0,606,604,1,0,0,0,607,579,
+  	1,0,0,0,607,593,1,0,0,0,608,55,1,0,0,0,609,610,3,102,51,0,610,611,5,126,
+  	0,0,611,612,5,51,0,0,612,613,5,126,0,0,613,614,3,174,87,0,614,617,1,0,
+  	0,0,615,617,3,102,51,0,616,609,1,0,0,0,616,615,1,0,0,0,617,57,1,0,0,0,
+  	618,619,5,64,0,0,619,620,5,126,0,0,620,621,5,65,0,0,621,622,5,126,0,0,
+  	622,630,3,64,32,0,623,625,5,2,0,0,624,626,5,126,0,0,625,624,1,0,0,0,625,
+  	626,1,0,0,0,626,627,1,0,0,0,627,629,3,64,32,0,628,623,1,0,0,0,629,632,
+  	1,0,0,0,630,628,1,0,0,0,630,631,1,0,0,0,631,59,1,0,0,0,632,630,1,0,0,
+  	0,633,634,5,66,0,0,634,635,5,126,0,0,635,636,3,102,51,0,636,61,1,0,0,
+  	0,637,638,5,67,0,0,638,639,5,126,0,0,639,640,3,102,51,0,640,63,1,0,0,
+  	0,641,646,3,102,51,0,642,644,5,126,0,0,643,642,1,0,0,0,643,644,1,0,0,
+  	0,644,645,1,0,0,0,645,647,7,0,0,0,646,643,1,0,0,0,646,647,1,0,0,0,647,
+  	65,1,0,0,0,648,649,5,72,0,0,649,650,5,126,0,0,650,651,3,102,51,0,651,
+  	67,1,0,0,0,652,663,3,70,35,0,653,655,5,126,0,0,654,653,1,0,0,0,654,655,
+  	1,0,0,0,655,656,1,0,0,0,656,658,5,2,0,0,657,659,5,126,0,0,658,657,1,0,
+  	0,0,658,659,1,0,0,0,659,660,1,0,0,0,660,662,3,70,35,0,661,654,1,0,0,0,
+  	662,665,1,0,0,0,663,661,1,0,0,0,663,664,1,0,0,0,664,69,1,0,0,0,665,663,
+  	1,0,0,0,666,668,3,174,87,0,667,669,5,126,0,0,668,667,1,0,0,0,668,669,
+  	1,0,0,0,669,670,1,0,0,0,670,672,5,3,0,0,671,673,5,126,0,0,672,671,1,0,
+  	0,0,672,673,1,0,0,0,673,674,1,0,0,0,674,675,3,72,36,0,675,678,1,0,0,0,
+  	676,678,3,72,36,0,677,666,1,0,0,0,677,676,1,0,0,0,678,71,1,0,0,0,679,
+  	680,3,74,37,0,680,73,1,0,0,0,681,688,3,78,39,0,682,684,5,126,0,0,683,
+  	682,1,0,0,0,683,684,1,0,0,0,684,685,1,0,0,0,685,687,3,80,40,0,686,683,
+  	1,0,0,0,687,690,1,0,0,0,688,686,1,0,0,0,688,689,1,0,0,0,689,696,1,0,0,
+  	0,690,688,1,0,0,0,691,692,5,6,0,0,692,693,3,74,37,0,693,694,5,7,0,0,694,
+  	696,1,0,0,0,695,681,1,0,0,0,695,691,1,0,0,0,696,75,1,0,0,0,697,702,3,
+  	78,39,0,698,700,5,126,0,0,699,698,1,0,0,0,699,700,1,0,0,0,700,701,1,0,
+  	0,0,701,703,3,80,40,0,702,699,1,0,0,0,703,704,1,0,0,0,704,702,1,0,0,0,
+  	704,705,1,0,0,0,705,77,1,0,0,0,706,708,5,6,0,0,707,709,5,126,0,0,708,
+  	707,1,0,0,0,708,709,1,0,0,0,709,714,1,0,0,0,710,712,3,174,87,0,711,713,
+  	5,126,0,0,712,711,1,0,0,0,712,713,1,0,0,0,713,715,1,0,0,0,714,710,1,0,
+  	0,0,714,715,1,0,0,0,715,720,1,0,0,0,716,718,3,90,45,0,717,719,5,126,0,
+  	0,718,717,1,0,0,0,718,719,1,0,0,0,719,721,1,0,0,0,720,716,1,0,0,0,720,
+  	721,1,0,0,0,721,726,1,0,0,0,722,724,3,86,43,0,723,725,5,126,0,0,724,723,
+  	1,0,0,0,724,725,1,0,0,0,725,727,1,0,0,0,726,722,1,0,0,0,726,727,1,0,0,
+  	0,727,728,1,0,0,0,728,729,5,7,0,0,729,79,1,0,0,0,730,732,3,82,41,0,731,
+  	733,5,126,0,0,732,731,1,0,0,0,732,733,1,0,0,0,733,734,1,0,0,0,734,735,
+  	3,78,39,0,735,81,1,0,0,0,736,738,3,200,100,0,737,739,5,126,0,0,738,737,
+  	1,0,0,0,738,739,1,0,0,0,739,740,1,0,0,0,740,742,3,204,102,0,741,743,5,
+  	126,0,0,742,741,1,0,0,0,742,743,1,0,0,0,743,745,1,0,0,0,744,746,3,84,
+  	42,0,745,744,1,0,0,0,745,746,1,0,0,0,746,748,1,0,0,0,747,749,5,126,0,
+  	0,748,747,1,0,0,0,748,749,1,0,0,0,749,750,1,0,0,0,750,752,3,204,102,0,
+  	751,753,5,126,0,0,752,751,1,0,0,0,752,753,1,0,0,0,753,754,1,0,0,0,754,
+  	755,3,202,101,0,755,801,1,0,0,0,756,758,3,200,100,0,757,759,5,126,0,0,
+  	758,757,1,0,0,0,758,759,1,0,0,0,759,760,1,0,0,0,760,762,3,204,102,0,761,
+  	763,5,126,0,0,762,761,1,0,0,0,762,763,1,0,0,0,763,765,1,0,0,0,764,766,
+  	3,84,42,0,765,764,1,0,0,0,765,766,1,0,0,0,766,768,1,0,0,0,767,769,5,126,
+  	0,0,768,767,1,0,0,0,768,769,1,0,0,0,769,770,1,0,0,0,770,771,3,204,102,
+  	0,771,801,1,0,0,0,772,774,3,204,102,0,773,775,5,126,0,0,774,773,1,0,0,
+  	0,774,775,1,0,0,0,775,777,1,0,0,0,776,778,3,84,42,0,777,776,1,0,0,0,777,
+  	778,1,0,0,0,778,780,1,0,0,0,779,781,5,126,0,0,780,779,1,0,0,0,780,781,
+  	1,0,0,0,781,782,1,0,0,0,782,784,3,204,102,0,783,785,5,126,0,0,784,783,
+  	1,0,0,0,784,785,1,0,0,0,785,786,1,0,0,0,786,787,3,202,101,0,787,801,1,
+  	0,0,0,788,790,3,204,102,0,789,791,5,126,0,0,790,789,1,0,0,0,790,791,1,
+  	0,0,0,791,793,1,0,0,0,792,794,3,84,42,0,793,792,1,0,0,0,793,794,1,0,0,
+  	0,794,796,1,0,0,0,795,797,5,126,0,0,796,795,1,0,0,0,796,797,1,0,0,0,797,
+  	798,1,0,0,0,798,799,3,204,102,0,799,801,1,0,0,0,800,736,1,0,0,0,800,756,
+  	1,0,0,0,800,772,1,0,0,0,800,788,1,0,0,0,801,83,1,0,0,0,802,804,5,8,0,
+  	0,803,805,5,126,0,0,804,803,1,0,0,0,804,805,1,0,0,0,805,810,1,0,0,0,806,
+  	808,3,174,87,0,807,809,5,126,0,0,808,807,1,0,0,0,808,809,1,0,0,0,809,
+  	811,1,0,0,0,810,806,1,0,0,0,810,811,1,0,0,0,811,816,1,0,0,0,812,814,3,
+  	88,44,0,813,815,5,126,0,0,814,813,1,0,0,0,814,815,1,0,0,0,815,817,1,0,
+  	0,0,816,812,1,0,0,0,816,817,1,0,0,0,817,819,1,0,0,0,818,820,3,94,47,0,
+  	819,818,1,0,0,0,819,820,1,0,0,0,820,825,1,0,0,0,821,823,3,86,43,0,822,
+  	824,5,126,0,0,823,822,1,0,0,0,823,824,1,0,0,0,824,826,1,0,0,0,825,821,
+  	1,0,0,0,825,826,1,0,0,0,826,827,1,0,0,0,827,828,5,9,0,0,828,85,1,0,0,
+  	0,829,832,3,188,94,0,830,832,3,192,96,0,831,829,1,0,0,0,831,830,1,0,0,
+  	0,832,87,1,0,0,0,833,835,5,10,0,0,834,836,5,126,0,0,835,834,1,0,0,0,835,
+  	836,1,0,0,0,836,837,1,0,0,0,837,851,3,98,49,0,838,840,5,126,0,0,839,838,
+  	1,0,0,0,839,840,1,0,0,0,840,841,1,0,0,0,841,843,5,11,0,0,842,844,5,10,
+  	0,0,843,842,1,0,0,0,843,844,1,0,0,0,844,846,1,0,0,0,845,847,5,126,0,0,
+  	846,845,1,0,0,0,846,847,1,0,0,0,847,848,1,0,0,0,848,850,3,98,49,0,849,
+  	839,1,0,0,0,850,853,1,0,0,0,851,849,1,0,0,0,851,852,1,0,0,0,852,89,1,
+  	0,0,0,853,851,1,0,0,0,854,861,3,92,46,0,855,857,5,126,0,0,856,855,1,0,
+  	0,0,856,857,1,0,0,0,857,858,1,0,0,0,858,860,3,92,46,0,859,856,1,0,0,0,
+  	860,863,1,0,0,0,861,859,1,0,0,0,861,862,1,0,0,0,862,91,1,0,0,0,863,861,
+  	1,0,0,0,864,866,5,10,0,0,865,867,5,126,0,0,866,865,1,0,0,0,866,867,1,
+  	0,0,0,867,868,1,0,0,0,868,869,3,96,48,0,869,93,1,0,0,0,870,872,5,5,0,
+  	0,871,873,5,126,0,0,872,871,1,0,0,0,872,873,1,0,0,0,873,878,1,0,0,0,874,
+  	876,3,182,91,0,875,877,5,126,0,0,876,875,1,0,0,0,876,877,1,0,0,0,877,
+  	879,1,0,0,0,878,874,1,0,0,0,878,879,1,0,0,0,879,890,1,0,0,0,880,882,5,
+  	12,0,0,881,883,5,126,0,0,882,881,1,0,0,0,882,883,1,0,0,0,883,888,1,0,
+  	0,0,884,886,3,182,91,0,885,887,5,126,0,0,886,885,1,0,0,0,886,887,1,0,
+  	0,0,887,889,1,0,0,0,888,884,1,0,0,0,888,889,1,0,0,0,889,891,1,0,0,0,890,
+  	880,1,0,0,0,890,891,1,0,0,0,891,95,1,0,0,0,892,893,3,194,97,0,893,97,
+  	1,0,0,0,894,895,3,194,97,0,895,99,1,0,0,0,896,901,3,138,69,0,897,899,
+  	5,126,0,0,898,897,1,0,0,0,898,899,1,0,0,0,899,900,1,0,0,0,900,902,3,136,
+  	68,0,901,898,1,0,0,0,902,903,1,0,0,0,903,901,1,0,0,0,903,904,1,0,0,0,
+  	904,101,1,0,0,0,905,906,3,104,52,0,906,103,1,0,0,0,907,914,3,106,53,0,
+  	908,909,5,126,0,0,909,910,5,73,0,0,910,911,5,126,0,0,911,913,3,106,53,
+  	0,912,908,1,0,0,0,913,916,1,0,0,0,914,912,1,0,0,0,914,915,1,0,0,0,915,
+  	105,1,0,0,0,916,914,1,0,0,0,917,924,3,108,54,0,918,919,5,126,0,0,919,
+  	920,5,74,0,0,920,921,5,126,0,0,921,923,3,108,54,0,922,918,1,0,0,0,923,
+  	926,1,0,0,0,924,922,1,0,0,0,924,925,1,0,0,0,925,107,1,0,0,0,926,924,1,
+  	0,0,0,927,934,3,110,55,0,928,929,5,126,0,0,929,930,5,75,0,0,930,931,5,
+  	126,0,0,931,933,3,110,55,0,932,928,1,0,0,0,933,936,1,0,0,0,934,932,1,
+  	0,0,0,934,935,1,0,0,0,935,109,1,0,0,0,936,934,1,0,0,0,937,939,5,76,0,
+  	0,938,940,5,126,0,0,939,938,1,0,0,0,939,940,1,0,0,0,940,942,1,0,0,0,941,
+  	937,1,0,0,0,942,945,1,0,0,0,943,941,1,0,0,0,943,944,1,0,0,0,944,946,1,
+  	0,0,0,945,943,1,0,0,0,946,947,3,112,56,0,947,111,1,0,0,0,948,955,3,116,
+  	58,0,949,951,5,126,0,0,950,949,1,0,0,0,950,951,1,0,0,0,951,952,1,0,0,
+  	0,952,954,3,114,57,0,953,950,1,0,0,0,954,957,1,0,0,0,955,953,1,0,0,0,
+  	955,956,1,0,0,0,956,113,1,0,0,0,957,955,1,0,0,0,958,960,5,3,0,0,959,961,
+  	5,126,0,0,960,959,1,0,0,0,960,961,1,0,0,0,961,962,1,0,0,0,962,989,3,116,
+  	58,0,963,965,5,13,0,0,964,966,5,126,0,0,965,964,1,0,0,0,965,966,1,0,0,
+  	0,966,967,1,0,0,0,967,989,3,116,58,0,968,970,5,14,0,0,969,971,5,126,0,
+  	0,970,969,1,0,0,0,970,971,1,0,0,0,971,972,1,0,0,0,972,989,3,116,58,0,
+  	973,975,5,15,0,0,974,976,5,126,0,0,975,974,1,0,0,0,975,976,1,0,0,0,976,
+  	977,1,0,0,0,977,989,3,116,58,0,978,980,5,16,0,0,979,981,5,126,0,0,980,
+  	979,1,0,0,0,980,981,1,0,0,0,981,982,1,0,0,0,982,989,3,116,58,0,983,985,
+  	5,17,0,0,984,986,5,126,0,0,985,984,1,0,0,0,985,986,1,0,0,0,986,987,1,
+  	0,0,0,987,989,3,116,58,0,988,958,1,0,0,0,988,963,1,0,0,0,988,968,1,0,
+  	0,0,988,973,1,0,0,0,988,978,1,0,0,0,988,983,1,0,0,0,989,115,1,0,0,0,990,
+  	996,3,124,62,0,991,995,3,118,59,0,992,995,3,120,60,0,993,995,3,122,61,
+  	0,994,991,1,0,0,0,994,992,1,0,0,0,994,993,1,0,0,0,995,998,1,0,0,0,996,
+  	994,1,0,0,0,996,997,1,0,0,0,997,117,1,0,0,0,998,996,1,0,0,0,999,1000,
+  	5,126,0,0,1000,1001,5,77,0,0,1001,1002,5,126,0,0,1002,1010,5,61,0,0,1003,
+  	1004,5,126,0,0,1004,1005,5,78,0,0,1005,1006,5,126,0,0,1006,1010,5,61,
+  	0,0,1007,1008,5,126,0,0,1008,1010,5,79,0,0,1009,999,1,0,0,0,1009,1003,
+  	1,0,0,0,1009,1007,1,0,0,0,1010,1012,1,0,0,0,1011,1013,5,126,0,0,1012,
+  	1011,1,0,0,0,1012,1013,1,0,0,0,1013,1014,1,0,0,0,1014,1015,3,124,62,0,
+  	1015,119,1,0,0,0,1016,1017,5,126,0,0,1017,1019,5,80,0,0,1018,1020,5,126,
+  	0,0,1019,1018,1,0,0,0,1019,1020,1,0,0,0,1020,1021,1,0,0,0,1021,1022,3,
+  	124,62,0,1022,121,1,0,0,0,1023,1024,5,126,0,0,1024,1025,5,81,0,0,1025,
+  	1026,5,126,0,0,1026,1034,5,82,0,0,1027,1028,5,126,0,0,1028,1029,5,81,
+  	0,0,1029,1030,5,126,0,0,1030,1031,5,76,0,0,1031,1032,5,126,0,0,1032,1034,
+  	5,82,0,0,1033,1023,1,0,0,0,1033,1027,1,0,0,0,1034,123,1,0,0,0,1035,1054,
+  	3,126,63,0,1036,1038,5,126,0,0,1037,1036,1,0,0,0,1037,1038,1,0,0,0,1038,
+  	1039,1,0,0,0,1039,1041,5,18,0,0,1040,1042,5,126,0,0,1041,1040,1,0,0,0,
+  	1041,1042,1,0,0,0,1042,1043,1,0,0,0,1043,1053,3,126,63,0,1044,1046,5,
+  	126,0,0,1045,1044,1,0,0,0,1045,1046,1,0,0,0,1046,1047,1,0,0,0,1047,1049,
+  	5,19,0,0,1048,1050,5,126,0,0,1049,1048,1,0,0,0,1049,1050,1,0,0,0,1050,
+  	1051,1,0,0,0,1051,1053,3,126,63,0,1052,1037,1,0,0,0,1052,1045,1,0,0,0,
+  	1053,1056,1,0,0,0,1054,1052,1,0,0,0,1054,1055,1,0,0,0,1055,125,1,0,0,
+  	0,1056,1054,1,0,0,0,1057,1084,3,128,64,0,1058,1060,5,126,0,0,1059,1058,
+  	1,0,0,0,1059,1060,1,0,0,0,1060,1061,1,0,0,0,1061,1063,5,5,0,0,1062,1064,
+  	5,126,0,0,1063,1062,1,0,0,0,1063,1064,1,0,0,0,1064,1065,1,0,0,0,1065,
+  	1083,3,128,64,0,1066,1068,5,126,0,0,1067,1066,1,0,0,0,1067,1068,1,0,0,
+  	0,1068,1069,1,0,0,0,1069,1071,5,20,0,0,1070,1072,5,126,0,0,1071,1070,
+  	1,0,0,0,1071,1072,1,0,0,0,1072,1073,1,0,0,0,1073,1083,3,128,64,0,1074,
+  	1076,5,126,0,0,1075,1074,1,0,0,0,1075,1076,1,0,0,0,1076,1077,1,0,0,0,
+  	1077,1079,5,21,0,0,1078,1080,5,126,0,0,1079,1078,1,0,0,0,1079,1080,1,
+  	0,0,0,1080,1081,1,0,0,0,1081,1083,3,128,64,0,1082,1059,1,0,0,0,1082,1067,
+  	1,0,0,0,1082,1075,1,0,0,0,1083,1086,1,0,0,0,1084,1082,1,0,0,0,1084,1085,
+  	1,0,0,0,1085,127,1,0,0,0,1086,1084,1,0,0,0,1087,1098,3,130,65,0,1088,
+  	1090,5,126,0,0,1089,1088,1,0,0,0,1089,1090,1,0,0,0,1090,1091,1,0,0,0,
+  	1091,1093,5,22,0,0,1092,1094,5,126,0,0,1093,1092,1,0,0,0,1093,1094,1,
+  	0,0,0,1094,1095,1,0,0,0,1095,1097,3,130,65,0,1096,1089,1,0,0,0,1097,1100,
+  	1,0,0,0,1098,1096,1,0,0,0,1098,1099,1,0,0,0,1099,129,1,0,0,0,1100,1098,
+  	1,0,0,0,1101,1108,3,132,66,0,1102,1104,7,1,0,0,1103,1105,5,126,0,0,1104,
+  	1103,1,0,0,0,1104,1105,1,0,0,0,1105,1106,1,0,0,0,1106,1108,3,132,66,0,
+  	1107,1101,1,0,0,0,1107,1102,1,0,0,0,1108,131,1,0,0,0,1109,1120,3,138,
+  	69,0,1110,1112,5,126,0,0,1111,1110,1,0,0,0,1111,1112,1,0,0,0,1112,1113,
+  	1,0,0,0,1113,1119,3,134,67,0,1114,1116,5,126,0,0,1115,1114,1,0,0,0,1115,
+  	1116,1,0,0,0,1116,1117,1,0,0,0,1117,1119,3,136,68,0,1118,1111,1,0,0,0,
+  	1118,1115,1,0,0,0,1119,1122,1,0,0,0,1120,1118,1,0,0,0,1120,1121,1,0,0,
+  	0,1121,1127,1,0,0,0,1122,1120,1,0,0,0,1123,1125,5,126,0,0,1124,1123,1,
+  	0,0,0,1124,1125,1,0,0,0,1125,1126,1,0,0,0,1126,1128,3,90,45,0,1127,1124,
+  	1,0,0,0,1127,1128,1,0,0,0,1128,133,1,0,0,0,1129,1130,5,8,0,0,1130,1131,
+  	3,102,51,0,1131,1132,5,9,0,0,1132,1143,1,0,0,0,1133,1135,5,8,0,0,1134,
+  	1136,3,102,51,0,1135,1134,1,0,0,0,1135,1136,1,0,0,0,1136,1137,1,0,0,0,
+  	1137,1139,5,12,0,0,1138,1140,3,102,51,0,1139,1138,1,0,0,0,1139,1140,1,
+  	0,0,0,1140,1141,1,0,0,0,1141,1143,5,9,0,0,1142,1129,1,0,0,0,1142,1133,
+  	1,0,0,0,1143,135,1,0,0,0,1144,1146,5,23,0,0,1145,1147,5,126,0,0,1146,
+  	1145,1,0,0,0,1146,1147,1,0,0,0,1147,1148,1,0,0,0,1148,1149,3,190,95,0,
+  	1149,137,1,0,0,0,1150,1175,3,176,88,0,1151,1175,3,192,96,0,1152,1175,
+  	3,140,70,0,1153,1155,5,83,0,0,1154,1156,5,126,0,0,1155,1154,1,0,0,0,1155,
+  	1156,1,0,0,0,1156,1157,1,0,0,0,1157,1159,5,6,0,0,1158,1160,5,126,0,0,
+  	1159,1158,1,0,0,0,1159,1160,1,0,0,0,1160,1161,1,0,0,0,1161,1163,5,5,0,
+  	0,1162,1164,5,126,0,0,1163,1162,1,0,0,0,1163,1164,1,0,0,0,1164,1165,1,
+  	0,0,0,1165,1175,5,7,0,0,1166,1175,3,144,72,0,1167,1175,3,146,73,0,1168,
+  	1175,3,148,74,0,1169,1175,3,152,76,0,1170,1175,3,154,77,0,1171,1175,3,
+  	158,79,0,1172,1175,3,162,81,0,1173,1175,3,174,87,0,1174,1150,1,0,0,0,
+  	1174,1151,1,0,0,0,1174,1152,1,0,0,0,1174,1153,1,0,0,0,1174,1166,1,0,0,
+  	0,1174,1167,1,0,0,0,1174,1168,1,0,0,0,1174,1169,1,0,0,0,1174,1170,1,0,
+  	0,0,1174,1171,1,0,0,0,1174,1172,1,0,0,0,1174,1173,1,0,0,0,1175,139,1,
+  	0,0,0,1176,1181,5,84,0,0,1177,1179,5,126,0,0,1178,1177,1,0,0,0,1178,1179,
+  	1,0,0,0,1179,1180,1,0,0,0,1180,1182,3,142,71,0,1181,1178,1,0,0,0,1182,
+  	1183,1,0,0,0,1183,1181,1,0,0,0,1183,1184,1,0,0,0,1184,1199,1,0,0,0,1185,
+  	1187,5,84,0,0,1186,1188,5,126,0,0,1187,1186,1,0,0,0,1187,1188,1,0,0,0,
+  	1188,1189,1,0,0,0,1189,1194,3,102,51,0,1190,1192,5,126,0,0,1191,1190,
+  	1,0,0,0,1191,1192,1,0,0,0,1192,1193,1,0,0,0,1193,1195,3,142,71,0,1194,
+  	1191,1,0,0,0,1195,1196,1,0,0,0,1196,1194,1,0,0,0,1196,1197,1,0,0,0,1197,
+  	1199,1,0,0,0,1198,1176,1,0,0,0,1198,1185,1,0,0,0,1199,1208,1,0,0,0,1200,
+  	1202,5,126,0,0,1201,1200,1,0,0,0,1201,1202,1,0,0,0,1202,1203,1,0,0,0,
+  	1203,1205,5,85,0,0,1204,1206,5,126,0,0,1205,1204,1,0,0,0,1205,1206,1,
+  	0,0,0,1206,1207,1,0,0,0,1207,1209,3,102,51,0,1208,1201,1,0,0,0,1208,1209,
+  	1,0,0,0,1209,1211,1,0,0,0,1210,1212,5,126,0,0,1211,1210,1,0,0,0,1211,
+  	1212,1,0,0,0,1212,1213,1,0,0,0,1213,1214,5,86,0,0,1214,141,1,0,0,0,1215,
+  	1217,5,87,0,0,1216,1218,5,126,0,0,1217,1216,1,0,0,0,1217,1218,1,0,0,0,
+  	1218,1219,1,0,0,0,1219,1221,3,102,51,0,1220,1222,5,126,0,0,1221,1220,
+  	1,0,0,0,1221,1222,1,0,0,0,1222,1223,1,0,0,0,1223,1225,5,88,0,0,1224,1226,
+  	5,126,0,0,1225,1224,1,0,0,0,1225,1226,1,0,0,0,1226,1227,1,0,0,0,1227,
+  	1228,3,102,51,0,1228,143,1,0,0,0,1229,1231,5,8,0,0,1230,1232,5,126,0,
+  	0,1231,1230,1,0,0,0,1231,1232,1,0,0,0,1232,1233,1,0,0,0,1233,1242,3,150,
+  	75,0,1234,1236,5,126,0,0,1235,1234,1,0,0,0,1235,1236,1,0,0,0,1236,1237,
+  	1,0,0,0,1237,1239,5,11,0,0,1238,1240,5,126,0,0,1239,1238,1,0,0,0,1239,
+  	1240,1,0,0,0,1240,1241,1,0,0,0,1241,1243,3,102,51,0,1242,1235,1,0,0,0,
+  	1242,1243,1,0,0,0,1243,1245,1,0,0,0,1244,1246,5,126,0,0,1245,1244,1,0,
+  	0,0,1245,1246,1,0,0,0,1246,1247,1,0,0,0,1247,1248,5,9,0,0,1248,145,1,
+  	0,0,0,1249,1251,5,8,0,0,1250,1252,5,126,0,0,1251,1250,1,0,0,0,1251,1252,
+  	1,0,0,0,1252,1261,1,0,0,0,1253,1255,3,174,87,0,1254,1256,5,126,0,0,1255,
+  	1254,1,0,0,0,1255,1256,1,0,0,0,1256,1257,1,0,0,0,1257,1259,5,3,0,0,1258,
+  	1260,5,126,0,0,1259,1258,1,0,0,0,1259,1260,1,0,0,0,1260,1262,1,0,0,0,
+  	1261,1253,1,0,0,0,1261,1262,1,0,0,0,1262,1263,1,0,0,0,1263,1265,3,76,
+  	38,0,1264,1266,5,126,0,0,1265,1264,1,0,0,0,1265,1266,1,0,0,0,1266,1271,
+  	1,0,0,0,1267,1269,3,66,33,0,1268,1270,5,126,0,0,1269,1268,1,0,0,0,1269,
+  	1270,1,0,0,0,1270,1272,1,0,0,0,1271,1267,1,0,0,0,1271,1272,1,0,0,0,1272,
+  	1273,1,0,0,0,1273,1275,5,11,0,0,1274,1276,5,126,0,0,1275,1274,1,0,0,0,
+  	1275,1276,1,0,0,0,1276,1277,1,0,0,0,1277,1279,3,102,51,0,1278,1280,5,
+  	126,0,0,1279,1278,1,0,0,0,1279,1280,1,0,0,0,1280,1281,1,0,0,0,1281,1282,
+  	5,9,0,0,1282,147,1,0,0,0,1283,1285,5,47,0,0,1284,1286,5,126,0,0,1285,
+  	1284,1,0,0,0,1285,1286,1,0,0,0,1286,1287,1,0,0,0,1287,1289,5,6,0,0,1288,
+  	1290,5,126,0,0,1289,1288,1,0,0,0,1289,1290,1,0,0,0,1290,1291,1,0,0,0,
+  	1291,1293,3,150,75,0,1292,1294,5,126,0,0,1293,1292,1,0,0,0,1293,1294,
+  	1,0,0,0,1294,1295,1,0,0,0,1295,1296,5,7,0,0,1296,1340,1,0,0,0,1297,1299,
+  	5,89,0,0,1298,1300,5,126,0,0,1299,1298,1,0,0,0,1299,1300,1,0,0,0,1300,
+  	1301,1,0,0,0,1301,1303,5,6,0,0,1302,1304,5,126,0,0,1303,1302,1,0,0,0,
+  	1303,1304,1,0,0,0,1304,1305,1,0,0,0,1305,1307,3,150,75,0,1306,1308,5,
+  	126,0,0,1307,1306,1,0,0,0,1307,1308,1,0,0,0,1308,1309,1,0,0,0,1309,1310,
+  	5,7,0,0,1310,1340,1,0,0,0,1311,1313,5,90,0,0,1312,1314,5,126,0,0,1313,
+  	1312,1,0,0,0,1313,1314,1,0,0,0,1314,1315,1,0,0,0,1315,1317,5,6,0,0,1316,
+  	1318,5,126,0,0,1317,1316,1,0,0,0,1317,1318,1,0,0,0,1318,1319,1,0,0,0,
+  	1319,1321,3,150,75,0,1320,1322,5,126,0,0,1321,1320,1,0,0,0,1321,1322,
+  	1,0,0,0,1322,1323,1,0,0,0,1323,1324,5,7,0,0,1324,1340,1,0,0,0,1325,1327,
+  	5,91,0,0,1326,1328,5,126,0,0,1327,1326,1,0,0,0,1327,1328,1,0,0,0,1328,
+  	1329,1,0,0,0,1329,1331,5,6,0,0,1330,1332,5,126,0,0,1331,1330,1,0,0,0,
+  	1331,1332,1,0,0,0,1332,1333,1,0,0,0,1333,1335,3,150,75,0,1334,1336,5,
+  	126,0,0,1335,1334,1,0,0,0,1335,1336,1,0,0,0,1336,1337,1,0,0,0,1337,1338,
+  	5,7,0,0,1338,1340,1,0,0,0,1339,1283,1,0,0,0,1339,1297,1,0,0,0,1339,1311,
+  	1,0,0,0,1339,1325,1,0,0,0,1340,149,1,0,0,0,1341,1346,3,156,78,0,1342,
+  	1344,5,126,0,0,1343,1342,1,0,0,0,1343,1344,1,0,0,0,1344,1345,1,0,0,0,
+  	1345,1347,3,66,33,0,1346,1343,1,0,0,0,1346,1347,1,0,0,0,1347,151,1,0,
+  	0,0,1348,1349,3,76,38,0,1349,153,1,0,0,0,1350,1352,5,6,0,0,1351,1353,
+  	5,126,0,0,1352,1351,1,0,0,0,1352,1353,1,0,0,0,1353,1354,1,0,0,0,1354,
+  	1356,3,102,51,0,1355,1357,5,126,0,0,1356,1355,1,0,0,0,1356,1357,1,0,0,
+  	0,1357,1358,1,0,0,0,1358,1359,5,7,0,0,1359,155,1,0,0,0,1360,1361,3,174,
+  	87,0,1361,1362,5,126,0,0,1362,1363,5,80,0,0,1363,1364,5,126,0,0,1364,
+  	1365,3,102,51,0,1365,157,1,0,0,0,1366,1368,3,160,80,0,1367,1369,5,126,
+  	0,0,1368,1367,1,0,0,0,1368,1369,1,0,0,0,1369,1370,1,0,0,0,1370,1372,5,
+  	6,0,0,1371,1373,5,126,0,0,1372,1371,1,0,0,0,1372,1373,1,0,0,0,1373,1378,
+  	1,0,0,0,1374,1376,5,63,0,0,1375,1377,5,126,0,0,1376,1375,1,0,0,0,1376,
+  	1377,1,0,0,0,1377,1379,1,0,0,0,1378,1374,1,0,0,0,1378,1379,1,0,0,0,1379,
+  	1397,1,0,0,0,1380,1382,3,102,51,0,1381,1383,5,126,0,0,1382,1381,1,0,0,
+  	0,1382,1383,1,0,0,0,1383,1394,1,0,0,0,1384,1386,5,2,0,0,1385,1387,5,126,
+  	0,0,1386,1385,1,0,0,0,1386,1387,1,0,0,0,1387,1388,1,0,0,0,1388,1390,3,
+  	102,51,0,1389,1391,5,126,0,0,1390,1389,1,0,0,0,1390,1391,1,0,0,0,1391,
+  	1393,1,0,0,0,1392,1384,1,0,0,0,1393,1396,1,0,0,0,1394,1392,1,0,0,0,1394,
+  	1395,1,0,0,0,1395,1398,1,0,0,0,1396,1394,1,0,0,0,1397,1380,1,0,0,0,1397,
+  	1398,1,0,0,0,1398,1399,1,0,0,0,1399,1400,5,7,0,0,1400,159,1,0,0,0,1401,
+  	1402,3,172,86,0,1402,1403,3,198,99,0,1403,161,1,0,0,0,1404,1406,5,92,
+  	0,0,1405,1407,5,126,0,0,1406,1405,1,0,0,0,1406,1407,1,0,0,0,1407,1408,
+  	1,0,0,0,1408,1410,5,24,0,0,1409,1411,5,126,0,0,1410,1409,1,0,0,0,1410,
+  	1411,1,0,0,0,1411,1420,1,0,0,0,1412,1421,3,6,3,0,1413,1418,3,68,34,0,
+  	1414,1416,5,126,0,0,1415,1414,1,0,0,0,1415,1416,1,0,0,0,1416,1417,1,0,
+  	0,0,1417,1419,3,66,33,0,1418,1415,1,0,0,0,1418,1419,1,0,0,0,1419,1421,
+  	1,0,0,0,1420,1412,1,0,0,0,1420,1413,1,0,0,0,1421,1423,1,0,0,0,1422,1424,
+  	5,126,0,0,1423,1422,1,0,0,0,1423,1424,1,0,0,0,1424,1425,1,0,0,0,1425,
+  	1426,5,25,0,0,1426,163,1,0,0,0,1427,1429,3,170,85,0,1428,1430,5,126,0,
+  	0,1429,1428,1,0,0,0,1429,1430,1,0,0,0,1430,1431,1,0,0,0,1431,1433,5,6,
+  	0,0,1432,1434,5,126,0,0,1433,1432,1,0,0,0,1433,1434,1,0,0,0,1434,1452,
+  	1,0,0,0,1435,1437,3,102,51,0,1436,1438,5,126,0,0,1437,1436,1,0,0,0,1437,
+  	1438,1,0,0,0,1438,1449,1,0,0,0,1439,1441,5,2,0,0,1440,1442,5,126,0,0,
+  	1441,1440,1,0,0,0,1441,1442,1,0,0,0,1442,1443,1,0,0,0,1443,1445,3,102,
+  	51,0,1444,1446,5,126,0,0,1445,1444,1,0,0,0,1445,1446,1,0,0,0,1446,1448,
+  	1,0,0,0,1447,1439,1,0,0,0,1448,1451,1,0,0,0,1449,1447,1,0,0,0,1449,1450,
+  	1,0,0,0,1450,1453,1,0,0,0,1451,1449,1,0,0,0,1452,1435,1,0,0,0,1452,1453,
+  	1,0,0,0,1453,1454,1,0,0,0,1454,1455,5,7,0,0,1455,165,1,0,0,0,1456,1457,
+  	3,170,85,0,1457,167,1,0,0,0,1458,1459,3,198,99,0,1459,169,1,0,0,0,1460,
+  	1461,3,172,86,0,1461,1462,3,198,99,0,1462,171,1,0,0,0,1463,1464,3,198,
+  	99,0,1464,1465,5,23,0,0,1465,1467,1,0,0,0,1466,1463,1,0,0,0,1467,1470,
+  	1,0,0,0,1468,1466,1,0,0,0,1468,1469,1,0,0,0,1469,173,1,0,0,0,1470,1468,
+  	1,0,0,0,1471,1472,3,198,99,0,1472,175,1,0,0,0,1473,1480,3,178,89,0,1474,
+  	1480,5,82,0,0,1475,1480,3,180,90,0,1476,1480,5,108,0,0,1477,1480,3,186,
+  	93,0,1478,1480,3,188,94,0,1479,1473,1,0,0,0,1479,1474,1,0,0,0,1479,1475,
+  	1,0,0,0,1479,1476,1,0,0,0,1479,1477,1,0,0,0,1479,1478,1,0,0,0,1480,177,
+  	1,0,0,0,1481,1482,7,2,0,0,1482,179,1,0,0,0,1483,1486,3,184,92,0,1484,
+  	1486,3,182,91,0,1485,1483,1,0,0,0,1485,1484,1,0,0,0,1486,181,1,0,0,0,
+  	1487,1488,7,3,0,0,1488,183,1,0,0,0,1489,1490,7,4,0,0,1490,185,1,0,0,0,
+  	1491,1493,5,8,0,0,1492,1494,5,126,0,0,1493,1492,1,0,0,0,1493,1494,1,0,
+  	0,0,1494,1512,1,0,0,0,1495,1497,3,102,51,0,1496,1498,5,126,0,0,1497,1496,
+  	1,0,0,0,1497,1498,1,0,0,0,1498,1509,1,0,0,0,1499,1501,5,2,0,0,1500,1502,
+  	5,126,0,0,1501,1500,1,0,0,0,1501,1502,1,0,0,0,1502,1503,1,0,0,0,1503,
+  	1505,3,102,51,0,1504,1506,5,126,0,0,1505,1504,1,0,0,0,1505,1506,1,0,0,
+  	0,1506,1508,1,0,0,0,1507,1499,1,0,0,0,1508,1511,1,0,0,0,1509,1507,1,0,
+  	0,0,1509,1510,1,0,0,0,1510,1513,1,0,0,0,1511,1509,1,0,0,0,1512,1495,1,
+  	0,0,0,1512,1513,1,0,0,0,1513,1514,1,0,0,0,1514,1515,5,9,0,0,1515,187,
+  	1,0,0,0,1516,1518,5,24,0,0,1517,1519,5,126,0,0,1518,1517,1,0,0,0,1518,
+  	1519,1,0,0,0,1519,1553,1,0,0,0,1520,1522,3,190,95,0,1521,1523,5,126,0,
+  	0,1522,1521,1,0,0,0,1522,1523,1,0,0,0,1523,1524,1,0,0,0,1524,1526,5,10,
+  	0,0,1525,1527,5,126,0,0,1526,1525,1,0,0,0,1526,1527,1,0,0,0,1527,1528,
+  	1,0,0,0,1528,1530,3,102,51,0,1529,1531,5,126,0,0,1530,1529,1,0,0,0,1530,
+  	1531,1,0,0,0,1531,1550,1,0,0,0,1532,1534,5,2,0,0,1533,1535,5,126,0,0,
+  	1534,1533,1,0,0,0,1534,1535,1,0,0,0,1535,1536,1,0,0,0,1536,1538,3,190,
+  	95,0,1537,1539,5,126,0,0,1538,1537,1,0,0,0,1538,1539,1,0,0,0,1539,1540,
+  	1,0,0,0,1540,1542,5,10,0,0,1541,1543,5,126,0,0,1542,1541,1,0,0,0,1542,
+  	1543,1,0,0,0,1543,1544,1,0,0,0,1544,1546,3,102,51,0,1545,1547,5,126,0,
+  	0,1546,1545,1,0,0,0,1546,1547,1,0,0,0,1547,1549,1,0,0,0,1548,1532,1,0,
+  	0,0,1549,1552,1,0,0,0,1550,1548,1,0,0,0,1550,1551,1,0,0,0,1551,1554,1,
+  	0,0,0,1552,1550,1,0,0,0,1553,1520,1,0,0,0,1553,1554,1,0,0,0,1554,1555,
+  	1,0,0,0,1555,1556,5,25,0,0,1556,189,1,0,0,0,1557,1558,3,194,97,0,1558,
+  	191,1,0,0,0,1559,1562,5,26,0,0,1560,1563,3,198,99,0,1561,1563,5,97,0,
+  	0,1562,1560,1,0,0,0,1562,1561,1,0,0,0,1563,193,1,0,0,0,1564,1567,3,198,
+  	99,0,1565,1567,3,196,98,0,1566,1564,1,0,0,0,1566,1565,1,0,0,0,1567,195,
+  	1,0,0,0,1568,1569,7,5,0,0,1569,197,1,0,0,0,1570,1571,7,6,0,0,1571,199,
+  	1,0,0,0,1572,1573,7,7,0,0,1573,201,1,0,0,0,1574,1575,7,8,0,0,1575,203,
+  	1,0,0,0,1576,1577,7,9,0,0,1577,205,1,0,0,0,292,207,211,214,217,225,229,
+  	233,238,245,250,253,257,261,265,271,275,280,285,289,292,294,298,302,307,
+  	311,316,320,329,334,338,342,346,349,353,363,370,383,387,393,397,401,406,
+  	411,415,421,425,431,435,441,445,449,453,457,461,466,473,477,482,489,495,
+  	500,506,509,515,517,521,525,530,534,537,544,551,554,560,563,569,573,577,
+  	581,585,590,595,599,604,607,616,625,630,643,646,654,658,663,668,672,677,
+  	683,688,695,699,704,708,712,714,718,720,724,726,732,738,742,745,748,752,
+  	758,762,765,768,774,777,780,784,790,793,796,800,804,808,810,814,816,819,
+  	823,825,831,835,839,843,846,851,856,861,866,872,876,878,882,886,888,890,
+  	898,903,914,924,934,939,943,950,955,960,965,970,975,980,985,988,994,996,
+  	1009,1012,1019,1033,1037,1041,1045,1049,1052,1054,1059,1063,1067,1071,
+  	1075,1079,1082,1084,1089,1093,1098,1104,1107,1111,1115,1118,1120,1124,
+  	1127,1135,1139,1142,1146,1155,1159,1163,1174,1178,1183,1187,1191,1196,
+  	1198,1201,1205,1208,1211,1217,1221,1225,1231,1235,1239,1242,1245,1251,
+  	1255,1259,1261,1265,1269,1271,1275,1279,1285,1289,1293,1299,1303,1307,
+  	1313,1317,1321,1327,1331,1335,1339,1343,1346,1352,1356,1368,1372,1376,
+  	1378,1382,1386,1390,1394,1397,1406,1410,1415,1418,1420,1423,1429,1433,
+  	1437,1441,1445,1449,1452,1468,1479,1485,1493,1497,1501,1505,1509,1512,
+  	1518,1522,1526,1530,1534,1538,1542,1546,1550,1553,1562,1566
+  };
+  staticData->serializedATN = antlr4::atn::SerializedATNView(serializedATNSegment, sizeof(serializedATNSegment) / sizeof(serializedATNSegment[0]));
 
   antlr4::atn::ATNDeserializer deserializer;
   staticData->atn = deserializer.deserialize(staticData->serializedATN);
 
   const size_t count = staticData->atn->getNumberOfDecisions();
   staticData->decisionToDFA.reserve(count);
-  for (size_t i = 0; i < count; i++) {
-    staticData->decisionToDFA.emplace_back(staticData->atn->getDecisionState(i),
-                                           i);
+  for (size_t i = 0; i < count; i++) { 
+    staticData->decisionToDFA.emplace_back(staticData->atn->getDecisionState(i), i);
   }
   cypherParserStaticData = std::move(staticData);
 }
 
-}  // namespace
-
-CypherParser::CypherParser(TokenStream *input)
-    : CypherParser(input, antlr4::atn::ParserATNSimulatorOptions()) {}
-
-CypherParser::CypherParser(
-    TokenStream *input, const antlr4::atn::ParserATNSimulatorOptions &options)
-    : Parser(input) {
-  CypherParser::initialize();
-  _interpreter = new atn::ParserATNSimulator(
-      this, *cypherParserStaticData->atn, cypherParserStaticData->decisionToDFA,
-      cypherParserStaticData->sharedContextCache, options);
 }
 
-CypherParser::~CypherParser() { delete _interpreter; }
+CypherParser::CypherParser(TokenStream *input) : CypherParser(input, antlr4::atn::ParserATNSimulatorOptions()) {}
 
-const atn::ATN &CypherParser::getATN() const {
+CypherParser::CypherParser(TokenStream *input, const antlr4::atn::ParserATNSimulatorOptions &options) : Parser(input) {
+  CypherParser::initialize();
+  _interpreter = new atn::ParserATNSimulator(this, *cypherParserStaticData->atn, cypherParserStaticData->decisionToDFA, cypherParserStaticData->sharedContextCache, options);
+}
+
+CypherParser::~CypherParser() {
+  delete _interpreter;
+}
+
+const atn::ATN& CypherParser::getATN() const {
   return *cypherParserStaticData->atn;
 }
 
-std::string CypherParser::getGrammarFileName() const { return "Cypher.g4"; }
+std::string CypherParser::getGrammarFileName() const {
+  return "Cypher.g4";
+}
 
-const std::vector<std::string> &CypherParser::getRuleNames() const {
+const std::vector<std::string>& CypherParser::getRuleNames() const {
   return cypherParserStaticData->ruleNames;
 }
 
-const dfa::Vocabulary &CypherParser::getVocabulary() const {
+const dfa::Vocabulary& CypherParser::getVocabulary() const {
   return cypherParserStaticData->vocabulary;
 }
 
@@ -1580,19 +763,18 @@ antlr4::atn::SerializedATNView CypherParser::getSerializedATN() const {
   return cypherParserStaticData->serializedATN;
 }
 
-//----------------- OC_CypherContext
-//------------------------------------------------------------------
 
-CypherParser::OC_CypherContext::OC_CypherContext(ParserRuleContext *parent,
-                                                 size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+//----------------- OC_CypherContext ------------------------------------------------------------------
 
-CypherParser::OC_StatementContext *
-CypherParser::OC_CypherContext::oC_Statement() {
+CypherParser::OC_CypherContext::OC_CypherContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
+
+CypherParser::OC_StatementContext* CypherParser::OC_CypherContext::oC_Statement() {
   return getRuleContext<CypherParser::OC_StatementContext>(0);
 }
 
-tree::TerminalNode *CypherParser::OC_CypherContext::EOF() {
+tree::TerminalNode* CypherParser::OC_CypherContext::EOF() {
   return getToken(CypherParser::EOF, 0);
 }
 
@@ -1600,25 +782,25 @@ std::vector<tree::TerminalNode *> CypherParser::OC_CypherContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_CypherContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_CypherContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
+
 
 size_t CypherParser::OC_CypherContext::getRuleIndex() const {
   return CypherParser::RuleOC_Cypher;
 }
 
-std::any CypherParser::OC_CypherContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_CypherContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_Cypher(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_CypherContext *CypherParser::oC_Cypher() {
-  OC_CypherContext *_localctx =
-      _tracker.createInstance<OC_CypherContext>(_ctx, getState());
+CypherParser::OC_CypherContext* CypherParser::oC_Cypher() {
+  OC_CypherContext *_localctx = _tracker.createInstance<OC_CypherContext>(_ctx, getState());
   enterRule(_localctx, 0, CypherParser::RuleOC_Cypher);
   size_t _la = 0;
 
@@ -1644,24 +826,23 @@ CypherParser::OC_CypherContext *CypherParser::oC_Cypher() {
     setState(214);
     _errHandler->sync(this);
 
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-        _input, 2, _ctx)) {
-      case 1: {
-        setState(211);
-        _errHandler->sync(this);
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 2, _ctx)) {
+    case 1: {
+      setState(211);
+      _errHandler->sync(this);
 
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(210);
-          match(CypherParser::SP);
-        }
-        setState(213);
-        match(CypherParser::T__0);
-        break;
+      _la = _input->LA(1);
+      if (_la == CypherParser::SP) {
+        setState(210);
+        match(CypherParser::SP);
       }
+      setState(213);
+      match(CypherParser::T__0);
+      break;
+    }
 
-      default:
-        break;
+    default:
+      break;
     }
     setState(217);
     _errHandler->sync(this);
@@ -1673,8 +854,9 @@ CypherParser::OC_CypherContext *CypherParser::oC_Cypher() {
     }
     setState(219);
     match(CypherParser::EOF);
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -1683,88 +865,40 @@ CypherParser::OC_CypherContext *CypherParser::oC_Cypher() {
   return _localctx;
 }
 
-//----------------- OC_StatementContext
-//------------------------------------------------------------------
+//----------------- OC_StatementContext ------------------------------------------------------------------
 
-CypherParser::OC_StatementContext::OC_StatementContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_StatementContext::OC_StatementContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_QueryContext *CypherParser::OC_StatementContext::oC_Query() {
+tree::TerminalNode* CypherParser::OC_StatementContext::EXPLAIN() {
+  return getToken(CypherParser::EXPLAIN, 0);
+}
+
+tree::TerminalNode* CypherParser::OC_StatementContext::SP() {
+  return getToken(CypherParser::SP, 0);
+}
+
+CypherParser::OC_QueryContext* CypherParser::OC_StatementContext::oC_Query() {
   return getRuleContext<CypherParser::OC_QueryContext>(0);
 }
+
 
 size_t CypherParser::OC_StatementContext::getRuleIndex() const {
   return CypherParser::RuleOC_Statement;
 }
 
-std::any CypherParser::OC_StatementContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_StatementContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_Statement(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_StatementContext *CypherParser::oC_Statement() {
-  OC_StatementContext *_localctx =
-      _tracker.createInstance<OC_StatementContext>(_ctx, getState());
+CypherParser::OC_StatementContext* CypherParser::oC_Statement() {
+  OC_StatementContext *_localctx = _tracker.createInstance<OC_StatementContext>(_ctx, getState());
   enterRule(_localctx, 2, CypherParser::RuleOC_Statement);
-
-#if __cplusplus > 201703L
-  auto onExit = finally([=, this] {
-#else
-  auto onExit = finally([=] {
-#endif
-    exitRule();
-  });
-  try {
-    enterOuterAlt(_localctx, 1);
-    setState(221);
-    oC_Query();
-
-  } catch (RecognitionException &e) {
-    _errHandler->reportError(this, e);
-    _localctx->exception = std::current_exception();
-    _errHandler->recover(this, _localctx->exception);
-  }
-
-  return _localctx;
-}
-
-//----------------- OC_QueryContext
-//------------------------------------------------------------------
-
-CypherParser::OC_QueryContext::OC_QueryContext(ParserRuleContext *parent,
-                                               size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
-
-CypherParser::OC_RegularQueryContext *
-CypherParser::OC_QueryContext::oC_RegularQuery() {
-  return getRuleContext<CypherParser::OC_RegularQueryContext>(0);
-}
-
-CypherParser::OC_StandaloneCallContext *
-CypherParser::OC_QueryContext::oC_StandaloneCall() {
-  return getRuleContext<CypherParser::OC_StandaloneCallContext>(0);
-}
-
-size_t CypherParser::OC_QueryContext::getRuleIndex() const {
-  return CypherParser::RuleOC_Query;
-}
-
-std::any CypherParser::OC_QueryContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
-    return parserVisitor->visitOC_Query(this);
-  else
-    return visitor->visitChildren(this);
-}
-
-CypherParser::OC_QueryContext *CypherParser::oC_Query() {
-  OC_QueryContext *_localctx =
-      _tracker.createInstance<OC_QueryContext>(_ctx, getState());
-  enterRule(_localctx, 4, CypherParser::RuleOC_Query);
 
 #if __cplusplus > 201703L
   auto onExit = finally([=, this] {
@@ -1776,27 +910,42 @@ CypherParser::OC_QueryContext *CypherParser::oC_Query() {
   try {
     setState(225);
     _errHandler->sync(this);
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-        _input, 4, _ctx)) {
-      case 1: {
+    switch (_input->LA(1)) {
+      case CypherParser::EXPLAIN: {
         enterOuterAlt(_localctx, 1);
+        setState(221);
+        match(CypherParser::EXPLAIN);
+        setState(222);
+        match(CypherParser::SP);
         setState(223);
-        oC_RegularQuery();
+        oC_Query();
         break;
       }
 
-      case 2: {
+      case CypherParser::OPTIONAL:
+      case CypherParser::MATCH:
+      case CypherParser::UNWIND:
+      case CypherParser::MERGE:
+      case CypherParser::CREATE:
+      case CypherParser::SET:
+      case CypherParser::DETACH:
+      case CypherParser::DELETE:
+      case CypherParser::REMOVE:
+      case CypherParser::CALL:
+      case CypherParser::WITH:
+      case CypherParser::RETURN: {
         enterOuterAlt(_localctx, 2);
         setState(224);
-        oC_StandaloneCall();
+        oC_Query();
         break;
       }
 
-      default:
-        break;
+    default:
+      throw NoViableAltException(this);
     }
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -1805,25 +954,91 @@ CypherParser::OC_QueryContext *CypherParser::oC_Query() {
   return _localctx;
 }
 
-//----------------- OC_RegularQueryContext
-//------------------------------------------------------------------
+//----------------- OC_QueryContext ------------------------------------------------------------------
 
-CypherParser::OC_RegularQueryContext::OC_RegularQueryContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_QueryContext::OC_QueryContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_SingleQueryContext *
-CypherParser::OC_RegularQueryContext::oC_SingleQuery() {
+CypherParser::OC_RegularQueryContext* CypherParser::OC_QueryContext::oC_RegularQuery() {
+  return getRuleContext<CypherParser::OC_RegularQueryContext>(0);
+}
+
+CypherParser::OC_StandaloneCallContext* CypherParser::OC_QueryContext::oC_StandaloneCall() {
+  return getRuleContext<CypherParser::OC_StandaloneCallContext>(0);
+}
+
+
+size_t CypherParser::OC_QueryContext::getRuleIndex() const {
+  return CypherParser::RuleOC_Query;
+}
+
+
+std::any CypherParser::OC_QueryContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
+    return parserVisitor->visitOC_Query(this);
+  else
+    return visitor->visitChildren(this);
+}
+
+CypherParser::OC_QueryContext* CypherParser::oC_Query() {
+  OC_QueryContext *_localctx = _tracker.createInstance<OC_QueryContext>(_ctx, getState());
+  enterRule(_localctx, 4, CypherParser::RuleOC_Query);
+
+#if __cplusplus > 201703L
+  auto onExit = finally([=, this] {
+#else
+  auto onExit = finally([=] {
+#endif
+    exitRule();
+  });
+  try {
+    setState(229);
+    _errHandler->sync(this);
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 5, _ctx)) {
+    case 1: {
+      enterOuterAlt(_localctx, 1);
+      setState(227);
+      oC_RegularQuery();
+      break;
+    }
+
+    case 2: {
+      enterOuterAlt(_localctx, 2);
+      setState(228);
+      oC_StandaloneCall();
+      break;
+    }
+
+    default:
+      break;
+    }
+   
+  }
+  catch (RecognitionException &e) {
+    _errHandler->reportError(this, e);
+    _localctx->exception = std::current_exception();
+    _errHandler->recover(this, _localctx->exception);
+  }
+
+  return _localctx;
+}
+
+//----------------- OC_RegularQueryContext ------------------------------------------------------------------
+
+CypherParser::OC_RegularQueryContext::OC_RegularQueryContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
+
+CypherParser::OC_SingleQueryContext* CypherParser::OC_RegularQueryContext::oC_SingleQuery() {
   return getRuleContext<CypherParser::OC_SingleQueryContext>(0);
 }
 
-std::vector<CypherParser::OC_UnionContext *>
-CypherParser::OC_RegularQueryContext::oC_Union() {
+std::vector<CypherParser::OC_UnionContext *> CypherParser::OC_RegularQueryContext::oC_Union() {
   return getRuleContexts<CypherParser::OC_UnionContext>();
 }
 
-CypherParser::OC_UnionContext *CypherParser::OC_RegularQueryContext::oC_Union(
-    size_t i) {
+CypherParser::OC_UnionContext* CypherParser::OC_RegularQueryContext::oC_Union(size_t i) {
   return getRuleContext<CypherParser::OC_UnionContext>(i);
 }
 
@@ -1831,25 +1046,25 @@ std::vector<tree::TerminalNode *> CypherParser::OC_RegularQueryContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_RegularQueryContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_RegularQueryContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
+
 
 size_t CypherParser::OC_RegularQueryContext::getRuleIndex() const {
   return CypherParser::RuleOC_RegularQuery;
 }
 
-std::any CypherParser::OC_RegularQueryContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_RegularQueryContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_RegularQuery(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_RegularQueryContext *CypherParser::oC_RegularQuery() {
-  OC_RegularQueryContext *_localctx =
-      _tracker.createInstance<OC_RegularQueryContext>(_ctx, getState());
+CypherParser::OC_RegularQueryContext* CypherParser::oC_RegularQuery() {
+  OC_RegularQueryContext *_localctx = _tracker.createInstance<OC_RegularQueryContext>(_ctx, getState());
   enterRule(_localctx, 6, CypherParser::RuleOC_RegularQuery);
   size_t _la = 0;
 
@@ -1863,32 +1078,31 @@ CypherParser::OC_RegularQueryContext *CypherParser::oC_RegularQuery() {
   try {
     size_t alt;
     enterOuterAlt(_localctx, 1);
-    setState(227);
+    setState(231);
     oC_SingleQuery();
-    setState(234);
+    setState(238);
     _errHandler->sync(this);
-    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 6,
-                                                                     _ctx);
+    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 7, _ctx);
     while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER) {
       if (alt == 1) {
-        setState(229);
+        setState(233);
         _errHandler->sync(this);
 
         _la = _input->LA(1);
         if (_la == CypherParser::SP) {
-          setState(228);
+          setState(232);
           match(CypherParser::SP);
         }
-        setState(231);
-        oC_Union();
+        setState(235);
+        oC_Union(); 
       }
-      setState(236);
+      setState(240);
       _errHandler->sync(this);
-      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input,
-                                                                       6, _ctx);
+      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 7, _ctx);
     }
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -1897,14 +1111,13 @@ CypherParser::OC_RegularQueryContext *CypherParser::oC_RegularQuery() {
   return _localctx;
 }
 
-//----------------- OC_UnionContext
-//------------------------------------------------------------------
+//----------------- OC_UnionContext ------------------------------------------------------------------
 
-CypherParser::OC_UnionContext::OC_UnionContext(ParserRuleContext *parent,
-                                               size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_UnionContext::OC_UnionContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-tree::TerminalNode *CypherParser::OC_UnionContext::UNION() {
+tree::TerminalNode* CypherParser::OC_UnionContext::UNION() {
   return getToken(CypherParser::UNION, 0);
 }
 
@@ -1912,34 +1125,33 @@ std::vector<tree::TerminalNode *> CypherParser::OC_UnionContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_UnionContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_UnionContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
-tree::TerminalNode *CypherParser::OC_UnionContext::ALL() {
+tree::TerminalNode* CypherParser::OC_UnionContext::ALL() {
   return getToken(CypherParser::ALL, 0);
 }
 
-CypherParser::OC_SingleQueryContext *
-CypherParser::OC_UnionContext::oC_SingleQuery() {
+CypherParser::OC_SingleQueryContext* CypherParser::OC_UnionContext::oC_SingleQuery() {
   return getRuleContext<CypherParser::OC_SingleQueryContext>(0);
 }
+
 
 size_t CypherParser::OC_UnionContext::getRuleIndex() const {
   return CypherParser::RuleOC_Union;
 }
 
-std::any CypherParser::OC_UnionContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_UnionContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_Union(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_UnionContext *CypherParser::oC_Union() {
-  OC_UnionContext *_localctx =
-      _tracker.createInstance<OC_UnionContext>(_ctx, getState());
+CypherParser::OC_UnionContext* CypherParser::oC_Union() {
+  OC_UnionContext *_localctx = _tracker.createInstance<OC_UnionContext>(_ctx, getState());
   enterRule(_localctx, 8, CypherParser::RuleOC_Union);
   size_t _la = 0;
 
@@ -1951,53 +1163,53 @@ CypherParser::OC_UnionContext *CypherParser::oC_Union() {
     exitRule();
   });
   try {
-    setState(249);
+    setState(253);
     _errHandler->sync(this);
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-        _input, 9, _ctx)) {
-      case 1: {
-        enterOuterAlt(_localctx, 1);
-        setState(237);
-        match(CypherParser::UNION);
-        setState(238);
-        match(CypherParser::SP);
-        setState(239);
-        match(CypherParser::ALL);
-        setState(241);
-        _errHandler->sync(this);
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 10, _ctx)) {
+    case 1: {
+      enterOuterAlt(_localctx, 1);
+      setState(241);
+      match(CypherParser::UNION);
+      setState(242);
+      match(CypherParser::SP);
+      setState(243);
+      match(CypherParser::ALL);
+      setState(245);
+      _errHandler->sync(this);
 
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(240);
-          match(CypherParser::SP);
-        }
-        setState(243);
-        oC_SingleQuery();
-        break;
-      }
-
-      case 2: {
-        enterOuterAlt(_localctx, 2);
+      _la = _input->LA(1);
+      if (_la == CypherParser::SP) {
         setState(244);
-        match(CypherParser::UNION);
-        setState(246);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(245);
-          match(CypherParser::SP);
-        }
-        setState(248);
-        oC_SingleQuery();
-        break;
+        match(CypherParser::SP);
       }
-
-      default:
-        break;
+      setState(247);
+      oC_SingleQuery();
+      break;
     }
 
-  } catch (RecognitionException &e) {
+    case 2: {
+      enterOuterAlt(_localctx, 2);
+      setState(248);
+      match(CypherParser::UNION);
+      setState(250);
+      _errHandler->sync(this);
+
+      _la = _input->LA(1);
+      if (_la == CypherParser::SP) {
+        setState(249);
+        match(CypherParser::SP);
+      }
+      setState(252);
+      oC_SingleQuery();
+      break;
+    }
+
+    default:
+      break;
+    }
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -2006,38 +1218,35 @@ CypherParser::OC_UnionContext *CypherParser::oC_Union() {
   return _localctx;
 }
 
-//----------------- OC_SingleQueryContext
-//------------------------------------------------------------------
+//----------------- OC_SingleQueryContext ------------------------------------------------------------------
 
-CypherParser::OC_SingleQueryContext::OC_SingleQueryContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_SingleQueryContext::OC_SingleQueryContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_SinglePartQueryContext *
-CypherParser::OC_SingleQueryContext::oC_SinglePartQuery() {
+CypherParser::OC_SinglePartQueryContext* CypherParser::OC_SingleQueryContext::oC_SinglePartQuery() {
   return getRuleContext<CypherParser::OC_SinglePartQueryContext>(0);
 }
 
-CypherParser::OC_MultiPartQueryContext *
-CypherParser::OC_SingleQueryContext::oC_MultiPartQuery() {
+CypherParser::OC_MultiPartQueryContext* CypherParser::OC_SingleQueryContext::oC_MultiPartQuery() {
   return getRuleContext<CypherParser::OC_MultiPartQueryContext>(0);
 }
+
 
 size_t CypherParser::OC_SingleQueryContext::getRuleIndex() const {
   return CypherParser::RuleOC_SingleQuery;
 }
 
-std::any CypherParser::OC_SingleQueryContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_SingleQueryContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_SingleQuery(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_SingleQueryContext *CypherParser::oC_SingleQuery() {
-  OC_SingleQueryContext *_localctx =
-      _tracker.createInstance<OC_SingleQueryContext>(_ctx, getState());
+CypherParser::OC_SingleQueryContext* CypherParser::oC_SingleQuery() {
+  OC_SingleQueryContext *_localctx = _tracker.createInstance<OC_SingleQueryContext>(_ctx, getState());
   enterRule(_localctx, 10, CypherParser::RuleOC_SingleQuery);
 
 #if __cplusplus > 201703L
@@ -2048,29 +1257,29 @@ CypherParser::OC_SingleQueryContext *CypherParser::oC_SingleQuery() {
     exitRule();
   });
   try {
-    setState(253);
+    setState(257);
     _errHandler->sync(this);
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-        _input, 10, _ctx)) {
-      case 1: {
-        enterOuterAlt(_localctx, 1);
-        setState(251);
-        oC_SinglePartQuery();
-        break;
-      }
-
-      case 2: {
-        enterOuterAlt(_localctx, 2);
-        setState(252);
-        oC_MultiPartQuery();
-        break;
-      }
-
-      default:
-        break;
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 11, _ctx)) {
+    case 1: {
+      enterOuterAlt(_localctx, 1);
+      setState(255);
+      oC_SinglePartQuery();
+      break;
     }
 
-  } catch (RecognitionException &e) {
+    case 2: {
+      enterOuterAlt(_localctx, 2);
+      setState(256);
+      oC_MultiPartQuery();
+      break;
+    }
+
+    default:
+      break;
+    }
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -2079,62 +1288,55 @@ CypherParser::OC_SingleQueryContext *CypherParser::oC_SingleQuery() {
   return _localctx;
 }
 
-//----------------- OC_SinglePartQueryContext
-//------------------------------------------------------------------
+//----------------- OC_SinglePartQueryContext ------------------------------------------------------------------
 
-CypherParser::OC_SinglePartQueryContext::OC_SinglePartQueryContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_SinglePartQueryContext::OC_SinglePartQueryContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_ReturnContext *
-CypherParser::OC_SinglePartQueryContext::oC_Return() {
+CypherParser::OC_ReturnContext* CypherParser::OC_SinglePartQueryContext::oC_Return() {
   return getRuleContext<CypherParser::OC_ReturnContext>(0);
 }
 
-std::vector<CypherParser::OC_ReadingClauseContext *>
-CypherParser::OC_SinglePartQueryContext::oC_ReadingClause() {
+std::vector<CypherParser::OC_ReadingClauseContext *> CypherParser::OC_SinglePartQueryContext::oC_ReadingClause() {
   return getRuleContexts<CypherParser::OC_ReadingClauseContext>();
 }
 
-CypherParser::OC_ReadingClauseContext *
-CypherParser::OC_SinglePartQueryContext::oC_ReadingClause(size_t i) {
+CypherParser::OC_ReadingClauseContext* CypherParser::OC_SinglePartQueryContext::oC_ReadingClause(size_t i) {
   return getRuleContext<CypherParser::OC_ReadingClauseContext>(i);
 }
 
-std::vector<tree::TerminalNode *>
-CypherParser::OC_SinglePartQueryContext::SP() {
+std::vector<tree::TerminalNode *> CypherParser::OC_SinglePartQueryContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_SinglePartQueryContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_SinglePartQueryContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
-std::vector<CypherParser::OC_UpdatingClauseContext *>
-CypherParser::OC_SinglePartQueryContext::oC_UpdatingClause() {
+std::vector<CypherParser::OC_UpdatingClauseContext *> CypherParser::OC_SinglePartQueryContext::oC_UpdatingClause() {
   return getRuleContexts<CypherParser::OC_UpdatingClauseContext>();
 }
 
-CypherParser::OC_UpdatingClauseContext *
-CypherParser::OC_SinglePartQueryContext::oC_UpdatingClause(size_t i) {
+CypherParser::OC_UpdatingClauseContext* CypherParser::OC_SinglePartQueryContext::oC_UpdatingClause(size_t i) {
   return getRuleContext<CypherParser::OC_UpdatingClauseContext>(i);
 }
+
 
 size_t CypherParser::OC_SinglePartQueryContext::getRuleIndex() const {
   return CypherParser::RuleOC_SinglePartQuery;
 }
 
-std::any CypherParser::OC_SinglePartQueryContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_SinglePartQueryContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_SinglePartQuery(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_SinglePartQueryContext *CypherParser::oC_SinglePartQuery() {
-  OC_SinglePartQueryContext *_localctx =
-      _tracker.createInstance<OC_SinglePartQueryContext>(_ctx, getState());
+CypherParser::OC_SinglePartQueryContext* CypherParser::oC_SinglePartQuery() {
+  OC_SinglePartQueryContext *_localctx = _tracker.createInstance<OC_SinglePartQueryContext>(_ctx, getState());
   enterRule(_localctx, 12, CypherParser::RuleOC_SinglePartQuery);
   size_t _la = 0;
 
@@ -2147,111 +1349,108 @@ CypherParser::OC_SinglePartQueryContext *CypherParser::oC_SinglePartQuery() {
   });
   try {
     size_t alt;
-    setState(290);
+    setState(294);
     _errHandler->sync(this);
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-        _input, 19, _ctx)) {
-      case 1: {
-        enterOuterAlt(_localctx, 1);
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 20, _ctx)) {
+    case 1: {
+      enterOuterAlt(_localctx, 1);
+      setState(265);
+      _errHandler->sync(this);
+      _la = _input->LA(1);
+      while ((((_la & ~ 0x3fULL) == 0) &&
+        ((1ULL << _la) & 578431077140398080) != 0)) {
+        setState(259);
+        oC_ReadingClause();
         setState(261);
         _errHandler->sync(this);
+
         _la = _input->LA(1);
-        while ((((_la & ~0x3fULL) == 0) &&
-                ((1ULL << _la) & 578431077140398080) != 0)) {
-          setState(255);
-          oC_ReadingClause();
-          setState(257);
-          _errHandler->sync(this);
-
-          _la = _input->LA(1);
-          if (_la == CypherParser::SP) {
-            setState(256);
-            match(CypherParser::SP);
-          }
-          setState(263);
-          _errHandler->sync(this);
-          _la = _input->LA(1);
+        if (_la == CypherParser::SP) {
+          setState(260);
+          match(CypherParser::SP);
         }
-        setState(264);
-        oC_Return();
-        break;
+        setState(267);
+        _errHandler->sync(this);
+        _la = _input->LA(1);
       }
+      setState(268);
+      oC_Return();
+      break;
+    }
 
-      case 2: {
-        enterOuterAlt(_localctx, 2);
+    case 2: {
+      enterOuterAlt(_localctx, 2);
+      setState(275);
+      _errHandler->sync(this);
+      _la = _input->LA(1);
+      while ((((_la & ~ 0x3fULL) == 0) &&
+        ((1ULL << _la) & 578431077140398080) != 0)) {
+        setState(269);
+        oC_ReadingClause();
         setState(271);
         _errHandler->sync(this);
+
         _la = _input->LA(1);
-        while ((((_la & ~0x3fULL) == 0) &&
-                ((1ULL << _la) & 578431077140398080) != 0)) {
-          setState(265);
-          oC_ReadingClause();
-          setState(267);
+        if (_la == CypherParser::SP) {
+          setState(270);
+          match(CypherParser::SP);
+        }
+        setState(277);
+        _errHandler->sync(this);
+        _la = _input->LA(1);
+      }
+      setState(278);
+      oC_UpdatingClause();
+      setState(285);
+      _errHandler->sync(this);
+      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 17, _ctx);
+      while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER) {
+        if (alt == 1) {
+          setState(280);
           _errHandler->sync(this);
 
           _la = _input->LA(1);
           if (_la == CypherParser::SP) {
-            setState(266);
+            setState(279);
             match(CypherParser::SP);
           }
-          setState(273);
-          _errHandler->sync(this);
-          _la = _input->LA(1);
+          setState(282);
+          oC_UpdatingClause(); 
         }
-        setState(274);
-        oC_UpdatingClause();
-        setState(281);
+        setState(287);
         _errHandler->sync(this);
-        alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-            _input, 16, _ctx);
-        while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER) {
-          if (alt == 1) {
-            setState(276);
-            _errHandler->sync(this);
+        alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 17, _ctx);
+      }
+      setState(292);
+      _errHandler->sync(this);
 
-            _la = _input->LA(1);
-            if (_la == CypherParser::SP) {
-              setState(275);
-              match(CypherParser::SP);
-            }
-            setState(278);
-            oC_UpdatingClause();
-          }
-          setState(283);
-          _errHandler->sync(this);
-          alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-              _input, 16, _ctx);
-        }
-        setState(288);
+      switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 19, _ctx)) {
+      case 1: {
+        setState(289);
         _errHandler->sync(this);
 
-        switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-            _input, 18, _ctx)) {
-          case 1: {
-            setState(285);
-            _errHandler->sync(this);
-
-            _la = _input->LA(1);
-            if (_la == CypherParser::SP) {
-              setState(284);
-              match(CypherParser::SP);
-            }
-            setState(287);
-            oC_Return();
-            break;
-          }
-
-          default:
-            break;
+        _la = _input->LA(1);
+        if (_la == CypherParser::SP) {
+          setState(288);
+          match(CypherParser::SP);
         }
+        setState(291);
+        oC_Return();
         break;
       }
 
       default:
         break;
+      }
+      break;
     }
 
-  } catch (RecognitionException &e) {
+    default:
+      break;
+    }
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -2260,45 +1459,37 @@ CypherParser::OC_SinglePartQueryContext *CypherParser::oC_SinglePartQuery() {
   return _localctx;
 }
 
-//----------------- OC_MultiPartQueryContext
-//------------------------------------------------------------------
+//----------------- OC_MultiPartQueryContext ------------------------------------------------------------------
 
-CypherParser::OC_MultiPartQueryContext::OC_MultiPartQueryContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_MultiPartQueryContext::OC_MultiPartQueryContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_SinglePartQueryContext *
-CypherParser::OC_MultiPartQueryContext::oC_SinglePartQuery() {
+CypherParser::OC_SinglePartQueryContext* CypherParser::OC_MultiPartQueryContext::oC_SinglePartQuery() {
   return getRuleContext<CypherParser::OC_SinglePartQueryContext>(0);
 }
 
-std::vector<CypherParser::OC_WithContext *>
-CypherParser::OC_MultiPartQueryContext::oC_With() {
+std::vector<CypherParser::OC_WithContext *> CypherParser::OC_MultiPartQueryContext::oC_With() {
   return getRuleContexts<CypherParser::OC_WithContext>();
 }
 
-CypherParser::OC_WithContext *CypherParser::OC_MultiPartQueryContext::oC_With(
-    size_t i) {
+CypherParser::OC_WithContext* CypherParser::OC_MultiPartQueryContext::oC_With(size_t i) {
   return getRuleContext<CypherParser::OC_WithContext>(i);
 }
 
-std::vector<CypherParser::OC_ReadingClauseContext *>
-CypherParser::OC_MultiPartQueryContext::oC_ReadingClause() {
+std::vector<CypherParser::OC_ReadingClauseContext *> CypherParser::OC_MultiPartQueryContext::oC_ReadingClause() {
   return getRuleContexts<CypherParser::OC_ReadingClauseContext>();
 }
 
-CypherParser::OC_ReadingClauseContext *
-CypherParser::OC_MultiPartQueryContext::oC_ReadingClause(size_t i) {
+CypherParser::OC_ReadingClauseContext* CypherParser::OC_MultiPartQueryContext::oC_ReadingClause(size_t i) {
   return getRuleContext<CypherParser::OC_ReadingClauseContext>(i);
 }
 
-std::vector<CypherParser::OC_UpdatingClauseContext *>
-CypherParser::OC_MultiPartQueryContext::oC_UpdatingClause() {
+std::vector<CypherParser::OC_UpdatingClauseContext *> CypherParser::OC_MultiPartQueryContext::oC_UpdatingClause() {
   return getRuleContexts<CypherParser::OC_UpdatingClauseContext>();
 }
 
-CypherParser::OC_UpdatingClauseContext *
-CypherParser::OC_MultiPartQueryContext::oC_UpdatingClause(size_t i) {
+CypherParser::OC_UpdatingClauseContext* CypherParser::OC_MultiPartQueryContext::oC_UpdatingClause(size_t i) {
   return getRuleContext<CypherParser::OC_UpdatingClauseContext>(i);
 }
 
@@ -2306,25 +1497,25 @@ std::vector<tree::TerminalNode *> CypherParser::OC_MultiPartQueryContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_MultiPartQueryContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_MultiPartQueryContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
+
 
 size_t CypherParser::OC_MultiPartQueryContext::getRuleIndex() const {
   return CypherParser::RuleOC_MultiPartQuery;
 }
 
-std::any CypherParser::OC_MultiPartQueryContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_MultiPartQueryContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_MultiPartQuery(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_MultiPartQueryContext *CypherParser::oC_MultiPartQuery() {
-  OC_MultiPartQueryContext *_localctx =
-      _tracker.createInstance<OC_MultiPartQueryContext>(_ctx, getState());
+CypherParser::OC_MultiPartQueryContext* CypherParser::oC_MultiPartQuery() {
+  OC_MultiPartQueryContext *_localctx = _tracker.createInstance<OC_MultiPartQueryContext>(_ctx, getState());
   enterRule(_localctx, 14, CypherParser::RuleOC_MultiPartQuery);
   size_t _la = 0;
 
@@ -2338,75 +1529,75 @@ CypherParser::OC_MultiPartQueryContext *CypherParser::oC_MultiPartQuery() {
   try {
     size_t alt;
     enterOuterAlt(_localctx, 1);
-    setState(314);
+    setState(318); 
     _errHandler->sync(this);
     alt = 1;
     do {
       switch (alt) {
         case 1: {
-          setState(298);
-          _errHandler->sync(this);
-          _la = _input->LA(1);
-          while ((((_la & ~0x3fULL) == 0) &&
-                  ((1ULL << _la) & 578431077140398080) != 0)) {
-            setState(292);
-            oC_ReadingClause();
-            setState(294);
-            _errHandler->sync(this);
-
-            _la = _input->LA(1);
-            if (_la == CypherParser::SP) {
-              setState(293);
-              match(CypherParser::SP);
-            }
-            setState(300);
-            _errHandler->sync(this);
-            _la = _input->LA(1);
-          }
-          setState(307);
-          _errHandler->sync(this);
-          _la = _input->LA(1);
-          while ((((_la & ~0x3fULL) == 0) &&
-                  ((1ULL << _la) & 562949953421312000) != 0)) {
-            setState(301);
-            oC_UpdatingClause();
-            setState(303);
-            _errHandler->sync(this);
-
-            _la = _input->LA(1);
-            if (_la == CypherParser::SP) {
               setState(302);
-              match(CypherParser::SP);
+              _errHandler->sync(this);
+              _la = _input->LA(1);
+              while ((((_la & ~ 0x3fULL) == 0) &&
+                ((1ULL << _la) & 578431077140398080) != 0)) {
+                setState(296);
+                oC_ReadingClause();
+                setState(298);
+                _errHandler->sync(this);
+
+                _la = _input->LA(1);
+                if (_la == CypherParser::SP) {
+                  setState(297);
+                  match(CypherParser::SP);
+                }
+                setState(304);
+                _errHandler->sync(this);
+                _la = _input->LA(1);
+              }
+              setState(311);
+              _errHandler->sync(this);
+              _la = _input->LA(1);
+              while ((((_la & ~ 0x3fULL) == 0) &&
+                ((1ULL << _la) & 562949953421312000) != 0)) {
+                setState(305);
+                oC_UpdatingClause();
+                setState(307);
+                _errHandler->sync(this);
+
+                _la = _input->LA(1);
+                if (_la == CypherParser::SP) {
+                  setState(306);
+                  match(CypherParser::SP);
+                }
+                setState(313);
+                _errHandler->sync(this);
+                _la = _input->LA(1);
+              }
+              setState(314);
+              oC_With();
+              setState(316);
+              _errHandler->sync(this);
+
+              _la = _input->LA(1);
+              if (_la == CypherParser::SP) {
+                setState(315);
+                match(CypherParser::SP);
+              }
+              break;
             }
-            setState(309);
-            _errHandler->sync(this);
-            _la = _input->LA(1);
-          }
-          setState(310);
-          oC_With();
-          setState(312);
-          _errHandler->sync(this);
 
-          _la = _input->LA(1);
-          if (_la == CypherParser::SP) {
-            setState(311);
-            match(CypherParser::SP);
-          }
-          break;
-        }
-
-        default:
-          throw NoViableAltException(this);
+      default:
+        throw NoViableAltException(this);
       }
-      setState(316);
+      setState(320); 
       _errHandler->sync(this);
-      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-          _input, 25, _ctx);
+      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 26, _ctx);
     } while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER);
-    setState(318);
+    setState(322);
     oC_SinglePartQuery();
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -2415,52 +1606,47 @@ CypherParser::OC_MultiPartQueryContext *CypherParser::oC_MultiPartQuery() {
   return _localctx;
 }
 
-//----------------- OC_UpdatingClauseContext
-//------------------------------------------------------------------
+//----------------- OC_UpdatingClauseContext ------------------------------------------------------------------
 
-CypherParser::OC_UpdatingClauseContext::OC_UpdatingClauseContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_UpdatingClauseContext::OC_UpdatingClauseContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_CreateContext *
-CypherParser::OC_UpdatingClauseContext::oC_Create() {
+CypherParser::OC_CreateContext* CypherParser::OC_UpdatingClauseContext::oC_Create() {
   return getRuleContext<CypherParser::OC_CreateContext>(0);
 }
 
-CypherParser::OC_MergeContext *
-CypherParser::OC_UpdatingClauseContext::oC_Merge() {
+CypherParser::OC_MergeContext* CypherParser::OC_UpdatingClauseContext::oC_Merge() {
   return getRuleContext<CypherParser::OC_MergeContext>(0);
 }
 
-CypherParser::OC_DeleteContext *
-CypherParser::OC_UpdatingClauseContext::oC_Delete() {
+CypherParser::OC_DeleteContext* CypherParser::OC_UpdatingClauseContext::oC_Delete() {
   return getRuleContext<CypherParser::OC_DeleteContext>(0);
 }
 
-CypherParser::OC_SetContext *CypherParser::OC_UpdatingClauseContext::oC_Set() {
+CypherParser::OC_SetContext* CypherParser::OC_UpdatingClauseContext::oC_Set() {
   return getRuleContext<CypherParser::OC_SetContext>(0);
 }
 
-CypherParser::OC_RemoveContext *
-CypherParser::OC_UpdatingClauseContext::oC_Remove() {
+CypherParser::OC_RemoveContext* CypherParser::OC_UpdatingClauseContext::oC_Remove() {
   return getRuleContext<CypherParser::OC_RemoveContext>(0);
 }
+
 
 size_t CypherParser::OC_UpdatingClauseContext::getRuleIndex() const {
   return CypherParser::RuleOC_UpdatingClause;
 }
 
-std::any CypherParser::OC_UpdatingClauseContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_UpdatingClauseContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_UpdatingClause(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_UpdatingClauseContext *CypherParser::oC_UpdatingClause() {
-  OC_UpdatingClauseContext *_localctx =
-      _tracker.createInstance<OC_UpdatingClauseContext>(_ctx, getState());
+CypherParser::OC_UpdatingClauseContext* CypherParser::oC_UpdatingClause() {
+  OC_UpdatingClauseContext *_localctx = _tracker.createInstance<OC_UpdatingClauseContext>(_ctx, getState());
   enterRule(_localctx, 16, CypherParser::RuleOC_UpdatingClause);
 
 #if __cplusplus > 201703L
@@ -2471,19 +1657,19 @@ CypherParser::OC_UpdatingClauseContext *CypherParser::oC_UpdatingClause() {
     exitRule();
   });
   try {
-    setState(325);
+    setState(329);
     _errHandler->sync(this);
     switch (_input->LA(1)) {
       case CypherParser::CREATE: {
         enterOuterAlt(_localctx, 1);
-        setState(320);
+        setState(324);
         oC_Create();
         break;
       }
 
       case CypherParser::MERGE: {
         enterOuterAlt(_localctx, 2);
-        setState(321);
+        setState(325);
         oC_Merge();
         break;
       }
@@ -2491,30 +1677,31 @@ CypherParser::OC_UpdatingClauseContext *CypherParser::oC_UpdatingClause() {
       case CypherParser::DETACH:
       case CypherParser::DELETE: {
         enterOuterAlt(_localctx, 3);
-        setState(322);
+        setState(326);
         oC_Delete();
         break;
       }
 
       case CypherParser::SET: {
         enterOuterAlt(_localctx, 4);
-        setState(323);
+        setState(327);
         oC_Set();
         break;
       }
 
       case CypherParser::REMOVE: {
         enterOuterAlt(_localctx, 5);
-        setState(324);
+        setState(328);
         oC_Remove();
         break;
       }
 
-      default:
-        throw NoViableAltException(this);
+    default:
+      throw NoViableAltException(this);
     }
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -2523,43 +1710,39 @@ CypherParser::OC_UpdatingClauseContext *CypherParser::oC_UpdatingClause() {
   return _localctx;
 }
 
-//----------------- OC_ReadingClauseContext
-//------------------------------------------------------------------
+//----------------- OC_ReadingClauseContext ------------------------------------------------------------------
 
-CypherParser::OC_ReadingClauseContext::OC_ReadingClauseContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_ReadingClauseContext::OC_ReadingClauseContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_MatchContext *
-CypherParser::OC_ReadingClauseContext::oC_Match() {
+CypherParser::OC_MatchContext* CypherParser::OC_ReadingClauseContext::oC_Match() {
   return getRuleContext<CypherParser::OC_MatchContext>(0);
 }
 
-CypherParser::OC_UnwindContext *
-CypherParser::OC_ReadingClauseContext::oC_Unwind() {
+CypherParser::OC_UnwindContext* CypherParser::OC_ReadingClauseContext::oC_Unwind() {
   return getRuleContext<CypherParser::OC_UnwindContext>(0);
 }
 
-CypherParser::OC_InQueryCallContext *
-CypherParser::OC_ReadingClauseContext::oC_InQueryCall() {
+CypherParser::OC_InQueryCallContext* CypherParser::OC_ReadingClauseContext::oC_InQueryCall() {
   return getRuleContext<CypherParser::OC_InQueryCallContext>(0);
 }
+
 
 size_t CypherParser::OC_ReadingClauseContext::getRuleIndex() const {
   return CypherParser::RuleOC_ReadingClause;
 }
 
-std::any CypherParser::OC_ReadingClauseContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_ReadingClauseContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_ReadingClause(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_ReadingClauseContext *CypherParser::oC_ReadingClause() {
-  OC_ReadingClauseContext *_localctx =
-      _tracker.createInstance<OC_ReadingClauseContext>(_ctx, getState());
+CypherParser::OC_ReadingClauseContext* CypherParser::oC_ReadingClause() {
+  OC_ReadingClauseContext *_localctx = _tracker.createInstance<OC_ReadingClauseContext>(_ctx, getState());
   enterRule(_localctx, 18, CypherParser::RuleOC_ReadingClause);
 
 #if __cplusplus > 201703L
@@ -2570,36 +1753,37 @@ CypherParser::OC_ReadingClauseContext *CypherParser::oC_ReadingClause() {
     exitRule();
   });
   try {
-    setState(330);
+    setState(334);
     _errHandler->sync(this);
     switch (_input->LA(1)) {
       case CypherParser::OPTIONAL:
       case CypherParser::MATCH: {
         enterOuterAlt(_localctx, 1);
-        setState(327);
+        setState(331);
         oC_Match();
         break;
       }
 
       case CypherParser::UNWIND: {
         enterOuterAlt(_localctx, 2);
-        setState(328);
+        setState(332);
         oC_Unwind();
         break;
       }
 
       case CypherParser::CALL: {
         enterOuterAlt(_localctx, 3);
-        setState(329);
+        setState(333);
         oC_InQueryCall();
         break;
       }
 
-      default:
-        throw NoViableAltException(this);
+    default:
+      throw NoViableAltException(this);
     }
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -2608,22 +1792,21 @@ CypherParser::OC_ReadingClauseContext *CypherParser::oC_ReadingClause() {
   return _localctx;
 }
 
-//----------------- OC_MatchContext
-//------------------------------------------------------------------
+//----------------- OC_MatchContext ------------------------------------------------------------------
 
-CypherParser::OC_MatchContext::OC_MatchContext(ParserRuleContext *parent,
-                                               size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_MatchContext::OC_MatchContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-tree::TerminalNode *CypherParser::OC_MatchContext::MATCH() {
+tree::TerminalNode* CypherParser::OC_MatchContext::MATCH() {
   return getToken(CypherParser::MATCH, 0);
 }
 
-CypherParser::OC_PatternContext *CypherParser::OC_MatchContext::oC_Pattern() {
+CypherParser::OC_PatternContext* CypherParser::OC_MatchContext::oC_Pattern() {
   return getRuleContext<CypherParser::OC_PatternContext>(0);
 }
 
-tree::TerminalNode *CypherParser::OC_MatchContext::OPTIONAL() {
+tree::TerminalNode* CypherParser::OC_MatchContext::OPTIONAL() {
   return getToken(CypherParser::OPTIONAL, 0);
 }
 
@@ -2631,29 +1814,29 @@ std::vector<tree::TerminalNode *> CypherParser::OC_MatchContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_MatchContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_MatchContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
-CypherParser::OC_WhereContext *CypherParser::OC_MatchContext::oC_Where() {
+CypherParser::OC_WhereContext* CypherParser::OC_MatchContext::oC_Where() {
   return getRuleContext<CypherParser::OC_WhereContext>(0);
 }
+
 
 size_t CypherParser::OC_MatchContext::getRuleIndex() const {
   return CypherParser::RuleOC_Match;
 }
 
-std::any CypherParser::OC_MatchContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_MatchContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_Match(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_MatchContext *CypherParser::oC_Match() {
-  OC_MatchContext *_localctx =
-      _tracker.createInstance<OC_MatchContext>(_ctx, getState());
+CypherParser::OC_MatchContext* CypherParser::oC_Match() {
+  OC_MatchContext *_localctx = _tracker.createInstance<OC_MatchContext>(_ctx, getState());
   enterRule(_localctx, 20, CypherParser::RuleOC_Match);
   size_t _la = 0;
 
@@ -2666,52 +1849,52 @@ CypherParser::OC_MatchContext *CypherParser::oC_Match() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(334);
-    _errHandler->sync(this);
-
-    _la = _input->LA(1);
-    if (_la == CypherParser::OPTIONAL) {
-      setState(332);
-      match(CypherParser::OPTIONAL);
-      setState(333);
-      match(CypherParser::SP);
-    }
-    setState(336);
-    match(CypherParser::MATCH);
     setState(338);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
-    if (_la == CypherParser::SP) {
+    if (_la == CypherParser::OPTIONAL) {
+      setState(336);
+      match(CypherParser::OPTIONAL);
       setState(337);
       match(CypherParser::SP);
     }
     setState(340);
-    oC_Pattern();
-    setState(345);
+    match(CypherParser::MATCH);
+    setState(342);
     _errHandler->sync(this);
 
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-        _input, 31, _ctx)) {
-      case 1: {
-        setState(342);
-        _errHandler->sync(this);
+    _la = _input->LA(1);
+    if (_la == CypherParser::SP) {
+      setState(341);
+      match(CypherParser::SP);
+    }
+    setState(344);
+    oC_Pattern();
+    setState(349);
+    _errHandler->sync(this);
 
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(341);
-          match(CypherParser::SP);
-        }
-        setState(344);
-        oC_Where();
-        break;
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 32, _ctx)) {
+    case 1: {
+      setState(346);
+      _errHandler->sync(this);
+
+      _la = _input->LA(1);
+      if (_la == CypherParser::SP) {
+        setState(345);
+        match(CypherParser::SP);
       }
-
-      default:
-        break;
+      setState(348);
+      oC_Where();
+      break;
     }
 
-  } catch (RecognitionException &e) {
+    default:
+      break;
+    }
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -2720,19 +1903,17 @@ CypherParser::OC_MatchContext *CypherParser::oC_Match() {
   return _localctx;
 }
 
-//----------------- OC_UnwindContext
-//------------------------------------------------------------------
+//----------------- OC_UnwindContext ------------------------------------------------------------------
 
-CypherParser::OC_UnwindContext::OC_UnwindContext(ParserRuleContext *parent,
-                                                 size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_UnwindContext::OC_UnwindContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-tree::TerminalNode *CypherParser::OC_UnwindContext::UNWIND() {
+tree::TerminalNode* CypherParser::OC_UnwindContext::UNWIND() {
   return getToken(CypherParser::UNWIND, 0);
 }
 
-CypherParser::OC_ExpressionContext *
-CypherParser::OC_UnwindContext::oC_Expression() {
+CypherParser::OC_ExpressionContext* CypherParser::OC_UnwindContext::oC_Expression() {
   return getRuleContext<CypherParser::OC_ExpressionContext>(0);
 }
 
@@ -2740,34 +1921,33 @@ std::vector<tree::TerminalNode *> CypherParser::OC_UnwindContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_UnwindContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_UnwindContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
-tree::TerminalNode *CypherParser::OC_UnwindContext::AS() {
+tree::TerminalNode* CypherParser::OC_UnwindContext::AS() {
   return getToken(CypherParser::AS, 0);
 }
 
-CypherParser::OC_VariableContext *
-CypherParser::OC_UnwindContext::oC_Variable() {
+CypherParser::OC_VariableContext* CypherParser::OC_UnwindContext::oC_Variable() {
   return getRuleContext<CypherParser::OC_VariableContext>(0);
 }
+
 
 size_t CypherParser::OC_UnwindContext::getRuleIndex() const {
   return CypherParser::RuleOC_Unwind;
 }
 
-std::any CypherParser::OC_UnwindContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_UnwindContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_Unwind(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_UnwindContext *CypherParser::oC_Unwind() {
-  OC_UnwindContext *_localctx =
-      _tracker.createInstance<OC_UnwindContext>(_ctx, getState());
+CypherParser::OC_UnwindContext* CypherParser::oC_Unwind() {
+  OC_UnwindContext *_localctx = _tracker.createInstance<OC_UnwindContext>(_ctx, getState());
   enterRule(_localctx, 22, CypherParser::RuleOC_Unwind);
   size_t _la = 0;
 
@@ -2780,28 +1960,29 @@ CypherParser::OC_UnwindContext *CypherParser::oC_Unwind() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(347);
+    setState(351);
     match(CypherParser::UNWIND);
-    setState(349);
+    setState(353);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
     if (_la == CypherParser::SP) {
-      setState(348);
+      setState(352);
       match(CypherParser::SP);
     }
-    setState(351);
-    oC_Expression();
-    setState(352);
-    match(CypherParser::SP);
-    setState(353);
-    match(CypherParser::AS);
-    setState(354);
-    match(CypherParser::SP);
     setState(355);
+    oC_Expression();
+    setState(356);
+    match(CypherParser::SP);
+    setState(357);
+    match(CypherParser::AS);
+    setState(358);
+    match(CypherParser::SP);
+    setState(359);
     oC_Variable();
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -2810,19 +1991,17 @@ CypherParser::OC_UnwindContext *CypherParser::oC_Unwind() {
   return _localctx;
 }
 
-//----------------- OC_MergeContext
-//------------------------------------------------------------------
+//----------------- OC_MergeContext ------------------------------------------------------------------
 
-CypherParser::OC_MergeContext::OC_MergeContext(ParserRuleContext *parent,
-                                               size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_MergeContext::OC_MergeContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-tree::TerminalNode *CypherParser::OC_MergeContext::MERGE() {
+tree::TerminalNode* CypherParser::OC_MergeContext::MERGE() {
   return getToken(CypherParser::MERGE, 0);
 }
 
-CypherParser::OC_PatternPartContext *
-CypherParser::OC_MergeContext::oC_PatternPart() {
+CypherParser::OC_PatternPartContext* CypherParser::OC_MergeContext::oC_PatternPart() {
   return getRuleContext<CypherParser::OC_PatternPartContext>(0);
 }
 
@@ -2830,35 +2009,33 @@ std::vector<tree::TerminalNode *> CypherParser::OC_MergeContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_MergeContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_MergeContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
-std::vector<CypherParser::OC_MergeActionContext *>
-CypherParser::OC_MergeContext::oC_MergeAction() {
+std::vector<CypherParser::OC_MergeActionContext *> CypherParser::OC_MergeContext::oC_MergeAction() {
   return getRuleContexts<CypherParser::OC_MergeActionContext>();
 }
 
-CypherParser::OC_MergeActionContext *
-CypherParser::OC_MergeContext::oC_MergeAction(size_t i) {
+CypherParser::OC_MergeActionContext* CypherParser::OC_MergeContext::oC_MergeAction(size_t i) {
   return getRuleContext<CypherParser::OC_MergeActionContext>(i);
 }
+
 
 size_t CypherParser::OC_MergeContext::getRuleIndex() const {
   return CypherParser::RuleOC_Merge;
 }
 
-std::any CypherParser::OC_MergeContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_MergeContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_Merge(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_MergeContext *CypherParser::oC_Merge() {
-  OC_MergeContext *_localctx =
-      _tracker.createInstance<OC_MergeContext>(_ctx, getState());
+CypherParser::OC_MergeContext* CypherParser::oC_Merge() {
+  OC_MergeContext *_localctx = _tracker.createInstance<OC_MergeContext>(_ctx, getState());
   enterRule(_localctx, 24, CypherParser::RuleOC_Merge);
   size_t _la = 0;
 
@@ -2872,36 +2049,35 @@ CypherParser::OC_MergeContext *CypherParser::oC_Merge() {
   try {
     size_t alt;
     enterOuterAlt(_localctx, 1);
-    setState(357);
+    setState(361);
     match(CypherParser::MERGE);
-    setState(359);
+    setState(363);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
     if (_la == CypherParser::SP) {
-      setState(358);
+      setState(362);
       match(CypherParser::SP);
     }
-    setState(361);
+    setState(365);
     oC_PatternPart();
-    setState(366);
+    setState(370);
     _errHandler->sync(this);
-    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 34,
-                                                                     _ctx);
+    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 35, _ctx);
     while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER) {
       if (alt == 1) {
-        setState(362);
+        setState(366);
         match(CypherParser::SP);
-        setState(363);
-        oC_MergeAction();
+        setState(367);
+        oC_MergeAction(); 
       }
-      setState(368);
+      setState(372);
       _errHandler->sync(this);
-      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-          _input, 34, _ctx);
+      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 35, _ctx);
     }
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -2910,14 +2086,13 @@ CypherParser::OC_MergeContext *CypherParser::oC_Merge() {
   return _localctx;
 }
 
-//----------------- OC_MergeActionContext
-//------------------------------------------------------------------
+//----------------- OC_MergeActionContext ------------------------------------------------------------------
 
-CypherParser::OC_MergeActionContext::OC_MergeActionContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_MergeActionContext::OC_MergeActionContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-tree::TerminalNode *CypherParser::OC_MergeActionContext::ON() {
+tree::TerminalNode* CypherParser::OC_MergeActionContext::ON() {
   return getToken(CypherParser::ON, 0);
 }
 
@@ -2925,37 +2100,37 @@ std::vector<tree::TerminalNode *> CypherParser::OC_MergeActionContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_MergeActionContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_MergeActionContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
-tree::TerminalNode *CypherParser::OC_MergeActionContext::MATCH() {
+tree::TerminalNode* CypherParser::OC_MergeActionContext::MATCH() {
   return getToken(CypherParser::MATCH, 0);
 }
 
-CypherParser::OC_SetContext *CypherParser::OC_MergeActionContext::oC_Set() {
+CypherParser::OC_SetContext* CypherParser::OC_MergeActionContext::oC_Set() {
   return getRuleContext<CypherParser::OC_SetContext>(0);
 }
 
-tree::TerminalNode *CypherParser::OC_MergeActionContext::CREATE() {
+tree::TerminalNode* CypherParser::OC_MergeActionContext::CREATE() {
   return getToken(CypherParser::CREATE, 0);
 }
+
 
 size_t CypherParser::OC_MergeActionContext::getRuleIndex() const {
   return CypherParser::RuleOC_MergeAction;
 }
 
-std::any CypherParser::OC_MergeActionContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_MergeActionContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_MergeAction(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_MergeActionContext *CypherParser::oC_MergeAction() {
-  OC_MergeActionContext *_localctx =
-      _tracker.createInstance<OC_MergeActionContext>(_ctx, getState());
+CypherParser::OC_MergeActionContext* CypherParser::oC_MergeAction() {
+  OC_MergeActionContext *_localctx = _tracker.createInstance<OC_MergeActionContext>(_ctx, getState());
   enterRule(_localctx, 26, CypherParser::RuleOC_MergeAction);
 
 #if __cplusplus > 201703L
@@ -2966,45 +2141,45 @@ CypherParser::OC_MergeActionContext *CypherParser::oC_MergeAction() {
     exitRule();
   });
   try {
-    setState(379);
+    setState(383);
     _errHandler->sync(this);
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-        _input, 35, _ctx)) {
-      case 1: {
-        enterOuterAlt(_localctx, 1);
-        setState(369);
-        match(CypherParser::ON);
-        setState(370);
-        match(CypherParser::SP);
-        setState(371);
-        match(CypherParser::MATCH);
-        setState(372);
-        match(CypherParser::SP);
-        setState(373);
-        oC_Set();
-        break;
-      }
-
-      case 2: {
-        enterOuterAlt(_localctx, 2);
-        setState(374);
-        match(CypherParser::ON);
-        setState(375);
-        match(CypherParser::SP);
-        setState(376);
-        match(CypherParser::CREATE);
-        setState(377);
-        match(CypherParser::SP);
-        setState(378);
-        oC_Set();
-        break;
-      }
-
-      default:
-        break;
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 36, _ctx)) {
+    case 1: {
+      enterOuterAlt(_localctx, 1);
+      setState(373);
+      match(CypherParser::ON);
+      setState(374);
+      match(CypherParser::SP);
+      setState(375);
+      match(CypherParser::MATCH);
+      setState(376);
+      match(CypherParser::SP);
+      setState(377);
+      oC_Set();
+      break;
     }
 
-  } catch (RecognitionException &e) {
+    case 2: {
+      enterOuterAlt(_localctx, 2);
+      setState(378);
+      match(CypherParser::ON);
+      setState(379);
+      match(CypherParser::SP);
+      setState(380);
+      match(CypherParser::CREATE);
+      setState(381);
+      match(CypherParser::SP);
+      setState(382);
+      oC_Set();
+      break;
+    }
+
+    default:
+      break;
+    }
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -3013,40 +2188,39 @@ CypherParser::OC_MergeActionContext *CypherParser::oC_MergeAction() {
   return _localctx;
 }
 
-//----------------- OC_CreateContext
-//------------------------------------------------------------------
+//----------------- OC_CreateContext ------------------------------------------------------------------
 
-CypherParser::OC_CreateContext::OC_CreateContext(ParserRuleContext *parent,
-                                                 size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_CreateContext::OC_CreateContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-tree::TerminalNode *CypherParser::OC_CreateContext::CREATE() {
+tree::TerminalNode* CypherParser::OC_CreateContext::CREATE() {
   return getToken(CypherParser::CREATE, 0);
 }
 
-CypherParser::OC_PatternContext *CypherParser::OC_CreateContext::oC_Pattern() {
+CypherParser::OC_PatternContext* CypherParser::OC_CreateContext::oC_Pattern() {
   return getRuleContext<CypherParser::OC_PatternContext>(0);
 }
 
-tree::TerminalNode *CypherParser::OC_CreateContext::SP() {
+tree::TerminalNode* CypherParser::OC_CreateContext::SP() {
   return getToken(CypherParser::SP, 0);
 }
+
 
 size_t CypherParser::OC_CreateContext::getRuleIndex() const {
   return CypherParser::RuleOC_Create;
 }
 
-std::any CypherParser::OC_CreateContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_CreateContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_Create(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_CreateContext *CypherParser::oC_Create() {
-  OC_CreateContext *_localctx =
-      _tracker.createInstance<OC_CreateContext>(_ctx, getState());
+CypherParser::OC_CreateContext* CypherParser::oC_Create() {
+  OC_CreateContext *_localctx = _tracker.createInstance<OC_CreateContext>(_ctx, getState());
   enterRule(_localctx, 28, CypherParser::RuleOC_Create);
   size_t _la = 0;
 
@@ -3059,20 +2233,21 @@ CypherParser::OC_CreateContext *CypherParser::oC_Create() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(381);
+    setState(385);
     match(CypherParser::CREATE);
-    setState(383);
+    setState(387);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
     if (_la == CypherParser::SP) {
-      setState(382);
+      setState(386);
       match(CypherParser::SP);
     }
-    setState(385);
+    setState(389);
     oC_Pattern();
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -3081,24 +2256,21 @@ CypherParser::OC_CreateContext *CypherParser::oC_Create() {
   return _localctx;
 }
 
-//----------------- OC_SetContext
-//------------------------------------------------------------------
+//----------------- OC_SetContext ------------------------------------------------------------------
 
-CypherParser::OC_SetContext::OC_SetContext(ParserRuleContext *parent,
-                                           size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_SetContext::OC_SetContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-tree::TerminalNode *CypherParser::OC_SetContext::SET() {
+tree::TerminalNode* CypherParser::OC_SetContext::SET() {
   return getToken(CypherParser::SET, 0);
 }
 
-std::vector<CypherParser::OC_SetItemContext *>
-CypherParser::OC_SetContext::oC_SetItem() {
+std::vector<CypherParser::OC_SetItemContext *> CypherParser::OC_SetContext::oC_SetItem() {
   return getRuleContexts<CypherParser::OC_SetItemContext>();
 }
 
-CypherParser::OC_SetItemContext *CypherParser::OC_SetContext::oC_SetItem(
-    size_t i) {
+CypherParser::OC_SetItemContext* CypherParser::OC_SetContext::oC_SetItem(size_t i) {
   return getRuleContext<CypherParser::OC_SetItemContext>(i);
 }
 
@@ -3106,24 +2278,25 @@ std::vector<tree::TerminalNode *> CypherParser::OC_SetContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_SetContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_SetContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
+
 
 size_t CypherParser::OC_SetContext::getRuleIndex() const {
   return CypherParser::RuleOC_Set;
 }
 
+
 std::any CypherParser::OC_SetContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_Set(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_SetContext *CypherParser::oC_Set() {
-  OC_SetContext *_localctx =
-      _tracker.createInstance<OC_SetContext>(_ctx, getState());
+CypherParser::OC_SetContext* CypherParser::oC_Set() {
+  OC_SetContext *_localctx = _tracker.createInstance<OC_SetContext>(_ctx, getState());
   enterRule(_localctx, 30, CypherParser::RuleOC_Set);
   size_t _la = 0;
 
@@ -3137,34 +2310,23 @@ CypherParser::OC_SetContext *CypherParser::oC_Set() {
   try {
     size_t alt;
     enterOuterAlt(_localctx, 1);
-    setState(387);
+    setState(391);
     match(CypherParser::SET);
-    setState(389);
+    setState(393);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
     if (_la == CypherParser::SP) {
-      setState(388);
+      setState(392);
       match(CypherParser::SP);
     }
-    setState(391);
+    setState(395);
     oC_SetItem();
-    setState(402);
+    setState(406);
     _errHandler->sync(this);
-    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 40,
-                                                                     _ctx);
+    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 41, _ctx);
     while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER) {
       if (alt == 1) {
-        setState(393);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(392);
-          match(CypherParser::SP);
-        }
-        setState(395);
-        match(CypherParser::T__1);
         setState(397);
         _errHandler->sync(this);
 
@@ -3174,15 +2336,25 @@ CypherParser::OC_SetContext *CypherParser::oC_Set() {
           match(CypherParser::SP);
         }
         setState(399);
-        oC_SetItem();
-      }
-      setState(404);
-      _errHandler->sync(this);
-      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-          _input, 40, _ctx);
-    }
+        match(CypherParser::T__1);
+        setState(401);
+        _errHandler->sync(this);
 
-  } catch (RecognitionException &e) {
+        _la = _input->LA(1);
+        if (_la == CypherParser::SP) {
+          setState(400);
+          match(CypherParser::SP);
+        }
+        setState(403);
+        oC_SetItem(); 
+      }
+      setState(408);
+      _errHandler->sync(this);
+      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 41, _ctx);
+    }
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -3191,20 +2363,17 @@ CypherParser::OC_SetContext *CypherParser::oC_Set() {
   return _localctx;
 }
 
-//----------------- OC_SetItemContext
-//------------------------------------------------------------------
+//----------------- OC_SetItemContext ------------------------------------------------------------------
 
-CypherParser::OC_SetItemContext::OC_SetItemContext(ParserRuleContext *parent,
-                                                   size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_SetItemContext::OC_SetItemContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_PropertyExpressionContext *
-CypherParser::OC_SetItemContext::oC_PropertyExpression() {
+CypherParser::OC_PropertyExpressionContext* CypherParser::OC_SetItemContext::oC_PropertyExpression() {
   return getRuleContext<CypherParser::OC_PropertyExpressionContext>(0);
 }
 
-CypherParser::OC_ExpressionContext *
-CypherParser::OC_SetItemContext::oC_Expression() {
+CypherParser::OC_ExpressionContext* CypherParser::OC_SetItemContext::oC_Expression() {
   return getRuleContext<CypherParser::OC_ExpressionContext>(0);
 }
 
@@ -3212,35 +2381,33 @@ std::vector<tree::TerminalNode *> CypherParser::OC_SetItemContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_SetItemContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_SetItemContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
-CypherParser::OC_VariableContext *
-CypherParser::OC_SetItemContext::oC_Variable() {
+CypherParser::OC_VariableContext* CypherParser::OC_SetItemContext::oC_Variable() {
   return getRuleContext<CypherParser::OC_VariableContext>(0);
 }
 
-CypherParser::OC_NodeLabelsContext *
-CypherParser::OC_SetItemContext::oC_NodeLabels() {
+CypherParser::OC_NodeLabelsContext* CypherParser::OC_SetItemContext::oC_NodeLabels() {
   return getRuleContext<CypherParser::OC_NodeLabelsContext>(0);
 }
+
 
 size_t CypherParser::OC_SetItemContext::getRuleIndex() const {
   return CypherParser::RuleOC_SetItem;
 }
 
-std::any CypherParser::OC_SetItemContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_SetItemContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_SetItem(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_SetItemContext *CypherParser::oC_SetItem() {
-  OC_SetItemContext *_localctx =
-      _tracker.createInstance<OC_SetItemContext>(_ctx, getState());
+CypherParser::OC_SetItemContext* CypherParser::oC_SetItem() {
+  OC_SetItemContext *_localctx = _tracker.createInstance<OC_SetItemContext>(_ctx, getState());
   enterRule(_localctx, 32, CypherParser::RuleOC_SetItem);
   size_t _la = 0;
 
@@ -3252,113 +2419,113 @@ CypherParser::OC_SetItemContext *CypherParser::oC_SetItem() {
     exitRule();
   });
   try {
-    setState(441);
+    setState(445);
     _errHandler->sync(this);
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-        _input, 48, _ctx)) {
-      case 1: {
-        enterOuterAlt(_localctx, 1);
-        setState(405);
-        oC_PropertyExpression();
-        setState(407);
-        _errHandler->sync(this);
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 49, _ctx)) {
+    case 1: {
+      enterOuterAlt(_localctx, 1);
+      setState(409);
+      oC_PropertyExpression();
+      setState(411);
+      _errHandler->sync(this);
 
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(406);
-          match(CypherParser::SP);
-        }
-        setState(409);
-        match(CypherParser::T__2);
-        setState(411);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(410);
-          match(CypherParser::SP);
-        }
-        setState(413);
-        oC_Expression();
-        break;
+      _la = _input->LA(1);
+      if (_la == CypherParser::SP) {
+        setState(410);
+        match(CypherParser::SP);
       }
+      setState(413);
+      match(CypherParser::T__2);
+      setState(415);
+      _errHandler->sync(this);
 
-      case 2: {
-        enterOuterAlt(_localctx, 2);
-        setState(415);
-        oC_Variable();
-        setState(417);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(416);
-          match(CypherParser::SP);
-        }
-        setState(419);
-        match(CypherParser::T__2);
-        setState(421);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(420);
-          match(CypherParser::SP);
-        }
-        setState(423);
-        oC_Expression();
-        break;
+      _la = _input->LA(1);
+      if (_la == CypherParser::SP) {
+        setState(414);
+        match(CypherParser::SP);
       }
-
-      case 3: {
-        enterOuterAlt(_localctx, 3);
-        setState(425);
-        oC_Variable();
-        setState(427);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(426);
-          match(CypherParser::SP);
-        }
-        setState(429);
-        match(CypherParser::T__3);
-        setState(431);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(430);
-          match(CypherParser::SP);
-        }
-        setState(433);
-        oC_Expression();
-        break;
-      }
-
-      case 4: {
-        enterOuterAlt(_localctx, 4);
-        setState(435);
-        oC_Variable();
-        setState(437);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(436);
-          match(CypherParser::SP);
-        }
-        setState(439);
-        oC_NodeLabels();
-        break;
-      }
-
-      default:
-        break;
+      setState(417);
+      oC_Expression();
+      break;
     }
 
-  } catch (RecognitionException &e) {
+    case 2: {
+      enterOuterAlt(_localctx, 2);
+      setState(419);
+      oC_Variable();
+      setState(421);
+      _errHandler->sync(this);
+
+      _la = _input->LA(1);
+      if (_la == CypherParser::SP) {
+        setState(420);
+        match(CypherParser::SP);
+      }
+      setState(423);
+      match(CypherParser::T__2);
+      setState(425);
+      _errHandler->sync(this);
+
+      _la = _input->LA(1);
+      if (_la == CypherParser::SP) {
+        setState(424);
+        match(CypherParser::SP);
+      }
+      setState(427);
+      oC_Expression();
+      break;
+    }
+
+    case 3: {
+      enterOuterAlt(_localctx, 3);
+      setState(429);
+      oC_Variable();
+      setState(431);
+      _errHandler->sync(this);
+
+      _la = _input->LA(1);
+      if (_la == CypherParser::SP) {
+        setState(430);
+        match(CypherParser::SP);
+      }
+      setState(433);
+      match(CypherParser::T__3);
+      setState(435);
+      _errHandler->sync(this);
+
+      _la = _input->LA(1);
+      if (_la == CypherParser::SP) {
+        setState(434);
+        match(CypherParser::SP);
+      }
+      setState(437);
+      oC_Expression();
+      break;
+    }
+
+    case 4: {
+      enterOuterAlt(_localctx, 4);
+      setState(439);
+      oC_Variable();
+      setState(441);
+      _errHandler->sync(this);
+
+      _la = _input->LA(1);
+      if (_la == CypherParser::SP) {
+        setState(440);
+        match(CypherParser::SP);
+      }
+      setState(443);
+      oC_NodeLabels();
+      break;
+    }
+
+    default:
+      break;
+    }
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -3367,28 +2534,25 @@ CypherParser::OC_SetItemContext *CypherParser::oC_SetItem() {
   return _localctx;
 }
 
-//----------------- OC_DeleteContext
-//------------------------------------------------------------------
+//----------------- OC_DeleteContext ------------------------------------------------------------------
 
-CypherParser::OC_DeleteContext::OC_DeleteContext(ParserRuleContext *parent,
-                                                 size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_DeleteContext::OC_DeleteContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-tree::TerminalNode *CypherParser::OC_DeleteContext::DELETE() {
+tree::TerminalNode* CypherParser::OC_DeleteContext::DELETE() {
   return getToken(CypherParser::DELETE, 0);
 }
 
-std::vector<CypherParser::OC_ExpressionContext *>
-CypherParser::OC_DeleteContext::oC_Expression() {
+std::vector<CypherParser::OC_ExpressionContext *> CypherParser::OC_DeleteContext::oC_Expression() {
   return getRuleContexts<CypherParser::OC_ExpressionContext>();
 }
 
-CypherParser::OC_ExpressionContext *
-CypherParser::OC_DeleteContext::oC_Expression(size_t i) {
+CypherParser::OC_ExpressionContext* CypherParser::OC_DeleteContext::oC_Expression(size_t i) {
   return getRuleContext<CypherParser::OC_ExpressionContext>(i);
 }
 
-tree::TerminalNode *CypherParser::OC_DeleteContext::DETACH() {
+tree::TerminalNode* CypherParser::OC_DeleteContext::DETACH() {
   return getToken(CypherParser::DETACH, 0);
 }
 
@@ -3396,25 +2560,25 @@ std::vector<tree::TerminalNode *> CypherParser::OC_DeleteContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_DeleteContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_DeleteContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
+
 
 size_t CypherParser::OC_DeleteContext::getRuleIndex() const {
   return CypherParser::RuleOC_Delete;
 }
 
-std::any CypherParser::OC_DeleteContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_DeleteContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_Delete(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_DeleteContext *CypherParser::oC_Delete() {
-  OC_DeleteContext *_localctx =
-      _tracker.createInstance<OC_DeleteContext>(_ctx, getState());
+CypherParser::OC_DeleteContext* CypherParser::oC_Delete() {
+  OC_DeleteContext *_localctx = _tracker.createInstance<OC_DeleteContext>(_ctx, getState());
   enterRule(_localctx, 34, CypherParser::RuleOC_Delete);
   size_t _la = 0;
 
@@ -3428,44 +2592,33 @@ CypherParser::OC_DeleteContext *CypherParser::oC_Delete() {
   try {
     size_t alt;
     enterOuterAlt(_localctx, 1);
-    setState(445);
-    _errHandler->sync(this);
-
-    _la = _input->LA(1);
-    if (_la == CypherParser::DETACH) {
-      setState(443);
-      match(CypherParser::DETACH);
-      setState(444);
-      match(CypherParser::SP);
-    }
-    setState(447);
-    match(CypherParser::DELETE);
     setState(449);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
-    if (_la == CypherParser::SP) {
+    if (_la == CypherParser::DETACH) {
+      setState(447);
+      match(CypherParser::DETACH);
       setState(448);
       match(CypherParser::SP);
     }
     setState(451);
-    oC_Expression();
-    setState(462);
+    match(CypherParser::DELETE);
+    setState(453);
     _errHandler->sync(this);
-    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 53,
-                                                                     _ctx);
+
+    _la = _input->LA(1);
+    if (_la == CypherParser::SP) {
+      setState(452);
+      match(CypherParser::SP);
+    }
+    setState(455);
+    oC_Expression();
+    setState(466);
+    _errHandler->sync(this);
+    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 54, _ctx);
     while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER) {
       if (alt == 1) {
-        setState(453);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(452);
-          match(CypherParser::SP);
-        }
-        setState(455);
-        match(CypherParser::T__1);
         setState(457);
         _errHandler->sync(this);
 
@@ -3475,15 +2628,25 @@ CypherParser::OC_DeleteContext *CypherParser::oC_Delete() {
           match(CypherParser::SP);
         }
         setState(459);
-        oC_Expression();
-      }
-      setState(464);
-      _errHandler->sync(this);
-      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-          _input, 53, _ctx);
-    }
+        match(CypherParser::T__1);
+        setState(461);
+        _errHandler->sync(this);
 
-  } catch (RecognitionException &e) {
+        _la = _input->LA(1);
+        if (_la == CypherParser::SP) {
+          setState(460);
+          match(CypherParser::SP);
+        }
+        setState(463);
+        oC_Expression(); 
+      }
+      setState(468);
+      _errHandler->sync(this);
+      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 54, _ctx);
+    }
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -3492,14 +2655,13 @@ CypherParser::OC_DeleteContext *CypherParser::oC_Delete() {
   return _localctx;
 }
 
-//----------------- OC_RemoveContext
-//------------------------------------------------------------------
+//----------------- OC_RemoveContext ------------------------------------------------------------------
 
-CypherParser::OC_RemoveContext::OC_RemoveContext(ParserRuleContext *parent,
-                                                 size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_RemoveContext::OC_RemoveContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-tree::TerminalNode *CypherParser::OC_RemoveContext::REMOVE() {
+tree::TerminalNode* CypherParser::OC_RemoveContext::REMOVE() {
   return getToken(CypherParser::REMOVE, 0);
 }
 
@@ -3507,35 +2669,33 @@ std::vector<tree::TerminalNode *> CypherParser::OC_RemoveContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_RemoveContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_RemoveContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
-std::vector<CypherParser::OC_RemoveItemContext *>
-CypherParser::OC_RemoveContext::oC_RemoveItem() {
+std::vector<CypherParser::OC_RemoveItemContext *> CypherParser::OC_RemoveContext::oC_RemoveItem() {
   return getRuleContexts<CypherParser::OC_RemoveItemContext>();
 }
 
-CypherParser::OC_RemoveItemContext *
-CypherParser::OC_RemoveContext::oC_RemoveItem(size_t i) {
+CypherParser::OC_RemoveItemContext* CypherParser::OC_RemoveContext::oC_RemoveItem(size_t i) {
   return getRuleContext<CypherParser::OC_RemoveItemContext>(i);
 }
+
 
 size_t CypherParser::OC_RemoveContext::getRuleIndex() const {
   return CypherParser::RuleOC_Remove;
 }
 
-std::any CypherParser::OC_RemoveContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_RemoveContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_Remove(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_RemoveContext *CypherParser::oC_Remove() {
-  OC_RemoveContext *_localctx =
-      _tracker.createInstance<OC_RemoveContext>(_ctx, getState());
+CypherParser::OC_RemoveContext* CypherParser::oC_Remove() {
+  OC_RemoveContext *_localctx = _tracker.createInstance<OC_RemoveContext>(_ctx, getState());
   enterRule(_localctx, 36, CypherParser::RuleOC_Remove);
   size_t _la = 0;
 
@@ -3549,28 +2709,17 @@ CypherParser::OC_RemoveContext *CypherParser::oC_Remove() {
   try {
     size_t alt;
     enterOuterAlt(_localctx, 1);
-    setState(465);
+    setState(469);
     match(CypherParser::REMOVE);
-    setState(466);
+    setState(470);
     match(CypherParser::SP);
-    setState(467);
+    setState(471);
     oC_RemoveItem();
-    setState(478);
+    setState(482);
     _errHandler->sync(this);
-    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 56,
-                                                                     _ctx);
+    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 57, _ctx);
     while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER) {
       if (alt == 1) {
-        setState(469);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(468);
-          match(CypherParser::SP);
-        }
-        setState(471);
-        match(CypherParser::T__1);
         setState(473);
         _errHandler->sync(this);
 
@@ -3580,15 +2729,25 @@ CypherParser::OC_RemoveContext *CypherParser::oC_Remove() {
           match(CypherParser::SP);
         }
         setState(475);
-        oC_RemoveItem();
-      }
-      setState(480);
-      _errHandler->sync(this);
-      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-          _input, 56, _ctx);
-    }
+        match(CypherParser::T__1);
+        setState(477);
+        _errHandler->sync(this);
 
-  } catch (RecognitionException &e) {
+        _la = _input->LA(1);
+        if (_la == CypherParser::SP) {
+          setState(476);
+          match(CypherParser::SP);
+        }
+        setState(479);
+        oC_RemoveItem(); 
+      }
+      setState(484);
+      _errHandler->sync(this);
+      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 57, _ctx);
+    }
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -3597,43 +2756,39 @@ CypherParser::OC_RemoveContext *CypherParser::oC_Remove() {
   return _localctx;
 }
 
-//----------------- OC_RemoveItemContext
-//------------------------------------------------------------------
+//----------------- OC_RemoveItemContext ------------------------------------------------------------------
 
-CypherParser::OC_RemoveItemContext::OC_RemoveItemContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_RemoveItemContext::OC_RemoveItemContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_VariableContext *
-CypherParser::OC_RemoveItemContext::oC_Variable() {
+CypherParser::OC_VariableContext* CypherParser::OC_RemoveItemContext::oC_Variable() {
   return getRuleContext<CypherParser::OC_VariableContext>(0);
 }
 
-CypherParser::OC_NodeLabelsContext *
-CypherParser::OC_RemoveItemContext::oC_NodeLabels() {
+CypherParser::OC_NodeLabelsContext* CypherParser::OC_RemoveItemContext::oC_NodeLabels() {
   return getRuleContext<CypherParser::OC_NodeLabelsContext>(0);
 }
 
-CypherParser::OC_PropertyExpressionContext *
-CypherParser::OC_RemoveItemContext::oC_PropertyExpression() {
+CypherParser::OC_PropertyExpressionContext* CypherParser::OC_RemoveItemContext::oC_PropertyExpression() {
   return getRuleContext<CypherParser::OC_PropertyExpressionContext>(0);
 }
+
 
 size_t CypherParser::OC_RemoveItemContext::getRuleIndex() const {
   return CypherParser::RuleOC_RemoveItem;
 }
 
-std::any CypherParser::OC_RemoveItemContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_RemoveItemContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_RemoveItem(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_RemoveItemContext *CypherParser::oC_RemoveItem() {
-  OC_RemoveItemContext *_localctx =
-      _tracker.createInstance<OC_RemoveItemContext>(_ctx, getState());
+CypherParser::OC_RemoveItemContext* CypherParser::oC_RemoveItem() {
+  OC_RemoveItemContext *_localctx = _tracker.createInstance<OC_RemoveItemContext>(_ctx, getState());
   enterRule(_localctx, 38, CypherParser::RuleOC_RemoveItem);
 
 #if __cplusplus > 201703L
@@ -3644,31 +2799,31 @@ CypherParser::OC_RemoveItemContext *CypherParser::oC_RemoveItem() {
     exitRule();
   });
   try {
-    setState(485);
+    setState(489);
     _errHandler->sync(this);
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-        _input, 57, _ctx)) {
-      case 1: {
-        enterOuterAlt(_localctx, 1);
-        setState(481);
-        oC_Variable();
-        setState(482);
-        oC_NodeLabels();
-        break;
-      }
-
-      case 2: {
-        enterOuterAlt(_localctx, 2);
-        setState(484);
-        oC_PropertyExpression();
-        break;
-      }
-
-      default:
-        break;
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 58, _ctx)) {
+    case 1: {
+      enterOuterAlt(_localctx, 1);
+      setState(485);
+      oC_Variable();
+      setState(486);
+      oC_NodeLabels();
+      break;
     }
 
-  } catch (RecognitionException &e) {
+    case 2: {
+      enterOuterAlt(_localctx, 2);
+      setState(488);
+      oC_PropertyExpression();
+      break;
+    }
+
+    default:
+      break;
+    }
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -3677,14 +2832,13 @@ CypherParser::OC_RemoveItemContext *CypherParser::oC_RemoveItem() {
   return _localctx;
 }
 
-//----------------- OC_InQueryCallContext
-//------------------------------------------------------------------
+//----------------- OC_InQueryCallContext ------------------------------------------------------------------
 
-CypherParser::OC_InQueryCallContext::OC_InQueryCallContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_InQueryCallContext::OC_InQueryCallContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-tree::TerminalNode *CypherParser::OC_InQueryCallContext::CALL() {
+tree::TerminalNode* CypherParser::OC_InQueryCallContext::CALL() {
   return getToken(CypherParser::CALL, 0);
 }
 
@@ -3692,39 +2846,37 @@ std::vector<tree::TerminalNode *> CypherParser::OC_InQueryCallContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_InQueryCallContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_InQueryCallContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
-CypherParser::OC_ExplicitProcedureInvocationContext *
-CypherParser::OC_InQueryCallContext::oC_ExplicitProcedureInvocation() {
+CypherParser::OC_ExplicitProcedureInvocationContext* CypherParser::OC_InQueryCallContext::oC_ExplicitProcedureInvocation() {
   return getRuleContext<CypherParser::OC_ExplicitProcedureInvocationContext>(0);
 }
 
-tree::TerminalNode *CypherParser::OC_InQueryCallContext::YIELD() {
+tree::TerminalNode* CypherParser::OC_InQueryCallContext::YIELD() {
   return getToken(CypherParser::YIELD, 0);
 }
 
-CypherParser::OC_YieldItemsContext *
-CypherParser::OC_InQueryCallContext::oC_YieldItems() {
+CypherParser::OC_YieldItemsContext* CypherParser::OC_InQueryCallContext::oC_YieldItems() {
   return getRuleContext<CypherParser::OC_YieldItemsContext>(0);
 }
+
 
 size_t CypherParser::OC_InQueryCallContext::getRuleIndex() const {
   return CypherParser::RuleOC_InQueryCall;
 }
 
-std::any CypherParser::OC_InQueryCallContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_InQueryCallContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_InQueryCall(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_InQueryCallContext *CypherParser::oC_InQueryCall() {
-  OC_InQueryCallContext *_localctx =
-      _tracker.createInstance<OC_InQueryCallContext>(_ctx, getState());
+CypherParser::OC_InQueryCallContext* CypherParser::oC_InQueryCall() {
+  OC_InQueryCallContext *_localctx = _tracker.createInstance<OC_InQueryCallContext>(_ctx, getState());
   enterRule(_localctx, 40, CypherParser::RuleOC_InQueryCall);
   size_t _la = 0;
 
@@ -3737,40 +2889,40 @@ CypherParser::OC_InQueryCallContext *CypherParser::oC_InQueryCall() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(487);
+    setState(491);
     match(CypherParser::CALL);
-    setState(488);
+    setState(492);
     match(CypherParser::SP);
-    setState(489);
+    setState(493);
     oC_ExplicitProcedureInvocation();
-    setState(496);
+    setState(500);
     _errHandler->sync(this);
 
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-        _input, 59, _ctx)) {
-      case 1: {
-        setState(491);
-        _errHandler->sync(this);
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 60, _ctx)) {
+    case 1: {
+      setState(495);
+      _errHandler->sync(this);
 
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(490);
-          match(CypherParser::SP);
-        }
-        setState(493);
-        match(CypherParser::YIELD);
+      _la = _input->LA(1);
+      if (_la == CypherParser::SP) {
         setState(494);
         match(CypherParser::SP);
-        setState(495);
-        oC_YieldItems();
-        break;
       }
-
-      default:
-        break;
+      setState(497);
+      match(CypherParser::YIELD);
+      setState(498);
+      match(CypherParser::SP);
+      setState(499);
+      oC_YieldItems();
+      break;
     }
 
-  } catch (RecognitionException &e) {
+    default:
+      break;
+    }
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -3779,14 +2931,13 @@ CypherParser::OC_InQueryCallContext *CypherParser::oC_InQueryCall() {
   return _localctx;
 }
 
-//----------------- OC_StandaloneCallContext
-//------------------------------------------------------------------
+//----------------- OC_StandaloneCallContext ------------------------------------------------------------------
 
-CypherParser::OC_StandaloneCallContext::OC_StandaloneCallContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_StandaloneCallContext::OC_StandaloneCallContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-tree::TerminalNode *CypherParser::OC_StandaloneCallContext::CALL() {
+tree::TerminalNode* CypherParser::OC_StandaloneCallContext::CALL() {
   return getToken(CypherParser::CALL, 0);
 }
 
@@ -3794,44 +2945,41 @@ std::vector<tree::TerminalNode *> CypherParser::OC_StandaloneCallContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_StandaloneCallContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_StandaloneCallContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
-CypherParser::OC_ExplicitProcedureInvocationContext *
-CypherParser::OC_StandaloneCallContext::oC_ExplicitProcedureInvocation() {
+CypherParser::OC_ExplicitProcedureInvocationContext* CypherParser::OC_StandaloneCallContext::oC_ExplicitProcedureInvocation() {
   return getRuleContext<CypherParser::OC_ExplicitProcedureInvocationContext>(0);
 }
 
-CypherParser::OC_ImplicitProcedureInvocationContext *
-CypherParser::OC_StandaloneCallContext::oC_ImplicitProcedureInvocation() {
+CypherParser::OC_ImplicitProcedureInvocationContext* CypherParser::OC_StandaloneCallContext::oC_ImplicitProcedureInvocation() {
   return getRuleContext<CypherParser::OC_ImplicitProcedureInvocationContext>(0);
 }
 
-tree::TerminalNode *CypherParser::OC_StandaloneCallContext::YIELD() {
+tree::TerminalNode* CypherParser::OC_StandaloneCallContext::YIELD() {
   return getToken(CypherParser::YIELD, 0);
 }
 
-CypherParser::OC_YieldItemsContext *
-CypherParser::OC_StandaloneCallContext::oC_YieldItems() {
+CypherParser::OC_YieldItemsContext* CypherParser::OC_StandaloneCallContext::oC_YieldItems() {
   return getRuleContext<CypherParser::OC_YieldItemsContext>(0);
 }
+
 
 size_t CypherParser::OC_StandaloneCallContext::getRuleIndex() const {
   return CypherParser::RuleOC_StandaloneCall;
 }
 
-std::any CypherParser::OC_StandaloneCallContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_StandaloneCallContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_StandaloneCall(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_StandaloneCallContext *CypherParser::oC_StandaloneCall() {
-  OC_StandaloneCallContext *_localctx =
-      _tracker.createInstance<OC_StandaloneCallContext>(_ctx, getState());
+CypherParser::OC_StandaloneCallContext* CypherParser::oC_StandaloneCall() {
+  OC_StandaloneCallContext *_localctx = _tracker.createInstance<OC_StandaloneCallContext>(_ctx, getState());
   enterRule(_localctx, 42, CypherParser::RuleOC_StandaloneCall);
   size_t _la = 0;
 
@@ -3844,81 +2992,80 @@ CypherParser::OC_StandaloneCallContext *CypherParser::oC_StandaloneCall() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(498);
-    match(CypherParser::CALL);
-    setState(499);
-    match(CypherParser::SP);
     setState(502);
+    match(CypherParser::CALL);
+    setState(503);
+    match(CypherParser::SP);
+    setState(506);
     _errHandler->sync(this);
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-        _input, 60, _ctx)) {
-      case 1: {
-        setState(500);
-        oC_ExplicitProcedureInvocation();
-        break;
-      }
-
-      case 2: {
-        setState(501);
-        oC_ImplicitProcedureInvocation();
-        break;
-      }
-
-      default:
-        break;
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 61, _ctx)) {
+    case 1: {
+      setState(504);
+      oC_ExplicitProcedureInvocation();
+      break;
     }
-    setState(513);
+
+    case 2: {
+      setState(505);
+      oC_ImplicitProcedureInvocation();
+      break;
+    }
+
+    default:
+      break;
+    }
+    setState(517);
     _errHandler->sync(this);
 
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-        _input, 63, _ctx)) {
-      case 1: {
-        setState(505);
-        _errHandler->sync(this);
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 64, _ctx)) {
+    case 1: {
+      setState(509);
+      _errHandler->sync(this);
 
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(504);
-          match(CypherParser::SP);
-        }
-        setState(507);
-        match(CypherParser::YIELD);
+      _la = _input->LA(1);
+      if (_la == CypherParser::SP) {
         setState(508);
         match(CypherParser::SP);
-        setState(511);
-        _errHandler->sync(this);
-        switch (_input->LA(1)) {
-          case CypherParser::T__4: {
-            setState(509);
-            match(CypherParser::T__4);
-            break;
-          }
-
-          case CypherParser::COUNT:
-          case CypherParser::ANY:
-          case CypherParser::NONE:
-          case CypherParser::SINGLE:
-          case CypherParser::HexLetter:
-          case CypherParser::FILTER:
-          case CypherParser::EXTRACT:
-          case CypherParser::UnescapedSymbolicName:
-          case CypherParser::EscapedSymbolicName: {
-            setState(510);
-            oC_YieldItems();
-            break;
-          }
-
-          default:
-            throw NoViableAltException(this);
-        }
-        break;
       }
+      setState(511);
+      match(CypherParser::YIELD);
+      setState(512);
+      match(CypherParser::SP);
+      setState(515);
+      _errHandler->sync(this);
+      switch (_input->LA(1)) {
+        case CypherParser::T__4: {
+          setState(513);
+          match(CypherParser::T__4);
+          break;
+        }
+
+        case CypherParser::COUNT:
+        case CypherParser::ANY:
+        case CypherParser::NONE:
+        case CypherParser::SINGLE:
+        case CypherParser::HexLetter:
+        case CypherParser::FILTER:
+        case CypherParser::EXTRACT:
+        case CypherParser::UnescapedSymbolicName:
+        case CypherParser::EscapedSymbolicName: {
+          setState(514);
+          oC_YieldItems();
+          break;
+        }
 
       default:
-        break;
+        throw NoViableAltException(this);
+      }
+      break;
     }
 
-  } catch (RecognitionException &e) {
+    default:
+      break;
+    }
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -3927,24 +3074,21 @@ CypherParser::OC_StandaloneCallContext *CypherParser::oC_StandaloneCall() {
   return _localctx;
 }
 
-//----------------- OC_YieldItemsContext
-//------------------------------------------------------------------
+//----------------- OC_YieldItemsContext ------------------------------------------------------------------
 
-CypherParser::OC_YieldItemsContext::OC_YieldItemsContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_YieldItemsContext::OC_YieldItemsContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-std::vector<CypherParser::OC_YieldItemContext *>
-CypherParser::OC_YieldItemsContext::oC_YieldItem() {
+std::vector<CypherParser::OC_YieldItemContext *> CypherParser::OC_YieldItemsContext::oC_YieldItem() {
   return getRuleContexts<CypherParser::OC_YieldItemContext>();
 }
 
-CypherParser::OC_YieldItemContext *
-CypherParser::OC_YieldItemsContext::oC_YieldItem(size_t i) {
+CypherParser::OC_YieldItemContext* CypherParser::OC_YieldItemsContext::oC_YieldItem(size_t i) {
   return getRuleContext<CypherParser::OC_YieldItemContext>(i);
 }
 
-CypherParser::OC_WhereContext *CypherParser::OC_YieldItemsContext::oC_Where() {
+CypherParser::OC_WhereContext* CypherParser::OC_YieldItemsContext::oC_Where() {
   return getRuleContext<CypherParser::OC_WhereContext>(0);
 }
 
@@ -3952,25 +3096,25 @@ std::vector<tree::TerminalNode *> CypherParser::OC_YieldItemsContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_YieldItemsContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_YieldItemsContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
+
 
 size_t CypherParser::OC_YieldItemsContext::getRuleIndex() const {
   return CypherParser::RuleOC_YieldItems;
 }
 
-std::any CypherParser::OC_YieldItemsContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_YieldItemsContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_YieldItems(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_YieldItemsContext *CypherParser::oC_YieldItems() {
-  OC_YieldItemsContext *_localctx =
-      _tracker.createInstance<OC_YieldItemsContext>(_ctx, getState());
+CypherParser::OC_YieldItemsContext* CypherParser::oC_YieldItems() {
+  OC_YieldItemsContext *_localctx = _tracker.createInstance<OC_YieldItemsContext>(_ctx, getState());
   enterRule(_localctx, 44, CypherParser::RuleOC_YieldItems);
   size_t _la = 0;
 
@@ -3984,24 +3128,13 @@ CypherParser::OC_YieldItemsContext *CypherParser::oC_YieldItems() {
   try {
     size_t alt;
     enterOuterAlt(_localctx, 1);
-    setState(515);
+    setState(519);
     oC_YieldItem();
-    setState(526);
+    setState(530);
     _errHandler->sync(this);
-    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 66,
-                                                                     _ctx);
+    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 67, _ctx);
     while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER) {
       if (alt == 1) {
-        setState(517);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(516);
-          match(CypherParser::SP);
-        }
-        setState(519);
-        match(CypherParser::T__1);
         setState(521);
         _errHandler->sync(this);
 
@@ -4011,37 +3144,46 @@ CypherParser::OC_YieldItemsContext *CypherParser::oC_YieldItems() {
           match(CypherParser::SP);
         }
         setState(523);
-        oC_YieldItem();
-      }
-      setState(528);
-      _errHandler->sync(this);
-      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-          _input, 66, _ctx);
-    }
-    setState(533);
-    _errHandler->sync(this);
-
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-        _input, 68, _ctx)) {
-      case 1: {
-        setState(530);
+        match(CypherParser::T__1);
+        setState(525);
         _errHandler->sync(this);
 
         _la = _input->LA(1);
         if (_la == CypherParser::SP) {
-          setState(529);
+          setState(524);
           match(CypherParser::SP);
         }
-        setState(532);
-        oC_Where();
-        break;
+        setState(527);
+        oC_YieldItem(); 
       }
+      setState(532);
+      _errHandler->sync(this);
+      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 67, _ctx);
+    }
+    setState(537);
+    _errHandler->sync(this);
 
-      default:
-        break;
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 69, _ctx)) {
+    case 1: {
+      setState(534);
+      _errHandler->sync(this);
+
+      _la = _input->LA(1);
+      if (_la == CypherParser::SP) {
+        setState(533);
+        match(CypherParser::SP);
+      }
+      setState(536);
+      oC_Where();
+      break;
     }
 
-  } catch (RecognitionException &e) {
+    default:
+      break;
+    }
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -4050,20 +3192,17 @@ CypherParser::OC_YieldItemsContext *CypherParser::oC_YieldItems() {
   return _localctx;
 }
 
-//----------------- OC_YieldItemContext
-//------------------------------------------------------------------
+//----------------- OC_YieldItemContext ------------------------------------------------------------------
 
-CypherParser::OC_YieldItemContext::OC_YieldItemContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_YieldItemContext::OC_YieldItemContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_VariableContext *
-CypherParser::OC_YieldItemContext::oC_Variable() {
+CypherParser::OC_VariableContext* CypherParser::OC_YieldItemContext::oC_Variable() {
   return getRuleContext<CypherParser::OC_VariableContext>(0);
 }
 
-CypherParser::OC_ProcedureResultFieldContext *
-CypherParser::OC_YieldItemContext::oC_ProcedureResultField() {
+CypherParser::OC_ProcedureResultFieldContext* CypherParser::OC_YieldItemContext::oC_ProcedureResultField() {
   return getRuleContext<CypherParser::OC_ProcedureResultFieldContext>(0);
 }
 
@@ -4071,29 +3210,29 @@ std::vector<tree::TerminalNode *> CypherParser::OC_YieldItemContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_YieldItemContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_YieldItemContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
-tree::TerminalNode *CypherParser::OC_YieldItemContext::AS() {
+tree::TerminalNode* CypherParser::OC_YieldItemContext::AS() {
   return getToken(CypherParser::AS, 0);
 }
+
 
 size_t CypherParser::OC_YieldItemContext::getRuleIndex() const {
   return CypherParser::RuleOC_YieldItem;
 }
 
-std::any CypherParser::OC_YieldItemContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_YieldItemContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_YieldItem(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_YieldItemContext *CypherParser::oC_YieldItem() {
-  OC_YieldItemContext *_localctx =
-      _tracker.createInstance<OC_YieldItemContext>(_ctx, getState());
+CypherParser::OC_YieldItemContext* CypherParser::oC_YieldItem() {
+  OC_YieldItemContext *_localctx = _tracker.createInstance<OC_YieldItemContext>(_ctx, getState());
   enterRule(_localctx, 46, CypherParser::RuleOC_YieldItem);
 
 #if __cplusplus > 201703L
@@ -4105,30 +3244,30 @@ CypherParser::OC_YieldItemContext *CypherParser::oC_YieldItem() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(540);
+    setState(544);
     _errHandler->sync(this);
 
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-        _input, 69, _ctx)) {
-      case 1: {
-        setState(535);
-        oC_ProcedureResultField();
-        setState(536);
-        match(CypherParser::SP);
-        setState(537);
-        match(CypherParser::AS);
-        setState(538);
-        match(CypherParser::SP);
-        break;
-      }
-
-      default:
-        break;
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 70, _ctx)) {
+    case 1: {
+      setState(539);
+      oC_ProcedureResultField();
+      setState(540);
+      match(CypherParser::SP);
+      setState(541);
+      match(CypherParser::AS);
+      setState(542);
+      match(CypherParser::SP);
+      break;
     }
-    setState(542);
-    oC_Variable();
 
-  } catch (RecognitionException &e) {
+    default:
+      break;
+    }
+    setState(546);
+    oC_Variable();
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -4137,44 +3276,43 @@ CypherParser::OC_YieldItemContext *CypherParser::oC_YieldItem() {
   return _localctx;
 }
 
-//----------------- OC_WithContext
-//------------------------------------------------------------------
+//----------------- OC_WithContext ------------------------------------------------------------------
 
-CypherParser::OC_WithContext::OC_WithContext(ParserRuleContext *parent,
-                                             size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_WithContext::OC_WithContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-tree::TerminalNode *CypherParser::OC_WithContext::WITH() {
+tree::TerminalNode* CypherParser::OC_WithContext::WITH() {
   return getToken(CypherParser::WITH, 0);
 }
 
-CypherParser::OC_ProjectionBodyContext *
-CypherParser::OC_WithContext::oC_ProjectionBody() {
+CypherParser::OC_ProjectionBodyContext* CypherParser::OC_WithContext::oC_ProjectionBody() {
   return getRuleContext<CypherParser::OC_ProjectionBodyContext>(0);
 }
 
-CypherParser::OC_WhereContext *CypherParser::OC_WithContext::oC_Where() {
+CypherParser::OC_WhereContext* CypherParser::OC_WithContext::oC_Where() {
   return getRuleContext<CypherParser::OC_WhereContext>(0);
 }
 
-tree::TerminalNode *CypherParser::OC_WithContext::SP() {
+tree::TerminalNode* CypherParser::OC_WithContext::SP() {
   return getToken(CypherParser::SP, 0);
 }
+
 
 size_t CypherParser::OC_WithContext::getRuleIndex() const {
   return CypherParser::RuleOC_With;
 }
 
+
 std::any CypherParser::OC_WithContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_With(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_WithContext *CypherParser::oC_With() {
-  OC_WithContext *_localctx =
-      _tracker.createInstance<OC_WithContext>(_ctx, getState());
+CypherParser::OC_WithContext* CypherParser::oC_With() {
+  OC_WithContext *_localctx = _tracker.createInstance<OC_WithContext>(_ctx, getState());
   enterRule(_localctx, 48, CypherParser::RuleOC_With);
   size_t _la = 0;
 
@@ -4187,34 +3325,34 @@ CypherParser::OC_WithContext *CypherParser::oC_With() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(544);
+    setState(548);
     match(CypherParser::WITH);
-    setState(545);
+    setState(549);
     oC_ProjectionBody();
-    setState(550);
+    setState(554);
     _errHandler->sync(this);
 
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-        _input, 71, _ctx)) {
-      case 1: {
-        setState(547);
-        _errHandler->sync(this);
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 72, _ctx)) {
+    case 1: {
+      setState(551);
+      _errHandler->sync(this);
 
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(546);
-          match(CypherParser::SP);
-        }
-        setState(549);
-        oC_Where();
-        break;
+      _la = _input->LA(1);
+      if (_la == CypherParser::SP) {
+        setState(550);
+        match(CypherParser::SP);
       }
-
-      default:
-        break;
+      setState(553);
+      oC_Where();
+      break;
     }
 
-  } catch (RecognitionException &e) {
+    default:
+      break;
+    }
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -4223,37 +3361,35 @@ CypherParser::OC_WithContext *CypherParser::oC_With() {
   return _localctx;
 }
 
-//----------------- OC_ReturnContext
-//------------------------------------------------------------------
+//----------------- OC_ReturnContext ------------------------------------------------------------------
 
-CypherParser::OC_ReturnContext::OC_ReturnContext(ParserRuleContext *parent,
-                                                 size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_ReturnContext::OC_ReturnContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-tree::TerminalNode *CypherParser::OC_ReturnContext::RETURN() {
+tree::TerminalNode* CypherParser::OC_ReturnContext::RETURN() {
   return getToken(CypherParser::RETURN, 0);
 }
 
-CypherParser::OC_ProjectionBodyContext *
-CypherParser::OC_ReturnContext::oC_ProjectionBody() {
+CypherParser::OC_ProjectionBodyContext* CypherParser::OC_ReturnContext::oC_ProjectionBody() {
   return getRuleContext<CypherParser::OC_ProjectionBodyContext>(0);
 }
+
 
 size_t CypherParser::OC_ReturnContext::getRuleIndex() const {
   return CypherParser::RuleOC_Return;
 }
 
-std::any CypherParser::OC_ReturnContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_ReturnContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_Return(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_ReturnContext *CypherParser::oC_Return() {
-  OC_ReturnContext *_localctx =
-      _tracker.createInstance<OC_ReturnContext>(_ctx, getState());
+CypherParser::OC_ReturnContext* CypherParser::oC_Return() {
+  OC_ReturnContext *_localctx = _tracker.createInstance<OC_ReturnContext>(_ctx, getState());
   enterRule(_localctx, 50, CypherParser::RuleOC_Return);
 
 #if __cplusplus > 201703L
@@ -4265,12 +3401,13 @@ CypherParser::OC_ReturnContext *CypherParser::oC_Return() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(552);
+    setState(556);
     match(CypherParser::RETURN);
-    setState(553);
+    setState(557);
     oC_ProjectionBody();
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -4279,60 +3416,55 @@ CypherParser::OC_ReturnContext *CypherParser::oC_Return() {
   return _localctx;
 }
 
-//----------------- OC_ProjectionBodyContext
-//------------------------------------------------------------------
+//----------------- OC_ProjectionBodyContext ------------------------------------------------------------------
 
-CypherParser::OC_ProjectionBodyContext::OC_ProjectionBodyContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_ProjectionBodyContext::OC_ProjectionBodyContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
 std::vector<tree::TerminalNode *> CypherParser::OC_ProjectionBodyContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_ProjectionBodyContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_ProjectionBodyContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
-CypherParser::OC_ProjectionItemsContext *
-CypherParser::OC_ProjectionBodyContext::oC_ProjectionItems() {
+CypherParser::OC_ProjectionItemsContext* CypherParser::OC_ProjectionBodyContext::oC_ProjectionItems() {
   return getRuleContext<CypherParser::OC_ProjectionItemsContext>(0);
 }
 
-tree::TerminalNode *CypherParser::OC_ProjectionBodyContext::DISTINCT() {
+tree::TerminalNode* CypherParser::OC_ProjectionBodyContext::DISTINCT() {
   return getToken(CypherParser::DISTINCT, 0);
 }
 
-CypherParser::OC_OrderContext *
-CypherParser::OC_ProjectionBodyContext::oC_Order() {
+CypherParser::OC_OrderContext* CypherParser::OC_ProjectionBodyContext::oC_Order() {
   return getRuleContext<CypherParser::OC_OrderContext>(0);
 }
 
-CypherParser::OC_SkipContext *
-CypherParser::OC_ProjectionBodyContext::oC_Skip() {
+CypherParser::OC_SkipContext* CypherParser::OC_ProjectionBodyContext::oC_Skip() {
   return getRuleContext<CypherParser::OC_SkipContext>(0);
 }
 
-CypherParser::OC_LimitContext *
-CypherParser::OC_ProjectionBodyContext::oC_Limit() {
+CypherParser::OC_LimitContext* CypherParser::OC_ProjectionBodyContext::oC_Limit() {
   return getRuleContext<CypherParser::OC_LimitContext>(0);
 }
+
 
 size_t CypherParser::OC_ProjectionBodyContext::getRuleIndex() const {
   return CypherParser::RuleOC_ProjectionBody;
 }
 
-std::any CypherParser::OC_ProjectionBodyContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_ProjectionBodyContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_ProjectionBody(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_ProjectionBodyContext *CypherParser::oC_ProjectionBody() {
-  OC_ProjectionBodyContext *_localctx =
-      _tracker.createInstance<OC_ProjectionBodyContext>(_ctx, getState());
+CypherParser::OC_ProjectionBodyContext* CypherParser::oC_ProjectionBody() {
+  OC_ProjectionBodyContext *_localctx = _tracker.createInstance<OC_ProjectionBodyContext>(_ctx, getState());
   enterRule(_localctx, 52, CypherParser::RuleOC_ProjectionBody);
   size_t _la = 0;
 
@@ -4345,82 +3477,79 @@ CypherParser::OC_ProjectionBodyContext *CypherParser::oC_ProjectionBody() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(559);
+    setState(563);
     _errHandler->sync(this);
 
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-        _input, 73, _ctx)) {
-      case 1: {
-        setState(556);
-        _errHandler->sync(this);
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 74, _ctx)) {
+    case 1: {
+      setState(560);
+      _errHandler->sync(this);
 
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(555);
-          match(CypherParser::SP);
-        }
-        setState(558);
-        match(CypherParser::DISTINCT);
-        break;
-      }
-
-      default:
-        break;
-    }
-    setState(561);
-    match(CypherParser::SP);
-    setState(562);
-    oC_ProjectionItems();
-    setState(565);
-    _errHandler->sync(this);
-
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-        _input, 74, _ctx)) {
-      case 1: {
-        setState(563);
+      _la = _input->LA(1);
+      if (_la == CypherParser::SP) {
+        setState(559);
         match(CypherParser::SP);
-        setState(564);
-        oC_Order();
-        break;
       }
-
-      default:
-        break;
+      setState(562);
+      match(CypherParser::DISTINCT);
+      break;
     }
+
+    default:
+      break;
+    }
+    setState(565);
+    match(CypherParser::SP);
+    setState(566);
+    oC_ProjectionItems();
     setState(569);
     _errHandler->sync(this);
 
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-        _input, 75, _ctx)) {
-      case 1: {
-        setState(567);
-        match(CypherParser::SP);
-        setState(568);
-        oC_Skip();
-        break;
-      }
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 75, _ctx)) {
+    case 1: {
+      setState(567);
+      match(CypherParser::SP);
+      setState(568);
+      oC_Order();
+      break;
+    }
 
-      default:
-        break;
+    default:
+      break;
     }
     setState(573);
     _errHandler->sync(this);
 
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-        _input, 76, _ctx)) {
-      case 1: {
-        setState(571);
-        match(CypherParser::SP);
-        setState(572);
-        oC_Limit();
-        break;
-      }
-
-      default:
-        break;
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 76, _ctx)) {
+    case 1: {
+      setState(571);
+      match(CypherParser::SP);
+      setState(572);
+      oC_Skip();
+      break;
     }
 
-  } catch (RecognitionException &e) {
+    default:
+      break;
+    }
+    setState(577);
+    _errHandler->sync(this);
+
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 77, _ctx)) {
+    case 1: {
+      setState(575);
+      match(CypherParser::SP);
+      setState(576);
+      oC_Limit();
+      break;
+    }
+
+    default:
+      break;
+    }
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -4429,47 +3558,43 @@ CypherParser::OC_ProjectionBodyContext *CypherParser::oC_ProjectionBody() {
   return _localctx;
 }
 
-//----------------- OC_ProjectionItemsContext
-//------------------------------------------------------------------
+//----------------- OC_ProjectionItemsContext ------------------------------------------------------------------
 
-CypherParser::OC_ProjectionItemsContext::OC_ProjectionItemsContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_ProjectionItemsContext::OC_ProjectionItemsContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-std::vector<CypherParser::OC_ProjectionItemContext *>
-CypherParser::OC_ProjectionItemsContext::oC_ProjectionItem() {
+std::vector<CypherParser::OC_ProjectionItemContext *> CypherParser::OC_ProjectionItemsContext::oC_ProjectionItem() {
   return getRuleContexts<CypherParser::OC_ProjectionItemContext>();
 }
 
-CypherParser::OC_ProjectionItemContext *
-CypherParser::OC_ProjectionItemsContext::oC_ProjectionItem(size_t i) {
+CypherParser::OC_ProjectionItemContext* CypherParser::OC_ProjectionItemsContext::oC_ProjectionItem(size_t i) {
   return getRuleContext<CypherParser::OC_ProjectionItemContext>(i);
 }
 
-std::vector<tree::TerminalNode *>
-CypherParser::OC_ProjectionItemsContext::SP() {
+std::vector<tree::TerminalNode *> CypherParser::OC_ProjectionItemsContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_ProjectionItemsContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_ProjectionItemsContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
+
 
 size_t CypherParser::OC_ProjectionItemsContext::getRuleIndex() const {
   return CypherParser::RuleOC_ProjectionItems;
 }
 
-std::any CypherParser::OC_ProjectionItemsContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_ProjectionItemsContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_ProjectionItems(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_ProjectionItemsContext *CypherParser::oC_ProjectionItems() {
-  OC_ProjectionItemsContext *_localctx =
-      _tracker.createInstance<OC_ProjectionItemsContext>(_ctx, getState());
+CypherParser::OC_ProjectionItemsContext* CypherParser::oC_ProjectionItems() {
+  OC_ProjectionItemsContext *_localctx = _tracker.createInstance<OC_ProjectionItemsContext>(_ctx, getState());
   enterRule(_localctx, 54, CypherParser::RuleOC_ProjectionItems);
   size_t _la = 0;
 
@@ -4482,29 +3607,18 @@ CypherParser::OC_ProjectionItemsContext *CypherParser::oC_ProjectionItems() {
   });
   try {
     size_t alt;
-    setState(603);
+    setState(607);
     _errHandler->sync(this);
     switch (_input->LA(1)) {
       case CypherParser::T__4: {
         enterOuterAlt(_localctx, 1);
-        setState(575);
+        setState(579);
         match(CypherParser::T__4);
-        setState(586);
+        setState(590);
         _errHandler->sync(this);
-        alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-            _input, 79, _ctx);
+        alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 80, _ctx);
         while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER) {
           if (alt == 1) {
-            setState(577);
-            _errHandler->sync(this);
-
-            _la = _input->LA(1);
-            if (_la == CypherParser::SP) {
-              setState(576);
-              match(CypherParser::SP);
-            }
-            setState(579);
-            match(CypherParser::T__1);
             setState(581);
             _errHandler->sync(this);
 
@@ -4514,12 +3628,21 @@ CypherParser::OC_ProjectionItemsContext *CypherParser::oC_ProjectionItems() {
               match(CypherParser::SP);
             }
             setState(583);
-            oC_ProjectionItem();
+            match(CypherParser::T__1);
+            setState(585);
+            _errHandler->sync(this);
+
+            _la = _input->LA(1);
+            if (_la == CypherParser::SP) {
+              setState(584);
+              match(CypherParser::SP);
+            }
+            setState(587);
+            oC_ProjectionItem(); 
           }
-          setState(588);
+          setState(592);
           _errHandler->sync(this);
-          alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-              _input, 79, _ctx);
+          alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 80, _ctx);
         }
         break;
       }
@@ -4553,24 +3676,13 @@ CypherParser::OC_ProjectionItemsContext *CypherParser::oC_ProjectionItems() {
       case CypherParser::UnescapedSymbolicName:
       case CypherParser::EscapedSymbolicName: {
         enterOuterAlt(_localctx, 2);
-        setState(589);
+        setState(593);
         oC_ProjectionItem();
-        setState(600);
+        setState(604);
         _errHandler->sync(this);
-        alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-            _input, 82, _ctx);
+        alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 83, _ctx);
         while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER) {
           if (alt == 1) {
-            setState(591);
-            _errHandler->sync(this);
-
-            _la = _input->LA(1);
-            if (_la == CypherParser::SP) {
-              setState(590);
-              match(CypherParser::SP);
-            }
-            setState(593);
-            match(CypherParser::T__1);
             setState(595);
             _errHandler->sync(this);
 
@@ -4580,21 +3692,31 @@ CypherParser::OC_ProjectionItemsContext *CypherParser::oC_ProjectionItems() {
               match(CypherParser::SP);
             }
             setState(597);
-            oC_ProjectionItem();
+            match(CypherParser::T__1);
+            setState(599);
+            _errHandler->sync(this);
+
+            _la = _input->LA(1);
+            if (_la == CypherParser::SP) {
+              setState(598);
+              match(CypherParser::SP);
+            }
+            setState(601);
+            oC_ProjectionItem(); 
           }
-          setState(602);
+          setState(606);
           _errHandler->sync(this);
-          alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-              _input, 82, _ctx);
+          alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 83, _ctx);
         }
         break;
       }
 
-      default:
-        throw NoViableAltException(this);
+    default:
+      throw NoViableAltException(this);
     }
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -4603,15 +3725,13 @@ CypherParser::OC_ProjectionItemsContext *CypherParser::oC_ProjectionItems() {
   return _localctx;
 }
 
-//----------------- OC_ProjectionItemContext
-//------------------------------------------------------------------
+//----------------- OC_ProjectionItemContext ------------------------------------------------------------------
 
-CypherParser::OC_ProjectionItemContext::OC_ProjectionItemContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_ProjectionItemContext::OC_ProjectionItemContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_ExpressionContext *
-CypherParser::OC_ProjectionItemContext::oC_Expression() {
+CypherParser::OC_ExpressionContext* CypherParser::OC_ProjectionItemContext::oC_Expression() {
   return getRuleContext<CypherParser::OC_ExpressionContext>(0);
 }
 
@@ -4619,34 +3739,33 @@ std::vector<tree::TerminalNode *> CypherParser::OC_ProjectionItemContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_ProjectionItemContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_ProjectionItemContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
-tree::TerminalNode *CypherParser::OC_ProjectionItemContext::AS() {
+tree::TerminalNode* CypherParser::OC_ProjectionItemContext::AS() {
   return getToken(CypherParser::AS, 0);
 }
 
-CypherParser::OC_VariableContext *
-CypherParser::OC_ProjectionItemContext::oC_Variable() {
+CypherParser::OC_VariableContext* CypherParser::OC_ProjectionItemContext::oC_Variable() {
   return getRuleContext<CypherParser::OC_VariableContext>(0);
 }
+
 
 size_t CypherParser::OC_ProjectionItemContext::getRuleIndex() const {
   return CypherParser::RuleOC_ProjectionItem;
 }
 
-std::any CypherParser::OC_ProjectionItemContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_ProjectionItemContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_ProjectionItem(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_ProjectionItemContext *CypherParser::oC_ProjectionItem() {
-  OC_ProjectionItemContext *_localctx =
-      _tracker.createInstance<OC_ProjectionItemContext>(_ctx, getState());
+CypherParser::OC_ProjectionItemContext* CypherParser::oC_ProjectionItem() {
+  OC_ProjectionItemContext *_localctx = _tracker.createInstance<OC_ProjectionItemContext>(_ctx, getState());
   enterRule(_localctx, 56, CypherParser::RuleOC_ProjectionItem);
 
 #if __cplusplus > 201703L
@@ -4657,37 +3776,37 @@ CypherParser::OC_ProjectionItemContext *CypherParser::oC_ProjectionItem() {
     exitRule();
   });
   try {
-    setState(612);
+    setState(616);
     _errHandler->sync(this);
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-        _input, 84, _ctx)) {
-      case 1: {
-        enterOuterAlt(_localctx, 1);
-        setState(605);
-        oC_Expression();
-        setState(606);
-        match(CypherParser::SP);
-        setState(607);
-        match(CypherParser::AS);
-        setState(608);
-        match(CypherParser::SP);
-        setState(609);
-        oC_Variable();
-        break;
-      }
-
-      case 2: {
-        enterOuterAlt(_localctx, 2);
-        setState(611);
-        oC_Expression();
-        break;
-      }
-
-      default:
-        break;
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 85, _ctx)) {
+    case 1: {
+      enterOuterAlt(_localctx, 1);
+      setState(609);
+      oC_Expression();
+      setState(610);
+      match(CypherParser::SP);
+      setState(611);
+      match(CypherParser::AS);
+      setState(612);
+      match(CypherParser::SP);
+      setState(613);
+      oC_Variable();
+      break;
     }
 
-  } catch (RecognitionException &e) {
+    case 2: {
+      enterOuterAlt(_localctx, 2);
+      setState(615);
+      oC_Expression();
+      break;
+    }
+
+    default:
+      break;
+    }
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -4696,14 +3815,13 @@ CypherParser::OC_ProjectionItemContext *CypherParser::oC_ProjectionItem() {
   return _localctx;
 }
 
-//----------------- OC_OrderContext
-//------------------------------------------------------------------
+//----------------- OC_OrderContext ------------------------------------------------------------------
 
-CypherParser::OC_OrderContext::OC_OrderContext(ParserRuleContext *parent,
-                                               size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_OrderContext::OC_OrderContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-tree::TerminalNode *CypherParser::OC_OrderContext::ORDER() {
+tree::TerminalNode* CypherParser::OC_OrderContext::ORDER() {
   return getToken(CypherParser::ORDER, 0);
 }
 
@@ -4711,39 +3829,37 @@ std::vector<tree::TerminalNode *> CypherParser::OC_OrderContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_OrderContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_OrderContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
-tree::TerminalNode *CypherParser::OC_OrderContext::BY() {
+tree::TerminalNode* CypherParser::OC_OrderContext::BY() {
   return getToken(CypherParser::BY, 0);
 }
 
-std::vector<CypherParser::OC_SortItemContext *>
-CypherParser::OC_OrderContext::oC_SortItem() {
+std::vector<CypherParser::OC_SortItemContext *> CypherParser::OC_OrderContext::oC_SortItem() {
   return getRuleContexts<CypherParser::OC_SortItemContext>();
 }
 
-CypherParser::OC_SortItemContext *CypherParser::OC_OrderContext::oC_SortItem(
-    size_t i) {
+CypherParser::OC_SortItemContext* CypherParser::OC_OrderContext::oC_SortItem(size_t i) {
   return getRuleContext<CypherParser::OC_SortItemContext>(i);
 }
+
 
 size_t CypherParser::OC_OrderContext::getRuleIndex() const {
   return CypherParser::RuleOC_Order;
 }
 
-std::any CypherParser::OC_OrderContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_OrderContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_Order(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_OrderContext *CypherParser::oC_Order() {
-  OC_OrderContext *_localctx =
-      _tracker.createInstance<OC_OrderContext>(_ctx, getState());
+CypherParser::OC_OrderContext* CypherParser::oC_Order() {
+  OC_OrderContext *_localctx = _tracker.createInstance<OC_OrderContext>(_ctx, getState());
   enterRule(_localctx, 58, CypherParser::RuleOC_Order);
   size_t _la = 0;
 
@@ -4756,38 +3872,39 @@ CypherParser::OC_OrderContext *CypherParser::oC_Order() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(614);
-    match(CypherParser::ORDER);
-    setState(615);
-    match(CypherParser::SP);
-    setState(616);
-    match(CypherParser::BY);
-    setState(617);
-    match(CypherParser::SP);
     setState(618);
+    match(CypherParser::ORDER);
+    setState(619);
+    match(CypherParser::SP);
+    setState(620);
+    match(CypherParser::BY);
+    setState(621);
+    match(CypherParser::SP);
+    setState(622);
     oC_SortItem();
-    setState(626);
+    setState(630);
     _errHandler->sync(this);
     _la = _input->LA(1);
     while (_la == CypherParser::T__1) {
-      setState(619);
+      setState(623);
       match(CypherParser::T__1);
-      setState(621);
+      setState(625);
       _errHandler->sync(this);
 
       _la = _input->LA(1);
       if (_la == CypherParser::SP) {
-        setState(620);
+        setState(624);
         match(CypherParser::SP);
       }
-      setState(623);
+      setState(627);
       oC_SortItem();
-      setState(628);
+      setState(632);
       _errHandler->sync(this);
       _la = _input->LA(1);
     }
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -4796,40 +3913,39 @@ CypherParser::OC_OrderContext *CypherParser::oC_Order() {
   return _localctx;
 }
 
-//----------------- OC_SkipContext
-//------------------------------------------------------------------
+//----------------- OC_SkipContext ------------------------------------------------------------------
 
-CypherParser::OC_SkipContext::OC_SkipContext(ParserRuleContext *parent,
-                                             size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_SkipContext::OC_SkipContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-tree::TerminalNode *CypherParser::OC_SkipContext::L_SKIP() {
+tree::TerminalNode* CypherParser::OC_SkipContext::L_SKIP() {
   return getToken(CypherParser::L_SKIP, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_SkipContext::SP() {
+tree::TerminalNode* CypherParser::OC_SkipContext::SP() {
   return getToken(CypherParser::SP, 0);
 }
 
-CypherParser::OC_ExpressionContext *
-CypherParser::OC_SkipContext::oC_Expression() {
+CypherParser::OC_ExpressionContext* CypherParser::OC_SkipContext::oC_Expression() {
   return getRuleContext<CypherParser::OC_ExpressionContext>(0);
 }
+
 
 size_t CypherParser::OC_SkipContext::getRuleIndex() const {
   return CypherParser::RuleOC_Skip;
 }
 
+
 std::any CypherParser::OC_SkipContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_Skip(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_SkipContext *CypherParser::oC_Skip() {
-  OC_SkipContext *_localctx =
-      _tracker.createInstance<OC_SkipContext>(_ctx, getState());
+CypherParser::OC_SkipContext* CypherParser::oC_Skip() {
+  OC_SkipContext *_localctx = _tracker.createInstance<OC_SkipContext>(_ctx, getState());
   enterRule(_localctx, 60, CypherParser::RuleOC_Skip);
 
 #if __cplusplus > 201703L
@@ -4841,14 +3957,15 @@ CypherParser::OC_SkipContext *CypherParser::oC_Skip() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(629);
+    setState(633);
     match(CypherParser::L_SKIP);
-    setState(630);
+    setState(634);
     match(CypherParser::SP);
-    setState(631);
+    setState(635);
     oC_Expression();
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -4857,41 +3974,39 @@ CypherParser::OC_SkipContext *CypherParser::oC_Skip() {
   return _localctx;
 }
 
-//----------------- OC_LimitContext
-//------------------------------------------------------------------
+//----------------- OC_LimitContext ------------------------------------------------------------------
 
-CypherParser::OC_LimitContext::OC_LimitContext(ParserRuleContext *parent,
-                                               size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_LimitContext::OC_LimitContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-tree::TerminalNode *CypherParser::OC_LimitContext::LIMIT() {
+tree::TerminalNode* CypherParser::OC_LimitContext::LIMIT() {
   return getToken(CypherParser::LIMIT, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_LimitContext::SP() {
+tree::TerminalNode* CypherParser::OC_LimitContext::SP() {
   return getToken(CypherParser::SP, 0);
 }
 
-CypherParser::OC_ExpressionContext *
-CypherParser::OC_LimitContext::oC_Expression() {
+CypherParser::OC_ExpressionContext* CypherParser::OC_LimitContext::oC_Expression() {
   return getRuleContext<CypherParser::OC_ExpressionContext>(0);
 }
+
 
 size_t CypherParser::OC_LimitContext::getRuleIndex() const {
   return CypherParser::RuleOC_Limit;
 }
 
-std::any CypherParser::OC_LimitContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_LimitContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_Limit(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_LimitContext *CypherParser::oC_Limit() {
-  OC_LimitContext *_localctx =
-      _tracker.createInstance<OC_LimitContext>(_ctx, getState());
+CypherParser::OC_LimitContext* CypherParser::oC_Limit() {
+  OC_LimitContext *_localctx = _tracker.createInstance<OC_LimitContext>(_ctx, getState());
   enterRule(_localctx, 62, CypherParser::RuleOC_Limit);
 
 #if __cplusplus > 201703L
@@ -4903,14 +4018,15 @@ CypherParser::OC_LimitContext *CypherParser::oC_Limit() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(633);
+    setState(637);
     match(CypherParser::LIMIT);
-    setState(634);
+    setState(638);
     match(CypherParser::SP);
-    setState(635);
+    setState(639);
     oC_Expression();
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -4919,53 +4035,51 @@ CypherParser::OC_LimitContext *CypherParser::oC_Limit() {
   return _localctx;
 }
 
-//----------------- OC_SortItemContext
-//------------------------------------------------------------------
+//----------------- OC_SortItemContext ------------------------------------------------------------------
 
-CypherParser::OC_SortItemContext::OC_SortItemContext(ParserRuleContext *parent,
-                                                     size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_SortItemContext::OC_SortItemContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_ExpressionContext *
-CypherParser::OC_SortItemContext::oC_Expression() {
+CypherParser::OC_ExpressionContext* CypherParser::OC_SortItemContext::oC_Expression() {
   return getRuleContext<CypherParser::OC_ExpressionContext>(0);
 }
 
-tree::TerminalNode *CypherParser::OC_SortItemContext::ASCENDING() {
+tree::TerminalNode* CypherParser::OC_SortItemContext::ASCENDING() {
   return getToken(CypherParser::ASCENDING, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_SortItemContext::ASC() {
+tree::TerminalNode* CypherParser::OC_SortItemContext::ASC() {
   return getToken(CypherParser::ASC, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_SortItemContext::DESCENDING() {
+tree::TerminalNode* CypherParser::OC_SortItemContext::DESCENDING() {
   return getToken(CypherParser::DESCENDING, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_SortItemContext::DESC() {
+tree::TerminalNode* CypherParser::OC_SortItemContext::DESC() {
   return getToken(CypherParser::DESC, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_SortItemContext::SP() {
+tree::TerminalNode* CypherParser::OC_SortItemContext::SP() {
   return getToken(CypherParser::SP, 0);
 }
+
 
 size_t CypherParser::OC_SortItemContext::getRuleIndex() const {
   return CypherParser::RuleOC_SortItem;
 }
 
-std::any CypherParser::OC_SortItemContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_SortItemContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_SortItem(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_SortItemContext *CypherParser::oC_SortItem() {
-  OC_SortItemContext *_localctx =
-      _tracker.createInstance<OC_SortItemContext>(_ctx, getState());
+CypherParser::OC_SortItemContext* CypherParser::oC_SortItem() {
+  OC_SortItemContext *_localctx = _tracker.createInstance<OC_SortItemContext>(_ctx, getState());
   enterRule(_localctx, 64, CypherParser::RuleOC_SortItem);
   size_t _la = 0;
 
@@ -4978,39 +4092,40 @@ CypherParser::OC_SortItemContext *CypherParser::oC_SortItem() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(637);
+    setState(641);
     oC_Expression();
-    setState(642);
+    setState(646);
     _errHandler->sync(this);
 
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-        _input, 88, _ctx)) {
-      case 1: {
-        setState(639);
-        _errHandler->sync(this);
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 89, _ctx)) {
+    case 1: {
+      setState(643);
+      _errHandler->sync(this);
 
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(638);
-          match(CypherParser::SP);
-        }
-        setState(641);
-        _la = _input->LA(1);
-        if (!(((((_la - 68) & ~0x3fULL) == 0) &&
-               ((1ULL << (_la - 68)) & 15) != 0))) {
-          _errHandler->recoverInline(this);
-        } else {
-          _errHandler->reportMatch(this);
-          consume();
-        }
-        break;
+      _la = _input->LA(1);
+      if (_la == CypherParser::SP) {
+        setState(642);
+        match(CypherParser::SP);
       }
-
-      default:
-        break;
+      setState(645);
+      _la = _input->LA(1);
+      if (!(((((_la - 68) & ~ 0x3fULL) == 0) &&
+        ((1ULL << (_la - 68)) & 15) != 0))) {
+      _errHandler->recoverInline(this);
+      }
+      else {
+        _errHandler->reportMatch(this);
+        consume();
+      }
+      break;
     }
 
-  } catch (RecognitionException &e) {
+    default:
+      break;
+    }
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -5019,41 +4134,39 @@ CypherParser::OC_SortItemContext *CypherParser::oC_SortItem() {
   return _localctx;
 }
 
-//----------------- OC_WhereContext
-//------------------------------------------------------------------
+//----------------- OC_WhereContext ------------------------------------------------------------------
 
-CypherParser::OC_WhereContext::OC_WhereContext(ParserRuleContext *parent,
-                                               size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_WhereContext::OC_WhereContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-tree::TerminalNode *CypherParser::OC_WhereContext::WHERE() {
+tree::TerminalNode* CypherParser::OC_WhereContext::WHERE() {
   return getToken(CypherParser::WHERE, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_WhereContext::SP() {
+tree::TerminalNode* CypherParser::OC_WhereContext::SP() {
   return getToken(CypherParser::SP, 0);
 }
 
-CypherParser::OC_ExpressionContext *
-CypherParser::OC_WhereContext::oC_Expression() {
+CypherParser::OC_ExpressionContext* CypherParser::OC_WhereContext::oC_Expression() {
   return getRuleContext<CypherParser::OC_ExpressionContext>(0);
 }
+
 
 size_t CypherParser::OC_WhereContext::getRuleIndex() const {
   return CypherParser::RuleOC_Where;
 }
 
-std::any CypherParser::OC_WhereContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_WhereContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_Where(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_WhereContext *CypherParser::oC_Where() {
-  OC_WhereContext *_localctx =
-      _tracker.createInstance<OC_WhereContext>(_ctx, getState());
+CypherParser::OC_WhereContext* CypherParser::oC_Where() {
+  OC_WhereContext *_localctx = _tracker.createInstance<OC_WhereContext>(_ctx, getState());
   enterRule(_localctx, 66, CypherParser::RuleOC_Where);
 
 #if __cplusplus > 201703L
@@ -5065,14 +4178,15 @@ CypherParser::OC_WhereContext *CypherParser::oC_Where() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(644);
+    setState(648);
     match(CypherParser::WHERE);
-    setState(645);
+    setState(649);
     match(CypherParser::SP);
-    setState(646);
+    setState(650);
     oC_Expression();
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -5081,20 +4195,17 @@ CypherParser::OC_WhereContext *CypherParser::oC_Where() {
   return _localctx;
 }
 
-//----------------- OC_PatternContext
-//------------------------------------------------------------------
+//----------------- OC_PatternContext ------------------------------------------------------------------
 
-CypherParser::OC_PatternContext::OC_PatternContext(ParserRuleContext *parent,
-                                                   size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_PatternContext::OC_PatternContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-std::vector<CypherParser::OC_PatternPartContext *>
-CypherParser::OC_PatternContext::oC_PatternPart() {
+std::vector<CypherParser::OC_PatternPartContext *> CypherParser::OC_PatternContext::oC_PatternPart() {
   return getRuleContexts<CypherParser::OC_PatternPartContext>();
 }
 
-CypherParser::OC_PatternPartContext *
-CypherParser::OC_PatternContext::oC_PatternPart(size_t i) {
+CypherParser::OC_PatternPartContext* CypherParser::OC_PatternContext::oC_PatternPart(size_t i) {
   return getRuleContext<CypherParser::OC_PatternPartContext>(i);
 }
 
@@ -5102,25 +4213,25 @@ std::vector<tree::TerminalNode *> CypherParser::OC_PatternContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_PatternContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_PatternContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
+
 
 size_t CypherParser::OC_PatternContext::getRuleIndex() const {
   return CypherParser::RuleOC_Pattern;
 }
 
-std::any CypherParser::OC_PatternContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_PatternContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_Pattern(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_PatternContext *CypherParser::oC_Pattern() {
-  OC_PatternContext *_localctx =
-      _tracker.createInstance<OC_PatternContext>(_ctx, getState());
+CypherParser::OC_PatternContext* CypherParser::oC_Pattern() {
+  OC_PatternContext *_localctx = _tracker.createInstance<OC_PatternContext>(_ctx, getState());
   enterRule(_localctx, 68, CypherParser::RuleOC_Pattern);
   size_t _la = 0;
 
@@ -5134,24 +4245,13 @@ CypherParser::OC_PatternContext *CypherParser::oC_Pattern() {
   try {
     size_t alt;
     enterOuterAlt(_localctx, 1);
-    setState(648);
+    setState(652);
     oC_PatternPart();
-    setState(659);
+    setState(663);
     _errHandler->sync(this);
-    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 91,
-                                                                     _ctx);
+    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 92, _ctx);
     while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER) {
       if (alt == 1) {
-        setState(650);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(649);
-          match(CypherParser::SP);
-        }
-        setState(652);
-        match(CypherParser::T__1);
         setState(654);
         _errHandler->sync(this);
 
@@ -5161,15 +4261,25 @@ CypherParser::OC_PatternContext *CypherParser::oC_Pattern() {
           match(CypherParser::SP);
         }
         setState(656);
-        oC_PatternPart();
-      }
-      setState(661);
-      _errHandler->sync(this);
-      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-          _input, 91, _ctx);
-    }
+        match(CypherParser::T__1);
+        setState(658);
+        _errHandler->sync(this);
 
-  } catch (RecognitionException &e) {
+        _la = _input->LA(1);
+        if (_la == CypherParser::SP) {
+          setState(657);
+          match(CypherParser::SP);
+        }
+        setState(660);
+        oC_PatternPart(); 
+      }
+      setState(665);
+      _errHandler->sync(this);
+      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 92, _ctx);
+    }
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -5178,20 +4288,17 @@ CypherParser::OC_PatternContext *CypherParser::oC_Pattern() {
   return _localctx;
 }
 
-//----------------- OC_PatternPartContext
-//------------------------------------------------------------------
+//----------------- OC_PatternPartContext ------------------------------------------------------------------
 
-CypherParser::OC_PatternPartContext::OC_PatternPartContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_PatternPartContext::OC_PatternPartContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_VariableContext *
-CypherParser::OC_PatternPartContext::oC_Variable() {
+CypherParser::OC_VariableContext* CypherParser::OC_PatternPartContext::oC_Variable() {
   return getRuleContext<CypherParser::OC_VariableContext>(0);
 }
 
-CypherParser::OC_AnonymousPatternPartContext *
-CypherParser::OC_PatternPartContext::oC_AnonymousPatternPart() {
+CypherParser::OC_AnonymousPatternPartContext* CypherParser::OC_PatternPartContext::oC_AnonymousPatternPart() {
   return getRuleContext<CypherParser::OC_AnonymousPatternPartContext>(0);
 }
 
@@ -5199,25 +4306,25 @@ std::vector<tree::TerminalNode *> CypherParser::OC_PatternPartContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_PatternPartContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_PatternPartContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
+
 
 size_t CypherParser::OC_PatternPartContext::getRuleIndex() const {
   return CypherParser::RuleOC_PatternPart;
 }
 
-std::any CypherParser::OC_PatternPartContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_PatternPartContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_PatternPart(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_PatternPartContext *CypherParser::oC_PatternPart() {
-  OC_PatternPartContext *_localctx =
-      _tracker.createInstance<OC_PatternPartContext>(_ctx, getState());
+CypherParser::OC_PatternPartContext* CypherParser::oC_PatternPart() {
+  OC_PatternPartContext *_localctx = _tracker.createInstance<OC_PatternPartContext>(_ctx, getState());
   enterRule(_localctx, 70, CypherParser::RuleOC_PatternPart);
   size_t _la = 0;
 
@@ -5229,7 +4336,7 @@ CypherParser::OC_PatternPartContext *CypherParser::oC_PatternPart() {
     exitRule();
   });
   try {
-    setState(673);
+    setState(677);
     _errHandler->sync(this);
     switch (_input->LA(1)) {
       case CypherParser::COUNT:
@@ -5242,18 +4349,8 @@ CypherParser::OC_PatternPartContext *CypherParser::oC_PatternPart() {
       case CypherParser::UnescapedSymbolicName:
       case CypherParser::EscapedSymbolicName: {
         enterOuterAlt(_localctx, 1);
-        setState(662);
-        oC_Variable();
-        setState(664);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(663);
-          match(CypherParser::SP);
-        }
         setState(666);
-        match(CypherParser::T__2);
+        oC_Variable();
         setState(668);
         _errHandler->sync(this);
 
@@ -5263,22 +4360,33 @@ CypherParser::OC_PatternPartContext *CypherParser::oC_PatternPart() {
           match(CypherParser::SP);
         }
         setState(670);
+        match(CypherParser::T__2);
+        setState(672);
+        _errHandler->sync(this);
+
+        _la = _input->LA(1);
+        if (_la == CypherParser::SP) {
+          setState(671);
+          match(CypherParser::SP);
+        }
+        setState(674);
         oC_AnonymousPatternPart();
         break;
       }
 
       case CypherParser::T__5: {
         enterOuterAlt(_localctx, 2);
-        setState(672);
+        setState(676);
         oC_AnonymousPatternPart();
         break;
       }
 
-      default:
-        throw NoViableAltException(this);
+    default:
+      throw NoViableAltException(this);
     }
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -5287,34 +4395,31 @@ CypherParser::OC_PatternPartContext *CypherParser::oC_PatternPart() {
   return _localctx;
 }
 
-//----------------- OC_AnonymousPatternPartContext
-//------------------------------------------------------------------
+//----------------- OC_AnonymousPatternPartContext ------------------------------------------------------------------
 
-CypherParser::OC_AnonymousPatternPartContext::OC_AnonymousPatternPartContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_AnonymousPatternPartContext::OC_AnonymousPatternPartContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_PatternElementContext *
-CypherParser::OC_AnonymousPatternPartContext::oC_PatternElement() {
+CypherParser::OC_PatternElementContext* CypherParser::OC_AnonymousPatternPartContext::oC_PatternElement() {
   return getRuleContext<CypherParser::OC_PatternElementContext>(0);
 }
+
 
 size_t CypherParser::OC_AnonymousPatternPartContext::getRuleIndex() const {
   return CypherParser::RuleOC_AnonymousPatternPart;
 }
 
-std::any CypherParser::OC_AnonymousPatternPartContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_AnonymousPatternPartContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_AnonymousPatternPart(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_AnonymousPatternPartContext *
-CypherParser::oC_AnonymousPatternPart() {
-  OC_AnonymousPatternPartContext *_localctx =
-      _tracker.createInstance<OC_AnonymousPatternPartContext>(_ctx, getState());
+CypherParser::OC_AnonymousPatternPartContext* CypherParser::oC_AnonymousPatternPart() {
+  OC_AnonymousPatternPartContext *_localctx = _tracker.createInstance<OC_AnonymousPatternPartContext>(_ctx, getState());
   enterRule(_localctx, 72, CypherParser::RuleOC_AnonymousPatternPart);
 
 #if __cplusplus > 201703L
@@ -5326,10 +4431,11 @@ CypherParser::oC_AnonymousPatternPart() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(675);
+    setState(679);
     oC_PatternElement();
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -5338,25 +4444,21 @@ CypherParser::oC_AnonymousPatternPart() {
   return _localctx;
 }
 
-//----------------- OC_PatternElementContext
-//------------------------------------------------------------------
+//----------------- OC_PatternElementContext ------------------------------------------------------------------
 
-CypherParser::OC_PatternElementContext::OC_PatternElementContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_PatternElementContext::OC_PatternElementContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_NodePatternContext *
-CypherParser::OC_PatternElementContext::oC_NodePattern() {
+CypherParser::OC_NodePatternContext* CypherParser::OC_PatternElementContext::oC_NodePattern() {
   return getRuleContext<CypherParser::OC_NodePatternContext>(0);
 }
 
-std::vector<CypherParser::OC_PatternElementChainContext *>
-CypherParser::OC_PatternElementContext::oC_PatternElementChain() {
+std::vector<CypherParser::OC_PatternElementChainContext *> CypherParser::OC_PatternElementContext::oC_PatternElementChain() {
   return getRuleContexts<CypherParser::OC_PatternElementChainContext>();
 }
 
-CypherParser::OC_PatternElementChainContext *
-CypherParser::OC_PatternElementContext::oC_PatternElementChain(size_t i) {
+CypherParser::OC_PatternElementChainContext* CypherParser::OC_PatternElementContext::oC_PatternElementChain(size_t i) {
   return getRuleContext<CypherParser::OC_PatternElementChainContext>(i);
 }
 
@@ -5364,30 +4466,29 @@ std::vector<tree::TerminalNode *> CypherParser::OC_PatternElementContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_PatternElementContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_PatternElementContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
-CypherParser::OC_PatternElementContext *
-CypherParser::OC_PatternElementContext::oC_PatternElement() {
+CypherParser::OC_PatternElementContext* CypherParser::OC_PatternElementContext::oC_PatternElement() {
   return getRuleContext<CypherParser::OC_PatternElementContext>(0);
 }
+
 
 size_t CypherParser::OC_PatternElementContext::getRuleIndex() const {
   return CypherParser::RuleOC_PatternElement;
 }
 
-std::any CypherParser::OC_PatternElementContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_PatternElementContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_PatternElement(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_PatternElementContext *CypherParser::oC_PatternElement() {
-  OC_PatternElementContext *_localctx =
-      _tracker.createInstance<OC_PatternElementContext>(_ctx, getState());
+CypherParser::OC_PatternElementContext* CypherParser::oC_PatternElement() {
+  OC_PatternElementContext *_localctx = _tracker.createInstance<OC_PatternElementContext>(_ctx, getState());
   enterRule(_localctx, 74, CypherParser::RuleOC_PatternElement);
   size_t _la = 0;
 
@@ -5400,55 +4501,53 @@ CypherParser::OC_PatternElementContext *CypherParser::oC_PatternElement() {
   });
   try {
     size_t alt;
-    setState(691);
+    setState(695);
     _errHandler->sync(this);
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-        _input, 97, _ctx)) {
-      case 1: {
-        enterOuterAlt(_localctx, 1);
-        setState(677);
-        oC_NodePattern();
-        setState(684);
-        _errHandler->sync(this);
-        alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-            _input, 96, _ctx);
-        while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER) {
-          if (alt == 1) {
-            setState(679);
-            _errHandler->sync(this);
-
-            _la = _input->LA(1);
-            if (_la == CypherParser::SP) {
-              setState(678);
-              match(CypherParser::SP);
-            }
-            setState(681);
-            oC_PatternElementChain();
-          }
-          setState(686);
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 98, _ctx)) {
+    case 1: {
+      enterOuterAlt(_localctx, 1);
+      setState(681);
+      oC_NodePattern();
+      setState(688);
+      _errHandler->sync(this);
+      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 97, _ctx);
+      while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER) {
+        if (alt == 1) {
+          setState(683);
           _errHandler->sync(this);
-          alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-              _input, 96, _ctx);
+
+          _la = _input->LA(1);
+          if (_la == CypherParser::SP) {
+            setState(682);
+            match(CypherParser::SP);
+          }
+          setState(685);
+          oC_PatternElementChain(); 
         }
-        break;
+        setState(690);
+        _errHandler->sync(this);
+        alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 97, _ctx);
       }
-
-      case 2: {
-        enterOuterAlt(_localctx, 2);
-        setState(687);
-        match(CypherParser::T__5);
-        setState(688);
-        oC_PatternElement();
-        setState(689);
-        match(CypherParser::T__6);
-        break;
-      }
-
-      default:
-        break;
+      break;
     }
 
-  } catch (RecognitionException &e) {
+    case 2: {
+      enterOuterAlt(_localctx, 2);
+      setState(691);
+      match(CypherParser::T__5);
+      setState(692);
+      oC_PatternElement();
+      setState(693);
+      match(CypherParser::T__6);
+      break;
+    }
+
+    default:
+      break;
+    }
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -5457,53 +4556,47 @@ CypherParser::OC_PatternElementContext *CypherParser::oC_PatternElement() {
   return _localctx;
 }
 
-//----------------- OC_RelationshipsPatternContext
-//------------------------------------------------------------------
+//----------------- OC_RelationshipsPatternContext ------------------------------------------------------------------
 
-CypherParser::OC_RelationshipsPatternContext::OC_RelationshipsPatternContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_RelationshipsPatternContext::OC_RelationshipsPatternContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_NodePatternContext *
-CypherParser::OC_RelationshipsPatternContext::oC_NodePattern() {
+CypherParser::OC_NodePatternContext* CypherParser::OC_RelationshipsPatternContext::oC_NodePattern() {
   return getRuleContext<CypherParser::OC_NodePatternContext>(0);
 }
 
-std::vector<CypherParser::OC_PatternElementChainContext *>
-CypherParser::OC_RelationshipsPatternContext::oC_PatternElementChain() {
+std::vector<CypherParser::OC_PatternElementChainContext *> CypherParser::OC_RelationshipsPatternContext::oC_PatternElementChain() {
   return getRuleContexts<CypherParser::OC_PatternElementChainContext>();
 }
 
-CypherParser::OC_PatternElementChainContext *
-CypherParser::OC_RelationshipsPatternContext::oC_PatternElementChain(size_t i) {
+CypherParser::OC_PatternElementChainContext* CypherParser::OC_RelationshipsPatternContext::oC_PatternElementChain(size_t i) {
   return getRuleContext<CypherParser::OC_PatternElementChainContext>(i);
 }
 
-std::vector<tree::TerminalNode *>
-CypherParser::OC_RelationshipsPatternContext::SP() {
+std::vector<tree::TerminalNode *> CypherParser::OC_RelationshipsPatternContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_RelationshipsPatternContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_RelationshipsPatternContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
+
 
 size_t CypherParser::OC_RelationshipsPatternContext::getRuleIndex() const {
   return CypherParser::RuleOC_RelationshipsPattern;
 }
 
-std::any CypherParser::OC_RelationshipsPatternContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_RelationshipsPatternContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_RelationshipsPattern(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_RelationshipsPatternContext *
-CypherParser::oC_RelationshipsPattern() {
-  OC_RelationshipsPatternContext *_localctx =
-      _tracker.createInstance<OC_RelationshipsPatternContext>(_ctx, getState());
+CypherParser::OC_RelationshipsPatternContext* CypherParser::oC_RelationshipsPattern() {
+  OC_RelationshipsPatternContext *_localctx = _tracker.createInstance<OC_RelationshipsPatternContext>(_ctx, getState());
   enterRule(_localctx, 76, CypherParser::RuleOC_RelationshipsPattern);
   size_t _la = 0;
 
@@ -5517,37 +4610,37 @@ CypherParser::oC_RelationshipsPattern() {
   try {
     size_t alt;
     enterOuterAlt(_localctx, 1);
-    setState(693);
+    setState(697);
     oC_NodePattern();
-    setState(698);
+    setState(702); 
     _errHandler->sync(this);
     alt = 1;
     do {
       switch (alt) {
         case 1: {
-          setState(695);
-          _errHandler->sync(this);
+              setState(699);
+              _errHandler->sync(this);
 
-          _la = _input->LA(1);
-          if (_la == CypherParser::SP) {
-            setState(694);
-            match(CypherParser::SP);
-          }
-          setState(697);
-          oC_PatternElementChain();
-          break;
-        }
+              _la = _input->LA(1);
+              if (_la == CypherParser::SP) {
+                setState(698);
+                match(CypherParser::SP);
+              }
+              setState(701);
+              oC_PatternElementChain();
+              break;
+            }
 
-        default:
-          throw NoViableAltException(this);
+      default:
+        throw NoViableAltException(this);
       }
-      setState(700);
+      setState(704); 
       _errHandler->sync(this);
-      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-          _input, 99, _ctx);
+      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 100, _ctx);
     } while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER);
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -5556,51 +4649,47 @@ CypherParser::oC_RelationshipsPattern() {
   return _localctx;
 }
 
-//----------------- OC_NodePatternContext
-//------------------------------------------------------------------
+//----------------- OC_NodePatternContext ------------------------------------------------------------------
 
-CypherParser::OC_NodePatternContext::OC_NodePatternContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_NodePatternContext::OC_NodePatternContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
 std::vector<tree::TerminalNode *> CypherParser::OC_NodePatternContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_NodePatternContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_NodePatternContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
-CypherParser::OC_VariableContext *
-CypherParser::OC_NodePatternContext::oC_Variable() {
+CypherParser::OC_VariableContext* CypherParser::OC_NodePatternContext::oC_Variable() {
   return getRuleContext<CypherParser::OC_VariableContext>(0);
 }
 
-CypherParser::OC_NodeLabelsContext *
-CypherParser::OC_NodePatternContext::oC_NodeLabels() {
+CypherParser::OC_NodeLabelsContext* CypherParser::OC_NodePatternContext::oC_NodeLabels() {
   return getRuleContext<CypherParser::OC_NodeLabelsContext>(0);
 }
 
-CypherParser::OC_PropertiesContext *
-CypherParser::OC_NodePatternContext::oC_Properties() {
+CypherParser::OC_PropertiesContext* CypherParser::OC_NodePatternContext::oC_Properties() {
   return getRuleContext<CypherParser::OC_PropertiesContext>(0);
 }
+
 
 size_t CypherParser::OC_NodePatternContext::getRuleIndex() const {
   return CypherParser::RuleOC_NodePattern;
 }
 
-std::any CypherParser::OC_NodePatternContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_NodePatternContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_NodePattern(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_NodePatternContext *CypherParser::oC_NodePattern() {
-  OC_NodePatternContext *_localctx =
-      _tracker.createInstance<OC_NodePatternContext>(_ctx, getState());
+CypherParser::OC_NodePatternContext* CypherParser::oC_NodePattern() {
+  OC_NodePatternContext *_localctx = _tracker.createInstance<OC_NodePatternContext>(_ctx, getState());
   enterRule(_localctx, 78, CypherParser::RuleOC_NodePattern);
   size_t _la = 0;
 
@@ -5613,71 +4702,72 @@ CypherParser::OC_NodePatternContext *CypherParser::oC_NodePattern() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(702);
+    setState(706);
     match(CypherParser::T__5);
-    setState(704);
+    setState(708);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
     if (_la == CypherParser::SP) {
-      setState(703);
+      setState(707);
       match(CypherParser::SP);
     }
-    setState(710);
+    setState(714);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
-    if (((((_la - 83) & ~0x3fULL) == 0) &&
-         ((1ULL << (_la - 83)) & 2680059625921) != 0)) {
-      setState(706);
+    if (((((_la - 83) & ~ 0x3fULL) == 0) &&
+      ((1ULL << (_la - 83)) & 5360119251393) != 0)) {
+      setState(710);
       oC_Variable();
-      setState(708);
+      setState(712);
       _errHandler->sync(this);
 
       _la = _input->LA(1);
       if (_la == CypherParser::SP) {
-        setState(707);
+        setState(711);
         match(CypherParser::SP);
       }
     }
-    setState(716);
+    setState(720);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
     if (_la == CypherParser::T__9) {
-      setState(712);
+      setState(716);
       oC_NodeLabels();
-      setState(714);
+      setState(718);
       _errHandler->sync(this);
 
       _la = _input->LA(1);
       if (_la == CypherParser::SP) {
-        setState(713);
+        setState(717);
         match(CypherParser::SP);
       }
     }
-    setState(722);
+    setState(726);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
     if (_la == CypherParser::T__23
 
-        || _la == CypherParser::T__25) {
-      setState(718);
+    || _la == CypherParser::T__25) {
+      setState(722);
       oC_Properties();
-      setState(720);
+      setState(724);
       _errHandler->sync(this);
 
       _la = _input->LA(1);
       if (_la == CypherParser::SP) {
-        setState(719);
+        setState(723);
         match(CypherParser::SP);
       }
     }
-    setState(724);
+    setState(728);
     match(CypherParser::T__6);
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -5686,43 +4776,39 @@ CypherParser::OC_NodePatternContext *CypherParser::oC_NodePattern() {
   return _localctx;
 }
 
-//----------------- OC_PatternElementChainContext
-//------------------------------------------------------------------
+//----------------- OC_PatternElementChainContext ------------------------------------------------------------------
 
-CypherParser::OC_PatternElementChainContext::OC_PatternElementChainContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_PatternElementChainContext::OC_PatternElementChainContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_RelationshipPatternContext *
-CypherParser::OC_PatternElementChainContext::oC_RelationshipPattern() {
+CypherParser::OC_RelationshipPatternContext* CypherParser::OC_PatternElementChainContext::oC_RelationshipPattern() {
   return getRuleContext<CypherParser::OC_RelationshipPatternContext>(0);
 }
 
-CypherParser::OC_NodePatternContext *
-CypherParser::OC_PatternElementChainContext::oC_NodePattern() {
+CypherParser::OC_NodePatternContext* CypherParser::OC_PatternElementChainContext::oC_NodePattern() {
   return getRuleContext<CypherParser::OC_NodePatternContext>(0);
 }
 
-tree::TerminalNode *CypherParser::OC_PatternElementChainContext::SP() {
+tree::TerminalNode* CypherParser::OC_PatternElementChainContext::SP() {
   return getToken(CypherParser::SP, 0);
 }
+
 
 size_t CypherParser::OC_PatternElementChainContext::getRuleIndex() const {
   return CypherParser::RuleOC_PatternElementChain;
 }
 
-std::any CypherParser::OC_PatternElementChainContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_PatternElementChainContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_PatternElementChain(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_PatternElementChainContext *
-CypherParser::oC_PatternElementChain() {
-  OC_PatternElementChainContext *_localctx =
-      _tracker.createInstance<OC_PatternElementChainContext>(_ctx, getState());
+CypherParser::OC_PatternElementChainContext* CypherParser::oC_PatternElementChain() {
+  OC_PatternElementChainContext *_localctx = _tracker.createInstance<OC_PatternElementChainContext>(_ctx, getState());
   enterRule(_localctx, 80, CypherParser::RuleOC_PatternElementChain);
   size_t _la = 0;
 
@@ -5735,20 +4821,21 @@ CypherParser::oC_PatternElementChain() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(726);
+    setState(730);
     oC_RelationshipPattern();
-    setState(728);
+    setState(732);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
     if (_la == CypherParser::SP) {
-      setState(727);
+      setState(731);
       match(CypherParser::SP);
     }
-    setState(730);
+    setState(734);
     oC_NodePattern();
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -5757,63 +4844,55 @@ CypherParser::oC_PatternElementChain() {
   return _localctx;
 }
 
-//----------------- OC_RelationshipPatternContext
-//------------------------------------------------------------------
+//----------------- OC_RelationshipPatternContext ------------------------------------------------------------------
 
-CypherParser::OC_RelationshipPatternContext::OC_RelationshipPatternContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_RelationshipPatternContext::OC_RelationshipPatternContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_LeftArrowHeadContext *
-CypherParser::OC_RelationshipPatternContext::oC_LeftArrowHead() {
+CypherParser::OC_LeftArrowHeadContext* CypherParser::OC_RelationshipPatternContext::oC_LeftArrowHead() {
   return getRuleContext<CypherParser::OC_LeftArrowHeadContext>(0);
 }
 
-std::vector<CypherParser::OC_DashContext *>
-CypherParser::OC_RelationshipPatternContext::oC_Dash() {
+std::vector<CypherParser::OC_DashContext *> CypherParser::OC_RelationshipPatternContext::oC_Dash() {
   return getRuleContexts<CypherParser::OC_DashContext>();
 }
 
-CypherParser::OC_DashContext *
-CypherParser::OC_RelationshipPatternContext::oC_Dash(size_t i) {
+CypherParser::OC_DashContext* CypherParser::OC_RelationshipPatternContext::oC_Dash(size_t i) {
   return getRuleContext<CypherParser::OC_DashContext>(i);
 }
 
-CypherParser::OC_RightArrowHeadContext *
-CypherParser::OC_RelationshipPatternContext::oC_RightArrowHead() {
+CypherParser::OC_RightArrowHeadContext* CypherParser::OC_RelationshipPatternContext::oC_RightArrowHead() {
   return getRuleContext<CypherParser::OC_RightArrowHeadContext>(0);
 }
 
-std::vector<tree::TerminalNode *>
-CypherParser::OC_RelationshipPatternContext::SP() {
+std::vector<tree::TerminalNode *> CypherParser::OC_RelationshipPatternContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_RelationshipPatternContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_RelationshipPatternContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
-CypherParser::OC_RelationshipDetailContext *
-CypherParser::OC_RelationshipPatternContext::oC_RelationshipDetail() {
+CypherParser::OC_RelationshipDetailContext* CypherParser::OC_RelationshipPatternContext::oC_RelationshipDetail() {
   return getRuleContext<CypherParser::OC_RelationshipDetailContext>(0);
 }
+
 
 size_t CypherParser::OC_RelationshipPatternContext::getRuleIndex() const {
   return CypherParser::RuleOC_RelationshipPattern;
 }
 
-std::any CypherParser::OC_RelationshipPatternContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_RelationshipPatternContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_RelationshipPattern(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_RelationshipPatternContext *
-CypherParser::oC_RelationshipPattern() {
-  OC_RelationshipPatternContext *_localctx =
-      _tracker.createInstance<OC_RelationshipPatternContext>(_ctx, getState());
+CypherParser::OC_RelationshipPatternContext* CypherParser::oC_RelationshipPattern() {
+  OC_RelationshipPatternContext *_localctx = _tracker.createInstance<OC_RelationshipPatternContext>(_ctx, getState());
   enterRule(_localctx, 82, CypherParser::RuleOC_RelationshipPattern);
   size_t _la = 0;
 
@@ -5825,211 +4904,207 @@ CypherParser::oC_RelationshipPattern() {
     exitRule();
   });
   try {
-    setState(796);
+    setState(800);
     _errHandler->sync(this);
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-        _input, 124, _ctx)) {
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 125, _ctx)) {
+    case 1: {
+      enterOuterAlt(_localctx, 1);
+      setState(736);
+      oC_LeftArrowHead();
+      setState(738);
+      _errHandler->sync(this);
+
+      _la = _input->LA(1);
+      if (_la == CypherParser::SP) {
+        setState(737);
+        match(CypherParser::SP);
+      }
+      setState(740);
+      oC_Dash();
+      setState(742);
+      _errHandler->sync(this);
+
+      switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 110, _ctx)) {
       case 1: {
-        enterOuterAlt(_localctx, 1);
-        setState(732);
-        oC_LeftArrowHead();
-        setState(734);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(733);
-          match(CypherParser::SP);
-        }
-        setState(736);
-        oC_Dash();
-        setState(738);
-        _errHandler->sync(this);
-
-        switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-            _input, 109, _ctx)) {
-          case 1: {
-            setState(737);
-            match(CypherParser::SP);
-            break;
-          }
-
-          default:
-            break;
-        }
         setState(741);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::T__7) {
-          setState(740);
-          oC_RelationshipDetail();
-        }
-        setState(744);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(743);
-          match(CypherParser::SP);
-        }
-        setState(746);
-        oC_Dash();
-        setState(748);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(747);
-          match(CypherParser::SP);
-        }
-        setState(750);
-        oC_RightArrowHead();
-        break;
-      }
-
-      case 2: {
-        enterOuterAlt(_localctx, 2);
-        setState(752);
-        oC_LeftArrowHead();
-        setState(754);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(753);
-          match(CypherParser::SP);
-        }
-        setState(756);
-        oC_Dash();
-        setState(758);
-        _errHandler->sync(this);
-
-        switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-            _input, 114, _ctx)) {
-          case 1: {
-            setState(757);
-            match(CypherParser::SP);
-            break;
-          }
-
-          default:
-            break;
-        }
-        setState(761);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::T__7) {
-          setState(760);
-          oC_RelationshipDetail();
-        }
-        setState(764);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(763);
-          match(CypherParser::SP);
-        }
-        setState(766);
-        oC_Dash();
-        break;
-      }
-
-      case 3: {
-        enterOuterAlt(_localctx, 3);
-        setState(768);
-        oC_Dash();
-        setState(770);
-        _errHandler->sync(this);
-
-        switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-            _input, 117, _ctx)) {
-          case 1: {
-            setState(769);
-            match(CypherParser::SP);
-            break;
-          }
-
-          default:
-            break;
-        }
-        setState(773);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::T__7) {
-          setState(772);
-          oC_RelationshipDetail();
-        }
-        setState(776);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(775);
-          match(CypherParser::SP);
-        }
-        setState(778);
-        oC_Dash();
-        setState(780);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(779);
-          match(CypherParser::SP);
-        }
-        setState(782);
-        oC_RightArrowHead();
-        break;
-      }
-
-      case 4: {
-        enterOuterAlt(_localctx, 4);
-        setState(784);
-        oC_Dash();
-        setState(786);
-        _errHandler->sync(this);
-
-        switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-            _input, 121, _ctx)) {
-          case 1: {
-            setState(785);
-            match(CypherParser::SP);
-            break;
-          }
-
-          default:
-            break;
-        }
-        setState(789);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::T__7) {
-          setState(788);
-          oC_RelationshipDetail();
-        }
-        setState(792);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(791);
-          match(CypherParser::SP);
-        }
-        setState(794);
-        oC_Dash();
+        match(CypherParser::SP);
         break;
       }
 
       default:
         break;
+      }
+      setState(745);
+      _errHandler->sync(this);
+
+      _la = _input->LA(1);
+      if (_la == CypherParser::T__7) {
+        setState(744);
+        oC_RelationshipDetail();
+      }
+      setState(748);
+      _errHandler->sync(this);
+
+      _la = _input->LA(1);
+      if (_la == CypherParser::SP) {
+        setState(747);
+        match(CypherParser::SP);
+      }
+      setState(750);
+      oC_Dash();
+      setState(752);
+      _errHandler->sync(this);
+
+      _la = _input->LA(1);
+      if (_la == CypherParser::SP) {
+        setState(751);
+        match(CypherParser::SP);
+      }
+      setState(754);
+      oC_RightArrowHead();
+      break;
     }
 
-  } catch (RecognitionException &e) {
+    case 2: {
+      enterOuterAlt(_localctx, 2);
+      setState(756);
+      oC_LeftArrowHead();
+      setState(758);
+      _errHandler->sync(this);
+
+      _la = _input->LA(1);
+      if (_la == CypherParser::SP) {
+        setState(757);
+        match(CypherParser::SP);
+      }
+      setState(760);
+      oC_Dash();
+      setState(762);
+      _errHandler->sync(this);
+
+      switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 115, _ctx)) {
+      case 1: {
+        setState(761);
+        match(CypherParser::SP);
+        break;
+      }
+
+      default:
+        break;
+      }
+      setState(765);
+      _errHandler->sync(this);
+
+      _la = _input->LA(1);
+      if (_la == CypherParser::T__7) {
+        setState(764);
+        oC_RelationshipDetail();
+      }
+      setState(768);
+      _errHandler->sync(this);
+
+      _la = _input->LA(1);
+      if (_la == CypherParser::SP) {
+        setState(767);
+        match(CypherParser::SP);
+      }
+      setState(770);
+      oC_Dash();
+      break;
+    }
+
+    case 3: {
+      enterOuterAlt(_localctx, 3);
+      setState(772);
+      oC_Dash();
+      setState(774);
+      _errHandler->sync(this);
+
+      switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 118, _ctx)) {
+      case 1: {
+        setState(773);
+        match(CypherParser::SP);
+        break;
+      }
+
+      default:
+        break;
+      }
+      setState(777);
+      _errHandler->sync(this);
+
+      _la = _input->LA(1);
+      if (_la == CypherParser::T__7) {
+        setState(776);
+        oC_RelationshipDetail();
+      }
+      setState(780);
+      _errHandler->sync(this);
+
+      _la = _input->LA(1);
+      if (_la == CypherParser::SP) {
+        setState(779);
+        match(CypherParser::SP);
+      }
+      setState(782);
+      oC_Dash();
+      setState(784);
+      _errHandler->sync(this);
+
+      _la = _input->LA(1);
+      if (_la == CypherParser::SP) {
+        setState(783);
+        match(CypherParser::SP);
+      }
+      setState(786);
+      oC_RightArrowHead();
+      break;
+    }
+
+    case 4: {
+      enterOuterAlt(_localctx, 4);
+      setState(788);
+      oC_Dash();
+      setState(790);
+      _errHandler->sync(this);
+
+      switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 122, _ctx)) {
+      case 1: {
+        setState(789);
+        match(CypherParser::SP);
+        break;
+      }
+
+      default:
+        break;
+      }
+      setState(793);
+      _errHandler->sync(this);
+
+      _la = _input->LA(1);
+      if (_la == CypherParser::T__7) {
+        setState(792);
+        oC_RelationshipDetail();
+      }
+      setState(796);
+      _errHandler->sync(this);
+
+      _la = _input->LA(1);
+      if (_la == CypherParser::SP) {
+        setState(795);
+        match(CypherParser::SP);
+      }
+      setState(798);
+      oC_Dash();
+      break;
+    }
+
+    default:
+      break;
+    }
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -6038,58 +5113,51 @@ CypherParser::oC_RelationshipPattern() {
   return _localctx;
 }
 
-//----------------- OC_RelationshipDetailContext
-//------------------------------------------------------------------
+//----------------- OC_RelationshipDetailContext ------------------------------------------------------------------
 
-CypherParser::OC_RelationshipDetailContext::OC_RelationshipDetailContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_RelationshipDetailContext::OC_RelationshipDetailContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-std::vector<tree::TerminalNode *>
-CypherParser::OC_RelationshipDetailContext::SP() {
+std::vector<tree::TerminalNode *> CypherParser::OC_RelationshipDetailContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_RelationshipDetailContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_RelationshipDetailContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
-CypherParser::OC_VariableContext *
-CypherParser::OC_RelationshipDetailContext::oC_Variable() {
+CypherParser::OC_VariableContext* CypherParser::OC_RelationshipDetailContext::oC_Variable() {
   return getRuleContext<CypherParser::OC_VariableContext>(0);
 }
 
-CypherParser::OC_RelationshipTypesContext *
-CypherParser::OC_RelationshipDetailContext::oC_RelationshipTypes() {
+CypherParser::OC_RelationshipTypesContext* CypherParser::OC_RelationshipDetailContext::oC_RelationshipTypes() {
   return getRuleContext<CypherParser::OC_RelationshipTypesContext>(0);
 }
 
-CypherParser::OC_RangeLiteralContext *
-CypherParser::OC_RelationshipDetailContext::oC_RangeLiteral() {
+CypherParser::OC_RangeLiteralContext* CypherParser::OC_RelationshipDetailContext::oC_RangeLiteral() {
   return getRuleContext<CypherParser::OC_RangeLiteralContext>(0);
 }
 
-CypherParser::OC_PropertiesContext *
-CypherParser::OC_RelationshipDetailContext::oC_Properties() {
+CypherParser::OC_PropertiesContext* CypherParser::OC_RelationshipDetailContext::oC_Properties() {
   return getRuleContext<CypherParser::OC_PropertiesContext>(0);
 }
+
 
 size_t CypherParser::OC_RelationshipDetailContext::getRuleIndex() const {
   return CypherParser::RuleOC_RelationshipDetail;
 }
 
-std::any CypherParser::OC_RelationshipDetailContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_RelationshipDetailContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_RelationshipDetail(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_RelationshipDetailContext *
-CypherParser::oC_RelationshipDetail() {
-  OC_RelationshipDetailContext *_localctx =
-      _tracker.createInstance<OC_RelationshipDetailContext>(_ctx, getState());
+CypherParser::OC_RelationshipDetailContext* CypherParser::oC_RelationshipDetail() {
+  OC_RelationshipDetailContext *_localctx = _tracker.createInstance<OC_RelationshipDetailContext>(_ctx, getState());
   enterRule(_localctx, 84, CypherParser::RuleOC_RelationshipDetail);
   size_t _la = 0;
 
@@ -6102,79 +5170,80 @@ CypherParser::oC_RelationshipDetail() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(798);
+    setState(802);
     match(CypherParser::T__7);
-    setState(800);
+    setState(804);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
     if (_la == CypherParser::SP) {
-      setState(799);
+      setState(803);
       match(CypherParser::SP);
     }
-    setState(806);
+    setState(810);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
-    if (((((_la - 83) & ~0x3fULL) == 0) &&
-         ((1ULL << (_la - 83)) & 2680059625921) != 0)) {
-      setState(802);
+    if (((((_la - 83) & ~ 0x3fULL) == 0) &&
+      ((1ULL << (_la - 83)) & 5360119251393) != 0)) {
+      setState(806);
       oC_Variable();
-      setState(804);
+      setState(808);
       _errHandler->sync(this);
 
       _la = _input->LA(1);
       if (_la == CypherParser::SP) {
-        setState(803);
+        setState(807);
         match(CypherParser::SP);
       }
     }
-    setState(812);
+    setState(816);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
     if (_la == CypherParser::T__9) {
-      setState(808);
+      setState(812);
       oC_RelationshipTypes();
-      setState(810);
+      setState(814);
       _errHandler->sync(this);
 
       _la = _input->LA(1);
       if (_la == CypherParser::SP) {
-        setState(809);
+        setState(813);
         match(CypherParser::SP);
       }
     }
-    setState(815);
+    setState(819);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
     if (_la == CypherParser::T__4) {
-      setState(814);
+      setState(818);
       oC_RangeLiteral();
     }
-    setState(821);
+    setState(825);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
     if (_la == CypherParser::T__23
 
-        || _la == CypherParser::T__25) {
-      setState(817);
+    || _la == CypherParser::T__25) {
+      setState(821);
       oC_Properties();
-      setState(819);
+      setState(823);
       _errHandler->sync(this);
 
       _la = _input->LA(1);
       if (_la == CypherParser::SP) {
-        setState(818);
+        setState(822);
         match(CypherParser::SP);
       }
     }
-    setState(823);
+    setState(827);
     match(CypherParser::T__8);
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -6183,38 +5252,35 @@ CypherParser::oC_RelationshipDetail() {
   return _localctx;
 }
 
-//----------------- OC_PropertiesContext
-//------------------------------------------------------------------
+//----------------- OC_PropertiesContext ------------------------------------------------------------------
 
-CypherParser::OC_PropertiesContext::OC_PropertiesContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_PropertiesContext::OC_PropertiesContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_MapLiteralContext *
-CypherParser::OC_PropertiesContext::oC_MapLiteral() {
+CypherParser::OC_MapLiteralContext* CypherParser::OC_PropertiesContext::oC_MapLiteral() {
   return getRuleContext<CypherParser::OC_MapLiteralContext>(0);
 }
 
-CypherParser::OC_ParameterContext *
-CypherParser::OC_PropertiesContext::oC_Parameter() {
+CypherParser::OC_ParameterContext* CypherParser::OC_PropertiesContext::oC_Parameter() {
   return getRuleContext<CypherParser::OC_ParameterContext>(0);
 }
+
 
 size_t CypherParser::OC_PropertiesContext::getRuleIndex() const {
   return CypherParser::RuleOC_Properties;
 }
 
-std::any CypherParser::OC_PropertiesContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_PropertiesContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_Properties(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_PropertiesContext *CypherParser::oC_Properties() {
-  OC_PropertiesContext *_localctx =
-      _tracker.createInstance<OC_PropertiesContext>(_ctx, getState());
+CypherParser::OC_PropertiesContext* CypherParser::oC_Properties() {
+  OC_PropertiesContext *_localctx = _tracker.createInstance<OC_PropertiesContext>(_ctx, getState());
   enterRule(_localctx, 86, CypherParser::RuleOC_Properties);
 
 #if __cplusplus > 201703L
@@ -6225,28 +5291,29 @@ CypherParser::OC_PropertiesContext *CypherParser::oC_Properties() {
     exitRule();
   });
   try {
-    setState(827);
+    setState(831);
     _errHandler->sync(this);
     switch (_input->LA(1)) {
       case CypherParser::T__23: {
         enterOuterAlt(_localctx, 1);
-        setState(825);
+        setState(829);
         oC_MapLiteral();
         break;
       }
 
       case CypherParser::T__25: {
         enterOuterAlt(_localctx, 2);
-        setState(826);
+        setState(830);
         oC_Parameter();
         break;
       }
 
-      default:
-        throw NoViableAltException(this);
+    default:
+      throw NoViableAltException(this);
     }
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -6255,48 +5322,43 @@ CypherParser::OC_PropertiesContext *CypherParser::oC_Properties() {
   return _localctx;
 }
 
-//----------------- OC_RelationshipTypesContext
-//------------------------------------------------------------------
+//----------------- OC_RelationshipTypesContext ------------------------------------------------------------------
 
-CypherParser::OC_RelationshipTypesContext::OC_RelationshipTypesContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_RelationshipTypesContext::OC_RelationshipTypesContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-std::vector<CypherParser::OC_RelTypeNameContext *>
-CypherParser::OC_RelationshipTypesContext::oC_RelTypeName() {
+std::vector<CypherParser::OC_RelTypeNameContext *> CypherParser::OC_RelationshipTypesContext::oC_RelTypeName() {
   return getRuleContexts<CypherParser::OC_RelTypeNameContext>();
 }
 
-CypherParser::OC_RelTypeNameContext *
-CypherParser::OC_RelationshipTypesContext::oC_RelTypeName(size_t i) {
+CypherParser::OC_RelTypeNameContext* CypherParser::OC_RelationshipTypesContext::oC_RelTypeName(size_t i) {
   return getRuleContext<CypherParser::OC_RelTypeNameContext>(i);
 }
 
-std::vector<tree::TerminalNode *>
-CypherParser::OC_RelationshipTypesContext::SP() {
+std::vector<tree::TerminalNode *> CypherParser::OC_RelationshipTypesContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_RelationshipTypesContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_RelationshipTypesContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
+
 
 size_t CypherParser::OC_RelationshipTypesContext::getRuleIndex() const {
   return CypherParser::RuleOC_RelationshipTypes;
 }
 
-std::any CypherParser::OC_RelationshipTypesContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_RelationshipTypesContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_RelationshipTypes(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_RelationshipTypesContext *
-CypherParser::oC_RelationshipTypes() {
-  OC_RelationshipTypesContext *_localctx =
-      _tracker.createInstance<OC_RelationshipTypesContext>(_ctx, getState());
+CypherParser::OC_RelationshipTypesContext* CypherParser::oC_RelationshipTypes() {
+  OC_RelationshipTypesContext *_localctx = _tracker.createInstance<OC_RelationshipTypesContext>(_ctx, getState());
   enterRule(_localctx, 88, CypherParser::RuleOC_RelationshipTypes);
   size_t _la = 0;
 
@@ -6310,60 +5372,59 @@ CypherParser::oC_RelationshipTypes() {
   try {
     size_t alt;
     enterOuterAlt(_localctx, 1);
-    setState(829);
+    setState(833);
     match(CypherParser::T__9);
-    setState(831);
+    setState(835);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
     if (_la == CypherParser::SP) {
-      setState(830);
+      setState(834);
       match(CypherParser::SP);
     }
-    setState(833);
+    setState(837);
     oC_RelTypeName();
-    setState(847);
+    setState(851);
     _errHandler->sync(this);
-    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input,
-                                                                     138, _ctx);
+    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 139, _ctx);
     while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER) {
       if (alt == 1) {
-        setState(835);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(834);
-          match(CypherParser::SP);
-        }
-        setState(837);
-        match(CypherParser::T__10);
         setState(839);
         _errHandler->sync(this);
 
         _la = _input->LA(1);
-        if (_la == CypherParser::T__9) {
+        if (_la == CypherParser::SP) {
           setState(838);
+          match(CypherParser::SP);
+        }
+        setState(841);
+        match(CypherParser::T__10);
+        setState(843);
+        _errHandler->sync(this);
+
+        _la = _input->LA(1);
+        if (_la == CypherParser::T__9) {
+          setState(842);
           match(CypherParser::T__9);
         }
-        setState(842);
+        setState(846);
         _errHandler->sync(this);
 
         _la = _input->LA(1);
         if (_la == CypherParser::SP) {
-          setState(841);
+          setState(845);
           match(CypherParser::SP);
         }
-        setState(844);
-        oC_RelTypeName();
+        setState(848);
+        oC_RelTypeName(); 
       }
-      setState(849);
+      setState(853);
       _errHandler->sync(this);
-      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-          _input, 138, _ctx);
+      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 139, _ctx);
     }
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -6372,20 +5433,17 @@ CypherParser::oC_RelationshipTypes() {
   return _localctx;
 }
 
-//----------------- OC_NodeLabelsContext
-//------------------------------------------------------------------
+//----------------- OC_NodeLabelsContext ------------------------------------------------------------------
 
-CypherParser::OC_NodeLabelsContext::OC_NodeLabelsContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_NodeLabelsContext::OC_NodeLabelsContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-std::vector<CypherParser::OC_NodeLabelContext *>
-CypherParser::OC_NodeLabelsContext::oC_NodeLabel() {
+std::vector<CypherParser::OC_NodeLabelContext *> CypherParser::OC_NodeLabelsContext::oC_NodeLabel() {
   return getRuleContexts<CypherParser::OC_NodeLabelContext>();
 }
 
-CypherParser::OC_NodeLabelContext *
-CypherParser::OC_NodeLabelsContext::oC_NodeLabel(size_t i) {
+CypherParser::OC_NodeLabelContext* CypherParser::OC_NodeLabelsContext::oC_NodeLabel(size_t i) {
   return getRuleContext<CypherParser::OC_NodeLabelContext>(i);
 }
 
@@ -6393,25 +5451,25 @@ std::vector<tree::TerminalNode *> CypherParser::OC_NodeLabelsContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_NodeLabelsContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_NodeLabelsContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
+
 
 size_t CypherParser::OC_NodeLabelsContext::getRuleIndex() const {
   return CypherParser::RuleOC_NodeLabels;
 }
 
-std::any CypherParser::OC_NodeLabelsContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_NodeLabelsContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_NodeLabels(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_NodeLabelsContext *CypherParser::oC_NodeLabels() {
-  OC_NodeLabelsContext *_localctx =
-      _tracker.createInstance<OC_NodeLabelsContext>(_ctx, getState());
+CypherParser::OC_NodeLabelsContext* CypherParser::oC_NodeLabels() {
+  OC_NodeLabelsContext *_localctx = _tracker.createInstance<OC_NodeLabelsContext>(_ctx, getState());
   enterRule(_localctx, 90, CypherParser::RuleOC_NodeLabels);
   size_t _la = 0;
 
@@ -6425,32 +5483,31 @@ CypherParser::OC_NodeLabelsContext *CypherParser::oC_NodeLabels() {
   try {
     size_t alt;
     enterOuterAlt(_localctx, 1);
-    setState(850);
+    setState(854);
     oC_NodeLabel();
-    setState(857);
+    setState(861);
     _errHandler->sync(this);
-    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input,
-                                                                     140, _ctx);
+    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 141, _ctx);
     while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER) {
       if (alt == 1) {
-        setState(852);
+        setState(856);
         _errHandler->sync(this);
 
         _la = _input->LA(1);
         if (_la == CypherParser::SP) {
-          setState(851);
+          setState(855);
           match(CypherParser::SP);
         }
-        setState(854);
-        oC_NodeLabel();
+        setState(858);
+        oC_NodeLabel(); 
       }
-      setState(859);
+      setState(863);
       _errHandler->sync(this);
-      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-          _input, 140, _ctx);
+      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 141, _ctx);
     }
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -6459,37 +5516,35 @@ CypherParser::OC_NodeLabelsContext *CypherParser::oC_NodeLabels() {
   return _localctx;
 }
 
-//----------------- OC_NodeLabelContext
-//------------------------------------------------------------------
+//----------------- OC_NodeLabelContext ------------------------------------------------------------------
 
-CypherParser::OC_NodeLabelContext::OC_NodeLabelContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_NodeLabelContext::OC_NodeLabelContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_LabelNameContext *
-CypherParser::OC_NodeLabelContext::oC_LabelName() {
+CypherParser::OC_LabelNameContext* CypherParser::OC_NodeLabelContext::oC_LabelName() {
   return getRuleContext<CypherParser::OC_LabelNameContext>(0);
 }
 
-tree::TerminalNode *CypherParser::OC_NodeLabelContext::SP() {
+tree::TerminalNode* CypherParser::OC_NodeLabelContext::SP() {
   return getToken(CypherParser::SP, 0);
 }
+
 
 size_t CypherParser::OC_NodeLabelContext::getRuleIndex() const {
   return CypherParser::RuleOC_NodeLabel;
 }
 
-std::any CypherParser::OC_NodeLabelContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_NodeLabelContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_NodeLabel(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_NodeLabelContext *CypherParser::oC_NodeLabel() {
-  OC_NodeLabelContext *_localctx =
-      _tracker.createInstance<OC_NodeLabelContext>(_ctx, getState());
+CypherParser::OC_NodeLabelContext* CypherParser::oC_NodeLabel() {
+  OC_NodeLabelContext *_localctx = _tracker.createInstance<OC_NodeLabelContext>(_ctx, getState());
   enterRule(_localctx, 92, CypherParser::RuleOC_NodeLabel);
   size_t _la = 0;
 
@@ -6502,20 +5557,21 @@ CypherParser::OC_NodeLabelContext *CypherParser::oC_NodeLabel() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(860);
+    setState(864);
     match(CypherParser::T__9);
-    setState(862);
+    setState(866);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
     if (_la == CypherParser::SP) {
-      setState(861);
+      setState(865);
       match(CypherParser::SP);
     }
-    setState(864);
+    setState(868);
     oC_LabelName();
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -6524,46 +5580,43 @@ CypherParser::OC_NodeLabelContext *CypherParser::oC_NodeLabel() {
   return _localctx;
 }
 
-//----------------- OC_RangeLiteralContext
-//------------------------------------------------------------------
+//----------------- OC_RangeLiteralContext ------------------------------------------------------------------
 
-CypherParser::OC_RangeLiteralContext::OC_RangeLiteralContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_RangeLiteralContext::OC_RangeLiteralContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
 std::vector<tree::TerminalNode *> CypherParser::OC_RangeLiteralContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_RangeLiteralContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_RangeLiteralContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
-std::vector<CypherParser::OC_IntegerLiteralContext *>
-CypherParser::OC_RangeLiteralContext::oC_IntegerLiteral() {
+std::vector<CypherParser::OC_IntegerLiteralContext *> CypherParser::OC_RangeLiteralContext::oC_IntegerLiteral() {
   return getRuleContexts<CypherParser::OC_IntegerLiteralContext>();
 }
 
-CypherParser::OC_IntegerLiteralContext *
-CypherParser::OC_RangeLiteralContext::oC_IntegerLiteral(size_t i) {
+CypherParser::OC_IntegerLiteralContext* CypherParser::OC_RangeLiteralContext::oC_IntegerLiteral(size_t i) {
   return getRuleContext<CypherParser::OC_IntegerLiteralContext>(i);
 }
+
 
 size_t CypherParser::OC_RangeLiteralContext::getRuleIndex() const {
   return CypherParser::RuleOC_RangeLiteral;
 }
 
-std::any CypherParser::OC_RangeLiteralContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_RangeLiteralContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_RangeLiteral(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_RangeLiteralContext *CypherParser::oC_RangeLiteral() {
-  OC_RangeLiteralContext *_localctx =
-      _tracker.createInstance<OC_RangeLiteralContext>(_ctx, getState());
+CypherParser::OC_RangeLiteralContext* CypherParser::oC_RangeLiteral() {
+  OC_RangeLiteralContext *_localctx = _tracker.createInstance<OC_RangeLiteralContext>(_ctx, getState());
   enterRule(_localctx, 94, CypherParser::RuleOC_RangeLiteral);
   size_t _la = 0;
 
@@ -6576,66 +5629,69 @@ CypherParser::OC_RangeLiteralContext *CypherParser::oC_RangeLiteral() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(866);
+    setState(870);
     match(CypherParser::T__4);
-    setState(868);
+    setState(872);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
     if (_la == CypherParser::SP) {
-      setState(867);
+      setState(871);
       match(CypherParser::SP);
     }
-    setState(874);
+    setState(878);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
-    if (((((_la - 95) & ~0x3fULL) == 0) && ((1ULL << (_la - 95)) & 7) != 0)) {
-      setState(870);
+    if (((((_la - 96) & ~ 0x3fULL) == 0) &&
+      ((1ULL << (_la - 96)) & 7) != 0)) {
+      setState(874);
       oC_IntegerLiteral();
-      setState(872);
+      setState(876);
       _errHandler->sync(this);
 
       _la = _input->LA(1);
       if (_la == CypherParser::SP) {
-        setState(871);
+        setState(875);
         match(CypherParser::SP);
       }
     }
-    setState(886);
+    setState(890);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
     if (_la == CypherParser::T__11) {
-      setState(876);
+      setState(880);
       match(CypherParser::T__11);
-      setState(878);
+      setState(882);
       _errHandler->sync(this);
 
       _la = _input->LA(1);
       if (_la == CypherParser::SP) {
-        setState(877);
+        setState(881);
         match(CypherParser::SP);
       }
-      setState(884);
+      setState(888);
       _errHandler->sync(this);
 
       _la = _input->LA(1);
-      if (((((_la - 95) & ~0x3fULL) == 0) && ((1ULL << (_la - 95)) & 7) != 0)) {
-        setState(880);
+      if (((((_la - 96) & ~ 0x3fULL) == 0) &&
+        ((1ULL << (_la - 96)) & 7) != 0)) {
+        setState(884);
         oC_IntegerLiteral();
-        setState(882);
+        setState(886);
         _errHandler->sync(this);
 
         _la = _input->LA(1);
         if (_la == CypherParser::SP) {
-          setState(881);
+          setState(885);
           match(CypherParser::SP);
         }
       }
     }
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -6644,33 +5700,31 @@ CypherParser::OC_RangeLiteralContext *CypherParser::oC_RangeLiteral() {
   return _localctx;
 }
 
-//----------------- OC_LabelNameContext
-//------------------------------------------------------------------
+//----------------- OC_LabelNameContext ------------------------------------------------------------------
 
-CypherParser::OC_LabelNameContext::OC_LabelNameContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_LabelNameContext::OC_LabelNameContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_SchemaNameContext *
-CypherParser::OC_LabelNameContext::oC_SchemaName() {
+CypherParser::OC_SchemaNameContext* CypherParser::OC_LabelNameContext::oC_SchemaName() {
   return getRuleContext<CypherParser::OC_SchemaNameContext>(0);
 }
+
 
 size_t CypherParser::OC_LabelNameContext::getRuleIndex() const {
   return CypherParser::RuleOC_LabelName;
 }
 
-std::any CypherParser::OC_LabelNameContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_LabelNameContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_LabelName(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_LabelNameContext *CypherParser::oC_LabelName() {
-  OC_LabelNameContext *_localctx =
-      _tracker.createInstance<OC_LabelNameContext>(_ctx, getState());
+CypherParser::OC_LabelNameContext* CypherParser::oC_LabelName() {
+  OC_LabelNameContext *_localctx = _tracker.createInstance<OC_LabelNameContext>(_ctx, getState());
   enterRule(_localctx, 96, CypherParser::RuleOC_LabelName);
 
 #if __cplusplus > 201703L
@@ -6682,10 +5736,11 @@ CypherParser::OC_LabelNameContext *CypherParser::oC_LabelName() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(888);
+    setState(892);
     oC_SchemaName();
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -6694,33 +5749,31 @@ CypherParser::OC_LabelNameContext *CypherParser::oC_LabelName() {
   return _localctx;
 }
 
-//----------------- OC_RelTypeNameContext
-//------------------------------------------------------------------
+//----------------- OC_RelTypeNameContext ------------------------------------------------------------------
 
-CypherParser::OC_RelTypeNameContext::OC_RelTypeNameContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_RelTypeNameContext::OC_RelTypeNameContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_SchemaNameContext *
-CypherParser::OC_RelTypeNameContext::oC_SchemaName() {
+CypherParser::OC_SchemaNameContext* CypherParser::OC_RelTypeNameContext::oC_SchemaName() {
   return getRuleContext<CypherParser::OC_SchemaNameContext>(0);
 }
+
 
 size_t CypherParser::OC_RelTypeNameContext::getRuleIndex() const {
   return CypherParser::RuleOC_RelTypeName;
 }
 
-std::any CypherParser::OC_RelTypeNameContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_RelTypeNameContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_RelTypeName(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_RelTypeNameContext *CypherParser::oC_RelTypeName() {
-  OC_RelTypeNameContext *_localctx =
-      _tracker.createInstance<OC_RelTypeNameContext>(_ctx, getState());
+CypherParser::OC_RelTypeNameContext* CypherParser::oC_RelTypeName() {
+  OC_RelTypeNameContext *_localctx = _tracker.createInstance<OC_RelTypeNameContext>(_ctx, getState());
   enterRule(_localctx, 98, CypherParser::RuleOC_RelTypeName);
 
 #if __cplusplus > 201703L
@@ -6732,10 +5785,11 @@ CypherParser::OC_RelTypeNameContext *CypherParser::oC_RelTypeName() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(890);
+    setState(894);
     oC_SchemaName();
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -6744,53 +5798,47 @@ CypherParser::OC_RelTypeNameContext *CypherParser::oC_RelTypeName() {
   return _localctx;
 }
 
-//----------------- OC_PropertyExpressionContext
-//------------------------------------------------------------------
+//----------------- OC_PropertyExpressionContext ------------------------------------------------------------------
 
-CypherParser::OC_PropertyExpressionContext::OC_PropertyExpressionContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_PropertyExpressionContext::OC_PropertyExpressionContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_AtomContext *
-CypherParser::OC_PropertyExpressionContext::oC_Atom() {
+CypherParser::OC_AtomContext* CypherParser::OC_PropertyExpressionContext::oC_Atom() {
   return getRuleContext<CypherParser::OC_AtomContext>(0);
 }
 
-std::vector<CypherParser::OC_PropertyLookupContext *>
-CypherParser::OC_PropertyExpressionContext::oC_PropertyLookup() {
+std::vector<CypherParser::OC_PropertyLookupContext *> CypherParser::OC_PropertyExpressionContext::oC_PropertyLookup() {
   return getRuleContexts<CypherParser::OC_PropertyLookupContext>();
 }
 
-CypherParser::OC_PropertyLookupContext *
-CypherParser::OC_PropertyExpressionContext::oC_PropertyLookup(size_t i) {
+CypherParser::OC_PropertyLookupContext* CypherParser::OC_PropertyExpressionContext::oC_PropertyLookup(size_t i) {
   return getRuleContext<CypherParser::OC_PropertyLookupContext>(i);
 }
 
-std::vector<tree::TerminalNode *>
-CypherParser::OC_PropertyExpressionContext::SP() {
+std::vector<tree::TerminalNode *> CypherParser::OC_PropertyExpressionContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_PropertyExpressionContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_PropertyExpressionContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
+
 
 size_t CypherParser::OC_PropertyExpressionContext::getRuleIndex() const {
   return CypherParser::RuleOC_PropertyExpression;
 }
 
-std::any CypherParser::OC_PropertyExpressionContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_PropertyExpressionContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_PropertyExpression(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_PropertyExpressionContext *
-CypherParser::oC_PropertyExpression() {
-  OC_PropertyExpressionContext *_localctx =
-      _tracker.createInstance<OC_PropertyExpressionContext>(_ctx, getState());
+CypherParser::OC_PropertyExpressionContext* CypherParser::oC_PropertyExpression() {
+  OC_PropertyExpressionContext *_localctx = _tracker.createInstance<OC_PropertyExpressionContext>(_ctx, getState());
   enterRule(_localctx, 100, CypherParser::RuleOC_PropertyExpression);
   size_t _la = 0;
 
@@ -6804,37 +5852,37 @@ CypherParser::oC_PropertyExpression() {
   try {
     size_t alt;
     enterOuterAlt(_localctx, 1);
-    setState(892);
+    setState(896);
     oC_Atom();
-    setState(897);
+    setState(901); 
     _errHandler->sync(this);
     alt = 1;
     do {
       switch (alt) {
         case 1: {
-          setState(894);
-          _errHandler->sync(this);
+              setState(898);
+              _errHandler->sync(this);
 
-          _la = _input->LA(1);
-          if (_la == CypherParser::SP) {
-            setState(893);
-            match(CypherParser::SP);
-          }
-          setState(896);
-          oC_PropertyLookup();
-          break;
-        }
+              _la = _input->LA(1);
+              if (_la == CypherParser::SP) {
+                setState(897);
+                match(CypherParser::SP);
+              }
+              setState(900);
+              oC_PropertyLookup();
+              break;
+            }
 
-        default:
-          throw NoViableAltException(this);
+      default:
+        throw NoViableAltException(this);
       }
-      setState(899);
+      setState(903); 
       _errHandler->sync(this);
-      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-          _input, 150, _ctx);
+      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 151, _ctx);
     } while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER);
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -6843,33 +5891,31 @@ CypherParser::oC_PropertyExpression() {
   return _localctx;
 }
 
-//----------------- OC_ExpressionContext
-//------------------------------------------------------------------
+//----------------- OC_ExpressionContext ------------------------------------------------------------------
 
-CypherParser::OC_ExpressionContext::OC_ExpressionContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_ExpressionContext::OC_ExpressionContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_OrExpressionContext *
-CypherParser::OC_ExpressionContext::oC_OrExpression() {
+CypherParser::OC_OrExpressionContext* CypherParser::OC_ExpressionContext::oC_OrExpression() {
   return getRuleContext<CypherParser::OC_OrExpressionContext>(0);
 }
+
 
 size_t CypherParser::OC_ExpressionContext::getRuleIndex() const {
   return CypherParser::RuleOC_Expression;
 }
 
-std::any CypherParser::OC_ExpressionContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_ExpressionContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_Expression(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_ExpressionContext *CypherParser::oC_Expression() {
-  OC_ExpressionContext *_localctx =
-      _tracker.createInstance<OC_ExpressionContext>(_ctx, getState());
+CypherParser::OC_ExpressionContext* CypherParser::oC_Expression() {
+  OC_ExpressionContext *_localctx = _tracker.createInstance<OC_ExpressionContext>(_ctx, getState());
   enterRule(_localctx, 102, CypherParser::RuleOC_Expression);
 
 #if __cplusplus > 201703L
@@ -6881,10 +5927,11 @@ CypherParser::OC_ExpressionContext *CypherParser::oC_Expression() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(901);
+    setState(905);
     oC_OrExpression();
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -6893,20 +5940,17 @@ CypherParser::OC_ExpressionContext *CypherParser::oC_Expression() {
   return _localctx;
 }
 
-//----------------- OC_OrExpressionContext
-//------------------------------------------------------------------
+//----------------- OC_OrExpressionContext ------------------------------------------------------------------
 
-CypherParser::OC_OrExpressionContext::OC_OrExpressionContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_OrExpressionContext::OC_OrExpressionContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-std::vector<CypherParser::OC_XorExpressionContext *>
-CypherParser::OC_OrExpressionContext::oC_XorExpression() {
+std::vector<CypherParser::OC_XorExpressionContext *> CypherParser::OC_OrExpressionContext::oC_XorExpression() {
   return getRuleContexts<CypherParser::OC_XorExpressionContext>();
 }
 
-CypherParser::OC_XorExpressionContext *
-CypherParser::OC_OrExpressionContext::oC_XorExpression(size_t i) {
+CypherParser::OC_XorExpressionContext* CypherParser::OC_OrExpressionContext::oC_XorExpression(size_t i) {
   return getRuleContext<CypherParser::OC_XorExpressionContext>(i);
 }
 
@@ -6914,7 +5958,7 @@ std::vector<tree::TerminalNode *> CypherParser::OC_OrExpressionContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_OrExpressionContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_OrExpressionContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
@@ -6922,25 +5966,25 @@ std::vector<tree::TerminalNode *> CypherParser::OC_OrExpressionContext::OR() {
   return getTokens(CypherParser::OR);
 }
 
-tree::TerminalNode *CypherParser::OC_OrExpressionContext::OR(size_t i) {
+tree::TerminalNode* CypherParser::OC_OrExpressionContext::OR(size_t i) {
   return getToken(CypherParser::OR, i);
 }
+
 
 size_t CypherParser::OC_OrExpressionContext::getRuleIndex() const {
   return CypherParser::RuleOC_OrExpression;
 }
 
-std::any CypherParser::OC_OrExpressionContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_OrExpressionContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_OrExpression(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_OrExpressionContext *CypherParser::oC_OrExpression() {
-  OC_OrExpressionContext *_localctx =
-      _tracker.createInstance<OC_OrExpressionContext>(_ctx, getState());
+CypherParser::OC_OrExpressionContext* CypherParser::oC_OrExpression() {
+  OC_OrExpressionContext *_localctx = _tracker.createInstance<OC_OrExpressionContext>(_ctx, getState());
   enterRule(_localctx, 104, CypherParser::RuleOC_OrExpression);
 
 #if __cplusplus > 201703L
@@ -6953,30 +5997,29 @@ CypherParser::OC_OrExpressionContext *CypherParser::oC_OrExpression() {
   try {
     size_t alt;
     enterOuterAlt(_localctx, 1);
-    setState(903);
+    setState(907);
     oC_XorExpression();
-    setState(910);
+    setState(914);
     _errHandler->sync(this);
-    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input,
-                                                                     151, _ctx);
+    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 152, _ctx);
     while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER) {
       if (alt == 1) {
-        setState(904);
+        setState(908);
         match(CypherParser::SP);
-        setState(905);
+        setState(909);
         match(CypherParser::OR);
-        setState(906);
+        setState(910);
         match(CypherParser::SP);
-        setState(907);
-        oC_XorExpression();
+        setState(911);
+        oC_XorExpression(); 
       }
-      setState(912);
+      setState(916);
       _errHandler->sync(this);
-      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-          _input, 151, _ctx);
+      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 152, _ctx);
     }
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -6985,20 +6028,17 @@ CypherParser::OC_OrExpressionContext *CypherParser::oC_OrExpression() {
   return _localctx;
 }
 
-//----------------- OC_XorExpressionContext
-//------------------------------------------------------------------
+//----------------- OC_XorExpressionContext ------------------------------------------------------------------
 
-CypherParser::OC_XorExpressionContext::OC_XorExpressionContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_XorExpressionContext::OC_XorExpressionContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-std::vector<CypherParser::OC_AndExpressionContext *>
-CypherParser::OC_XorExpressionContext::oC_AndExpression() {
+std::vector<CypherParser::OC_AndExpressionContext *> CypherParser::OC_XorExpressionContext::oC_AndExpression() {
   return getRuleContexts<CypherParser::OC_AndExpressionContext>();
 }
 
-CypherParser::OC_AndExpressionContext *
-CypherParser::OC_XorExpressionContext::oC_AndExpression(size_t i) {
+CypherParser::OC_AndExpressionContext* CypherParser::OC_XorExpressionContext::oC_AndExpression(size_t i) {
   return getRuleContext<CypherParser::OC_AndExpressionContext>(i);
 }
 
@@ -7006,7 +6046,7 @@ std::vector<tree::TerminalNode *> CypherParser::OC_XorExpressionContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_XorExpressionContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_XorExpressionContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
@@ -7014,25 +6054,25 @@ std::vector<tree::TerminalNode *> CypherParser::OC_XorExpressionContext::XOR() {
   return getTokens(CypherParser::XOR);
 }
 
-tree::TerminalNode *CypherParser::OC_XorExpressionContext::XOR(size_t i) {
+tree::TerminalNode* CypherParser::OC_XorExpressionContext::XOR(size_t i) {
   return getToken(CypherParser::XOR, i);
 }
+
 
 size_t CypherParser::OC_XorExpressionContext::getRuleIndex() const {
   return CypherParser::RuleOC_XorExpression;
 }
 
-std::any CypherParser::OC_XorExpressionContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_XorExpressionContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_XorExpression(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_XorExpressionContext *CypherParser::oC_XorExpression() {
-  OC_XorExpressionContext *_localctx =
-      _tracker.createInstance<OC_XorExpressionContext>(_ctx, getState());
+CypherParser::OC_XorExpressionContext* CypherParser::oC_XorExpression() {
+  OC_XorExpressionContext *_localctx = _tracker.createInstance<OC_XorExpressionContext>(_ctx, getState());
   enterRule(_localctx, 106, CypherParser::RuleOC_XorExpression);
 
 #if __cplusplus > 201703L
@@ -7045,30 +6085,29 @@ CypherParser::OC_XorExpressionContext *CypherParser::oC_XorExpression() {
   try {
     size_t alt;
     enterOuterAlt(_localctx, 1);
-    setState(913);
+    setState(917);
     oC_AndExpression();
-    setState(920);
+    setState(924);
     _errHandler->sync(this);
-    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input,
-                                                                     152, _ctx);
+    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 153, _ctx);
     while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER) {
       if (alt == 1) {
-        setState(914);
+        setState(918);
         match(CypherParser::SP);
-        setState(915);
+        setState(919);
         match(CypherParser::XOR);
-        setState(916);
+        setState(920);
         match(CypherParser::SP);
-        setState(917);
-        oC_AndExpression();
+        setState(921);
+        oC_AndExpression(); 
       }
-      setState(922);
+      setState(926);
       _errHandler->sync(this);
-      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-          _input, 152, _ctx);
+      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 153, _ctx);
     }
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -7077,20 +6116,17 @@ CypherParser::OC_XorExpressionContext *CypherParser::oC_XorExpression() {
   return _localctx;
 }
 
-//----------------- OC_AndExpressionContext
-//------------------------------------------------------------------
+//----------------- OC_AndExpressionContext ------------------------------------------------------------------
 
-CypherParser::OC_AndExpressionContext::OC_AndExpressionContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_AndExpressionContext::OC_AndExpressionContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-std::vector<CypherParser::OC_NotExpressionContext *>
-CypherParser::OC_AndExpressionContext::oC_NotExpression() {
+std::vector<CypherParser::OC_NotExpressionContext *> CypherParser::OC_AndExpressionContext::oC_NotExpression() {
   return getRuleContexts<CypherParser::OC_NotExpressionContext>();
 }
 
-CypherParser::OC_NotExpressionContext *
-CypherParser::OC_AndExpressionContext::oC_NotExpression(size_t i) {
+CypherParser::OC_NotExpressionContext* CypherParser::OC_AndExpressionContext::oC_NotExpression(size_t i) {
   return getRuleContext<CypherParser::OC_NotExpressionContext>(i);
 }
 
@@ -7098,7 +6134,7 @@ std::vector<tree::TerminalNode *> CypherParser::OC_AndExpressionContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_AndExpressionContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_AndExpressionContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
@@ -7106,25 +6142,25 @@ std::vector<tree::TerminalNode *> CypherParser::OC_AndExpressionContext::AND() {
   return getTokens(CypherParser::AND);
 }
 
-tree::TerminalNode *CypherParser::OC_AndExpressionContext::AND(size_t i) {
+tree::TerminalNode* CypherParser::OC_AndExpressionContext::AND(size_t i) {
   return getToken(CypherParser::AND, i);
 }
+
 
 size_t CypherParser::OC_AndExpressionContext::getRuleIndex() const {
   return CypherParser::RuleOC_AndExpression;
 }
 
-std::any CypherParser::OC_AndExpressionContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_AndExpressionContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_AndExpression(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_AndExpressionContext *CypherParser::oC_AndExpression() {
-  OC_AndExpressionContext *_localctx =
-      _tracker.createInstance<OC_AndExpressionContext>(_ctx, getState());
+CypherParser::OC_AndExpressionContext* CypherParser::oC_AndExpression() {
+  OC_AndExpressionContext *_localctx = _tracker.createInstance<OC_AndExpressionContext>(_ctx, getState());
   enterRule(_localctx, 108, CypherParser::RuleOC_AndExpression);
 
 #if __cplusplus > 201703L
@@ -7137,30 +6173,29 @@ CypherParser::OC_AndExpressionContext *CypherParser::oC_AndExpression() {
   try {
     size_t alt;
     enterOuterAlt(_localctx, 1);
-    setState(923);
+    setState(927);
     oC_NotExpression();
-    setState(930);
+    setState(934);
     _errHandler->sync(this);
-    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input,
-                                                                     153, _ctx);
+    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 154, _ctx);
     while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER) {
       if (alt == 1) {
-        setState(924);
+        setState(928);
         match(CypherParser::SP);
-        setState(925);
+        setState(929);
         match(CypherParser::AND);
-        setState(926);
+        setState(930);
         match(CypherParser::SP);
-        setState(927);
-        oC_NotExpression();
+        setState(931);
+        oC_NotExpression(); 
       }
-      setState(932);
+      setState(936);
       _errHandler->sync(this);
-      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-          _input, 153, _ctx);
+      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 154, _ctx);
     }
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -7169,15 +6204,13 @@ CypherParser::OC_AndExpressionContext *CypherParser::oC_AndExpression() {
   return _localctx;
 }
 
-//----------------- OC_NotExpressionContext
-//------------------------------------------------------------------
+//----------------- OC_NotExpressionContext ------------------------------------------------------------------
 
-CypherParser::OC_NotExpressionContext::OC_NotExpressionContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_NotExpressionContext::OC_NotExpressionContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_ComparisonExpressionContext *
-CypherParser::OC_NotExpressionContext::oC_ComparisonExpression() {
+CypherParser::OC_ComparisonExpressionContext* CypherParser::OC_NotExpressionContext::oC_ComparisonExpression() {
   return getRuleContext<CypherParser::OC_ComparisonExpressionContext>(0);
 }
 
@@ -7185,7 +6218,7 @@ std::vector<tree::TerminalNode *> CypherParser::OC_NotExpressionContext::NOT() {
   return getTokens(CypherParser::NOT);
 }
 
-tree::TerminalNode *CypherParser::OC_NotExpressionContext::NOT(size_t i) {
+tree::TerminalNode* CypherParser::OC_NotExpressionContext::NOT(size_t i) {
   return getToken(CypherParser::NOT, i);
 }
 
@@ -7193,25 +6226,25 @@ std::vector<tree::TerminalNode *> CypherParser::OC_NotExpressionContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_NotExpressionContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_NotExpressionContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
+
 
 size_t CypherParser::OC_NotExpressionContext::getRuleIndex() const {
   return CypherParser::RuleOC_NotExpression;
 }
 
-std::any CypherParser::OC_NotExpressionContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_NotExpressionContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_NotExpression(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_NotExpressionContext *CypherParser::oC_NotExpression() {
-  OC_NotExpressionContext *_localctx =
-      _tracker.createInstance<OC_NotExpressionContext>(_ctx, getState());
+CypherParser::OC_NotExpressionContext* CypherParser::oC_NotExpression() {
+  OC_NotExpressionContext *_localctx = _tracker.createInstance<OC_NotExpressionContext>(_ctx, getState());
   enterRule(_localctx, 110, CypherParser::RuleOC_NotExpression);
   size_t _la = 0;
 
@@ -7224,28 +6257,29 @@ CypherParser::OC_NotExpressionContext *CypherParser::oC_NotExpression() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(939);
+    setState(943);
     _errHandler->sync(this);
     _la = _input->LA(1);
     while (_la == CypherParser::NOT) {
-      setState(933);
+      setState(937);
       match(CypherParser::NOT);
-      setState(935);
+      setState(939);
       _errHandler->sync(this);
 
       _la = _input->LA(1);
       if (_la == CypherParser::SP) {
-        setState(934);
+        setState(938);
         match(CypherParser::SP);
       }
-      setState(941);
+      setState(945);
       _errHandler->sync(this);
       _la = _input->LA(1);
     }
-    setState(942);
+    setState(946);
     oC_ComparisonExpression();
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -7254,55 +6288,47 @@ CypherParser::OC_NotExpressionContext *CypherParser::oC_NotExpression() {
   return _localctx;
 }
 
-//----------------- OC_ComparisonExpressionContext
-//------------------------------------------------------------------
+//----------------- OC_ComparisonExpressionContext ------------------------------------------------------------------
 
-CypherParser::OC_ComparisonExpressionContext::OC_ComparisonExpressionContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
-
-CypherParser::OC_StringListNullPredicateExpressionContext *CypherParser::
-    OC_ComparisonExpressionContext::oC_StringListNullPredicateExpression() {
-  return getRuleContext<
-      CypherParser::OC_StringListNullPredicateExpressionContext>(0);
+CypherParser::OC_ComparisonExpressionContext::OC_ComparisonExpressionContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
 }
 
-std::vector<CypherParser::OC_PartialComparisonExpressionContext *>
-CypherParser::OC_ComparisonExpressionContext::oC_PartialComparisonExpression() {
+CypherParser::OC_StringListNullPredicateExpressionContext* CypherParser::OC_ComparisonExpressionContext::oC_StringListNullPredicateExpression() {
+  return getRuleContext<CypherParser::OC_StringListNullPredicateExpressionContext>(0);
+}
+
+std::vector<CypherParser::OC_PartialComparisonExpressionContext *> CypherParser::OC_ComparisonExpressionContext::oC_PartialComparisonExpression() {
   return getRuleContexts<CypherParser::OC_PartialComparisonExpressionContext>();
 }
 
-CypherParser::OC_PartialComparisonExpressionContext *
-CypherParser::OC_ComparisonExpressionContext::oC_PartialComparisonExpression(
-    size_t i) {
+CypherParser::OC_PartialComparisonExpressionContext* CypherParser::OC_ComparisonExpressionContext::oC_PartialComparisonExpression(size_t i) {
   return getRuleContext<CypherParser::OC_PartialComparisonExpressionContext>(i);
 }
 
-std::vector<tree::TerminalNode *>
-CypherParser::OC_ComparisonExpressionContext::SP() {
+std::vector<tree::TerminalNode *> CypherParser::OC_ComparisonExpressionContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_ComparisonExpressionContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_ComparisonExpressionContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
+
 
 size_t CypherParser::OC_ComparisonExpressionContext::getRuleIndex() const {
   return CypherParser::RuleOC_ComparisonExpression;
 }
 
-std::any CypherParser::OC_ComparisonExpressionContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_ComparisonExpressionContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_ComparisonExpression(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_ComparisonExpressionContext *
-CypherParser::oC_ComparisonExpression() {
-  OC_ComparisonExpressionContext *_localctx =
-      _tracker.createInstance<OC_ComparisonExpressionContext>(_ctx, getState());
+CypherParser::OC_ComparisonExpressionContext* CypherParser::oC_ComparisonExpression() {
+  OC_ComparisonExpressionContext *_localctx = _tracker.createInstance<OC_ComparisonExpressionContext>(_ctx, getState());
   enterRule(_localctx, 112, CypherParser::RuleOC_ComparisonExpression);
   size_t _la = 0;
 
@@ -7316,32 +6342,31 @@ CypherParser::oC_ComparisonExpression() {
   try {
     size_t alt;
     enterOuterAlt(_localctx, 1);
-    setState(944);
+    setState(948);
     oC_StringListNullPredicateExpression();
-    setState(951);
+    setState(955);
     _errHandler->sync(this);
-    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input,
-                                                                     157, _ctx);
+    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 158, _ctx);
     while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER) {
       if (alt == 1) {
-        setState(946);
+        setState(950);
         _errHandler->sync(this);
 
         _la = _input->LA(1);
         if (_la == CypherParser::SP) {
-          setState(945);
+          setState(949);
           match(CypherParser::SP);
         }
-        setState(948);
-        oC_PartialComparisonExpression();
+        setState(952);
+        oC_PartialComparisonExpression(); 
       }
-      setState(953);
+      setState(957);
       _errHandler->sync(this);
-      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-          _input, 157, _ctx);
+      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 158, _ctx);
     }
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -7350,43 +6375,35 @@ CypherParser::oC_ComparisonExpression() {
   return _localctx;
 }
 
-//----------------- OC_PartialComparisonExpressionContext
-//------------------------------------------------------------------
+//----------------- OC_PartialComparisonExpressionContext ------------------------------------------------------------------
 
-CypherParser::OC_PartialComparisonExpressionContext::
-    OC_PartialComparisonExpressionContext(ParserRuleContext *parent,
-                                          size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
-
-CypherParser::OC_StringListNullPredicateExpressionContext *
-CypherParser::OC_PartialComparisonExpressionContext::
-    oC_StringListNullPredicateExpression() {
-  return getRuleContext<
-      CypherParser::OC_StringListNullPredicateExpressionContext>(0);
+CypherParser::OC_PartialComparisonExpressionContext::OC_PartialComparisonExpressionContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
 }
 
-tree::TerminalNode *CypherParser::OC_PartialComparisonExpressionContext::SP() {
+CypherParser::OC_StringListNullPredicateExpressionContext* CypherParser::OC_PartialComparisonExpressionContext::oC_StringListNullPredicateExpression() {
+  return getRuleContext<CypherParser::OC_StringListNullPredicateExpressionContext>(0);
+}
+
+tree::TerminalNode* CypherParser::OC_PartialComparisonExpressionContext::SP() {
   return getToken(CypherParser::SP, 0);
 }
 
-size_t CypherParser::OC_PartialComparisonExpressionContext::getRuleIndex()
-    const {
+
+size_t CypherParser::OC_PartialComparisonExpressionContext::getRuleIndex() const {
   return CypherParser::RuleOC_PartialComparisonExpression;
 }
 
-std::any CypherParser::OC_PartialComparisonExpressionContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_PartialComparisonExpressionContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_PartialComparisonExpression(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_PartialComparisonExpressionContext *
-CypherParser::oC_PartialComparisonExpression() {
-  OC_PartialComparisonExpressionContext *_localctx =
-      _tracker.createInstance<OC_PartialComparisonExpressionContext>(
-          _ctx, getState());
+CypherParser::OC_PartialComparisonExpressionContext* CypherParser::oC_PartialComparisonExpression() {
+  OC_PartialComparisonExpressionContext *_localctx = _tracker.createInstance<OC_PartialComparisonExpressionContext>(_ctx, getState());
   enterRule(_localctx, 114, CypherParser::RuleOC_PartialComparisonExpression);
   size_t _la = 0;
 
@@ -7398,116 +6415,117 @@ CypherParser::oC_PartialComparisonExpression() {
     exitRule();
   });
   try {
-    setState(984);
+    setState(988);
     _errHandler->sync(this);
     switch (_input->LA(1)) {
       case CypherParser::T__2: {
         enterOuterAlt(_localctx, 1);
-        setState(954);
+        setState(958);
         match(CypherParser::T__2);
-        setState(956);
+        setState(960);
         _errHandler->sync(this);
 
         _la = _input->LA(1);
         if (_la == CypherParser::SP) {
-          setState(955);
+          setState(959);
           match(CypherParser::SP);
         }
-        setState(958);
+        setState(962);
         oC_StringListNullPredicateExpression();
         break;
       }
 
       case CypherParser::T__12: {
         enterOuterAlt(_localctx, 2);
-        setState(959);
+        setState(963);
         match(CypherParser::T__12);
-        setState(961);
+        setState(965);
         _errHandler->sync(this);
 
         _la = _input->LA(1);
         if (_la == CypherParser::SP) {
-          setState(960);
+          setState(964);
           match(CypherParser::SP);
         }
-        setState(963);
+        setState(967);
         oC_StringListNullPredicateExpression();
         break;
       }
 
       case CypherParser::T__13: {
         enterOuterAlt(_localctx, 3);
-        setState(964);
+        setState(968);
         match(CypherParser::T__13);
-        setState(966);
+        setState(970);
         _errHandler->sync(this);
 
         _la = _input->LA(1);
         if (_la == CypherParser::SP) {
-          setState(965);
+          setState(969);
           match(CypherParser::SP);
         }
-        setState(968);
+        setState(972);
         oC_StringListNullPredicateExpression();
         break;
       }
 
       case CypherParser::T__14: {
         enterOuterAlt(_localctx, 4);
-        setState(969);
+        setState(973);
         match(CypherParser::T__14);
-        setState(971);
+        setState(975);
         _errHandler->sync(this);
 
         _la = _input->LA(1);
         if (_la == CypherParser::SP) {
-          setState(970);
+          setState(974);
           match(CypherParser::SP);
         }
-        setState(973);
+        setState(977);
         oC_StringListNullPredicateExpression();
         break;
       }
 
       case CypherParser::T__15: {
         enterOuterAlt(_localctx, 5);
-        setState(974);
+        setState(978);
         match(CypherParser::T__15);
-        setState(976);
+        setState(980);
         _errHandler->sync(this);
 
         _la = _input->LA(1);
         if (_la == CypherParser::SP) {
-          setState(975);
+          setState(979);
           match(CypherParser::SP);
         }
-        setState(978);
+        setState(982);
         oC_StringListNullPredicateExpression();
         break;
       }
 
       case CypherParser::T__16: {
         enterOuterAlt(_localctx, 6);
-        setState(979);
+        setState(983);
         match(CypherParser::T__16);
-        setState(981);
+        setState(985);
         _errHandler->sync(this);
 
         _la = _input->LA(1);
         if (_la == CypherParser::SP) {
-          setState(980);
+          setState(984);
           match(CypherParser::SP);
         }
-        setState(983);
+        setState(987);
         oC_StringListNullPredicateExpression();
         break;
       }
 
-      default:
-        throw NoViableAltException(this);
+    default:
+      throw NoViableAltException(this);
     }
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -7516,73 +6534,56 @@ CypherParser::oC_PartialComparisonExpression() {
   return _localctx;
 }
 
-//----------------- OC_StringListNullPredicateExpressionContext
-//------------------------------------------------------------------
+//----------------- OC_StringListNullPredicateExpressionContext ------------------------------------------------------------------
 
-CypherParser::OC_StringListNullPredicateExpressionContext::
-    OC_StringListNullPredicateExpressionContext(ParserRuleContext *parent,
-                                                size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_StringListNullPredicateExpressionContext::OC_StringListNullPredicateExpressionContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_AddOrSubtractExpressionContext *CypherParser::
-    OC_StringListNullPredicateExpressionContext::oC_AddOrSubtractExpression() {
+CypherParser::OC_AddOrSubtractExpressionContext* CypherParser::OC_StringListNullPredicateExpressionContext::oC_AddOrSubtractExpression() {
   return getRuleContext<CypherParser::OC_AddOrSubtractExpressionContext>(0);
 }
 
-std::vector<CypherParser::OC_StringPredicateExpressionContext *>
-CypherParser::OC_StringListNullPredicateExpressionContext::
-    oC_StringPredicateExpression() {
+std::vector<CypherParser::OC_StringPredicateExpressionContext *> CypherParser::OC_StringListNullPredicateExpressionContext::oC_StringPredicateExpression() {
   return getRuleContexts<CypherParser::OC_StringPredicateExpressionContext>();
 }
 
-CypherParser::OC_StringPredicateExpressionContext *CypherParser::
-    OC_StringListNullPredicateExpressionContext::oC_StringPredicateExpression(
-        size_t i) {
+CypherParser::OC_StringPredicateExpressionContext* CypherParser::OC_StringListNullPredicateExpressionContext::oC_StringPredicateExpression(size_t i) {
   return getRuleContext<CypherParser::OC_StringPredicateExpressionContext>(i);
 }
 
-std::vector<CypherParser::OC_ListPredicateExpressionContext *> CypherParser::
-    OC_StringListNullPredicateExpressionContext::oC_ListPredicateExpression() {
+std::vector<CypherParser::OC_ListPredicateExpressionContext *> CypherParser::OC_StringListNullPredicateExpressionContext::oC_ListPredicateExpression() {
   return getRuleContexts<CypherParser::OC_ListPredicateExpressionContext>();
 }
 
-CypherParser::OC_ListPredicateExpressionContext *CypherParser::
-    OC_StringListNullPredicateExpressionContext::oC_ListPredicateExpression(
-        size_t i) {
+CypherParser::OC_ListPredicateExpressionContext* CypherParser::OC_StringListNullPredicateExpressionContext::oC_ListPredicateExpression(size_t i) {
   return getRuleContext<CypherParser::OC_ListPredicateExpressionContext>(i);
 }
 
-std::vector<CypherParser::OC_NullPredicateExpressionContext *> CypherParser::
-    OC_StringListNullPredicateExpressionContext::oC_NullPredicateExpression() {
+std::vector<CypherParser::OC_NullPredicateExpressionContext *> CypherParser::OC_StringListNullPredicateExpressionContext::oC_NullPredicateExpression() {
   return getRuleContexts<CypherParser::OC_NullPredicateExpressionContext>();
 }
 
-CypherParser::OC_NullPredicateExpressionContext *CypherParser::
-    OC_StringListNullPredicateExpressionContext::oC_NullPredicateExpression(
-        size_t i) {
+CypherParser::OC_NullPredicateExpressionContext* CypherParser::OC_StringListNullPredicateExpressionContext::oC_NullPredicateExpression(size_t i) {
   return getRuleContext<CypherParser::OC_NullPredicateExpressionContext>(i);
 }
 
-size_t CypherParser::OC_StringListNullPredicateExpressionContext::getRuleIndex()
-    const {
+
+size_t CypherParser::OC_StringListNullPredicateExpressionContext::getRuleIndex() const {
   return CypherParser::RuleOC_StringListNullPredicateExpression;
 }
 
-std::any CypherParser::OC_StringListNullPredicateExpressionContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_StringListNullPredicateExpressionContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_StringListNullPredicateExpression(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_StringListNullPredicateExpressionContext *
-CypherParser::oC_StringListNullPredicateExpression() {
-  OC_StringListNullPredicateExpressionContext *_localctx =
-      _tracker.createInstance<OC_StringListNullPredicateExpressionContext>(
-          _ctx, getState());
-  enterRule(_localctx, 116,
-            CypherParser::RuleOC_StringListNullPredicateExpression);
+CypherParser::OC_StringListNullPredicateExpressionContext* CypherParser::oC_StringListNullPredicateExpression() {
+  OC_StringListNullPredicateExpressionContext *_localctx = _tracker.createInstance<OC_StringListNullPredicateExpressionContext>(_ctx, getState());
+  enterRule(_localctx, 116, CypherParser::RuleOC_StringListNullPredicateExpression);
 
 #if __cplusplus > 201703L
   auto onExit = finally([=, this] {
@@ -7594,47 +6595,45 @@ CypherParser::oC_StringListNullPredicateExpression() {
   try {
     size_t alt;
     enterOuterAlt(_localctx, 1);
-    setState(986);
+    setState(990);
     oC_AddOrSubtractExpression();
-    setState(992);
+    setState(996);
     _errHandler->sync(this);
-    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input,
-                                                                     166, _ctx);
+    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 167, _ctx);
     while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER) {
       if (alt == 1) {
-        setState(990);
+        setState(994);
         _errHandler->sync(this);
-        switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-            _input, 165, _ctx)) {
-          case 1: {
-            setState(987);
-            oC_StringPredicateExpression();
-            break;
-          }
-
-          case 2: {
-            setState(988);
-            oC_ListPredicateExpression();
-            break;
-          }
-
-          case 3: {
-            setState(989);
-            oC_NullPredicateExpression();
-            break;
-          }
-
-          default:
-            break;
+        switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 166, _ctx)) {
+        case 1: {
+          setState(991);
+          oC_StringPredicateExpression();
+          break;
         }
-      }
-      setState(994);
-      _errHandler->sync(this);
-      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-          _input, 166, _ctx);
-    }
 
-  } catch (RecognitionException &e) {
+        case 2: {
+          setState(992);
+          oC_ListPredicateExpression();
+          break;
+        }
+
+        case 3: {
+          setState(993);
+          oC_NullPredicateExpression();
+          break;
+        }
+
+        default:
+          break;
+        } 
+      }
+      setState(998);
+      _errHandler->sync(this);
+      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 167, _ctx);
+    }
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -7643,64 +6642,55 @@ CypherParser::oC_StringListNullPredicateExpression() {
   return _localctx;
 }
 
-//----------------- OC_StringPredicateExpressionContext
-//------------------------------------------------------------------
+//----------------- OC_StringPredicateExpressionContext ------------------------------------------------------------------
 
-CypherParser::OC_StringPredicateExpressionContext::
-    OC_StringPredicateExpressionContext(ParserRuleContext *parent,
-                                        size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_StringPredicateExpressionContext::OC_StringPredicateExpressionContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_AddOrSubtractExpressionContext *CypherParser::
-    OC_StringPredicateExpressionContext::oC_AddOrSubtractExpression() {
+CypherParser::OC_AddOrSubtractExpressionContext* CypherParser::OC_StringPredicateExpressionContext::oC_AddOrSubtractExpression() {
   return getRuleContext<CypherParser::OC_AddOrSubtractExpressionContext>(0);
 }
 
-std::vector<tree::TerminalNode *>
-CypherParser::OC_StringPredicateExpressionContext::SP() {
+std::vector<tree::TerminalNode *> CypherParser::OC_StringPredicateExpressionContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_StringPredicateExpressionContext::SP(
-    size_t i) {
+tree::TerminalNode* CypherParser::OC_StringPredicateExpressionContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
-tree::TerminalNode *
-CypherParser::OC_StringPredicateExpressionContext::STARTS() {
+tree::TerminalNode* CypherParser::OC_StringPredicateExpressionContext::STARTS() {
   return getToken(CypherParser::STARTS, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_StringPredicateExpressionContext::WITH() {
+tree::TerminalNode* CypherParser::OC_StringPredicateExpressionContext::WITH() {
   return getToken(CypherParser::WITH, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_StringPredicateExpressionContext::ENDS() {
+tree::TerminalNode* CypherParser::OC_StringPredicateExpressionContext::ENDS() {
   return getToken(CypherParser::ENDS, 0);
 }
 
-tree::TerminalNode *
-CypherParser::OC_StringPredicateExpressionContext::CONTAINS() {
+tree::TerminalNode* CypherParser::OC_StringPredicateExpressionContext::CONTAINS() {
   return getToken(CypherParser::CONTAINS, 0);
 }
+
 
 size_t CypherParser::OC_StringPredicateExpressionContext::getRuleIndex() const {
   return CypherParser::RuleOC_StringPredicateExpression;
 }
 
-std::any CypherParser::OC_StringPredicateExpressionContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_StringPredicateExpressionContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_StringPredicateExpression(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_StringPredicateExpressionContext *
-CypherParser::oC_StringPredicateExpression() {
-  OC_StringPredicateExpressionContext *_localctx =
-      _tracker.createInstance<OC_StringPredicateExpressionContext>(_ctx,
-                                                                   getState());
+CypherParser::OC_StringPredicateExpressionContext* CypherParser::oC_StringPredicateExpression() {
+  OC_StringPredicateExpressionContext *_localctx = _tracker.createInstance<OC_StringPredicateExpressionContext>(_ctx, getState());
   enterRule(_localctx, 118, CypherParser::RuleOC_StringPredicateExpression);
   size_t _la = 0;
 
@@ -7713,57 +6703,57 @@ CypherParser::oC_StringPredicateExpression() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(1005);
+    setState(1009);
     _errHandler->sync(this);
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-        _input, 167, _ctx)) {
-      case 1: {
-        setState(995);
-        match(CypherParser::SP);
-        setState(996);
-        match(CypherParser::STARTS);
-        setState(997);
-        match(CypherParser::SP);
-        setState(998);
-        match(CypherParser::WITH);
-        break;
-      }
-
-      case 2: {
-        setState(999);
-        match(CypherParser::SP);
-        setState(1000);
-        match(CypherParser::ENDS);
-        setState(1001);
-        match(CypherParser::SP);
-        setState(1002);
-        match(CypherParser::WITH);
-        break;
-      }
-
-      case 3: {
-        setState(1003);
-        match(CypherParser::SP);
-        setState(1004);
-        match(CypherParser::CONTAINS);
-        break;
-      }
-
-      default:
-        break;
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 168, _ctx)) {
+    case 1: {
+      setState(999);
+      match(CypherParser::SP);
+      setState(1000);
+      match(CypherParser::STARTS);
+      setState(1001);
+      match(CypherParser::SP);
+      setState(1002);
+      match(CypherParser::WITH);
+      break;
     }
-    setState(1008);
+
+    case 2: {
+      setState(1003);
+      match(CypherParser::SP);
+      setState(1004);
+      match(CypherParser::ENDS);
+      setState(1005);
+      match(CypherParser::SP);
+      setState(1006);
+      match(CypherParser::WITH);
+      break;
+    }
+
+    case 3: {
+      setState(1007);
+      match(CypherParser::SP);
+      setState(1008);
+      match(CypherParser::CONTAINS);
+      break;
+    }
+
+    default:
+      break;
+    }
+    setState(1012);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
     if (_la == CypherParser::SP) {
-      setState(1007);
+      setState(1011);
       match(CypherParser::SP);
     }
-    setState(1010);
+    setState(1014);
     oC_AddOrSubtractExpression();
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -7772,50 +6762,43 @@ CypherParser::oC_StringPredicateExpression() {
   return _localctx;
 }
 
-//----------------- OC_ListPredicateExpressionContext
-//------------------------------------------------------------------
+//----------------- OC_ListPredicateExpressionContext ------------------------------------------------------------------
 
-CypherParser::OC_ListPredicateExpressionContext::
-    OC_ListPredicateExpressionContext(ParserRuleContext *parent,
-                                      size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_ListPredicateExpressionContext::OC_ListPredicateExpressionContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-std::vector<tree::TerminalNode *>
-CypherParser::OC_ListPredicateExpressionContext::SP() {
+std::vector<tree::TerminalNode *> CypherParser::OC_ListPredicateExpressionContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_ListPredicateExpressionContext::SP(
-    size_t i) {
+tree::TerminalNode* CypherParser::OC_ListPredicateExpressionContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
-tree::TerminalNode *CypherParser::OC_ListPredicateExpressionContext::IN() {
+tree::TerminalNode* CypherParser::OC_ListPredicateExpressionContext::IN() {
   return getToken(CypherParser::IN, 0);
 }
 
-CypherParser::OC_AddOrSubtractExpressionContext *
-CypherParser::OC_ListPredicateExpressionContext::oC_AddOrSubtractExpression() {
+CypherParser::OC_AddOrSubtractExpressionContext* CypherParser::OC_ListPredicateExpressionContext::oC_AddOrSubtractExpression() {
   return getRuleContext<CypherParser::OC_AddOrSubtractExpressionContext>(0);
 }
+
 
 size_t CypherParser::OC_ListPredicateExpressionContext::getRuleIndex() const {
   return CypherParser::RuleOC_ListPredicateExpression;
 }
 
-std::any CypherParser::OC_ListPredicateExpressionContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_ListPredicateExpressionContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_ListPredicateExpression(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_ListPredicateExpressionContext *
-CypherParser::oC_ListPredicateExpression() {
-  OC_ListPredicateExpressionContext *_localctx =
-      _tracker.createInstance<OC_ListPredicateExpressionContext>(_ctx,
-                                                                 getState());
+CypherParser::OC_ListPredicateExpressionContext* CypherParser::oC_ListPredicateExpression() {
+  OC_ListPredicateExpressionContext *_localctx = _tracker.createInstance<OC_ListPredicateExpressionContext>(_ctx, getState());
   enterRule(_localctx, 120, CypherParser::RuleOC_ListPredicateExpression);
   size_t _la = 0;
 
@@ -7828,22 +6811,23 @@ CypherParser::oC_ListPredicateExpression() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(1012);
+    setState(1016);
     match(CypherParser::SP);
-    setState(1013);
+    setState(1017);
     match(CypherParser::IN);
-    setState(1015);
+    setState(1019);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
     if (_la == CypherParser::SP) {
-      setState(1014);
+      setState(1018);
       match(CypherParser::SP);
     }
-    setState(1017);
+    setState(1021);
     oC_AddOrSubtractExpression();
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -7852,53 +6836,47 @@ CypherParser::oC_ListPredicateExpression() {
   return _localctx;
 }
 
-//----------------- OC_NullPredicateExpressionContext
-//------------------------------------------------------------------
+//----------------- OC_NullPredicateExpressionContext ------------------------------------------------------------------
 
-CypherParser::OC_NullPredicateExpressionContext::
-    OC_NullPredicateExpressionContext(ParserRuleContext *parent,
-                                      size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_NullPredicateExpressionContext::OC_NullPredicateExpressionContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-std::vector<tree::TerminalNode *>
-CypherParser::OC_NullPredicateExpressionContext::SP() {
+std::vector<tree::TerminalNode *> CypherParser::OC_NullPredicateExpressionContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_NullPredicateExpressionContext::SP(
-    size_t i) {
+tree::TerminalNode* CypherParser::OC_NullPredicateExpressionContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
-tree::TerminalNode *CypherParser::OC_NullPredicateExpressionContext::IS() {
+tree::TerminalNode* CypherParser::OC_NullPredicateExpressionContext::IS() {
   return getToken(CypherParser::IS, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_NullPredicateExpressionContext::NULL_() {
+tree::TerminalNode* CypherParser::OC_NullPredicateExpressionContext::NULL_() {
   return getToken(CypherParser::NULL_, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_NullPredicateExpressionContext::NOT() {
+tree::TerminalNode* CypherParser::OC_NullPredicateExpressionContext::NOT() {
   return getToken(CypherParser::NOT, 0);
 }
+
 
 size_t CypherParser::OC_NullPredicateExpressionContext::getRuleIndex() const {
   return CypherParser::RuleOC_NullPredicateExpression;
 }
 
-std::any CypherParser::OC_NullPredicateExpressionContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_NullPredicateExpressionContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_NullPredicateExpression(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_NullPredicateExpressionContext *
-CypherParser::oC_NullPredicateExpression() {
-  OC_NullPredicateExpressionContext *_localctx =
-      _tracker.createInstance<OC_NullPredicateExpressionContext>(_ctx,
-                                                                 getState());
+CypherParser::OC_NullPredicateExpressionContext* CypherParser::oC_NullPredicateExpression() {
+  OC_NullPredicateExpressionContext *_localctx = _tracker.createInstance<OC_NullPredicateExpressionContext>(_ctx, getState());
   enterRule(_localctx, 122, CypherParser::RuleOC_NullPredicateExpression);
 
 #if __cplusplus > 201703L
@@ -7909,45 +6887,45 @@ CypherParser::oC_NullPredicateExpression() {
     exitRule();
   });
   try {
-    setState(1029);
+    setState(1033);
     _errHandler->sync(this);
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-        _input, 170, _ctx)) {
-      case 1: {
-        enterOuterAlt(_localctx, 1);
-        setState(1019);
-        match(CypherParser::SP);
-        setState(1020);
-        match(CypherParser::IS);
-        setState(1021);
-        match(CypherParser::SP);
-        setState(1022);
-        match(CypherParser::NULL_);
-        break;
-      }
-
-      case 2: {
-        enterOuterAlt(_localctx, 2);
-        setState(1023);
-        match(CypherParser::SP);
-        setState(1024);
-        match(CypherParser::IS);
-        setState(1025);
-        match(CypherParser::SP);
-        setState(1026);
-        match(CypherParser::NOT);
-        setState(1027);
-        match(CypherParser::SP);
-        setState(1028);
-        match(CypherParser::NULL_);
-        break;
-      }
-
-      default:
-        break;
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 171, _ctx)) {
+    case 1: {
+      enterOuterAlt(_localctx, 1);
+      setState(1023);
+      match(CypherParser::SP);
+      setState(1024);
+      match(CypherParser::IS);
+      setState(1025);
+      match(CypherParser::SP);
+      setState(1026);
+      match(CypherParser::NULL_);
+      break;
     }
 
-  } catch (RecognitionException &e) {
+    case 2: {
+      enterOuterAlt(_localctx, 2);
+      setState(1027);
+      match(CypherParser::SP);
+      setState(1028);
+      match(CypherParser::IS);
+      setState(1029);
+      match(CypherParser::SP);
+      setState(1030);
+      match(CypherParser::NOT);
+      setState(1031);
+      match(CypherParser::SP);
+      setState(1032);
+      match(CypherParser::NULL_);
+      break;
+    }
+
+    default:
+      break;
+    }
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -7956,55 +6934,43 @@ CypherParser::oC_NullPredicateExpression() {
   return _localctx;
 }
 
-//----------------- OC_AddOrSubtractExpressionContext
-//------------------------------------------------------------------
+//----------------- OC_AddOrSubtractExpressionContext ------------------------------------------------------------------
 
-CypherParser::OC_AddOrSubtractExpressionContext::
-    OC_AddOrSubtractExpressionContext(ParserRuleContext *parent,
-                                      size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
-
-std::vector<CypherParser::OC_MultiplyDivideModuloExpressionContext *>
-CypherParser::OC_AddOrSubtractExpressionContext::
-    oC_MultiplyDivideModuloExpression() {
-  return getRuleContexts<
-      CypherParser::OC_MultiplyDivideModuloExpressionContext>();
+CypherParser::OC_AddOrSubtractExpressionContext::OC_AddOrSubtractExpressionContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
 }
 
-CypherParser::OC_MultiplyDivideModuloExpressionContext *CypherParser::
-    OC_AddOrSubtractExpressionContext::oC_MultiplyDivideModuloExpression(
-        size_t i) {
-  return getRuleContext<CypherParser::OC_MultiplyDivideModuloExpressionContext>(
-      i);
+std::vector<CypherParser::OC_MultiplyDivideModuloExpressionContext *> CypherParser::OC_AddOrSubtractExpressionContext::oC_MultiplyDivideModuloExpression() {
+  return getRuleContexts<CypherParser::OC_MultiplyDivideModuloExpressionContext>();
 }
 
-std::vector<tree::TerminalNode *>
-CypherParser::OC_AddOrSubtractExpressionContext::SP() {
+CypherParser::OC_MultiplyDivideModuloExpressionContext* CypherParser::OC_AddOrSubtractExpressionContext::oC_MultiplyDivideModuloExpression(size_t i) {
+  return getRuleContext<CypherParser::OC_MultiplyDivideModuloExpressionContext>(i);
+}
+
+std::vector<tree::TerminalNode *> CypherParser::OC_AddOrSubtractExpressionContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_AddOrSubtractExpressionContext::SP(
-    size_t i) {
+tree::TerminalNode* CypherParser::OC_AddOrSubtractExpressionContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
+
 
 size_t CypherParser::OC_AddOrSubtractExpressionContext::getRuleIndex() const {
   return CypherParser::RuleOC_AddOrSubtractExpression;
 }
 
-std::any CypherParser::OC_AddOrSubtractExpressionContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_AddOrSubtractExpressionContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_AddOrSubtractExpression(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_AddOrSubtractExpressionContext *
-CypherParser::oC_AddOrSubtractExpression() {
-  OC_AddOrSubtractExpressionContext *_localctx =
-      _tracker.createInstance<OC_AddOrSubtractExpressionContext>(_ctx,
-                                                                 getState());
+CypherParser::OC_AddOrSubtractExpressionContext* CypherParser::oC_AddOrSubtractExpression() {
+  OC_AddOrSubtractExpressionContext *_localctx = _tracker.createInstance<OC_AddOrSubtractExpressionContext>(_ctx, getState());
   enterRule(_localctx, 124, CypherParser::RuleOC_AddOrSubtractExpression);
   size_t _la = 0;
 
@@ -8018,77 +6984,75 @@ CypherParser::oC_AddOrSubtractExpression() {
   try {
     size_t alt;
     enterOuterAlt(_localctx, 1);
-    setState(1031);
+    setState(1035);
     oC_MultiplyDivideModuloExpression();
-    setState(1050);
+    setState(1054);
     _errHandler->sync(this);
-    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input,
-                                                                     176, _ctx);
+    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 177, _ctx);
     while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER) {
       if (alt == 1) {
-        setState(1048);
+        setState(1052);
         _errHandler->sync(this);
-        switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-            _input, 175, _ctx)) {
-          case 1: {
-            setState(1033);
-            _errHandler->sync(this);
+        switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 176, _ctx)) {
+        case 1: {
+          setState(1037);
+          _errHandler->sync(this);
 
-            _la = _input->LA(1);
-            if (_la == CypherParser::SP) {
-              setState(1032);
-              match(CypherParser::SP);
-            }
-            setState(1035);
-            match(CypherParser::T__17);
-            setState(1037);
-            _errHandler->sync(this);
-
-            _la = _input->LA(1);
-            if (_la == CypherParser::SP) {
-              setState(1036);
-              match(CypherParser::SP);
-            }
-            setState(1039);
-            oC_MultiplyDivideModuloExpression();
-            break;
+          _la = _input->LA(1);
+          if (_la == CypherParser::SP) {
+            setState(1036);
+            match(CypherParser::SP);
           }
+          setState(1039);
+          match(CypherParser::T__17);
+          setState(1041);
+          _errHandler->sync(this);
 
-          case 2: {
-            setState(1041);
-            _errHandler->sync(this);
-
-            _la = _input->LA(1);
-            if (_la == CypherParser::SP) {
-              setState(1040);
-              match(CypherParser::SP);
-            }
-            setState(1043);
-            match(CypherParser::T__18);
-            setState(1045);
-            _errHandler->sync(this);
-
-            _la = _input->LA(1);
-            if (_la == CypherParser::SP) {
-              setState(1044);
-              match(CypherParser::SP);
-            }
-            setState(1047);
-            oC_MultiplyDivideModuloExpression();
-            break;
+          _la = _input->LA(1);
+          if (_la == CypherParser::SP) {
+            setState(1040);
+            match(CypherParser::SP);
           }
-
-          default:
-            break;
+          setState(1043);
+          oC_MultiplyDivideModuloExpression();
+          break;
         }
-      }
-      setState(1052);
-      _errHandler->sync(this);
-      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-          _input, 176, _ctx);
-    }
 
-  } catch (RecognitionException &e) {
+        case 2: {
+          setState(1045);
+          _errHandler->sync(this);
+
+          _la = _input->LA(1);
+          if (_la == CypherParser::SP) {
+            setState(1044);
+            match(CypherParser::SP);
+          }
+          setState(1047);
+          match(CypherParser::T__18);
+          setState(1049);
+          _errHandler->sync(this);
+
+          _la = _input->LA(1);
+          if (_la == CypherParser::SP) {
+            setState(1048);
+            match(CypherParser::SP);
+          }
+          setState(1051);
+          oC_MultiplyDivideModuloExpression();
+          break;
+        }
+
+        default:
+          break;
+        } 
+      }
+      setState(1056);
+      _errHandler->sync(this);
+      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 177, _ctx);
+    }
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -8097,55 +7061,44 @@ CypherParser::oC_AddOrSubtractExpression() {
   return _localctx;
 }
 
-//----------------- OC_MultiplyDivideModuloExpressionContext
-//------------------------------------------------------------------
+//----------------- OC_MultiplyDivideModuloExpressionContext ------------------------------------------------------------------
 
-CypherParser::OC_MultiplyDivideModuloExpressionContext::
-    OC_MultiplyDivideModuloExpressionContext(ParserRuleContext *parent,
-                                             size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_MultiplyDivideModuloExpressionContext::OC_MultiplyDivideModuloExpressionContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-std::vector<CypherParser::OC_PowerOfExpressionContext *>
-CypherParser::OC_MultiplyDivideModuloExpressionContext::oC_PowerOfExpression() {
+std::vector<CypherParser::OC_PowerOfExpressionContext *> CypherParser::OC_MultiplyDivideModuloExpressionContext::oC_PowerOfExpression() {
   return getRuleContexts<CypherParser::OC_PowerOfExpressionContext>();
 }
 
-CypherParser::OC_PowerOfExpressionContext *
-CypherParser::OC_MultiplyDivideModuloExpressionContext::oC_PowerOfExpression(
-    size_t i) {
+CypherParser::OC_PowerOfExpressionContext* CypherParser::OC_MultiplyDivideModuloExpressionContext::oC_PowerOfExpression(size_t i) {
   return getRuleContext<CypherParser::OC_PowerOfExpressionContext>(i);
 }
 
-std::vector<tree::TerminalNode *>
-CypherParser::OC_MultiplyDivideModuloExpressionContext::SP() {
+std::vector<tree::TerminalNode *> CypherParser::OC_MultiplyDivideModuloExpressionContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_MultiplyDivideModuloExpressionContext::SP(
-    size_t i) {
+tree::TerminalNode* CypherParser::OC_MultiplyDivideModuloExpressionContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
-size_t CypherParser::OC_MultiplyDivideModuloExpressionContext::getRuleIndex()
-    const {
+
+size_t CypherParser::OC_MultiplyDivideModuloExpressionContext::getRuleIndex() const {
   return CypherParser::RuleOC_MultiplyDivideModuloExpression;
 }
 
-std::any CypherParser::OC_MultiplyDivideModuloExpressionContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_MultiplyDivideModuloExpressionContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_MultiplyDivideModuloExpression(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_MultiplyDivideModuloExpressionContext *
-CypherParser::oC_MultiplyDivideModuloExpression() {
-  OC_MultiplyDivideModuloExpressionContext *_localctx =
-      _tracker.createInstance<OC_MultiplyDivideModuloExpressionContext>(
-          _ctx, getState());
-  enterRule(_localctx, 126,
-            CypherParser::RuleOC_MultiplyDivideModuloExpression);
+CypherParser::OC_MultiplyDivideModuloExpressionContext* CypherParser::oC_MultiplyDivideModuloExpression() {
+  OC_MultiplyDivideModuloExpressionContext *_localctx = _tracker.createInstance<OC_MultiplyDivideModuloExpressionContext>(_ctx, getState());
+  enterRule(_localctx, 126, CypherParser::RuleOC_MultiplyDivideModuloExpression);
   size_t _la = 0;
 
 #if __cplusplus > 201703L
@@ -8158,101 +7111,99 @@ CypherParser::oC_MultiplyDivideModuloExpression() {
   try {
     size_t alt;
     enterOuterAlt(_localctx, 1);
-    setState(1053);
+    setState(1057);
     oC_PowerOfExpression();
-    setState(1080);
+    setState(1084);
     _errHandler->sync(this);
-    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input,
-                                                                     184, _ctx);
+    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 185, _ctx);
     while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER) {
       if (alt == 1) {
-        setState(1078);
+        setState(1082);
         _errHandler->sync(this);
-        switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-            _input, 183, _ctx)) {
-          case 1: {
-            setState(1055);
-            _errHandler->sync(this);
+        switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 184, _ctx)) {
+        case 1: {
+          setState(1059);
+          _errHandler->sync(this);
 
-            _la = _input->LA(1);
-            if (_la == CypherParser::SP) {
-              setState(1054);
-              match(CypherParser::SP);
-            }
-            setState(1057);
-            match(CypherParser::T__4);
-            setState(1059);
-            _errHandler->sync(this);
-
-            _la = _input->LA(1);
-            if (_la == CypherParser::SP) {
-              setState(1058);
-              match(CypherParser::SP);
-            }
-            setState(1061);
-            oC_PowerOfExpression();
-            break;
+          _la = _input->LA(1);
+          if (_la == CypherParser::SP) {
+            setState(1058);
+            match(CypherParser::SP);
           }
+          setState(1061);
+          match(CypherParser::T__4);
+          setState(1063);
+          _errHandler->sync(this);
 
-          case 2: {
-            setState(1063);
-            _errHandler->sync(this);
-
-            _la = _input->LA(1);
-            if (_la == CypherParser::SP) {
-              setState(1062);
-              match(CypherParser::SP);
-            }
-            setState(1065);
-            match(CypherParser::T__19);
-            setState(1067);
-            _errHandler->sync(this);
-
-            _la = _input->LA(1);
-            if (_la == CypherParser::SP) {
-              setState(1066);
-              match(CypherParser::SP);
-            }
-            setState(1069);
-            oC_PowerOfExpression();
-            break;
+          _la = _input->LA(1);
+          if (_la == CypherParser::SP) {
+            setState(1062);
+            match(CypherParser::SP);
           }
-
-          case 3: {
-            setState(1071);
-            _errHandler->sync(this);
-
-            _la = _input->LA(1);
-            if (_la == CypherParser::SP) {
-              setState(1070);
-              match(CypherParser::SP);
-            }
-            setState(1073);
-            match(CypherParser::T__20);
-            setState(1075);
-            _errHandler->sync(this);
-
-            _la = _input->LA(1);
-            if (_la == CypherParser::SP) {
-              setState(1074);
-              match(CypherParser::SP);
-            }
-            setState(1077);
-            oC_PowerOfExpression();
-            break;
-          }
-
-          default:
-            break;
+          setState(1065);
+          oC_PowerOfExpression();
+          break;
         }
-      }
-      setState(1082);
-      _errHandler->sync(this);
-      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-          _input, 184, _ctx);
-    }
 
-  } catch (RecognitionException &e) {
+        case 2: {
+          setState(1067);
+          _errHandler->sync(this);
+
+          _la = _input->LA(1);
+          if (_la == CypherParser::SP) {
+            setState(1066);
+            match(CypherParser::SP);
+          }
+          setState(1069);
+          match(CypherParser::T__19);
+          setState(1071);
+          _errHandler->sync(this);
+
+          _la = _input->LA(1);
+          if (_la == CypherParser::SP) {
+            setState(1070);
+            match(CypherParser::SP);
+          }
+          setState(1073);
+          oC_PowerOfExpression();
+          break;
+        }
+
+        case 3: {
+          setState(1075);
+          _errHandler->sync(this);
+
+          _la = _input->LA(1);
+          if (_la == CypherParser::SP) {
+            setState(1074);
+            match(CypherParser::SP);
+          }
+          setState(1077);
+          match(CypherParser::T__20);
+          setState(1079);
+          _errHandler->sync(this);
+
+          _la = _input->LA(1);
+          if (_la == CypherParser::SP) {
+            setState(1078);
+            match(CypherParser::SP);
+          }
+          setState(1081);
+          oC_PowerOfExpression();
+          break;
+        }
+
+        default:
+          break;
+        } 
+      }
+      setState(1086);
+      _errHandler->sync(this);
+      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 185, _ctx);
+    }
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -8261,51 +7212,43 @@ CypherParser::oC_MultiplyDivideModuloExpression() {
   return _localctx;
 }
 
-//----------------- OC_PowerOfExpressionContext
-//------------------------------------------------------------------
+//----------------- OC_PowerOfExpressionContext ------------------------------------------------------------------
 
-CypherParser::OC_PowerOfExpressionContext::OC_PowerOfExpressionContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
-
-std::vector<CypherParser::OC_UnaryAddOrSubtractExpressionContext *>
-CypherParser::OC_PowerOfExpressionContext::oC_UnaryAddOrSubtractExpression() {
-  return getRuleContexts<
-      CypherParser::OC_UnaryAddOrSubtractExpressionContext>();
+CypherParser::OC_PowerOfExpressionContext::OC_PowerOfExpressionContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
 }
 
-CypherParser::OC_UnaryAddOrSubtractExpressionContext *
-CypherParser::OC_PowerOfExpressionContext::oC_UnaryAddOrSubtractExpression(
-    size_t i) {
-  return getRuleContext<CypherParser::OC_UnaryAddOrSubtractExpressionContext>(
-      i);
+std::vector<CypherParser::OC_UnaryAddOrSubtractExpressionContext *> CypherParser::OC_PowerOfExpressionContext::oC_UnaryAddOrSubtractExpression() {
+  return getRuleContexts<CypherParser::OC_UnaryAddOrSubtractExpressionContext>();
 }
 
-std::vector<tree::TerminalNode *>
-CypherParser::OC_PowerOfExpressionContext::SP() {
+CypherParser::OC_UnaryAddOrSubtractExpressionContext* CypherParser::OC_PowerOfExpressionContext::oC_UnaryAddOrSubtractExpression(size_t i) {
+  return getRuleContext<CypherParser::OC_UnaryAddOrSubtractExpressionContext>(i);
+}
+
+std::vector<tree::TerminalNode *> CypherParser::OC_PowerOfExpressionContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_PowerOfExpressionContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_PowerOfExpressionContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
+
 
 size_t CypherParser::OC_PowerOfExpressionContext::getRuleIndex() const {
   return CypherParser::RuleOC_PowerOfExpression;
 }
 
-std::any CypherParser::OC_PowerOfExpressionContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_PowerOfExpressionContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_PowerOfExpression(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_PowerOfExpressionContext *
-CypherParser::oC_PowerOfExpression() {
-  OC_PowerOfExpressionContext *_localctx =
-      _tracker.createInstance<OC_PowerOfExpressionContext>(_ctx, getState());
+CypherParser::OC_PowerOfExpressionContext* CypherParser::oC_PowerOfExpression() {
+  OC_PowerOfExpressionContext *_localctx = _tracker.createInstance<OC_PowerOfExpressionContext>(_ctx, getState());
   enterRule(_localctx, 128, CypherParser::RuleOC_PowerOfExpression);
   size_t _la = 0;
 
@@ -8319,24 +7262,13 @@ CypherParser::oC_PowerOfExpression() {
   try {
     size_t alt;
     enterOuterAlt(_localctx, 1);
-    setState(1083);
+    setState(1087);
     oC_UnaryAddOrSubtractExpression();
-    setState(1094);
+    setState(1098);
     _errHandler->sync(this);
-    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input,
-                                                                     187, _ctx);
+    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 188, _ctx);
     while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER) {
       if (alt == 1) {
-        setState(1085);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(1084);
-          match(CypherParser::SP);
-        }
-        setState(1087);
-        match(CypherParser::T__21);
         setState(1089);
         _errHandler->sync(this);
 
@@ -8346,15 +7278,25 @@ CypherParser::oC_PowerOfExpression() {
           match(CypherParser::SP);
         }
         setState(1091);
-        oC_UnaryAddOrSubtractExpression();
-      }
-      setState(1096);
-      _errHandler->sync(this);
-      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-          _input, 187, _ctx);
-    }
+        match(CypherParser::T__21);
+        setState(1093);
+        _errHandler->sync(this);
 
-  } catch (RecognitionException &e) {
+        _la = _input->LA(1);
+        if (_la == CypherParser::SP) {
+          setState(1092);
+          match(CypherParser::SP);
+        }
+        setState(1095);
+        oC_UnaryAddOrSubtractExpression(); 
+      }
+      setState(1100);
+      _errHandler->sync(this);
+      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 188, _ctx);
+    }
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -8363,43 +7305,35 @@ CypherParser::oC_PowerOfExpression() {
   return _localctx;
 }
 
-//----------------- OC_UnaryAddOrSubtractExpressionContext
-//------------------------------------------------------------------
+//----------------- OC_UnaryAddOrSubtractExpressionContext ------------------------------------------------------------------
 
-CypherParser::OC_UnaryAddOrSubtractExpressionContext::
-    OC_UnaryAddOrSubtractExpressionContext(ParserRuleContext *parent,
-                                           size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
-
-CypherParser::OC_NonArithmeticOperatorExpressionContext *
-CypherParser::OC_UnaryAddOrSubtractExpressionContext::
-    oC_NonArithmeticOperatorExpression() {
-  return getRuleContext<
-      CypherParser::OC_NonArithmeticOperatorExpressionContext>(0);
+CypherParser::OC_UnaryAddOrSubtractExpressionContext::OC_UnaryAddOrSubtractExpressionContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
 }
 
-tree::TerminalNode *CypherParser::OC_UnaryAddOrSubtractExpressionContext::SP() {
+CypherParser::OC_NonArithmeticOperatorExpressionContext* CypherParser::OC_UnaryAddOrSubtractExpressionContext::oC_NonArithmeticOperatorExpression() {
+  return getRuleContext<CypherParser::OC_NonArithmeticOperatorExpressionContext>(0);
+}
+
+tree::TerminalNode* CypherParser::OC_UnaryAddOrSubtractExpressionContext::SP() {
   return getToken(CypherParser::SP, 0);
 }
 
-size_t CypherParser::OC_UnaryAddOrSubtractExpressionContext::getRuleIndex()
-    const {
+
+size_t CypherParser::OC_UnaryAddOrSubtractExpressionContext::getRuleIndex() const {
   return CypherParser::RuleOC_UnaryAddOrSubtractExpression;
 }
 
-std::any CypherParser::OC_UnaryAddOrSubtractExpressionContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_UnaryAddOrSubtractExpressionContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_UnaryAddOrSubtractExpression(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_UnaryAddOrSubtractExpressionContext *
-CypherParser::oC_UnaryAddOrSubtractExpression() {
-  OC_UnaryAddOrSubtractExpressionContext *_localctx =
-      _tracker.createInstance<OC_UnaryAddOrSubtractExpressionContext>(
-          _ctx, getState());
+CypherParser::OC_UnaryAddOrSubtractExpressionContext* CypherParser::oC_UnaryAddOrSubtractExpression() {
+  OC_UnaryAddOrSubtractExpressionContext *_localctx = _tracker.createInstance<OC_UnaryAddOrSubtractExpressionContext>(_ctx, getState());
   enterRule(_localctx, 130, CypherParser::RuleOC_UnaryAddOrSubtractExpression);
   size_t _la = 0;
 
@@ -8411,7 +7345,7 @@ CypherParser::oC_UnaryAddOrSubtractExpression() {
     exitRule();
   });
   try {
-    setState(1103);
+    setState(1107);
     _errHandler->sync(this);
     switch (_input->LA(1)) {
       case CypherParser::T__5:
@@ -8440,7 +7374,7 @@ CypherParser::oC_UnaryAddOrSubtractExpression() {
       case CypherParser::UnescapedSymbolicName:
       case CypherParser::EscapedSymbolicName: {
         enterOuterAlt(_localctx, 1);
-        setState(1097);
+        setState(1101);
         oC_NonArithmeticOperatorExpression();
         break;
       }
@@ -8448,34 +7382,36 @@ CypherParser::oC_UnaryAddOrSubtractExpression() {
       case CypherParser::T__17:
       case CypherParser::T__18: {
         enterOuterAlt(_localctx, 2);
-        setState(1098);
+        setState(1102);
         _la = _input->LA(1);
         if (!(_la == CypherParser::T__17
 
-              || _la == CypherParser::T__18)) {
-          _errHandler->recoverInline(this);
-        } else {
+        || _la == CypherParser::T__18)) {
+        _errHandler->recoverInline(this);
+        }
+        else {
           _errHandler->reportMatch(this);
           consume();
         }
-        setState(1100);
+        setState(1104);
         _errHandler->sync(this);
 
         _la = _input->LA(1);
         if (_la == CypherParser::SP) {
-          setState(1099);
+          setState(1103);
           match(CypherParser::SP);
         }
-        setState(1102);
+        setState(1106);
         oC_NonArithmeticOperatorExpression();
         break;
       }
 
-      default:
-        throw NoViableAltException(this);
+    default:
+      throw NoViableAltException(this);
     }
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -8484,76 +7420,60 @@ CypherParser::oC_UnaryAddOrSubtractExpression() {
   return _localctx;
 }
 
-//----------------- OC_NonArithmeticOperatorExpressionContext
-//------------------------------------------------------------------
+//----------------- OC_NonArithmeticOperatorExpressionContext ------------------------------------------------------------------
 
-CypherParser::OC_NonArithmeticOperatorExpressionContext::
-    OC_NonArithmeticOperatorExpressionContext(ParserRuleContext *parent,
-                                              size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_NonArithmeticOperatorExpressionContext::OC_NonArithmeticOperatorExpressionContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_AtomContext *
-CypherParser::OC_NonArithmeticOperatorExpressionContext::oC_Atom() {
+CypherParser::OC_AtomContext* CypherParser::OC_NonArithmeticOperatorExpressionContext::oC_Atom() {
   return getRuleContext<CypherParser::OC_AtomContext>(0);
 }
 
-CypherParser::OC_NodeLabelsContext *
-CypherParser::OC_NonArithmeticOperatorExpressionContext::oC_NodeLabels() {
+CypherParser::OC_NodeLabelsContext* CypherParser::OC_NonArithmeticOperatorExpressionContext::oC_NodeLabels() {
   return getRuleContext<CypherParser::OC_NodeLabelsContext>(0);
 }
 
-std::vector<CypherParser::OC_ListOperatorExpressionContext *> CypherParser::
-    OC_NonArithmeticOperatorExpressionContext::oC_ListOperatorExpression() {
+std::vector<CypherParser::OC_ListOperatorExpressionContext *> CypherParser::OC_NonArithmeticOperatorExpressionContext::oC_ListOperatorExpression() {
   return getRuleContexts<CypherParser::OC_ListOperatorExpressionContext>();
 }
 
-CypherParser::OC_ListOperatorExpressionContext *CypherParser::
-    OC_NonArithmeticOperatorExpressionContext::oC_ListOperatorExpression(
-        size_t i) {
+CypherParser::OC_ListOperatorExpressionContext* CypherParser::OC_NonArithmeticOperatorExpressionContext::oC_ListOperatorExpression(size_t i) {
   return getRuleContext<CypherParser::OC_ListOperatorExpressionContext>(i);
 }
 
-std::vector<CypherParser::OC_PropertyLookupContext *>
-CypherParser::OC_NonArithmeticOperatorExpressionContext::oC_PropertyLookup() {
+std::vector<CypherParser::OC_PropertyLookupContext *> CypherParser::OC_NonArithmeticOperatorExpressionContext::oC_PropertyLookup() {
   return getRuleContexts<CypherParser::OC_PropertyLookupContext>();
 }
 
-CypherParser::OC_PropertyLookupContext *
-CypherParser::OC_NonArithmeticOperatorExpressionContext::oC_PropertyLookup(
-    size_t i) {
+CypherParser::OC_PropertyLookupContext* CypherParser::OC_NonArithmeticOperatorExpressionContext::oC_PropertyLookup(size_t i) {
   return getRuleContext<CypherParser::OC_PropertyLookupContext>(i);
 }
 
-std::vector<tree::TerminalNode *>
-CypherParser::OC_NonArithmeticOperatorExpressionContext::SP() {
+std::vector<tree::TerminalNode *> CypherParser::OC_NonArithmeticOperatorExpressionContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_NonArithmeticOperatorExpressionContext::SP(
-    size_t i) {
+tree::TerminalNode* CypherParser::OC_NonArithmeticOperatorExpressionContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
-size_t CypherParser::OC_NonArithmeticOperatorExpressionContext::getRuleIndex()
-    const {
+
+size_t CypherParser::OC_NonArithmeticOperatorExpressionContext::getRuleIndex() const {
   return CypherParser::RuleOC_NonArithmeticOperatorExpression;
 }
 
-std::any CypherParser::OC_NonArithmeticOperatorExpressionContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_NonArithmeticOperatorExpressionContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_NonArithmeticOperatorExpression(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_NonArithmeticOperatorExpressionContext *
-CypherParser::oC_NonArithmeticOperatorExpression() {
-  OC_NonArithmeticOperatorExpressionContext *_localctx =
-      _tracker.createInstance<OC_NonArithmeticOperatorExpressionContext>(
-          _ctx, getState());
-  enterRule(_localctx, 132,
-            CypherParser::RuleOC_NonArithmeticOperatorExpression);
+CypherParser::OC_NonArithmeticOperatorExpressionContext* CypherParser::oC_NonArithmeticOperatorExpression() {
+  OC_NonArithmeticOperatorExpressionContext *_localctx = _tracker.createInstance<OC_NonArithmeticOperatorExpressionContext>(_ctx, getState());
+  enterRule(_localctx, 132, CypherParser::RuleOC_NonArithmeticOperatorExpression);
   size_t _la = 0;
 
 #if __cplusplus > 201703L
@@ -8566,79 +7486,76 @@ CypherParser::oC_NonArithmeticOperatorExpression() {
   try {
     size_t alt;
     enterOuterAlt(_localctx, 1);
-    setState(1105);
+    setState(1109);
     oC_Atom();
-    setState(1116);
+    setState(1120);
     _errHandler->sync(this);
-    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input,
-                                                                     193, _ctx);
+    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 194, _ctx);
     while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER) {
       if (alt == 1) {
-        setState(1114);
+        setState(1118);
         _errHandler->sync(this);
-        switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-            _input, 192, _ctx)) {
-          case 1: {
-            setState(1107);
-            _errHandler->sync(this);
+        switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 193, _ctx)) {
+        case 1: {
+          setState(1111);
+          _errHandler->sync(this);
 
-            _la = _input->LA(1);
-            if (_la == CypherParser::SP) {
-              setState(1106);
-              match(CypherParser::SP);
-            }
-            setState(1109);
-            oC_ListOperatorExpression();
-            break;
+          _la = _input->LA(1);
+          if (_la == CypherParser::SP) {
+            setState(1110);
+            match(CypherParser::SP);
           }
-
-          case 2: {
-            setState(1111);
-            _errHandler->sync(this);
-
-            _la = _input->LA(1);
-            if (_la == CypherParser::SP) {
-              setState(1110);
-              match(CypherParser::SP);
-            }
-            setState(1113);
-            oC_PropertyLookup();
-            break;
-          }
-
-          default:
-            break;
+          setState(1113);
+          oC_ListOperatorExpression();
+          break;
         }
+
+        case 2: {
+          setState(1115);
+          _errHandler->sync(this);
+
+          _la = _input->LA(1);
+          if (_la == CypherParser::SP) {
+            setState(1114);
+            match(CypherParser::SP);
+          }
+          setState(1117);
+          oC_PropertyLookup();
+          break;
+        }
+
+        default:
+          break;
+        } 
       }
-      setState(1118);
+      setState(1122);
       _errHandler->sync(this);
-      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-          _input, 193, _ctx);
+      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 194, _ctx);
     }
-    setState(1123);
+    setState(1127);
     _errHandler->sync(this);
 
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-        _input, 195, _ctx)) {
-      case 1: {
-        setState(1120);
-        _errHandler->sync(this);
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 196, _ctx)) {
+    case 1: {
+      setState(1124);
+      _errHandler->sync(this);
 
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(1119);
-          match(CypherParser::SP);
-        }
-        setState(1122);
-        oC_NodeLabels();
-        break;
+      _la = _input->LA(1);
+      if (_la == CypherParser::SP) {
+        setState(1123);
+        match(CypherParser::SP);
       }
-
-      default:
-        break;
+      setState(1126);
+      oC_NodeLabels();
+      break;
     }
 
-  } catch (RecognitionException &e) {
+    default:
+      break;
+    }
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -8647,41 +7564,35 @@ CypherParser::oC_NonArithmeticOperatorExpression() {
   return _localctx;
 }
 
-//----------------- OC_ListOperatorExpressionContext
-//------------------------------------------------------------------
+//----------------- OC_ListOperatorExpressionContext ------------------------------------------------------------------
 
-CypherParser::OC_ListOperatorExpressionContext::
-    OC_ListOperatorExpressionContext(ParserRuleContext *parent,
-                                     size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_ListOperatorExpressionContext::OC_ListOperatorExpressionContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-std::vector<CypherParser::OC_ExpressionContext *>
-CypherParser::OC_ListOperatorExpressionContext::oC_Expression() {
+std::vector<CypherParser::OC_ExpressionContext *> CypherParser::OC_ListOperatorExpressionContext::oC_Expression() {
   return getRuleContexts<CypherParser::OC_ExpressionContext>();
 }
 
-CypherParser::OC_ExpressionContext *
-CypherParser::OC_ListOperatorExpressionContext::oC_Expression(size_t i) {
+CypherParser::OC_ExpressionContext* CypherParser::OC_ListOperatorExpressionContext::oC_Expression(size_t i) {
   return getRuleContext<CypherParser::OC_ExpressionContext>(i);
 }
+
 
 size_t CypherParser::OC_ListOperatorExpressionContext::getRuleIndex() const {
   return CypherParser::RuleOC_ListOperatorExpression;
 }
 
-std::any CypherParser::OC_ListOperatorExpressionContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_ListOperatorExpressionContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_ListOperatorExpression(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_ListOperatorExpressionContext *
-CypherParser::oC_ListOperatorExpression() {
-  OC_ListOperatorExpressionContext *_localctx =
-      _tracker.createInstance<OC_ListOperatorExpressionContext>(_ctx,
-                                                                getState());
+CypherParser::OC_ListOperatorExpressionContext* CypherParser::oC_ListOperatorExpression() {
+  OC_ListOperatorExpressionContext *_localctx = _tracker.createInstance<OC_ListOperatorExpressionContext>(_ctx, getState());
   enterRule(_localctx, 134, CypherParser::RuleOC_ListOperatorExpression);
   size_t _la = 0;
 
@@ -8693,59 +7604,57 @@ CypherParser::oC_ListOperatorExpression() {
     exitRule();
   });
   try {
-    setState(1138);
+    setState(1142);
     _errHandler->sync(this);
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-        _input, 198, _ctx)) {
-      case 1: {
-        enterOuterAlt(_localctx, 1);
-        setState(1125);
-        match(CypherParser::T__7);
-        setState(1126);
-        oC_Expression();
-        setState(1127);
-        match(CypherParser::T__8);
-        break;
-      }
-
-      case 2: {
-        enterOuterAlt(_localctx, 2);
-        setState(1129);
-        match(CypherParser::T__7);
-        setState(1131);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if ((((_la & ~0x3fULL) == 0) &&
-             ((1ULL << _la) & 140737573028160) != 0) ||
-            ((((_la - 76) & ~0x3fULL) == 0) &&
-             ((1ULL << (_la - 76)) & 343051394343361) != 0)) {
-          setState(1130);
-          oC_Expression();
-        }
-        setState(1133);
-        match(CypherParser::T__11);
-        setState(1135);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if ((((_la & ~0x3fULL) == 0) &&
-             ((1ULL << _la) & 140737573028160) != 0) ||
-            ((((_la - 76) & ~0x3fULL) == 0) &&
-             ((1ULL << (_la - 76)) & 343051394343361) != 0)) {
-          setState(1134);
-          oC_Expression();
-        }
-        setState(1137);
-        match(CypherParser::T__8);
-        break;
-      }
-
-      default:
-        break;
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 199, _ctx)) {
+    case 1: {
+      enterOuterAlt(_localctx, 1);
+      setState(1129);
+      match(CypherParser::T__7);
+      setState(1130);
+      oC_Expression();
+      setState(1131);
+      match(CypherParser::T__8);
+      break;
     }
 
-  } catch (RecognitionException &e) {
+    case 2: {
+      enterOuterAlt(_localctx, 2);
+      setState(1133);
+      match(CypherParser::T__7);
+      setState(1135);
+      _errHandler->sync(this);
+
+      _la = _input->LA(1);
+      if ((((_la & ~ 0x3fULL) == 0) &&
+        ((1ULL << _la) & 140737573028160) != 0) || ((((_la - 76) & ~ 0x3fULL) == 0) &&
+        ((1ULL << (_la - 76)) & 686102788563393) != 0)) {
+        setState(1134);
+        oC_Expression();
+      }
+      setState(1137);
+      match(CypherParser::T__11);
+      setState(1139);
+      _errHandler->sync(this);
+
+      _la = _input->LA(1);
+      if ((((_la & ~ 0x3fULL) == 0) &&
+        ((1ULL << _la) & 140737573028160) != 0) || ((((_la - 76) & ~ 0x3fULL) == 0) &&
+        ((1ULL << (_la - 76)) & 686102788563393) != 0)) {
+        setState(1138);
+        oC_Expression();
+      }
+      setState(1141);
+      match(CypherParser::T__8);
+      break;
+    }
+
+    default:
+      break;
+    }
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -8754,37 +7663,35 @@ CypherParser::oC_ListOperatorExpression() {
   return _localctx;
 }
 
-//----------------- OC_PropertyLookupContext
-//------------------------------------------------------------------
+//----------------- OC_PropertyLookupContext ------------------------------------------------------------------
 
-CypherParser::OC_PropertyLookupContext::OC_PropertyLookupContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_PropertyLookupContext::OC_PropertyLookupContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_PropertyKeyNameContext *
-CypherParser::OC_PropertyLookupContext::oC_PropertyKeyName() {
+CypherParser::OC_PropertyKeyNameContext* CypherParser::OC_PropertyLookupContext::oC_PropertyKeyName() {
   return getRuleContext<CypherParser::OC_PropertyKeyNameContext>(0);
 }
 
-tree::TerminalNode *CypherParser::OC_PropertyLookupContext::SP() {
+tree::TerminalNode* CypherParser::OC_PropertyLookupContext::SP() {
   return getToken(CypherParser::SP, 0);
 }
+
 
 size_t CypherParser::OC_PropertyLookupContext::getRuleIndex() const {
   return CypherParser::RuleOC_PropertyLookup;
 }
 
-std::any CypherParser::OC_PropertyLookupContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_PropertyLookupContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_PropertyLookup(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_PropertyLookupContext *CypherParser::oC_PropertyLookup() {
-  OC_PropertyLookupContext *_localctx =
-      _tracker.createInstance<OC_PropertyLookupContext>(_ctx, getState());
+CypherParser::OC_PropertyLookupContext* CypherParser::oC_PropertyLookup() {
+  OC_PropertyLookupContext *_localctx = _tracker.createInstance<OC_PropertyLookupContext>(_ctx, getState());
   enterRule(_localctx, 136, CypherParser::RuleOC_PropertyLookup);
   size_t _la = 0;
 
@@ -8797,21 +7704,22 @@ CypherParser::OC_PropertyLookupContext *CypherParser::oC_PropertyLookup() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(1140);
+    setState(1144);
     match(CypherParser::T__22);
-    setState(1142);
+    setState(1146);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
     if (_la == CypherParser::SP) {
-      setState(1141);
+      setState(1145);
       match(CypherParser::SP);
     }
 
-    setState(1144);
+    setState(1148);
     oC_PropertyKeyName();
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -8820,28 +7728,25 @@ CypherParser::OC_PropertyLookupContext *CypherParser::oC_PropertyLookup() {
   return _localctx;
 }
 
-//----------------- OC_AtomContext
-//------------------------------------------------------------------
+//----------------- OC_AtomContext ------------------------------------------------------------------
 
-CypherParser::OC_AtomContext::OC_AtomContext(ParserRuleContext *parent,
-                                             size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_AtomContext::OC_AtomContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_LiteralContext *CypherParser::OC_AtomContext::oC_Literal() {
+CypherParser::OC_LiteralContext* CypherParser::OC_AtomContext::oC_Literal() {
   return getRuleContext<CypherParser::OC_LiteralContext>(0);
 }
 
-CypherParser::OC_ParameterContext *
-CypherParser::OC_AtomContext::oC_Parameter() {
+CypherParser::OC_ParameterContext* CypherParser::OC_AtomContext::oC_Parameter() {
   return getRuleContext<CypherParser::OC_ParameterContext>(0);
 }
 
-CypherParser::OC_CaseExpressionContext *
-CypherParser::OC_AtomContext::oC_CaseExpression() {
+CypherParser::OC_CaseExpressionContext* CypherParser::OC_AtomContext::oC_CaseExpression() {
   return getRuleContext<CypherParser::OC_CaseExpressionContext>(0);
 }
 
-tree::TerminalNode *CypherParser::OC_AtomContext::COUNT() {
+tree::TerminalNode* CypherParser::OC_AtomContext::COUNT() {
   return getToken(CypherParser::COUNT, 0);
 }
 
@@ -8849,63 +7754,57 @@ std::vector<tree::TerminalNode *> CypherParser::OC_AtomContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_AtomContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_AtomContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
-CypherParser::OC_ListComprehensionContext *
-CypherParser::OC_AtomContext::oC_ListComprehension() {
+CypherParser::OC_ListComprehensionContext* CypherParser::OC_AtomContext::oC_ListComprehension() {
   return getRuleContext<CypherParser::OC_ListComprehensionContext>(0);
 }
 
-CypherParser::OC_PatternComprehensionContext *
-CypherParser::OC_AtomContext::oC_PatternComprehension() {
+CypherParser::OC_PatternComprehensionContext* CypherParser::OC_AtomContext::oC_PatternComprehension() {
   return getRuleContext<CypherParser::OC_PatternComprehensionContext>(0);
 }
 
-CypherParser::OC_QuantifierContext *
-CypherParser::OC_AtomContext::oC_Quantifier() {
+CypherParser::OC_QuantifierContext* CypherParser::OC_AtomContext::oC_Quantifier() {
   return getRuleContext<CypherParser::OC_QuantifierContext>(0);
 }
 
-CypherParser::OC_PatternPredicateContext *
-CypherParser::OC_AtomContext::oC_PatternPredicate() {
+CypherParser::OC_PatternPredicateContext* CypherParser::OC_AtomContext::oC_PatternPredicate() {
   return getRuleContext<CypherParser::OC_PatternPredicateContext>(0);
 }
 
-CypherParser::OC_ParenthesizedExpressionContext *
-CypherParser::OC_AtomContext::oC_ParenthesizedExpression() {
+CypherParser::OC_ParenthesizedExpressionContext* CypherParser::OC_AtomContext::oC_ParenthesizedExpression() {
   return getRuleContext<CypherParser::OC_ParenthesizedExpressionContext>(0);
 }
 
-CypherParser::OC_FunctionInvocationContext *
-CypherParser::OC_AtomContext::oC_FunctionInvocation() {
+CypherParser::OC_FunctionInvocationContext* CypherParser::OC_AtomContext::oC_FunctionInvocation() {
   return getRuleContext<CypherParser::OC_FunctionInvocationContext>(0);
 }
 
-CypherParser::OC_ExistentialSubqueryContext *
-CypherParser::OC_AtomContext::oC_ExistentialSubquery() {
+CypherParser::OC_ExistentialSubqueryContext* CypherParser::OC_AtomContext::oC_ExistentialSubquery() {
   return getRuleContext<CypherParser::OC_ExistentialSubqueryContext>(0);
 }
 
-CypherParser::OC_VariableContext *CypherParser::OC_AtomContext::oC_Variable() {
+CypherParser::OC_VariableContext* CypherParser::OC_AtomContext::oC_Variable() {
   return getRuleContext<CypherParser::OC_VariableContext>(0);
 }
+
 
 size_t CypherParser::OC_AtomContext::getRuleIndex() const {
   return CypherParser::RuleOC_Atom;
 }
 
+
 std::any CypherParser::OC_AtomContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_Atom(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_AtomContext *CypherParser::oC_Atom() {
-  OC_AtomContext *_localctx =
-      _tracker.createInstance<OC_AtomContext>(_ctx, getState());
+CypherParser::OC_AtomContext* CypherParser::oC_Atom() {
+  OC_AtomContext *_localctx = _tracker.createInstance<OC_AtomContext>(_ctx, getState());
   enterRule(_localctx, 138, CypherParser::RuleOC_Atom);
   size_t _la = 0;
 
@@ -8917,129 +7816,129 @@ CypherParser::OC_AtomContext *CypherParser::oC_Atom() {
     exitRule();
   });
   try {
-    setState(1170);
+    setState(1174);
     _errHandler->sync(this);
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-        _input, 203, _ctx)) {
-      case 1: {
-        enterOuterAlt(_localctx, 1);
-        setState(1146);
-        oC_Literal();
-        break;
-      }
-
-      case 2: {
-        enterOuterAlt(_localctx, 2);
-        setState(1147);
-        oC_Parameter();
-        break;
-      }
-
-      case 3: {
-        enterOuterAlt(_localctx, 3);
-        setState(1148);
-        oC_CaseExpression();
-        break;
-      }
-
-      case 4: {
-        enterOuterAlt(_localctx, 4);
-        setState(1149);
-        match(CypherParser::COUNT);
-        setState(1151);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(1150);
-          match(CypherParser::SP);
-        }
-        setState(1153);
-        match(CypherParser::T__5);
-        setState(1155);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(1154);
-          match(CypherParser::SP);
-        }
-        setState(1157);
-        match(CypherParser::T__4);
-        setState(1159);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(1158);
-          match(CypherParser::SP);
-        }
-        setState(1161);
-        match(CypherParser::T__6);
-        break;
-      }
-
-      case 5: {
-        enterOuterAlt(_localctx, 5);
-        setState(1162);
-        oC_ListComprehension();
-        break;
-      }
-
-      case 6: {
-        enterOuterAlt(_localctx, 6);
-        setState(1163);
-        oC_PatternComprehension();
-        break;
-      }
-
-      case 7: {
-        enterOuterAlt(_localctx, 7);
-        setState(1164);
-        oC_Quantifier();
-        break;
-      }
-
-      case 8: {
-        enterOuterAlt(_localctx, 8);
-        setState(1165);
-        oC_PatternPredicate();
-        break;
-      }
-
-      case 9: {
-        enterOuterAlt(_localctx, 9);
-        setState(1166);
-        oC_ParenthesizedExpression();
-        break;
-      }
-
-      case 10: {
-        enterOuterAlt(_localctx, 10);
-        setState(1167);
-        oC_FunctionInvocation();
-        break;
-      }
-
-      case 11: {
-        enterOuterAlt(_localctx, 11);
-        setState(1168);
-        oC_ExistentialSubquery();
-        break;
-      }
-
-      case 12: {
-        enterOuterAlt(_localctx, 12);
-        setState(1169);
-        oC_Variable();
-        break;
-      }
-
-      default:
-        break;
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 204, _ctx)) {
+    case 1: {
+      enterOuterAlt(_localctx, 1);
+      setState(1150);
+      oC_Literal();
+      break;
     }
 
-  } catch (RecognitionException &e) {
+    case 2: {
+      enterOuterAlt(_localctx, 2);
+      setState(1151);
+      oC_Parameter();
+      break;
+    }
+
+    case 3: {
+      enterOuterAlt(_localctx, 3);
+      setState(1152);
+      oC_CaseExpression();
+      break;
+    }
+
+    case 4: {
+      enterOuterAlt(_localctx, 4);
+      setState(1153);
+      match(CypherParser::COUNT);
+      setState(1155);
+      _errHandler->sync(this);
+
+      _la = _input->LA(1);
+      if (_la == CypherParser::SP) {
+        setState(1154);
+        match(CypherParser::SP);
+      }
+      setState(1157);
+      match(CypherParser::T__5);
+      setState(1159);
+      _errHandler->sync(this);
+
+      _la = _input->LA(1);
+      if (_la == CypherParser::SP) {
+        setState(1158);
+        match(CypherParser::SP);
+      }
+      setState(1161);
+      match(CypherParser::T__4);
+      setState(1163);
+      _errHandler->sync(this);
+
+      _la = _input->LA(1);
+      if (_la == CypherParser::SP) {
+        setState(1162);
+        match(CypherParser::SP);
+      }
+      setState(1165);
+      match(CypherParser::T__6);
+      break;
+    }
+
+    case 5: {
+      enterOuterAlt(_localctx, 5);
+      setState(1166);
+      oC_ListComprehension();
+      break;
+    }
+
+    case 6: {
+      enterOuterAlt(_localctx, 6);
+      setState(1167);
+      oC_PatternComprehension();
+      break;
+    }
+
+    case 7: {
+      enterOuterAlt(_localctx, 7);
+      setState(1168);
+      oC_Quantifier();
+      break;
+    }
+
+    case 8: {
+      enterOuterAlt(_localctx, 8);
+      setState(1169);
+      oC_PatternPredicate();
+      break;
+    }
+
+    case 9: {
+      enterOuterAlt(_localctx, 9);
+      setState(1170);
+      oC_ParenthesizedExpression();
+      break;
+    }
+
+    case 10: {
+      enterOuterAlt(_localctx, 10);
+      setState(1171);
+      oC_FunctionInvocation();
+      break;
+    }
+
+    case 11: {
+      enterOuterAlt(_localctx, 11);
+      setState(1172);
+      oC_ExistentialSubquery();
+      break;
+    }
+
+    case 12: {
+      enterOuterAlt(_localctx, 12);
+      setState(1173);
+      oC_Variable();
+      break;
+    }
+
+    default:
+      break;
+    }
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -9048,28 +7947,25 @@ CypherParser::OC_AtomContext *CypherParser::oC_Atom() {
   return _localctx;
 }
 
-//----------------- OC_CaseExpressionContext
-//------------------------------------------------------------------
+//----------------- OC_CaseExpressionContext ------------------------------------------------------------------
 
-CypherParser::OC_CaseExpressionContext::OC_CaseExpressionContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_CaseExpressionContext::OC_CaseExpressionContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-tree::TerminalNode *CypherParser::OC_CaseExpressionContext::END() {
+tree::TerminalNode* CypherParser::OC_CaseExpressionContext::END() {
   return getToken(CypherParser::END, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_CaseExpressionContext::ELSE() {
+tree::TerminalNode* CypherParser::OC_CaseExpressionContext::ELSE() {
   return getToken(CypherParser::ELSE, 0);
 }
 
-std::vector<CypherParser::OC_ExpressionContext *>
-CypherParser::OC_CaseExpressionContext::oC_Expression() {
+std::vector<CypherParser::OC_ExpressionContext *> CypherParser::OC_CaseExpressionContext::oC_Expression() {
   return getRuleContexts<CypherParser::OC_ExpressionContext>();
 }
 
-CypherParser::OC_ExpressionContext *
-CypherParser::OC_CaseExpressionContext::oC_Expression(size_t i) {
+CypherParser::OC_ExpressionContext* CypherParser::OC_CaseExpressionContext::oC_Expression(size_t i) {
   return getRuleContext<CypherParser::OC_ExpressionContext>(i);
 }
 
@@ -9077,39 +7973,37 @@ std::vector<tree::TerminalNode *> CypherParser::OC_CaseExpressionContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_CaseExpressionContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_CaseExpressionContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
-tree::TerminalNode *CypherParser::OC_CaseExpressionContext::CASE() {
+tree::TerminalNode* CypherParser::OC_CaseExpressionContext::CASE() {
   return getToken(CypherParser::CASE, 0);
 }
 
-std::vector<CypherParser::OC_CaseAlternativeContext *>
-CypherParser::OC_CaseExpressionContext::oC_CaseAlternative() {
+std::vector<CypherParser::OC_CaseAlternativeContext *> CypherParser::OC_CaseExpressionContext::oC_CaseAlternative() {
   return getRuleContexts<CypherParser::OC_CaseAlternativeContext>();
 }
 
-CypherParser::OC_CaseAlternativeContext *
-CypherParser::OC_CaseExpressionContext::oC_CaseAlternative(size_t i) {
+CypherParser::OC_CaseAlternativeContext* CypherParser::OC_CaseExpressionContext::oC_CaseAlternative(size_t i) {
   return getRuleContext<CypherParser::OC_CaseAlternativeContext>(i);
 }
+
 
 size_t CypherParser::OC_CaseExpressionContext::getRuleIndex() const {
   return CypherParser::RuleOC_CaseExpression;
 }
 
-std::any CypherParser::OC_CaseExpressionContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_CaseExpressionContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_CaseExpression(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_CaseExpressionContext *CypherParser::oC_CaseExpression() {
-  OC_CaseExpressionContext *_localctx =
-      _tracker.createInstance<OC_CaseExpressionContext>(_ctx, getState());
+CypherParser::OC_CaseExpressionContext* CypherParser::oC_CaseExpression() {
+  OC_CaseExpressionContext *_localctx = _tracker.createInstance<OC_CaseExpressionContext>(_ctx, getState());
   enterRule(_localctx, 140, CypherParser::RuleOC_CaseExpression);
   size_t _la = 0;
 
@@ -9123,133 +8017,130 @@ CypherParser::OC_CaseExpressionContext *CypherParser::oC_CaseExpression() {
   try {
     size_t alt;
     enterOuterAlt(_localctx, 1);
-    setState(1194);
+    setState(1198);
     _errHandler->sync(this);
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-        _input, 209, _ctx)) {
-      case 1: {
-        setState(1172);
-        match(CypherParser::CASE);
-        setState(1177);
-        _errHandler->sync(this);
-        alt = 1;
-        do {
-          switch (alt) {
-            case 1: {
-              setState(1174);
-              _errHandler->sync(this);
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 210, _ctx)) {
+    case 1: {
+      setState(1176);
+      match(CypherParser::CASE);
+      setState(1181); 
+      _errHandler->sync(this);
+      alt = 1;
+      do {
+        switch (alt) {
+          case 1: {
+                setState(1178);
+                _errHandler->sync(this);
 
-              _la = _input->LA(1);
-              if (_la == CypherParser::SP) {
-                setState(1173);
-                match(CypherParser::SP);
+                _la = _input->LA(1);
+                if (_la == CypherParser::SP) {
+                  setState(1177);
+                  match(CypherParser::SP);
+                }
+                setState(1180);
+                oC_CaseAlternative();
+                break;
               }
-              setState(1176);
-              oC_CaseAlternative();
-              break;
-            }
 
-            default:
-              throw NoViableAltException(this);
-          }
-          setState(1179);
-          _errHandler->sync(this);
-          alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-              _input, 205, _ctx);
-        } while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER);
-        break;
-      }
-
-      case 2: {
-        setState(1181);
-        match(CypherParser::CASE);
-        setState(1183);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(1182);
-          match(CypherParser::SP);
+        default:
+          throw NoViableAltException(this);
         }
-        setState(1185);
-        oC_Expression();
-        setState(1190);
+        setState(1183); 
         _errHandler->sync(this);
-        alt = 1;
-        do {
-          switch (alt) {
-            case 1: {
-              setState(1187);
-              _errHandler->sync(this);
-
-              _la = _input->LA(1);
-              if (_la == CypherParser::SP) {
-                setState(1186);
-                match(CypherParser::SP);
-              }
-              setState(1189);
-              oC_CaseAlternative();
-              break;
-            }
-
-            default:
-              throw NoViableAltException(this);
-          }
-          setState(1192);
-          _errHandler->sync(this);
-          alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-              _input, 208, _ctx);
-        } while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER);
-        break;
-      }
-
-      default:
-        break;
+        alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 206, _ctx);
+      } while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER);
+      break;
     }
-    setState(1204);
+
+    case 2: {
+      setState(1185);
+      match(CypherParser::CASE);
+      setState(1187);
+      _errHandler->sync(this);
+
+      _la = _input->LA(1);
+      if (_la == CypherParser::SP) {
+        setState(1186);
+        match(CypherParser::SP);
+      }
+      setState(1189);
+      oC_Expression();
+      setState(1194); 
+      _errHandler->sync(this);
+      alt = 1;
+      do {
+        switch (alt) {
+          case 1: {
+                setState(1191);
+                _errHandler->sync(this);
+
+                _la = _input->LA(1);
+                if (_la == CypherParser::SP) {
+                  setState(1190);
+                  match(CypherParser::SP);
+                }
+                setState(1193);
+                oC_CaseAlternative();
+                break;
+              }
+
+        default:
+          throw NoViableAltException(this);
+        }
+        setState(1196); 
+        _errHandler->sync(this);
+        alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 209, _ctx);
+      } while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER);
+      break;
+    }
+
+    default:
+      break;
+    }
+    setState(1208);
     _errHandler->sync(this);
 
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-        _input, 212, _ctx)) {
-      case 1: {
-        setState(1197);
-        _errHandler->sync(this);
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 213, _ctx)) {
+    case 1: {
+      setState(1201);
+      _errHandler->sync(this);
 
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(1196);
-          match(CypherParser::SP);
-        }
-        setState(1199);
-        match(CypherParser::ELSE);
-        setState(1201);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(1200);
-          match(CypherParser::SP);
-        }
-        setState(1203);
-        oC_Expression();
-        break;
+      _la = _input->LA(1);
+      if (_la == CypherParser::SP) {
+        setState(1200);
+        match(CypherParser::SP);
       }
+      setState(1203);
+      match(CypherParser::ELSE);
+      setState(1205);
+      _errHandler->sync(this);
 
-      default:
-        break;
+      _la = _input->LA(1);
+      if (_la == CypherParser::SP) {
+        setState(1204);
+        match(CypherParser::SP);
+      }
+      setState(1207);
+      oC_Expression();
+      break;
     }
-    setState(1207);
+
+    default:
+      break;
+    }
+    setState(1211);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
     if (_la == CypherParser::SP) {
-      setState(1206);
+      setState(1210);
       match(CypherParser::SP);
     }
-    setState(1209);
+    setState(1213);
     match(CypherParser::END);
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -9258,55 +8149,51 @@ CypherParser::OC_CaseExpressionContext *CypherParser::oC_CaseExpression() {
   return _localctx;
 }
 
-//----------------- OC_CaseAlternativeContext
-//------------------------------------------------------------------
+//----------------- OC_CaseAlternativeContext ------------------------------------------------------------------
 
-CypherParser::OC_CaseAlternativeContext::OC_CaseAlternativeContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_CaseAlternativeContext::OC_CaseAlternativeContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-tree::TerminalNode *CypherParser::OC_CaseAlternativeContext::WHEN() {
+tree::TerminalNode* CypherParser::OC_CaseAlternativeContext::WHEN() {
   return getToken(CypherParser::WHEN, 0);
 }
 
-std::vector<CypherParser::OC_ExpressionContext *>
-CypherParser::OC_CaseAlternativeContext::oC_Expression() {
+std::vector<CypherParser::OC_ExpressionContext *> CypherParser::OC_CaseAlternativeContext::oC_Expression() {
   return getRuleContexts<CypherParser::OC_ExpressionContext>();
 }
 
-CypherParser::OC_ExpressionContext *
-CypherParser::OC_CaseAlternativeContext::oC_Expression(size_t i) {
+CypherParser::OC_ExpressionContext* CypherParser::OC_CaseAlternativeContext::oC_Expression(size_t i) {
   return getRuleContext<CypherParser::OC_ExpressionContext>(i);
 }
 
-tree::TerminalNode *CypherParser::OC_CaseAlternativeContext::THEN() {
+tree::TerminalNode* CypherParser::OC_CaseAlternativeContext::THEN() {
   return getToken(CypherParser::THEN, 0);
 }
 
-std::vector<tree::TerminalNode *>
-CypherParser::OC_CaseAlternativeContext::SP() {
+std::vector<tree::TerminalNode *> CypherParser::OC_CaseAlternativeContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_CaseAlternativeContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_CaseAlternativeContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
+
 
 size_t CypherParser::OC_CaseAlternativeContext::getRuleIndex() const {
   return CypherParser::RuleOC_CaseAlternative;
 }
 
-std::any CypherParser::OC_CaseAlternativeContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_CaseAlternativeContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_CaseAlternative(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_CaseAlternativeContext *CypherParser::oC_CaseAlternative() {
-  OC_CaseAlternativeContext *_localctx =
-      _tracker.createInstance<OC_CaseAlternativeContext>(_ctx, getState());
+CypherParser::OC_CaseAlternativeContext* CypherParser::oC_CaseAlternative() {
+  OC_CaseAlternativeContext *_localctx = _tracker.createInstance<OC_CaseAlternativeContext>(_ctx, getState());
   enterRule(_localctx, 142, CypherParser::RuleOC_CaseAlternative);
   size_t _la = 0;
 
@@ -9319,18 +8206,8 @@ CypherParser::OC_CaseAlternativeContext *CypherParser::oC_CaseAlternative() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(1211);
-    match(CypherParser::WHEN);
-    setState(1213);
-    _errHandler->sync(this);
-
-    _la = _input->LA(1);
-    if (_la == CypherParser::SP) {
-      setState(1212);
-      match(CypherParser::SP);
-    }
     setState(1215);
-    oC_Expression();
+    match(CypherParser::WHEN);
     setState(1217);
     _errHandler->sync(this);
 
@@ -9340,7 +8217,7 @@ CypherParser::OC_CaseAlternativeContext *CypherParser::oC_CaseAlternative() {
       match(CypherParser::SP);
     }
     setState(1219);
-    match(CypherParser::THEN);
+    oC_Expression();
     setState(1221);
     _errHandler->sync(this);
 
@@ -9350,9 +8227,20 @@ CypherParser::OC_CaseAlternativeContext *CypherParser::oC_CaseAlternative() {
       match(CypherParser::SP);
     }
     setState(1223);
-    oC_Expression();
+    match(CypherParser::THEN);
+    setState(1225);
+    _errHandler->sync(this);
 
-  } catch (RecognitionException &e) {
+    _la = _input->LA(1);
+    if (_la == CypherParser::SP) {
+      setState(1224);
+      match(CypherParser::SP);
+    }
+    setState(1227);
+    oC_Expression();
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -9361,48 +8249,43 @@ CypherParser::OC_CaseAlternativeContext *CypherParser::oC_CaseAlternative() {
   return _localctx;
 }
 
-//----------------- OC_ListComprehensionContext
-//------------------------------------------------------------------
+//----------------- OC_ListComprehensionContext ------------------------------------------------------------------
 
-CypherParser::OC_ListComprehensionContext::OC_ListComprehensionContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_ListComprehensionContext::OC_ListComprehensionContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_FilterExpressionContext *
-CypherParser::OC_ListComprehensionContext::oC_FilterExpression() {
+CypherParser::OC_FilterExpressionContext* CypherParser::OC_ListComprehensionContext::oC_FilterExpression() {
   return getRuleContext<CypherParser::OC_FilterExpressionContext>(0);
 }
 
-std::vector<tree::TerminalNode *>
-CypherParser::OC_ListComprehensionContext::SP() {
+std::vector<tree::TerminalNode *> CypherParser::OC_ListComprehensionContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_ListComprehensionContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_ListComprehensionContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
-CypherParser::OC_ExpressionContext *
-CypherParser::OC_ListComprehensionContext::oC_Expression() {
+CypherParser::OC_ExpressionContext* CypherParser::OC_ListComprehensionContext::oC_Expression() {
   return getRuleContext<CypherParser::OC_ExpressionContext>(0);
 }
+
 
 size_t CypherParser::OC_ListComprehensionContext::getRuleIndex() const {
   return CypherParser::RuleOC_ListComprehension;
 }
 
-std::any CypherParser::OC_ListComprehensionContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_ListComprehensionContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_ListComprehension(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_ListComprehensionContext *
-CypherParser::oC_ListComprehension() {
-  OC_ListComprehensionContext *_localctx =
-      _tracker.createInstance<OC_ListComprehensionContext>(_ctx, getState());
+CypherParser::OC_ListComprehensionContext* CypherParser::oC_ListComprehension() {
+  OC_ListComprehensionContext *_localctx = _tracker.createInstance<OC_ListComprehensionContext>(_ctx, getState());
   enterRule(_localctx, 144, CypherParser::RuleOC_ListComprehension);
   size_t _la = 0;
 
@@ -9415,62 +8298,62 @@ CypherParser::oC_ListComprehension() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(1225);
-    match(CypherParser::T__7);
-    setState(1227);
-    _errHandler->sync(this);
-
-    _la = _input->LA(1);
-    if (_la == CypherParser::SP) {
-      setState(1226);
-      match(CypherParser::SP);
-    }
     setState(1229);
-    oC_FilterExpression();
-    setState(1238);
-    _errHandler->sync(this);
-
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-        _input, 220, _ctx)) {
-      case 1: {
-        setState(1231);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(1230);
-          match(CypherParser::SP);
-        }
-        setState(1233);
-        match(CypherParser::T__10);
-        setState(1235);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(1234);
-          match(CypherParser::SP);
-        }
-        setState(1237);
-        oC_Expression();
-        break;
-      }
-
-      default:
-        break;
-    }
-    setState(1241);
+    match(CypherParser::T__7);
+    setState(1231);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
     if (_la == CypherParser::SP) {
-      setState(1240);
+      setState(1230);
       match(CypherParser::SP);
     }
-    setState(1243);
-    match(CypherParser::T__8);
+    setState(1233);
+    oC_FilterExpression();
+    setState(1242);
+    _errHandler->sync(this);
 
-  } catch (RecognitionException &e) {
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 221, _ctx)) {
+    case 1: {
+      setState(1235);
+      _errHandler->sync(this);
+
+      _la = _input->LA(1);
+      if (_la == CypherParser::SP) {
+        setState(1234);
+        match(CypherParser::SP);
+      }
+      setState(1237);
+      match(CypherParser::T__10);
+      setState(1239);
+      _errHandler->sync(this);
+
+      _la = _input->LA(1);
+      if (_la == CypherParser::SP) {
+        setState(1238);
+        match(CypherParser::SP);
+      }
+      setState(1241);
+      oC_Expression();
+      break;
+    }
+
+    default:
+      break;
+    }
+    setState(1245);
+    _errHandler->sync(this);
+
+    _la = _input->LA(1);
+    if (_la == CypherParser::SP) {
+      setState(1244);
+      match(CypherParser::SP);
+    }
+    setState(1247);
+    match(CypherParser::T__8);
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -9479,58 +8362,51 @@ CypherParser::oC_ListComprehension() {
   return _localctx;
 }
 
-//----------------- OC_PatternComprehensionContext
-//------------------------------------------------------------------
+//----------------- OC_PatternComprehensionContext ------------------------------------------------------------------
 
-CypherParser::OC_PatternComprehensionContext::OC_PatternComprehensionContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_PatternComprehensionContext::OC_PatternComprehensionContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_RelationshipsPatternContext *
-CypherParser::OC_PatternComprehensionContext::oC_RelationshipsPattern() {
+CypherParser::OC_RelationshipsPatternContext* CypherParser::OC_PatternComprehensionContext::oC_RelationshipsPattern() {
   return getRuleContext<CypherParser::OC_RelationshipsPatternContext>(0);
 }
 
-CypherParser::OC_ExpressionContext *
-CypherParser::OC_PatternComprehensionContext::oC_Expression() {
+CypherParser::OC_ExpressionContext* CypherParser::OC_PatternComprehensionContext::oC_Expression() {
   return getRuleContext<CypherParser::OC_ExpressionContext>(0);
 }
 
-std::vector<tree::TerminalNode *>
-CypherParser::OC_PatternComprehensionContext::SP() {
+std::vector<tree::TerminalNode *> CypherParser::OC_PatternComprehensionContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_PatternComprehensionContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_PatternComprehensionContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
-CypherParser::OC_VariableContext *
-CypherParser::OC_PatternComprehensionContext::oC_Variable() {
+CypherParser::OC_VariableContext* CypherParser::OC_PatternComprehensionContext::oC_Variable() {
   return getRuleContext<CypherParser::OC_VariableContext>(0);
 }
 
-CypherParser::OC_WhereContext *
-CypherParser::OC_PatternComprehensionContext::oC_Where() {
+CypherParser::OC_WhereContext* CypherParser::OC_PatternComprehensionContext::oC_Where() {
   return getRuleContext<CypherParser::OC_WhereContext>(0);
 }
+
 
 size_t CypherParser::OC_PatternComprehensionContext::getRuleIndex() const {
   return CypherParser::RuleOC_PatternComprehension;
 }
 
-std::any CypherParser::OC_PatternComprehensionContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_PatternComprehensionContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_PatternComprehension(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_PatternComprehensionContext *
-CypherParser::oC_PatternComprehension() {
-  OC_PatternComprehensionContext *_localctx =
-      _tracker.createInstance<OC_PatternComprehensionContext>(_ctx, getState());
+CypherParser::OC_PatternComprehensionContext* CypherParser::oC_PatternComprehension() {
+  OC_PatternComprehensionContext *_localctx = _tracker.createInstance<OC_PatternComprehensionContext>(_ctx, getState());
   enterRule(_localctx, 146, CypherParser::RuleOC_PatternComprehension);
   size_t _la = 0;
 
@@ -9543,34 +8419,24 @@ CypherParser::oC_PatternComprehension() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(1245);
+    setState(1249);
     match(CypherParser::T__7);
-    setState(1247);
+    setState(1251);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
     if (_la == CypherParser::SP) {
-      setState(1246);
+      setState(1250);
       match(CypherParser::SP);
     }
-    setState(1257);
+    setState(1261);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
-    if (((((_la - 83) & ~0x3fULL) == 0) &&
-         ((1ULL << (_la - 83)) & 2680059625921) != 0)) {
-      setState(1249);
-      oC_Variable();
-      setState(1251);
-      _errHandler->sync(this);
-
-      _la = _input->LA(1);
-      if (_la == CypherParser::SP) {
-        setState(1250);
-        match(CypherParser::SP);
-      }
+    if (((((_la - 83) & ~ 0x3fULL) == 0) &&
+      ((1ULL << (_la - 83)) & 5360119251393) != 0)) {
       setState(1253);
-      match(CypherParser::T__2);
+      oC_Variable();
       setState(1255);
       _errHandler->sync(this);
 
@@ -9579,45 +8445,45 @@ CypherParser::oC_PatternComprehension() {
         setState(1254);
         match(CypherParser::SP);
       }
-    }
-    setState(1259);
-    oC_RelationshipsPattern();
-    setState(1261);
-    _errHandler->sync(this);
-
-    _la = _input->LA(1);
-    if (_la == CypherParser::SP) {
-      setState(1260);
-      match(CypherParser::SP);
-    }
-    setState(1267);
-    _errHandler->sync(this);
-
-    _la = _input->LA(1);
-    if (_la == CypherParser::WHERE) {
-      setState(1263);
-      oC_Where();
-      setState(1265);
+      setState(1257);
+      match(CypherParser::T__2);
+      setState(1259);
       _errHandler->sync(this);
 
       _la = _input->LA(1);
       if (_la == CypherParser::SP) {
-        setState(1264);
+        setState(1258);
         match(CypherParser::SP);
       }
     }
-    setState(1269);
-    match(CypherParser::T__10);
-    setState(1271);
+    setState(1263);
+    oC_RelationshipsPattern();
+    setState(1265);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
     if (_la == CypherParser::SP) {
-      setState(1270);
+      setState(1264);
       match(CypherParser::SP);
     }
+    setState(1271);
+    _errHandler->sync(this);
+
+    _la = _input->LA(1);
+    if (_la == CypherParser::WHERE) {
+      setState(1267);
+      oC_Where();
+      setState(1269);
+      _errHandler->sync(this);
+
+      _la = _input->LA(1);
+      if (_la == CypherParser::SP) {
+        setState(1268);
+        match(CypherParser::SP);
+      }
+    }
     setState(1273);
-    oC_Expression();
+    match(CypherParser::T__10);
     setState(1275);
     _errHandler->sync(this);
 
@@ -9627,9 +8493,20 @@ CypherParser::oC_PatternComprehension() {
       match(CypherParser::SP);
     }
     setState(1277);
-    match(CypherParser::T__8);
+    oC_Expression();
+    setState(1279);
+    _errHandler->sync(this);
 
-  } catch (RecognitionException &e) {
+    _la = _input->LA(1);
+    if (_la == CypherParser::SP) {
+      setState(1278);
+      match(CypherParser::SP);
+    }
+    setState(1281);
+    match(CypherParser::T__8);
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -9638,19 +8515,17 @@ CypherParser::oC_PatternComprehension() {
   return _localctx;
 }
 
-//----------------- OC_QuantifierContext
-//------------------------------------------------------------------
+//----------------- OC_QuantifierContext ------------------------------------------------------------------
 
-CypherParser::OC_QuantifierContext::OC_QuantifierContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_QuantifierContext::OC_QuantifierContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-tree::TerminalNode *CypherParser::OC_QuantifierContext::ALL() {
+tree::TerminalNode* CypherParser::OC_QuantifierContext::ALL() {
   return getToken(CypherParser::ALL, 0);
 }
 
-CypherParser::OC_FilterExpressionContext *
-CypherParser::OC_QuantifierContext::oC_FilterExpression() {
+CypherParser::OC_FilterExpressionContext* CypherParser::OC_QuantifierContext::oC_FilterExpression() {
   return getRuleContext<CypherParser::OC_FilterExpressionContext>(0);
 }
 
@@ -9658,37 +8533,37 @@ std::vector<tree::TerminalNode *> CypherParser::OC_QuantifierContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_QuantifierContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_QuantifierContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
-tree::TerminalNode *CypherParser::OC_QuantifierContext::ANY() {
+tree::TerminalNode* CypherParser::OC_QuantifierContext::ANY() {
   return getToken(CypherParser::ANY, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_QuantifierContext::NONE() {
+tree::TerminalNode* CypherParser::OC_QuantifierContext::NONE() {
   return getToken(CypherParser::NONE, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_QuantifierContext::SINGLE() {
+tree::TerminalNode* CypherParser::OC_QuantifierContext::SINGLE() {
   return getToken(CypherParser::SINGLE, 0);
 }
+
 
 size_t CypherParser::OC_QuantifierContext::getRuleIndex() const {
   return CypherParser::RuleOC_Quantifier;
 }
 
-std::any CypherParser::OC_QuantifierContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_QuantifierContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_Quantifier(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_QuantifierContext *CypherParser::oC_Quantifier() {
-  OC_QuantifierContext *_localctx =
-      _tracker.createInstance<OC_QuantifierContext>(_ctx, getState());
+CypherParser::OC_QuantifierContext* CypherParser::oC_Quantifier() {
+  OC_QuantifierContext *_localctx = _tracker.createInstance<OC_QuantifierContext>(_ctx, getState());
   enterRule(_localctx, 148, CypherParser::RuleOC_Quantifier);
   size_t _la = 0;
 
@@ -9700,23 +8575,13 @@ CypherParser::OC_QuantifierContext *CypherParser::oC_Quantifier() {
     exitRule();
   });
   try {
-    setState(1335);
+    setState(1339);
     _errHandler->sync(this);
     switch (_input->LA(1)) {
       case CypherParser::ALL: {
         enterOuterAlt(_localctx, 1);
-        setState(1279);
-        match(CypherParser::ALL);
-        setState(1281);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(1280);
-          match(CypherParser::SP);
-        }
         setState(1283);
-        match(CypherParser::T__5);
+        match(CypherParser::ALL);
         setState(1285);
         _errHandler->sync(this);
 
@@ -9726,7 +8591,7 @@ CypherParser::OC_QuantifierContext *CypherParser::oC_Quantifier() {
           match(CypherParser::SP);
         }
         setState(1287);
-        oC_FilterExpression();
+        match(CypherParser::T__5);
         setState(1289);
         _errHandler->sync(this);
 
@@ -9736,24 +8601,24 @@ CypherParser::OC_QuantifierContext *CypherParser::oC_Quantifier() {
           match(CypherParser::SP);
         }
         setState(1291);
+        oC_FilterExpression();
+        setState(1293);
+        _errHandler->sync(this);
+
+        _la = _input->LA(1);
+        if (_la == CypherParser::SP) {
+          setState(1292);
+          match(CypherParser::SP);
+        }
+        setState(1295);
         match(CypherParser::T__6);
         break;
       }
 
       case CypherParser::ANY: {
         enterOuterAlt(_localctx, 2);
-        setState(1293);
-        match(CypherParser::ANY);
-        setState(1295);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(1294);
-          match(CypherParser::SP);
-        }
         setState(1297);
-        match(CypherParser::T__5);
+        match(CypherParser::ANY);
         setState(1299);
         _errHandler->sync(this);
 
@@ -9763,7 +8628,7 @@ CypherParser::OC_QuantifierContext *CypherParser::oC_Quantifier() {
           match(CypherParser::SP);
         }
         setState(1301);
-        oC_FilterExpression();
+        match(CypherParser::T__5);
         setState(1303);
         _errHandler->sync(this);
 
@@ -9773,24 +8638,24 @@ CypherParser::OC_QuantifierContext *CypherParser::oC_Quantifier() {
           match(CypherParser::SP);
         }
         setState(1305);
+        oC_FilterExpression();
+        setState(1307);
+        _errHandler->sync(this);
+
+        _la = _input->LA(1);
+        if (_la == CypherParser::SP) {
+          setState(1306);
+          match(CypherParser::SP);
+        }
+        setState(1309);
         match(CypherParser::T__6);
         break;
       }
 
       case CypherParser::NONE: {
         enterOuterAlt(_localctx, 3);
-        setState(1307);
-        match(CypherParser::NONE);
-        setState(1309);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(1308);
-          match(CypherParser::SP);
-        }
         setState(1311);
-        match(CypherParser::T__5);
+        match(CypherParser::NONE);
         setState(1313);
         _errHandler->sync(this);
 
@@ -9800,7 +8665,7 @@ CypherParser::OC_QuantifierContext *CypherParser::oC_Quantifier() {
           match(CypherParser::SP);
         }
         setState(1315);
-        oC_FilterExpression();
+        match(CypherParser::T__5);
         setState(1317);
         _errHandler->sync(this);
 
@@ -9810,24 +8675,24 @@ CypherParser::OC_QuantifierContext *CypherParser::oC_Quantifier() {
           match(CypherParser::SP);
         }
         setState(1319);
+        oC_FilterExpression();
+        setState(1321);
+        _errHandler->sync(this);
+
+        _la = _input->LA(1);
+        if (_la == CypherParser::SP) {
+          setState(1320);
+          match(CypherParser::SP);
+        }
+        setState(1323);
         match(CypherParser::T__6);
         break;
       }
 
       case CypherParser::SINGLE: {
         enterOuterAlt(_localctx, 4);
-        setState(1321);
-        match(CypherParser::SINGLE);
-        setState(1323);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(1322);
-          match(CypherParser::SP);
-        }
         setState(1325);
-        match(CypherParser::T__5);
+        match(CypherParser::SINGLE);
         setState(1327);
         _errHandler->sync(this);
 
@@ -9837,7 +8702,7 @@ CypherParser::OC_QuantifierContext *CypherParser::oC_Quantifier() {
           match(CypherParser::SP);
         }
         setState(1329);
-        oC_FilterExpression();
+        match(CypherParser::T__5);
         setState(1331);
         _errHandler->sync(this);
 
@@ -9847,15 +8712,26 @@ CypherParser::OC_QuantifierContext *CypherParser::oC_Quantifier() {
           match(CypherParser::SP);
         }
         setState(1333);
+        oC_FilterExpression();
+        setState(1335);
+        _errHandler->sync(this);
+
+        _la = _input->LA(1);
+        if (_la == CypherParser::SP) {
+          setState(1334);
+          match(CypherParser::SP);
+        }
+        setState(1337);
         match(CypherParser::T__6);
         break;
       }
 
-      default:
-        throw NoViableAltException(this);
+    default:
+      throw NoViableAltException(this);
     }
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -9864,42 +8740,39 @@ CypherParser::OC_QuantifierContext *CypherParser::oC_Quantifier() {
   return _localctx;
 }
 
-//----------------- OC_FilterExpressionContext
-//------------------------------------------------------------------
+//----------------- OC_FilterExpressionContext ------------------------------------------------------------------
 
-CypherParser::OC_FilterExpressionContext::OC_FilterExpressionContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_FilterExpressionContext::OC_FilterExpressionContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_IdInCollContext *
-CypherParser::OC_FilterExpressionContext::oC_IdInColl() {
+CypherParser::OC_IdInCollContext* CypherParser::OC_FilterExpressionContext::oC_IdInColl() {
   return getRuleContext<CypherParser::OC_IdInCollContext>(0);
 }
 
-CypherParser::OC_WhereContext *
-CypherParser::OC_FilterExpressionContext::oC_Where() {
+CypherParser::OC_WhereContext* CypherParser::OC_FilterExpressionContext::oC_Where() {
   return getRuleContext<CypherParser::OC_WhereContext>(0);
 }
 
-tree::TerminalNode *CypherParser::OC_FilterExpressionContext::SP() {
+tree::TerminalNode* CypherParser::OC_FilterExpressionContext::SP() {
   return getToken(CypherParser::SP, 0);
 }
+
 
 size_t CypherParser::OC_FilterExpressionContext::getRuleIndex() const {
   return CypherParser::RuleOC_FilterExpression;
 }
 
-std::any CypherParser::OC_FilterExpressionContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_FilterExpressionContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_FilterExpression(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_FilterExpressionContext *CypherParser::oC_FilterExpression() {
-  OC_FilterExpressionContext *_localctx =
-      _tracker.createInstance<OC_FilterExpressionContext>(_ctx, getState());
+CypherParser::OC_FilterExpressionContext* CypherParser::oC_FilterExpression() {
+  OC_FilterExpressionContext *_localctx = _tracker.createInstance<OC_FilterExpressionContext>(_ctx, getState());
   enterRule(_localctx, 150, CypherParser::RuleOC_FilterExpression);
   size_t _la = 0;
 
@@ -9912,32 +8785,32 @@ CypherParser::OC_FilterExpressionContext *CypherParser::oC_FilterExpression() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(1337);
+    setState(1341);
     oC_IdInColl();
-    setState(1342);
+    setState(1346);
     _errHandler->sync(this);
 
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-        _input, 245, _ctx)) {
-      case 1: {
-        setState(1339);
-        _errHandler->sync(this);
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 246, _ctx)) {
+    case 1: {
+      setState(1343);
+      _errHandler->sync(this);
 
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(1338);
-          match(CypherParser::SP);
-        }
-        setState(1341);
-        oC_Where();
-        break;
+      _la = _input->LA(1);
+      if (_la == CypherParser::SP) {
+        setState(1342);
+        match(CypherParser::SP);
       }
-
-      default:
-        break;
+      setState(1345);
+      oC_Where();
+      break;
     }
 
-  } catch (RecognitionException &e) {
+    default:
+      break;
+    }
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -9946,33 +8819,31 @@ CypherParser::OC_FilterExpressionContext *CypherParser::oC_FilterExpression() {
   return _localctx;
 }
 
-//----------------- OC_PatternPredicateContext
-//------------------------------------------------------------------
+//----------------- OC_PatternPredicateContext ------------------------------------------------------------------
 
-CypherParser::OC_PatternPredicateContext::OC_PatternPredicateContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_PatternPredicateContext::OC_PatternPredicateContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_RelationshipsPatternContext *
-CypherParser::OC_PatternPredicateContext::oC_RelationshipsPattern() {
+CypherParser::OC_RelationshipsPatternContext* CypherParser::OC_PatternPredicateContext::oC_RelationshipsPattern() {
   return getRuleContext<CypherParser::OC_RelationshipsPatternContext>(0);
 }
+
 
 size_t CypherParser::OC_PatternPredicateContext::getRuleIndex() const {
   return CypherParser::RuleOC_PatternPredicate;
 }
 
-std::any CypherParser::OC_PatternPredicateContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_PatternPredicateContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_PatternPredicate(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_PatternPredicateContext *CypherParser::oC_PatternPredicate() {
-  OC_PatternPredicateContext *_localctx =
-      _tracker.createInstance<OC_PatternPredicateContext>(_ctx, getState());
+CypherParser::OC_PatternPredicateContext* CypherParser::oC_PatternPredicate() {
+  OC_PatternPredicateContext *_localctx = _tracker.createInstance<OC_PatternPredicateContext>(_ctx, getState());
   enterRule(_localctx, 152, CypherParser::RuleOC_PatternPredicate);
 
 #if __cplusplus > 201703L
@@ -9984,10 +8855,11 @@ CypherParser::OC_PatternPredicateContext *CypherParser::oC_PatternPredicate() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(1344);
+    setState(1348);
     oC_RelationshipsPattern();
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -9996,46 +8868,39 @@ CypherParser::OC_PatternPredicateContext *CypherParser::oC_PatternPredicate() {
   return _localctx;
 }
 
-//----------------- OC_ParenthesizedExpressionContext
-//------------------------------------------------------------------
+//----------------- OC_ParenthesizedExpressionContext ------------------------------------------------------------------
 
-CypherParser::OC_ParenthesizedExpressionContext::
-    OC_ParenthesizedExpressionContext(ParserRuleContext *parent,
-                                      size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_ParenthesizedExpressionContext::OC_ParenthesizedExpressionContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_ExpressionContext *
-CypherParser::OC_ParenthesizedExpressionContext::oC_Expression() {
+CypherParser::OC_ExpressionContext* CypherParser::OC_ParenthesizedExpressionContext::oC_Expression() {
   return getRuleContext<CypherParser::OC_ExpressionContext>(0);
 }
 
-std::vector<tree::TerminalNode *>
-CypherParser::OC_ParenthesizedExpressionContext::SP() {
+std::vector<tree::TerminalNode *> CypherParser::OC_ParenthesizedExpressionContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_ParenthesizedExpressionContext::SP(
-    size_t i) {
+tree::TerminalNode* CypherParser::OC_ParenthesizedExpressionContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
+
 
 size_t CypherParser::OC_ParenthesizedExpressionContext::getRuleIndex() const {
   return CypherParser::RuleOC_ParenthesizedExpression;
 }
 
-std::any CypherParser::OC_ParenthesizedExpressionContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_ParenthesizedExpressionContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_ParenthesizedExpression(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_ParenthesizedExpressionContext *
-CypherParser::oC_ParenthesizedExpression() {
-  OC_ParenthesizedExpressionContext *_localctx =
-      _tracker.createInstance<OC_ParenthesizedExpressionContext>(_ctx,
-                                                                 getState());
+CypherParser::OC_ParenthesizedExpressionContext* CypherParser::oC_ParenthesizedExpression() {
+  OC_ParenthesizedExpressionContext *_localctx = _tracker.createInstance<OC_ParenthesizedExpressionContext>(_ctx, getState());
   enterRule(_localctx, 154, CypherParser::RuleOC_ParenthesizedExpression);
   size_t _la = 0;
 
@@ -10048,18 +8913,8 @@ CypherParser::oC_ParenthesizedExpression() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(1346);
-    match(CypherParser::T__5);
-    setState(1348);
-    _errHandler->sync(this);
-
-    _la = _input->LA(1);
-    if (_la == CypherParser::SP) {
-      setState(1347);
-      match(CypherParser::SP);
-    }
     setState(1350);
-    oC_Expression();
+    match(CypherParser::T__5);
     setState(1352);
     _errHandler->sync(this);
 
@@ -10069,9 +8924,20 @@ CypherParser::oC_ParenthesizedExpression() {
       match(CypherParser::SP);
     }
     setState(1354);
-    match(CypherParser::T__6);
+    oC_Expression();
+    setState(1356);
+    _errHandler->sync(this);
 
-  } catch (RecognitionException &e) {
+    _la = _input->LA(1);
+    if (_la == CypherParser::SP) {
+      setState(1355);
+      match(CypherParser::SP);
+    }
+    setState(1358);
+    match(CypherParser::T__6);
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -10080,15 +8946,13 @@ CypherParser::oC_ParenthesizedExpression() {
   return _localctx;
 }
 
-//----------------- OC_IdInCollContext
-//------------------------------------------------------------------
+//----------------- OC_IdInCollContext ------------------------------------------------------------------
 
-CypherParser::OC_IdInCollContext::OC_IdInCollContext(ParserRuleContext *parent,
-                                                     size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_IdInCollContext::OC_IdInCollContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_VariableContext *
-CypherParser::OC_IdInCollContext::oC_Variable() {
+CypherParser::OC_VariableContext* CypherParser::OC_IdInCollContext::oC_Variable() {
   return getRuleContext<CypherParser::OC_VariableContext>(0);
 }
 
@@ -10096,34 +8960,33 @@ std::vector<tree::TerminalNode *> CypherParser::OC_IdInCollContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_IdInCollContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_IdInCollContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
-tree::TerminalNode *CypherParser::OC_IdInCollContext::IN() {
+tree::TerminalNode* CypherParser::OC_IdInCollContext::IN() {
   return getToken(CypherParser::IN, 0);
 }
 
-CypherParser::OC_ExpressionContext *
-CypherParser::OC_IdInCollContext::oC_Expression() {
+CypherParser::OC_ExpressionContext* CypherParser::OC_IdInCollContext::oC_Expression() {
   return getRuleContext<CypherParser::OC_ExpressionContext>(0);
 }
+
 
 size_t CypherParser::OC_IdInCollContext::getRuleIndex() const {
   return CypherParser::RuleOC_IdInColl;
 }
 
-std::any CypherParser::OC_IdInCollContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_IdInCollContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_IdInColl(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_IdInCollContext *CypherParser::oC_IdInColl() {
-  OC_IdInCollContext *_localctx =
-      _tracker.createInstance<OC_IdInCollContext>(_ctx, getState());
+CypherParser::OC_IdInCollContext* CypherParser::oC_IdInColl() {
+  OC_IdInCollContext *_localctx = _tracker.createInstance<OC_IdInCollContext>(_ctx, getState());
   enterRule(_localctx, 156, CypherParser::RuleOC_IdInColl);
 
 #if __cplusplus > 201703L
@@ -10135,18 +8998,19 @@ CypherParser::OC_IdInCollContext *CypherParser::oC_IdInColl() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(1356);
-    oC_Variable();
-    setState(1357);
-    match(CypherParser::SP);
-    setState(1358);
-    match(CypherParser::IN);
-    setState(1359);
-    match(CypherParser::SP);
     setState(1360);
+    oC_Variable();
+    setState(1361);
+    match(CypherParser::SP);
+    setState(1362);
+    match(CypherParser::IN);
+    setState(1363);
+    match(CypherParser::SP);
+    setState(1364);
     oC_Expression();
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -10155,57 +9019,51 @@ CypherParser::OC_IdInCollContext *CypherParser::oC_IdInColl() {
   return _localctx;
 }
 
-//----------------- OC_FunctionInvocationContext
-//------------------------------------------------------------------
+//----------------- OC_FunctionInvocationContext ------------------------------------------------------------------
 
-CypherParser::OC_FunctionInvocationContext::OC_FunctionInvocationContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_FunctionInvocationContext::OC_FunctionInvocationContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_FunctionNameContext *
-CypherParser::OC_FunctionInvocationContext::oC_FunctionName() {
+CypherParser::OC_FunctionNameContext* CypherParser::OC_FunctionInvocationContext::oC_FunctionName() {
   return getRuleContext<CypherParser::OC_FunctionNameContext>(0);
 }
 
-std::vector<tree::TerminalNode *>
-CypherParser::OC_FunctionInvocationContext::SP() {
+std::vector<tree::TerminalNode *> CypherParser::OC_FunctionInvocationContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_FunctionInvocationContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_FunctionInvocationContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
-tree::TerminalNode *CypherParser::OC_FunctionInvocationContext::DISTINCT() {
+tree::TerminalNode* CypherParser::OC_FunctionInvocationContext::DISTINCT() {
   return getToken(CypherParser::DISTINCT, 0);
 }
 
-std::vector<CypherParser::OC_ExpressionContext *>
-CypherParser::OC_FunctionInvocationContext::oC_Expression() {
+std::vector<CypherParser::OC_ExpressionContext *> CypherParser::OC_FunctionInvocationContext::oC_Expression() {
   return getRuleContexts<CypherParser::OC_ExpressionContext>();
 }
 
-CypherParser::OC_ExpressionContext *
-CypherParser::OC_FunctionInvocationContext::oC_Expression(size_t i) {
+CypherParser::OC_ExpressionContext* CypherParser::OC_FunctionInvocationContext::oC_Expression(size_t i) {
   return getRuleContext<CypherParser::OC_ExpressionContext>(i);
 }
+
 
 size_t CypherParser::OC_FunctionInvocationContext::getRuleIndex() const {
   return CypherParser::RuleOC_FunctionInvocation;
 }
 
-std::any CypherParser::OC_FunctionInvocationContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_FunctionInvocationContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_FunctionInvocation(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_FunctionInvocationContext *
-CypherParser::oC_FunctionInvocation() {
-  OC_FunctionInvocationContext *_localctx =
-      _tracker.createInstance<OC_FunctionInvocationContext>(_ctx, getState());
+CypherParser::OC_FunctionInvocationContext* CypherParser::oC_FunctionInvocation() {
+  OC_FunctionInvocationContext *_localctx = _tracker.createInstance<OC_FunctionInvocationContext>(_ctx, getState());
   enterRule(_localctx, 158, CypherParser::RuleOC_FunctionInvocation);
   size_t _la = 0;
 
@@ -10218,18 +9076,8 @@ CypherParser::oC_FunctionInvocation() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(1362);
-    oC_FunctionName();
-    setState(1364);
-    _errHandler->sync(this);
-
-    _la = _input->LA(1);
-    if (_la == CypherParser::SP) {
-      setState(1363);
-      match(CypherParser::SP);
-    }
     setState(1366);
-    match(CypherParser::T__5);
+    oC_FunctionName();
     setState(1368);
     _errHandler->sync(this);
 
@@ -10238,55 +9086,55 @@ CypherParser::oC_FunctionInvocation() {
       setState(1367);
       match(CypherParser::SP);
     }
-    setState(1374);
+    setState(1370);
+    match(CypherParser::T__5);
+    setState(1372);
+    _errHandler->sync(this);
+
+    _la = _input->LA(1);
+    if (_la == CypherParser::SP) {
+      setState(1371);
+      match(CypherParser::SP);
+    }
+    setState(1378);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
     if (_la == CypherParser::DISTINCT) {
-      setState(1370);
+      setState(1374);
       match(CypherParser::DISTINCT);
-      setState(1372);
+      setState(1376);
       _errHandler->sync(this);
 
       _la = _input->LA(1);
       if (_la == CypherParser::SP) {
-        setState(1371);
+        setState(1375);
         match(CypherParser::SP);
       }
     }
-    setState(1393);
+    setState(1397);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
-    if ((((_la & ~0x3fULL) == 0) && ((1ULL << _la) & 140737573028160) != 0) ||
-        ((((_la - 76) & ~0x3fULL) == 0) &&
-         ((1ULL << (_la - 76)) & 343051394343361) != 0)) {
-      setState(1376);
+    if ((((_la & ~ 0x3fULL) == 0) &&
+      ((1ULL << _la) & 140737573028160) != 0) || ((((_la - 76) & ~ 0x3fULL) == 0) &&
+      ((1ULL << (_la - 76)) & 686102788563393) != 0)) {
+      setState(1380);
       oC_Expression();
-      setState(1378);
+      setState(1382);
       _errHandler->sync(this);
 
       _la = _input->LA(1);
       if (_la == CypherParser::SP) {
-        setState(1377);
+        setState(1381);
         match(CypherParser::SP);
       }
-      setState(1390);
+      setState(1394);
       _errHandler->sync(this);
       _la = _input->LA(1);
       while (_la == CypherParser::T__1) {
-        setState(1380);
-        match(CypherParser::T__1);
-        setState(1382);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(1381);
-          match(CypherParser::SP);
-        }
         setState(1384);
-        oC_Expression();
+        match(CypherParser::T__1);
         setState(1386);
         _errHandler->sync(this);
 
@@ -10295,15 +9143,26 @@ CypherParser::oC_FunctionInvocation() {
           setState(1385);
           match(CypherParser::SP);
         }
-        setState(1392);
+        setState(1388);
+        oC_Expression();
+        setState(1390);
+        _errHandler->sync(this);
+
+        _la = _input->LA(1);
+        if (_la == CypherParser::SP) {
+          setState(1389);
+          match(CypherParser::SP);
+        }
+        setState(1396);
         _errHandler->sync(this);
         _la = _input->LA(1);
       }
     }
-    setState(1395);
+    setState(1399);
     match(CypherParser::T__6);
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -10312,38 +9171,35 @@ CypherParser::oC_FunctionInvocation() {
   return _localctx;
 }
 
-//----------------- OC_FunctionNameContext
-//------------------------------------------------------------------
+//----------------- OC_FunctionNameContext ------------------------------------------------------------------
 
-CypherParser::OC_FunctionNameContext::OC_FunctionNameContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_FunctionNameContext::OC_FunctionNameContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_NamespaceContext *
-CypherParser::OC_FunctionNameContext::oC_Namespace() {
+CypherParser::OC_NamespaceContext* CypherParser::OC_FunctionNameContext::oC_Namespace() {
   return getRuleContext<CypherParser::OC_NamespaceContext>(0);
 }
 
-CypherParser::OC_SymbolicNameContext *
-CypherParser::OC_FunctionNameContext::oC_SymbolicName() {
+CypherParser::OC_SymbolicNameContext* CypherParser::OC_FunctionNameContext::oC_SymbolicName() {
   return getRuleContext<CypherParser::OC_SymbolicNameContext>(0);
 }
+
 
 size_t CypherParser::OC_FunctionNameContext::getRuleIndex() const {
   return CypherParser::RuleOC_FunctionName;
 }
 
-std::any CypherParser::OC_FunctionNameContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_FunctionNameContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_FunctionName(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_FunctionNameContext *CypherParser::oC_FunctionName() {
-  OC_FunctionNameContext *_localctx =
-      _tracker.createInstance<OC_FunctionNameContext>(_ctx, getState());
+CypherParser::OC_FunctionNameContext* CypherParser::oC_FunctionName() {
+  OC_FunctionNameContext *_localctx = _tracker.createInstance<OC_FunctionNameContext>(_ctx, getState());
   enterRule(_localctx, 160, CypherParser::RuleOC_FunctionName);
 
 #if __cplusplus > 201703L
@@ -10355,12 +9211,13 @@ CypherParser::OC_FunctionNameContext *CypherParser::oC_FunctionName() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(1397);
+    setState(1401);
     oC_Namespace();
-    setState(1398);
+    setState(1402);
     oC_SymbolicName();
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -10369,57 +9226,51 @@ CypherParser::OC_FunctionNameContext *CypherParser::oC_FunctionName() {
   return _localctx;
 }
 
-//----------------- OC_ExistentialSubqueryContext
-//------------------------------------------------------------------
+//----------------- OC_ExistentialSubqueryContext ------------------------------------------------------------------
 
-CypherParser::OC_ExistentialSubqueryContext::OC_ExistentialSubqueryContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_ExistentialSubqueryContext::OC_ExistentialSubqueryContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-tree::TerminalNode *CypherParser::OC_ExistentialSubqueryContext::EXISTS() {
+tree::TerminalNode* CypherParser::OC_ExistentialSubqueryContext::EXISTS() {
   return getToken(CypherParser::EXISTS, 0);
 }
 
-CypherParser::OC_RegularQueryContext *
-CypherParser::OC_ExistentialSubqueryContext::oC_RegularQuery() {
+CypherParser::OC_RegularQueryContext* CypherParser::OC_ExistentialSubqueryContext::oC_RegularQuery() {
   return getRuleContext<CypherParser::OC_RegularQueryContext>(0);
 }
 
-std::vector<tree::TerminalNode *>
-CypherParser::OC_ExistentialSubqueryContext::SP() {
+std::vector<tree::TerminalNode *> CypherParser::OC_ExistentialSubqueryContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_ExistentialSubqueryContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_ExistentialSubqueryContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
-CypherParser::OC_PatternContext *
-CypherParser::OC_ExistentialSubqueryContext::oC_Pattern() {
+CypherParser::OC_PatternContext* CypherParser::OC_ExistentialSubqueryContext::oC_Pattern() {
   return getRuleContext<CypherParser::OC_PatternContext>(0);
 }
 
-CypherParser::OC_WhereContext *
-CypherParser::OC_ExistentialSubqueryContext::oC_Where() {
+CypherParser::OC_WhereContext* CypherParser::OC_ExistentialSubqueryContext::oC_Where() {
   return getRuleContext<CypherParser::OC_WhereContext>(0);
 }
+
 
 size_t CypherParser::OC_ExistentialSubqueryContext::getRuleIndex() const {
   return CypherParser::RuleOC_ExistentialSubquery;
 }
 
-std::any CypherParser::OC_ExistentialSubqueryContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_ExistentialSubqueryContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_ExistentialSubquery(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_ExistentialSubqueryContext *
-CypherParser::oC_ExistentialSubquery() {
-  OC_ExistentialSubqueryContext *_localctx =
-      _tracker.createInstance<OC_ExistentialSubqueryContext>(_ctx, getState());
+CypherParser::OC_ExistentialSubqueryContext* CypherParser::oC_ExistentialSubquery() {
+  OC_ExistentialSubqueryContext *_localctx = _tracker.createInstance<OC_ExistentialSubqueryContext>(_ctx, getState());
   enterRule(_localctx, 162, CypherParser::RuleOC_ExistentialSubquery);
   size_t _la = 0;
 
@@ -10432,18 +9283,8 @@ CypherParser::oC_ExistentialSubquery() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(1400);
-    match(CypherParser::EXISTS);
-    setState(1402);
-    _errHandler->sync(this);
-
-    _la = _input->LA(1);
-    if (_la == CypherParser::SP) {
-      setState(1401);
-      match(CypherParser::SP);
-    }
     setState(1404);
-    match(CypherParser::T__23);
+    match(CypherParser::EXISTS);
     setState(1406);
     _errHandler->sync(this);
 
@@ -10452,7 +9293,17 @@ CypherParser::oC_ExistentialSubquery() {
       setState(1405);
       match(CypherParser::SP);
     }
-    setState(1416);
+    setState(1408);
+    match(CypherParser::T__23);
+    setState(1410);
+    _errHandler->sync(this);
+
+    _la = _input->LA(1);
+    if (_la == CypherParser::SP) {
+      setState(1409);
+      match(CypherParser::SP);
+    }
+    setState(1420);
     _errHandler->sync(this);
     switch (_input->LA(1)) {
       case CypherParser::OPTIONAL:
@@ -10467,7 +9318,7 @@ CypherParser::oC_ExistentialSubquery() {
       case CypherParser::CALL:
       case CypherParser::WITH:
       case CypherParser::RETURN: {
-        setState(1408);
+        setState(1412);
         oC_RegularQuery();
         break;
       }
@@ -10482,48 +9333,48 @@ CypherParser::oC_ExistentialSubquery() {
       case CypherParser::EXTRACT:
       case CypherParser::UnescapedSymbolicName:
       case CypherParser::EscapedSymbolicName: {
-        setState(1409);
+        setState(1413);
         oC_Pattern();
-        setState(1414);
+        setState(1418);
         _errHandler->sync(this);
 
-        switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-            _input, 260, _ctx)) {
-          case 1: {
-            setState(1411);
-            _errHandler->sync(this);
+        switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 261, _ctx)) {
+        case 1: {
+          setState(1415);
+          _errHandler->sync(this);
 
-            _la = _input->LA(1);
-            if (_la == CypherParser::SP) {
-              setState(1410);
-              match(CypherParser::SP);
-            }
-            setState(1413);
-            oC_Where();
-            break;
+          _la = _input->LA(1);
+          if (_la == CypherParser::SP) {
+            setState(1414);
+            match(CypherParser::SP);
           }
+          setState(1417);
+          oC_Where();
+          break;
+        }
 
-          default:
-            break;
+        default:
+          break;
         }
         break;
       }
 
-      default:
-        throw NoViableAltException(this);
+    default:
+      throw NoViableAltException(this);
     }
-    setState(1419);
+    setState(1423);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
     if (_la == CypherParser::SP) {
-      setState(1418);
+      setState(1422);
       match(CypherParser::SP);
     }
-    setState(1421);
+    setState(1425);
     match(CypherParser::T__24);
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -10532,57 +9383,47 @@ CypherParser::oC_ExistentialSubquery() {
   return _localctx;
 }
 
-//----------------- OC_ExplicitProcedureInvocationContext
-//------------------------------------------------------------------
+//----------------- OC_ExplicitProcedureInvocationContext ------------------------------------------------------------------
 
-CypherParser::OC_ExplicitProcedureInvocationContext::
-    OC_ExplicitProcedureInvocationContext(ParserRuleContext *parent,
-                                          size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_ExplicitProcedureInvocationContext::OC_ExplicitProcedureInvocationContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_ProcedureNameContext *
-CypherParser::OC_ExplicitProcedureInvocationContext::oC_ProcedureName() {
+CypherParser::OC_ProcedureNameContext* CypherParser::OC_ExplicitProcedureInvocationContext::oC_ProcedureName() {
   return getRuleContext<CypherParser::OC_ProcedureNameContext>(0);
 }
 
-std::vector<tree::TerminalNode *>
-CypherParser::OC_ExplicitProcedureInvocationContext::SP() {
+std::vector<tree::TerminalNode *> CypherParser::OC_ExplicitProcedureInvocationContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_ExplicitProcedureInvocationContext::SP(
-    size_t i) {
+tree::TerminalNode* CypherParser::OC_ExplicitProcedureInvocationContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
-std::vector<CypherParser::OC_ExpressionContext *>
-CypherParser::OC_ExplicitProcedureInvocationContext::oC_Expression() {
+std::vector<CypherParser::OC_ExpressionContext *> CypherParser::OC_ExplicitProcedureInvocationContext::oC_Expression() {
   return getRuleContexts<CypherParser::OC_ExpressionContext>();
 }
 
-CypherParser::OC_ExpressionContext *
-CypherParser::OC_ExplicitProcedureInvocationContext::oC_Expression(size_t i) {
+CypherParser::OC_ExpressionContext* CypherParser::OC_ExplicitProcedureInvocationContext::oC_Expression(size_t i) {
   return getRuleContext<CypherParser::OC_ExpressionContext>(i);
 }
 
-size_t CypherParser::OC_ExplicitProcedureInvocationContext::getRuleIndex()
-    const {
+
+size_t CypherParser::OC_ExplicitProcedureInvocationContext::getRuleIndex() const {
   return CypherParser::RuleOC_ExplicitProcedureInvocation;
 }
 
-std::any CypherParser::OC_ExplicitProcedureInvocationContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_ExplicitProcedureInvocationContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_ExplicitProcedureInvocation(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_ExplicitProcedureInvocationContext *
-CypherParser::oC_ExplicitProcedureInvocation() {
-  OC_ExplicitProcedureInvocationContext *_localctx =
-      _tracker.createInstance<OC_ExplicitProcedureInvocationContext>(
-          _ctx, getState());
+CypherParser::OC_ExplicitProcedureInvocationContext* CypherParser::oC_ExplicitProcedureInvocation() {
+  OC_ExplicitProcedureInvocationContext *_localctx = _tracker.createInstance<OC_ExplicitProcedureInvocationContext>(_ctx, getState());
   enterRule(_localctx, 164, CypherParser::RuleOC_ExplicitProcedureInvocation);
   size_t _la = 0;
 
@@ -10595,18 +9436,8 @@ CypherParser::oC_ExplicitProcedureInvocation() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(1423);
-    oC_ProcedureName();
-    setState(1425);
-    _errHandler->sync(this);
-
-    _la = _input->LA(1);
-    if (_la == CypherParser::SP) {
-      setState(1424);
-      match(CypherParser::SP);
-    }
     setState(1427);
-    match(CypherParser::T__5);
+    oC_ProcedureName();
     setState(1429);
     _errHandler->sync(this);
 
@@ -10615,39 +9446,39 @@ CypherParser::oC_ExplicitProcedureInvocation() {
       setState(1428);
       match(CypherParser::SP);
     }
-    setState(1448);
+    setState(1431);
+    match(CypherParser::T__5);
+    setState(1433);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
-    if ((((_la & ~0x3fULL) == 0) && ((1ULL << _la) & 140737573028160) != 0) ||
-        ((((_la - 76) & ~0x3fULL) == 0) &&
-         ((1ULL << (_la - 76)) & 343051394343361) != 0)) {
-      setState(1431);
+    if (_la == CypherParser::SP) {
+      setState(1432);
+      match(CypherParser::SP);
+    }
+    setState(1452);
+    _errHandler->sync(this);
+
+    _la = _input->LA(1);
+    if ((((_la & ~ 0x3fULL) == 0) &&
+      ((1ULL << _la) & 140737573028160) != 0) || ((((_la - 76) & ~ 0x3fULL) == 0) &&
+      ((1ULL << (_la - 76)) & 686102788563393) != 0)) {
+      setState(1435);
       oC_Expression();
-      setState(1433);
+      setState(1437);
       _errHandler->sync(this);
 
       _la = _input->LA(1);
       if (_la == CypherParser::SP) {
-        setState(1432);
+        setState(1436);
         match(CypherParser::SP);
       }
-      setState(1445);
+      setState(1449);
       _errHandler->sync(this);
       _la = _input->LA(1);
       while (_la == CypherParser::T__1) {
-        setState(1435);
-        match(CypherParser::T__1);
-        setState(1437);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(1436);
-          match(CypherParser::SP);
-        }
         setState(1439);
-        oC_Expression();
+        match(CypherParser::T__1);
         setState(1441);
         _errHandler->sync(this);
 
@@ -10656,15 +9487,26 @@ CypherParser::oC_ExplicitProcedureInvocation() {
           setState(1440);
           match(CypherParser::SP);
         }
-        setState(1447);
+        setState(1443);
+        oC_Expression();
+        setState(1445);
+        _errHandler->sync(this);
+
+        _la = _input->LA(1);
+        if (_la == CypherParser::SP) {
+          setState(1444);
+          match(CypherParser::SP);
+        }
+        setState(1451);
         _errHandler->sync(this);
         _la = _input->LA(1);
       }
     }
-    setState(1450);
+    setState(1454);
     match(CypherParser::T__6);
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -10673,37 +9515,31 @@ CypherParser::oC_ExplicitProcedureInvocation() {
   return _localctx;
 }
 
-//----------------- OC_ImplicitProcedureInvocationContext
-//------------------------------------------------------------------
+//----------------- OC_ImplicitProcedureInvocationContext ------------------------------------------------------------------
 
-CypherParser::OC_ImplicitProcedureInvocationContext::
-    OC_ImplicitProcedureInvocationContext(ParserRuleContext *parent,
-                                          size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_ImplicitProcedureInvocationContext::OC_ImplicitProcedureInvocationContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_ProcedureNameContext *
-CypherParser::OC_ImplicitProcedureInvocationContext::oC_ProcedureName() {
+CypherParser::OC_ProcedureNameContext* CypherParser::OC_ImplicitProcedureInvocationContext::oC_ProcedureName() {
   return getRuleContext<CypherParser::OC_ProcedureNameContext>(0);
 }
 
-size_t CypherParser::OC_ImplicitProcedureInvocationContext::getRuleIndex()
-    const {
+
+size_t CypherParser::OC_ImplicitProcedureInvocationContext::getRuleIndex() const {
   return CypherParser::RuleOC_ImplicitProcedureInvocation;
 }
 
-std::any CypherParser::OC_ImplicitProcedureInvocationContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_ImplicitProcedureInvocationContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_ImplicitProcedureInvocation(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_ImplicitProcedureInvocationContext *
-CypherParser::oC_ImplicitProcedureInvocation() {
-  OC_ImplicitProcedureInvocationContext *_localctx =
-      _tracker.createInstance<OC_ImplicitProcedureInvocationContext>(
-          _ctx, getState());
+CypherParser::OC_ImplicitProcedureInvocationContext* CypherParser::oC_ImplicitProcedureInvocation() {
+  OC_ImplicitProcedureInvocationContext *_localctx = _tracker.createInstance<OC_ImplicitProcedureInvocationContext>(_ctx, getState());
   enterRule(_localctx, 166, CypherParser::RuleOC_ImplicitProcedureInvocation);
 
 #if __cplusplus > 201703L
@@ -10715,10 +9551,11 @@ CypherParser::oC_ImplicitProcedureInvocation() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(1452);
+    setState(1456);
     oC_ProcedureName();
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -10727,34 +9564,31 @@ CypherParser::oC_ImplicitProcedureInvocation() {
   return _localctx;
 }
 
-//----------------- OC_ProcedureResultFieldContext
-//------------------------------------------------------------------
+//----------------- OC_ProcedureResultFieldContext ------------------------------------------------------------------
 
-CypherParser::OC_ProcedureResultFieldContext::OC_ProcedureResultFieldContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_ProcedureResultFieldContext::OC_ProcedureResultFieldContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_SymbolicNameContext *
-CypherParser::OC_ProcedureResultFieldContext::oC_SymbolicName() {
+CypherParser::OC_SymbolicNameContext* CypherParser::OC_ProcedureResultFieldContext::oC_SymbolicName() {
   return getRuleContext<CypherParser::OC_SymbolicNameContext>(0);
 }
+
 
 size_t CypherParser::OC_ProcedureResultFieldContext::getRuleIndex() const {
   return CypherParser::RuleOC_ProcedureResultField;
 }
 
-std::any CypherParser::OC_ProcedureResultFieldContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_ProcedureResultFieldContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_ProcedureResultField(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_ProcedureResultFieldContext *
-CypherParser::oC_ProcedureResultField() {
-  OC_ProcedureResultFieldContext *_localctx =
-      _tracker.createInstance<OC_ProcedureResultFieldContext>(_ctx, getState());
+CypherParser::OC_ProcedureResultFieldContext* CypherParser::oC_ProcedureResultField() {
+  OC_ProcedureResultFieldContext *_localctx = _tracker.createInstance<OC_ProcedureResultFieldContext>(_ctx, getState());
   enterRule(_localctx, 168, CypherParser::RuleOC_ProcedureResultField);
 
 #if __cplusplus > 201703L
@@ -10766,10 +9600,11 @@ CypherParser::oC_ProcedureResultField() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(1454);
+    setState(1458);
     oC_SymbolicName();
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -10778,38 +9613,35 @@ CypherParser::oC_ProcedureResultField() {
   return _localctx;
 }
 
-//----------------- OC_ProcedureNameContext
-//------------------------------------------------------------------
+//----------------- OC_ProcedureNameContext ------------------------------------------------------------------
 
-CypherParser::OC_ProcedureNameContext::OC_ProcedureNameContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_ProcedureNameContext::OC_ProcedureNameContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_NamespaceContext *
-CypherParser::OC_ProcedureNameContext::oC_Namespace() {
+CypherParser::OC_NamespaceContext* CypherParser::OC_ProcedureNameContext::oC_Namespace() {
   return getRuleContext<CypherParser::OC_NamespaceContext>(0);
 }
 
-CypherParser::OC_SymbolicNameContext *
-CypherParser::OC_ProcedureNameContext::oC_SymbolicName() {
+CypherParser::OC_SymbolicNameContext* CypherParser::OC_ProcedureNameContext::oC_SymbolicName() {
   return getRuleContext<CypherParser::OC_SymbolicNameContext>(0);
 }
+
 
 size_t CypherParser::OC_ProcedureNameContext::getRuleIndex() const {
   return CypherParser::RuleOC_ProcedureName;
 }
 
-std::any CypherParser::OC_ProcedureNameContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_ProcedureNameContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_ProcedureName(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_ProcedureNameContext *CypherParser::oC_ProcedureName() {
-  OC_ProcedureNameContext *_localctx =
-      _tracker.createInstance<OC_ProcedureNameContext>(_ctx, getState());
+CypherParser::OC_ProcedureNameContext* CypherParser::oC_ProcedureName() {
+  OC_ProcedureNameContext *_localctx = _tracker.createInstance<OC_ProcedureNameContext>(_ctx, getState());
   enterRule(_localctx, 170, CypherParser::RuleOC_ProcedureName);
 
 #if __cplusplus > 201703L
@@ -10821,12 +9653,13 @@ CypherParser::OC_ProcedureNameContext *CypherParser::oC_ProcedureName() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(1456);
+    setState(1460);
     oC_Namespace();
-    setState(1457);
+    setState(1461);
     oC_SymbolicName();
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -10835,38 +9668,35 @@ CypherParser::OC_ProcedureNameContext *CypherParser::oC_ProcedureName() {
   return _localctx;
 }
 
-//----------------- OC_NamespaceContext
-//------------------------------------------------------------------
+//----------------- OC_NamespaceContext ------------------------------------------------------------------
 
-CypherParser::OC_NamespaceContext::OC_NamespaceContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_NamespaceContext::OC_NamespaceContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-std::vector<CypherParser::OC_SymbolicNameContext *>
-CypherParser::OC_NamespaceContext::oC_SymbolicName() {
+std::vector<CypherParser::OC_SymbolicNameContext *> CypherParser::OC_NamespaceContext::oC_SymbolicName() {
   return getRuleContexts<CypherParser::OC_SymbolicNameContext>();
 }
 
-CypherParser::OC_SymbolicNameContext *
-CypherParser::OC_NamespaceContext::oC_SymbolicName(size_t i) {
+CypherParser::OC_SymbolicNameContext* CypherParser::OC_NamespaceContext::oC_SymbolicName(size_t i) {
   return getRuleContext<CypherParser::OC_SymbolicNameContext>(i);
 }
+
 
 size_t CypherParser::OC_NamespaceContext::getRuleIndex() const {
   return CypherParser::RuleOC_Namespace;
 }
 
-std::any CypherParser::OC_NamespaceContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_NamespaceContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_Namespace(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_NamespaceContext *CypherParser::oC_Namespace() {
-  OC_NamespaceContext *_localctx =
-      _tracker.createInstance<OC_NamespaceContext>(_ctx, getState());
+CypherParser::OC_NamespaceContext* CypherParser::oC_Namespace() {
+  OC_NamespaceContext *_localctx = _tracker.createInstance<OC_NamespaceContext>(_ctx, getState());
   enterRule(_localctx, 172, CypherParser::RuleOC_Namespace);
 
 #if __cplusplus > 201703L
@@ -10879,24 +9709,23 @@ CypherParser::OC_NamespaceContext *CypherParser::oC_Namespace() {
   try {
     size_t alt;
     enterOuterAlt(_localctx, 1);
-    setState(1464);
+    setState(1468);
     _errHandler->sync(this);
-    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input,
-                                                                     270, _ctx);
+    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 271, _ctx);
     while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER) {
       if (alt == 1) {
-        setState(1459);
+        setState(1463);
         oC_SymbolicName();
-        setState(1460);
-        match(CypherParser::T__22);
+        setState(1464);
+        match(CypherParser::T__22); 
       }
-      setState(1466);
+      setState(1470);
       _errHandler->sync(this);
-      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(
-          _input, 270, _ctx);
+      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 271, _ctx);
     }
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -10905,33 +9734,31 @@ CypherParser::OC_NamespaceContext *CypherParser::oC_Namespace() {
   return _localctx;
 }
 
-//----------------- OC_VariableContext
-//------------------------------------------------------------------
+//----------------- OC_VariableContext ------------------------------------------------------------------
 
-CypherParser::OC_VariableContext::OC_VariableContext(ParserRuleContext *parent,
-                                                     size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_VariableContext::OC_VariableContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_SymbolicNameContext *
-CypherParser::OC_VariableContext::oC_SymbolicName() {
+CypherParser::OC_SymbolicNameContext* CypherParser::OC_VariableContext::oC_SymbolicName() {
   return getRuleContext<CypherParser::OC_SymbolicNameContext>(0);
 }
+
 
 size_t CypherParser::OC_VariableContext::getRuleIndex() const {
   return CypherParser::RuleOC_Variable;
 }
 
-std::any CypherParser::OC_VariableContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_VariableContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_Variable(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_VariableContext *CypherParser::oC_Variable() {
-  OC_VariableContext *_localctx =
-      _tracker.createInstance<OC_VariableContext>(_ctx, getState());
+CypherParser::OC_VariableContext* CypherParser::oC_Variable() {
+  OC_VariableContext *_localctx = _tracker.createInstance<OC_VariableContext>(_ctx, getState());
   enterRule(_localctx, 174, CypherParser::RuleOC_Variable);
 
 #if __cplusplus > 201703L
@@ -10943,10 +9770,11 @@ CypherParser::OC_VariableContext *CypherParser::oC_Variable() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(1467);
+    setState(1471);
     oC_SymbolicName();
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -10955,56 +9783,51 @@ CypherParser::OC_VariableContext *CypherParser::oC_Variable() {
   return _localctx;
 }
 
-//----------------- OC_LiteralContext
-//------------------------------------------------------------------
+//----------------- OC_LiteralContext ------------------------------------------------------------------
 
-CypherParser::OC_LiteralContext::OC_LiteralContext(ParserRuleContext *parent,
-                                                   size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_LiteralContext::OC_LiteralContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_BooleanLiteralContext *
-CypherParser::OC_LiteralContext::oC_BooleanLiteral() {
+CypherParser::OC_BooleanLiteralContext* CypherParser::OC_LiteralContext::oC_BooleanLiteral() {
   return getRuleContext<CypherParser::OC_BooleanLiteralContext>(0);
 }
 
-tree::TerminalNode *CypherParser::OC_LiteralContext::NULL_() {
+tree::TerminalNode* CypherParser::OC_LiteralContext::NULL_() {
   return getToken(CypherParser::NULL_, 0);
 }
 
-CypherParser::OC_NumberLiteralContext *
-CypherParser::OC_LiteralContext::oC_NumberLiteral() {
+CypherParser::OC_NumberLiteralContext* CypherParser::OC_LiteralContext::oC_NumberLiteral() {
   return getRuleContext<CypherParser::OC_NumberLiteralContext>(0);
 }
 
-tree::TerminalNode *CypherParser::OC_LiteralContext::StringLiteral() {
+tree::TerminalNode* CypherParser::OC_LiteralContext::StringLiteral() {
   return getToken(CypherParser::StringLiteral, 0);
 }
 
-CypherParser::OC_ListLiteralContext *
-CypherParser::OC_LiteralContext::oC_ListLiteral() {
+CypherParser::OC_ListLiteralContext* CypherParser::OC_LiteralContext::oC_ListLiteral() {
   return getRuleContext<CypherParser::OC_ListLiteralContext>(0);
 }
 
-CypherParser::OC_MapLiteralContext *
-CypherParser::OC_LiteralContext::oC_MapLiteral() {
+CypherParser::OC_MapLiteralContext* CypherParser::OC_LiteralContext::oC_MapLiteral() {
   return getRuleContext<CypherParser::OC_MapLiteralContext>(0);
 }
+
 
 size_t CypherParser::OC_LiteralContext::getRuleIndex() const {
   return CypherParser::RuleOC_Literal;
 }
 
-std::any CypherParser::OC_LiteralContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_LiteralContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_Literal(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_LiteralContext *CypherParser::oC_Literal() {
-  OC_LiteralContext *_localctx =
-      _tracker.createInstance<OC_LiteralContext>(_ctx, getState());
+CypherParser::OC_LiteralContext* CypherParser::oC_Literal() {
+  OC_LiteralContext *_localctx = _tracker.createInstance<OC_LiteralContext>(_ctx, getState());
   enterRule(_localctx, 176, CypherParser::RuleOC_Literal);
 
 #if __cplusplus > 201703L
@@ -11015,20 +9838,20 @@ CypherParser::OC_LiteralContext *CypherParser::oC_Literal() {
     exitRule();
   });
   try {
-    setState(1475);
+    setState(1479);
     _errHandler->sync(this);
     switch (_input->LA(1)) {
       case CypherParser::TRUE:
       case CypherParser::FALSE: {
         enterOuterAlt(_localctx, 1);
-        setState(1469);
+        setState(1473);
         oC_BooleanLiteral();
         break;
       }
 
       case CypherParser::NULL_: {
         enterOuterAlt(_localctx, 2);
-        setState(1470);
+        setState(1474);
         match(CypherParser::NULL_);
         break;
       }
@@ -11039,37 +9862,38 @@ CypherParser::OC_LiteralContext *CypherParser::oC_Literal() {
       case CypherParser::ExponentDecimalReal:
       case CypherParser::RegularDecimalReal: {
         enterOuterAlt(_localctx, 3);
-        setState(1471);
+        setState(1475);
         oC_NumberLiteral();
         break;
       }
 
       case CypherParser::StringLiteral: {
         enterOuterAlt(_localctx, 4);
-        setState(1472);
+        setState(1476);
         match(CypherParser::StringLiteral);
         break;
       }
 
       case CypherParser::T__7: {
         enterOuterAlt(_localctx, 5);
-        setState(1473);
+        setState(1477);
         oC_ListLiteral();
         break;
       }
 
       case CypherParser::T__23: {
         enterOuterAlt(_localctx, 6);
-        setState(1474);
+        setState(1478);
         oC_MapLiteral();
         break;
       }
 
-      default:
-        throw NoViableAltException(this);
+    default:
+      throw NoViableAltException(this);
     }
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -11078,36 +9902,35 @@ CypherParser::OC_LiteralContext *CypherParser::oC_Literal() {
   return _localctx;
 }
 
-//----------------- OC_BooleanLiteralContext
-//------------------------------------------------------------------
+//----------------- OC_BooleanLiteralContext ------------------------------------------------------------------
 
-CypherParser::OC_BooleanLiteralContext::OC_BooleanLiteralContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_BooleanLiteralContext::OC_BooleanLiteralContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-tree::TerminalNode *CypherParser::OC_BooleanLiteralContext::TRUE() {
+tree::TerminalNode* CypherParser::OC_BooleanLiteralContext::TRUE() {
   return getToken(CypherParser::TRUE, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_BooleanLiteralContext::FALSE() {
+tree::TerminalNode* CypherParser::OC_BooleanLiteralContext::FALSE() {
   return getToken(CypherParser::FALSE, 0);
 }
+
 
 size_t CypherParser::OC_BooleanLiteralContext::getRuleIndex() const {
   return CypherParser::RuleOC_BooleanLiteral;
 }
 
-std::any CypherParser::OC_BooleanLiteralContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_BooleanLiteralContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_BooleanLiteral(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_BooleanLiteralContext *CypherParser::oC_BooleanLiteral() {
-  OC_BooleanLiteralContext *_localctx =
-      _tracker.createInstance<OC_BooleanLiteralContext>(_ctx, getState());
+CypherParser::OC_BooleanLiteralContext* CypherParser::oC_BooleanLiteral() {
+  OC_BooleanLiteralContext *_localctx = _tracker.createInstance<OC_BooleanLiteralContext>(_ctx, getState());
   enterRule(_localctx, 178, CypherParser::RuleOC_BooleanLiteral);
   size_t _la = 0;
 
@@ -11120,18 +9943,20 @@ CypherParser::OC_BooleanLiteralContext *CypherParser::oC_BooleanLiteral() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(1477);
+    setState(1481);
     _la = _input->LA(1);
     if (!(_la == CypherParser::TRUE
 
-          || _la == CypherParser::FALSE)) {
-      _errHandler->recoverInline(this);
-    } else {
+    || _la == CypherParser::FALSE)) {
+    _errHandler->recoverInline(this);
+    }
+    else {
       _errHandler->reportMatch(this);
       consume();
     }
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -11140,38 +9965,35 @@ CypherParser::OC_BooleanLiteralContext *CypherParser::oC_BooleanLiteral() {
   return _localctx;
 }
 
-//----------------- OC_NumberLiteralContext
-//------------------------------------------------------------------
+//----------------- OC_NumberLiteralContext ------------------------------------------------------------------
 
-CypherParser::OC_NumberLiteralContext::OC_NumberLiteralContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_NumberLiteralContext::OC_NumberLiteralContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_DoubleLiteralContext *
-CypherParser::OC_NumberLiteralContext::oC_DoubleLiteral() {
+CypherParser::OC_DoubleLiteralContext* CypherParser::OC_NumberLiteralContext::oC_DoubleLiteral() {
   return getRuleContext<CypherParser::OC_DoubleLiteralContext>(0);
 }
 
-CypherParser::OC_IntegerLiteralContext *
-CypherParser::OC_NumberLiteralContext::oC_IntegerLiteral() {
+CypherParser::OC_IntegerLiteralContext* CypherParser::OC_NumberLiteralContext::oC_IntegerLiteral() {
   return getRuleContext<CypherParser::OC_IntegerLiteralContext>(0);
 }
+
 
 size_t CypherParser::OC_NumberLiteralContext::getRuleIndex() const {
   return CypherParser::RuleOC_NumberLiteral;
 }
 
-std::any CypherParser::OC_NumberLiteralContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_NumberLiteralContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_NumberLiteral(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_NumberLiteralContext *CypherParser::oC_NumberLiteral() {
-  OC_NumberLiteralContext *_localctx =
-      _tracker.createInstance<OC_NumberLiteralContext>(_ctx, getState());
+CypherParser::OC_NumberLiteralContext* CypherParser::oC_NumberLiteral() {
+  OC_NumberLiteralContext *_localctx = _tracker.createInstance<OC_NumberLiteralContext>(_ctx, getState());
   enterRule(_localctx, 180, CypherParser::RuleOC_NumberLiteral);
 
 #if __cplusplus > 201703L
@@ -11182,13 +10004,13 @@ CypherParser::OC_NumberLiteralContext *CypherParser::oC_NumberLiteral() {
     exitRule();
   });
   try {
-    setState(1481);
+    setState(1485);
     _errHandler->sync(this);
     switch (_input->LA(1)) {
       case CypherParser::ExponentDecimalReal:
       case CypherParser::RegularDecimalReal: {
         enterOuterAlt(_localctx, 1);
-        setState(1479);
+        setState(1483);
         oC_DoubleLiteral();
         break;
       }
@@ -11197,16 +10019,17 @@ CypherParser::OC_NumberLiteralContext *CypherParser::oC_NumberLiteral() {
       case CypherParser::DecimalInteger:
       case CypherParser::OctalInteger: {
         enterOuterAlt(_localctx, 2);
-        setState(1480);
+        setState(1484);
         oC_IntegerLiteral();
         break;
       }
 
-      default:
-        throw NoViableAltException(this);
+    default:
+      throw NoViableAltException(this);
     }
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -11215,40 +10038,39 @@ CypherParser::OC_NumberLiteralContext *CypherParser::oC_NumberLiteral() {
   return _localctx;
 }
 
-//----------------- OC_IntegerLiteralContext
-//------------------------------------------------------------------
+//----------------- OC_IntegerLiteralContext ------------------------------------------------------------------
 
-CypherParser::OC_IntegerLiteralContext::OC_IntegerLiteralContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_IntegerLiteralContext::OC_IntegerLiteralContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-tree::TerminalNode *CypherParser::OC_IntegerLiteralContext::HexInteger() {
+tree::TerminalNode* CypherParser::OC_IntegerLiteralContext::HexInteger() {
   return getToken(CypherParser::HexInteger, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_IntegerLiteralContext::OctalInteger() {
+tree::TerminalNode* CypherParser::OC_IntegerLiteralContext::OctalInteger() {
   return getToken(CypherParser::OctalInteger, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_IntegerLiteralContext::DecimalInteger() {
+tree::TerminalNode* CypherParser::OC_IntegerLiteralContext::DecimalInteger() {
   return getToken(CypherParser::DecimalInteger, 0);
 }
+
 
 size_t CypherParser::OC_IntegerLiteralContext::getRuleIndex() const {
   return CypherParser::RuleOC_IntegerLiteral;
 }
 
-std::any CypherParser::OC_IntegerLiteralContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_IntegerLiteralContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_IntegerLiteral(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_IntegerLiteralContext *CypherParser::oC_IntegerLiteral() {
-  OC_IntegerLiteralContext *_localctx =
-      _tracker.createInstance<OC_IntegerLiteralContext>(_ctx, getState());
+CypherParser::OC_IntegerLiteralContext* CypherParser::oC_IntegerLiteral() {
+  OC_IntegerLiteralContext *_localctx = _tracker.createInstance<OC_IntegerLiteralContext>(_ctx, getState());
   enterRule(_localctx, 182, CypherParser::RuleOC_IntegerLiteral);
   size_t _la = 0;
 
@@ -11261,17 +10083,19 @@ CypherParser::OC_IntegerLiteralContext *CypherParser::oC_IntegerLiteral() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(1483);
+    setState(1487);
     _la = _input->LA(1);
-    if (!(((((_la - 95) & ~0x3fULL) == 0) &&
-           ((1ULL << (_la - 95)) & 7) != 0))) {
-      _errHandler->recoverInline(this);
-    } else {
+    if (!(((((_la - 96) & ~ 0x3fULL) == 0) &&
+      ((1ULL << (_la - 96)) & 7) != 0))) {
+    _errHandler->recoverInline(this);
+    }
+    else {
       _errHandler->reportMatch(this);
       consume();
     }
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -11280,38 +10104,35 @@ CypherParser::OC_IntegerLiteralContext *CypherParser::oC_IntegerLiteral() {
   return _localctx;
 }
 
-//----------------- OC_DoubleLiteralContext
-//------------------------------------------------------------------
+//----------------- OC_DoubleLiteralContext ------------------------------------------------------------------
 
-CypherParser::OC_DoubleLiteralContext::OC_DoubleLiteralContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_DoubleLiteralContext::OC_DoubleLiteralContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-tree::TerminalNode *
-CypherParser::OC_DoubleLiteralContext::ExponentDecimalReal() {
+tree::TerminalNode* CypherParser::OC_DoubleLiteralContext::ExponentDecimalReal() {
   return getToken(CypherParser::ExponentDecimalReal, 0);
 }
 
-tree::TerminalNode *
-CypherParser::OC_DoubleLiteralContext::RegularDecimalReal() {
+tree::TerminalNode* CypherParser::OC_DoubleLiteralContext::RegularDecimalReal() {
   return getToken(CypherParser::RegularDecimalReal, 0);
 }
+
 
 size_t CypherParser::OC_DoubleLiteralContext::getRuleIndex() const {
   return CypherParser::RuleOC_DoubleLiteral;
 }
 
-std::any CypherParser::OC_DoubleLiteralContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_DoubleLiteralContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_DoubleLiteral(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_DoubleLiteralContext *CypherParser::oC_DoubleLiteral() {
-  OC_DoubleLiteralContext *_localctx =
-      _tracker.createInstance<OC_DoubleLiteralContext>(_ctx, getState());
+CypherParser::OC_DoubleLiteralContext* CypherParser::oC_DoubleLiteral() {
+  OC_DoubleLiteralContext *_localctx = _tracker.createInstance<OC_DoubleLiteralContext>(_ctx, getState());
   enterRule(_localctx, 184, CypherParser::RuleOC_DoubleLiteral);
   size_t _la = 0;
 
@@ -11324,18 +10145,20 @@ CypherParser::OC_DoubleLiteralContext *CypherParser::oC_DoubleLiteral() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(1485);
+    setState(1489);
     _la = _input->LA(1);
     if (!(_la == CypherParser::ExponentDecimalReal
 
-          || _la == CypherParser::RegularDecimalReal)) {
-      _errHandler->recoverInline(this);
-    } else {
+    || _la == CypherParser::RegularDecimalReal)) {
+    _errHandler->recoverInline(this);
+    }
+    else {
       _errHandler->reportMatch(this);
       consume();
     }
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -11344,46 +10167,43 @@ CypherParser::OC_DoubleLiteralContext *CypherParser::oC_DoubleLiteral() {
   return _localctx;
 }
 
-//----------------- OC_ListLiteralContext
-//------------------------------------------------------------------
+//----------------- OC_ListLiteralContext ------------------------------------------------------------------
 
-CypherParser::OC_ListLiteralContext::OC_ListLiteralContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_ListLiteralContext::OC_ListLiteralContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
 std::vector<tree::TerminalNode *> CypherParser::OC_ListLiteralContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_ListLiteralContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_ListLiteralContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
-std::vector<CypherParser::OC_ExpressionContext *>
-CypherParser::OC_ListLiteralContext::oC_Expression() {
+std::vector<CypherParser::OC_ExpressionContext *> CypherParser::OC_ListLiteralContext::oC_Expression() {
   return getRuleContexts<CypherParser::OC_ExpressionContext>();
 }
 
-CypherParser::OC_ExpressionContext *
-CypherParser::OC_ListLiteralContext::oC_Expression(size_t i) {
+CypherParser::OC_ExpressionContext* CypherParser::OC_ListLiteralContext::oC_Expression(size_t i) {
   return getRuleContext<CypherParser::OC_ExpressionContext>(i);
 }
+
 
 size_t CypherParser::OC_ListLiteralContext::getRuleIndex() const {
   return CypherParser::RuleOC_ListLiteral;
 }
 
-std::any CypherParser::OC_ListLiteralContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_ListLiteralContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_ListLiteral(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_ListLiteralContext *CypherParser::oC_ListLiteral() {
-  OC_ListLiteralContext *_localctx =
-      _tracker.createInstance<OC_ListLiteralContext>(_ctx, getState());
+CypherParser::OC_ListLiteralContext* CypherParser::oC_ListLiteral() {
+  OC_ListLiteralContext *_localctx = _tracker.createInstance<OC_ListLiteralContext>(_ctx, getState());
   enterRule(_localctx, 186, CypherParser::RuleOC_ListLiteral);
   size_t _la = 0;
 
@@ -11396,49 +10216,39 @@ CypherParser::OC_ListLiteralContext *CypherParser::oC_ListLiteral() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(1487);
+    setState(1491);
     match(CypherParser::T__7);
-    setState(1489);
+    setState(1493);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
     if (_la == CypherParser::SP) {
-      setState(1488);
+      setState(1492);
       match(CypherParser::SP);
     }
-    setState(1508);
+    setState(1512);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
-    if ((((_la & ~0x3fULL) == 0) && ((1ULL << _la) & 140737573028160) != 0) ||
-        ((((_la - 76) & ~0x3fULL) == 0) &&
-         ((1ULL << (_la - 76)) & 343051394343361) != 0)) {
-      setState(1491);
+    if ((((_la & ~ 0x3fULL) == 0) &&
+      ((1ULL << _la) & 140737573028160) != 0) || ((((_la - 76) & ~ 0x3fULL) == 0) &&
+      ((1ULL << (_la - 76)) & 686102788563393) != 0)) {
+      setState(1495);
       oC_Expression();
-      setState(1493);
+      setState(1497);
       _errHandler->sync(this);
 
       _la = _input->LA(1);
       if (_la == CypherParser::SP) {
-        setState(1492);
+        setState(1496);
         match(CypherParser::SP);
       }
-      setState(1505);
+      setState(1509);
       _errHandler->sync(this);
       _la = _input->LA(1);
       while (_la == CypherParser::T__1) {
-        setState(1495);
-        match(CypherParser::T__1);
-        setState(1497);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(1496);
-          match(CypherParser::SP);
-        }
         setState(1499);
-        oC_Expression();
+        match(CypherParser::T__1);
         setState(1501);
         _errHandler->sync(this);
 
@@ -11447,15 +10257,26 @@ CypherParser::OC_ListLiteralContext *CypherParser::oC_ListLiteral() {
           setState(1500);
           match(CypherParser::SP);
         }
-        setState(1507);
+        setState(1503);
+        oC_Expression();
+        setState(1505);
+        _errHandler->sync(this);
+
+        _la = _input->LA(1);
+        if (_la == CypherParser::SP) {
+          setState(1504);
+          match(CypherParser::SP);
+        }
+        setState(1511);
         _errHandler->sync(this);
         _la = _input->LA(1);
       }
     }
-    setState(1510);
+    setState(1514);
     match(CypherParser::T__8);
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -11464,56 +10285,51 @@ CypherParser::OC_ListLiteralContext *CypherParser::oC_ListLiteral() {
   return _localctx;
 }
 
-//----------------- OC_MapLiteralContext
-//------------------------------------------------------------------
+//----------------- OC_MapLiteralContext ------------------------------------------------------------------
 
-CypherParser::OC_MapLiteralContext::OC_MapLiteralContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_MapLiteralContext::OC_MapLiteralContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
 std::vector<tree::TerminalNode *> CypherParser::OC_MapLiteralContext::SP() {
   return getTokens(CypherParser::SP);
 }
 
-tree::TerminalNode *CypherParser::OC_MapLiteralContext::SP(size_t i) {
+tree::TerminalNode* CypherParser::OC_MapLiteralContext::SP(size_t i) {
   return getToken(CypherParser::SP, i);
 }
 
-std::vector<CypherParser::OC_PropertyKeyNameContext *>
-CypherParser::OC_MapLiteralContext::oC_PropertyKeyName() {
+std::vector<CypherParser::OC_PropertyKeyNameContext *> CypherParser::OC_MapLiteralContext::oC_PropertyKeyName() {
   return getRuleContexts<CypherParser::OC_PropertyKeyNameContext>();
 }
 
-CypherParser::OC_PropertyKeyNameContext *
-CypherParser::OC_MapLiteralContext::oC_PropertyKeyName(size_t i) {
+CypherParser::OC_PropertyKeyNameContext* CypherParser::OC_MapLiteralContext::oC_PropertyKeyName(size_t i) {
   return getRuleContext<CypherParser::OC_PropertyKeyNameContext>(i);
 }
 
-std::vector<CypherParser::OC_ExpressionContext *>
-CypherParser::OC_MapLiteralContext::oC_Expression() {
+std::vector<CypherParser::OC_ExpressionContext *> CypherParser::OC_MapLiteralContext::oC_Expression() {
   return getRuleContexts<CypherParser::OC_ExpressionContext>();
 }
 
-CypherParser::OC_ExpressionContext *
-CypherParser::OC_MapLiteralContext::oC_Expression(size_t i) {
+CypherParser::OC_ExpressionContext* CypherParser::OC_MapLiteralContext::oC_Expression(size_t i) {
   return getRuleContext<CypherParser::OC_ExpressionContext>(i);
 }
+
 
 size_t CypherParser::OC_MapLiteralContext::getRuleIndex() const {
   return CypherParser::RuleOC_MapLiteral;
 }
 
-std::any CypherParser::OC_MapLiteralContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_MapLiteralContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_MapLiteral(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_MapLiteralContext *CypherParser::oC_MapLiteral() {
-  OC_MapLiteralContext *_localctx =
-      _tracker.createInstance<OC_MapLiteralContext>(_ctx, getState());
+CypherParser::OC_MapLiteralContext* CypherParser::oC_MapLiteral() {
+  OC_MapLiteralContext *_localctx = _tracker.createInstance<OC_MapLiteralContext>(_ctx, getState());
   enterRule(_localctx, 188, CypherParser::RuleOC_MapLiteral);
   size_t _la = 0;
 
@@ -11526,36 +10342,25 @@ CypherParser::OC_MapLiteralContext *CypherParser::oC_MapLiteral() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(1512);
+    setState(1516);
     match(CypherParser::T__23);
-    setState(1514);
+    setState(1518);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
     if (_la == CypherParser::SP) {
-      setState(1513);
+      setState(1517);
       match(CypherParser::SP);
     }
-    setState(1549);
+    setState(1553);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
-    if ((((_la & ~0x3fULL) == 0) &&
-         ((1ULL << _la) & -1729452625654448128) != 0) ||
-        ((((_la - 64) & ~0x3fULL) == 0) &&
-         ((1ULL << (_la - 64)) & 1441116715713822719) != 0)) {
-      setState(1516);
-      oC_PropertyKeyName();
-      setState(1518);
-      _errHandler->sync(this);
-
-      _la = _input->LA(1);
-      if (_la == CypherParser::SP) {
-        setState(1517);
-        match(CypherParser::SP);
-      }
+    if ((((_la & ~ 0x3fULL) == 0) &&
+      ((1ULL << _la) & -1729452625654448128) != 0) || ((((_la - 64) & ~ 0x3fULL) == 0) &&
+      ((1ULL << (_la - 64)) & 2882233431427645439) != 0)) {
       setState(1520);
-      match(CypherParser::T__9);
+      oC_PropertyKeyName();
       setState(1522);
       _errHandler->sync(this);
 
@@ -11565,7 +10370,7 @@ CypherParser::OC_MapLiteralContext *CypherParser::oC_MapLiteral() {
         match(CypherParser::SP);
       }
       setState(1524);
-      oC_Expression();
+      match(CypherParser::T__9);
       setState(1526);
       _errHandler->sync(this);
 
@@ -11574,22 +10379,22 @@ CypherParser::OC_MapLiteralContext *CypherParser::oC_MapLiteral() {
         setState(1525);
         match(CypherParser::SP);
       }
-      setState(1546);
+      setState(1528);
+      oC_Expression();
+      setState(1530);
+      _errHandler->sync(this);
+
+      _la = _input->LA(1);
+      if (_la == CypherParser::SP) {
+        setState(1529);
+        match(CypherParser::SP);
+      }
+      setState(1550);
       _errHandler->sync(this);
       _la = _input->LA(1);
       while (_la == CypherParser::T__1) {
-        setState(1528);
-        match(CypherParser::T__1);
-        setState(1530);
-        _errHandler->sync(this);
-
-        _la = _input->LA(1);
-        if (_la == CypherParser::SP) {
-          setState(1529);
-          match(CypherParser::SP);
-        }
         setState(1532);
-        oC_PropertyKeyName();
+        match(CypherParser::T__1);
         setState(1534);
         _errHandler->sync(this);
 
@@ -11599,7 +10404,7 @@ CypherParser::OC_MapLiteralContext *CypherParser::oC_MapLiteral() {
           match(CypherParser::SP);
         }
         setState(1536);
-        match(CypherParser::T__9);
+        oC_PropertyKeyName();
         setState(1538);
         _errHandler->sync(this);
 
@@ -11609,7 +10414,7 @@ CypherParser::OC_MapLiteralContext *CypherParser::oC_MapLiteral() {
           match(CypherParser::SP);
         }
         setState(1540);
-        oC_Expression();
+        match(CypherParser::T__9);
         setState(1542);
         _errHandler->sync(this);
 
@@ -11618,15 +10423,26 @@ CypherParser::OC_MapLiteralContext *CypherParser::oC_MapLiteral() {
           setState(1541);
           match(CypherParser::SP);
         }
-        setState(1548);
+        setState(1544);
+        oC_Expression();
+        setState(1546);
+        _errHandler->sync(this);
+
+        _la = _input->LA(1);
+        if (_la == CypherParser::SP) {
+          setState(1545);
+          match(CypherParser::SP);
+        }
+        setState(1552);
         _errHandler->sync(this);
         _la = _input->LA(1);
       }
     }
-    setState(1551);
+    setState(1555);
     match(CypherParser::T__24);
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -11635,33 +10451,31 @@ CypherParser::OC_MapLiteralContext *CypherParser::oC_MapLiteral() {
   return _localctx;
 }
 
-//----------------- OC_PropertyKeyNameContext
-//------------------------------------------------------------------
+//----------------- OC_PropertyKeyNameContext ------------------------------------------------------------------
 
-CypherParser::OC_PropertyKeyNameContext::OC_PropertyKeyNameContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_PropertyKeyNameContext::OC_PropertyKeyNameContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_SchemaNameContext *
-CypherParser::OC_PropertyKeyNameContext::oC_SchemaName() {
+CypherParser::OC_SchemaNameContext* CypherParser::OC_PropertyKeyNameContext::oC_SchemaName() {
   return getRuleContext<CypherParser::OC_SchemaNameContext>(0);
 }
+
 
 size_t CypherParser::OC_PropertyKeyNameContext::getRuleIndex() const {
   return CypherParser::RuleOC_PropertyKeyName;
 }
 
-std::any CypherParser::OC_PropertyKeyNameContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_PropertyKeyNameContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_PropertyKeyName(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_PropertyKeyNameContext *CypherParser::oC_PropertyKeyName() {
-  OC_PropertyKeyNameContext *_localctx =
-      _tracker.createInstance<OC_PropertyKeyNameContext>(_ctx, getState());
+CypherParser::OC_PropertyKeyNameContext* CypherParser::oC_PropertyKeyName() {
+  OC_PropertyKeyNameContext *_localctx = _tracker.createInstance<OC_PropertyKeyNameContext>(_ctx, getState());
   enterRule(_localctx, 190, CypherParser::RuleOC_PropertyKeyName);
 
 #if __cplusplus > 201703L
@@ -11673,10 +10487,11 @@ CypherParser::OC_PropertyKeyNameContext *CypherParser::oC_PropertyKeyName() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(1553);
+    setState(1557);
     oC_SchemaName();
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -11685,37 +10500,35 @@ CypherParser::OC_PropertyKeyNameContext *CypherParser::oC_PropertyKeyName() {
   return _localctx;
 }
 
-//----------------- OC_ParameterContext
-//------------------------------------------------------------------
+//----------------- OC_ParameterContext ------------------------------------------------------------------
 
-CypherParser::OC_ParameterContext::OC_ParameterContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_ParameterContext::OC_ParameterContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-CypherParser::OC_SymbolicNameContext *
-CypherParser::OC_ParameterContext::oC_SymbolicName() {
+CypherParser::OC_SymbolicNameContext* CypherParser::OC_ParameterContext::oC_SymbolicName() {
   return getRuleContext<CypherParser::OC_SymbolicNameContext>(0);
 }
 
-tree::TerminalNode *CypherParser::OC_ParameterContext::DecimalInteger() {
+tree::TerminalNode* CypherParser::OC_ParameterContext::DecimalInteger() {
   return getToken(CypherParser::DecimalInteger, 0);
 }
+
 
 size_t CypherParser::OC_ParameterContext::getRuleIndex() const {
   return CypherParser::RuleOC_Parameter;
 }
 
-std::any CypherParser::OC_ParameterContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_ParameterContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_Parameter(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_ParameterContext *CypherParser::oC_Parameter() {
-  OC_ParameterContext *_localctx =
-      _tracker.createInstance<OC_ParameterContext>(_ctx, getState());
+CypherParser::OC_ParameterContext* CypherParser::oC_Parameter() {
+  OC_ParameterContext *_localctx = _tracker.createInstance<OC_ParameterContext>(_ctx, getState());
   enterRule(_localctx, 192, CypherParser::RuleOC_Parameter);
 
 #if __cplusplus > 201703L
@@ -11727,86 +10540,8 @@ CypherParser::OC_ParameterContext *CypherParser::oC_Parameter() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(1555);
+    setState(1559);
     match(CypherParser::T__25);
-    setState(1558);
-    _errHandler->sync(this);
-    switch (_input->LA(1)) {
-      case CypherParser::COUNT:
-      case CypherParser::ANY:
-      case CypherParser::NONE:
-      case CypherParser::SINGLE:
-      case CypherParser::HexLetter:
-      case CypherParser::FILTER:
-      case CypherParser::EXTRACT:
-      case CypherParser::UnescapedSymbolicName:
-      case CypherParser::EscapedSymbolicName: {
-        setState(1556);
-        oC_SymbolicName();
-        break;
-      }
-
-      case CypherParser::DecimalInteger: {
-        setState(1557);
-        match(CypherParser::DecimalInteger);
-        break;
-      }
-
-      default:
-        throw NoViableAltException(this);
-    }
-
-  } catch (RecognitionException &e) {
-    _errHandler->reportError(this, e);
-    _localctx->exception = std::current_exception();
-    _errHandler->recover(this, _localctx->exception);
-  }
-
-  return _localctx;
-}
-
-//----------------- OC_SchemaNameContext
-//------------------------------------------------------------------
-
-CypherParser::OC_SchemaNameContext::OC_SchemaNameContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
-
-CypherParser::OC_SymbolicNameContext *
-CypherParser::OC_SchemaNameContext::oC_SymbolicName() {
-  return getRuleContext<CypherParser::OC_SymbolicNameContext>(0);
-}
-
-CypherParser::OC_ReservedWordContext *
-CypherParser::OC_SchemaNameContext::oC_ReservedWord() {
-  return getRuleContext<CypherParser::OC_ReservedWordContext>(0);
-}
-
-size_t CypherParser::OC_SchemaNameContext::getRuleIndex() const {
-  return CypherParser::RuleOC_SchemaName;
-}
-
-std::any CypherParser::OC_SchemaNameContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
-    return parserVisitor->visitOC_SchemaName(this);
-  else
-    return visitor->visitChildren(this);
-}
-
-CypherParser::OC_SchemaNameContext *CypherParser::oC_SchemaName() {
-  OC_SchemaNameContext *_localctx =
-      _tracker.createInstance<OC_SchemaNameContext>(_ctx, getState());
-  enterRule(_localctx, 194, CypherParser::RuleOC_SchemaName);
-
-#if __cplusplus > 201703L
-  auto onExit = finally([=, this] {
-#else
-  auto onExit = finally([=] {
-#endif
-    exitRule();
-  });
-  try {
     setState(1562);
     _errHandler->sync(this);
     switch (_input->LA(1)) {
@@ -11819,8 +10554,84 @@ CypherParser::OC_SchemaNameContext *CypherParser::oC_SchemaName() {
       case CypherParser::EXTRACT:
       case CypherParser::UnescapedSymbolicName:
       case CypherParser::EscapedSymbolicName: {
-        enterOuterAlt(_localctx, 1);
         setState(1560);
+        oC_SymbolicName();
+        break;
+      }
+
+      case CypherParser::DecimalInteger: {
+        setState(1561);
+        match(CypherParser::DecimalInteger);
+        break;
+      }
+
+    default:
+      throw NoViableAltException(this);
+    }
+   
+  }
+  catch (RecognitionException &e) {
+    _errHandler->reportError(this, e);
+    _localctx->exception = std::current_exception();
+    _errHandler->recover(this, _localctx->exception);
+  }
+
+  return _localctx;
+}
+
+//----------------- OC_SchemaNameContext ------------------------------------------------------------------
+
+CypherParser::OC_SchemaNameContext::OC_SchemaNameContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
+
+CypherParser::OC_SymbolicNameContext* CypherParser::OC_SchemaNameContext::oC_SymbolicName() {
+  return getRuleContext<CypherParser::OC_SymbolicNameContext>(0);
+}
+
+CypherParser::OC_ReservedWordContext* CypherParser::OC_SchemaNameContext::oC_ReservedWord() {
+  return getRuleContext<CypherParser::OC_ReservedWordContext>(0);
+}
+
+
+size_t CypherParser::OC_SchemaNameContext::getRuleIndex() const {
+  return CypherParser::RuleOC_SchemaName;
+}
+
+
+std::any CypherParser::OC_SchemaNameContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
+    return parserVisitor->visitOC_SchemaName(this);
+  else
+    return visitor->visitChildren(this);
+}
+
+CypherParser::OC_SchemaNameContext* CypherParser::oC_SchemaName() {
+  OC_SchemaNameContext *_localctx = _tracker.createInstance<OC_SchemaNameContext>(_ctx, getState());
+  enterRule(_localctx, 194, CypherParser::RuleOC_SchemaName);
+
+#if __cplusplus > 201703L
+  auto onExit = finally([=, this] {
+#else
+  auto onExit = finally([=] {
+#endif
+    exitRule();
+  });
+  try {
+    setState(1566);
+    _errHandler->sync(this);
+    switch (_input->LA(1)) {
+      case CypherParser::COUNT:
+      case CypherParser::ANY:
+      case CypherParser::NONE:
+      case CypherParser::SINGLE:
+      case CypherParser::HexLetter:
+      case CypherParser::FILTER:
+      case CypherParser::EXTRACT:
+      case CypherParser::UnescapedSymbolicName:
+      case CypherParser::EscapedSymbolicName: {
+        enterOuterAlt(_localctx, 1);
+        setState(1564);
         oC_SymbolicName();
         break;
       }
@@ -11866,6 +10677,7 @@ CypherParser::OC_SchemaNameContext *CypherParser::oC_SchemaName() {
       case CypherParser::WHEN:
       case CypherParser::THEN:
       case CypherParser::EXISTS:
+      case CypherParser::EXPLAIN:
       case CypherParser::TRUE:
       case CypherParser::FALSE:
       case CypherParser::CONSTRAINT:
@@ -11879,16 +10691,17 @@ CypherParser::OC_SchemaNameContext *CypherParser::oC_SchemaName() {
       case CypherParser::ADD:
       case CypherParser::DROP: {
         enterOuterAlt(_localctx, 2);
-        setState(1561);
+        setState(1565);
         oC_ReservedWord();
         break;
       }
 
-      default:
-        throw NoViableAltException(this);
+    default:
+      throw NoViableAltException(this);
     }
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -11897,387 +10710,244 @@ CypherParser::OC_SchemaNameContext *CypherParser::oC_SchemaName() {
   return _localctx;
 }
 
-//----------------- OC_ReservedWordContext
-//------------------------------------------------------------------
+//----------------- OC_ReservedWordContext ------------------------------------------------------------------
 
-CypherParser::OC_ReservedWordContext::OC_ReservedWordContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
+CypherParser::OC_ReservedWordContext::OC_ReservedWordContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::ALL() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::ALL() {
   return getToken(CypherParser::ALL, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::ASC() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::ASC() {
   return getToken(CypherParser::ASC, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::ASCENDING() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::ASCENDING() {
   return getToken(CypherParser::ASCENDING, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::BY() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::BY() {
   return getToken(CypherParser::BY, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::CREATE() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::CREATE() {
   return getToken(CypherParser::CREATE, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::DELETE() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::DELETE() {
   return getToken(CypherParser::DELETE, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::DESC() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::DESC() {
   return getToken(CypherParser::DESC, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::DESCENDING() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::DESCENDING() {
   return getToken(CypherParser::DESCENDING, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::DETACH() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::DETACH() {
   return getToken(CypherParser::DETACH, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::EXISTS() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::EXISTS() {
   return getToken(CypherParser::EXISTS, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::LIMIT() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::EXPLAIN() {
+  return getToken(CypherParser::EXPLAIN, 0);
+}
+
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::LIMIT() {
   return getToken(CypherParser::LIMIT, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::MATCH() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::MATCH() {
   return getToken(CypherParser::MATCH, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::MERGE() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::MERGE() {
   return getToken(CypherParser::MERGE, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::ON() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::ON() {
   return getToken(CypherParser::ON, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::OPTIONAL() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::OPTIONAL() {
   return getToken(CypherParser::OPTIONAL, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::ORDER() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::ORDER() {
   return getToken(CypherParser::ORDER, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::REMOVE() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::REMOVE() {
   return getToken(CypherParser::REMOVE, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::RETURN() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::RETURN() {
   return getToken(CypherParser::RETURN, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::SET() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::SET() {
   return getToken(CypherParser::SET, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::L_SKIP() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::L_SKIP() {
   return getToken(CypherParser::L_SKIP, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::WHERE() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::WHERE() {
   return getToken(CypherParser::WHERE, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::WITH() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::WITH() {
   return getToken(CypherParser::WITH, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::UNION() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::UNION() {
   return getToken(CypherParser::UNION, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::UNWIND() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::UNWIND() {
   return getToken(CypherParser::UNWIND, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::AND() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::AND() {
   return getToken(CypherParser::AND, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::AS() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::AS() {
   return getToken(CypherParser::AS, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::CONTAINS() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::CONTAINS() {
   return getToken(CypherParser::CONTAINS, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::DISTINCT() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::DISTINCT() {
   return getToken(CypherParser::DISTINCT, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::ENDS() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::ENDS() {
   return getToken(CypherParser::ENDS, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::IN() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::IN() {
   return getToken(CypherParser::IN, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::IS() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::IS() {
   return getToken(CypherParser::IS, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::NOT() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::NOT() {
   return getToken(CypherParser::NOT, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::OR() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::OR() {
   return getToken(CypherParser::OR, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::STARTS() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::STARTS() {
   return getToken(CypherParser::STARTS, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::XOR() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::XOR() {
   return getToken(CypherParser::XOR, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::FALSE() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::FALSE() {
   return getToken(CypherParser::FALSE, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::TRUE() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::TRUE() {
   return getToken(CypherParser::TRUE, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::NULL_() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::NULL_() {
   return getToken(CypherParser::NULL_, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::CONSTRAINT() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::CONSTRAINT() {
   return getToken(CypherParser::CONSTRAINT, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::DO() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::DO() {
   return getToken(CypherParser::DO, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::FOR() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::FOR() {
   return getToken(CypherParser::FOR, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::REQUIRE() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::REQUIRE() {
   return getToken(CypherParser::REQUIRE, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::UNIQUE() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::UNIQUE() {
   return getToken(CypherParser::UNIQUE, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::CASE() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::CASE() {
   return getToken(CypherParser::CASE, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::WHEN() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::WHEN() {
   return getToken(CypherParser::WHEN, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::THEN() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::THEN() {
   return getToken(CypherParser::THEN, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::ELSE() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::ELSE() {
   return getToken(CypherParser::ELSE, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::END() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::END() {
   return getToken(CypherParser::END, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::MANDATORY() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::MANDATORY() {
   return getToken(CypherParser::MANDATORY, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::SCALAR() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::SCALAR() {
   return getToken(CypherParser::SCALAR, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::OF() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::OF() {
   return getToken(CypherParser::OF, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::ADD() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::ADD() {
   return getToken(CypherParser::ADD, 0);
 }
 
-tree::TerminalNode *CypherParser::OC_ReservedWordContext::DROP() {
+tree::TerminalNode* CypherParser::OC_ReservedWordContext::DROP() {
   return getToken(CypherParser::DROP, 0);
 }
+
 
 size_t CypherParser::OC_ReservedWordContext::getRuleIndex() const {
   return CypherParser::RuleOC_ReservedWord;
 }
 
-std::any CypherParser::OC_ReservedWordContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
+
+std::any CypherParser::OC_ReservedWordContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
     return parserVisitor->visitOC_ReservedWord(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_ReservedWordContext *CypherParser::oC_ReservedWord() {
-  OC_ReservedWordContext *_localctx =
-      _tracker.createInstance<OC_ReservedWordContext>(_ctx, getState());
+CypherParser::OC_ReservedWordContext* CypherParser::oC_ReservedWord() {
+  OC_ReservedWordContext *_localctx = _tracker.createInstance<OC_ReservedWordContext>(_ctx, getState());
   enterRule(_localctx, 196, CypherParser::RuleOC_ReservedWord);
-  size_t _la = 0;
-
-#if __cplusplus > 201703L
-  auto onExit = finally([=, this] {
-#else
-  auto onExit = finally([=] {
-#endif
-    exitRule();
-  });
-  try {
-    enterOuterAlt(_localctx, 1);
-    setState(1564);
-    _la = _input->LA(1);
-    if (!((((_la & ~0x3fULL) == 0) &&
-           ((1ULL << _la) & -1729452625654448128) != 0) ||
-          ((((_la - 64) & ~0x3fULL) == 0) &&
-           ((1ULL << (_la - 64)) & 35993614558953471) != 0))) {
-      _errHandler->recoverInline(this);
-    } else {
-      _errHandler->reportMatch(this);
-      consume();
-    }
-
-  } catch (RecognitionException &e) {
-    _errHandler->reportError(this, e);
-    _localctx->exception = std::current_exception();
-    _errHandler->recover(this, _localctx->exception);
-  }
-
-  return _localctx;
-}
-
-//----------------- OC_SymbolicNameContext
-//------------------------------------------------------------------
-
-CypherParser::OC_SymbolicNameContext::OC_SymbolicNameContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
-
-tree::TerminalNode *
-CypherParser::OC_SymbolicNameContext::UnescapedSymbolicName() {
-  return getToken(CypherParser::UnescapedSymbolicName, 0);
-}
-
-tree::TerminalNode *
-CypherParser::OC_SymbolicNameContext::EscapedSymbolicName() {
-  return getToken(CypherParser::EscapedSymbolicName, 0);
-}
-
-tree::TerminalNode *CypherParser::OC_SymbolicNameContext::HexLetter() {
-  return getToken(CypherParser::HexLetter, 0);
-}
-
-tree::TerminalNode *CypherParser::OC_SymbolicNameContext::COUNT() {
-  return getToken(CypherParser::COUNT, 0);
-}
-
-tree::TerminalNode *CypherParser::OC_SymbolicNameContext::FILTER() {
-  return getToken(CypherParser::FILTER, 0);
-}
-
-tree::TerminalNode *CypherParser::OC_SymbolicNameContext::EXTRACT() {
-  return getToken(CypherParser::EXTRACT, 0);
-}
-
-tree::TerminalNode *CypherParser::OC_SymbolicNameContext::ANY() {
-  return getToken(CypherParser::ANY, 0);
-}
-
-tree::TerminalNode *CypherParser::OC_SymbolicNameContext::NONE() {
-  return getToken(CypherParser::NONE, 0);
-}
-
-tree::TerminalNode *CypherParser::OC_SymbolicNameContext::SINGLE() {
-  return getToken(CypherParser::SINGLE, 0);
-}
-
-size_t CypherParser::OC_SymbolicNameContext::getRuleIndex() const {
-  return CypherParser::RuleOC_SymbolicName;
-}
-
-std::any CypherParser::OC_SymbolicNameContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
-    return parserVisitor->visitOC_SymbolicName(this);
-  else
-    return visitor->visitChildren(this);
-}
-
-CypherParser::OC_SymbolicNameContext *CypherParser::oC_SymbolicName() {
-  OC_SymbolicNameContext *_localctx =
-      _tracker.createInstance<OC_SymbolicNameContext>(_ctx, getState());
-  enterRule(_localctx, 198, CypherParser::RuleOC_SymbolicName);
-  size_t _la = 0;
-
-#if __cplusplus > 201703L
-  auto onExit = finally([=, this] {
-#else
-  auto onExit = finally([=] {
-#endif
-    exitRule();
-  });
-  try {
-    enterOuterAlt(_localctx, 1);
-    setState(1566);
-    _la = _input->LA(1);
-    if (!(((((_la - 83) & ~0x3fULL) == 0) &&
-           ((1ULL << (_la - 83)) & 2680059625921) != 0))) {
-      _errHandler->recoverInline(this);
-    } else {
-      _errHandler->reportMatch(this);
-      consume();
-    }
-
-  } catch (RecognitionException &e) {
-    _errHandler->reportError(this, e);
-    _localctx->exception = std::current_exception();
-    _errHandler->recover(this, _localctx->exception);
-  }
-
-  return _localctx;
-}
-
-//----------------- OC_LeftArrowHeadContext
-//------------------------------------------------------------------
-
-CypherParser::OC_LeftArrowHeadContext::OC_LeftArrowHeadContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
-
-size_t CypherParser::OC_LeftArrowHeadContext::getRuleIndex() const {
-  return CypherParser::RuleOC_LeftArrowHead;
-}
-
-std::any CypherParser::OC_LeftArrowHeadContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
-    return parserVisitor->visitOC_LeftArrowHead(this);
-  else
-    return visitor->visitChildren(this);
-}
-
-CypherParser::OC_LeftArrowHeadContext *CypherParser::oC_LeftArrowHead() {
-  OC_LeftArrowHeadContext *_localctx =
-      _tracker.createInstance<OC_LeftArrowHeadContext>(_ctx, getState());
-  enterRule(_localctx, 200, CypherParser::RuleOC_LeftArrowHead);
   size_t _la = 0;
 
 #if __cplusplus > 201703L
@@ -12291,14 +10961,18 @@ CypherParser::OC_LeftArrowHeadContext *CypherParser::oC_LeftArrowHead() {
     enterOuterAlt(_localctx, 1);
     setState(1568);
     _la = _input->LA(1);
-    if (!((((_la & ~0x3fULL) == 0) && ((1ULL << _la) & 2013282304) != 0))) {
-      _errHandler->recoverInline(this);
-    } else {
+    if (!((((_la & ~ 0x3fULL) == 0) &&
+      ((1ULL << _la) & -1729452625654448128) != 0) || ((((_la - 64) & ~ 0x3fULL) == 0) &&
+      ((1ULL << (_la - 64)) & 71987229353312255) != 0))) {
+    _errHandler->recoverInline(this);
+    }
+    else {
       _errHandler->reportMatch(this);
       consume();
     }
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -12307,29 +10981,64 @@ CypherParser::OC_LeftArrowHeadContext *CypherParser::oC_LeftArrowHead() {
   return _localctx;
 }
 
-//----------------- OC_RightArrowHeadContext
-//------------------------------------------------------------------
+//----------------- OC_SymbolicNameContext ------------------------------------------------------------------
 
-CypherParser::OC_RightArrowHeadContext::OC_RightArrowHeadContext(
-    ParserRuleContext *parent, size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
-
-size_t CypherParser::OC_RightArrowHeadContext::getRuleIndex() const {
-  return CypherParser::RuleOC_RightArrowHead;
+CypherParser::OC_SymbolicNameContext::OC_SymbolicNameContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
 }
 
-std::any CypherParser::OC_RightArrowHeadContext::accept(
-    tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
-    return parserVisitor->visitOC_RightArrowHead(this);
+tree::TerminalNode* CypherParser::OC_SymbolicNameContext::UnescapedSymbolicName() {
+  return getToken(CypherParser::UnescapedSymbolicName, 0);
+}
+
+tree::TerminalNode* CypherParser::OC_SymbolicNameContext::EscapedSymbolicName() {
+  return getToken(CypherParser::EscapedSymbolicName, 0);
+}
+
+tree::TerminalNode* CypherParser::OC_SymbolicNameContext::HexLetter() {
+  return getToken(CypherParser::HexLetter, 0);
+}
+
+tree::TerminalNode* CypherParser::OC_SymbolicNameContext::COUNT() {
+  return getToken(CypherParser::COUNT, 0);
+}
+
+tree::TerminalNode* CypherParser::OC_SymbolicNameContext::FILTER() {
+  return getToken(CypherParser::FILTER, 0);
+}
+
+tree::TerminalNode* CypherParser::OC_SymbolicNameContext::EXTRACT() {
+  return getToken(CypherParser::EXTRACT, 0);
+}
+
+tree::TerminalNode* CypherParser::OC_SymbolicNameContext::ANY() {
+  return getToken(CypherParser::ANY, 0);
+}
+
+tree::TerminalNode* CypherParser::OC_SymbolicNameContext::NONE() {
+  return getToken(CypherParser::NONE, 0);
+}
+
+tree::TerminalNode* CypherParser::OC_SymbolicNameContext::SINGLE() {
+  return getToken(CypherParser::SINGLE, 0);
+}
+
+
+size_t CypherParser::OC_SymbolicNameContext::getRuleIndex() const {
+  return CypherParser::RuleOC_SymbolicName;
+}
+
+
+std::any CypherParser::OC_SymbolicNameContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
+    return parserVisitor->visitOC_SymbolicName(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_RightArrowHeadContext *CypherParser::oC_RightArrowHead() {
-  OC_RightArrowHeadContext *_localctx =
-      _tracker.createInstance<OC_RightArrowHeadContext>(_ctx, getState());
-  enterRule(_localctx, 202, CypherParser::RuleOC_RightArrowHead);
+CypherParser::OC_SymbolicNameContext* CypherParser::oC_SymbolicName() {
+  OC_SymbolicNameContext *_localctx = _tracker.createInstance<OC_SymbolicNameContext>(_ctx, getState());
+  enterRule(_localctx, 198, CypherParser::RuleOC_SymbolicName);
   size_t _la = 0;
 
 #if __cplusplus > 201703L
@@ -12343,14 +11052,17 @@ CypherParser::OC_RightArrowHeadContext *CypherParser::oC_RightArrowHead() {
     enterOuterAlt(_localctx, 1);
     setState(1570);
     _la = _input->LA(1);
-    if (!((((_la & ~0x3fULL) == 0) && ((1ULL << _la) & 32212287488) != 0))) {
-      _errHandler->recoverInline(this);
-    } else {
+    if (!(((((_la - 83) & ~ 0x3fULL) == 0) &&
+      ((1ULL << (_la - 83)) & 5360119251393) != 0))) {
+    _errHandler->recoverInline(this);
+    }
+    else {
       _errHandler->reportMatch(this);
       consume();
     }
-
-  } catch (RecognitionException &e) {
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);
@@ -12359,28 +11071,28 @@ CypherParser::OC_RightArrowHeadContext *CypherParser::oC_RightArrowHead() {
   return _localctx;
 }
 
-//----------------- OC_DashContext
-//------------------------------------------------------------------
+//----------------- OC_LeftArrowHeadContext ------------------------------------------------------------------
 
-CypherParser::OC_DashContext::OC_DashContext(ParserRuleContext *parent,
-                                             size_t invokingState)
-    : ParserRuleContext(parent, invokingState) {}
-
-size_t CypherParser::OC_DashContext::getRuleIndex() const {
-  return CypherParser::RuleOC_Dash;
+CypherParser::OC_LeftArrowHeadContext::OC_LeftArrowHeadContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
 }
 
-std::any CypherParser::OC_DashContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<CypherVisitor *>(visitor))
-    return parserVisitor->visitOC_Dash(this);
+
+size_t CypherParser::OC_LeftArrowHeadContext::getRuleIndex() const {
+  return CypherParser::RuleOC_LeftArrowHead;
+}
+
+
+std::any CypherParser::OC_LeftArrowHeadContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
+    return parserVisitor->visitOC_LeftArrowHead(this);
   else
     return visitor->visitChildren(this);
 }
 
-CypherParser::OC_DashContext *CypherParser::oC_Dash() {
-  OC_DashContext *_localctx =
-      _tracker.createInstance<OC_DashContext>(_ctx, getState());
-  enterRule(_localctx, 204, CypherParser::RuleOC_Dash);
+CypherParser::OC_LeftArrowHeadContext* CypherParser::oC_LeftArrowHead() {
+  OC_LeftArrowHeadContext *_localctx = _tracker.createInstance<OC_LeftArrowHeadContext>(_ctx, getState());
+  enterRule(_localctx, 200, CypherParser::RuleOC_LeftArrowHead);
   size_t _la = 0;
 
 #if __cplusplus > 201703L
@@ -12394,14 +11106,125 @@ CypherParser::OC_DashContext *CypherParser::oC_Dash() {
     enterOuterAlt(_localctx, 1);
     setState(1572);
     _la = _input->LA(1);
-    if (!((((_la & ~0x3fULL) == 0) && ((1ULL << _la) & 70334384963584) != 0))) {
-      _errHandler->recoverInline(this);
-    } else {
+    if (!((((_la & ~ 0x3fULL) == 0) &&
+      ((1ULL << _la) & 2013282304) != 0))) {
+    _errHandler->recoverInline(this);
+    }
+    else {
       _errHandler->reportMatch(this);
       consume();
     }
+   
+  }
+  catch (RecognitionException &e) {
+    _errHandler->reportError(this, e);
+    _localctx->exception = std::current_exception();
+    _errHandler->recover(this, _localctx->exception);
+  }
 
-  } catch (RecognitionException &e) {
+  return _localctx;
+}
+
+//----------------- OC_RightArrowHeadContext ------------------------------------------------------------------
+
+CypherParser::OC_RightArrowHeadContext::OC_RightArrowHeadContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
+
+
+size_t CypherParser::OC_RightArrowHeadContext::getRuleIndex() const {
+  return CypherParser::RuleOC_RightArrowHead;
+}
+
+
+std::any CypherParser::OC_RightArrowHeadContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
+    return parserVisitor->visitOC_RightArrowHead(this);
+  else
+    return visitor->visitChildren(this);
+}
+
+CypherParser::OC_RightArrowHeadContext* CypherParser::oC_RightArrowHead() {
+  OC_RightArrowHeadContext *_localctx = _tracker.createInstance<OC_RightArrowHeadContext>(_ctx, getState());
+  enterRule(_localctx, 202, CypherParser::RuleOC_RightArrowHead);
+  size_t _la = 0;
+
+#if __cplusplus > 201703L
+  auto onExit = finally([=, this] {
+#else
+  auto onExit = finally([=] {
+#endif
+    exitRule();
+  });
+  try {
+    enterOuterAlt(_localctx, 1);
+    setState(1574);
+    _la = _input->LA(1);
+    if (!((((_la & ~ 0x3fULL) == 0) &&
+      ((1ULL << _la) & 32212287488) != 0))) {
+    _errHandler->recoverInline(this);
+    }
+    else {
+      _errHandler->reportMatch(this);
+      consume();
+    }
+   
+  }
+  catch (RecognitionException &e) {
+    _errHandler->reportError(this, e);
+    _localctx->exception = std::current_exception();
+    _errHandler->recover(this, _localctx->exception);
+  }
+
+  return _localctx;
+}
+
+//----------------- OC_DashContext ------------------------------------------------------------------
+
+CypherParser::OC_DashContext::OC_DashContext(ParserRuleContext *parent, size_t invokingState)
+  : ParserRuleContext(parent, invokingState) {
+}
+
+
+size_t CypherParser::OC_DashContext::getRuleIndex() const {
+  return CypherParser::RuleOC_Dash;
+}
+
+
+std::any CypherParser::OC_DashContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<CypherVisitor*>(visitor))
+    return parserVisitor->visitOC_Dash(this);
+  else
+    return visitor->visitChildren(this);
+}
+
+CypherParser::OC_DashContext* CypherParser::oC_Dash() {
+  OC_DashContext *_localctx = _tracker.createInstance<OC_DashContext>(_ctx, getState());
+  enterRule(_localctx, 204, CypherParser::RuleOC_Dash);
+  size_t _la = 0;
+
+#if __cplusplus > 201703L
+  auto onExit = finally([=, this] {
+#else
+  auto onExit = finally([=] {
+#endif
+    exitRule();
+  });
+  try {
+    enterOuterAlt(_localctx, 1);
+    setState(1576);
+    _la = _input->LA(1);
+    if (!((((_la & ~ 0x3fULL) == 0) &&
+      ((1ULL << _la) & 70334384963584) != 0))) {
+    _errHandler->recoverInline(this);
+    }
+    else {
+      _errHandler->reportMatch(this);
+      consume();
+    }
+   
+  }
+  catch (RecognitionException &e) {
     _errHandler->reportError(this, e);
     _localctx->exception = std::current_exception();
     _errHandler->recover(this, _localctx->exception);

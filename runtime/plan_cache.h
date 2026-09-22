@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -26,16 +27,24 @@ struct PlanCacheKey {
 class CachedPlan final {
  public:
   CachedPlan(std::shared_ptr<const PhysicalPlan> physical_plan,
-             std::vector<std::string> required_parameters);
+             std::vector<std::string> required_parameters,
+             std::optional<std::string> explain_plan = std::nullopt);
 
   [[nodiscard]] const std::shared_ptr<const PhysicalPlan> &PhysicalPlanPtr()
       const noexcept;
   [[nodiscard]] const std::vector<std::string> &RequiredParameters()
       const noexcept;
+  [[nodiscard]] bool IsExplain() const noexcept {
+    return explain_plan_.has_value();
+  }
+  [[nodiscard]] const std::string &ExplainPlan() const noexcept {
+    return *explain_plan_;
+  }
 
  private:
   std::shared_ptr<const PhysicalPlan> physical_plan_;
   std::vector<std::string> required_parameters_;
+  std::optional<std::string> explain_plan_;
 };
 
 struct PlanCacheStats {

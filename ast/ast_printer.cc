@@ -45,7 +45,8 @@ void ASTPrinter::Visit(Statement &node) { LineNodeType(node); }
 void ASTPrinter::Visit(Query &node) { LineNodeType(node); }
 
 void ASTPrinter::Visit(RegularQuery &node) {
-  LineNodeType(node);
+  Line(std::string(ToString(node.node_type)) +
+       (node.explain ? " explain=true" : ""));
   IndentGuard guard(*this);
   VisitMaybe(node.single_query);
   VisitList(node.unions);
@@ -54,6 +55,9 @@ void ASTPrinter::Visit(RegularQuery &node) {
 void ASTPrinter::Visit(StandaloneCall &node) {
   std::ostringstream oss;
   oss << ToString(node.node_type) << " procedure=" << node.procedure_name;
+  if (node.explain) {
+    oss << " explain=true";
+  }
   if (node.yield_star) {
     oss << " yield=*";
   }

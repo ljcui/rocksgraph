@@ -31,7 +31,9 @@ oC_Cypher
       :  SP? oC_Statement ( SP? ';' )? SP? EOF ;
 
 oC_Statement
-         :  oC_Query ;
+         :  EXPLAIN SP oC_Query
+         |  oC_Query
+         ;
 
 oC_Query
      :  oC_RegularQuery
@@ -433,6 +435,8 @@ oC_ExistentialSubquery
 
 EXISTS : ( 'E' | 'e' ) ( 'X' | 'x' ) ( 'I' | 'i' ) ( 'S' | 's' ) ( 'T' | 't' ) ( 'S' | 's' ) ;
 
+EXPLAIN : ( 'E' | 'e' ) ( 'X' | 'x' ) ( 'P' | 'p' ) ( 'L' | 'l' ) ( 'A' | 'a' ) ( 'I' | 'i' ) ( 'N' | 'n' ) ;
+
 oC_ExplicitProcedureInvocation
                            :  oC_ProcedureName SP? '(' SP? ( oC_Expression SP? ( ',' SP? oC_Expression SP? )* )? ')' ;
 
@@ -581,6 +585,7 @@ oC_ReservedWord
                 | DESCENDING
                 | DETACH
                 | EXISTS
+                | EXPLAIN
                 | LIMIT
                 | MATCH
                 | MERGE
@@ -802,4 +807,3 @@ fragment VT : [\u000B] ;
 fragment US : [\u001F] ;
 
 fragment ID_Start : [\p{ID_Start}] ;
-

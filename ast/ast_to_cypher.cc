@@ -46,7 +46,11 @@ class CypherPrinter : public ASTVisitor {
         parts.push_back(std::move(piece));
       }
     }
-    Push(Join(parts, " "));
+    std::string out = Join(parts, " ");
+    if (node.explain) {
+      out = "EXPLAIN " + out;
+    }
+    Push(std::move(out));
   }
 
   void Visit(StandaloneCall &node) override {
@@ -64,6 +68,9 @@ class CypherPrinter : public ASTVisitor {
         out += " WHERE ";
         out += RenderMaybe(node.yield_where);
       }
+    }
+    if (node.explain) {
+      out = "EXPLAIN " + out;
     }
     Push(out);
   }

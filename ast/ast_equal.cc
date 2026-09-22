@@ -139,12 +139,16 @@ bool ASTEqual::EqualQuery(const Query & /*unused*/, const Query & /*unused*/) {
 
 bool ASTEqual::EqualRegularQuery(const RegularQuery &left,
                                  const RegularQuery &right) {
-  return EqualPtr(left.single_query, right.single_query) &&
+  return left.explain == right.explain &&
+         EqualPtr(left.single_query, right.single_query) &&
          EqualList(left.unions, right.unions);
 }
 
 bool ASTEqual::EqualStandaloneCall(const StandaloneCall &left,
                                    const StandaloneCall &right) {
+  if (left.explain != right.explain) {
+    return false;
+  }
   if (left.procedure_name != right.procedure_name) {
     return false;
   }

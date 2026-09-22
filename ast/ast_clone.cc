@@ -623,6 +623,7 @@ std::unique_ptr<UnionPart> CloneUnionPart(const UnionPart &part) {
 
 std::unique_ptr<RegularQuery> CloneRegularQuery(const RegularQuery &query) {
   auto cloned = std::make_unique<RegularQuery>();
+  cloned->explain = query.explain;
   cloned->single_query = CloneMaybe(query.single_query, CloneSingleQuery);
   cloned->unions = CloneList(query.unions, CloneUnionPart);
   return cloned;

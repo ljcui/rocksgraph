@@ -5,6 +5,7 @@
 #include <string>
 
 #include "ast/ast_builder.h"
+#include "ast/ast_node.h"
 #include "common/exception.h"
 
 namespace {
@@ -25,6 +26,16 @@ std::string ToCypherOrFail(const std::string &query) {
 TEST(AstToCypherTest, BasicMatchReturn) {
   const std::string query = "MATCH (n:Person {name: 'Bob'}) RETURN n";
   EXPECT_EQ(ToCypherOrFail(query), "MATCH (n:Person {name: 'Bob'}) RETURN n");
+}
+
+TEST(AstToCypherTest, ExplainQuery) {
+  const std::string query = "EXPLAIN MATCH (n) RETURN n";
+  auto statement = ast::ParseCypher(query);
+  const auto *regular =
+      dynamic_cast<const ast::RegularQuery *>(statement.get());
+  ASSERT_NE(regular, nullptr);
+  EXPECT_TRUE(regular->explain);
+  EXPECT_EQ(ast::ToCypher(*statement), query);
 }
 
 TEST(AstToCypherTest, BinaryExpressionAddsParentheses) {

@@ -199,6 +199,9 @@ class ASTBuilder {
       return nullptr;
     }
     auto query = BuildQuery(ctx->oC_Query());
+    if (query != nullptr) {
+      query->explain = ctx->EXPLAIN() != nullptr;
+    }
     return std::unique_ptr<Statement>(query.release());
   }
 

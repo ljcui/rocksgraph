@@ -213,6 +213,10 @@ class Statement : public ASTNode {
 class Query : public Statement {
  protected:
   Query() = default;
+
+ public:
+  // EXPLAIN plans the query without executing it.
+  bool explain = false;
 };
 
 class SingleQuery : public ASTNode {

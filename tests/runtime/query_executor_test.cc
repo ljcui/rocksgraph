@@ -12,6 +12,7 @@
 
 #include "common/exception.h"
 #include "planner/planned_query.h"
+#include "runtime/plan_cache.h"
 #include "tests/common/exception_test_utils.h"
 #include "tests/runtime/graphdb_test_utils.h"
 
@@ -159,6 +160,42 @@ TEST(QueryExecutorTest, ClosingCursorLeavesItsTransactionActive) {
   EXPECT_NO_THROW(next_transaction = graph.BeginTransaction());
   ASSERT_NE(next_transaction, nullptr);
   next_transaction->Rollback();
+}
+
+TEST(QueryExecutorTest, ExplainReturnsPlanWithoutExecutingQuery) {
+  rg::test::GraphDBTestDatabase graph;
+  auto transaction = graph.BeginTransaction();
+  std::unique_ptr<rg::QueryResultCursor> cursor = rg::ExecuteQueryCursor(
+      *transaction, "EXPLAIN CREATE (:Person {name: 'Ada'}) RETURN count(*)");
+
+  EXPECT_EQ(cursor->Columns(), std::vector<std::string>{"plan"});
+  std::vector<rg::Value> row;
+  ASSERT_TRUE(cursor->Next(&row));
+  ASSERT_EQ(row.size(), 1U);
+  ASSERT_TRUE(row.front().IsString());
+  EXPECT_NE(row.front().AsString().find("Create"), std::string::npos);
+  EXPECT_FALSE(cursor->Next(&row));
+  EXPECT_EQ(rg::test::CountVertices(*transaction), 0U);
+  EXPECT_EQ(transaction->GetState(), graphdb::Transaction::State::kActive);
+  transaction->Commit();
+}
+
+TEST(QueryExecutorTest, ExplainUsesPlanCacheWithoutExecutingQuery) {
+  rg::test::GraphDBTestDatabase graph;
+  rg::PlanCache cache(4);
+  rg::QueryOptions options;
+  options.plan_cache = &cache;
+  auto transaction = graph.BeginTransaction();
+  auto cursor = rg::ExecuteQueryCursor(
+      *transaction, "EXPLAIN CREATE (:Person) RETURN count(*)", options);
+  std::vector<rg::Value> row;
+  ASSERT_TRUE(cursor->Next(&row));
+  ASSERT_EQ(row.size(), 1U);
+  EXPECT_TRUE(row.front().IsString());
+  EXPECT_FALSE(cursor->Next(&row));
+  EXPECT_EQ(rg::test::CountVertices(*transaction), 0U);
+  transaction->Rollback();
+  EXPECT_EQ(cache.GetStats().entries, 1U);
 }
 
 TEST(QueryExecutorTest, CursorLeavesTransactionActiveAfterExecutionFailure) {
