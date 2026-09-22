@@ -153,7 +153,8 @@ int RunServer() {
            .ft_apply_interval = FLAGS_ft_apply_interval,
            .ft_writer_threads = FLAGS_ft_writer_threads,
            .ft_writer_memory_budget = FLAGS_ft_writer_memory_budget,
-           .vt_apply_interval = FLAGS_vt_apply_interval}});
+           .vt_apply_interval = FLAGS_vt_apply_interval,
+           .plan_cache_capacity = FLAGS_plan_cache_capacity}});
   g_shutdown_signal = 0;
   try {
     if (!server.Start()) {

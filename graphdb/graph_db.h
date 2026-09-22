@@ -42,7 +42,7 @@ class GraphDB {
   friend class server::GraphManager;
 
  public:
-  GraphDB() = default;
+  GraphDB();
   ~GraphDB();
   // No copying allowed
   GraphDB(const GraphDB&) = delete;
@@ -51,6 +51,9 @@ class GraphDB {
   static std::unique_ptr<GraphDB> Open(const std::string& path,
                                        const GraphDBOptions& options);
   std::unique_ptr<Transaction> BeginTransaction();
+  [[nodiscard]] uint64_t PlanCacheIdentity() const noexcept {
+    return plan_cache_identity_;
+  }
   void ClearData();
   void AddVertexPropertyIndex(const std::string& index_name, bool,
                               const std::string& label,
@@ -143,6 +146,7 @@ class GraphDB {
       const std::shared_ptr<VertexVectorIndex>& index, bool reset_existing);
 
   std::string path_;
+  uint64_t plan_cache_identity_ = 0;
   rocksdb::TransactionDB* db_ = nullptr;
   std::vector<rocksdb::ColumnFamilyHandle*> cf_handles_;
   std::shared_ptr<AssistantPool> assistant_pool_;

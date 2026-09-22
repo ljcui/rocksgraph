@@ -10,6 +10,10 @@
 
 #include "graphdb/graph_db.h"
 
+namespace rg {
+class PlanCache;
+}
+
 namespace server {
 enum class GraphManagerMetadataType : char {
   GraphDB = 0,
@@ -25,6 +29,7 @@ struct GraphManagerOptions {
   size_t ft_writer_threads = 1;
   size_t ft_writer_memory_budget = 50 * 1000 * 1000;
   size_t vt_apply_interval = 1;
+  size_t plan_cache_capacity = 1024;
 };
 
 struct LocalNodeOptions {
@@ -45,6 +50,7 @@ class GraphManager {
       const std::string& path, const GraphManagerOptions& graph_manager_options,
       LocalNodeOptions local_node_options = {});
   std::shared_ptr<graphdb::GraphDB> OpenGraph(const std::string& name);
+  [[nodiscard]] rg::PlanCache& GetPlanCache() noexcept;
   graphdb::GraphDB* CreateGraph(const std::string& name);
   graphdb::GraphDB* CreateGraphWithRaft(const std::string& name,
                                         const meta::RaftNodeInfos& node_infos);
@@ -67,6 +73,7 @@ class GraphManager {
   std::shared_ptr<rocksdb::Cache> block_cache_;
   std::shared_ptr<rocksdb::Cache> raft_log_block_cache_;
   std::shared_ptr<graphdb::AssistantPool> assistant_pool_;
+  std::unique_ptr<rg::PlanCache> plan_cache_;
   std::shared_mutex graphs_mutex_;
   std::mutex create_graph_mutex_;
   std::atomic<uint64_t> next_graph_id_ = 1;

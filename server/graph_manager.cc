@@ -6,6 +6,7 @@
 
 #include "common/exception.h"
 #include "common/logger.h"
+#include "runtime/plan_cache.h"
 using namespace graphdb;
 using namespace boost::endian;
 namespace server {
@@ -163,6 +164,8 @@ std::unique_ptr<GraphManager> GraphManager::Open(
       rocksdb::NewLRUCache(graph_manager_options.raft_log_block_cache_size);
   graph_manager->assistant_pool_ = std::make_shared<graphdb::AssistantPool>(
       graph_manager_options.assistant_thread_num);
+  graph_manager->plan_cache_ = std::make_unique<rg::PlanCache>(
+      graph_manager_options.plan_cache_capacity);
 
   rocksdb::ReadOptions ro;
   {
@@ -221,6 +224,8 @@ std::shared_ptr<GraphDB> GraphManager::OpenGraph(const std::string &name) {
     RG_THROW(common::ErrorCode::NoSuchGraph, "No such graph: {}", name);
   }
 }
+
+rg::PlanCache &GraphManager::GetPlanCache() noexcept { return *plan_cache_; }
 
 GraphDB *GraphManager::CreateGraph(const std::string &name) {
   std::lock_guard<std::mutex> guard(create_graph_mutex_);

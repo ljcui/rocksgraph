@@ -3,6 +3,7 @@
 //
 
 #pragma once
+#include <atomic>
 #include <cinttypes>
 #include <memory>
 #include <set>
@@ -16,6 +17,10 @@
 #include "index.h"
 namespace graphdb {
 struct MetaInfo {
+  [[nodiscard]] uint64_t PlannerCatalogVersion() const noexcept {
+    return planner_catalog_version_.load(std::memory_order_acquire);
+  }
+
   // property index
   void Init(rocksdb::TransactionDB* db, boost::asio::io_service& service,
             boost::asio::io_service::strand* strand, GraphCF* graph_cf,
@@ -112,7 +117,12 @@ struct MetaInfo {
   void ClearVertexVectorIndexes();
 
  private:
+  void AdvancePlannerCatalogVersion() noexcept {
+    planner_catalog_version_.fetch_add(1, std::memory_order_release);
+  }
+
   mutable std::shared_mutex mutex_;
+  std::atomic<uint64_t> planner_catalog_version_{0};
   std::unordered_map<std::string, std::shared_ptr<VertexPropertyIndex>>
       ready_vertex_property_indexes_by_name_;
   std::unordered_map<std::string, std::shared_ptr<VertexPropertyIndex>>

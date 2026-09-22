@@ -31,3 +31,4 @@ DECLARE_uint64(ft_writer_threads);
 DECLARE_uint64(ft_writer_memory_budget);
 DECLARE_uint64(vt_apply_interval);
 DECLARE_uint64(vt_serialize_interval);
+DECLARE_uint64(plan_cache_capacity);

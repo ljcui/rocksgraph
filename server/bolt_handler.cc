@@ -738,6 +738,7 @@ static void ProcessRun(GraphManager* graph_manager,
     active_query->cypher = *cypher;
     active_query->start_time = steady_clock::now();
     rg::QueryOptions query_options;
+    query_options.plan_cache = &graph_manager->GetPlanCache();
     for (const auto& [name, value] : *params) {
       query_options.parameters.emplace(name, ConvertParameter(value));
     }

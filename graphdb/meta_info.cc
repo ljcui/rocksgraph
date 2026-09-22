@@ -239,6 +239,9 @@ bool MetaInfo::AddVertexPropertyIndex(
                         : &building_vertex_property_indexes_by_schema_;
   by_schema->emplace(schema_key, vpi);
   by_name->emplace(std::move(name), std::move(vpi));
+  if (by_name == &ready_vertex_property_indexes_by_name_) {
+    AdvancePlannerCatalogVersion();
+  }
   return true;
 }
 
@@ -255,6 +258,7 @@ void MetaInfo::PublishVertexPropertyIndex(const std::string& index_name) {
   ready_vertex_property_indexes_by_schema_.emplace(schema_key, index);
   ready_vertex_property_indexes_by_name_.emplace(index->meta().name(),
                                                  std::move(index));
+  AdvancePlannerCatalogVersion();
 }
 
 void MetaInfo::DeleteVertexPropertyIndex(const std::string& index_name) {
@@ -264,6 +268,7 @@ void MetaInfo::DeleteVertexPropertyIndex(const std::string& index_name) {
     ready_vertex_property_indexes_by_schema_.erase(BuildVertexPropertyIndexKey(
         name_iter->second->lid(), name_iter->second->pids()));
     ready_vertex_property_indexes_by_name_.erase(name_iter);
+    AdvancePlannerCatalogVersion();
     return;
   }
   name_iter = building_vertex_property_indexes_by_name_.find(index_name);
@@ -361,6 +366,9 @@ bool MetaInfo::AddEdgePropertyIndex(std::shared_ptr<EdgePropertyIndex> epi) {
                                    : &building_edge_property_indexes_by_schema_;
   by_schema->emplace(schema_key, epi);
   by_name->emplace(std::move(name), std::move(epi));
+  if (by_name == &ready_edge_property_indexes_by_name_) {
+    AdvancePlannerCatalogVersion();
+  }
   return true;
 }
 
@@ -377,6 +385,7 @@ void MetaInfo::PublishEdgePropertyIndex(const std::string& index_name) {
   ready_edge_property_indexes_by_schema_.emplace(schema_key, index);
   ready_edge_property_indexes_by_name_.emplace(index->meta().name(),
                                                std::move(index));
+  AdvancePlannerCatalogVersion();
 }
 
 void MetaInfo::DeleteEdgePropertyIndex(const std::string& index_name) {
@@ -386,6 +395,7 @@ void MetaInfo::DeleteEdgePropertyIndex(const std::string& index_name) {
     ready_edge_property_indexes_by_schema_.erase(BuildEdgePropertyIndexKey(
         name_iter->second->tid(), name_iter->second->pids()));
     ready_edge_property_indexes_by_name_.erase(name_iter);
+    AdvancePlannerCatalogVersion();
     return;
   }
   name_iter = building_edge_property_indexes_by_name_.find(index_name);

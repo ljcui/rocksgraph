@@ -3,6 +3,7 @@
 //
 #include "graph_db.h"
 
+#include <atomic>
 #include <filesystem>
 
 #include "common/exception.h"
@@ -11,6 +12,17 @@
 #include "graphdb/transaction.h"
 namespace graphdb {
 using namespace internal;
+
+namespace {
+
+uint64_t NextPlanCacheIdentity() {
+  static std::atomic<uint64_t> next_identity{1};
+  return next_identity.fetch_add(1, std::memory_order_relaxed);
+}
+
+}  // namespace
+
+GraphDB::GraphDB() : plan_cache_identity_(NextPlanCacheIdentity()) {}
 
 std::unique_ptr<GraphDB> GraphDB::Open(const std::string& path,
                                        const GraphDBOptions& graph_options) {

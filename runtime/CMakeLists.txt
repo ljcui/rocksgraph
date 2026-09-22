@@ -5,6 +5,7 @@ add_library(
   expression_evaluator.cc
   graphdb_access.cc
   graphdb_planner_catalog.cc
+  plan_cache.cc
   physical_plan.cc
   physical_plan_printer.cc
   query_executor.cc

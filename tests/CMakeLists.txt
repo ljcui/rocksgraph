@@ -42,6 +42,9 @@ rocksgraph_add_test(expression_evaluator_test
 rocksgraph_add_test(physical_plan_test runtime/physical_plan_test.cc
                     RocksGraph::runtime)
 target_link_libraries(physical_plan_test PRIVATE RocksGraph::graphdb)
+rocksgraph_add_test(plan_cache_test runtime/plan_cache_test.cc
+                    RocksGraph::runtime)
+target_link_libraries(plan_cache_test PRIVATE RocksGraph::graphdb)
 rocksgraph_add_test(query_executor_test runtime/query_executor_test.cc
                     RocksGraph::runtime)
 target_link_libraries(query_executor_test PRIVATE RocksGraph::graphdb)

@@ -45,3 +45,6 @@ DEFINE_uint64(vt_apply_interval, (uint64_t)1,
               "Vector index WAL auto apply interval, in seconds.");
 DEFINE_uint64(vt_serialize_interval, (uint64_t)10000,
               "Vector index serialize interval.");
+DEFINE_uint64(plan_cache_capacity, 1024,
+              "Maximum number of compiled query plans cached by the server. "
+              "0 disables the plan cache.");

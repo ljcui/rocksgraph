@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -22,6 +23,8 @@ class PlannerStatistics;
 }  // namespace planner
 
 namespace rg {
+
+class PlanCache;
 
 struct QueryResult {
   std::vector<std::string> columns;
@@ -50,6 +53,12 @@ struct QueryOptions {
   std::size_t max_idp_candidates_per_relationship_count = 128;
   const planner::PlannerStatistics *planner_statistics = nullptr;
   const planner::PlannerCatalog *planner_catalog = nullptr;
+  // A cache is scoped by the graph, planner inputs, and catalog version. When
+  // supplying a custom catalog or mutable statistics, increment
+  // plan_cache_generation whenever its planning metadata changes (or clear
+  // the cache explicitly).
+  PlanCache *plan_cache = nullptr;
+  std::uint64_t plan_cache_generation = 0;
   QueryParameters parameters;
   QueryExecutionOptions execution;
 };
