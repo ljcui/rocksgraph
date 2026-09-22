@@ -6,6 +6,8 @@ function(rocksgraph_add_test target source library)
 endfunction()
 
 rocksgraph_add_test(exception_test common/exception_test.cc RocksGraph::common)
+rocksgraph_add_test(table_printer_test common/table_printer_test.cc
+                    RocksGraph::common)
 rocksgraph_add_test(exception_boundary_test bolt/exception_boundary_test.cc
                     RocksGraph::bolt)
 rocksgraph_add_test(bolt_summary_test bolt/summary_test.cc RocksGraph::bolt)

@@ -3,7 +3,7 @@ find_package(Threads REQUIRED)
 find_package(gflags REQUIRED)
 find_package(spdlog REQUIRED)
 
-add_library(rocksgraph_common exception.cc flags.cc logger.cc)
+add_library(rocksgraph_common exception.cc flags.cc logger.cc table_printer.cc)
 add_library(RocksGraph::common ALIAS rocksgraph_common)
 
 target_compile_features(rocksgraph_common PUBLIC cxx_std_20)

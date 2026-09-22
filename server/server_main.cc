@@ -6,7 +6,6 @@
 #include <cstring>
 #include <fstream>
 #include <sstream>
-#include <tabulate/table.hpp>
 #include <thread>
 #include <unordered_set>
 
@@ -14,6 +13,7 @@
 #include "common/exception.h"
 #include "common/flags.h"
 #include "common/logger.h"
+#include "common/table_printer.h"
 #include "common/version.h"
 #include "server/graph_server.h"
 #include "server/raft_server.h"
@@ -52,12 +52,11 @@ std::string Version() {
 void PrintWelcome() {
   std::ostringstream info;
   {
-    tabulate::Table table;
-    table.format().trim_mode(tabulate::Format::TrimMode::kNone).locale("C");
+    common::TablePrinter table;
     info << "Compile Information:\n";
-    table.add_row({"Branch", common::kGitBranch});
-    table.add_row({"Commit", common::kGitCommitHash});
-    table.add_row({"BuildType", common::kBuildType});
+    table.AddRow({"Branch", common::kGitBranch});
+    table.AddRow({"Commit", common::kGitCommitHash});
+    table.AddRow({"BuildType", common::kBuildType});
     info << table << "\n";
   }
   {
@@ -73,23 +72,21 @@ void PrintWelcome() {
     } else {
       LOG_ERROR("Failed to read /proc/sys/kernel/core_pattern");
     }
-    tabulate::Table table;
-    table.format().trim_mode(tabulate::Format::TrimMode::kNone).locale("C");
-    table.add_row({"coredump file limit size", std::to_string(rlim.rlim_cur)});
-    table.add_row({"coredump file path", path});
+    common::TablePrinter table;
+    table.AddRow({"coredump file limit size", std::to_string(rlim.rlim_cur)});
+    table.AddRow({"coredump file path", path});
     info << "System environment Information:\n";
     info << table << "\n";
   }
   {
-    tabulate::Table table;
-    table.format().trim_mode(tabulate::Format::TrimMode::kNone).locale("C");
+    common::TablePrinter table;
     std::vector<gflags::CommandLineFlagInfo> flags;
     GetAllFlags(&flags);
     for (auto& flag : flags) {
       if (inner_flags.count(flag.name)) {
         continue;
       }
-      table.add_row({flag.name, flag.current_value});
+      table.AddRow({flag.name, flag.current_value});
     }
     info << "Config Information:\n";
     info << table;

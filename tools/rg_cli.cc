@@ -31,7 +31,6 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <tabulate/table.hpp>
 #include <unordered_map>
 #include <vector>
 
@@ -42,6 +41,7 @@
 #include "bolt/record.h"
 #include "bolt/to_string.h"
 #include "common/exception.h"
+#include "common/table_printer.h"
 #include "tools/linenoise/linenoise.h"
 
 DEFINE_string(format, "table", "Output format: table, csv, or json");
@@ -146,8 +146,7 @@ bool FetchRecords(boost::asio::ip::tcp::socket& socket,
   const auto start = std::chrono::steady_clock::now();
   std::optional<std::vector<std::string>> header;
   std::size_t row_count = 0;
-  tabulate::Table table;
-  table.format().trim_mode(tabulate::Format::TrimMode::kNone).locale("C");
+  common::TablePrinter table;
 
   while (true) {
     auto message = ReadMessage(socket, hydrator);
@@ -174,7 +173,7 @@ bool FetchRecords(boost::asio::ip::tcp::socket& socket,
       } else {
         auto display_values = DisplayValues(values);
         if (output_format == OutputFormat::kTable) {
-          table.add_row({display_values.begin(), display_values.end()});
+          table.AddRow(std::move(display_values));
         } else {
           PrintCsvRow(display_values);
         }
@@ -189,7 +188,7 @@ bool FetchRecords(boost::asio::ip::tcp::socket& socket,
         header = success->fields;
         if (output_format == OutputFormat::kTable) {
           if (!header->empty()) {
-            table.add_row({header->begin(), header->end()});
+            table.AddRow(*header);
           }
         } else if (output_format == OutputFormat::kCsv) {
           PrintCsvRow(*header);
