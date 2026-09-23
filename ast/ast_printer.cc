@@ -421,6 +421,29 @@ void ASTPrinter::Visit(ListComprehension &node) {
   }
 }
 
+void ASTPrinter::Visit(ReduceExpression &node) {
+  std::ostringstream oss;
+  oss << ToString(node.node_type) << " accumulator=" << node.accumulator
+      << " variable=" << node.variable;
+  Line(oss.str());
+  IndentGuard guard(*this);
+  Line("Initial");
+  {
+    IndentGuard initial_guard(*this);
+    VisitMaybe(node.initial);
+  }
+  Line("List");
+  {
+    IndentGuard list_guard(*this);
+    VisitMaybe(node.list_expr);
+  }
+  Line("Eval");
+  {
+    IndentGuard eval_guard(*this);
+    VisitMaybe(node.eval_expr);
+  }
+}
+
 void ASTPrinter::Visit(PatternComprehension &node) {
   std::ostringstream oss;
   oss << ToString(node.node_type) << " variable=" << node.variable;

@@ -275,6 +275,20 @@ class SemanticTableAnalyzer final : public ASTConstWalker {
     PopScope();
   }
 
+  void Visit(const ReduceExpression &node) override {
+    WalkMaybe(node.initial);
+    WalkMaybe(node.list_expr);
+    PushScope(CurrentScope());
+    Define(node.accumulator, node.initial != nullptr
+                                 ? InferExpressionType(*node.initial)
+                                 : SemanticVariableType::kUnknown);
+    Define(node.variable, node.list_expr != nullptr
+                              ? InferListElementType(*node.list_expr)
+                              : SemanticVariableType::kUnknown);
+    WalkMaybe(node.eval_expr);
+    PopScope();
+  }
+
   void Visit(const PatternComprehension &node) override {
     PushScope(CurrentScope());
     Define(node.variable, SemanticVariableType::kPath);
@@ -523,6 +537,13 @@ class SemanticTableAnalyzer final : public ASTConstWalker {
         return SemanticVariableType::kList;
       case ASTNodeType::kMapLiteral:
         return SemanticVariableType::kMap;
+      case ASTNodeType::kReduceExpression: {
+        const auto &reduce = CastAst<ReduceExpression>(expression);
+        if (reduce.eval_expr) {
+          return InferExpressionType(*reduce.eval_expr);
+        }
+        return SemanticVariableType::kUnknown;
+      }
       case ASTNodeType::kListIndexExpression: {
         const auto &list_index = CastAst<ListIndexExpression>(expression);
         if (list_index.list) {

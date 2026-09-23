@@ -65,6 +65,12 @@ class NameCollector final : public ASTConstWalker {
     ASTConstWalker::Visit(node);
   }
 
+  void Visit(const ReduceExpression &node) override {
+    Add(node.accumulator);
+    Add(node.variable);
+    ASTConstWalker::Visit(node);
+  }
+
   void Visit(const PatternComprehension &node) override {
     Add(node.variable);
     ASTConstWalker::Visit(node);

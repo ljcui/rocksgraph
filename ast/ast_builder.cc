@@ -953,6 +953,9 @@ class ASTBuilder {
     if (ctx->oC_ListComprehension() != nullptr) {
       return BuildListComprehension(ctx->oC_ListComprehension());
     }
+    if (ctx->oC_Reduce() != nullptr) {
+      return BuildReduceExpression(ctx->oC_Reduce());
+    }
     if (ctx->oC_PatternComprehension() != nullptr) {
       return BuildPatternComprehension(ctx->oC_PatternComprehension());
     }
@@ -1147,6 +1150,21 @@ class ASTBuilder {
       node->where_expr = BuildExpression(ctx->oC_Where()->oC_Expression());
     }
     node->eval_expr = BuildExpression(ctx->oC_Expression());
+    return node;
+  }
+
+  std::unique_ptr<Expression> BuildReduceExpression(
+      CypherParser::OC_ReduceContext *ctx) {
+    auto node = std::make_unique<ReduceExpression>();
+    node->accumulator = ParseVariable(ctx->oC_Variable());
+    const auto expressions = ctx->oC_Expression();
+    RG_CHECK(expressions.size() == 2, common::ErrorCode::InternalError,
+             "reduce expression must contain an initial and eval expression");
+    node->initial = BuildExpression(expressions[0]);
+    auto *id_in_coll = ctx->oC_IdInColl();
+    node->variable = ParseVariable(id_in_coll->oC_Variable());
+    node->list_expr = BuildExpression(id_in_coll->oC_Expression());
+    node->eval_expr = BuildExpression(expressions[1]);
     return node;
   }
 

@@ -32,10 +32,10 @@ public:
     OctDigit = 104, ZeroDigit = 105, ExponentDecimalReal = 106, RegularDecimalReal = 107, 
     StringLiteral = 108, EscapedChar = 109, CONSTRAINT = 110, DO = 111, 
     FOR = 112, REQUIRE = 113, UNIQUE = 114, MANDATORY = 115, SCALAR = 116, 
-    OF = 117, ADD = 118, DROP = 119, SHORTESTPATH = 120, ALLSHORTESTPATHS = 121, 
-    FILTER = 122, EXTRACT = 123, UnescapedSymbolicName = 124, IdentifierStart = 125, 
-    IdentifierPart = 126, EscapedSymbolicName = 127, SP = 128, WHITESPACE = 129, 
-    Comment = 130
+    OF = 117, ADD = 118, DROP = 119, REDUCE = 120, SHORTESTPATH = 121, ALLSHORTESTPATHS = 122, 
+    FILTER = 123, EXTRACT = 124, UnescapedSymbolicName = 125, IdentifierStart = 126, 
+    IdentifierPart = 127, EscapedSymbolicName = 128, SP = 129, WHITESPACE = 130, 
+    Comment = 131
   };
 
   explicit CypherLexer(antlr4::CharStream *input);

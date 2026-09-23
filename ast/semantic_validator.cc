@@ -153,6 +153,19 @@ class MixedAggregationScanner final : public ASTWalker {
     PopLocal();
   }
 
+  void Visit(ReduceExpression &node) override {
+    WalkMaybe(node.initial);
+    WalkMaybe(node.list_expr);
+    PushLocal(node.accumulator);
+    PushLocal(node.variable);
+    if (ContainsAggregation(node.eval_expr.get())) {
+      invalid_comprehension_aggregation_ = true;
+    }
+    WalkMaybe(node.eval_expr);
+    PopLocal();
+    PopLocal();
+  }
+
   void Visit(AllQuantifier &node) override { VisitQuantifier(node); }
   void Visit(AnyQuantifier &node) override { VisitQuantifier(node); }
   void Visit(NoneQuantifier &node) override { VisitQuantifier(node); }
@@ -529,6 +542,22 @@ class SemanticValidator : public ASTWalker {
     Define(node.variable, ListElementType(node.list_expr.get()));
     ValidateBooleanExpression(node.where_expr.get(), "list comprehension");
     WalkMaybe(node.where_expr);
+    WalkMaybe(node.eval_expr);
+    PopScope();
+  }
+
+  void Visit(ReduceExpression &node) override {
+    WalkMaybe(node.initial);
+    WalkMaybe(node.list_expr);
+    const StaticValue list_type = InferType(node.list_expr.get());
+    if (IsKnown(list_type) && list_type.type != StaticType::kNull &&
+        list_type.type != StaticType::kList) {
+      ReportInvalidArgument("reduce requires a list expression");
+    }
+
+    PushScope(CurrentScope());
+    Define(node.accumulator, InferType(node.initial.get()));
+    Define(node.variable, ListElementType(node.list_expr.get()));
     WalkMaybe(node.eval_expr);
     PopScope();
   }
@@ -1195,6 +1224,10 @@ class SemanticValidator : public ASTWalker {
           return {StaticType::kString};
         }
         return {};
+      }
+      case ASTNodeType::kReduceExpression: {
+        const auto &reduce = CastAst<ReduceExpression>(*expression);
+        return InferType(reduce.eval_expr.get());
       }
       case ASTNodeType::kListComprehension:
       case ASTNodeType::kPatternComprehension:

@@ -42,6 +42,14 @@ class ExpressionDependencyCollector : public ASTConstWalker {
     PopScope();
   }
 
+  void Visit(const ReduceExpression &node) override {
+    WalkMaybe(node.initial);
+    WalkMaybe(node.list_expr);
+    PushScope({node.accumulator, node.variable});
+    WalkMaybe(node.eval_expr);
+    PopScope();
+  }
+
   void Visit(const PatternComprehension &node) override {
     PushScope();
     AddPatternBinding(node.variable);

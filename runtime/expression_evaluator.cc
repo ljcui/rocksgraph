@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <optional>
 #include <string>
@@ -18,6 +19,8 @@
 #include "common/exception.h"
 #include "graphdb/edge_iterator.h"
 #include "graphdb/graph_entity.h"
+#include "graphdb/transaction.h"
+#include "graphdb/vertex_iterator.h"
 #include "runtime/builtin_function_evaluator.h"
 #include "runtime/graphdb_access.h"
 #include "value/temporal.h"
@@ -484,6 +487,36 @@ Value EvaluateListComprehension(
   return Value(std::move(output));
 }
 
+Value EvaluateReduce(const ast::ReduceExpression &expression,
+                     const ExpressionBindings &row,
+                     const std::vector<ast::PrecomputedExpression> &precomputed,
+                     ExecutionContext context) {
+  RG_CHECK(
+      !expression.accumulator.empty() && !expression.variable.empty() &&
+          expression.initial != nullptr && expression.list_expr != nullptr &&
+          expression.eval_expr != nullptr,
+      common::ErrorCode::InvalidParameter, "reduce expression is incomplete");
+  Value accumulator =
+      EvaluateExpression(*expression.initial, row, precomputed, context);
+  Value list =
+      EvaluateExpression(*expression.list_expr, row, precomputed, context);
+  if (list.IsNull()) {
+    return Value::Null();
+  }
+  RG_CHECK(list.IsList(), common::ErrorCode::InvalidParameter,
+           "reduce requires a list value");
+  for (const auto &item : list.AsList()) {
+    context.CheckCancelled();
+    ScopedExpressionBindings accumulator_scope(row, expression.accumulator,
+                                               accumulator);
+    ScopedExpressionBindings item_scope(accumulator_scope, expression.variable,
+                                        item);
+    accumulator = EvaluateExpression(*expression.eval_expr, item_scope,
+                                     precomputed, context);
+  }
+  return accumulator;
+}
+
 Value EvaluateLocallyCorrelatedPatternComprehension(
     const ast::PatternComprehension &expression, const ExpressionBindings &row,
     const std::vector<ast::PrecomputedExpression> &precomputed,
@@ -493,96 +526,197 @@ Value EvaluateLocallyCorrelatedPatternComprehension(
            common::ErrorCode::InvalidParameter,
            "pattern comprehension is incomplete");
   const ast::RelationshipsPattern &pattern = *expression.relationships_pattern;
-  RG_CHECK(pattern.node_pattern != nullptr && pattern.chain.size() == 1,
+  RG_CHECK(pattern.node_pattern != nullptr && !pattern.chain.empty(),
            common::ErrorCode::InvalidParameter,
-           "locally correlated pattern comprehension supports one hop");
+           "locally correlated pattern comprehension is empty");
   const ast::NodePattern &start_pattern = *pattern.node_pattern;
-  RG_CHECK(
-      !start_pattern.variable.empty() && start_pattern.properties == nullptr,
-      common::ErrorCode::InvalidParameter,
-      "locally correlated pattern comprehension requires a bound start "
-      "node without inline properties");
-
-  Value start = row.Lookup(start_pattern.variable);
-  if (start.IsNull()) {
-    return Value(Value::List{});
-  }
-  RG_CHECK(start.IsNode(), common::ErrorCode::InvalidParameter,
-           "pattern comprehension start must be a node");
-  if (!NodeHasLabels(start.AsNode(), start_pattern.labels)) {
-    return Value(Value::List{});
-  }
-
-  const auto &[relationship_ptr, next_node_ptr] = pattern.chain.front();
-  RG_CHECK(relationship_ptr != nullptr && next_node_ptr != nullptr,
+  RG_CHECK(start_pattern.properties == nullptr,
            common::ErrorCode::InvalidParameter,
-           "pattern comprehension relationship is incomplete");
-  const ast::RelationshipPattern &relationship_pattern = *relationship_ptr;
-  const ast::RelationshipDetail *detail = relationship_pattern.detail.get();
-  RG_CHECK((detail == nullptr ||
-            (detail->range == std::nullopt && detail->properties == nullptr)) &&
-               next_node_ptr->properties == nullptr,
-           common::ErrorCode::InvalidParameter,
-           "locally correlated pattern comprehension does not support variable "
-           "length or inline properties");
-
-  graphdb::EdgeDirection direction = graphdb::EdgeDirection::BOTH;
-  if (relationship_pattern.left_arrow && !relationship_pattern.right_arrow) {
-    direction = graphdb::EdgeDirection::INCOMING;
-  } else if (relationship_pattern.right_arrow &&
-             !relationship_pattern.left_arrow) {
-    direction = graphdb::EdgeDirection::OUTGOING;
+           "locally correlated pattern comprehension does not support inline "
+           "properties");
+  for (const auto &[relationship, node] : pattern.chain) {
+    RG_CHECK(relationship != nullptr && node != nullptr,
+             common::ErrorCode::InvalidParameter,
+             "pattern comprehension relationship is incomplete");
+    const ast::RelationshipDetail *detail = relationship->detail.get();
+    RG_CHECK((detail == nullptr || (detail->range == std::nullopt &&
+                                    detail->properties == nullptr)) &&
+                 node->properties == nullptr,
+             common::ErrorCode::InvalidParameter,
+             "locally correlated pattern comprehension does not support "
+             "variable length or inline properties");
   }
-  const std::vector<std::string> types =
-      detail == nullptr ? std::vector<std::string>{} : detail->types;
-  graphdb::Vertex vertex =
-      GraphDBVertexById(context.GraphDBTransaction(), start.AsNode().id);
-  std::unique_ptr<graphdb::EdgeIterator> edges = vertex.NewEdgeIterator(
-      direction, std::unordered_set<std::string>(types.begin(), types.end()),
-      {});
+
+  using Bindings = std::unordered_map<std::string, Value>;
+  const auto lookup_binding =
+      [&](const Bindings &bindings,
+          const std::string &name) -> std::optional<Value> {
+    if (name.empty()) {
+      return std::nullopt;
+    }
+    const auto local = bindings.find(name);
+    if (local != bindings.end()) {
+      return local->second;
+    }
+    try {
+      return row.Lookup(name);
+    } catch (const common::Exception &error) {
+      if (error.code() == common::ErrorCode::InvalidParameter) {
+        return std::nullopt;
+      }
+      throw;
+    }
+  };
+
+  const auto bind = [&](Bindings *bindings, const std::string &name,
+                        Value value) {
+    if (!name.empty()) {
+      bindings->insert_or_assign(name, std::move(value));
+    }
+  };
 
   Value::List output;
-  while (edges->Valid()) {
-    context.CheckCancelled();
-    graphdb::Edge edge = edges->GetEdge();
-    edges->Next();
-    const std::int64_t start_id = start.AsNode().id;
-    std::int64_t next_id = edge.GetEndId();
-    if (edge.GetStartId() != start_id) {
-      RG_CHECK(direction != graphdb::EdgeDirection::OUTGOING &&
-                   edge.GetEndId() == start_id,
-               common::ErrorCode::InternalError,
-               "edge iterator returned an unrelated relationship");
-      next_id = edge.GetStartId();
+  std::function<void(std::size_t, const Value::NodePtr &, Bindings,
+                     std::vector<Value::NodePtr>,
+                     std::vector<Value::RelationshipPtr>,
+                     std::vector<RelationshipReference>)>
+      expand;
+  expand = [&](std::size_t chain_index, const Value::NodePtr &current,
+               Bindings bindings, std::vector<Value::NodePtr> path_nodes,
+               std::vector<Value::RelationshipPtr> path_relationships,
+               std::vector<RelationshipReference> used_relationships) {
+    if (chain_index == pattern.chain.size()) {
+      if (!expression.variable.empty()) {
+        auto path = std::make_shared<Path>();
+        path->nodes = std::move(path_nodes);
+        path->relationships = std::move(path_relationships);
+        bind(&bindings, expression.variable, Value(std::move(path)));
+      }
+      MapScopedExpressionBindings scoped(row, std::move(bindings));
+      if (expression.where_expr != nullptr &&
+          !PredicateIsTrue(EvaluateExpression(*expression.where_expr, scoped,
+                                              precomputed, context))) {
+        return;
+      }
+      output.push_back(EvaluateExpression(*expression.eval_expr, scoped,
+                                          precomputed, context));
+      return;
     }
 
-    Value::NodePtr next =
-        MaterializeGraphDBVertex(context.GraphDBTransaction(), next_id);
-    if (!NodeHasLabels(*next, next_node_ptr->labels)) {
+    const auto &[relationship_ptr, next_node_ptr] = pattern.chain[chain_index];
+    const ast::RelationshipPattern &relationship_pattern = *relationship_ptr;
+    const ast::RelationshipDetail *detail = relationship_pattern.detail.get();
+    graphdb::EdgeDirection direction = graphdb::EdgeDirection::BOTH;
+    if (relationship_pattern.left_arrow && !relationship_pattern.right_arrow) {
+      direction = graphdb::EdgeDirection::INCOMING;
+    } else if (relationship_pattern.right_arrow &&
+               !relationship_pattern.left_arrow) {
+      direction = graphdb::EdgeDirection::OUTGOING;
+    }
+    const std::vector<std::string> types =
+        detail == nullptr ? std::vector<std::string>{} : detail->types;
+    graphdb::Vertex vertex =
+        GraphDBVertexById(context.GraphDBTransaction(), current->id);
+    std::unique_ptr<graphdb::EdgeIterator> edges = vertex.NewEdgeIterator(
+        direction, std::unordered_set<std::string>(types.begin(), types.end()),
+        {});
+    while (edges->Valid()) {
+      context.CheckCancelled();
+      graphdb::Edge edge = edges->GetEdge();
+      edges->Next();
+      const RelationshipReference reference{.id = edge.GetId(),
+                                            .type_id = edge.GetTypeId()};
+      if (std::find(used_relationships.begin(), used_relationships.end(),
+                    reference) != used_relationships.end()) {
+        continue;
+      }
+
+      std::int64_t next_id = -1;
+      if (direction != graphdb::EdgeDirection::INCOMING &&
+          edge.GetStartId() == current->id) {
+        next_id = edge.GetEndId();
+      } else if (direction != graphdb::EdgeDirection::OUTGOING &&
+                 edge.GetEndId() == current->id) {
+        next_id = edge.GetStartId();
+      } else {
+        continue;
+      }
+
+      Value::RelationshipPtr relationship = MaterializeGraphDBEdge(edge);
+      if (detail != nullptr && !detail->variable.empty()) {
+        const std::optional<Value> bound =
+            lookup_binding(bindings, detail->variable);
+        if (bound.has_value() &&
+            (!bound->IsRelationship() ||
+             bound->AsRelationship().id != relationship->id ||
+             bound->AsRelationship().type_id != relationship->type_id)) {
+          continue;
+        }
+      }
+
+      Value::NodePtr next =
+          MaterializeGraphDBVertex(context.GraphDBTransaction(), next_id);
+      if (!NodeHasLabels(*next, next_node_ptr->labels)) {
+        continue;
+      }
+      if (!next_node_ptr->variable.empty()) {
+        const std::optional<Value> bound =
+            lookup_binding(bindings, next_node_ptr->variable);
+        if (bound.has_value() &&
+            (!bound->IsNode() || bound->AsNode().id != next->id)) {
+          continue;
+        }
+      }
+
+      Bindings next_bindings = bindings;
+      if (detail != nullptr) {
+        bind(&next_bindings, detail->variable, Value(relationship));
+      }
+      bind(&next_bindings, next_node_ptr->variable, Value(next));
+      auto next_nodes = path_nodes;
+      next_nodes.push_back(next);
+      auto next_relationships = path_relationships;
+      next_relationships.push_back(relationship);
+      auto next_used = used_relationships;
+      next_used.push_back(reference);
+      expand(chain_index + 1, next, std::move(next_bindings),
+             std::move(next_nodes), std::move(next_relationships),
+             std::move(next_used));
+    }
+  };
+
+  const std::optional<Value> bound_start =
+      lookup_binding({}, start_pattern.variable);
+  if (bound_start.has_value()) {
+    if (bound_start->IsNull()) {
+      return Value(std::move(output));
+    }
+    RG_CHECK(bound_start->IsNode(), common::ErrorCode::InvalidParameter,
+             "pattern comprehension start must be a node");
+    Value::NodePtr start = std::make_shared<Node>(bound_start->AsNode());
+    if (NodeHasLabels(*start, start_pattern.labels)) {
+      Bindings bindings;
+      bind(&bindings, start_pattern.variable, Value(start));
+      expand(0, start, std::move(bindings), {start}, {}, {});
+    }
+    return Value(std::move(output));
+  }
+
+  std::unique_ptr<graphdb::VertexIterator> vertices =
+      start_pattern.labels.empty()
+          ? context.GraphDBTransaction().NewVertexIterator()
+          : context.GraphDBTransaction().NewVertexIterator(
+                start_pattern.labels.front());
+  while (vertices->Valid()) {
+    context.CheckCancelled();
+    Value::NodePtr start = MaterializeGraphDBVertex(vertices->GetVertex());
+    vertices->Next();
+    if (!NodeHasLabels(*start, start_pattern.labels)) {
       continue;
     }
-    Value::RelationshipPtr relationship = MaterializeGraphDBEdge(edge);
-    std::unordered_map<std::string, Value> bindings;
-    if (!next_node_ptr->variable.empty()) {
-      bindings.emplace(next_node_ptr->variable, Value(next));
-    }
-    if (detail != nullptr && !detail->variable.empty()) {
-      bindings.emplace(detail->variable, Value(relationship));
-    }
-    if (!expression.variable.empty()) {
-      auto path = std::make_shared<Path>();
-      path->nodes = {std::make_shared<Node>(start.AsNode()), next};
-      path->relationships = {relationship};
-      bindings.emplace(expression.variable, Value(std::move(path)));
-    }
-    MapScopedExpressionBindings scoped(row, std::move(bindings));
-    if (expression.where_expr != nullptr &&
-        !PredicateIsTrue(EvaluateExpression(*expression.where_expr, scoped,
-                                            precomputed, context))) {
-      continue;
-    }
-    output.push_back(EvaluateExpression(*expression.eval_expr, scoped,
-                                        precomputed, context));
+    Bindings bindings;
+    bind(&bindings, start_pattern.variable, Value(start));
+    expand(0, start, std::move(bindings), {start}, {}, {});
   }
   return Value(std::move(output));
 }
@@ -1099,6 +1233,9 @@ Value EvaluateExpression(
       return EvaluateListComprehension(
           ast::CastAst<ast::ListComprehension>(expression), row, precomputed,
           context);
+    case ast::ASTNodeType::kReduceExpression:
+      return EvaluateReduce(ast::CastAst<ast::ReduceExpression>(expression),
+                            row, precomputed, context);
     case ast::ASTNodeType::kPatternComprehension:
       return EvaluateLocallyCorrelatedPatternComprehension(
           ast::CastAst<ast::PatternComprehension>(expression), row, precomputed,

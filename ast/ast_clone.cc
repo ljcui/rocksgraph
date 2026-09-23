@@ -292,6 +292,16 @@ std::unique_ptr<Expression> CloneExpressionImpl(const Expression &expr) {
       cloned->eval_expr = CloneExpressionPtr(node.eval_expr);
       return cloned;
     }
+    case ASTNodeType::kReduceExpression: {
+      const auto &node = CastAst<ReduceExpression>(expr);
+      auto cloned = std::make_unique<ReduceExpression>();
+      cloned->accumulator = node.accumulator;
+      cloned->variable = node.variable;
+      cloned->initial = CloneExpressionPtr(node.initial);
+      cloned->list_expr = CloneExpressionPtr(node.list_expr);
+      cloned->eval_expr = CloneExpressionPtr(node.eval_expr);
+      return cloned;
+    }
     case ASTNodeType::kPatternComprehension: {
       const auto &node = CastAst<PatternComprehension>(expr);
       auto cloned = std::make_unique<PatternComprehension>();

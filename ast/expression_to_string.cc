@@ -448,6 +448,21 @@ ExprText ExpressionText(const Expression &expr) {
       out += "]";
       return {out, kPrimary};
     }
+    case ASTNodeType::kReduceExpression: {
+      const auto &node = CastAst<ReduceExpression>(expr);
+      if (!node.initial || !node.list_expr || !node.eval_expr) {
+        return {};
+      }
+      const std::string initial_text = ExpressionToString(*node.initial);
+      const std::string list_text = ExpressionToString(*node.list_expr);
+      const std::string eval_text = ExpressionToString(*node.eval_expr);
+      if (initial_text.empty() || list_text.empty() || eval_text.empty()) {
+        return {};
+      }
+      return {"reduce(" + node.accumulator + " = " + initial_text + ", " +
+                  node.variable + " IN " + list_text + " | " + eval_text + ")",
+              kPrimary};
+    }
     case ASTNodeType::kPatternComprehension: {
       const auto &node = CastAst<PatternComprehension>(expr);
       if (!node.relationships_pattern || !node.eval_expr) {

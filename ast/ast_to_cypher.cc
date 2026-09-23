@@ -381,6 +381,21 @@ class CypherPrinter : public ASTVisitor {
     Push(out);
   }
 
+  void Visit(ReduceExpression &node) override {
+    std::string out = "reduce(";
+    out += RenderSymbolicName(node.accumulator);
+    out += " = ";
+    out += RenderMaybe(node.initial);
+    out += ", ";
+    out += RenderSymbolicName(node.variable);
+    out += " IN ";
+    out += RenderMaybe(node.list_expr);
+    out += " | ";
+    out += RenderMaybe(node.eval_expr);
+    out += ")";
+    Push(out);
+  }
+
   void Visit(PatternComprehension &node) override {
     std::string out = "[";
     if (!node.variable.empty()) {

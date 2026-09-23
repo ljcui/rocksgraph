@@ -368,6 +368,16 @@ class QueryIRBuilder {
         local_variables_.pop_back();
       }
 
+      void Visit(const ast::ReduceExpression &node) override {
+        WalkMaybe(node.initial);
+        WalkMaybe(node.list_expr);
+        local_variables_.push_back(node.accumulator);
+        local_variables_.push_back(node.variable);
+        WalkMaybe(node.eval_expr);
+        local_variables_.pop_back();
+        local_variables_.pop_back();
+      }
+
       void Visit(const ast::ExistentialSubquery &node) override {
         nested_expressions_->push_back(builder_->BuildExistsIRExpression(node));
       }

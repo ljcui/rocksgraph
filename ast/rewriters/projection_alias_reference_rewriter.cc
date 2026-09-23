@@ -55,6 +55,7 @@ class AliasExpressionRewriter final : public ASTRewriter {
   // Variables introduced by these expressions shadow variables outside the
   // expression, so projection aliases must not be substituted inside them.
   void Visit(ListComprehension &node) override { (void)node; }
+  void Visit(ReduceExpression &node) override { (void)node; }
   void Visit(PatternComprehension &node) override { (void)node; }
   void Visit(AllQuantifier &node) override { (void)node; }
   void Visit(AnyQuantifier &node) override { (void)node; }

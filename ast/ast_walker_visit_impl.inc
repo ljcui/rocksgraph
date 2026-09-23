@@ -193,6 +193,11 @@ void AST_WALKER_CLASS::Visit(AST_WALKER_PARAM(ListComprehension) node) {
   WalkMaybe(node.where_expr);
   WalkMaybe(node.eval_expr);
 }
+void AST_WALKER_CLASS::Visit(AST_WALKER_PARAM(ReduceExpression) node) {
+  WalkMaybe(node.initial);
+  WalkMaybe(node.list_expr);
+  WalkMaybe(node.eval_expr);
+}
 void AST_WALKER_CLASS::Visit(AST_WALKER_PARAM(PatternComprehension) node) {
   WalkMaybe(node.relationships_pattern);
   WalkMaybe(node.where_expr);

@@ -131,6 +131,8 @@ class ASTEqual {
       const ParenthesizedExpression &right);
   static bool EqualListComprehension(const ListComprehension &left,
                                      const ListComprehension &right);
+  static bool EqualReduceExpression(const ReduceExpression &left,
+                                    const ReduceExpression &right);
   static bool EqualPatternComprehension(const PatternComprehension &left,
                                         const PatternComprehension &right);
   static bool EqualPatternPredicateExpression(

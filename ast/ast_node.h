@@ -77,6 +77,7 @@ class Parameter;
   X(kCaseExpression, "CaseExpression")                         \
   X(kParenthesizedExpression, "ParenthesizedExpression")       \
   X(kListComprehension, "ListComprehension")                   \
+  X(kReduceExpression, "ReduceExpression")                     \
   X(kPatternComprehension, "PatternComprehension")             \
   X(kPatternPredicateExpression, "PatternPredicateExpression") \
   X(kAllQuantifier, "AllQuantifier")                           \
@@ -617,6 +618,17 @@ class ListComprehension : public Expression {
   void Accept(ASTVisitor& visitor) override;
 };
 
+class ReduceExpression : public Expression {
+ public:
+  ReduceExpression() { node_type = ASTNodeType::kReduceExpression; }
+  std::string accumulator;
+  std::string variable;
+  std::unique_ptr<Expression> initial;
+  std::unique_ptr<Expression> list_expr;
+  std::unique_ptr<Expression> eval_expr;
+  void Accept(ASTVisitor& visitor) override;
+};
+
 class PatternComprehension : public Expression {
  public:
   PatternComprehension() { node_type = ASTNodeType::kPatternComprehension; }
@@ -1139,6 +1151,9 @@ inline void ParenthesizedExpression::Accept(ASTVisitor& visitor) {
   visitor.Visit(*this);
 }
 inline void ListComprehension::Accept(ASTVisitor& visitor) {
+  visitor.Visit(*this);
+}
+inline void ReduceExpression::Accept(ASTVisitor& visitor) {
   visitor.Visit(*this);
 }
 inline void PatternComprehension::Accept(ASTVisitor& visitor) {

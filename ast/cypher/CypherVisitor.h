@@ -169,6 +169,8 @@ public:
 
     virtual std::any visitOC_ListComprehension(CypherParser::OC_ListComprehensionContext *context) = 0;
 
+    virtual std::any visitOC_Reduce(CypherParser::OC_ReduceContext *context) = 0;
+
     virtual std::any visitOC_PatternComprehension(CypherParser::OC_PatternComprehensionContext *context) = 0;
 
     virtual std::any visitOC_Quantifier(CypherParser::OC_QuantifierContext *context) = 0;

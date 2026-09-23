@@ -51,6 +51,20 @@ TEST(SemanticValidatorTest, ComprehensionUsesOuterScope) {
       ast::ParseCypher("MATCH (n) RETURN [x IN [1,2] WHERE x > n.age | x]"));
 }
 
+TEST(SemanticValidatorTest, ReduceScopesAccumulatorAndIterationVariable) {
+  EXPECT_NO_THROW(ast::ParseCypher(
+      "MATCH (n) RETURN reduce(total = n.age, x IN [1, 2] | total + x)"));
+  ExpectSemanticError("RETURN reduce(total = missing, x IN [1] | total + x)",
+                      "undefined variable: missing");
+  ExpectSemanticError("RETURN reduce(total = 0, x IN [1] | total + missing)",
+                      "undefined variable: missing");
+}
+
+TEST(SemanticValidatorTest, RejectsNonListReduceInput) {
+  ExpectSemanticError("RETURN reduce(total = 0, x IN 1 | total + x)",
+                      "reduce requires a list expression");
+}
+
 TEST(SemanticValidatorTest, RejectsUnionColumnCountMismatch) {
   ExpectSemanticError("RETURN 1 AS a UNION RETURN 1 AS b, 2 AS c",
                       "UNION branches must return the same number of columns");
@@ -101,6 +115,10 @@ TEST(SemanticValidatorTest, AllowsAggregateSubexpressions) {
 TEST(SemanticValidatorTest, RejectsAggregationInsideListComprehension) {
   ExpectSemanticError(
       "MATCH (n) RETURN [x IN [1, 2, 3] | count(*)] AS bad",
+      "aggregation is not allowed in a comprehension predicate or mapping "
+      "expression");
+  ExpectSemanticError(
+      "MATCH (n) RETURN reduce(total = 0, x IN [1] | total + count(*))",
       "aggregation is not allowed in a comprehension predicate or mapping "
       "expression");
 }

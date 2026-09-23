@@ -54,6 +54,12 @@ TEST(AstToCypherTest, ListComprehensionWithoutEval) {
   EXPECT_EQ(ToCypherOrFail(query), "RETURN [x IN [1, 2, 3]]");
 }
 
+TEST(AstToCypherTest, ReduceExpression) {
+  const std::string query = "RETURN reduce(total=0, x IN [1,2,3] | total+x)";
+  EXPECT_EQ(ToCypherOrFail(query),
+            "RETURN reduce(total = 0, x IN [1, 2, 3] | (total + x))");
+}
+
 TEST(AstToCypherTest, RelationshipPatternDetails) {
   const std::string query =
       "MATCH (a)-[r:KNOWS|LIKES*1..3 {since: 2020}]->(b) RETURN r";

@@ -376,6 +376,7 @@ oC_Atom
         | oC_CaseExpression
         | ( COUNT SP? '(' SP? '*' SP? ')' )
         | oC_ListComprehension
+        | oC_Reduce
         | oC_PatternComprehension
         | oC_Quantifier
         | oC_PatternPredicate
@@ -405,6 +406,9 @@ THEN : ( 'T' | 't' ) ( 'H' | 'h' ) ( 'E' | 'e' ) ( 'N' | 'n' ) ;
 
 oC_ListComprehension
                  :  '[' SP? oC_FilterExpression ( SP? '|' SP? oC_Expression )? SP? ']' ;
+
+oC_Reduce
+      :  REDUCE SP? '(' SP? oC_Variable SP? '=' SP? oC_Expression SP? ',' SP? oC_IdInColl SP? '|' SP? oC_Expression SP? ')' ;
 
 oC_PatternComprehension
                     :  '[' SP? ( oC_Variable SP? '=' SP? )? oC_RelationshipsPattern SP? ( oC_Where SP? )? '|' SP? oC_Expression SP? ']' ;
@@ -639,6 +643,7 @@ oC_ReservedWord
                 | OF
                 | ADD
                 | DROP
+                | REDUCE
                 | SHORTESTPATH
                 | ALLSHORTESTPATHS
                 ;
@@ -662,6 +667,8 @@ OF : ( 'O' | 'o' ) ( 'F' | 'f' ) ;
 ADD : ( 'A' | 'a' ) ( 'D' | 'd' ) ( 'D' | 'd' ) ;
 
 DROP : ( 'D' | 'd' ) ( 'R' | 'r' ) ( 'O' | 'o' ) ( 'P' | 'p' ) ;
+
+REDUCE : ( 'R' | 'r' ) ( 'E' | 'e' ) ( 'D' | 'd' ) ( 'U' | 'u' ) ( 'C' | 'c' ) ( 'E' | 'e' ) ;
 
 SHORTESTPATH : ( 'S' | 's' ) ( 'H' | 'h' ) ( 'O' | 'o' ) ( 'R' | 'r' )
                ( 'T' | 't' ) ( 'E' | 'e' ) ( 'S' | 's' ) ( 'T' | 't' )

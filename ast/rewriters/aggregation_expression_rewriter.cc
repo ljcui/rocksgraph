@@ -164,6 +164,12 @@ class NameCollector final : public ASTWalker {
     ASTWalker::Visit(node);
   }
 
+  void Visit(ReduceExpression &node) override {
+    Add(node.accumulator);
+    Add(node.variable);
+    ASTWalker::Visit(node);
+  }
+
   void Visit(PatternComprehension &node) override {
     Add(node.variable);
     ASTWalker::Visit(node);
@@ -227,6 +233,16 @@ class AggregationExpressionRewriter::ExpressionAliasRewriter final
     PushLocal(node.variable);
     RewriteMaybe(node.where_expr);
     RewriteMaybe(node.eval_expr);
+    PopLocal();
+  }
+
+  void Visit(ReduceExpression &node) override {
+    RewriteMaybe(node.initial);
+    RewriteMaybe(node.list_expr);
+    PushLocal(node.accumulator);
+    PushLocal(node.variable);
+    RewriteMaybe(node.eval_expr);
+    PopLocal();
     PopLocal();
   }
 

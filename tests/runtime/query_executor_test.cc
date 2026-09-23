@@ -1363,6 +1363,73 @@ TEST(QueryExecutorTest, ExecutesListComprehension) {
                                     {"[20, 30]", "[2, 3]", "[1, 2, 3]"}}));
 }
 
+TEST(QueryExecutorTest, ExecutesReduceExpression) {
+  rg::test::GraphDBTestDatabase graph;
+
+  rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "RETURN reduce(total = 0, x IN [1, 2, 3] | total + x) AS sum, "
+      "reduce(values = [], x IN [1, 2] | values + x) AS copied, "
+      "reduce(total = 7, x IN [] | total + x) AS empty, "
+      "reduce(total = 0, x IN null | total + x) AS null_value");
+
+  ASSERT_EQ(result.columns,
+            (std::vector<std::string>{"sum", "copied", "empty", "null_value"}));
+  EXPECT_EQ(
+      StringRows(result),
+      (std::vector<std::vector<std::string>>{{"6", "[1, 2]", "7", "null"}}));
+}
+
+TEST(QueryExecutorTest, ExecutesLdbcInteractiveComplex14) {
+  rg::test::GraphDBTestDatabase graph;
+  const auto person1 = graph.CreateNode({"Person"}, {{"id", rg::Value(1)}});
+  const auto person2 = graph.CreateNode({"Person"}, {{"id", rg::Value(2)}});
+  const auto comment1 = graph.CreateNode({"Comment"});
+  const auto post = graph.CreateNode({"Post"});
+  const auto comment2 = graph.CreateNode({"Comment"});
+  graph.CreateRelationship(person1, person2, "KNOWS");
+  graph.CreateRelationship(comment1, person1, "HAS_CREATOR");
+  graph.CreateRelationship(comment1, post, "REPLY_OF");
+  graph.CreateRelationship(post, person2, "HAS_CREATOR");
+  graph.CreateRelationship(comment1, comment2, "REPLY_OF");
+  graph.CreateRelationship(comment2, person2, "HAS_CREATOR");
+
+  rg::QueryOptions options = QueryOptionsFor(graph);
+  options.parameters = {{"person1Id", rg::Value(1)},
+                        {"person2Id", rg::Value(2)}};
+  const rg::QueryResult result = graph.ExecuteQueryAndCommit(
+      "MATCH path = allShortestPaths("
+      "(person1:Person {id: $person1Id})-[:KNOWS*0..]-"
+      "(person2:Person {id: $person2Id})) "
+      "WITH collect(path) AS paths "
+      "UNWIND paths AS path "
+      "WITH path, relationships(path) AS rels_in_path "
+      "WITH [n IN nodes(path) | n.id] AS personIdsInPath, "
+      "[r IN rels_in_path | reduce(w = 0.0, v IN ["
+      "(a:Person)<-[:HAS_CREATOR]-(:Comment)-[:REPLY_OF]->"
+      "(:Post)-[:HAS_CREATOR]->(b:Person) "
+      "WHERE (a.id = startNode(r).id AND b.id = endNode(r).id) OR "
+      "(a.id = endNode(r).id AND b.id = startNode(r).id) | 1.0] "
+      "| w + v)] AS weight1, "
+      "[r IN rels_in_path | reduce(w = 0.0, v IN ["
+      "(a:Person)<-[:HAS_CREATOR]-(:Comment)-[:REPLY_OF]->"
+      "(:Comment)-[:HAS_CREATOR]->(b:Person) "
+      "WHERE (a.id = startNode(r).id AND b.id = endNode(r).id) OR "
+      "(a.id = endNode(r).id AND b.id = startNode(r).id) | 0.5] "
+      "| w + v)] AS weight2 "
+      "WITH personIdsInPath, "
+      "reduce(w = 0.0, v IN weight1 | w + v) AS w1, "
+      "reduce(w = 0.0, v IN weight2 | w + v) AS w2 "
+      "RETURN personIdsInPath, w1 + w2 AS pathWeight "
+      "ORDER BY pathWeight DESC",
+      options);
+
+  ASSERT_EQ(result.columns,
+            (std::vector<std::string>{"personIdsInPath", "pathWeight"}));
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{{"[1, 2]", "1.5"}}));
+}
+
 TEST(QueryExecutorTest, ExecutesExistsSubqueryProjection) {
   rg::test::GraphDBTestDatabase graph;
   SeedDemoGraph(&graph);

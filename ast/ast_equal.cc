@@ -83,6 +83,7 @@ bool ASTEqual::Equal(const ASTNode *left, const ASTNode *right) {
                    EqualParenthesizedExpression);
     AST_EQUAL_CASE(kListComprehension, ListComprehension,
                    EqualListComprehension);
+    AST_EQUAL_CASE(kReduceExpression, ReduceExpression, EqualReduceExpression);
     AST_EQUAL_CASE(kPatternComprehension, PatternComprehension,
                    EqualPatternComprehension);
     AST_EQUAL_CASE(kPatternPredicateExpression, PatternPredicateExpression,
@@ -452,6 +453,15 @@ bool ASTEqual::EqualListComprehension(const ListComprehension &left,
   return left.variable == right.variable &&
          EqualPtr(left.list_expr, right.list_expr) &&
          EqualPtr(left.where_expr, right.where_expr) &&
+         EqualPtr(left.eval_expr, right.eval_expr);
+}
+
+bool ASTEqual::EqualReduceExpression(const ReduceExpression &left,
+                                     const ReduceExpression &right) {
+  return left.accumulator == right.accumulator &&
+         left.variable == right.variable &&
+         EqualPtr(left.initial, right.initial) &&
+         EqualPtr(left.list_expr, right.list_expr) &&
          EqualPtr(left.eval_expr, right.eval_expr);
 }
 

@@ -70,6 +70,12 @@ class NameCollector : public ASTRewriter {
     ASTRewriter::Visit(node);
   }
 
+  void Visit(ReduceExpression &node) override {
+    AddName(node.accumulator);
+    AddName(node.variable);
+    ASTRewriter::Visit(node);
+  }
+
   void Visit(PatternComprehension &node) override {
     AddName(node.variable);
     ASTRewriter::Visit(node);

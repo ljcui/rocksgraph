@@ -32,10 +32,10 @@ public:
     OctDigit = 104, ZeroDigit = 105, ExponentDecimalReal = 106, RegularDecimalReal = 107, 
     StringLiteral = 108, EscapedChar = 109, CONSTRAINT = 110, DO = 111, 
     FOR = 112, REQUIRE = 113, UNIQUE = 114, MANDATORY = 115, SCALAR = 116, 
-    OF = 117, ADD = 118, DROP = 119, SHORTESTPATH = 120, ALLSHORTESTPATHS = 121, 
-    FILTER = 122, EXTRACT = 123, UnescapedSymbolicName = 124, IdentifierStart = 125, 
-    IdentifierPart = 126, EscapedSymbolicName = 127, SP = 128, WHITESPACE = 129, 
-    Comment = 130
+    OF = 117, ADD = 118, DROP = 119, REDUCE = 120, SHORTESTPATH = 121, ALLSHORTESTPATHS = 122, 
+    FILTER = 123, EXTRACT = 124, UnescapedSymbolicName = 125, IdentifierStart = 126, 
+    IdentifierPart = 127, EscapedSymbolicName = 128, SP = 129, WHITESPACE = 130, 
+    Comment = 131
   };
 
   enum {
@@ -63,17 +63,18 @@ public:
     RuleOC_PowerOfExpression = 66, RuleOC_UnaryAddOrSubtractExpression = 67, 
     RuleOC_NonArithmeticOperatorExpression = 68, RuleOC_ListOperatorExpression = 69, 
     RuleOC_PropertyLookup = 70, RuleOC_Atom = 71, RuleOC_CaseExpression = 72, 
-    RuleOC_CaseAlternative = 73, RuleOC_ListComprehension = 74, RuleOC_PatternComprehension = 75, 
-    RuleOC_Quantifier = 76, RuleOC_FilterExpression = 77, RuleOC_PatternPredicate = 78, 
-    RuleOC_ParenthesizedExpression = 79, RuleOC_IdInColl = 80, RuleOC_FunctionInvocation = 81, 
-    RuleOC_FunctionName = 82, RuleOC_ExistentialSubquery = 83, RuleOC_ExplicitProcedureInvocation = 84, 
-    RuleOC_ImplicitProcedureInvocation = 85, RuleOC_ProcedureResultField = 86, 
-    RuleOC_ProcedureName = 87, RuleOC_Namespace = 88, RuleOC_Variable = 89, 
-    RuleOC_Literal = 90, RuleOC_BooleanLiteral = 91, RuleOC_NumberLiteral = 92, 
-    RuleOC_IntegerLiteral = 93, RuleOC_DoubleLiteral = 94, RuleOC_ListLiteral = 95, 
-    RuleOC_MapLiteral = 96, RuleOC_PropertyKeyName = 97, RuleOC_Parameter = 98, 
-    RuleOC_SchemaName = 99, RuleOC_ReservedWord = 100, RuleOC_SymbolicName = 101, 
-    RuleOC_LeftArrowHead = 102, RuleOC_RightArrowHead = 103, RuleOC_Dash = 104
+    RuleOC_CaseAlternative = 73, RuleOC_ListComprehension = 74, RuleOC_Reduce = 75, 
+    RuleOC_PatternComprehension = 76, RuleOC_Quantifier = 77, RuleOC_FilterExpression = 78, 
+    RuleOC_PatternPredicate = 79, RuleOC_ParenthesizedExpression = 80, RuleOC_IdInColl = 81, 
+    RuleOC_FunctionInvocation = 82, RuleOC_FunctionName = 83, RuleOC_ExistentialSubquery = 84, 
+    RuleOC_ExplicitProcedureInvocation = 85, RuleOC_ImplicitProcedureInvocation = 86, 
+    RuleOC_ProcedureResultField = 87, RuleOC_ProcedureName = 88, RuleOC_Namespace = 89, 
+    RuleOC_Variable = 90, RuleOC_Literal = 91, RuleOC_BooleanLiteral = 92, 
+    RuleOC_NumberLiteral = 93, RuleOC_IntegerLiteral = 94, RuleOC_DoubleLiteral = 95, 
+    RuleOC_ListLiteral = 96, RuleOC_MapLiteral = 97, RuleOC_PropertyKeyName = 98, 
+    RuleOC_Parameter = 99, RuleOC_SchemaName = 100, RuleOC_ReservedWord = 101, 
+    RuleOC_SymbolicName = 102, RuleOC_LeftArrowHead = 103, RuleOC_RightArrowHead = 104, 
+    RuleOC_Dash = 105
   };
 
   explicit CypherParser(antlr4::TokenStream *input);
@@ -168,6 +169,7 @@ public:
   class OC_CaseExpressionContext;
   class OC_CaseAlternativeContext;
   class OC_ListComprehensionContext;
+  class OC_ReduceContext;
   class OC_PatternComprehensionContext;
   class OC_QuantifierContext;
   class OC_FilterExpressionContext;
@@ -1376,6 +1378,7 @@ public:
     std::vector<antlr4::tree::TerminalNode *> SP();
     antlr4::tree::TerminalNode* SP(size_t i);
     OC_ListComprehensionContext *oC_ListComprehension();
+    OC_ReduceContext *oC_Reduce();
     OC_PatternComprehensionContext *oC_PatternComprehension();
     OC_QuantifierContext *oC_Quantifier();
     OC_PatternPredicateContext *oC_PatternPredicate();
@@ -1445,6 +1448,25 @@ public:
   };
 
   OC_ListComprehensionContext* oC_ListComprehension();
+
+  class  OC_ReduceContext : public antlr4::ParserRuleContext {
+  public:
+    OC_ReduceContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *REDUCE();
+    OC_VariableContext *oC_Variable();
+    std::vector<OC_ExpressionContext *> oC_Expression();
+    OC_ExpressionContext* oC_Expression(size_t i);
+    OC_IdInCollContext *oC_IdInColl();
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
+
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  OC_ReduceContext* oC_Reduce();
 
   class  OC_PatternComprehensionContext : public antlr4::ParserRuleContext {
   public:
@@ -1885,6 +1907,7 @@ public:
     antlr4::tree::TerminalNode *OF();
     antlr4::tree::TerminalNode *ADD();
     antlr4::tree::TerminalNode *DROP();
+    antlr4::tree::TerminalNode *REDUCE();
     antlr4::tree::TerminalNode *SHORTESTPATH();
     antlr4::tree::TerminalNode *ALLSHORTESTPATHS();
 
