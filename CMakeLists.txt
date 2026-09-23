@@ -47,6 +47,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Strip final Release binaries; static archives retain symbols needed for linking.
+add_link_options("$<$<CONFIG:Release>:-s>")
+
 execute_process(
   COMMAND git rev-parse --abbrev-ref HEAD
   WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
