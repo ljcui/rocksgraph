@@ -98,7 +98,7 @@ if(CLANG_FORMAT_BIN OR CMAKE_FORMAT_BIN)
     list(FILTER ROCKSGRAPH_FORMAT_FILES EXCLUDE REGEX
          "^${CMAKE_SOURCE_DIR}/(build|cmake-build-debug)/")
     list(FILTER ROCKSGRAPH_FORMAT_FILES EXCLUDE REGEX
-         "^${CMAKE_SOURCE_DIR}/ast/cypher/Cypher.*\\.(cc|h)$")
+         "^${CMAKE_SOURCE_DIR}/ast/cypher/Cypher.*\\.(cpp|h)$")
     list(FILTER ROCKSGRAPH_FORMAT_FILES EXCLUDE REGEX
          "^${CMAKE_SOURCE_DIR}/(proto|etcd_raft/raftpb)/.*\\.pb\\.(cc|h)$")
     list(FILTER ROCKSGRAPH_FORMAT_FILES EXCLUDE REGEX
@@ -137,6 +137,31 @@ else()
 endif()
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
+# The C++ runtime is needed for every build, while the Java generator is only
+# needed when the checked-in Cypher parser sources are intentionally refreshed.
+# Keep the generator path explicit and stable instead of relying on a temporary
+# file under /tmp.
+set(ANTLR4_JAR_LOCATION
+    ""
+    CACHE FILEPATH
+          "Path to the ANTLR 4.13.2 complete JAR used to regenerate Cypher.")
+if(NOT ANTLR4_JAR_LOCATION)
+  find_file(
+    ROCKSGRAPH_ANTLR4_JAR_DEFAULT
+    NAMES antlr-4.13.2-complete.jar
+    PATHS /usr/local/share/antlr4 /opt/antlr4
+    NO_DEFAULT_PATH)
+  if(ROCKSGRAPH_ANTLR4_JAR_DEFAULT)
+    set(ANTLR4_JAR_LOCATION
+        "${ROCKSGRAPH_ANTLR4_JAR_DEFAULT}"
+        CACHE FILEPATH
+              "Path to the ANTLR 4.13.2 complete JAR used to regenerate Cypher."
+        FORCE)
+  endif()
+endif()
+find_package(Java COMPONENTS Runtime QUIET)
+
 find_package(ANTLR4Runtime REQUIRED)
 find_package(gflags REQUIRED)
 find_package(spdlog REQUIRED)

@@ -1,5 +1,20 @@
 set(ROCKSGRAPH_AST_GENERATED_SOURCES
-    cypher/CypherLexer.cc cypher/CypherParser.cc cypher/CypherVisitor.cc)
+    cypher/CypherLexer.cpp cypher/CypherParser.cpp cypher/CypherVisitor.cpp)
+
+add_custom_target(
+  generate_cypher_parser
+  COMMAND
+    ${CMAKE_COMMAND}
+    -DANTLR4_JAR_LOCATION=${ANTLR4_JAR_LOCATION}
+    -DANTLR4_JAVA_EXECUTABLE=${Java_JAVA_EXECUTABLE}
+    -DROCKSGRAPH_CYPHER_GRAMMAR_DIR=${CMAKE_CURRENT_SOURCE_DIR}/cypher
+    -DROCKSGRAPH_CYPHER_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/cypher
+    -DROCKSGRAPH_CYPHER_WORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cypher-generated
+    -P ${PROJECT_SOURCE_DIR}/cmake/GenerateCypherParser.cmake
+  WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+  COMMENT "Regenerate the checked-in Cypher parser sources."
+  VERBATIM)
+
 if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.27")
   set_source_files_properties(${ROCKSGRAPH_AST_GENERATED_SOURCES}
                               PROPERTIES SKIP_LINTING ON)
