@@ -40,6 +40,10 @@ TEST(BuiltinFunctionEvaluatorTest, EvaluatesNumericFunctions) {
             Value(1.5));
   EXPECT_EQ(EvaluateBuiltinFunction(BuiltinFunctionKind::kCeil, {Value(1.2)}),
             Value(2.0));
+  EXPECT_EQ(EvaluateBuiltinFunction(BuiltinFunctionKind::kFloor, {Value(1.8)}),
+            Value(1.0));
+  EXPECT_EQ(EvaluateBuiltinFunction(BuiltinFunctionKind::kFloor, {Value(-1.2)}),
+            Value(-2.0));
   EXPECT_EQ(EvaluateBuiltinFunction(BuiltinFunctionKind::kSqrt, {Value(12.96)}),
             Value(3.6));
   EXPECT_EQ(EvaluateBuiltinFunction(BuiltinFunctionKind::kSign, {Value(-5)}),

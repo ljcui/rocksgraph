@@ -21,6 +21,7 @@ enum class BuiltinFunctionKind {
   kSum,
   kAbs,
   kCeil,
+  kFloor,
   kCoalesce,
   kDate,
   kDateRealtime,

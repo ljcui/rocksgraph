@@ -1253,7 +1253,8 @@ TEST(QueryExecutorTest, ExecutesNumericListAndStringBuiltInFunctions) {
 
   rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
       graph,
-      "RETURN abs(-7) AS absolute, ceil(1.2) AS ceiling, sqrt(12.96) AS root, "
+      "RETURN abs(-7) AS absolute, ceil(1.2) AS ceiling, floor(1.8) AS floor, "
+      "sqrt(12.96) AS root, "
       "sign(-5) AS negative_sign, sign(0) AS zero_sign, "
       "tail([1, 2, 3]) AS rest, last([1, 2, 3]) AS final, "
       "last([]) AS missing, reverse([1, 2, 3]) AS reversed_list, "
@@ -1262,14 +1263,14 @@ TEST(QueryExecutorTest, ExecutesNumericListAndStringBuiltInFunctions) {
       "substring('0123456789', 2, 3) AS middle");
 
   ASSERT_EQ(result.columns,
-            (std::vector<std::string>{"absolute", "ceiling", "root",
+            (std::vector<std::string>{"absolute", "ceiling", "floor", "root",
                                       "negative_sign", "zero_sign", "rest",
                                       "final", "missing", "reversed_list",
                                       "reversed_text", "suffix", "middle"}));
   EXPECT_EQ(StringRows(result),
             (std::vector<std::vector<std::string>>{
-                {"7", "2", "3.6", "-1", "0", "[2, 3]", "3", "null", "[3, 2, 1]",
-                 "\"Oskar\"", "\"123456789\"", "\"234\""}}));
+                {"7", "2", "1", "3.6", "-1", "0", "[2, 3]", "3", "null",
+                 "[3, 2, 1]", "\"Oskar\"", "\"123456789\"", "\"234\""}}));
 }
 
 TEST(QueryExecutorTest, PreservesCompactDoubleLiteralsInResultColumns) {
@@ -1361,6 +1362,32 @@ TEST(QueryExecutorTest, ExecutesListComprehension) {
             (std::vector<std::string>{"scaled", "filtered", "copy"}));
   EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{
                                     {"[20, 30]", "[2, 3]", "[1, 2, 3]"}}));
+}
+
+TEST(QueryExecutorTest, ExecutesPatternPredicatesInExpressions) {
+  rg::test::GraphDBTestDatabase graph;
+  const auto person = graph.CreateNode({"Person"}, {{"id", rg::Value(1)}});
+  const auto friend_candidate =
+      graph.CreateNode({"Person"}, {{"id", rg::Value(2)}});
+  const auto matching_post =
+      graph.CreateNode({"Post"}, {{"id", rg::Value(10)}});
+  const auto other_post = graph.CreateNode({"Post"}, {{"id", rg::Value(11)}});
+  const auto common_tag = graph.CreateNode({"Tag"});
+  const auto other_tag = graph.CreateNode({"Tag"});
+  graph.CreateRelationship(person, common_tag, "HAS_INTEREST");
+  graph.CreateRelationship(matching_post, common_tag, "HAS_TAG");
+  graph.CreateRelationship(other_post, other_tag, "HAS_TAG");
+
+  const rg::QueryResult result = graph.ExecuteQueryAndCommit(
+      "MATCH (person:Person {id: 1}), (friend:Person {id: 2}), "
+      "(matching:Post {id: 10}), (other:Post {id: 11}) "
+      "RETURN NOT ((friend)-[:KNOWS]-(person)) AS isNew, "
+      "size([p IN [matching, other] "
+      "WHERE (p)-[:HAS_TAG]->()<-[:HAS_INTEREST]-(person)]) AS commonPosts");
+
+  ASSERT_EQ(result.columns, (std::vector<std::string>{"isNew", "commonPosts"}));
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{{"true", "1"}}));
 }
 
 TEST(QueryExecutorTest, ExecutesReduceExpression) {

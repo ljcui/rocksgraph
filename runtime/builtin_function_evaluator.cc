@@ -137,6 +137,13 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
       }
       return arguments[0].IsDouble() ? Value(std::ceil(arguments[0].AsDouble()))
                                      : Value::Null();
+    case ast::BuiltinFunctionKind::kFloor:
+      if (arguments[0].IsInteger()) {
+        return Value(static_cast<double>(arguments[0].AsInteger()));
+      }
+      return arguments[0].IsDouble()
+                 ? Value(std::floor(arguments[0].AsDouble()))
+                 : Value::Null();
     case ast::BuiltinFunctionKind::kId:
       if (arguments[0].IsNode()) {
         return Value(arguments[0].AsNode().id);

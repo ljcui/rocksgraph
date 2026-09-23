@@ -379,7 +379,17 @@ class QueryIRBuilder {
       }
 
       void Visit(const ast::ExistentialSubquery &node) override {
-        nested_expressions_->push_back(builder_->BuildExistsIRExpression(node));
+        const auto dependencies =
+            builder_->SemanticTableRef().ExpressionDependencies(node);
+        const bool locally_correlated =
+            std::any_of(local_variables_.begin(), local_variables_.end(),
+                        [&](const std::string &variable) {
+                          return dependencies.contains(variable);
+                        });
+        if (!locally_correlated) {
+          nested_expressions_->push_back(
+              builder_->BuildExistsIRExpression(node));
+        }
       }
 
       void Visit(const ast::PatternComprehension &node) override {

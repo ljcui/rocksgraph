@@ -237,32 +237,6 @@ bool ProjectionContainsAggregation(const ProjectionBody &body) {
   return false;
 }
 
-class PatternPredicateScanner final : public ASTWalker {
- public:
-  bool Scan(Expression &expression) {
-    contains_ = false;
-    expression.Accept(*this);
-    return contains_;
-  }
-
- protected:
-  void Visit(PatternPredicateExpression &node) override {
-    (void)node;
-    contains_ = true;
-  }
-
- private:
-  bool contains_ = false;
-};
-
-bool ContainsPatternPredicate(Expression *expression) {
-  if (expression == nullptr) {
-    return false;
-  }
-  PatternPredicateScanner scanner;
-  return scanner.Scan(*expression);
-}
-
 class UpdatingClauseScanner final : public ASTWalker {
  public:
   bool Scan(ASTNode &node) {
@@ -1040,9 +1014,6 @@ class SemanticValidator : public ASTWalker {
       if (!name.empty() && !names.insert(name).second) {
         ReportSemantic("duplicate projection column: " + name);
       }
-      if (ContainsPatternPredicate(item->expression.get())) {
-        ReportSemantic("pattern expressions are not allowed in projections");
-      }
     }
   }
 
@@ -1260,6 +1231,7 @@ class SemanticValidator : public ASTWalker {
         return {StaticType::kInteger};
       case BuiltinFunctionKind::kAverage:
       case BuiltinFunctionKind::kCeil:
+      case BuiltinFunctionKind::kFloor:
       case BuiltinFunctionKind::kPercentileContinuous:
       case BuiltinFunctionKind::kRand:
       case BuiltinFunctionKind::kSqrt:
@@ -1467,6 +1439,7 @@ class SemanticValidator : public ASTWalker {
     switch (function.kind) {
       case BuiltinFunctionKind::kAbs:
       case BuiltinFunctionKind::kCeil:
+      case BuiltinFunctionKind::kFloor:
       case BuiltinFunctionKind::kSign:
       case BuiltinFunctionKind::kSqrt:
         accepted = IsNumericCompatible(argument);

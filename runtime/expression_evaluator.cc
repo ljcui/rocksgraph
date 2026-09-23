@@ -517,33 +517,33 @@ Value EvaluateReduce(const ast::ReduceExpression &expression,
   return accumulator;
 }
 
-Value EvaluateLocallyCorrelatedPatternComprehension(
-    const ast::PatternComprehension &expression, const ExpressionBindings &row,
+using FixedPatternChain =
+    std::vector<std::pair<std::unique_ptr<ast::RelationshipPattern>,
+                          std::unique_ptr<ast::NodePattern>>>;
+
+bool VisitLocallyCorrelatedFixedPattern(
+    const ast::NodePattern &start_pattern, const FixedPatternChain &chain,
+    const std::string &path_variable, const ast::Expression *where_expression,
+    const ExpressionBindings &row,
     const std::vector<ast::PrecomputedExpression> &precomputed,
-    ExecutionContext context) {
-  RG_CHECK(expression.relationships_pattern != nullptr &&
-               expression.eval_expr != nullptr,
-           common::ErrorCode::InvalidParameter,
-           "pattern comprehension is incomplete");
-  const ast::RelationshipsPattern &pattern = *expression.relationships_pattern;
-  RG_CHECK(pattern.node_pattern != nullptr && !pattern.chain.empty(),
-           common::ErrorCode::InvalidParameter,
-           "locally correlated pattern comprehension is empty");
-  const ast::NodePattern &start_pattern = *pattern.node_pattern;
+    ExecutionContext context,
+    const std::function<bool(const ExpressionBindings &)> &on_match) {
+  RG_CHECK(!chain.empty(), common::ErrorCode::InvalidParameter,
+           "locally correlated pattern expression is empty");
   RG_CHECK(start_pattern.properties == nullptr,
            common::ErrorCode::InvalidParameter,
-           "locally correlated pattern comprehension does not support inline "
+           "locally correlated pattern expression does not support inline "
            "properties");
-  for (const auto &[relationship, node] : pattern.chain) {
+  for (const auto &[relationship, node] : chain) {
     RG_CHECK(relationship != nullptr && node != nullptr,
              common::ErrorCode::InvalidParameter,
-             "pattern comprehension relationship is incomplete");
+             "locally correlated pattern relationship is incomplete");
     const ast::RelationshipDetail *detail = relationship->detail.get();
     RG_CHECK((detail == nullptr || (detail->range == std::nullopt &&
                                     detail->properties == nullptr)) &&
                  node->properties == nullptr,
              common::ErrorCode::InvalidParameter,
-             "locally correlated pattern comprehension does not support "
+             "locally correlated pattern expression does not support "
              "variable length or inline properties");
   }
 
@@ -575,8 +575,7 @@ Value EvaluateLocallyCorrelatedPatternComprehension(
     }
   };
 
-  Value::List output;
-  std::function<void(std::size_t, const Value::NodePtr &, Bindings,
+  std::function<bool(std::size_t, const Value::NodePtr &, Bindings,
                      std::vector<Value::NodePtr>,
                      std::vector<Value::RelationshipPtr>,
                      std::vector<RelationshipReference>)>
@@ -585,25 +584,23 @@ Value EvaluateLocallyCorrelatedPatternComprehension(
                Bindings bindings, std::vector<Value::NodePtr> path_nodes,
                std::vector<Value::RelationshipPtr> path_relationships,
                std::vector<RelationshipReference> used_relationships) {
-    if (chain_index == pattern.chain.size()) {
-      if (!expression.variable.empty()) {
+    if (chain_index == chain.size()) {
+      if (!path_variable.empty()) {
         auto path = std::make_shared<Path>();
         path->nodes = std::move(path_nodes);
         path->relationships = std::move(path_relationships);
-        bind(&bindings, expression.variable, Value(std::move(path)));
+        bind(&bindings, path_variable, Value(std::move(path)));
       }
       MapScopedExpressionBindings scoped(row, std::move(bindings));
-      if (expression.where_expr != nullptr &&
-          !PredicateIsTrue(EvaluateExpression(*expression.where_expr, scoped,
+      if (where_expression != nullptr &&
+          !PredicateIsTrue(EvaluateExpression(*where_expression, scoped,
                                               precomputed, context))) {
-        return;
+        return false;
       }
-      output.push_back(EvaluateExpression(*expression.eval_expr, scoped,
-                                          precomputed, context));
-      return;
+      return on_match(scoped);
     }
 
-    const auto &[relationship_ptr, next_node_ptr] = pattern.chain[chain_index];
+    const auto &[relationship_ptr, next_node_ptr] = chain[chain_index];
     const ast::RelationshipPattern &relationship_pattern = *relationship_ptr;
     const ast::RelationshipDetail *detail = relationship_pattern.detail.get();
     graphdb::EdgeDirection direction = graphdb::EdgeDirection::BOTH;
@@ -679,27 +676,30 @@ Value EvaluateLocallyCorrelatedPatternComprehension(
       next_relationships.push_back(relationship);
       auto next_used = used_relationships;
       next_used.push_back(reference);
-      expand(chain_index + 1, next, std::move(next_bindings),
-             std::move(next_nodes), std::move(next_relationships),
-             std::move(next_used));
+      if (expand(chain_index + 1, next, std::move(next_bindings),
+                 std::move(next_nodes), std::move(next_relationships),
+                 std::move(next_used))) {
+        return true;
+      }
     }
+    return false;
   };
 
   const std::optional<Value> bound_start =
       lookup_binding({}, start_pattern.variable);
   if (bound_start.has_value()) {
     if (bound_start->IsNull()) {
-      return Value(std::move(output));
+      return false;
     }
     RG_CHECK(bound_start->IsNode(), common::ErrorCode::InvalidParameter,
-             "pattern comprehension start must be a node");
+             "locally correlated pattern start must be a node");
     Value::NodePtr start = std::make_shared<Node>(bound_start->AsNode());
     if (NodeHasLabels(*start, start_pattern.labels)) {
       Bindings bindings;
       bind(&bindings, start_pattern.variable, Value(start));
-      expand(0, start, std::move(bindings), {start}, {}, {});
+      return expand(0, start, std::move(bindings), {start}, {}, {});
     }
-    return Value(std::move(output));
+    return false;
   }
 
   std::unique_ptr<graphdb::VertexIterator> vertices =
@@ -716,9 +716,82 @@ Value EvaluateLocallyCorrelatedPatternComprehension(
     }
     Bindings bindings;
     bind(&bindings, start_pattern.variable, Value(start));
-    expand(0, start, std::move(bindings), {start}, {}, {});
+    if (expand(0, start, std::move(bindings), {start}, {}, {})) {
+      return true;
+    }
   }
+  return false;
+}
+
+Value EvaluateLocallyCorrelatedPatternComprehension(
+    const ast::PatternComprehension &expression, const ExpressionBindings &row,
+    const std::vector<ast::PrecomputedExpression> &precomputed,
+    ExecutionContext context) {
+  RG_CHECK(expression.relationships_pattern != nullptr &&
+               expression.relationships_pattern->node_pattern != nullptr &&
+               expression.eval_expr != nullptr,
+           common::ErrorCode::InvalidParameter,
+           "pattern comprehension is incomplete");
+  const ast::RelationshipsPattern &pattern = *expression.relationships_pattern;
+  Value::List output;
+  (void)VisitLocallyCorrelatedFixedPattern(
+      *pattern.node_pattern, pattern.chain, expression.variable,
+      expression.where_expr.get(), row, precomputed, context,
+      [&](const ExpressionBindings &bindings) {
+        output.push_back(EvaluateExpression(*expression.eval_expr, bindings,
+                                            precomputed, context));
+        return false;
+      });
   return Value(std::move(output));
+}
+
+Value EvaluateLocallyCorrelatedExistentialSubquery(
+    const ast::ExistentialSubquery &expression, const ExpressionBindings &row,
+    const std::vector<ast::PrecomputedExpression> &precomputed,
+    ExecutionContext context) {
+  const auto evaluate_part = [&](const ast::PatternPart &part,
+                                 const ast::Expression *where_expression) {
+    RG_CHECK(part.shortest_path_kind == ast::ShortestPathKind::kNone &&
+                 part.element != nullptr &&
+                 part.element->node_pattern != nullptr,
+             common::ErrorCode::InvalidParameter,
+             "locally correlated EXISTS requires a fixed pattern");
+    return VisitLocallyCorrelatedFixedPattern(
+        *part.element->node_pattern, part.element->chain, part.variable,
+        where_expression, row, precomputed, context,
+        [](const ExpressionBindings &) { return true; });
+  };
+
+  if (expression.pattern != nullptr) {
+    RG_CHECK(expression.pattern->parts.size() == 1 &&
+                 expression.pattern->parts.front() != nullptr,
+             common::ErrorCode::InvalidParameter,
+             "locally correlated EXISTS supports one pattern part");
+    return Value(evaluate_part(*expression.pattern->parts.front(),
+                               expression.where_expr.get()));
+  }
+
+  RG_CHECK(expression.query != nullptr && expression.query->unions.empty() &&
+               expression.query->single_query != nullptr &&
+               expression.query->single_query->Is(
+                   ast::ASTNodeType::kSinglePartQuery),
+           common::ErrorCode::InvalidParameter,
+           "locally correlated EXISTS requires a single query");
+  const auto &single =
+      ast::CastAst<ast::SinglePartQuery>(*expression.query->single_query);
+  RG_CHECK(single.updating_clauses.empty() &&
+               single.reading_clauses.size() == 1 &&
+               single.reading_clauses.front() != nullptr &&
+               single.reading_clauses.front()->Is(ast::ASTNodeType::kMatch),
+           common::ErrorCode::InvalidParameter,
+           "locally correlated EXISTS supports one MATCH clause");
+  const auto &match = ast::CastAst<ast::Match>(*single.reading_clauses.front());
+  RG_CHECK(!match.optional_match && match.pattern != nullptr &&
+               match.pattern->parts.size() == 1 &&
+               match.pattern->parts.front() != nullptr,
+           common::ErrorCode::InvalidParameter,
+           "locally correlated EXISTS supports one required pattern part");
+  return Value(evaluate_part(*match.pattern->parts.front(), match.where.get()));
 }
 
 Value EvaluateQuantifier(
@@ -1239,6 +1312,10 @@ Value EvaluateExpression(
     case ast::ASTNodeType::kPatternComprehension:
       return EvaluateLocallyCorrelatedPatternComprehension(
           ast::CastAst<ast::PatternComprehension>(expression), row, precomputed,
+          context);
+    case ast::ASTNodeType::kExistentialSubquery:
+      return EvaluateLocallyCorrelatedExistentialSubquery(
+          ast::CastAst<ast::ExistentialSubquery>(expression), row, precomputed,
           context);
     case ast::ASTNodeType::kAllQuantifier:
       return EvaluateQuantifier(ast::CastAst<ast::AllQuantifier>(expression),

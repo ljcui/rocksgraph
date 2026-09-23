@@ -427,8 +427,13 @@ TEST(SemanticValidatorTest, RejectsInvalidProjectionComposition) {
                       "duplicate projection column: value");
   ExpectSemanticError("MATCH (n) WITH n, count(*) RETURN n",
                       "WITH expressions must be aliased");
-  ExpectSemanticError("MATCH (n) RETURN (n)-->()",
-                      "pattern expressions are not allowed in projections");
+}
+
+TEST(SemanticValidatorTest, AllowsPatternPredicatesInExpressions) {
+  EXPECT_NO_THROW(
+      ast::ParseCypher("MATCH (n), (m) RETURN NOT ((n)-->(m)) AS missing"));
+  EXPECT_NO_THROW(ast::ParseCypher(
+      "MATCH (person) RETURN [p IN [person] WHERE (p)--()--(person)] AS ps"));
 }
 
 TEST(SemanticValidatorTest, RejectsMixedUnionComposition) {
