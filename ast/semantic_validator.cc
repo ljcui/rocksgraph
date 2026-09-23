@@ -237,6 +237,125 @@ bool ProjectionContainsAggregation(const ProjectionBody &body) {
   return false;
 }
 
+class PatternPredicateContextValidator final : public ASTWalker {
+ public:
+  explicit PatternPredicateContextValidator(std::vector<std::string> &errors)
+      : errors_(errors) {}
+
+  void Validate(ASTNode &node) {
+    boolean_expected_ = false;
+    reported_ = false;
+    Walk(node);
+  }
+
+ protected:
+  void WalkExpression(std::unique_ptr<Expression> &expression) override {
+    WalkExpressionWithExpectedBoolean(expression, false);
+  }
+
+  void Visit(StandaloneCall &node) override {
+    WalkList(node.arguments);
+    WalkExpressionWithExpectedBoolean(node.yield_where, true);
+  }
+
+  void Visit(Match &node) override {
+    WalkMaybe(node.pattern);
+    WalkExpressionWithExpectedBoolean(node.where, true);
+  }
+
+  void Visit(InQueryCall &node) override {
+    WalkList(node.arguments);
+    WalkExpressionWithExpectedBoolean(node.yield_where, true);
+  }
+
+  void Visit(With &node) override {
+    WalkMaybe(node.body);
+    WalkExpressionWithExpectedBoolean(node.where, true);
+  }
+
+  void Visit(OrExpression &node) override { WalkBooleanOperands(node); }
+
+  void Visit(XorExpression &node) override { WalkBooleanOperands(node); }
+
+  void Visit(AndExpression &node) override { WalkBooleanOperands(node); }
+
+  void Visit(NotExpression &node) override {
+    WalkExpressionWithExpectedBoolean(node.operand, true);
+  }
+
+  void Visit(CaseExpression &node) override {
+    WalkMaybe(node.test);
+    const bool searched_case = node.test == nullptr;
+    for (auto &alternative : node.alternatives) {
+      WalkExpressionWithExpectedBoolean(alternative.first, searched_case);
+      WalkMaybe(alternative.second);
+    }
+    WalkMaybe(node.else_expr);
+  }
+
+  void Visit(ParenthesizedExpression &node) override {
+    WalkExpressionWithExpectedBoolean(node.expr, boolean_expected_);
+  }
+
+  void Visit(ListComprehension &node) override {
+    WalkMaybe(node.list_expr);
+    WalkExpressionWithExpectedBoolean(node.where_expr, true);
+    WalkMaybe(node.eval_expr);
+  }
+
+  void Visit(PatternComprehension &node) override {
+    WalkMaybe(node.relationships_pattern);
+    WalkExpressionWithExpectedBoolean(node.where_expr, true);
+    WalkMaybe(node.eval_expr);
+  }
+
+  void Visit(PatternPredicateExpression &node) override {
+    if (!boolean_expected_ && !reported_) {
+      errors_.emplace_back(
+          "pattern predicates are only allowed in boolean contexts");
+      reported_ = true;
+    }
+    ASTWalker::Visit(node);
+  }
+
+  void Visit(AllQuantifier &node) override { WalkQuantifier(node); }
+  void Visit(AnyQuantifier &node) override { WalkQuantifier(node); }
+  void Visit(NoneQuantifier &node) override { WalkQuantifier(node); }
+  void Visit(SingleQuantifier &node) override { WalkQuantifier(node); }
+
+  void Visit(ExistentialSubquery &node) override {
+    WalkMaybe(node.query);
+    WalkMaybe(node.pattern);
+    WalkExpressionWithExpectedBoolean(node.where_expr, true);
+  }
+
+ private:
+  void WalkExpressionWithExpectedBoolean(
+      std::unique_ptr<Expression> &expression, bool expected) {
+    if (!expression) {
+      return;
+    }
+    const bool previous = boolean_expected_;
+    boolean_expected_ = expected;
+    expression->Accept(*this);
+    boolean_expected_ = previous;
+  }
+
+  void WalkBooleanOperands(BinaryExpression &node) {
+    WalkExpressionWithExpectedBoolean(node.left, true);
+    WalkExpressionWithExpectedBoolean(node.right, true);
+  }
+
+  void WalkQuantifier(Quantifier &node) {
+    WalkMaybe(node.list_expr);
+    WalkExpressionWithExpectedBoolean(node.predicate, true);
+  }
+
+  std::vector<std::string> &errors_;
+  bool boolean_expected_ = false;
+  bool reported_ = false;
+};
+
 class UpdatingClauseScanner final : public ASTWalker {
  public:
   bool Scan(ASTNode &node) {
@@ -1835,6 +1954,8 @@ class SemanticValidator : public ASTWalker {
 
 void ValidateStatement(ASTNode &node) {
   std::vector<std::string> errors;
+  PatternPredicateContextValidator pattern_predicate_context_validator(errors);
+  pattern_predicate_context_validator.Validate(node);
   SemanticValidator validator(errors);
   validator.Validate(node);
   if (!errors.empty()) {

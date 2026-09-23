@@ -429,11 +429,26 @@ TEST(SemanticValidatorTest, RejectsInvalidProjectionComposition) {
                       "WITH expressions must be aliased");
 }
 
-TEST(SemanticValidatorTest, AllowsPatternPredicatesInExpressions) {
+TEST(SemanticValidatorTest, AllowsPatternPredicatesInBooleanContexts) {
   EXPECT_NO_THROW(
       ast::ParseCypher("MATCH (n), (m) RETURN NOT ((n)-->(m)) AS missing"));
+  EXPECT_NO_THROW(ast::ParseCypher("RETURN ()--() OR ()--()--() AS found"));
   EXPECT_NO_THROW(ast::ParseCypher(
       "MATCH (person) RETURN [p IN [person] WHERE (p)--()--(person)] AS ps"));
+  EXPECT_NO_THROW(ast::ParseCypher(
+      "MATCH (actor) RETURN CASE WHEN (actor)-->() THEN 1 ELSE 0 END AS rank"));
+}
+
+TEST(SemanticValidatorTest, RejectsPatternPredicatesOutsideBooleanContexts) {
+  constexpr std::string_view k_error =
+      "pattern predicates are only allowed in boolean contexts";
+
+  ExpectSemanticError("MATCH (n) RETURN (n)-->()", std::string(k_error));
+  ExpectSemanticError("MATCH (n) WITH (n)-->() AS found RETURN found",
+                      std::string(k_error));
+  ExpectSemanticError("MATCH (n) RETURN size((n)--())", std::string(k_error));
+  ExpectSemanticError("MATCH (n) WHERE ANY(x IN (n)--() WHERE true) RETURN n",
+                      std::string(k_error));
 }
 
 TEST(SemanticValidatorTest, RejectsMixedUnionComposition) {
