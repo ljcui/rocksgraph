@@ -61,6 +61,15 @@ TEST(AstToCypherTest, RelationshipPatternDetails) {
             "MATCH (a)-[r:KNOWS|LIKES*1..3 {since: 2020}]->(b) RETURN r");
 }
 
+TEST(AstToCypherTest, ShortestPathPatterns) {
+  EXPECT_EQ(ToCypherOrFail(
+                "MATCH p = shortestPath((a)-[r:KNOWS*1..3]->(b)) RETURN p"),
+            "MATCH p = shortestPath((a)-[r:KNOWS*1..3]->(b)) RETURN p");
+  EXPECT_EQ(ToCypherOrFail(
+                "MATCH p = allShortestPaths((a)-[:KNOWS*0..]-(b)) RETURN p"),
+            "MATCH p = allShortestPaths((a)-[:KNOWS*0..]-(b)) RETURN p");
+}
+
 TEST(AstToCypherTest, EscapesSymbolicNames) {
   const std::string query = "MATCH (`a-b` {`k-1`: 1}) RETURN `a-b`";
   EXPECT_EQ(ToCypherOrFail(query), "MATCH (`a-b` {`k-1`: 1}) RETURN `a-b`");

@@ -1,6 +1,8 @@
 #include <algorithm>
 #include <cmath>
+#include <deque>
 #include <limits>
+#include <unordered_map>
 #include <unordered_set>
 
 #include "common/exception.h"
@@ -1124,6 +1126,292 @@ class VarExpandOperator final : public PullOperator {
   bool closed_ = false;
 };
 
+class ShortestVarExpandOperator final : public PullOperator {
+ public:
+  ShortestVarExpandOperator(const PhysicalPlanNode &node, RuntimeState &state,
+                            std::unique_ptr<PullOperator> source)
+      : node_(&node),
+        data_(&OperatorData<VarExpandOp>(node)),
+        state_(&state),
+        source_(std::move(source)) {
+    RG_CHECK(data_->length.min.value_or(1) >= 0 &&
+                 data_->length.max.value_or(0) >= 0,
+             common::ErrorCode::InvalidParameter,
+             "negative shortest path length");
+  }
+
+  ~ShortestVarExpandOperator() override { Close(); }
+
+  bool Next(ExecutionRow *row) override {
+    RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
+             "output row is null");
+    while (!closed_) {
+      state_->CheckCancelled();
+      if (outputs_.empty() && !LoadNextInput()) {
+        Close();
+        return false;
+      }
+      if (outputs_.empty()) {
+        continue;
+      }
+      Output output = std::move(outputs_.front());
+      outputs_.pop_front();
+      auto result = CopyMappedRow(*input_, node_->output_layout,
+                                  node_->child_mappings.front());
+      if (output.null_path) {
+        const bool bound = TryBindAt(&result, data_->relationship_output_offset,
+                                     Value::Null());
+        ReleaseTracked(output.reserved_bytes);
+        if (bound) {
+          *row = std::move(result);
+          return true;
+        }
+        continue;
+      }
+      Value::List relationships;
+      relationships.reserve(output.relationships.size());
+      for (std::size_t i = 0; i < output.relationships.size(); ++i) {
+        const std::size_t index = data_->reverse_relationships
+                                      ? output.relationships.size() - i - 1
+                                      : i;
+        relationships.emplace_back(Value(MaterializeGraphDBEdge(
+            *state_->transaction, output.relationships[index])));
+      }
+      const bool bound = TryBindAt(&result, data_->relationship_output_offset,
+                                   Value(std::move(relationships))) &&
+                         TryBindNode(&result, data_->to_node_output_offset,
+                                     output.node, *state_);
+      ReleaseTracked(output.reserved_bytes);
+      if (!bound) {
+        continue;
+      }
+      *row = std::move(result);
+      return true;
+    }
+    return false;
+  }
+
+  void Close() noexcept override {
+    if (closed_) {
+      return;
+    }
+    input_.reset();
+    outputs_.clear();
+    state_->memory_tracker.Release(reserved_bytes_);
+    reserved_bytes_ = 0;
+    source_->Close();
+    closed_ = true;
+  }
+
+ private:
+  struct SearchState {
+    std::int64_t node = -1;
+    std::vector<RelationshipReference> relationships;
+    std::size_t reserved_bytes = 0;
+  };
+
+  struct Output {
+    std::int64_t node = -1;
+    std::vector<RelationshipReference> relationships;
+    bool null_path = false;
+    std::size_t reserved_bytes = 0;
+  };
+
+  void ReleaseTracked(std::size_t bytes) noexcept {
+    state_->memory_tracker.Release(bytes);
+    reserved_bytes_ = bytes >= reserved_bytes_ ? 0 : reserved_bytes_ - bytes;
+  }
+
+  void ReserveDepthEntry(std::size_t *depth_reserved_bytes) {
+    constexpr std::size_t kDepthEntryBytes =
+        sizeof(std::pair<const std::int64_t, std::size_t>) + 3 * sizeof(void *);
+    state_->memory_tracker.Reserve(kDepthEntryBytes);
+    reserved_bytes_ += kDepthEntryBytes;
+    *depth_reserved_bytes += kDepthEntryBytes;
+  }
+
+  void AddOutput(Output output) {
+    output.reserved_bytes = sizeof(Output) + output.relationships.capacity() *
+                                                 sizeof(RelationshipReference);
+    state_->memory_tracker.Reserve(output.reserved_bytes);
+    reserved_bytes_ += output.reserved_bytes;
+    outputs_.push_back(std::move(output));
+  }
+
+  void AddSearchState(std::deque<SearchState> *queue, SearchState search) {
+    search.reserved_bytes =
+        sizeof(SearchState) +
+        search.relationships.capacity() * sizeof(RelationshipReference);
+    state_->memory_tracker.Reserve(search.reserved_bytes);
+    reserved_bytes_ += search.reserved_bytes;
+    queue->push_back(std::move(search));
+  }
+
+  bool LoadNextInput() {
+    outputs_.clear();
+    input_.reset();
+    ExecutionRow input(node_->children[0]->output_layout);
+    if (!source_->Next(&input)) {
+      return false;
+    }
+    const std::int64_t from = NodeId(input, data_->from_node_input_offset);
+    if (from < 0) {
+      return true;
+    }
+    std::optional<std::int64_t> target;
+    if (data_->to_node_input_offset.has_value() &&
+        input.IsInitialized(*data_->to_node_input_offset)) {
+      target = NodeId(input, *data_->to_node_input_offset);
+      if (*target < 0) {
+        return true;
+      }
+    }
+    const std::size_t min =
+        static_cast<std::size_t>(data_->length.min.value_or(1));
+    const std::size_t max = data_->length.max.has_value()
+                                ? static_cast<std::size_t>(*data_->length.max)
+                                : std::numeric_limits<std::size_t>::max();
+    if (min > max) {
+      return true;
+    }
+    input_.emplace(std::move(input));
+    std::size_t depth_reserved_bytes = 0;
+    std::unordered_map<std::int64_t, std::size_t> shortest_depth;
+    if (target.has_value() && from == *target && min == 0) {
+      shortest_depth.emplace(*target, 0);
+      ReserveDepthEntry(&depth_reserved_bytes);
+      AddOutput({.node = *target});
+    }
+
+    std::deque<SearchState> queue;
+    AddSearchState(&queue, {.node = from});
+    std::unordered_map<std::int64_t, std::size_t> best_depth;
+    if (min <= 1) {
+      best_depth.emplace(from, 0);
+      ReserveDepthEntry(&depth_reserved_bytes);
+    }
+    while (!queue.empty()) {
+      state_->CheckCancelled();
+      SearchState current = std::move(queue.front());
+      queue.pop_front();
+      const std::size_t depth = current.relationships.size();
+      if (target.has_value()) {
+        const auto target_shortest = shortest_depth.find(*target);
+        if (target_shortest != shortest_depth.end() &&
+            depth >= target_shortest->second) {
+          ReleaseTracked(current.reserved_bytes);
+          continue;
+        }
+      }
+      const auto current_shortest = shortest_depth.find(current.node);
+      if (current_shortest != shortest_depth.end() &&
+          (target.has_value() ? depth >= current_shortest->second
+                              : depth > current_shortest->second)) {
+        ReleaseTracked(current.reserved_bytes);
+        continue;
+      }
+      auto vertex = GraphDBVertexById(*state_->transaction, current.node);
+      auto cursor = vertex.NewEdgeIterator(
+          GraphDBDirection(data_->pattern.direction),
+          std::unordered_set<std::string>(data_->pattern.types.begin(),
+                                          data_->pattern.types.end()),
+          {});
+      while (cursor->Valid()) {
+        state_->CheckCancelled();
+        const graphdb::Edge edge = cursor->GetEdge();
+        cursor->Next();
+        const RelationshipReference relationship{.id = edge.GetId(),
+                                                 .type_id = edge.GetTypeId()};
+        if (std::find_if(current.relationships.begin(),
+                         current.relationships.end(),
+                         [&](const RelationshipReference &used) {
+                           return used.id == relationship.id;
+                         }) != current.relationships.end()) {
+          continue;
+        }
+        const Relationship value{.id = relationship.id,
+                                 .start_node_id = edge.GetStartId(),
+                                 .end_node_id = edge.GetEndId(),
+                                 .type_id = relationship.type_id};
+        const auto next = NextPhysicalExpandNode(value, current.node,
+                                                 data_->pattern.direction);
+        if (!next.has_value()) {
+          continue;
+        }
+        const std::size_t next_depth = depth + 1;
+        if (next_depth > max) {
+          continue;
+        }
+        auto path = current.relationships;
+        path.push_back(relationship);
+        const bool reaches_target = !target.has_value() || *next == *target;
+        if (reaches_target && next_depth >= min) {
+          const auto found_shortest = shortest_depth.find(*next);
+          if (found_shortest == shortest_depth.end() ||
+              next_depth < found_shortest->second) {
+            if (found_shortest == shortest_depth.end()) {
+              shortest_depth.emplace(*next, next_depth);
+              ReserveDepthEntry(&depth_reserved_bytes);
+            } else {
+              found_shortest->second = next_depth;
+            }
+            AddOutput({.node = *next, .relationships = path});
+          } else if (next_depth == found_shortest->second &&
+                     data_->pattern.shortest_path_kind ==
+                         PhysicalShortestPathKind::kAllShortest) {
+            AddOutput({.node = *next, .relationships = path});
+          }
+          if (target.has_value()) {
+            continue;
+          }
+        }
+        if (target.has_value() && *next == *target && next_depth >= min) {
+          continue;
+        }
+        const auto next_shortest = shortest_depth.find(*next);
+        if (next_shortest != shortest_depth.end() &&
+            (target.has_value() ? next_depth >= next_shortest->second
+                                : next_depth > next_shortest->second)) {
+          continue;
+        }
+        if (next_depth >= min) {
+          const auto found = best_depth.find(*next);
+          if (found != best_depth.end() && found->second < next_depth) {
+            continue;
+          }
+          if (found == best_depth.end() || found->second > next_depth) {
+            if (found == best_depth.end()) {
+              best_depth.emplace(*next, next_depth);
+              ReserveDepthEntry(&depth_reserved_bytes);
+            } else {
+              found->second = next_depth;
+            }
+          }
+        }
+        AddSearchState(&queue,
+                       {.node = *next, .relationships = std::move(path)});
+      }
+      ReleaseTracked(current.reserved_bytes);
+    }
+    ReleaseTracked(depth_reserved_bytes);
+    if (outputs_.empty() && target.has_value() &&
+        data_->pattern.shortest_path_kind ==
+            PhysicalShortestPathKind::kShortest) {
+      AddOutput({.node = *target, .null_path = true});
+    }
+    return true;
+  }
+
+  const PhysicalPlanNode *node_ = nullptr;
+  const VarExpandOp *data_ = nullptr;
+  RuntimeState *state_ = nullptr;
+  std::unique_ptr<PullOperator> source_;
+  std::optional<ExecutionRow> input_;
+  std::deque<Output> outputs_;
+  std::size_t reserved_bytes_ = 0;
+  bool closed_ = false;
+};
+
 class PruningVarExpandOperator final : public PullOperator {
  public:
   PruningVarExpandOperator(const PhysicalPlanNode &node, RuntimeState &state,
@@ -1588,6 +1876,11 @@ std::unique_ptr<PullOperator> BuildExpandOperator(
       std::string(ToString(node.kind)) + " physical node must have one child");
   switch (node.kind) {
     case PhysicalOperatorKind::kVarExpand:
+      if (OperatorData<VarExpandOp>(node).pattern.shortest_path_kind !=
+          PhysicalShortestPathKind::kNone) {
+        return std::make_unique<ShortestVarExpandOperator>(node, state,
+                                                           std::move(source));
+      }
       return std::make_unique<VarExpandOperator>(node, state,
                                                  std::move(source));
     case PhysicalOperatorKind::kPruningVarExpand:

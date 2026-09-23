@@ -510,6 +510,7 @@ bool ASTEqual::EqualPattern(const Pattern &left, const Pattern &right) {
 bool ASTEqual::EqualPatternPart(const PatternPart &left,
                                 const PatternPart &right) {
   return left.variable == right.variable &&
+         left.shortest_path_kind == right.shortest_path_kind &&
          EqualPtr(left.element, right.element);
 }
 

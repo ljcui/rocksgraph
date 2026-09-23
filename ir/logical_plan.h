@@ -557,7 +557,8 @@ class VarExpandPlan final : public LogicalPlan {
                 std::string relationship, std::string to_node,
                 ExpandDirection direction, std::vector<std::string> types,
                 LogicalVariableLength length,
-                bool reverse_relationships = false);
+                bool reverse_relationships = false,
+                ShortestPathKind shortest_path_kind = ShortestPathKind::kNone);
 
   [[nodiscard]] const std::string &FromNode() const noexcept {
     return from_node_;
@@ -578,6 +579,9 @@ class VarExpandPlan final : public LogicalPlan {
   [[nodiscard]] bool ReverseRelationships() const noexcept {
     return reverse_relationships_;
   }
+  [[nodiscard]] ShortestPathKind ShortestPath() const noexcept {
+    return shortest_path_kind_;
+  }
   [[nodiscard]] std::string Details() const override;
 
  private:
@@ -588,6 +592,7 @@ class VarExpandPlan final : public LogicalPlan {
   std::vector<std::string> types_;
   LogicalVariableLength length_;
   bool reverse_relationships_ = false;
+  ShortestPathKind shortest_path_kind_ = ShortestPathKind::kNone;
 };
 
 class PathBuildPlan final : public LogicalPlan {

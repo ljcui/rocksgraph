@@ -381,6 +381,10 @@ Value BuildPathValue(const PathBuildOp &data, const ExecutionRow &row,
     state->CheckCancelled();
     const Value value =
         ReadRowValue(row, data.relationship_input_offsets[index]);
+    if (pattern.shortest_path_kind != PhysicalShortestPathKind::kNone &&
+        value.IsNull()) {
+      return Value::Null();
+    }
     std::vector<Value::RelationshipPtr> relationships;
     if (value.IsList()) {
       for (const auto &item : value.AsList()) {

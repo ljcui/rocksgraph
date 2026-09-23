@@ -529,6 +529,18 @@ std::string VarRelationshipDetails(std::string_view from_node,
   return out.str();
 }
 
+std::string ShortestPathDetails(std::string details, ShortestPathKind kind) {
+  switch (kind) {
+    case ShortestPathKind::kNone:
+      return details;
+    case ShortestPathKind::kShortest:
+      return "shortestPath(" + details + ")";
+    case ShortestPathKind::kAllShortest:
+      return "allShortestPaths(" + details + ")";
+  }
+  RG_THROW(common::ErrorCode::InternalError, "unknown shortest path kind");
+}
+
 const ast::Expression *UnwrapParenthesized(const ast::Expression *expression) {
   while (expression != nullptr &&
          expression->Is(ast::ASTNodeType::kParenthesizedExpression)) {
@@ -918,7 +930,8 @@ VarExpandPlan::VarExpandPlan(LogicalPlanPtr source, std::string from_node,
                              ExpandDirection direction,
                              std::vector<std::string> types,
                              LogicalVariableLength length,
-                             bool reverse_relationships)
+                             bool reverse_relationships,
+                             ShortestPathKind shortest_path_kind)
     : LogicalPlan(LogicalPlanNodeType::kVarExpand,
                   UnaryChildren(std::move(source), "VarExpand")),
       from_node_(std::move(from_node)),
@@ -927,7 +940,8 @@ VarExpandPlan::VarExpandPlan(LogicalPlanPtr source, std::string from_node,
       direction_(direction),
       types_(std::move(types)),
       length_(std::move(length)),
-      reverse_relationships_(reverse_relationships) {
+      reverse_relationships_(reverse_relationships),
+      shortest_path_kind_(shortest_path_kind) {
   SetSolvedSymbols(Child(0).SolvedSymbols());
   SetOutputColumns(Child(0).OutputColumns());
   AddSolvedSymbol(from_node_);
@@ -939,8 +953,10 @@ VarExpandPlan::VarExpandPlan(LogicalPlanPtr source, std::string from_node,
 }
 
 std::string VarExpandPlan::Details() const {
-  return VarRelationshipDetails(from_node_, relationship_, to_node_, direction_,
-                                types_, length_);
+  return ShortestPathDetails(
+      VarRelationshipDetails(from_node_, relationship_, to_node_, direction_,
+                             types_, length_),
+      shortest_path_kind_);
 }
 
 PathBuildPlan::PathBuildPlan(LogicalPlanPtr source, PathPattern path)
@@ -1570,12 +1586,16 @@ std::string PatternDetails(const PatternRelationship &pattern) {
       : pattern.direction == Direction::kOutgoing ? ExpandDirection::kOutgoing
                                                   : ExpandDirection::kBoth;
   if (pattern.length.variable) {
-    return VarRelationshipDetails(pattern.left_node, pattern.variable,
-                                  pattern.right_node, direction, pattern.types,
-                                  {pattern.length.min, pattern.length.max});
+    return ShortestPathDetails(
+        VarRelationshipDetails(pattern.left_node, pattern.variable,
+                               pattern.right_node, direction, pattern.types,
+                               {pattern.length.min, pattern.length.max}),
+        pattern.shortest_path_kind);
   }
-  return RelationshipDetails(pattern.left_node, pattern.variable,
-                             pattern.right_node, direction, pattern.types);
+  return ShortestPathDetails(
+      RelationshipDetails(pattern.left_node, pattern.variable,
+                          pattern.right_node, direction, pattern.types),
+      pattern.shortest_path_kind);
 }
 
 }  // namespace

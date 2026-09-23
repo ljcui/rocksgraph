@@ -217,9 +217,19 @@ oC_Pattern
        :  oC_PatternPart ( SP? ',' SP? oC_PatternPart )* ;
 
 oC_PatternPart
-           :  ( oC_Variable SP? '=' SP? oC_AnonymousPatternPart )
+           :  ( oC_Variable SP? '=' SP? oC_ShortestPathPattern )
+               | ( oC_Variable SP? '=' SP? oC_AnonymousPatternPart )
                | oC_AnonymousPatternPart
                ;
+
+oC_ShortestPathPattern
+           :  oC_ShortestPathName SP? '(' SP? oC_PatternElement SP? ')'
+           ;
+
+oC_ShortestPathName
+           :  SHORTESTPATH
+           |  ALLSHORTESTPATHS
+           ;
 
 oC_AnonymousPatternPart
                     :  oC_PatternElement ;
@@ -629,6 +639,8 @@ oC_ReservedWord
                 | OF
                 | ADD
                 | DROP
+                | SHORTESTPATH
+                | ALLSHORTESTPATHS
                 ;
 
 CONSTRAINT : ( 'C' | 'c' ) ( 'O' | 'o' ) ( 'N' | 'n' ) ( 'S' | 's' ) ( 'T' | 't' ) ( 'R' | 'r' ) ( 'A' | 'a' ) ( 'I' | 'i' ) ( 'N' | 'n' ) ( 'T' | 't' ) ;
@@ -650,6 +662,16 @@ OF : ( 'O' | 'o' ) ( 'F' | 'f' ) ;
 ADD : ( 'A' | 'a' ) ( 'D' | 'd' ) ( 'D' | 'd' ) ;
 
 DROP : ( 'D' | 'd' ) ( 'R' | 'r' ) ( 'O' | 'o' ) ( 'P' | 'p' ) ;
+
+SHORTESTPATH : ( 'S' | 's' ) ( 'H' | 'h' ) ( 'O' | 'o' ) ( 'R' | 'r' )
+               ( 'T' | 't' ) ( 'E' | 'e' ) ( 'S' | 's' ) ( 'T' | 't' )
+               ( 'P' | 'p' ) ( 'A' | 'a' ) ( 'T' | 't' ) ( 'H' | 'h' ) ;
+
+ALLSHORTESTPATHS : ( 'A' | 'a' ) ( 'L' | 'l' ) ( 'L' | 'l' )
+                    ( 'S' | 's' ) ( 'H' | 'h' ) ( 'O' | 'o' ) ( 'R' | 'r' )
+                    ( 'T' | 't' ) ( 'E' | 'e' ) ( 'S' | 's' ) ( 'T' | 't' )
+                    ( 'P' | 'p' ) ( 'A' | 'a' ) ( 'T' | 't' ) ( 'H' | 'h' )
+                    ( 'S' | 's' ) ;
 
 oC_SymbolicName
             :  UnescapedSymbolicName

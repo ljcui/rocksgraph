@@ -100,7 +100,8 @@ LogicalPlanPtr PruneDistinctExpand(
   const auto &expand = static_cast<const VarExpandPlan &>(*candidate);
   // Directed reachability with a lower bound of zero or one preserves
   // endpoint sets. Higher lower bounds and undirected trails need more state.
-  if (expand.Direction() == ExpandDirection::kBoth ||
+  if (expand.ShortestPath() != ShortestPathKind::kNone ||
+      expand.Direction() == ExpandDirection::kBoth ||
       expand.Length().min.value_or(1) > 1 ||
       expand.Child(0).SolvedSymbols().contains(expand.Relationship())) {
     return plan;

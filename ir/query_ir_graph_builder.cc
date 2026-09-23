@@ -64,6 +64,17 @@ class PatternConverter {
     RG_CHECK(part.element != nullptr, common::ErrorCode::InvalidParameter,
              Missing("pattern element"));
     PathPattern path = AddPatternElement(*part.element);
+    if (part.shortest_path_kind != ast::ShortestPathKind::kNone) {
+      RG_CHECK(!part.variable.empty() && path.relationships.size() == 1,
+               common::ErrorCode::InvalidParameter,
+               Unsupported("shortest path pattern"));
+      const auto kind =
+          part.shortest_path_kind == ast::ShortestPathKind::kShortest
+              ? ShortestPathKind::kShortest
+              : ShortestPathKind::kAllShortest;
+      graph_->pattern_relationships.back().shortest_path_kind = kind;
+      path.shortest_path_kind = kind;
+    }
     if (!part.variable.empty()) {
       graph_->pattern_paths.insert(part.variable);
       path.variable = part.variable;
@@ -176,6 +187,9 @@ class CreatePatternConverter {
 
  private:
   void AddPatternPart(const ast::PatternPart &part) {
+    RG_CHECK(part.shortest_path_kind == ast::ShortestPathKind::kNone,
+             common::ErrorCode::InvalidParameter,
+             Unsupported("shortest path in updating pattern"));
     RG_CHECK(part.element != nullptr, common::ErrorCode::InvalidParameter,
              Missing("updating pattern element"));
     PathPattern path = AddPatternElement(*part.element);

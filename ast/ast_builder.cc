@@ -562,8 +562,17 @@ class ASTBuilder {
     if (ctx->oC_Variable() != nullptr) {
       node->variable = ParseVariable(ctx->oC_Variable());
     }
-    node->element = BuildPatternElement(
-        ctx->oC_AnonymousPatternPart()->oC_PatternElement());
+    if (ctx->oC_ShortestPathPattern() != nullptr) {
+      auto *shortest = ctx->oC_ShortestPathPattern();
+      node->shortest_path_kind =
+          shortest->oC_ShortestPathName()->SHORTESTPATH() != nullptr
+              ? ShortestPathKind::kShortest
+              : ShortestPathKind::kAllShortest;
+      node->element = BuildPatternElement(shortest->oC_PatternElement());
+    } else {
+      node->element = BuildPatternElement(
+          ctx->oC_AnonymousPatternPart()->oC_PatternElement());
+    }
     return node;
   }
 

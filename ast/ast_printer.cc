@@ -510,6 +510,12 @@ void ASTPrinter::Visit(PatternPart &node) {
   if (!node.variable.empty()) {
     oss << " variable=" << node.variable;
   }
+  if (node.shortest_path_kind != ShortestPathKind::kNone) {
+    oss << " shortest_path="
+        << (node.shortest_path_kind == ShortestPathKind::kShortest
+                ? "shortest"
+                : "all_shortest");
+  }
   Line(oss.str());
   IndentGuard guard(*this);
   VisitMaybe(node.element);

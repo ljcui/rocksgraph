@@ -91,6 +91,10 @@ public:
 
     virtual std::any visitOC_PatternPart(CypherParser::OC_PatternPartContext *context) = 0;
 
+    virtual std::any visitOC_ShortestPathPattern(CypherParser::OC_ShortestPathPatternContext *context) = 0;
+
+    virtual std::any visitOC_ShortestPathName(CypherParser::OC_ShortestPathNameContext *context) = 0;
+
     virtual std::any visitOC_AnonymousPatternPart(CypherParser::OC_AnonymousPatternPartContext *context) = 0;
 
     virtual std::any visitOC_PatternElement(CypherParser::OC_PatternElementContext *context) = 0;

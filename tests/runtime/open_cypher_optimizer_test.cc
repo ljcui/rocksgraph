@@ -366,6 +366,7 @@ TEST(OpenCypherOptimizerTest, EnforcesMemoryLimitsForNewStatefulOperators) {
   for (const auto &text :
        {"MATCH (n) WHERE id(n) IN [1,2] RETURN n",
         "MATCH (a)-[r:R*0..2]->(b) RETURN r",
+        "MATCH p = shortestPath((a)-[:R*]->(b)) RETURN p",
         "MATCH (a)-[r:R*0..2]->(b) RETURN DISTINCT b",
         "MATCH (a),(d) OPTIONAL MATCH (a)-[:R]->(b)-[:S]->(c) RETURN c"}) {
     SCOPED_TRACE(text);

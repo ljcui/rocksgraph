@@ -399,6 +399,7 @@ std::unique_ptr<PatternElement> ClonePatternElement(
 std::unique_ptr<PatternPart> ClonePatternPart(const PatternPart &part) {
   auto cloned = std::make_unique<PatternPart>();
   cloned->variable = part.variable;
+  cloned->shortest_path_kind = part.shortest_path_kind;
   cloned->element = CloneMaybe(part.element, ClonePatternElement);
   return cloned;
 }

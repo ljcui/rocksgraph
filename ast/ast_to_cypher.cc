@@ -450,7 +450,13 @@ class CypherPrinter : public ASTVisitor {
     }
     std::string out = RenderSymbolicName(node.variable);
     out += " = ";
-    out += element;
+    if (node.shortest_path_kind == ShortestPathKind::kShortest) {
+      out += "shortestPath(" + element + ")";
+    } else if (node.shortest_path_kind == ShortestPathKind::kAllShortest) {
+      out += "allShortestPaths(" + element + ")";
+    } else {
+      out += element;
+    }
     Push(out);
   }
 

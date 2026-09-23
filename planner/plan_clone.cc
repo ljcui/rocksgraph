@@ -109,7 +109,8 @@ std::unique_ptr<LogicalPlan> CloneComponentPlanWithoutMetadata(
       return std::make_unique<VarExpandPlan>(
           CloneComponentPlan(expand.Child(0)), expand.FromNode(),
           expand.Relationship(), expand.ToNode(), expand.Direction(),
-          expand.Types(), expand.Length(), expand.ReverseRelationships());
+          expand.Types(), expand.Length(), expand.ReverseRelationships(),
+          expand.ShortestPath());
     }
     case LogicalPlanNodeType::kPathBuild: {
       const auto &path = static_cast<const PathBuildPlan &>(plan);

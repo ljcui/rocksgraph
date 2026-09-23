@@ -51,6 +51,18 @@ std::string DirectionToString(Direction direction) {
            "unknown pattern relationship direction");
 }
 
+std::string ShortestPathKindToString(ShortestPathKind kind) {
+  switch (kind) {
+    case ShortestPathKind::kNone:
+      return "none";
+    case ShortestPathKind::kShortest:
+      return "shortest";
+    case ShortestPathKind::kAllShortest:
+      return "all_shortest";
+  }
+  RG_THROW(common::ErrorCode::InternalError, "unknown shortest path kind");
+}
+
 std::string OrderDirectionToString(OrderDirection direction) {
   switch (direction) {
     case OrderDirection::kAscending:
@@ -322,6 +334,10 @@ class QueryIRPrinter {
       Line("direction: " + DirectionToString(relationship.direction));
       Line("types: " + List(relationship.types));
       Line("length: " + PatternLengthText(relationship.length));
+      if (relationship.shortest_path_kind != ShortestPathKind::kNone) {
+        Line("shortest_path: " +
+             ShortestPathKindToString(relationship.shortest_path_kind));
+      }
       Dedent();
     }
     Dedent();

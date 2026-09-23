@@ -468,13 +468,27 @@ std::vector<PhysicalAggregationItem> CopyPhysicalAggregationItems(
   return copied;
 }
 
+PhysicalShortestPathKind ToPhysicalShortestPathKind(ir::ShortestPathKind kind) {
+  switch (kind) {
+    case ir::ShortestPathKind::kNone:
+      return PhysicalShortestPathKind::kNone;
+    case ir::ShortestPathKind::kShortest:
+      return PhysicalShortestPathKind::kShortest;
+    case ir::ShortestPathKind::kAllShortest:
+      return PhysicalShortestPathKind::kAllShortest;
+  }
+  RG_THROW(common::ErrorCode::InternalError, "unknown shortest path kind");
+}
+
 PhysicalRelationshipPattern CopyPhysicalRelationshipPattern(
     const ir::PatternRelationship &pattern) {
   return {.from_node = pattern.left_node,
           .relationship = pattern.variable,
           .to_node = pattern.right_node,
           .direction = ToPhysicalExpandDirection(pattern.direction),
-          .types = pattern.types};
+          .types = pattern.types,
+          .shortest_path_kind =
+              ToPhysicalShortestPathKind(pattern.shortest_path_kind)};
 }
 
 class PhysicalPlanBuilder final {
@@ -921,7 +935,9 @@ class PhysicalPlanBuilder final {
                         .to_node = expand.ToNode(),
                         .direction =
                             ToPhysicalExpandDirection(expand.Direction()),
-                        .types = expand.Types()},
+                        .types = expand.Types(),
+                        .shortest_path_kind =
+                            ToPhysicalShortestPathKind(expand.ShortestPath())},
             .length = {.variable = true,
                        .min = expand.Length().min,
                        .max = expand.Length().max},
@@ -1000,11 +1016,14 @@ class PhysicalPlanBuilder final {
         const auto &build = static_cast<const ir::PathBuildPlan &>(plan);
         RG_CHECK(node->children.size() == 1, common::ErrorCode::InternalError,
                  "PathBuild physical node must have one child");
-        PathBuildOp data{.path = {.variable = build.Path().variable,
-                                  .nodes = build.Path().nodes,
-                                  .relationships = build.Path().relationships},
-                         .path_output_offset =
-                             node->output_layout->At(build.Path().variable)};
+        PathBuildOp data{
+            .path = {.variable = build.Path().variable,
+                     .nodes = build.Path().nodes,
+                     .relationships = build.Path().relationships,
+                     .shortest_path_kind = ToPhysicalShortestPathKind(
+                         build.Path().shortest_path_kind)},
+            .path_output_offset =
+                node->output_layout->At(build.Path().variable)};
         data.node_input_offsets.reserve(build.Path().nodes.size());
         for (const auto &name : build.Path().nodes) {
           data.node_input_offsets.push_back(

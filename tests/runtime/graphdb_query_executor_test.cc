@@ -433,6 +433,82 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeVariableLengthNamedPath) {
   transaction->Commit();
 }
 
+TEST_F(GraphDBQueryExecutorTest, ExecutesNativeShortestPathVariants) {
+  auto setup = graph_->BeginTransaction();
+  auto ada = setup->GetVertexById(ada_);
+  auto grace = setup->GetVertexById(grace_);
+  auto other = setup->GetVertexById(other_);
+  auto hopper = setup->CreateVertex(
+      {"Person"}, {{"name", rg::Value("Hopper")}, {"age", rg::Value(40)}});
+  setup->CreateVertex(
+      {"Person"}, {{"name", rg::Value("Isolated")}, {"age", rg::Value(50)}});
+  setup->CreateEdge(ada, grace, "ROUTE", {});
+  setup->CreateEdge(grace, other, "ROUTE", {});
+  setup->CreateEdge(ada, hopper, "ROUTE", {});
+  setup->CreateEdge(hopper, other, "ROUTE", {});
+  setup->CreateEdge(hopper, ada, "ROUTE", {});
+  setup->Commit();
+
+  auto transaction = graph_->BeginTransaction();
+  rg::QueryResult all = rg::ExecuteQuery(
+      *transaction,
+      "MATCH (a:Person {name: 'Ada'}), (b:Person {name: 'Other'}), "
+      "p = allShortestPaths((a)-[:ROUTE*]->(b)) "
+      "RETURN length(p) AS hops, nodes(p)[1].name AS middle "
+      "ORDER BY middle");
+  ASSERT_EQ(all.rows.size(), 2U);
+  EXPECT_EQ(all.rows[0],
+            (std::vector<rg::Value>{rg::Value(2), rg::Value("Grace")}));
+  EXPECT_EQ(all.rows[1],
+            (std::vector<rg::Value>{rg::Value(2), rg::Value("Hopper")}));
+
+  rg::QueryResult one = rg::ExecuteQuery(
+      *transaction,
+      "MATCH (a:Person {name: 'Ada'}), (b:Person {name: 'Other'}), "
+      "p = shortestPath((a)-[:ROUTE*]->(b)) RETURN length(p) AS hops");
+  ASSERT_EQ(one.rows.size(), 1U);
+  EXPECT_EQ(one.rows[0][0], rg::Value(2));
+
+  rg::QueryResult undirected = rg::ExecuteQuery(
+      *transaction,
+      "MATCH (a:Person {name: 'Other'}), (b:Person {name: 'Ada'}), "
+      "p = shortestPath((a)-[:ROUTE*]-(b)) RETURN length(p) AS hops");
+  ASSERT_EQ(undirected.rows.size(), 1U);
+  EXPECT_EQ(undirected.rows[0][0], rg::Value(2));
+
+  rg::QueryResult fixed = rg::ExecuteQuery(
+      *transaction,
+      "MATCH p = shortestPath((a:Person {name: 'Ada'})-[:ROUTE]->"
+      "(b:Person {name: 'Grace'})) RETURN length(p) AS hops");
+  ASSERT_EQ(fixed.rows.size(), 1U);
+  EXPECT_EQ(fixed.rows[0][0], rg::Value(1));
+
+  rg::QueryResult zero = rg::ExecuteQuery(
+      *transaction,
+      "MATCH p = shortestPath((a:Person {name: 'Ada'})-[:ROUTE*0..]->(a)) "
+      "RETURN length(p) AS hops");
+  ASSERT_EQ(zero.rows.size(), 1U);
+  EXPECT_EQ(zero.rows[0][0], rg::Value(0));
+
+  rg::QueryResult lower_bound = rg::ExecuteQuery(
+      *transaction,
+      "MATCH (a:Person {name: 'Ada'}), (b:Person {name: 'Grace'}), "
+      "p = shortestPath((a)-[:ROUTE*3..3]->(b)) RETURN length(p) AS hops");
+  ASSERT_EQ(lower_bound.rows.size(), 1U);
+  EXPECT_EQ(lower_bound.rows[0][0], rg::Value(3));
+
+  rg::QueryResult missing = rg::ExecuteQuery(
+      *transaction,
+      "MATCH (a:Person {name: 'Ada'}), (b:Person {name: 'Isolated'}), "
+      "p = shortestPath((a)-[:ROUTE*]->(b)) "
+      "RETURN p IS NULL AS missing, "
+      "CASE p IS NULL WHEN true THEN -1 ELSE length(p) END AS hops");
+  ASSERT_EQ(missing.rows.size(), 1U);
+  EXPECT_EQ(missing.rows[0],
+            (std::vector<rg::Value>{rg::Value(true), rg::Value(-1)}));
+  transaction->Commit();
+}
+
 TEST_F(GraphDBQueryExecutorTest,
        ExecutesReversePlannedNativeVariableLengthNamedPath) {
   auto transaction = graph_->BeginTransaction();

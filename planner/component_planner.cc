@@ -7,6 +7,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -378,6 +379,20 @@ class IdpComponentPlanner final : public ComponentPlanner {
     RG_CHECK(context != nullptr, common::ErrorCode::InternalError,
              "query graph planning context is null");
 
+    for (std::size_t relationship_index :
+         component.pattern_relationship_indices) {
+      if (query_graph.pattern_relationships[relationship_index]
+              .shortest_path_kind != ShortestPathKind::kNone) {
+        RG_CHECK(
+            component.pattern_relationship_indices.size() == 1,
+            common::ErrorCode::InvalidParameter,
+            UnsupportedInStage(kLogicalPlanStage,
+                               "shortest path with multiple relationships"));
+        return PlanShortestPath(query_graph, relationship_index, context,
+                                interesting_order);
+      }
+    }
+
     const std::unordered_set<const Predicate *> base_predicates =
         context->Snapshot();
     if (component.pattern_relationship_indices.empty()) {
@@ -429,6 +444,106 @@ class IdpComponentPlanner final : public ComponentPlanner {
   }
 
  private:
+  std::unique_ptr<LogicalPlan> PlanShortestPath(
+      const QueryGraph &query_graph, std::size_t relationship_index,
+      QueryGraphPlanningContext *context,
+      const std::vector<LogicalSortItem> &interesting_order) const {
+    RG_CHECK(context != nullptr, common::ErrorCode::InternalError,
+             "query graph planning context is null");
+    const PatternRelationship &relationship =
+        query_graph.pattern_relationships[relationship_index];
+    const std::unordered_set<const Predicate *> base_predicates =
+        context->Snapshot();
+
+    auto build_node = [&](const std::string &variable) {
+      context->Restore(base_predicates);
+      std::vector<LeafPlanCandidate> candidates =
+          context->BuildNodeLeafCandidates(query_graph, variable);
+      RG_CHECK(!candidates.empty(), common::ErrorCode::InternalError,
+               "missing shortest path node candidate");
+      using NodePlan = std::tuple<std::unique_ptr<LogicalPlan>, CostEstimate,
+                                  std::unordered_set<const Predicate *>>;
+      std::optional<NodePlan> best;
+      for (auto &candidate : candidates) {
+        RG_CHECK(candidate.plan != nullptr, common::ErrorCode::InternalError,
+                 "shortest path node candidate is null");
+        CostEstimate estimate = EstimateLeafPlan(*candidate.plan, cost_model_);
+        context->Restore(std::move(candidate.planned_predicates));
+        const std::size_t filter_count = context->ApplyAvailableFilters(
+            query_graph.selections, &candidate.plan);
+        estimate = ApplyFilterEstimates(estimate, filter_count, cost_model_);
+        if (!best.has_value() || estimate.cost < std::get<1>(*best).cost) {
+          best.emplace(std::move(candidate.plan), estimate,
+                       context->Snapshot());
+        }
+      }
+      RG_CHECK(best.has_value(), common::ErrorCode::InternalError,
+               "missing shortest path node plan");
+      return std::move(*best);
+    };
+
+    std::unique_ptr<LogicalPlan> input;
+    CostEstimate input_estimate;
+    std::unordered_set<const Predicate *> planned_predicates;
+    std::vector<std::string> argument_endpoints;
+    if (query_graph.argument_ids.contains(relationship.left_node)) {
+      argument_endpoints.push_back(relationship.left_node);
+    }
+    if (relationship.right_node != relationship.left_node &&
+        query_graph.argument_ids.contains(relationship.right_node)) {
+      argument_endpoints.push_back(relationship.right_node);
+    }
+    const bool endpoints_are_arguments =
+        argument_endpoints.size() ==
+        (relationship.left_node == relationship.right_node ? 1U : 2U);
+    if (endpoints_are_arguments) {
+      context->Restore(base_predicates);
+      input = std::make_unique<ArgumentPlan>(argument_endpoints);
+      input_estimate = cost_model_.EstimateArgument(argument_endpoints.size());
+      const std::size_t filter_count =
+          context->ApplyAvailableFilters(query_graph.selections, &input);
+      input_estimate =
+          ApplyFilterEstimates(input_estimate, filter_count, cost_model_);
+      planned_predicates = context->Snapshot();
+    } else if (relationship.left_node == relationship.right_node) {
+      std::tie(input, input_estimate, planned_predicates) =
+          build_node(relationship.left_node);
+    } else {
+      auto [left, left_estimate, left_predicates] =
+          build_node(relationship.left_node);
+      auto [right, right_estimate, right_predicates] =
+          build_node(relationship.right_node);
+      planned_predicates = std::move(left_predicates);
+      planned_predicates.insert(right_predicates.begin(),
+                                right_predicates.end());
+      context->Restore(planned_predicates);
+      input = std::make_unique<CartesianProductPlan>(std::move(left),
+                                                     std::move(right));
+      input_estimate =
+          cost_model_.EstimateCartesianProduct(left_estimate, right_estimate);
+      const std::size_t filter_count =
+          context->ApplyAvailableFilters(query_graph.selections, &input);
+      input_estimate =
+          ApplyFilterEstimates(input_estimate, filter_count, cost_model_);
+      planned_predicates = context->Snapshot();
+    }
+
+    PlanCandidate candidate = MakePlanCandidate(
+        std::move(input), {}, input_estimate, std::move(planned_predicates));
+    context->Restore(candidate.planned_predicates);
+    PlanCandidate expanded =
+        ExpandCandidate(query_graph, candidate, relationship_index, context);
+    context->Restore(expanded.planned_predicates);
+    std::unique_ptr<LogicalPlan> plan = std::move(expanded.plan);
+    if (!interesting_order.empty() &&
+        !OrderingSatisfies(expanded.provided_order, interesting_order) &&
+        OrderingDependenciesAvailable(interesting_order,
+                                      expanded.covered_symbols)) {
+      plan = std::make_unique<SortPlan>(std::move(plan), interesting_order);
+    }
+    return plan;
+  }
+
   [[nodiscard]] PlanKey BestKeyWithRelationshipCount(
       const PlanTable &plan_table, std::size_t relationship_count,
       const std::vector<LogicalSortItem> &interesting_order) const {
@@ -707,7 +822,8 @@ class IdpComponentPlanner final : public ComponentPlanner {
         context->ConsumeRelationshipTypes(query_graph.selections, relationship);
 
     CostEstimate estimate;
-    if (relationship.length.variable) {
+    if (relationship.length.variable ||
+        relationship.shortest_path_kind != ShortestPathKind::kNone) {
       const std::string from_node =
           left_solved ? relationship.left_node : relationship.right_node;
       const std::string to_node =
@@ -722,7 +838,10 @@ class IdpComponentPlanner final : public ComponentPlanner {
       candidate.plan = std::make_unique<VarExpandPlan>(
           std::move(candidate.plan), from_node, relationship.variable, to_node,
           ToExpandDirection(direction), relationship_types,
-          ToLogicalVariableLength(relationship.length), !left_solved);
+          relationship.length.variable
+              ? ToLogicalVariableLength(relationship.length)
+              : LogicalVariableLength{.min = 1, .max = 1},
+          !left_solved, relationship.shortest_path_kind);
     } else if (left_solved && right_solved) {
       estimate = cost_model_.EstimateExpandInto(CandidateEstimate(candidate),
                                                 relationship_types);

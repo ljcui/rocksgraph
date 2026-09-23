@@ -118,6 +118,9 @@ std::vector<RelationshipConnection> CollectConnectionsFromPattern(
     if (!part || !part->element) {
       continue;
     }
+    if (part->shortest_path_kind != ShortestPathKind::kNone) {
+      continue;
+    }
     for (const auto &chain_item : part->element->chain) {
       const auto &relationship_pattern = chain_item.first;
       if (!relationship_pattern || !relationship_pattern->detail) {

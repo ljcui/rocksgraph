@@ -1328,6 +1328,23 @@ TEST(LogicalPlanBuilderTest, BuildsVariableLengthExpandBetweenArgumentsPlan) {
 )");
 }
 
+TEST(LogicalPlanBuilderTest, BuildsShortestPathBetweenBoundEndpointsPlan) {
+  ExpectLogicalPlanText(
+      "MATCH (a), (b) WITH DISTINCT a, b "
+      "MATCH p = shortestPath((a)-[r*0..2]->(b)) RETURN p",
+      R"(ProduceResults [p]
+  Projection [p]
+    Apply
+      Distinct [a, b]
+        CartesianProduct
+          AllNodeScan [a]
+          AllNodeScan [b]
+      PathBuild [p]
+        VarExpand [shortestPath((a)-[r*0..2]->(b))]
+          Argument [a, b]
+)");
+}
+
 TEST(LogicalPlanBuilderTest, BuildsNamedPathPlan) {
   ExpectLogicalPlanText("MATCH p = (a)-[r]->(b) RETURN p",
                         R"(ProduceResults [p]

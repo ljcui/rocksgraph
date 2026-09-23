@@ -704,6 +704,12 @@ class Pattern : public ASTNode {
   void Accept(ASTVisitor& visitor) override;
 };
 
+enum class ShortestPathKind {
+  kNone,
+  kShortest,
+  kAllShortest,
+};
+
 class PatternPart : public ASTNode {
  public:
   PatternPart() {
@@ -711,6 +717,7 @@ class PatternPart : public ASTNode {
     category = ASTNodeCategory::kPattern;
   }
   std::string variable;
+  ShortestPathKind shortest_path_kind = ShortestPathKind::kNone;
   std::unique_ptr<PatternElement> element;
   void Validate() const { assert(element); }
   void Accept(ASTVisitor& visitor) override;

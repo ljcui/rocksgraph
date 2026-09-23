@@ -1230,6 +1230,22 @@ TEST(QueryIRTest, BuildsVariableLengthRelationshipPattern) {
   EXPECT_EQ(relationship.length.max, 3);
 }
 
+TEST(QueryIRTest, BuildsAllShortestPathPattern) {
+  auto statement = ParseOrFail(
+      "MATCH p = allShortestPaths((a)-[r:KNOWS*0..3]-(b)) RETURN p");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::QueryIR> query_ir = ir::CreateQueryIR(*statement);
+  const ir::QueryGraph &query_graph = query_ir->RequireSingle().query_graph;
+  ASSERT_EQ(query_graph.pattern_relationships.size(), 1U);
+  EXPECT_EQ(query_graph.pattern_relationships[0].shortest_path_kind,
+            ir::ShortestPathKind::kAllShortest);
+  ASSERT_EQ(query_graph.path_patterns.size(), 1U);
+  EXPECT_EQ(query_graph.path_patterns[0].variable, "p");
+  EXPECT_EQ(query_graph.path_patterns[0].shortest_path_kind,
+            ir::ShortestPathKind::kAllShortest);
+}
+
 TEST(QueryIRTest, InlinesPassthroughWithWhereForMultiPartQuery) {
   auto statement = ParseOrFail(
       "MATCH (n:Person) WHERE true WITH n WHERE n.age > 30 "

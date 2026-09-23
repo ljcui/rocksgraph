@@ -81,6 +81,12 @@ enum class PhysicalOperatorKind {
   kUnionDistinct,
 };
 
+enum class PhysicalShortestPathKind {
+  kNone,
+  kShortest,
+  kAllShortest,
+};
+
 [[nodiscard]] std::string_view ToString(PhysicalOperatorKind kind);
 
 enum class PhysicalExpandDirection {
@@ -160,6 +166,7 @@ struct PhysicalRelationshipPattern {
   std::string to_node;
   PhysicalExpandDirection direction = PhysicalExpandDirection::kBoth;
   std::vector<std::string> types;
+  PhysicalShortestPathKind shortest_path_kind = PhysicalShortestPathKind::kNone;
 };
 
 struct PhysicalRelationshipOffsets {
@@ -252,6 +259,7 @@ struct PhysicalPathPattern {
   std::string variable;
   std::vector<std::string> nodes;
   std::vector<std::string> relationships;
+  PhysicalShortestPathKind shortest_path_kind = PhysicalShortestPathKind::kNone;
 };
 
 struct PathBuildOp {

@@ -24,6 +24,12 @@ struct PatternLength {
   std::optional<int> max;
 };
 
+enum class ShortestPathKind {
+  kNone,
+  kShortest,
+  kAllShortest,
+};
+
 struct PatternRelationship {
   std::string variable;
   std::string left_node;
@@ -31,12 +37,14 @@ struct PatternRelationship {
   Direction direction = Direction::kBoth;
   std::vector<std::string> types;
   PatternLength length;
+  ShortestPathKind shortest_path_kind = ShortestPathKind::kNone;
 };
 
 struct PathPattern {
   std::string variable;
   std::vector<std::string> nodes;
   std::vector<std::string> relationships;
+  ShortestPathKind shortest_path_kind = ShortestPathKind::kNone;
 };
 
 enum class PredicateKind {
