@@ -569,7 +569,7 @@ static void CloseProtocolError(const std::shared_ptr<BoltConnection>& conn,
             ToString(type), SessionStateName(session->state));
   AbortActiveQuery(session);
   session->state = SessionState::DEFUNCT;
-  conn->Close();
+  conn->PostClose();
 }
 
 static void ProcessRecoverableState(const std::shared_ptr<BoltConnection>& conn,

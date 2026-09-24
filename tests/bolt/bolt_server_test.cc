@@ -6,9 +6,31 @@
 #include <chrono>
 #include <future>
 #include <memory>
+#include <thread>
 #include <vector>
 
+#include "bolt/connection.h"
 #include "bolt/worker_pool.h"
+
+TEST(BoltServerTest, PostCloseRunsOnConnectionIOService) {
+  boost::asio::io_service io_service;
+  auto conn = std::make_shared<bolt::BoltConnection>(
+      io_service,
+      [](bolt::BoltConnection&, bolt::BoltMsg, std::vector<std::any>) {});
+  conn->socket().open(boost::asio::ip::tcp::v4());
+
+  std::thread worker([conn] {
+    conn->PostClose();
+    conn->PostClose();
+  });
+  worker.join();
+
+  EXPECT_TRUE(conn->socket().is_open());
+  EXPECT_FALSE(conn->has_closed());
+  EXPECT_EQ(io_service.poll(), 2);
+  EXPECT_FALSE(conn->socket().is_open());
+  EXPECT_TRUE(conn->has_closed());
+}
 
 TEST(BoltServerTest, StopDrainsQueuedWorkerTasks) {
   auto worker_pool =

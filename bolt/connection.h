@@ -70,6 +70,8 @@ class BoltConnection : public Connection,
       : Connection(io_service), handle_(std::move(handle)) {}
   void Start() override;
   void Close() override;
+  // Schedule closing on the IO service that owns the socket.
+  void PostClose();
   void PostResponse(std::string res);
   void Respond(std::string str);
   void SetContext(std::shared_ptr<void> ctx) { context_ = std::move(ctx); }

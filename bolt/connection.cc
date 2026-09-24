@@ -120,6 +120,10 @@ void BoltConnection::Start() {
 
 void BoltConnection::Close() { Connection::Close(); }
 
+void BoltConnection::PostClose() {
+  io_service().post([self = shared_from_this()] { self->Close(); });
+}
+
 void BoltConnection::DoSend() {
   for (size_t i = 0; i < msg_queue_.size(); i++) {
     send_buffers_.emplace_back(boost::asio::buffer(msg_queue_[i]));
