@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <cstdint>
 #include <limits>
 #include <memory>
@@ -466,6 +467,37 @@ TEST(PhysicalExecutorTest, MaintainsPercentileParameterState) {
       "MATCH (n:N) RETURN percentileCont(n.value, n.p) AS percentile");
   ASSERT_EQ(all_null_result.rows.size(), 1U);
   EXPECT_TRUE(all_null_result.rows[0][0].IsNull());
+}
+
+TEST(PhysicalExecutorTest, OrdersNaNInNumericAggregates) {
+  rg::test::GraphDBTestDatabase graph;
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  rg::QueryOptions options;
+  options.parameters = {
+      {"values",
+       rg::Value(rg::Value::List{rg::Value(nan), rg::Value(2), rg::Value(1)})}};
+
+  const rg::QueryResult aggregates = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "UNWIND $values AS x RETURN min(x), max(x), "
+      "percentileDisc(x, 0.5), percentileDisc(x, 1.0)",
+      options);
+  ASSERT_EQ(aggregates.rows.size(), 1U);
+  ASSERT_EQ(aggregates.rows[0].size(), 4U);
+  EXPECT_EQ(aggregates.rows[0][0], rg::Value(1));
+  ASSERT_TRUE(aggregates.rows[0][1].IsDouble());
+  EXPECT_TRUE(std::isnan(aggregates.rows[0][1].AsDouble()));
+  EXPECT_EQ(aggregates.rows[0][2], rg::Value(2));
+  ASSERT_TRUE(aggregates.rows[0][3].IsDouble());
+  EXPECT_TRUE(std::isnan(aggregates.rows[0][3].AsDouble()));
+
+  const rg::QueryResult sorted = rg::test::ExecuteQueryAndCommit(
+      graph, "UNWIND $values AS x RETURN x ORDER BY x", options);
+  ASSERT_EQ(sorted.rows.size(), 3U);
+  EXPECT_EQ(sorted.rows[0][0], rg::Value(1));
+  EXPECT_EQ(sorted.rows[1][0], rg::Value(2));
+  ASSERT_TRUE(sorted.rows[2][0].IsDouble());
+  EXPECT_TRUE(std::isnan(sorted.rows[2][0].AsDouble()));
 }
 
 TEST(PhysicalExecutorTest, UsesTypedKeysAcrossSetOperators) {

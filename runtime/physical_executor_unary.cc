@@ -490,13 +490,6 @@ int CompareValues(const Value &left, const Value &right) {
   if (ValuesEqual(left, right)) {
     return 0;
   }
-  if (IsNumeric(left) && IsNumeric(right)) {
-    const bool left_nan = left.IsDouble() && std::isnan(left.AsDouble());
-    const bool right_nan = right.IsDouble() && std::isnan(right.AsDouble());
-    if (left_nan || right_nan) {
-      return left_nan == right_nan ? 0 : (left_nan ? 1 : -1);
-    }
-  }
   const bool left_less = ValueLess(left, right);
   const bool right_less = ValueLess(right, left);
   if (left_less != right_less) {

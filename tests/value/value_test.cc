@@ -7,6 +7,7 @@
 #include <type_traits>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
 #include "value/temporal.h"
 
@@ -212,6 +213,55 @@ TEST(ValueTest, OrdersMixedValuesUsingCypherTypePrecedence) {
   EXPECT_TRUE(rg::ValueLess(rg::Value("text"), rg::Value(false)));
   EXPECT_TRUE(rg::ValueLess(rg::Value(false), rg::Value(1.5)));
   EXPECT_TRUE(rg::ValueLess(rg::Value(1.5), rg::Value::Null()));
+}
+
+TEST(ValueTest, OrdersNaNAfterOtherNumbersWithStrictWeakOrdering) {
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  const double infinity = std::numeric_limits<double>::infinity();
+  const std::vector<rg::Value> values{
+      rg::Value(-infinity),
+      rg::Value(-1),
+      rg::Value(-0.0),
+      rg::Value(0),
+      rg::Value(0.5),
+      rg::Value(1),
+      rg::Value(infinity),
+      rg::Value(nan),
+      rg::Value(-nan),
+      rg::Value::Null(),
+      rg::Value(rg::Value::List{rg::Value(1)}),
+      rg::Value(rg::Value::List{rg::Value(nan)}),
+      rg::Value(rg::Value::List{rg::Value(-nan), rg::Value(1)})};
+  const auto equivalent = [](const rg::Value &left, const rg::Value &right) {
+    return !rg::ValueLess(left, right) && !rg::ValueLess(right, left);
+  };
+
+  EXPECT_TRUE(rg::ValueLess(rg::Value(infinity), rg::Value(nan)));
+  EXPECT_TRUE(rg::ValueLess(rg::Value(nan), rg::Value::Null()));
+  EXPECT_TRUE(equivalent(rg::Value(nan), rg::Value(-nan)));
+  EXPECT_TRUE(rg::ValueLess(rg::Value(rg::Value::List{rg::Value(1)}),
+                            rg::Value(rg::Value::List{rg::Value(nan)})));
+
+  for (std::size_t i = 0; i < values.size(); ++i) {
+    EXPECT_FALSE(rg::ValueLess(values[i], values[i])) << i;
+    for (std::size_t j = 0; j < values.size(); ++j) {
+      EXPECT_FALSE(rg::ValueLess(values[i], values[j]) &&
+                   rg::ValueLess(values[j], values[i]))
+          << i << ", " << j;
+      for (std::size_t k = 0; k < values.size(); ++k) {
+        if (rg::ValueLess(values[i], values[j]) &&
+            rg::ValueLess(values[j], values[k])) {
+          EXPECT_TRUE(rg::ValueLess(values[i], values[k]))
+              << i << ", " << j << ", " << k;
+        }
+        if (equivalent(values[i], values[j]) &&
+            equivalent(values[j], values[k])) {
+          EXPECT_TRUE(equivalent(values[i], values[k]))
+              << i << ", " << j << ", " << k;
+        }
+      }
+    }
+  }
 }
 
 TEST(ValueTest, AppliesDurationsToTemporalValues) {

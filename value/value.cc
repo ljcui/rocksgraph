@@ -104,6 +104,11 @@ bool ValueLess(const Value &left, const Value &right) {
   }
   if ((left.IsInteger() || left.IsDouble()) &&
       (right.IsInteger() || right.IsDouble())) {
+    const bool left_nan = left.IsDouble() && std::isnan(left.AsDouble());
+    const bool right_nan = right.IsDouble() && std::isnan(right.AsDouble());
+    if (left_nan || right_nan) {
+      return !left_nan && right_nan;
+    }
     if (left.IsInteger() && right.IsInteger()) {
       return left.AsInteger() < right.AsInteger();
     }
@@ -114,22 +119,20 @@ bool ValueLess(const Value &left, const Value &right) {
     const Value &floating = left.IsDouble() ? left : right;
     const double number = floating.AsDouble();
     bool integer_less = false;
-    if (!std::isnan(number)) {
-      if (number >=
-          static_cast<double>(std::numeric_limits<std::int64_t>::max())) {
-        integer_less = true;
-      } else if (number >= static_cast<double>(
-                               std::numeric_limits<std::int64_t>::min())) {
-        const auto truncated = static_cast<std::int64_t>(number);
-        integer_less = integer.AsInteger() < truncated ||
-                       (integer.AsInteger() == truncated &&
-                        static_cast<double>(truncated) < number);
-      }
+    if (number >=
+        static_cast<double>(std::numeric_limits<std::int64_t>::max())) {
+      integer_less = true;
+    } else if (number >=
+               static_cast<double>(std::numeric_limits<std::int64_t>::min())) {
+      const auto truncated = static_cast<std::int64_t>(number);
+      integer_less = integer.AsInteger() < truncated ||
+                     (integer.AsInteger() == truncated &&
+                      static_cast<double>(truncated) < number);
     }
     if (left.IsInteger()) {
       return integer_less;
     }
-    return !std::isnan(number) && !ValuesEqual(left, right) && !integer_less;
+    return !ValuesEqual(left, right) && !integer_less;
   }
   if (left.Type() != right.Type()) {
     return ValueOrderRank(left) < ValueOrderRank(right);
