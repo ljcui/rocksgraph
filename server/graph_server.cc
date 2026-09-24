@@ -1,5 +1,6 @@
 #include "server/graph_server.h"
 
+#include "bolt/worker_pool.h"
 #include "common/logger.h"
 #include "server/bolt_handler.h"
 
@@ -31,12 +32,12 @@ bool GraphServer::Start() {
     return false;
   }
 
+  auto worker_pool = std::make_shared<bolt::BoltWorkerPool>(
+      options_.bolt_worker_thread_num, "bolt-worker-", "bolt");
   if (!bolt_server_.Start(
           options_.local_node_options.bolt_port, options_.bolt_io_thread_num,
           options_.max_bolt_connections,
-          NewBoltHandler(
-              graph_manager_.get(),
-              {.worker_thread_num = options_.bolt_worker_thread_num}))) {
+          NewBoltHandler(graph_manager_.get(), worker_pool), worker_pool)) {
     raft_server_.Stop();
     graph_manager_.reset();
     return false;

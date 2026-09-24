@@ -861,10 +861,8 @@ static bool EnqueueSessionMessage(
 }  // namespace
 
 BoltHandler NewBoltHandler(GraphManager* graph_manager,
-                           BoltHandlerOptions options) {
-  auto worker_pool = std::make_shared<bolt::BoltWorkerPool>(
-      options.worker_thread_num, "bolt-worker-", "bolt");
-  return [graph_manager, options, worker_pool](
+                           std::shared_ptr<bolt::BoltWorkerPool> worker_pool) {
+  return [graph_manager, worker_pool = std::move(worker_pool)](
              BoltConnection& conn, BoltMsg msg, std::vector<std::any> fields) {
     if (msg == BoltMsg::Hello) {
       auto existing_context = GetSessionContext(conn);

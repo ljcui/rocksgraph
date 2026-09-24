@@ -10,7 +10,8 @@ namespace bolt {
 bool BoltServer::Start(
     uint32_t port, uint32_t io_thread_num, size_t max_connections,
     const std::function<void(bolt::BoltConnection& conn, bolt::BoltMsg msg,
-                             std::vector<std::any> fields)>& handler) {
+                             std::vector<std::any> fields)>& handler,
+    std::shared_ptr<BoltWorkerPool> worker_pool) {
   if (started_.load()) {
     return true;
   }
@@ -19,7 +20,12 @@ bool BoltServer::Start(
     LOG_ERROR("bolt server start failed: previous threads are still running");
     return false;
   }
+  if (!worker_pool) {
+    LOG_ERROR("bolt server start failed: worker pool is null");
+    return false;
+  }
   listener_.reset();
+  worker_pool_ = std::move(worker_pool);
 
   std::promise<bool> promise;
   auto future = promise.get_future();
@@ -66,6 +72,10 @@ void BoltServer::Stop() {
     t.join();
   }
   threads_.clear();
+  if (worker_pool_) {
+    worker_pool_->Stop();
+    worker_pool_.reset();
+  }
   started_.store(false);
   listener_.reset();
   if (had_threads) {

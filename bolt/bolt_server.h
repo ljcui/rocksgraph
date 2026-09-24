@@ -1,10 +1,12 @@
 #pragma once
 #include <atomic>
+#include <memory>
 #include <thread>
 #include <vector>
 
 #include "connection.h"
 #include "io_service.h"
+#include "worker_pool.h"
 
 namespace bolt {
 class BoltServer final {
@@ -17,7 +19,8 @@ class BoltServer final {
   bool Start(
       uint32_t port, uint32_t io_thread_num, size_t max_connections,
       const std::function<void(bolt::BoltConnection& conn, bolt::BoltMsg msg,
-                               std::vector<std::any> fields)>& handler);
+                               std::vector<std::any> fields)>& handler,
+      std::shared_ptr<BoltWorkerPool> worker_pool);
   void Stop();
   bool Started() const { return started_.load(); }
   ~BoltServer() { Stop(); }
@@ -25,5 +28,6 @@ class BoltServer final {
   std::vector<std::thread> threads_;
   std::atomic<bool> started_{false};
   boost::asio::io_service listener_{BOOST_ASIO_CONCURRENCY_HINT_UNSAFE};
+  std::shared_ptr<BoltWorkerPool> worker_pool_;
 };
 }  // namespace bolt

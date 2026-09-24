@@ -58,7 +58,7 @@ class BoltWorkerPool {
                                           std::memory_order_acq_rel)) {
       return;
     }
-    pool_.stop();
+    // Finish queued session work before releasing resources it may use.
     pool_.join();
   }
 
