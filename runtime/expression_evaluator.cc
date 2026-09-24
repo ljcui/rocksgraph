@@ -518,12 +518,12 @@ Value EvaluateReduce(const ast::ReduceExpression &expression,
   return accumulator;
 }
 
-using FixedPatternChain =
+using PatternChain =
     std::vector<std::pair<std::unique_ptr<ast::RelationshipPattern>,
                           std::unique_ptr<ast::NodePattern>>>;
 
-bool VisitLocallyCorrelatedFixedPattern(
-    const ast::NodePattern &start_pattern, const FixedPatternChain &chain,
+bool VisitLocallyCorrelatedPatternChain(
+    const ast::NodePattern &start_pattern, const PatternChain &chain,
     const std::string &path_variable, const ast::Expression *where_expression,
     const ExpressionBindings &row,
     const std::vector<ast::PrecomputedExpression> &precomputed,
@@ -531,21 +531,10 @@ bool VisitLocallyCorrelatedFixedPattern(
     const std::function<bool(const ExpressionBindings &,
                              const std::vector<RelationshipReference> &)>
         &on_match) {
-  RG_CHECK(start_pattern.properties == nullptr,
-           common::ErrorCode::InvalidParameter,
-           "locally correlated pattern expression does not support inline "
-           "properties");
   for (const auto &[relationship, node] : chain) {
     RG_CHECK(relationship != nullptr && node != nullptr,
              common::ErrorCode::InvalidParameter,
              "locally correlated pattern relationship is incomplete");
-    const ast::RelationshipDetail *detail = relationship->detail.get();
-    RG_CHECK((detail == nullptr || (detail->range == std::nullopt &&
-                                    detail->properties == nullptr)) &&
-                 node->properties == nullptr,
-             common::ErrorCode::InvalidParameter,
-             "locally correlated pattern expression does not support "
-             "variable length or inline properties");
   }
 
   using Bindings = std::unordered_map<std::string, Value>;
@@ -574,6 +563,33 @@ bool VisitLocallyCorrelatedFixedPattern(
     if (!name.empty()) {
       bindings->insert_or_assign(name, std::move(value));
     }
+  };
+
+  const auto matches_properties = [&](const ast::Properties *properties,
+                                      const Value &entity,
+                                      const Bindings &bindings) {
+    if (properties == nullptr) {
+      return true;
+    }
+    MapScopedExpressionBindings scoped(row, bindings);
+    const ast::Expression *expression =
+        properties->map != nullptr
+            ? static_cast<const ast::Expression *>(properties->map.get())
+            : properties->parameter.get();
+    RG_CHECK(expression != nullptr, common::ErrorCode::InternalError,
+             "pattern properties are incomplete");
+    const Value expected =
+        EvaluateExpression(*expression, scoped, precomputed, context);
+    RG_CHECK(expected.IsMap(), common::ErrorCode::InvalidParameter,
+             "pattern properties must be a map");
+    for (const auto &[key, value] : expected.AsMap()) {
+      const Value *actual = FindProperty(entity, key);
+      if (actual == nullptr ||
+          EqualityTruth(*actual, value) != TruthValue::kTrue) {
+        return false;
+      }
+    }
+    return true;
   };
 
   std::function<bool(std::size_t, const Value::NodePtr &, Bindings,
@@ -613,6 +629,110 @@ bool VisitLocallyCorrelatedFixedPattern(
     }
     const std::vector<std::string> types =
         detail == nullptr ? std::vector<std::string>{} : detail->types;
+    if (detail != nullptr && detail->range.has_value()) {
+      const std::size_t min =
+          static_cast<std::size_t>(detail->range->min.value_or(1));
+      const std::size_t max =
+          detail->range->max.has_value()
+              ? static_cast<std::size_t>(*detail->range->max)
+              : std::numeric_limits<std::size_t>::max();
+      RG_CHECK(detail->range->min.value_or(1) >= 0 &&
+                   detail->range->max.value_or(0) >= 0,
+               common::ErrorCode::InvalidParameter,
+               "negative variable path length");
+      std::function<bool(const Value::NodePtr &, std::vector<Value::NodePtr>,
+                         std::vector<Value::RelationshipPtr>,
+                         std::vector<RelationshipReference>)>
+          visit_hops;
+      visit_hops = [&](const Value::NodePtr &at,
+                       std::vector<Value::NodePtr> segment_nodes,
+                       std::vector<Value::RelationshipPtr> segment_edges,
+                       std::vector<RelationshipReference> used) {
+        if (segment_edges.size() >= min &&
+            NodeHasLabels(*at, next_node_ptr->labels) &&
+            matches_properties(next_node_ptr->properties.get(), Value(at),
+                               bindings)) {
+          Value::List relationship_values;
+          relationship_values.reserve(segment_edges.size());
+          for (const auto &edge : segment_edges) {
+            relationship_values.emplace_back(Value(edge));
+          }
+          Value relationship_list(std::move(relationship_values));
+          const std::optional<Value> bound_relationship =
+              lookup_binding(bindings, detail->variable);
+          const std::optional<Value> bound_node =
+              lookup_binding(bindings, next_node_ptr->variable);
+          if ((!bound_relationship.has_value() ||
+               EqualityTruth(*bound_relationship, relationship_list) ==
+                   TruthValue::kTrue) &&
+              (!bound_node.has_value() ||
+               (bound_node->IsNode() && bound_node->AsNode().id == at->id))) {
+            Bindings next_bindings = bindings;
+            bind(&next_bindings, detail->variable,
+                 std::move(relationship_list));
+            bind(&next_bindings, next_node_ptr->variable, Value(at));
+            auto next_nodes = path_nodes;
+            next_nodes.insert(next_nodes.end(), segment_nodes.begin(),
+                              segment_nodes.end());
+            auto next_edges = path_relationships;
+            next_edges.insert(next_edges.end(), segment_edges.begin(),
+                              segment_edges.end());
+            if (expand(chain_index + 1, at, std::move(next_bindings),
+                       std::move(next_nodes), std::move(next_edges), used)) {
+              return true;
+            }
+          }
+        }
+        if (segment_edges.size() >= max) {
+          return false;
+        }
+        graphdb::Vertex vertex =
+            GraphDBVertexById(context.GraphDBTransaction(), at->id);
+        std::unique_ptr<graphdb::EdgeIterator> edges = vertex.NewEdgeIterator(
+            direction,
+            std::unordered_set<std::string>(types.begin(), types.end()), {});
+        while (edges->Valid()) {
+          context.CheckCancelled();
+          graphdb::Edge edge = edges->GetEdge();
+          edges->Next();
+          const RelationshipReference reference{.id = edge.GetId(),
+                                                .type_id = edge.GetTypeId()};
+          if (std::find(used.begin(), used.end(), reference) != used.end()) {
+            continue;
+          }
+          std::int64_t next_id = -1;
+          if (direction != graphdb::EdgeDirection::INCOMING &&
+              edge.GetStartId() == at->id) {
+            next_id = edge.GetEndId();
+          } else if (direction != graphdb::EdgeDirection::OUTGOING &&
+                     edge.GetEndId() == at->id) {
+            next_id = edge.GetStartId();
+          } else {
+            continue;
+          }
+          Value::RelationshipPtr relationship = MaterializeGraphDBEdge(edge);
+          if (!matches_properties(detail->properties.get(), Value(relationship),
+                                  bindings)) {
+            continue;
+          }
+          auto next =
+              MaterializeGraphDBVertex(context.GraphDBTransaction(), next_id);
+          auto following_nodes = segment_nodes;
+          following_nodes.push_back(next);
+          auto following_edges = segment_edges;
+          following_edges.push_back(relationship);
+          auto following_used = used;
+          following_used.push_back(reference);
+          if (visit_hops(next, std::move(following_nodes),
+                         std::move(following_edges),
+                         std::move(following_used))) {
+            return true;
+          }
+        }
+        return false;
+      };
+      return visit_hops(current, {}, {}, std::move(used_relationships));
+    }
     graphdb::Vertex vertex =
         GraphDBVertexById(context.GraphDBTransaction(), current->id);
     std::unique_ptr<graphdb::EdgeIterator> edges = vertex.NewEdgeIterator(
@@ -641,6 +761,11 @@ bool VisitLocallyCorrelatedFixedPattern(
       }
 
       Value::RelationshipPtr relationship = MaterializeGraphDBEdge(edge);
+      if (detail != nullptr &&
+          !matches_properties(detail->properties.get(), Value(relationship),
+                              bindings)) {
+        continue;
+      }
       if (detail != nullptr && !detail->variable.empty()) {
         const std::optional<Value> bound =
             lookup_binding(bindings, detail->variable);
@@ -654,7 +779,9 @@ bool VisitLocallyCorrelatedFixedPattern(
 
       Value::NodePtr next =
           MaterializeGraphDBVertex(context.GraphDBTransaction(), next_id);
-      if (!NodeHasLabels(*next, next_node_ptr->labels)) {
+      if (!NodeHasLabels(*next, next_node_ptr->labels) ||
+          !matches_properties(next_node_ptr->properties.get(), Value(next),
+                              bindings)) {
         continue;
       }
       if (!next_node_ptr->variable.empty()) {
@@ -695,7 +822,8 @@ bool VisitLocallyCorrelatedFixedPattern(
     RG_CHECK(bound_start->IsNode(), common::ErrorCode::InvalidParameter,
              "locally correlated pattern start must be a node");
     Value::NodePtr start = std::make_shared<Node>(bound_start->AsNode());
-    if (NodeHasLabels(*start, start_pattern.labels)) {
+    if (NodeHasLabels(*start, start_pattern.labels) &&
+        matches_properties(start_pattern.properties.get(), Value(start), {})) {
       Bindings bindings;
       bind(&bindings, start_pattern.variable, Value(start));
       return expand(0, start, std::move(bindings), {start}, {}, {});
@@ -712,7 +840,8 @@ bool VisitLocallyCorrelatedFixedPattern(
     context.CheckCancelled();
     Value::NodePtr start = MaterializeGraphDBVertex(vertices->GetVertex());
     vertices->Next();
-    if (!NodeHasLabels(*start, start_pattern.labels)) {
+    if (!NodeHasLabels(*start, start_pattern.labels) ||
+        !matches_properties(start_pattern.properties.get(), Value(start), {})) {
       continue;
     }
     Bindings bindings;
@@ -735,7 +864,7 @@ Value EvaluateLocallyCorrelatedPatternComprehension(
            "pattern comprehension is incomplete");
   const ast::RelationshipsPattern &pattern = *expression.relationships_pattern;
   Value::List output;
-  (void)VisitLocallyCorrelatedFixedPattern(
+  (void)VisitLocallyCorrelatedPatternChain(
       *pattern.node_pattern, pattern.chain, expression.variable,
       expression.where_expr.get(), row, precomputed, context,
       [&](const ExpressionBindings &bindings,
@@ -769,7 +898,7 @@ bool VisitLocallyCorrelatedPattern(
   RG_CHECK(part->shortest_path_kind == ast::ShortestPathKind::kNone,
            common::ErrorCode::InvalidParameter,
            "locally correlated EXISTS requires a fixed pattern");
-  return VisitLocallyCorrelatedFixedPattern(
+  return VisitLocallyCorrelatedPatternChain(
       *part->element->node_pattern, part->element->chain, part->variable,
       nullptr, row, precomputed, context,
       [&](const ExpressionBindings &bindings,

@@ -404,6 +404,22 @@ TEST(RewriterPipelineTest, IsolatesCreateSubqueryExpression) {
   EXPECT_TRUE(ast::ASTEqual::Equal(statement.get(), expected_statement.get()));
 }
 
+TEST(RewriterPipelineTest, IsolatesMergePatternPropertyExpression) {
+  auto statement = ParseOrFail(
+      "MATCH (a) MERGE (n:Result {p: [(a)-[:R*1..2]->(b) | b.x]}) "
+      "RETURN n.p");
+  auto expected_statement = ParseOrFail(
+      "MATCH (a) WITH a AS a, [(a)-[anon_0:R*1..2]->(b) | b.x] "
+      "AS __update_expr_0 MERGE (n:Result {p: __update_expr_0}) "
+      "RETURN n.p AS `n.p`");
+  ASSERT_TRUE(statement);
+  ASSERT_TRUE(expected_statement);
+
+  ast::ApplyDefaultRewriters(*statement);
+
+  EXPECT_TRUE(ast::ASTEqual::Equal(statement.get(), expected_statement.get()));
+}
+
 TEST(RewriterPipelineTest, IsolatesSetSubqueryExpression) {
   auto statement = ParseOrFail(
       "MATCH (n) SET n.p = EXISTS { MATCH (m) RETURN m } RETURN n.p");

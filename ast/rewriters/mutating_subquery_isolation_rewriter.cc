@@ -168,6 +168,14 @@ std::vector<std::unique_ptr<Expression> *> UpdateExpressions(
     }
     return expressions;
   }
+  if (clause.Is(ASTNodeType::kMerge)) {
+    auto &merge = CastAst<Merge>(clause);
+    if (merge.pattern_part != nullptr &&
+        merge.pattern_part->element != nullptr) {
+      CollectCreatePropertyValues(*merge.pattern_part->element, &expressions);
+    }
+    return expressions;
+  }
   if (clause.Is(ASTNodeType::kSet)) {
     auto &set = CastAst<Set>(clause);
     for (auto &item : set.items) {

@@ -2171,6 +2171,57 @@ TEST(QueryExecutorTest, ExecutesMergeCreateAndMatchActions) {
             (std::vector<std::vector<std::string>>{{"true", "true"}}));
 }
 
+TEST(QueryExecutorTest, MergePatternPropertySupportsVariableLengthSubquery) {
+  rg::test::GraphDBTestDatabase graph;
+  rg::test::ExecuteQueryAndCommit(
+      graph, "CREATE (a:Anchor)-[:R]->(b:Middle {id: 2})-[:R]->(c {id: 3})");
+
+  const std::string query =
+      "MATCH (a:Anchor) "
+      "MERGE (n:Result {p: [(a)-[:R*1..2]->(x) | x.id]}) "
+      "RETURN n.p AS p";
+  const auto created = rg::test::ExecuteQueryAndCommit(graph, query);
+  EXPECT_EQ(StringRows(created),
+            (std::vector<std::vector<std::string>>{{"[2, 3]"}}));
+  const auto matched = rg::test::ExecuteQueryAndCommit(graph, query);
+  EXPECT_EQ(StringRows(matched), StringRows(created));
+  EXPECT_EQ(graph.Nodes().size(), 4U);
+
+  const auto relationship = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "MATCH (a:Anchor), (b:Middle) "
+      "MERGE (a)-[r:Link {hops: size([(a)-[:R*1..2]->(x) | x.id])}]->(b) "
+      "RETURN r.hops AS hops");
+  EXPECT_EQ(StringRows(relationship),
+            (std::vector<std::vector<std::string>>{{"2"}}));
+}
+
+TEST(QueryExecutorTest, MergeActionsEvaluateVariableLengthSubqueriesLazily) {
+  rg::test::GraphDBTestDatabase graph;
+  rg::test::ExecuteQueryAndCommit(
+      graph, "CREATE (a:Anchor)-[:R]->(b {id: 2})-[:R]->(c {id: 3})");
+
+  const auto created = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "MATCH (a:Anchor) MERGE (n:Action {key: 1}) "
+      "ON CREATE SET n.values = [(a)-[:R*1..2]->(x) | x.id], "
+      "n.self = [(n)-[:S*0..1]->(x) | x.key] "
+      "ON MATCH SET n.bad = [(a)-[:R*1..2]->(x) | 1 / 0] "
+      "RETURN n.values AS values, n.self AS self");
+  EXPECT_EQ(StringRows(created),
+            (std::vector<std::vector<std::string>>{{"[2, 3]", "[1]"}}));
+
+  const auto matched = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "MATCH (a:Anchor) MERGE (n:Action {key: 1}) "
+      "ON MATCH SET n.matches = [(a)-[:R*1..2]->(x) | x.id], "
+      "n.filtered = [(a)-[:R*1..2]->(x {id: 2}) | x.id] "
+      "ON CREATE SET n.bad = [(a)-[:R*1..2]->(x) | 1 / 0] "
+      "RETURN n.matches AS matches, n.filtered AS filtered, n.bad AS bad");
+  EXPECT_EQ(StringRows(matched),
+            (std::vector<std::vector<std::string>>{{"[2, 3]", "[2]", "null"}}));
+}
+
 TEST(QueryExecutorTest, MergeDoesNotMaterializeDeletedNodeBindings) {
   rg::test::GraphDBTestDatabase graph;
   rg::test::ExecuteQueryAndCommit(graph, "CREATE (:A {num: 1}), (:A {num: 2})");
