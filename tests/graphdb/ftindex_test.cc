@@ -1,8 +1,10 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <exception>
 #include <filesystem>
 #include <set>
 #include <string>
@@ -444,6 +446,59 @@ TEST(FTIndex, deleteIndexRejectsPendingTransactionCommit) {
       CountKeysWithPrefix(graphDB.get(), graphDB->graph_cf().index, prefix), 0);
   EXPECT_EQ(CountKeysWithPrefix(graphDB.get(), graphDB->graph_cf().wal, prefix),
             0);
+}
+
+TEST(FTIndex, concurrentQueryAndDeleteKeepsStaleHandleSafe) {
+  fs::remove_all(testdb);
+  auto graphDB = GraphDB::Open(testdb, testutil::NewGraphDBOptions());
+  graphDB->AddVertexFullTextIndex("ft_index", {"label1"}, {"str"});
+  ASSERT_TRUE(WaitUntilFullTextIndexReady(graphDB.get(), "ft_index"));
+  auto index = graphDB->meta_info().GetReadyVertexFullTextIndex("ft_index");
+  ASSERT_NE(index, nullptr);
+
+  std::atomic<bool> stop{false};
+  std::atomic<int> query_count{0};
+  std::exception_ptr unexpected_error;
+  std::thread reader([&] {
+    while (!stop.load()) {
+      try {
+        index->Query("token", 10);
+        query_count.fetch_add(1);
+        std::this_thread::yield();
+      } catch (const common::Exception& e) {
+        if (e.code() != common::ErrorCode::FullTextIndexNotFound) {
+          unexpected_error = std::current_exception();
+        }
+        return;
+      } catch (...) {
+        unexpected_error = std::current_exception();
+        return;
+      }
+    }
+  });
+
+  const auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds(2);
+  while (query_count.load() < 10 &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::yield();
+  }
+  EXPECT_NO_THROW(graphDB->DeleteVertexFullTextIndex("ft_index"));
+  stop.store(true);
+  reader.join();
+
+  EXPECT_GE(query_count.load(), 10);
+  if (unexpected_error) {
+    try {
+      std::rethrow_exception(unexpected_error);
+    } catch (const std::exception& e) {
+      ADD_FAILURE() << "concurrent fulltext query failed: " << e.what();
+    } catch (...) {
+      ADD_FAILURE() << "concurrent fulltext query failed unexpectedly";
+    }
+  }
+  EXPECT_THROW_CODE_MSG(index->Query("token", 10), FullTextIndexNotFound,
+                        "was deleted");
 }
 
 TEST(FTIndex, rollbackDoesNotBreakWalApply) {

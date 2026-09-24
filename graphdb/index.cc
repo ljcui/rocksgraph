@@ -1177,6 +1177,11 @@ std::string VertexFullTextIndex::NextWALKey() {
 
 void VertexFullTextIndex::Load(const rocksdb::Snapshot* snapshot,
                                uint64_t snapshot_wal_id) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (deleted_.load() || ft_index_ == nullptr) {
+    RG_THROW(common::ErrorCode::FullTextIndexNotFound,
+             "Fulltext index [{}] was deleted during build", meta_.name());
+  }
   int count = 0;
   bool has_documents = false;
   FTUpdateBatch batch;
@@ -1260,6 +1265,11 @@ void VertexFullTextIndex::Load(const rocksdb::Snapshot* snapshot,
 
 void VertexFullTextIndex::AddVertex(int64_t id, std::vector<std::string> fields,
                                     std::vector<std::string> values) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (deleted_.load() || ft_index_ == nullptr) {
+    RG_THROW(common::ErrorCode::FullTextIndexNotFound,
+             "Fulltext index [{}] was deleted", meta_.name());
+  }
   FTUpdateBatch batch;
   batch.AddDocument(id, &fields, &values);
   ApplyUpdatesBatch(batch.ids, batch.ops, batch.field_counts, batch.fields,
@@ -1281,6 +1291,11 @@ bool VertexFullTextIndex::MatchPropertyIds(
 }
 
 void VertexFullTextIndex::DeleteVertex(int64_t id) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (deleted_.load() || ft_index_ == nullptr) {
+    RG_THROW(common::ErrorCode::FullTextIndexNotFound,
+             "Fulltext index [{}] was deleted", meta_.name());
+  }
   FTUpdateBatch batch;
   batch.AddDelete(id);
   ApplyUpdatesBatch(batch.ids, batch.ops, batch.field_counts, batch.fields,
@@ -1303,6 +1318,10 @@ void VertexFullTextIndex::Commit(const std::string& payload) {
 
 void VertexFullTextIndex::ApplyWAL() {
   std::lock_guard<std::mutex> lock(mutex_);
+  if (deleted_.load() || ft_index_ == nullptr) {
+    RG_THROW(common::ErrorCode::FullTextIndexNotFound,
+             "Fulltext index [{}] was deleted", meta_.name());
+  }
   std::string prefix = EncodeBigEndianId(index_id_);
   std::string start_key(prefix);
   uint64_t next = big_to_native(apply_id_) + 1;
@@ -1385,6 +1404,11 @@ void VertexFullTextIndex::ApplyWAL() {
 
 ::rust::Vec<::IdScore> VertexFullTextIndex::Query(const std::string& query,
                                                   size_t top_n) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (deleted_.load() || ft_index_ == nullptr) {
+    RG_THROW(common::ErrorCode::FullTextIndexNotFound,
+             "Fulltext index [{}] was deleted", meta_.name());
+  }
   return ft_query(*ft_index_, query, QueryOptions{top_n});
 }
 
