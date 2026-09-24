@@ -234,6 +234,31 @@ TEST(SemanticValidatorTest, RejectsUnknownProcedureYieldField) {
                       "unknown yield field for db.labels: missing");
 }
 
+TEST(SemanticValidatorTest, RejectsRepeatedUnwindVariable) {
+  ExpectSemanticError("UNWIND [1, 2] AS x UNWIND [3, 4] AS x RETURN x",
+                      "variable already declared: x");
+  ExpectSemanticError("MATCH (x) UNWIND [1] AS x RETURN x",
+                      "variable already declared: x");
+  ExpectSemanticError("WITH 1 AS x UNWIND [2] AS x RETURN x",
+                      "variable already declared: x");
+  EXPECT_NO_THROW(ast::ParseCypher(
+      "UNWIND [1] AS x WITH x AS y UNWIND [2] AS x RETURN x, y"));
+}
+
+TEST(SemanticValidatorTest, RejectsRepeatedProcedureYieldVariable) {
+  ExpectSemanticError(
+      "MATCH (name) CALL db.labels() YIELD label AS name RETURN name",
+      "variable already declared: name");
+  ExpectSemanticError(
+      "CALL db.index.vector.knnSearchNodes('idx', [1.0], {top_k: 1}) "
+      "YIELD node AS value, distance AS value RETURN value",
+      "variable already declared: value");
+  ExpectSemanticError("CALL db.labels() YIELD label AS value, label AS value",
+                      "variable already declared: value");
+  EXPECT_NO_THROW(ast::ParseCypher(
+      "WITH 1 AS name CALL db.labels() YIELD label RETURN name, label"));
+}
+
 TEST(SemanticValidatorTest, AcceptsIndexAndRaftProcedures) {
   EXPECT_NO_THROW(ast::ParseCypher(
       "CALL db.index.createNodeIndex('idx', 'Person', ['name'], {})"));

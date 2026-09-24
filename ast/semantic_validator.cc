@@ -504,6 +504,9 @@ class SemanticValidator : public ASTWalker {
     Scope yield_scope = CurrentScope();
     if (!node.yield_star) {
       for (const auto &item : node.yield_items) {
+        if (yield_scope.Contains(item.variable)) {
+          ReportSemantic("variable already declared: " + item.variable);
+        }
         yield_scope.Add(item.variable);
       }
     }
@@ -537,6 +540,9 @@ class SemanticValidator : public ASTWalker {
 
   void Visit(Unwind &node) override {
     WalkMaybe(node.expression);
+    if (IsDefined(node.variable)) {
+      ReportSemantic("variable already declared: " + node.variable);
+    }
     Define(node.variable, ListElementType(node.expression.get()));
   }
 
@@ -547,6 +553,9 @@ class SemanticValidator : public ASTWalker {
 
     Scope yield_scope = CurrentScope();
     for (const auto &item : node.yield_items) {
+      if (yield_scope.Contains(item.variable)) {
+        ReportSemantic("variable already declared: " + item.variable);
+      }
       yield_scope.Add(item.variable);
     }
 
