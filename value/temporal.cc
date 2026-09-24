@@ -27,6 +27,7 @@ constexpr std::int64_t kNanosecondsPerSecond = 1'000'000'000;
 constexpr std::int64_t kSecondsPerDay = 86'400;
 constexpr int kMinimumYear = -999'999'999;
 constexpr int kMaximumYear = 999'999'999;
+using WideInteger = __int128_t;
 
 [[noreturn]] void InvalidTemporal(std::string message) {
   RG_THROW(common::ErrorCode::InvalidParameter, std::move(message));
@@ -62,6 +63,13 @@ int CheckedInt(std::int64_t value, int minimum, int maximum,
                std::string_view component) {
   if (value < minimum || value > maximum) {
     InvalidTemporal(std::string(component) + " is out of range");
+  }
+  return static_cast<int>(value);
+}
+
+int CheckedTimeNanosecond(WideInteger value) {
+  if (value < 0 || value >= kNanosecondsPerSecond) {
+    InvalidTemporal("nanosecond is out of range");
   }
   return static_cast<int>(value);
 }
@@ -242,6 +250,14 @@ int MapIntOr(const Value::Map &map, std::string_view key, int fallback,
                            : fallback;
 }
 
+WideInteger MapFractionNanoseconds(const Value::Map &map) {
+  return static_cast<WideInteger>(MapInteger(map, "millisecond").value_or(0)) *
+             1'000'000 +
+         static_cast<WideInteger>(MapInteger(map, "microsecond").value_or(0)) *
+             1'000 +
+         MapInteger(map, "nanosecond").value_or(0);
+}
+
 Date DateFromTemporal(const Value &value) {
   if (value.IsDate()) {
     return value.AsDate();
@@ -391,14 +407,11 @@ LocalTime ApplyTimeComponents(const Value::Map &map,
   const bool has_seconds = base ? base->has_seconds : false;
   const bool specifies_second = MapInteger(map, "second").has_value();
   const int second = MapIntOr(map, "second", base ? base->second : 0, 0, 59);
-  std::int64_t nanosecond = base ? base->nanosecond : 0;
+  WideInteger nanosecond = base ? base->nanosecond : 0;
   if (specifies_fraction) {
-    nanosecond = MapInteger(map, "millisecond").value_or(0) * 1'000'000 +
-                 MapInteger(map, "microsecond").value_or(0) * 1'000 +
-                 MapInteger(map, "nanosecond").value_or(0);
+    nanosecond = MapFractionNanoseconds(map);
   }
-  return {hour, minute, second,
-          CheckedInt(nanosecond, 0, 999'999'999, "nanosecond"),
+  return {hour, minute, second, CheckedTimeNanosecond(nanosecond),
           has_seconds || specifies_second || specifies_fraction};
 }
 
@@ -716,8 +729,6 @@ Duration NormalizeDuration(std::int64_t months, std::int64_t days,
   return {months, days, whole_seconds,
           static_cast<std::int32_t>(nanosecond_remainder)};
 }
-
-using WideInteger = __int128_t;
 
 Date AddMonthsClamped(const Date &date, std::int64_t months);
 
@@ -1231,18 +1242,13 @@ LocalTime ApplyTruncationTimeFields(LocalTime time, const Value::Map &fields) {
   components.erase("microsecond");
   components.erase("nanosecond");
   time = ApplyTimeComponents(components, time);
-  const std::int64_t addition =
-      MapInteger(fields, "millisecond").value_or(0) * 1'000'000 +
-      MapInteger(fields, "microsecond").value_or(0) * 1'000 +
-      MapInteger(fields, "nanosecond").value_or(0);
+  const WideInteger addition = MapFractionNanoseconds(fields);
   const bool specifies_fraction =
       MapInteger(fields, "millisecond").has_value() ||
       MapInteger(fields, "microsecond").has_value() ||
       MapInteger(fields, "nanosecond").has_value();
   if (addition != 0) {
-    time.nanosecond =
-        CheckedInt(static_cast<std::int64_t>(time.nanosecond) + addition, 0,
-                   999'999'999, "nanosecond");
+    time.nanosecond = CheckedTimeNanosecond(time.nanosecond + addition);
   }
   time.has_seconds = time.has_seconds || specifies_fraction;
   return time;
@@ -1970,9 +1976,10 @@ std::optional<Value> TemporalProperty(const Value &value,
         date_time.local_date_time.time.second - date_time.utc_offset_seconds;
     if (property == "epochSeconds") return IntegerProperty(epoch_seconds);
     if (property == "epochMillis") {
-      return IntegerProperty(epoch_seconds * 1000 +
-                             date_time.local_date_time.time.nanosecond /
-                                 1'000'000);
+      return IntegerProperty(CheckedWideInteger(
+          static_cast<WideInteger>(epoch_seconds) * 1000 +
+              date_time.local_date_time.time.nanosecond / 1'000'000,
+          "epochMillis"));
     }
     return std::nullopt;
   }
@@ -1987,16 +1994,20 @@ std::optional<Value> TemporalProperty(const Value &value,
     if (property == "minutes") return IntegerProperty(duration.seconds / 60);
     if (property == "seconds") return IntegerProperty(duration.seconds);
     if (property == "milliseconds") {
-      return IntegerProperty(duration.seconds * 1000 +
-                             duration.nanoseconds / 1'000'000);
+      return IntegerProperty(
+          CheckedWideInteger(static_cast<WideInteger>(duration.seconds) * 1000 +
+                                 duration.nanoseconds / 1'000'000,
+                             "duration milliseconds"));
     }
     if (property == "microseconds") {
-      return IntegerProperty(duration.seconds * 1'000'000 +
-                             duration.nanoseconds / 1'000);
+      return IntegerProperty(CheckedWideInteger(
+          static_cast<WideInteger>(duration.seconds) * 1'000'000 +
+              duration.nanoseconds / 1'000,
+          "duration microseconds"));
     }
     if (property == "nanoseconds") {
-      return IntegerProperty(duration.seconds * kNanosecondsPerSecond +
-                             duration.nanoseconds);
+      return IntegerProperty(CheckedWideInteger(DurationNanoseconds(duration),
+                                                "duration nanoseconds"));
     }
     if (property == "quartersOfYear") {
       return IntegerProperty((duration.months % 12) / 3);

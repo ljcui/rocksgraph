@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "tests/common/exception_test_utils.h"
 #include "value/temporal.h"
 
 namespace {
@@ -325,6 +326,78 @@ TEST(ValueTest, CombinesAndScalesDurations) {
             rg::Value(rg::Duration{}));
   EXPECT_EQ(rg::temporal::ScaleDuration(duration, 0.5),
             rg::Value(rg::Duration{74, 22, 48'068, 0}));
+}
+
+TEST(ValueTest, RejectsEpochMillisOutsideInt64Range) {
+  const rg::Value late(
+      rg::DateTime{{{999'999'999, 1, 1}, {0, 0, 0, 0}}, 0, {}});
+  const rg::Value early(
+      rg::DateTime{{{-999'999'999, 1, 1}, {0, 0, 0, 0}}, 0, {}});
+  for (const rg::Value &date_time : {late, early}) {
+    RG_EXPECT_ERROR(
+        (void)rg::temporal::TemporalProperty(date_time, "epochMillis"),
+        common::ErrorCode::InvalidParameter);
+    const auto seconds =
+        rg::temporal::TemporalProperty(date_time, "epochSeconds");
+    ASSERT_TRUE(seconds.has_value());
+    EXPECT_TRUE(seconds->IsInteger());
+  }
+
+  const rg::Value epoch(
+      rg::DateTime{{{1970, 1, 1}, {0, 0, 1, 234'000'000}}, 0, {}});
+  EXPECT_EQ(rg::temporal::TemporalProperty(epoch, "epochMillis"),
+            rg::Value(1234));
+}
+
+TEST(ValueTest, RejectsDurationPropertiesOutsideInt64Range) {
+  const rg::Duration part{0, 0, 9'000'000'000, 0};
+  const rg::Value sum = rg::temporal::AddDurations(part, part);
+  EXPECT_EQ(rg::temporal::TemporalProperty(sum, "seconds"),
+            rg::Value(18'000'000'000));
+  RG_EXPECT_ERROR((void)rg::temporal::TemporalProperty(sum, "nanoseconds"),
+                  common::ErrorCode::InvalidParameter);
+
+  rg::Value large = sum;
+  for (int i = 0; i < 20; ++i) {
+    large = rg::temporal::AddDurations(large.AsDuration(), large.AsDuration());
+  }
+  RG_EXPECT_ERROR((void)rg::temporal::TemporalProperty(large, "milliseconds"),
+                  common::ErrorCode::InvalidParameter);
+  RG_EXPECT_ERROR((void)rg::temporal::TemporalProperty(large, "microseconds"),
+                  common::ErrorCode::InvalidParameter);
+
+  const rg::Value small(rg::Duration{0, 0, 1, 234'567'890});
+  EXPECT_EQ(rg::temporal::TemporalProperty(small, "milliseconds"),
+            rg::Value(1234));
+  EXPECT_EQ(rg::temporal::TemporalProperty(small, "microseconds"),
+            rg::Value(1'234'567));
+  EXPECT_EQ(rg::temporal::TemporalProperty(small, "nanoseconds"),
+            rg::Value(1'234'567'890));
+}
+
+TEST(ValueTest, RejectsOversizedTimeFractionsBeforeArithmeticOverflow) {
+  // Both products are multiples of 2^64, which can mask overflow as zero.
+  const rg::Value::Map oversized_milliseconds{
+      {"millisecond", rg::Value(std::int64_t{1} << 58)}};
+  const rg::Value::Map oversized_microseconds{
+      {"microsecond", rg::Value(std::int64_t{1} << 61)}};
+  for (const rg::Value::Map &oversized :
+       {oversized_milliseconds, oversized_microseconds}) {
+    RG_EXPECT_ERROR(
+        (void)rg::temporal::ConstructLocalTime(rg::Value(oversized)),
+        common::ErrorCode::InvalidParameter);
+    RG_EXPECT_ERROR(
+        (void)rg::temporal::TruncateLocalTime(
+            rg::Value("second"), rg::Value(rg::LocalTime{12, 0, 0, 0}),
+            rg::Value(oversized)),
+        common::ErrorCode::InvalidParameter);
+  }
+
+  const rg::Value valid(rg::Value::Map{{"millisecond", rg::Value(123)},
+                                       {"microsecond", rg::Value(456)},
+                                       {"nanosecond", rg::Value(789)}});
+  EXPECT_EQ(rg::temporal::ConstructLocalTime(valid),
+            rg::Value(rg::LocalTime{0, 0, 0, 123'456'789}));
 }
 
 TEST(ValueTest, GraphTypes) {
