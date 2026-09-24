@@ -275,17 +275,35 @@ void BoltConnection::ReadChunkSizeDone(const boost::system::error_code& ec) {
   }
   big_to_native_inplace(chunk_size_);
   if (chunk_size_ == 0 && !chunk_.empty()) {
+    const auto close_on_unpack_error = [this]() {
+      const auto& error = unpacker_.Err();
+      if (!error) {
+        return false;
+      }
+      LOG_WARN("Invalid Bolt message: {}", *error);
+      Close();
+      return true;
+    };
     unpacker_.Reset(
         std::string_view((const char*)chunk_.data(), chunk_.size()));
     unpacker_.Next();
     auto len = unpacker_.Len();
     auto tag = static_cast<BoltMsg>(unpacker_.StructTag());
+    if (close_on_unpack_error()) {
+      return;
+    }
     std::vector<std::any> fields;
     fields.reserve(len);
     try {
       for (uint32_t i = 0; i < len; i++) {
         unpacker_.Next();
+        if (close_on_unpack_error()) {
+          return;
+        }
         fields.push_back(bolt::ServerHydrator(unpacker_));
+        if (close_on_unpack_error()) {
+          return;
+        }
       }
       LOG_DEBUG("msg: {}, fields: {}", ToString(tag), Print(fields));
       handle_(*this, tag, std::move(fields));
