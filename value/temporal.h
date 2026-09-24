@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -8,6 +9,8 @@
 #include "value/value.h"
 
 namespace rg::temporal {
+
+inline constexpr std::int64_t kAverageMonthSeconds = 2'629'746;
 
 [[nodiscard]] Value ConstructDate(std::chrono::system_clock::time_point now =
                                       std::chrono::system_clock::now());

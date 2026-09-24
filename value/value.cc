@@ -1,5 +1,6 @@
 #include "value/value.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <functional>
@@ -94,6 +95,40 @@ std::pair<std::int64_t, int32_t> DateTimeKey(const DateTime &date_time) {
       static_cast<std::int64_t>(time.hour) * 3'600 + time.minute * 60 +
       time.second - date_time.utc_offset_seconds;
   return {seconds, time.nanosecond};
+}
+
+__int128_t EstimatedDurationNanoseconds(const Duration &duration) {
+  const auto seconds = static_cast<__int128_t>(duration.months) *
+                           temporal::kAverageMonthSeconds +
+                       static_cast<__int128_t>(duration.days) * 86'400 +
+                       duration.seconds;
+  return seconds * 1'000'000'000 + duration.nanoseconds;
+}
+
+bool CoordinateLess(double left, double right) {
+  const bool left_nan = std::isnan(left);
+  const bool right_nan = std::isnan(right);
+  if (left_nan || right_nan) {
+    return !left_nan && right_nan;
+  }
+  return left < right;
+}
+
+bool PointLess(const Point &left, const Point &right) {
+  if (left.srid != right.srid) {
+    return left.srid < right.srid;
+  }
+  const std::size_t common_size =
+      std::min(left.coordinates.size(), right.coordinates.size());
+  for (std::size_t index = 0; index < common_size; ++index) {
+    if (CoordinateLess(left.coordinates[index], right.coordinates[index])) {
+      return true;
+    }
+    if (CoordinateLess(right.coordinates[index], left.coordinates[index])) {
+      return false;
+    }
+  }
+  return left.coordinates.size() < right.coordinates.size();
 }
 
 }  // namespace
@@ -191,6 +226,20 @@ bool ValueLess(const Value &left, const Value &right) {
   }
   if (left.IsDateTime()) {
     return DateTimeKey(left.AsDateTime()) < DateTimeKey(right.AsDateTime());
+  }
+  if (left.IsDuration()) {
+    const Duration &lhs = left.AsDuration();
+    const Duration &rhs = right.AsDuration();
+    const auto left_nanoseconds = EstimatedDurationNanoseconds(lhs);
+    const auto right_nanoseconds = EstimatedDurationNanoseconds(rhs);
+    if (left_nanoseconds != right_nanoseconds) {
+      return left_nanoseconds < right_nanoseconds;
+    }
+    return std::tie(lhs.months, lhs.days, lhs.seconds, lhs.nanoseconds) <
+           std::tie(rhs.months, rhs.days, rhs.seconds, rhs.nanoseconds);
+  }
+  if (left.IsPoint()) {
+    return PointLess(left.AsPoint(), right.AsPoint());
   }
   return left.ToString() < right.ToString();
 }

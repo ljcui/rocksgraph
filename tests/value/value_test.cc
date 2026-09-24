@@ -206,6 +206,44 @@ TEST(ValueTest, OrdersZonedTemporalValuesByInstant) {
   EXPECT_TRUE(rg::ValueLess(earlier_date_time, later_date_time));
 }
 
+TEST(ValueTest, OrdersDurationsByEstimatedLengthAndComponents) {
+  const rg::Value two_seconds(rg::Duration{0, 0, 2, 0});
+  const rg::Value ten_seconds(rg::Duration{0, 0, 10, 0});
+  const rg::Value one_day(rg::Duration{0, 1, 0, 0});
+  const rg::Value one_month(rg::Duration{1, 0, 0, 0});
+  const rg::Value equivalent_length(rg::Duration{0, 0, 86'400, 0});
+
+  EXPECT_TRUE(rg::ValueLess(two_seconds, ten_seconds));
+  EXPECT_TRUE(rg::ValueLess(ten_seconds, one_day));
+  EXPECT_TRUE(rg::ValueLess(one_day, one_month));
+  EXPECT_TRUE(rg::ValueLess(equivalent_length, one_day));
+  EXPECT_FALSE(rg::ValueLess(one_day, equivalent_length));
+
+  const rg::Value smallest(
+      rg::Duration{std::numeric_limits<std::int64_t>::min(), 0, 0, 0});
+  const rg::Value largest(
+      rg::Duration{std::numeric_limits<std::int64_t>::max(), 0, 0, 0});
+  EXPECT_TRUE(rg::ValueLess(smallest, largest));
+}
+
+TEST(ValueTest, OrdersPointsBySridAndNumericCoordinates) {
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  const rg::Value two(rg::Point{7203, {2.0, 0.0}});
+  const rg::Value ten(rg::Point{7203, {10.0, 0.0}});
+  const rg::Value lower_srid(rg::Point{4326, {100.0, 0.0}});
+  const rg::Value three_dimensions(rg::Point{7203, {2.0, 0.0, 1.0}});
+  const rg::Value nan_x(rg::Point{7203, {nan, 0.0}});
+  const rg::Value nan_y(rg::Point{7203, {nan, 1.0}});
+
+  EXPECT_TRUE(rg::ValueLess(two, ten));
+  EXPECT_TRUE(rg::ValueLess(lower_srid, two));
+  EXPECT_TRUE(rg::ValueLess(two, three_dimensions));
+  EXPECT_TRUE(rg::ValueLess(ten, nan_x));
+  EXPECT_TRUE(rg::ValueLess(nan_x, nan_y));
+  EXPECT_FALSE(rg::ValueLess(nan_x, rg::Value(rg::Point{7203, {-nan, -0.0}})));
+  EXPECT_FALSE(rg::ValueLess(rg::Value(rg::Point{7203, {-nan, -0.0}}), nan_x));
+}
+
 TEST(ValueTest, OrdersMixedValuesUsingCypherTypePrecedence) {
   EXPECT_TRUE(rg::ValueLess(rg::Value(rg::Value::Map{}),
                             rg::Value(rg::Value::List{})));

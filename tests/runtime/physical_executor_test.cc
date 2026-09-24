@@ -6,6 +6,7 @@
 #include <memory>
 #include <string>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "common/exception.h"
@@ -498,6 +499,43 @@ TEST(PhysicalExecutorTest, OrdersNaNInNumericAggregates) {
   EXPECT_EQ(sorted.rows[1][0], rg::Value(2));
   ASSERT_TRUE(sorted.rows[2][0].IsDouble());
   EXPECT_TRUE(std::isnan(sorted.rows[2][0].AsDouble()));
+}
+
+TEST(PhysicalExecutorTest, OrdersDurationsAndPointsInQueries) {
+  rg::test::GraphDBTestDatabase graph;
+  const std::vector<std::pair<rg::Value, rg::Value>> ordered_pairs{
+      {rg::Value(rg::Duration{0, 0, 2, 0}),
+       rg::Value(rg::Duration{0, 0, 10, 0})},
+      {rg::Value(rg::Point{7203, {2.0, 0.0}}),
+       rg::Value(rg::Point{7203, {10.0, 0.0}})}};
+
+  for (const auto &[smaller, larger] : ordered_pairs) {
+    rg::QueryOptions options;
+    options.parameters = {
+        {"values", rg::Value(rg::Value::List{larger, smaller})},
+        {"smaller", smaller},
+        {"larger", larger}};
+
+    const rg::QueryResult comparison = rg::test::ExecuteQueryAndCommit(
+        graph, "RETURN $smaller < $larger, $larger > $smaller", options);
+    ASSERT_EQ(comparison.rows.size(), 1U);
+    ASSERT_EQ(comparison.rows[0].size(), 2U);
+    EXPECT_EQ(comparison.rows[0][0], rg::Value(true));
+    EXPECT_EQ(comparison.rows[0][1], rg::Value(true));
+
+    const rg::QueryResult aggregates = rg::test::ExecuteQueryAndCommit(
+        graph, "UNWIND $values AS x RETURN min(x), max(x)", options);
+    ASSERT_EQ(aggregates.rows.size(), 1U);
+    ASSERT_EQ(aggregates.rows[0].size(), 2U);
+    EXPECT_EQ(aggregates.rows[0][0], smaller);
+    EXPECT_EQ(aggregates.rows[0][1], larger);
+
+    const rg::QueryResult sorted = rg::test::ExecuteQueryAndCommit(
+        graph, "UNWIND $values AS x RETURN x ORDER BY x", options);
+    ASSERT_EQ(sorted.rows.size(), 2U);
+    EXPECT_EQ(sorted.rows[0][0], smaller);
+    EXPECT_EQ(sorted.rows[1][0], larger);
+  }
 }
 
 TEST(PhysicalExecutorTest, UsesTypedKeysAcrossSetOperators) {

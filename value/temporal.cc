@@ -25,7 +25,6 @@ using namespace std::chrono_literals;
 
 constexpr std::int64_t kNanosecondsPerSecond = 1'000'000'000;
 constexpr std::int64_t kSecondsPerDay = 86'400;
-constexpr long double kAverageMonthSeconds = 2'629'746.0L;
 constexpr int kMinimumYear = -999'999'999;
 constexpr int kMaximumYear = 999'999'999;
 
@@ -812,7 +811,7 @@ Duration DurationFromMap(const Value::Map &map) {
   const long double total_months = years * 12 + months;
   const std::int64_t whole_months = static_cast<std::int64_t>(total_months);
   const long double fractional_month_seconds =
-      (total_months - whole_months) * kAverageMonthSeconds;
+      (total_months - whole_months) * temporal::kAverageMonthSeconds;
   const std::int64_t month_days =
       static_cast<std::int64_t>(fractional_month_seconds / kSecondsPerDay);
   long double seconds = fractional_month_seconds - month_days * kSecondsPerDay;
@@ -862,7 +861,7 @@ Duration ParseDuration(std::string_view text) {
   const long double total_months = component(1) * 12 + component(2);
   const std::int64_t months = static_cast<std::int64_t>(total_months);
   const long double fractional_month_seconds =
-      (total_months - months) * kAverageMonthSeconds;
+      (total_months - months) * temporal::kAverageMonthSeconds;
   const std::int64_t month_days =
       static_cast<std::int64_t>(fractional_month_seconds / kSecondsPerDay);
   long double seconds = fractional_month_seconds - month_days * kSecondsPerDay;
@@ -1740,7 +1739,7 @@ Value ScaleDuration(const Duration &duration, double factor) {
   }
   const std::int64_t months = static_cast<std::int64_t>(total_months);
   const long double fractional_month_seconds =
-      (total_months - months) * kAverageMonthSeconds;
+      (total_months - months) * temporal::kAverageMonthSeconds;
   const std::int64_t month_days =
       static_cast<std::int64_t>(fractional_month_seconds / kSecondsPerDay);
   long double seconds = fractional_month_seconds - month_days * kSecondsPerDay;
