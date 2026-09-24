@@ -22,6 +22,7 @@
 #include "graphdb/transaction.h"
 #include "graphdb/vertex_iterator.h"
 #include "runtime/builtin_function_evaluator.h"
+#include "runtime/execution_row.h"
 #include "runtime/graphdb_access.h"
 #include "value/temporal.h"
 
@@ -527,9 +528,9 @@ bool VisitLocallyCorrelatedFixedPattern(
     const ExpressionBindings &row,
     const std::vector<ast::PrecomputedExpression> &precomputed,
     ExecutionContext context,
-    const std::function<bool(const ExpressionBindings &)> &on_match) {
-  RG_CHECK(!chain.empty(), common::ErrorCode::InvalidParameter,
-           "locally correlated pattern expression is empty");
+    const std::function<bool(const ExpressionBindings &,
+                             const std::vector<RelationshipReference> &)>
+        &on_match) {
   RG_CHECK(start_pattern.properties == nullptr,
            common::ErrorCode::InvalidParameter,
            "locally correlated pattern expression does not support inline "
@@ -597,7 +598,7 @@ bool VisitLocallyCorrelatedFixedPattern(
                                               precomputed, context))) {
         return false;
       }
-      return on_match(scoped);
+      return on_match(scoped, used_relationships);
     }
 
     const auto &[relationship_ptr, next_node_ptr] = chain[chain_index];
@@ -737,7 +738,8 @@ Value EvaluateLocallyCorrelatedPatternComprehension(
   (void)VisitLocallyCorrelatedFixedPattern(
       *pattern.node_pattern, pattern.chain, expression.variable,
       expression.where_expr.get(), row, precomputed, context,
-      [&](const ExpressionBindings &bindings) {
+      [&](const ExpressionBindings &bindings,
+          const std::vector<RelationshipReference> &) {
         output.push_back(EvaluateExpression(*expression.eval_expr, bindings,
                                             precomputed, context));
         return false;
@@ -745,53 +747,370 @@ Value EvaluateLocallyCorrelatedPatternComprehension(
   return Value(std::move(output));
 }
 
+bool VisitLocallyCorrelatedPattern(
+    const ast::Pattern &pattern, std::size_t index,
+    const ast::Expression *where_expression, const ExpressionBindings &row,
+    const std::vector<ast::PrecomputedExpression> &precomputed,
+    ExecutionContext context,
+    const std::function<bool(const ExpressionBindings &)> &on_match) {
+  if (index == pattern.parts.size()) {
+    if (where_expression != nullptr &&
+        !PredicateIsTrue(
+            EvaluateExpression(*where_expression, row, precomputed, context))) {
+      return false;
+    }
+    return on_match(row);
+  }
+  const ast::PatternPart *part = pattern.parts[index].get();
+  RG_CHECK(part != nullptr && part->element != nullptr &&
+               part->element->node_pattern != nullptr,
+           common::ErrorCode::InternalError,
+           "locally correlated EXISTS pattern part is incomplete");
+  RG_CHECK(part->shortest_path_kind == ast::ShortestPathKind::kNone,
+           common::ErrorCode::InvalidParameter,
+           "locally correlated EXISTS requires a fixed pattern");
+  return VisitLocallyCorrelatedFixedPattern(
+      *part->element->node_pattern, part->element->chain, part->variable,
+      nullptr, row, precomputed, context,
+      [&](const ExpressionBindings &bindings,
+          const std::vector<RelationshipReference> &) {
+        return VisitLocallyCorrelatedPattern(pattern, index + 1,
+                                             where_expression, bindings,
+                                             precomputed, context, on_match);
+      });
+}
+
+std::unordered_map<std::string, Value> OptionalMatchNullBindings(
+    const ast::Pattern &pattern, const ExpressionBindings &row) {
+  std::unordered_map<std::string, Value> nulls;
+  const auto add_unbound = [&](const std::string &name) {
+    if (name.empty() || nulls.contains(name)) {
+      return;
+    }
+    try {
+      (void)row.Lookup(name);
+    } catch (const common::Exception &error) {
+      if (error.code() != common::ErrorCode::InvalidParameter) {
+        throw;
+      }
+      nulls.emplace(name, Value::Null());
+    }
+  };
+  for (const auto &part : pattern.parts) {
+    RG_CHECK(part != nullptr && part->element != nullptr &&
+                 part->element->node_pattern != nullptr,
+             common::ErrorCode::InternalError,
+             "locally correlated EXISTS pattern part is incomplete");
+    add_unbound(part->variable);
+    add_unbound(part->element->node_pattern->variable);
+    for (const auto &[relationship, node] : part->element->chain) {
+      RG_CHECK(relationship != nullptr && node != nullptr,
+               common::ErrorCode::InternalError,
+               "locally correlated EXISTS pattern chain is incomplete");
+      if (relationship->detail != nullptr) {
+        add_unbound(relationship->detail->variable);
+      }
+      add_unbound(node->variable);
+    }
+  }
+  return nulls;
+}
+
+bool VisitLocallyCorrelatedReadingClauses(
+    const std::vector<std::unique_ptr<ast::ReadingClause>> &clauses,
+    std::size_t index, const ExpressionBindings &row,
+    const std::vector<ast::PrecomputedExpression> &precomputed,
+    ExecutionContext context,
+    const std::function<bool(const ExpressionBindings &)> &on_row) {
+  if (index == clauses.size()) {
+    return on_row(row);
+  }
+  const ast::ReadingClause *clause = clauses[index].get();
+  RG_CHECK(clause != nullptr, common::ErrorCode::InternalError,
+           "locally correlated EXISTS reading clause is null");
+  if (clause->Is(ast::ASTNodeType::kMatch)) {
+    const auto &match = ast::CastAst<ast::Match>(*clause);
+    RG_CHECK(match.pattern != nullptr, common::ErrorCode::InternalError,
+             "locally correlated EXISTS MATCH pattern is null");
+    bool matched = false;
+    const bool stopped = VisitLocallyCorrelatedPattern(
+        *match.pattern, 0, match.where.get(), row, precomputed, context,
+        [&](const ExpressionBindings &bindings) {
+          matched = true;
+          return VisitLocallyCorrelatedReadingClauses(
+              clauses, index + 1, bindings, precomputed, context, on_row);
+        });
+    if (stopped || matched || !match.optional_match) {
+      return stopped;
+    }
+    MapScopedExpressionBindings null_row(
+        row, OptionalMatchNullBindings(*match.pattern, row));
+    return VisitLocallyCorrelatedReadingClauses(clauses, index + 1, null_row,
+                                                precomputed, context, on_row);
+  }
+  if (clause->Is(ast::ASTNodeType::kUnwind)) {
+    const auto &unwind = ast::CastAst<ast::Unwind>(*clause);
+    RG_CHECK(unwind.expression != nullptr, common::ErrorCode::InternalError,
+             "locally correlated EXISTS UNWIND expression is null");
+    Value list =
+        EvaluateExpression(*unwind.expression, row, precomputed, context);
+    if (list.IsNull()) {
+      return false;
+    }
+    RG_CHECK(list.IsList(), common::ErrorCode::InvalidParameter,
+             "UNWIND requires a list value");
+    for (const Value &item : list.AsList()) {
+      context.CheckCancelled();
+      ScopedExpressionBindings scoped(row, unwind.variable, item);
+      if (VisitLocallyCorrelatedReadingClauses(clauses, index + 1, scoped,
+                                               precomputed, context, on_row)) {
+        return true;
+      }
+    }
+    return false;
+  }
+  RG_THROW(common::ErrorCode::InvalidParameter,
+           "unsupported reading clause in locally correlated EXISTS");
+}
+
+std::uint64_t EvaluateLocallyCorrelatedPagination(
+    const ast::Expression *expression, const ExpressionBindings &row,
+    const std::vector<ast::PrecomputedExpression> &precomputed,
+    ExecutionContext context, std::string_view name) {
+  Value count = EvaluateExpression(*expression, row, precomputed, context);
+  RG_CHECK(count.IsInteger() && count.AsInteger() >= 0,
+           common::ErrorCode::InvalidParameter,
+           std::string(name) + " requires a non-negative integer");
+  return static_cast<std::uint64_t>(count.AsInteger());
+}
+
+bool VisitLocallyCorrelatedProjection(
+    const std::vector<std::unique_ptr<ast::ReadingClause>> &clauses,
+    const ast::ProjectionBody &body, const ast::Expression *where,
+    bool preserve_order, const ExpressionBindings &row,
+    const std::vector<ast::PrecomputedExpression> &precomputed,
+    ExecutionContext context,
+    const std::function<bool(const ExpressionBindings &)> &on_row) {
+  std::optional<std::uint64_t> skip;
+  std::optional<std::uint64_t> limit;
+  std::unordered_set<Value, ValueHash, ValueEqual> distinct_rows;
+  std::uint64_t seen = 0;
+  const bool sort_before_pagination = preserve_order && !body.order_by.empty();
+  struct BufferedProjection {
+    std::unordered_map<std::string, Value> aliases;
+    std::vector<Value> sort_keys;
+  };
+  std::vector<BufferedProjection> buffered;
+  struct MemoryReservation {
+    QueryMemoryTracker *tracker;
+    std::size_t bytes = 0;
+    ~MemoryReservation() {
+      if (tracker != nullptr) {
+        tracker->Release(bytes);
+      }
+    }
+    void Reserve(std::size_t amount) {
+      if (tracker != nullptr) {
+        tracker->Reserve(amount);
+        bytes += amount;
+      }
+    }
+  } reservation{context.memory_tracker};
+  const bool stopped = VisitLocallyCorrelatedReadingClauses(
+      clauses, 0, row, precomputed, context,
+      [&](const ExpressionBindings &bindings) {
+        Value::List projected;
+        std::unordered_map<std::string, Value> aliases;
+        projected.reserve(body.items.size());
+        for (const auto &item : body.items) {
+          RG_CHECK(item != nullptr && item->expression != nullptr,
+                   common::ErrorCode::InternalError,
+                   "locally correlated EXISTS projection item is null");
+          projected.push_back(EvaluateExpression(*item->expression, bindings,
+                                                 precomputed, context));
+          if (!item->alias.empty()) {
+            aliases.insert_or_assign(item->alias, projected.back());
+          } else if (item->expression->Is(ast::ASTNodeType::kVariable)) {
+            const auto &variable =
+                ast::CastAst<ast::Variable>(*item->expression);
+            aliases.insert_or_assign(variable.name, projected.back());
+          }
+        }
+        MapScopedExpressionBindings projected_row(bindings, aliases);
+        if (where != nullptr &&
+            !PredicateIsTrue(EvaluateExpression(*where, projected_row,
+                                                precomputed, context))) {
+          return false;
+        }
+        if (body.distinct) {
+          if (!distinct_rows.emplace(std::move(projected)).second) {
+            return false;
+          }
+        }
+        if (!skip.has_value()) {
+          skip = body.skip == nullptr ? 0
+                                      : EvaluateLocallyCorrelatedPagination(
+                                            body.skip.get(), projected_row,
+                                            precomputed, context, "SKIP");
+        }
+        if (!limit.has_value()) {
+          limit = body.limit == nullptr
+                      ? std::numeric_limits<std::uint64_t>::max()
+                      : EvaluateLocallyCorrelatedPagination(
+                            body.limit.get(), projected_row, precomputed,
+                            context, "LIMIT");
+        }
+        if (*limit == 0) {
+          return true;
+        }
+        if (sort_before_pagination) {
+          BufferedProjection candidate{.aliases = std::move(aliases)};
+          candidate.sort_keys.reserve(body.order_by.size());
+          for (const auto &sort_item : body.order_by) {
+            RG_CHECK(sort_item != nullptr && sort_item->expression != nullptr,
+                     common::ErrorCode::InternalError,
+                     "locally correlated EXISTS sort item is null");
+            candidate.sort_keys.push_back(EvaluateExpression(
+                *sort_item->expression, projected_row, precomputed, context));
+          }
+          std::size_t bytes = sizeof(BufferedProjection);
+          for (const auto &[name, value] : candidate.aliases) {
+            bytes += name.capacity() + EstimatedValueHeapUsage(value);
+          }
+          for (const Value &value : candidate.sort_keys) {
+            bytes += sizeof(Value) + EstimatedValueHeapUsage(value);
+          }
+          reservation.Reserve(bytes);
+          buffered.push_back(std::move(candidate));
+          return false;
+        }
+        if (seen < *skip) {
+          ++seen;
+          return false;
+        }
+        return on_row(projected_row);
+      });
+  if (!sort_before_pagination || stopped) {
+    return stopped;
+  }
+  if (buffered.empty()) {
+    return false;
+  }
+  std::stable_sort(
+      buffered.begin(), buffered.end(),
+      [&](const BufferedProjection &left, const BufferedProjection &right) {
+        for (std::size_t index = 0; index < body.order_by.size(); ++index) {
+          const bool ascending = body.order_by[index]->ascending;
+          const Value &lhs = left.sort_keys[index];
+          const Value &rhs = right.sort_keys[index];
+          if (ValueLess(lhs, rhs)) {
+            return ascending;
+          }
+          if (ValueLess(rhs, lhs)) {
+            return !ascending;
+          }
+        }
+        return false;
+      });
+  const std::uint64_t begin = std::min<std::uint64_t>(*skip, buffered.size());
+  const std::uint64_t count =
+      std::min<std::uint64_t>(*limit, buffered.size() - begin);
+  for (std::uint64_t index = begin; index < begin + count; ++index) {
+    MapScopedExpressionBindings projected_row(row, buffered[index].aliases);
+    if (on_row(projected_row)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool VisitLocallyCorrelatedSingleQuery(
+    const ast::SingleQuery &query, const ExpressionBindings &row,
+    const std::vector<ast::PrecomputedExpression> &precomputed,
+    ExecutionContext context);
+
+bool VisitLocallyCorrelatedMultiPart(
+    const ast::MultiPartQuery &query, std::size_t index,
+    const ExpressionBindings &row,
+    const std::vector<ast::PrecomputedExpression> &precomputed,
+    ExecutionContext context) {
+  if (index == query.parts.size()) {
+    RG_CHECK(query.final_single_part_query != nullptr,
+             common::ErrorCode::InternalError,
+             "locally correlated EXISTS final query part is null");
+    return VisitLocallyCorrelatedSingleQuery(*query.final_single_part_query,
+                                             row, precomputed, context);
+  }
+  const auto &part = query.parts[index];
+  RG_CHECK(part.updating_clauses.empty() && part.with_clause != nullptr &&
+               part.with_clause->body != nullptr,
+           common::ErrorCode::InternalError,
+           "locally correlated EXISTS WITH part is incomplete");
+  bool exists = false;
+  (void)VisitLocallyCorrelatedProjection(
+      part.reading_clauses, *part.with_clause->body,
+      part.with_clause->where.get(), true, row, precomputed, context,
+      [&](const ExpressionBindings &projected) {
+        exists = VisitLocallyCorrelatedMultiPart(query, index + 1, projected,
+                                                 precomputed, context);
+        return exists;
+      });
+  return exists;
+}
+
+bool VisitLocallyCorrelatedSingleQuery(
+    const ast::SingleQuery &query, const ExpressionBindings &row,
+    const std::vector<ast::PrecomputedExpression> &precomputed,
+    ExecutionContext context) {
+  if (query.Is(ast::ASTNodeType::kMultiPartQuery)) {
+    return VisitLocallyCorrelatedMultiPart(
+        ast::CastAst<ast::MultiPartQuery>(query), 0, row, precomputed, context);
+  }
+  RG_CHECK(query.Is(ast::ASTNodeType::kSinglePartQuery),
+           common::ErrorCode::InternalError,
+           "locally correlated EXISTS query has an unknown shape");
+  const auto &single = ast::CastAst<ast::SinglePartQuery>(query);
+  RG_CHECK(single.updating_clauses.empty() && single.return_clause != nullptr &&
+               single.return_clause->body != nullptr,
+           common::ErrorCode::InternalError,
+           "locally correlated EXISTS query is incomplete");
+  bool exists = false;
+  (void)VisitLocallyCorrelatedProjection(
+      single.reading_clauses, *single.return_clause->body, nullptr, true, row,
+      precomputed, context, [&](const ExpressionBindings &) {
+        exists = true;
+        return true;
+      });
+  return exists;
+}
+
 Value EvaluateLocallyCorrelatedExistentialSubquery(
     const ast::ExistentialSubquery &expression, const ExpressionBindings &row,
     const std::vector<ast::PrecomputedExpression> &precomputed,
     ExecutionContext context) {
-  const auto evaluate_part = [&](const ast::PatternPart &part,
-                                 const ast::Expression *where_expression) {
-    RG_CHECK(part.shortest_path_kind == ast::ShortestPathKind::kNone &&
-                 part.element != nullptr &&
-                 part.element->node_pattern != nullptr,
-             common::ErrorCode::InvalidParameter,
-             "locally correlated EXISTS requires a fixed pattern");
-    return VisitLocallyCorrelatedFixedPattern(
-        *part.element->node_pattern, part.element->chain, part.variable,
-        where_expression, row, precomputed, context,
-        [](const ExpressionBindings &) { return true; });
-  };
-
   if (expression.pattern != nullptr) {
-    RG_CHECK(expression.pattern->parts.size() == 1 &&
-                 expression.pattern->parts.front() != nullptr,
-             common::ErrorCode::InvalidParameter,
-             "locally correlated EXISTS supports one pattern part");
-    return Value(evaluate_part(*expression.pattern->parts.front(),
-                               expression.where_expr.get()));
+    return Value(VisitLocallyCorrelatedPattern(
+        *expression.pattern, 0, expression.where_expr.get(), row, precomputed,
+        context, [](const ExpressionBindings &) { return true; }));
   }
-
-  RG_CHECK(expression.query != nullptr && expression.query->unions.empty() &&
-               expression.query->single_query != nullptr &&
-               expression.query->single_query->Is(
-                   ast::ASTNodeType::kSinglePartQuery),
-           common::ErrorCode::InvalidParameter,
-           "locally correlated EXISTS requires a single query");
-  const auto &single =
-      ast::CastAst<ast::SinglePartQuery>(*expression.query->single_query);
-  RG_CHECK(single.updating_clauses.empty() &&
-               single.reading_clauses.size() == 1 &&
-               single.reading_clauses.front() != nullptr &&
-               single.reading_clauses.front()->Is(ast::ASTNodeType::kMatch),
-           common::ErrorCode::InvalidParameter,
-           "locally correlated EXISTS supports one MATCH clause");
-  const auto &match = ast::CastAst<ast::Match>(*single.reading_clauses.front());
-  RG_CHECK(!match.optional_match && match.pattern != nullptr &&
-               match.pattern->parts.size() == 1 &&
-               match.pattern->parts.front() != nullptr,
-           common::ErrorCode::InvalidParameter,
-           "locally correlated EXISTS supports one required pattern part");
-  return Value(evaluate_part(*match.pattern->parts.front(), match.where.get()));
+  RG_CHECK(
+      expression.query != nullptr && expression.query->single_query != nullptr,
+      common::ErrorCode::InternalError,
+      "locally correlated EXISTS query is null");
+  if (VisitLocallyCorrelatedSingleQuery(*expression.query->single_query, row,
+                                        precomputed, context)) {
+    return Value(true);
+  }
+  for (const auto &part : expression.query->unions) {
+    RG_CHECK(part != nullptr && part->query != nullptr,
+             common::ErrorCode::InternalError,
+             "locally correlated EXISTS UNION part is null");
+    if (VisitLocallyCorrelatedSingleQuery(*part->query, row, precomputed,
+                                          context)) {
+      return Value(true);
+    }
+  }
+  return Value(false);
 }
 
 Value EvaluateQuantifier(

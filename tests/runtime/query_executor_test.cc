@@ -1474,6 +1474,72 @@ TEST(QueryExecutorTest, ExecutesExistsSubqueryProjection) {
                                                    {"\"Grace\"", "false"}}));
 }
 
+TEST(QueryExecutorTest, LocallyCorrelatedExistsRespectsPagination) {
+  rg::test::GraphDBTestDatabase graph;
+  SeedDemoGraph(&graph);
+
+  const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "MATCH (p:Person) WHERE p.name = 'Ada' "
+      "RETURN EXISTS { MATCH (p)-[:KNOWS]->(m) RETURN 1 LIMIT 0 } "
+      "AS ordinary, "
+      "[x IN [p] WHERE EXISTS { MATCH (x)-[:KNOWS]->(m) "
+      "RETURN 1 LIMIT 0 } | x.name] AS limited, "
+      "[x IN [p] WHERE EXISTS { MATCH (x)-[:KNOWS]->(m) "
+      "RETURN 1 SKIP 1 } | x.name] AS skipped, "
+      "[x IN [p] WHERE EXISTS { UNWIND [x, x] AS y "
+      "RETURN DISTINCT 1 SKIP 1 } | x.name] AS deduped");
+
+  EXPECT_EQ(
+      StringRows(result),
+      (std::vector<std::vector<std::string>>{{"false", "[]", "[]", "[]"}}));
+}
+
+TEST(QueryExecutorTest, LocallyCorrelatedExistsHandlesMultipleAndNodePatterns) {
+  rg::test::GraphDBTestDatabase graph;
+  SeedDemoGraph(&graph);
+
+  const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "MATCH (p:Person) WHERE p.name = 'Ada' "
+      "RETURN [x IN [p] | EXISTS { "
+      "MATCH (x)-[:KNOWS]->(m) MATCH (m) RETURN 1 }] AS multiple, "
+      "[x IN [p] | EXISTS { MATCH (x)-[:KNOWS]->(m), "
+      "(m)-[:USES]->(l) RETURN 1 }] AS parts, "
+      "[x IN [p] | EXISTS { MATCH (x) RETURN 1 }] AS node_only, "
+      "[x IN [p] | EXISTS { MATCH (x) RETURN false }] AS false_value, "
+      "[x IN [p] | EXISTS { MATCH (x) RETURN 1 LIMIT 0 }] AS empty_node, "
+      "[x IN [p] | EXISTS { OPTIONAL MATCH (x)-[:UNKNOWN]->(m) "
+      "RETURN m }] AS optional_exists");
+
+  EXPECT_EQ(
+      StringRows(result),
+      (std::vector<std::vector<std::string>>{
+          {"[true]", "[true]", "[true]", "[true]", "[false]", "[true]"}}));
+}
+
+TEST(QueryExecutorTest, LocallyCorrelatedExistsHandlesWithAndUnion) {
+  rg::test::GraphDBTestDatabase graph;
+  SeedDemoGraph(&graph);
+
+  const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+      graph,
+      "MATCH (p:Person) WHERE p.name = 'Ada' "
+      "RETURN [x IN [p] | EXISTS { WITH x AS y "
+      "MATCH (y)-[:KNOWS]->(m) RETURN 1 }] AS with_match, "
+      "[x IN [p] | EXISTS { WITH x AS y LIMIT 0 "
+      "MATCH (y) RETURN 1 }] AS with_limit, "
+      "[x IN [p] | EXISTS { UNWIND [2, 1] AS v "
+      "WITH v ORDER BY v SKIP 1 MATCH (x) WHERE v = 2 RETURN 1 }] "
+      "AS with_order, "
+      "[x IN [p] | EXISTS { MATCH (x)-[:UNKNOWN]->(m) RETURN 1 "
+      "UNION MATCH (x) RETURN 1 }] AS union_match");
+
+  EXPECT_EQ(StringRows(result),
+            (std::vector<std::vector<std::string>>{
+                {"[true]", "[false]", "[true]", "[true]"}}));
+}
+
 TEST(QueryExecutorTest, OrdersByExistsSubquery) {
   rg::test::GraphDBTestDatabase graph;
   SeedDemoGraph(&graph);
