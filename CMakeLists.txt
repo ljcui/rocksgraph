@@ -47,6 +47,14 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Enable AddressSanitizer in debug builds and keep frame pointers for useful
+# allocation and error stack traces.
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  add_compile_options("$<$<CONFIG:Debug>:-fsanitize=address>"
+                      "$<$<CONFIG:Debug>:-fno-omit-frame-pointer>")
+  add_link_options("$<$<CONFIG:Debug>:-fsanitize=address>")
+endif()
+
 # Strip final Release binaries; static archives retain symbols needed for linking.
 add_link_options("$<$<CONFIG:Release>:-s>")
 
