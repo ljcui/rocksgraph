@@ -24,10 +24,10 @@ class IOService : private boost::asio::noncopyable {
   IOService(boost::asio::io_service& service, uint32_t port,
             uint32_t thread_num, size_t max_connections, F handler,
             size_t max_message_size = kDefaultMaxBoltMessageSize)
-      : handler_(handler),
+      : io_service_pool_(thread_num),
+        handler_(handler),
         acceptor_(service, tcp::endpoint(tcp::v4(), port),
                   /*reuse_addr*/ true),
-        io_service_pool_(thread_num),
         max_connections_(max_connections),
         max_message_size_(max_message_size),
         interval_(10),
@@ -98,11 +98,13 @@ class IOService : private boost::asio::noncopyable {
       clean_closed_conn();
     });
   }
+  // Declared first so the pool (owning the io_contexts) is destroyed last:
+  // connection sockets must outlive the io_contexts they are bound to.
+  common::IOServicePool io_service_pool_;
   std::shared_ptr<T> conn_;
   F handler_;
   std::unordered_map<int64_t, std::shared_ptr<T>> connections_;
   tcp::acceptor acceptor_;
-  common::IOServicePool io_service_pool_;
   int next_conn_id_ = 0;
   size_t max_connections_;
   size_t max_message_size_;

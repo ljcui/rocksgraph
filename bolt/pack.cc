@@ -110,7 +110,7 @@ int64_t Unpacker::Int() {
     return int64_t(mrk_.shortlen);
   }
 
-  auto end = off_ + uint32_t(n);
+  const uint64_t end = static_cast<uint64_t>(off_) + n;
   if (end > len_) {
     SetErr("IO Error");
     return 0;
@@ -133,7 +133,7 @@ int64_t Unpacker::Int() {
       SetErr("Illegal int length: " + std::to_string(i));
       return 0;
   }
-  off_ = end;
+  off_ = static_cast<uint32_t>(end);
   return i;
 }
 
@@ -180,29 +180,31 @@ uint8_t Unpacker::Pop() {
 }
 
 std::string Unpacker::Read(uint32_t n) {
-  auto start = off_;
-  auto end = off_ + n;
+  const auto start = off_;
+  // Compute in 64 bits: off_ + n can wrap a 32-bit sum and bypass the
+  // bounds check for hostile length fields (e.g. String32 0xFFFFFFFF).
+  const uint64_t end = static_cast<uint64_t>(off_) + n;
   if (end > len_) {
     SetErr("IO Error");
     return {};
   }
-  off_ = end;
+  off_ = static_cast<uint32_t>(end);
   return {buf_.data() + start, n};
 }
 
 void Unpacker::Read(uint32_t n, void *p) {
-  auto start = off_;
-  auto end = off_ + n;
+  const auto start = off_;
+  const uint64_t end = static_cast<uint64_t>(off_) + n;
   if (end > len_) {
     SetErr("IO Error");
     return;
   }
-  off_ = end;
+  off_ = static_cast<uint32_t>(end);
   memcpy(p, buf_.data() + start, n);
 }
 
 uint32_t Unpacker::ReadLen(uint32_t n) {
-  auto end = off_ + n;
+  const uint64_t end = static_cast<uint64_t>(off_) + n;
   if (end > len_) {
     SetErr("IO Error");
     return 0;
@@ -223,7 +225,7 @@ uint32_t Unpacker::ReadLen(uint32_t n) {
              std::to_string(static_cast<uint8_t>(CurrentType())));
       break;
   }
-  off_ = end;
+  off_ = static_cast<uint32_t>(end);
   return l;
 }
 

@@ -18,14 +18,25 @@ inline void socket_set_options(tcp::socket &socket) {
 template <typename T, typename F>
 class IOService : private boost::asio::noncopyable {
  public:
-  ~IOService() { io_service_pool_.Stop(); }
+  ~IOService() {
+    boost::system::error_code ec;
+    timer_.cancel(ec);
+    acceptor_.close(ec);
+    if (conn_) {
+      conn_->Close();
+    }
+    for (auto &pair : connections_) {
+      pair.second->Close();
+    }
+    io_service_pool_.Stop();
+  }
 
   IOService(boost::asio::io_service &service, int port, int thread_num,
             F handler)
-      : handler_(handler),
+      : io_service_pool_(thread_num),
+        handler_(handler),
         acceptor_(service, tcp::endpoint(tcp::v4(), port),
                   /*reuse_addr*/ true),
-        io_service_pool_(thread_num),
         interval_(10),
         timer_(service) {
     io_service_pool_.Run();
@@ -69,11 +80,13 @@ class IOService : private boost::asio::noncopyable {
     timer_.async_wait(std::bind(&IOService::clean_closed_conn, this));
   }
 
+  // Declared first so the pool (owning the io_contexts) is destroyed last:
+  // connection sockets must outlive the io_contexts they are bound to.
+  common::IOServicePool io_service_pool_;
   std::shared_ptr<T> conn_;
   F handler_;
   std::unordered_map<int64_t, std::shared_ptr<T>> connections_;
   tcp::acceptor acceptor_;
-  common::IOServicePool io_service_pool_;
   int next_conn_id_ = 0;
   boost::posix_time::seconds interval_;
   boost::asio::deadline_timer timer_;

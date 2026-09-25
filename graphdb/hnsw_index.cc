@@ -28,18 +28,26 @@ class CallbackIdSelector : public faiss::IDSelector {
   const FaissHnswIndex::Filter& filter_;
 };
 
+// IndexIDMap2 does not own its sub-index unless own_fields is set; without
+// it the whole HNSW graph leaks when the wrapper index is destroyed.
+std::unique_ptr<faiss::Index> MakeIdMappedHnswIndex(int64_t dim, int hnsw_m,
+                                                    faiss::MetricType metric) {
+  auto* id_map =
+      new faiss::IndexIDMap2(new faiss::IndexHNSWFlat(dim, hnsw_m, metric));
+  id_map->own_fields = true;
+  return std::unique_ptr<faiss::Index>(id_map);
+}
+
 }  // namespace
 
 FaissHnswIndex::FaissHnswIndex(int64_t dim,
                                meta::VectorDistanceType distance_type,
                                int hnsw_m, int ef_construction)
-    : FaissHnswIndex(
-          std::unique_ptr<faiss::Index>(
-              new faiss::IndexIDMap2(new faiss::IndexHNSWFlat(
-                  dim, hnsw_m,
-                  static_cast<faiss::MetricType>(
-                      DistanceTypeToFaissMetricType(distance_type))))),
-          distance_type, hnsw_m, ef_construction) {}
+    : FaissHnswIndex(MakeIdMappedHnswIndex(
+                         dim, hnsw_m,
+                         static_cast<faiss::MetricType>(
+                             DistanceTypeToFaissMetricType(distance_type))),
+                     distance_type, hnsw_m, ef_construction) {}
 
 FaissHnswIndex::FaissHnswIndex(std::unique_ptr<faiss::Index> index,
                                meta::VectorDistanceType distance_type,
