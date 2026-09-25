@@ -18,6 +18,7 @@ struct GraphServerOptions {
   uint32_t bolt_io_thread_num = 1;
   uint32_t bolt_worker_thread_num = 4;
   uint64_t max_bolt_connections = 10000;
+  uint64_t bolt_max_message_size = bolt::kDefaultMaxBoltMessageSize;
   GraphManagerOptions graph_manager_options;
 };
 

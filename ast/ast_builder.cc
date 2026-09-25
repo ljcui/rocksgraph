@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cerrno>
+#include <cmath>
 #include <cstdlib>
 #include <limits>
 #include <sstream>
@@ -90,6 +92,18 @@ int64_t ParseIntegerLiteral(const std::string &text) {
     RG_THROW(common::ErrorCode::ParseError, std::move(errors));
   }
   return static_cast<int64_t>(value);
+}
+
+double ParseDoubleLiteral(const std::string &text) {
+  const char *begin = text.c_str();
+  char *end = nullptr;
+  errno = 0;
+  const double value = std::strtod(begin, &end);
+  if (end != begin + text.size() || (errno == ERANGE && std::isinf(value))) {
+    std::vector<std::string> errors = {"double literal is out of range"};
+    RG_THROW(common::ErrorCode::ParseError, std::move(errors));
+  }
+  return value;
 }
 
 void AppendUtf8(uint32_t codepoint, std::string &out) {
@@ -999,8 +1013,8 @@ class ASTBuilder {
     if (ctx->oC_NumberLiteral() != nullptr) {
       if (ctx->oC_NumberLiteral()->oC_DoubleLiteral() != nullptr) {
         auto node = std::make_unique<DoubleLiteral>();
-        node->value =
-            std::stod(ctx->oC_NumberLiteral()->oC_DoubleLiteral()->getText());
+        node->value = ParseDoubleLiteral(
+            ctx->oC_NumberLiteral()->oC_DoubleLiteral()->getText());
         return node;
       }
       if (ctx->oC_NumberLiteral()->oC_IntegerLiteral() != nullptr) {

@@ -24,6 +24,9 @@ DEFINE_uint32(bolt_io_thread_num, 2, "Number of Bolt io thread");
 DEFINE_uint32(bolt_worker_thread_num, 64, "Number of Bolt worker threads");
 DEFINE_uint64(max_bolt_connections, 10000,
               "Maximum number of open Bolt connections. 0 means unlimited.");
+DEFINE_uint64(bolt_max_message_size, (uint64_t)64 * 1024 * 1024,
+              "Maximum size of a single Bolt message in bytes. Connections "
+              "sending larger messages are closed.");
 
 DEFINE_uint64(graph_block_cache, (uint64_t)8 * 1024 * 1024 * 1024,
               "Graph data block cache size, in bytes.");

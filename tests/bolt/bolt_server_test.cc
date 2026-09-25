@@ -91,6 +91,64 @@ TEST(BoltServerTest, ClosesInsteadOfDispatchingMalformedMessage) {
   server_thread.join();
 }
 
+TEST(BoltServerTest, ClosesConnectionWhenMessageExceedsLimit) {
+  boost::asio::io_service server_io;
+  boost::asio::ip::tcp::acceptor acceptor(server_io,
+                                          {boost::asio::ip::tcp::v4(), 0});
+  std::atomic<bool> handled{false};
+  auto conn = std::make_shared<bolt::BoltConnection>(
+      server_io, [&handled](bolt::BoltConnection&, bolt::BoltMsg,
+                            std::vector<std::any>) { handled.store(true); });
+  conn->set_max_message_size(1024);
+  acceptor.async_accept(conn->socket(),
+                        [conn](const boost::system::error_code& ec) {
+                          if (!ec) {
+                            conn->Start();
+                          }
+                        });
+
+  boost::asio::io_service client_io;
+  boost::asio::ip::tcp::socket client(client_io);
+  client.connect(acceptor.local_endpoint());
+  std::thread server_thread([&server_io] { server_io.run(); });
+
+  std::array<uint8_t, 20> handshake{};
+  handshake[0] = 0x60;
+  handshake[1] = 0x60;
+  handshake[2] = 0xb0;
+  handshake[3] = 0x17;
+  for (size_t i = 0; i < 4; i++) {
+    handshake[i * 4 + 6] = 4;
+    handshake[i * 4 + 7] = 4;
+  }
+  boost::asio::write(client, boost::asio::buffer(handshake));
+
+  std::array<uint8_t, 4> selected_version{};
+  boost::asio::read(client, boost::asio::buffer(selected_version));
+
+  // Two 768-byte chunks without an end-of-message marker: the accumulated
+  // message crosses the 1024-byte limit before any message is dispatched.
+  const std::vector<uint8_t> payload(768, 0x41);
+  for (int i = 0; i < 2; i++) {
+    const std::array<uint8_t, 2> chunk_size{
+        static_cast<uint8_t>(payload.size() >> 8),
+        static_cast<uint8_t>(payload.size())};
+    boost::asio::write(client, boost::asio::buffer(chunk_size));
+    boost::asio::write(client, boost::asio::buffer(payload));
+  }
+
+  for (int i = 0; i < 100 && !conn->has_closed(); i++) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  EXPECT_TRUE(conn->has_closed());
+  EXPECT_FALSE(handled.load());
+
+  boost::system::error_code ec;
+  client.close(ec);
+  server_io.stop();
+  server_thread.join();
+}
+
 TEST(BoltServerTest, StopDrainsQueuedWorkerTasks) {
   auto worker_pool =
       std::make_shared<bolt::BoltWorkerPool>(1, "bolt-test-", "bolt-test");

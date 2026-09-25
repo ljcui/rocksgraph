@@ -318,6 +318,12 @@ void BoltConnection::ReadChunkSizeDone(const boost::system::error_code& ec) {
     chunk_.resize(0);
   }
   auto old_size = chunk_.size();
+  if (old_size + chunk_size_ > max_message_size_) {
+    LOG_WARN("Bolt message size {} exceeds limit {}, close the connection",
+             old_size + chunk_size_, max_message_size_);
+    Close();
+    return;
+  }
   chunk_.resize(old_size + chunk_size_);
   if (protocol_ == Protocol::Socket) {
     async_read(socket(),

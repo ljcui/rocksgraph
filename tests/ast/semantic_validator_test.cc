@@ -331,6 +331,18 @@ TEST(SemanticValidatorTest, RejectsIntegerLiteralOutsideInt64Range) {
                     "integer literal is out of range");
 }
 
+TEST(SemanticValidatorTest, RejectsDoubleLiteralOutsideDoubleRange) {
+  ExpectParserError("RETURN 1e999 AS value",
+                    "double literal is out of range");
+  ExpectParserError("RETURN -1e999 AS value",
+                    "double literal is out of range");
+}
+
+TEST(SemanticValidatorTest, ParsesSubnormalAndUnderflowDoubles) {
+  EXPECT_NO_THROW(ast::ParseCypher("RETURN 1e-308 AS value"));
+  EXPECT_NO_THROW(ast::ParseCypher("RETURN 1e-400 AS value"));
+}
+
 TEST(SemanticValidatorTest, RejectsPatternVariableTypeConflicts) {
   ExpectSemanticError("MATCH (n) MATCH ()-[n]->() RETURN n",
                       "variable type conflict: n");

@@ -21,6 +21,7 @@ DECLARE_uint32(raft_port);
 DECLARE_uint32(bolt_io_thread_num);
 DECLARE_uint32(bolt_worker_thread_num);
 DECLARE_uint64(max_bolt_connections);
+DECLARE_uint64(bolt_max_message_size);
 
 DECLARE_uint64(graph_block_cache);
 DECLARE_uint64(raft_log_block_cache);

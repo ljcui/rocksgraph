@@ -37,7 +37,8 @@ bool GraphServer::Start() {
   if (!bolt_server_.Start(
           options_.local_node_options.bolt_port, options_.bolt_io_thread_num,
           options_.max_bolt_connections,
-          NewBoltHandler(graph_manager_.get(), worker_pool), worker_pool)) {
+          NewBoltHandler(graph_manager_.get(), worker_pool), worker_pool,
+          options_.bolt_max_message_size)) {
     raft_server_.Stop();
     graph_manager_.reset();
     return false;

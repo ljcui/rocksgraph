@@ -22,6 +22,10 @@ using boost::asio::ip::tcp;
 namespace websocket = boost::beast::websocket;
 void socket_set_options(tcp::socket& socket);
 
+// Upper bound for a single Bolt message accumulated from chunks. A client
+// that exceeds it gets the connection closed instead of unbounded buffering.
+constexpr size_t kDefaultMaxBoltMessageSize = 64 << 20;  // 64 MiB
+
 class Connection : private boost::asio::noncopyable {
  public:
   explicit Connection(boost::asio::io_service& io_service)
@@ -77,6 +81,7 @@ class BoltConnection : public Connection,
   void SetContext(std::shared_ptr<void> ctx) { context_ = std::move(ctx); }
   void* GetContext() { return context_.get(); }
   std::shared_ptr<void> GetContextShared() { return context_; }
+  void set_max_message_size(size_t size) { max_message_size_ = size; }
 
  private:
   enum class Protocol { None = 0, Socket, WebSocket };
@@ -104,6 +109,7 @@ class BoltConnection : public Connection,
   uint8_t buffer16_[16] = {0};
   uint16_t chunk_size_ = 0;
   std::vector<uint8_t> chunk_;
+  size_t max_message_size_ = kDefaultMaxBoltMessageSize;
   Unpacker unpacker_;
   std::deque<std::string> msg_queue_;
   std::vector<boost::asio::const_buffer> send_buffers_;

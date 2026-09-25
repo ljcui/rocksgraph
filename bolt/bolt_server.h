@@ -20,7 +20,8 @@ class BoltServer final {
       uint32_t port, uint32_t io_thread_num, size_t max_connections,
       const std::function<void(bolt::BoltConnection& conn, bolt::BoltMsg msg,
                                std::vector<std::any> fields)>& handler,
-      std::shared_ptr<BoltWorkerPool> worker_pool);
+      std::shared_ptr<BoltWorkerPool> worker_pool,
+      size_t max_message_size = kDefaultMaxBoltMessageSize);
   void Stop();
   bool Started() const { return started_.load(); }
   ~BoltServer() { Stop(); }

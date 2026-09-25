@@ -11,7 +11,8 @@ bool BoltServer::Start(
     uint32_t port, uint32_t io_thread_num, size_t max_connections,
     const std::function<void(bolt::BoltConnection& conn, bolt::BoltMsg msg,
                              std::vector<std::any> fields)>& handler,
-    std::shared_ptr<BoltWorkerPool> worker_pool) {
+    std::shared_ptr<BoltWorkerPool> worker_pool,
+    size_t max_message_size) {
   if (started_.load()) {
     return true;
   }
@@ -29,15 +30,15 @@ bool BoltServer::Start(
 
   std::promise<bool> promise;
   auto future = promise.get_future();
-  threads_.emplace_back([this, port, io_thread_num, max_connections, handler,
-                         &promise]() {
+  threads_.emplace_back([this, port, io_thread_num, max_connections,
+                         max_message_size, handler, &promise]() {
     bool promise_done = false;
     try {
       bolt::IOService<bolt::BoltConnection,
                       std::function<void(bolt::BoltConnection&, bolt::BoltMsg,
                                          std::vector<std::any> fields)>>
           bolt_service(listener_, port, io_thread_num, max_connections,
-                       handler);
+                       handler, max_message_size);
       boost::asio::io_service::work holder(listener_);
 
       started_.store(true);
