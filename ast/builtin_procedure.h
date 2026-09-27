@@ -28,6 +28,14 @@ enum class BuiltinProcedureKind {
   kClearGraph,
   kListGraph,
   kRaftNodeInfos,
+  kAddRaftNode,
+  kAddRaftLearnerNode,
+  kPromoteRaftLearnerNode,
+  kRemoveRaftNode,
+  kGetRaftStatus,
+  kTransferRaftLeader,
+  kDemoteRaftNode,
+  kUpdateRaftNode,
 };
 
 struct BuiltinProcedureYield {

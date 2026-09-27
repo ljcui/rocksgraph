@@ -27,6 +27,37 @@ std::string BuildGraphManagerMetaKey(GraphManagerMetadataType type) {
   return std::string(1, static_cast<char>(type));
 }
 
+void ValidateRaftNodeInfo(const meta::RaftNodeInfo &node_info,
+                          std::string_view graph_name) {
+  if (node_info.node_id() == 0) {
+    RG_THROW(common::ErrorCode::InvalidParameter,
+             "raft node_id should be greater than 0");
+  }
+  if (node_info.ip().empty()) {
+    RG_THROW(common::ErrorCode::InvalidParameter,
+             "raft node [{}] ip should not be empty", node_info.node_id());
+  }
+  if (node_info.bolt_port() <= 0) {
+    RG_THROW(common::ErrorCode::InvalidParameter,
+             "raft node [{}] bolt_port should be greater than 0",
+             node_info.node_id());
+  }
+  if (node_info.raft_poft() <= 0) {
+    RG_THROW(common::ErrorCode::InvalidParameter,
+             "raft node [{}] raft_port should be greater than 0",
+             node_info.node_id());
+  }
+  if (node_info.graph().empty()) {
+    RG_THROW(common::ErrorCode::InvalidParameter,
+             "raft node [{}] graph should not be empty", node_info.node_id());
+  }
+  if (!graph_name.empty() && node_info.graph() != graph_name) {
+    RG_THROW(common::ErrorCode::InvalidParameter,
+             "raft node [{}] graph [{}] does not match graph [{}]",
+             node_info.node_id(), node_info.graph(), graph_name);
+  }
+}
+
 void ValidateRaftNodeInfos(const meta::RaftNodeInfos &node_infos,
                            std::string_view graph_name) {
   if (node_infos.nodes().empty()) {
@@ -34,36 +65,12 @@ void ValidateRaftNodeInfos(const meta::RaftNodeInfos &node_infos,
              "raft node infos should not be empty");
   }
   for (const auto &[node_id, node_info] : node_infos.nodes()) {
-    if (node_id == 0) {
-      RG_THROW(common::ErrorCode::InvalidParameter,
-               "raft node_id should be greater than 0");
-    }
     if (node_info.node_id() != node_id) {
       RG_THROW(common::ErrorCode::InvalidParameter,
                "raft node info key [{}] does not match node_id [{}]", node_id,
                node_info.node_id());
     }
-    if (node_info.ip().empty()) {
-      RG_THROW(common::ErrorCode::InvalidParameter,
-               "raft node [{}] ip should not be empty", node_id);
-    }
-    if (node_info.bolt_port() <= 0) {
-      RG_THROW(common::ErrorCode::InvalidParameter,
-               "raft node [{}] bolt_port should be greater than 0", node_id);
-    }
-    if (node_info.raft_poft() <= 0) {
-      RG_THROW(common::ErrorCode::InvalidParameter,
-               "raft node [{}] raft_port should be greater than 0", node_id);
-    }
-    if (node_info.graph().empty()) {
-      RG_THROW(common::ErrorCode::InvalidParameter,
-               "raft node [{}] graph should not be empty", node_id);
-    }
-    if (!graph_name.empty() && node_info.graph() != graph_name) {
-      RG_THROW(common::ErrorCode::InvalidParameter,
-               "raft node [{}] graph [{}] does not match graph [{}]", node_id,
-               node_info.graph(), graph_name);
-    }
+    ValidateRaftNodeInfo(node_info, graph_name);
   }
 }
 
@@ -123,6 +130,16 @@ std::vector<eraft::Peer> BuildInitPeers(const meta::RaftNodeInfos &node_infos) {
     init_peers.emplace_back(std::move(peer));
   }
   return init_peers;
+}
+
+std::uint64_t ProposeRaftConfChange(raft::RaftDriver *driver,
+                                    raftpb::ConfChange conf_change) {
+  const auto result = driver->ProposeConfChangeAndWait(std::move(conf_change));
+  if (result.err != nullptr) {
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "raft configuration change failed: {}", result.err.String());
+  }
+  return result.index;
 }
 
 }  // namespace
@@ -402,6 +419,224 @@ meta::RaftNodeInfos GraphManager::ManagedGraphRaftNodeInfos(
   RG_CHECK(driver != nullptr, common::ErrorCode::InvalidParameter,
            "graph [{}] does not enable raft", name);
   return driver->GetNodeInfosWithLeader();
+}
+
+rg::ManagedRaftChangeResult GraphManager::AddManagedRaftNode(
+    std::string_view name, const meta::RaftNodeInfo &node_info, bool learner) {
+  auto graph = OpenGraph(std::string(name));
+  auto *driver = graph->raft_driver();
+  RG_CHECK(driver != nullptr, common::ErrorCode::InvalidParameter,
+           "graph [{}] does not enable raft", name);
+  ValidateRaftNodeInfo(node_info, name);
+  auto node_infos = driver->GetNodeInfosWithLeader();
+  RG_CHECK(!node_infos.nodes().contains(node_info.node_id()),
+           common::ErrorCode::InvalidParameter, "raft node [{}] already exists",
+           node_info.node_id());
+  for (const auto &[existing_id, existing] : node_infos.nodes()) {
+    RG_CHECK(existing.ip() != node_info.ip() ||
+                 existing.raft_poft() != node_info.raft_poft(),
+             common::ErrorCode::InvalidParameter,
+             "raft endpoint [{}:{}] is already used by node [{}]",
+             node_info.ip(), node_info.raft_poft(), existing_id);
+  }
+
+  auto conf_change = raftpb::ConfChange();
+  conf_change.set_type(learner ? raftpb::ConfChangeAddLearnerNode
+                               : raftpb::ConfChangeAddNode);
+  conf_change.set_node_id(node_info.node_id());
+  conf_change.set_context(node_info.SerializeAsString());
+  return {.node_id = node_info.node_id(),
+          .raft_index = ProposeRaftConfChange(driver, std::move(conf_change)),
+          .is_learner = learner};
+}
+
+rg::ManagedRaftChangeResult GraphManager::PromoteManagedRaftLearnerNode(
+    std::string_view name, std::uint64_t node_id) {
+  auto graph = OpenGraph(std::string(name));
+  auto *driver = graph->raft_driver();
+  RG_CHECK(driver != nullptr, common::ErrorCode::InvalidParameter,
+           "graph [{}] does not enable raft", name);
+  auto node_infos = driver->GetNodeInfosWithLeader();
+  auto iter = node_infos.nodes().find(node_id);
+  RG_CHECK(iter != node_infos.nodes().end(),
+           common::ErrorCode::InvalidParameter, "raft node [{}] does not exist",
+           node_id);
+  RG_CHECK(iter->second.is_learner(), common::ErrorCode::InvalidParameter,
+           "raft node [{}] is not a learner", node_id);
+  const auto status = driver->GetRaftStatus();
+  RG_CHECK(status.s.basicStatus_.id_ == status.s.basicStatus_.softState_.lead_,
+           common::ErrorCode::StorageEngineError,
+           "raft configuration change must be executed on the leader");
+  const auto progress = status.s.progress_.find(node_id);
+  RG_CHECK(progress != status.s.progress_.end(),
+           common::ErrorCode::InvalidParameter,
+           "raft learner [{}] has no replication progress", node_id);
+  RG_CHECK(progress->second.match_ >= status.s.basicStatus_.hardState_.commit(),
+           common::ErrorCode::InvalidParameter,
+           "raft learner [{}] has not caught up: match index {}, commit index "
+           "{}",
+           node_id, progress->second.match_,
+           status.s.basicStatus_.hardState_.commit());
+
+  auto node_info = iter->second;
+  node_info.set_is_learner(false);
+  node_info.set_is_leader(false);
+  raftpb::ConfChange conf_change;
+  conf_change.set_type(raftpb::ConfChangeAddNode);
+  conf_change.set_node_id(node_id);
+  conf_change.set_context(node_info.SerializeAsString());
+  return {.node_id = node_id,
+          .raft_index = ProposeRaftConfChange(driver, std::move(conf_change)),
+          .is_learner = false};
+}
+
+rg::ManagedRaftChangeResult GraphManager::RemoveManagedRaftNode(
+    std::string_view name, std::uint64_t node_id) {
+  auto graph = OpenGraph(std::string(name));
+  auto *driver = graph->raft_driver();
+  RG_CHECK(driver != nullptr, common::ErrorCode::InvalidParameter,
+           "graph [{}] does not enable raft", name);
+  auto node_infos = driver->GetNodeInfosWithLeader();
+  auto iter = node_infos.nodes().find(node_id);
+  RG_CHECK(iter != node_infos.nodes().end(),
+           common::ErrorCode::InvalidParameter, "raft node [{}] does not exist",
+           node_id);
+  RG_CHECK(!iter->second.is_leader(), common::ErrorCode::InvalidParameter,
+           "cannot remove the current leader; transfer leadership first");
+  if (!iter->second.is_learner()) {
+    const auto voter_count = std::ranges::count_if(
+        node_infos.nodes(),
+        [](const auto &item) { return !item.second.is_learner(); });
+    RG_CHECK(voter_count > 1, common::ErrorCode::InvalidParameter,
+             "cannot remove the last raft voter");
+  }
+
+  const bool was_learner = iter->second.is_learner();
+  raftpb::ConfChange conf_change;
+  conf_change.set_type(raftpb::ConfChangeRemoveNode);
+  conf_change.set_node_id(node_id);
+  conf_change.set_context(iter->second.SerializeAsString());
+  return {.node_id = node_id,
+          .raft_index = ProposeRaftConfChange(driver, std::move(conf_change)),
+          .is_learner = was_learner};
+}
+
+void GraphManager::TransferManagedRaftLeader(std::string_view name,
+                                             std::uint64_t node_id) {
+  auto graph = OpenGraph(std::string(name));
+  auto *driver = graph->raft_driver();
+  RG_CHECK(driver != nullptr, common::ErrorCode::InvalidParameter,
+           "graph [{}] does not enable raft", name);
+  auto err = driver->TransferLeader(node_id);
+  if (err != nullptr) {
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "raft leader transfer failed: {}", err.String());
+  }
+}
+
+rg::ManagedRaftChangeResult GraphManager::DemoteManagedRaftNode(
+    std::string_view name, std::uint64_t node_id) {
+  auto graph = OpenGraph(std::string(name));
+  auto *driver = graph->raft_driver();
+  RG_CHECK(driver != nullptr, common::ErrorCode::InvalidParameter,
+           "graph [{}] does not enable raft", name);
+  auto node_infos = driver->GetNodeInfosWithLeader();
+  auto iter = node_infos.nodes().find(node_id);
+  RG_CHECK(iter != node_infos.nodes().end(),
+           common::ErrorCode::InvalidParameter, "raft node [{}] does not exist",
+           node_id);
+  RG_CHECK(!iter->second.is_learner(), common::ErrorCode::InvalidParameter,
+           "raft node [{}] is already a learner", node_id);
+  RG_CHECK(!iter->second.is_leader(), common::ErrorCode::InvalidParameter,
+           "cannot demote the current leader; transfer leadership first");
+  const auto voter_count = std::ranges::count_if(
+      node_infos.nodes(),
+      [](const auto &item) { return !item.second.is_learner(); });
+  RG_CHECK(voter_count > 1, common::ErrorCode::InvalidParameter,
+           "cannot demote the last raft voter");
+
+  auto node_info = iter->second;
+  node_info.set_is_learner(true);
+  node_info.set_is_leader(false);
+  raftpb::ConfChange conf_change;
+  conf_change.set_type(raftpb::ConfChangeAddLearnerNode);
+  conf_change.set_node_id(node_id);
+  conf_change.set_context(node_info.SerializeAsString());
+  return {.node_id = node_id,
+          .raft_index = ProposeRaftConfChange(driver, std::move(conf_change)),
+          .is_learner = true};
+}
+
+rg::ManagedRaftChangeResult GraphManager::UpdateManagedRaftNode(
+    std::string_view name, const meta::RaftNodeInfo &node_info) {
+  auto graph = OpenGraph(std::string(name));
+  auto *driver = graph->raft_driver();
+  RG_CHECK(driver != nullptr, common::ErrorCode::InvalidParameter,
+           "graph [{}] does not enable raft", name);
+  ValidateRaftNodeInfo(node_info, name);
+  auto node_infos = driver->GetNodeInfosWithLeader();
+  auto iter = node_infos.nodes().find(node_info.node_id());
+  RG_CHECK(iter != node_infos.nodes().end(),
+           common::ErrorCode::InvalidParameter, "raft node [{}] does not exist",
+           node_info.node_id());
+  RG_CHECK(!iter->second.is_leader(), common::ErrorCode::InvalidParameter,
+           "cannot update the current leader node");
+  for (const auto &[existing_id, existing] : node_infos.nodes()) {
+    if (existing_id == node_info.node_id()) {
+      continue;
+    }
+    RG_CHECK(existing.ip() != node_info.ip() ||
+                 existing.raft_poft() != node_info.raft_poft(),
+             common::ErrorCode::InvalidParameter,
+             "raft endpoint [{}:{}] is already used by node [{}]",
+             node_info.ip(), node_info.raft_poft(), existing_id);
+  }
+
+  auto updated = node_info;
+  updated.set_is_learner(iter->second.is_learner());
+  updated.set_is_leader(false);
+  raftpb::ConfChange conf_change;
+  conf_change.set_type(raftpb::ConfChangeUpdateNode);
+  conf_change.set_node_id(updated.node_id());
+  conf_change.set_context(updated.SerializeAsString());
+  return {.node_id = updated.node_id(),
+          .raft_index = ProposeRaftConfChange(driver, std::move(conf_change)),
+          .is_learner = updated.is_learner()};
+}
+
+rg::ManagedRaftStatus GraphManager::ManagedGraphRaftStatus(
+    std::string_view name) {
+  auto graph = OpenGraph(std::string(name));
+  auto *driver = graph->raft_driver();
+  RG_CHECK(driver != nullptr, common::ErrorCode::InvalidParameter,
+           "graph [{}] does not enable raft", name);
+  const auto status = driver->GetRaftStatus();
+  rg::ManagedRaftStatus result;
+  result.local_node_id = status.s.basicStatus_.id_;
+  result.leader_id = status.s.basicStatus_.softState_.lead_;
+  result.term = status.s.basicStatus_.hardState_.term();
+  result.commit_index = status.s.basicStatus_.hardState_.commit();
+  result.applied_index = status.s.basicStatus_.applied_;
+  result.first_log = status.first_log;
+  result.last_log = status.last_log;
+  result.raft_state =
+      eraft::ToString(status.s.basicStatus_.softState_.raftState_);
+  result.nodes.reserve(status.nodes.size());
+  for (const auto &node : status.nodes) {
+    result.nodes.push_back({.node_id = node.node_info.node_id(),
+                            .ip = node.node_info.ip(),
+                            .bolt_port = node.node_info.bolt_port(),
+                            .raft_port = node.node_info.raft_poft(),
+                            .is_leader = node.node_info.is_leader(),
+                            .is_learner = node.node_info.is_learner(),
+                            .reachable = node.reachable,
+                            .match_index = node.match_index,
+                            .next_index = node.next_index});
+  }
+  std::ranges::sort(
+      result.nodes, {},
+      [](const rg::ManagedRaftNodeStatus &node) { return node.node_id; });
+  return result;
 }
 
 }  // namespace server

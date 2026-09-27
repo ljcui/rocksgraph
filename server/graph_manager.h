@@ -71,6 +71,21 @@ class GraphManager final : public rg::GraphManagement {
       const override;
   [[nodiscard]] meta::RaftNodeInfos ManagedGraphRaftNodeInfos(
       std::string_view name) override;
+  rg::ManagedRaftChangeResult AddManagedRaftNode(
+      std::string_view name, const meta::RaftNodeInfo& node_info,
+      bool learner) override;
+  rg::ManagedRaftChangeResult PromoteManagedRaftLearnerNode(
+      std::string_view name, std::uint64_t node_id) override;
+  rg::ManagedRaftChangeResult RemoveManagedRaftNode(
+      std::string_view name, std::uint64_t node_id) override;
+  void TransferManagedRaftLeader(std::string_view name,
+                                 std::uint64_t node_id) override;
+  rg::ManagedRaftChangeResult DemoteManagedRaftNode(
+      std::string_view name, std::uint64_t node_id) override;
+  rg::ManagedRaftChangeResult UpdateManagedRaftNode(
+      std::string_view name, const meta::RaftNodeInfo& node_info) override;
+  [[nodiscard]] rg::ManagedRaftStatus ManagedGraphRaftStatus(
+      std::string_view name) override;
 
  private:
   graphdb::GraphDB* CreateGraphInternal(const std::string& name,

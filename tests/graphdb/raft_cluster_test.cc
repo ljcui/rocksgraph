@@ -882,6 +882,15 @@ rg::Value RaftMembersValue(const meta::RaftNodeInfos& node_infos) {
   return rg::Value(std::move(members));
 }
 
+rg::Value RaftMemberValue(const meta::RaftNodeInfo& node_info) {
+  return rg::Value(rg::Value::Map{
+      {"node_id", Value(static_cast<std::int64_t>(node_info.node_id()))},
+      {"ip", Value(node_info.ip())},
+      {"bolt_port", Value(node_info.bolt_port())},
+      {"raft_port", Value(node_info.raft_poft())},
+  });
+}
+
 std::vector<std::string> CollectCypherStringColumn(GraphDB* graph,
                                                    const std::string& cypher) {
   auto txn = graph->BeginTransaction();
@@ -1669,6 +1678,133 @@ TEST(RaftCluster, createAndDeleteRaftGraphThroughSystemProcedures) {
       graph_manager, "CALL dbms.graph.deleteGraph($graph_name)",
       {{"graph_name", Value(kLocalGraphName)}}));
   EXPECT_THROW_CODE(graph_manager->OpenGraph(kLocalGraphName), NoSuchGraph);
+}
+
+TEST(RaftCluster, manageRaftMembershipThroughSystemProcedures) {
+  TestServerCluster cluster("testdb_raft_cluster");
+  ASSERT_NO_THROW(cluster.Start());
+
+  auto leader_index = cluster.WaitForLeaderIndex(std::chrono::seconds(15));
+  ASSERT_TRUE(leader_index.has_value()) << cluster.StatusSummary();
+  const size_t target_index = FirstFollowerIndex(cluster, *leader_index);
+  const uint64_t target_node_id = cluster.node_id(target_index);
+  auto* leader = cluster.server(*leader_index);
+  ASSERT_NE(leader, nullptr);
+  auto* management = leader->graph_manager();
+
+  auto status = ExecuteSystemCypherAndCommit(
+      management,
+      "CALL dbms.graph.getRaftStatus($graph_name) "
+      "YIELD node_id, leader_id, term, raft_state "
+      "RETURN node_id, leader_id, term, raft_state ORDER BY node_id",
+      {{"graph_name", Value(kGraphName)}});
+  ASSERT_EQ(status.rows.size(), cluster.size());
+  for (const auto& row : status.rows) {
+    ASSERT_EQ(row.size(), 4U);
+    EXPECT_EQ(row[1],
+              Value(static_cast<std::int64_t>(cluster.node_id(*leader_index))));
+    EXPECT_TRUE(row[2].IsInteger());
+    EXPECT_EQ(row[3], Value("StateLeader"));
+  }
+
+  auto demoted = ExecuteSystemCypherAndCommit(
+      management,
+      "CALL dbms.graph.demoteRaftNode($graph_name, $node_id) "
+      "YIELD node_id, role, raft_index RETURN node_id, role, raft_index",
+      {{"graph_name", Value(kGraphName)},
+       {"node_id", Value(static_cast<std::int64_t>(target_node_id))}});
+  ASSERT_EQ(demoted.rows.size(), 1U);
+  ASSERT_EQ(demoted.rows.front().size(), 3U);
+  EXPECT_EQ(demoted.rows.front()[0],
+            Value(static_cast<std::int64_t>(target_node_id)));
+  EXPECT_EQ(demoted.rows.front()[1], Value("learner"));
+  EXPECT_GT(demoted.rows.front()[2].AsInteger(), 0);
+  ASSERT_TRUE(WaitUntil(
+      [management, target_node_id]() {
+        auto infos = management->ManagedGraphRaftNodeInfos(kGraphName);
+        auto iter = infos.nodes().find(target_node_id);
+        return iter != infos.nodes().end() && iter->second.is_learner();
+      },
+      std::chrono::seconds(15)));
+
+  ASSERT_TRUE(WaitUntil(
+      [management, target_node_id]() {
+        auto raft_status = management->ManagedGraphRaftStatus(kGraphName);
+        auto iter = std::ranges::find(raft_status.nodes, target_node_id,
+                                      &rg::ManagedRaftNodeStatus::node_id);
+        return iter != raft_status.nodes.end() &&
+               iter->match_index >= raft_status.commit_index;
+      },
+      std::chrono::seconds(15)));
+  ASSERT_NO_THROW(ExecuteSystemCypherAndCommit(
+      management,
+      "CALL dbms.graph.promoteRaftLearnerNode($graph_name, $node_id)",
+      {{"graph_name", Value(kGraphName)},
+       {"node_id", Value(static_cast<std::int64_t>(target_node_id))}}));
+  ASSERT_TRUE(WaitUntil(
+      [management, target_node_id]() {
+        auto infos = management->ManagedGraphRaftNodeInfos(kGraphName);
+        auto iter = infos.nodes().find(target_node_id);
+        return iter != infos.nodes().end() && !iter->second.is_learner();
+      },
+      std::chrono::seconds(15)));
+
+  auto target_info =
+      cluster.NodeInfosForGraph(kGraphName).nodes().at(target_node_id);
+  ASSERT_NO_THROW(ExecuteSystemCypherAndCommit(
+      management, "CALL dbms.graph.updateRaftNode($graph_name, $member)",
+      {{"graph_name", Value(kGraphName)},
+       {"member", RaftMemberValue(target_info)}}));
+
+  ASSERT_NO_THROW(ExecuteSystemCypherAndCommit(
+      management, "CALL dbms.graph.transferRaftLeader($graph_name, $node_id)",
+      {{"graph_name", Value(kGraphName)},
+       {"node_id", Value(static_cast<std::int64_t>(target_node_id))}}));
+  auto transferred_leader =
+      cluster.WaitForLeaderIndex(std::chrono::seconds(20));
+  ASSERT_TRUE(transferred_leader.has_value()) << cluster.StatusSummary();
+  ASSERT_EQ(*transferred_leader, target_index);
+
+  auto* new_management = cluster.server(target_index)->graph_manager();
+  const uint64_t removed_node_id = cluster.node_id(*leader_index);
+  auto removed_info =
+      cluster.NodeInfosForGraph(kGraphName).nodes().at(removed_node_id);
+  ASSERT_NO_THROW(ExecuteSystemCypherAndCommit(
+      new_management, "CALL dbms.graph.removeRaftNode($graph_name, $node_id)",
+      {{"graph_name", Value(kGraphName)},
+       {"node_id", Value(static_cast<std::int64_t>(removed_node_id))}}));
+  ASSERT_TRUE(WaitUntil(
+      [new_management, removed_node_id]() {
+        return !new_management->ManagedGraphRaftNodeInfos(kGraphName)
+                    .nodes()
+                    .contains(removed_node_id);
+      },
+      std::chrono::seconds(15)));
+
+  ASSERT_NO_THROW(ExecuteSystemCypherAndCommit(
+      new_management,
+      "CALL dbms.graph.addRaftLearnerNode($graph_name, $member)",
+      {{"graph_name", Value(kGraphName)},
+       {"member", RaftMemberValue(removed_info)}}));
+  ASSERT_TRUE(WaitUntil(
+      [new_management, removed_node_id]() {
+        auto infos = new_management->ManagedGraphRaftNodeInfos(kGraphName);
+        auto iter = infos.nodes().find(removed_node_id);
+        return iter != infos.nodes().end() && iter->second.is_learner();
+      },
+      std::chrono::seconds(15)));
+
+  auto direct_voter = removed_info;
+  direct_voter.set_node_id(100);
+  direct_voter.set_bolt_port(AllocateFreePort());
+  direct_voter.set_raft_poft(AllocateFreePort());
+  ASSERT_NO_THROW(ExecuteSystemCypherAndCommit(
+      new_management, "CALL dbms.graph.addRaftNode($graph_name, $member)",
+      {{"graph_name", Value(kGraphName)},
+       {"member", RaftMemberValue(direct_voter)}}));
+  ASSERT_NO_THROW(ExecuteSystemCypherAndCommit(
+      new_management, "CALL dbms.graph.removeRaftNode($graph_name, $node_id)",
+      {{"graph_name", Value(kGraphName)}, {"node_id", Value(100)}}));
 }
 
 TEST(RaftCluster, clearRaftGraphUpdatesOnlyLocalServer) {

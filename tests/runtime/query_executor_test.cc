@@ -951,18 +951,31 @@ TEST(QueryExecutorTest, ExecutesDbmsProcedures) {
                                  {"db.labels", "READ"},
                                  {"db.propertyKeys", "READ"},
                                  {"db.relationshipTypes", "READ"},
+                                 {"dbms.graph.addRaftLearnerNode", "WRITE"},
+                                 {"dbms.graph.addRaftNode", "WRITE"},
                                  {"dbms.graph.clearGraph", "WRITE"},
                                  {"dbms.graph.createGraph", "WRITE"},
                                  {"dbms.graph.createGraphWithRaft", "WRITE"},
                                  {"dbms.graph.deleteGraph", "WRITE"},
+                                 {"dbms.graph.demoteRaftNode", "WRITE"},
                                  {"dbms.graph.getRaftNodeInfos", "READ"},
+                                 {"dbms.graph.getRaftStatus", "READ"},
                                  {"dbms.graph.listGraph", "READ"},
+                                 {"dbms.graph.promoteRaftLearnerNode", "WRITE"},
+                                 {"dbms.graph.removeRaftNode", "WRITE"},
+                                 {"dbms.graph.transferRaftLeader", "WRITE"},
+                                 {"dbms.graph.updateRaftNode", "WRITE"},
                                  {"dbms.procedures", "READ"}}));
-  EXPECT_EQ(system_procedures,
-            (std::vector<std::string>{
-                "dbms.graph.clearGraph", "dbms.graph.createGraph",
-                "dbms.graph.createGraphWithRaft", "dbms.graph.deleteGraph",
-                "dbms.graph.getRaftNodeInfos", "dbms.graph.listGraph"}));
+  EXPECT_EQ(
+      system_procedures,
+      (std::vector<std::string>{
+          "dbms.graph.addRaftLearnerNode", "dbms.graph.addRaftNode",
+          "dbms.graph.clearGraph", "dbms.graph.createGraph",
+          "dbms.graph.createGraphWithRaft", "dbms.graph.deleteGraph",
+          "dbms.graph.demoteRaftNode", "dbms.graph.getRaftNodeInfos",
+          "dbms.graph.getRaftStatus", "dbms.graph.listGraph",
+          "dbms.graph.promoteRaftLearnerNode", "dbms.graph.removeRaftNode",
+          "dbms.graph.transferRaftLeader", "dbms.graph.updateRaftNode"}));
 }
 
 TEST(QueryExecutorTest, ExecutesIndexProceduresThroughCypher) {

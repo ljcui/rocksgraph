@@ -217,6 +217,15 @@ struct RaftStatus {
   eraft::Status s;
   uint64_t first_log = 0;
   uint64_t last_log = 0;
+
+  struct NodeStatus {
+    meta::RaftNodeInfo node_info;
+    bool reachable = false;
+    uint64_t match_index = 0;
+    uint64_t next_index = 0;
+  };
+
+  std::vector<NodeStatus> nodes;
 };
 
 struct RaftConfig {
@@ -263,10 +272,12 @@ class RaftDriver {
   void Step(raftpb::Message msg);
   PromiseContext::ApplyResult ProposeWriteBatch(meta::WriteBatchKind kind,
                                                 const rocksdb::WriteBatch& wb);
+  PromiseContext::ApplyResult ProposeConfChangeAndWait(raftpb::ConfChange cc);
   PromiseContext::ApplyResult ProposeRaftRequestAndWait(
       meta::RaftRequest request);
   std::shared_ptr<PromiseContext> ProposeRaftRequest(meta::RaftRequest request);
   std::shared_ptr<PromiseContext> ProposeConfChange(raftpb::ConfChange& cc);
+  eraft::Error TransferLeader(uint64_t node_id);
   meta::RaftNodeInfos GetNodeInfosWithLeader();
   RaftStatus GetRaftStatus();
 
@@ -304,6 +315,7 @@ class RaftDriver {
   std::unordered_map<uint64_t, std::shared_ptr<TransportClient>> node_clients_;
   Generator id_generator_;
   std::mutex promise_mutex_;
+  std::mutex confchange_mutex_;
   std::unordered_map<uint64_t, std::shared_ptr<PromiseContext>>
       pending_promise_;
   uint64_t pending_proposals_ = 0;

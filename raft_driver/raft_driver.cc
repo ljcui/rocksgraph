@@ -914,6 +914,28 @@ std::shared_ptr<PromiseContext> RaftDriver::ProposeConfChange(
   return Propose(cc.id(), std::move(msg), proposal_bytes);
 }
 
+PromiseContext::ApplyResult RaftDriver::ProposeConfChangeAndWait(
+    raftpb::ConfChange cc) {
+  std::lock_guard<std::mutex> guard(confchange_mutex_);
+  auto context = ProposeConfChange(cc);
+  auto future = context->applied.get_future();
+  auto timeout = std::chrono::milliseconds(raft_config_.proposal_timeout);
+  if (future.wait_for(timeout) == std::future_status::ready) {
+    return future.get();
+  }
+  if (future.wait_for(std::chrono::milliseconds(0)) ==
+      std::future_status::ready) {
+    return future.get();
+  }
+  auto err =
+      eraft::Error(fmt::format("proposal {} timed out after {} ms", context->id,
+                               raft_config_.proposal_timeout));
+  if (RemovePendingPromise(context->id, context)) {
+    context->SetError(err);
+  }
+  return PromiseContext::ApplyResult{std::move(err), 0};
+}
+
 PromiseContext::ApplyResult RaftDriver::ProposeWriteBatch(
     meta::WriteBatchKind kind, const rocksdb::WriteBatch& wb) {
   meta::RaftRequest request;
@@ -980,6 +1002,41 @@ meta::RaftNodeInfos RaftDriver::GetNodeInfosWithLeader() {
   return ret;
 }
 
+eraft::Error RaftDriver::TransferLeader(uint64_t node_id) {
+  std::promise<eraft::Error> promise;
+  auto future = promise.get_future();
+  auto alive = callback_alive_;
+  manager_->raft_service(shard_id_).post([this, alive, node_id, &promise]() {
+    if (!alive->load() || stopped_.load()) {
+      promise.set_value(eraft::Error("raft driver stopped"));
+      return;
+    }
+    auto status = rn_->GetStatus();
+    if (status.basicStatus_.softState_.lead_ != node_id_) {
+      promise.set_value(eraft::Error("not leader"));
+      return;
+    }
+    if (node_id == node_id_) {
+      promise.set_value(eraft::Error("target node is already leader"));
+      return;
+    }
+    auto progress = status.progress_.find(node_id);
+    if (progress == status.progress_.end()) {
+      promise.set_value(eraft::Error("target node is not a raft member"));
+      return;
+    }
+    if (progress->second.isLearner_) {
+      promise.set_value(
+          eraft::Error("target node is a learner and cannot become leader"));
+      return;
+    }
+    rn_->TransferLeader(node_id);
+    CheckReady();
+    promise.set_value(nullptr);
+  });
+  return future.get();
+}
+
 RaftStatus RaftDriver::GetRaftStatus() {
   std::promise<RaftStatus> promise;
   auto future = promise.get_future();
@@ -993,6 +1050,26 @@ RaftStatus RaftDriver::GetRaftStatus() {
     rs.s = rn_->GetStatus();
     rs.first_log = storage_->FirstIndex().first - 1;
     rs.last_log = storage_->LastIndex().first;
+    const auto leader = rs.s.basicStatus_.softState_.lead_;
+    std::shared_lock<std::shared_mutex> lock(nodes_mutex_);
+    rs.nodes.reserve(node_infos_.nodes_size());
+    for (const auto& [node_id, node_info] : node_infos_.nodes()) {
+      RaftStatus::NodeStatus node_status;
+      node_status.node_info = node_info;
+      node_status.node_info.set_is_leader(node_id == leader);
+      node_status.reachable = node_id == node_id_;
+      auto client = node_clients_.find(node_id);
+      if (client != node_clients_.end() && client->second != nullptr) {
+        node_status.reachable =
+            node_status.reachable || client->second->connected();
+      }
+      auto progress = rs.s.progress_.find(node_id);
+      if (progress != rs.s.progress_.end()) {
+        node_status.match_index = progress->second.match_;
+        node_status.next_index = progress->second.next_;
+      }
+      rs.nodes.emplace_back(std::move(node_status));
+    }
     promise.set_value(rs);
   });
   return future.get();
@@ -1160,7 +1237,9 @@ void RaftDriver::Apply(const std::vector<raftpb::Entry>& entries) {
         }
         auto confstate = rn_->ApplyConfChange(raftpb::ConfChangeWrap(cc));
         meta::RaftNodeInfo node_info;
-        node_info.ParseFromString(cc.context());
+        if (!node_info.ParseFromString(cc.context())) {
+          LOG_FATAL("failed to parse raft node info from ConfChange");
+        }
         switch (cc.type()) {
           case raftpb::ConfChangeType::ConfChangeAddLearnerNode:
           case raftpb::ConfChangeType::ConfChangeAddNode: {
@@ -1170,12 +1249,19 @@ void RaftDriver::Apply(const std::vector<raftpb::Entry>& entries) {
               LOG_INFO("add learner: {}", node_info.ShortDebugString());
             }
             std::unique_lock<std::shared_mutex> lock(nodes_mutex_);
-            if (!node_infos_.nodes().count(node_info.node_id())) {
-              node_infos_.mutable_nodes()->insert(
-                  {node_info.node_id(), node_info});
+            auto* nodes = node_infos_.mutable_nodes();
+            auto existing = nodes->find(node_info.node_id());
+            const bool learner =
+                cc.type() == raftpb::ConfChangeType::ConfChangeAddLearnerNode;
+            node_info.set_is_learner(learner);
+            node_info.set_is_leader(false);
+            if (existing == nodes->end()) {
+              nodes->insert({node_info.node_id(), node_info});
               auto client = manager_->AcquireClient(node_info.ip(),
                                                     node_info.raft_poft());
               node_clients_.emplace(node_info.node_id(), std::move(client));
+            } else if (existing->second.is_learner() != learner) {
+              existing->second = node_info;
             } else {
               LOG_ERROR("node id {} has already existed", node_info.node_id());
             }
@@ -1194,6 +1280,19 @@ void RaftDriver::Apply(const std::vector<raftpb::Entry>& entries) {
           }
           case raftpb::ConfChangeType::ConfChangeUpdateNode: {
             LOG_INFO("update node: {}", cc.ShortDebugString());
+            std::unique_lock<std::shared_mutex> lock(nodes_mutex_);
+            auto* nodes = node_infos_.mutable_nodes();
+            auto existing = nodes->find(node_info.node_id());
+            if (existing == nodes->end()) {
+              LOG_ERROR("no such node id {}", node_info.node_id());
+              break;
+            }
+            node_info.set_is_learner(existing->second.is_learner());
+            node_info.set_is_leader(false);
+            auto client =
+                manager_->AcquireClient(node_info.ip(), node_info.raft_poft());
+            node_clients_[node_info.node_id()] = std::move(client);
+            existing->second = node_info;
             break;
           }
           default: {

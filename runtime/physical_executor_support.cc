@@ -632,6 +632,59 @@ meta::RaftNodeInfos ParseRaftMembers(const Value &value,
   return node_infos;
 }
 
+meta::RaftNodeInfo ParseRaftMember(const Value &value,
+                                   std::string_view graph_name,
+                                   const ast::BuiltinProcedure &procedure,
+                                   std::string_view argument) {
+  const Value::Map &fields = RequireProcedureMap(value, procedure, argument);
+  const std::int64_t node_id = RequireProcedureInteger(
+      RequireProcedureMapField(fields, "node_id", procedure, argument),
+      procedure, std::string(argument) + ".node_id");
+  RG_CHECK(
+      node_id > 0, common::ErrorCode::InvalidParameter,
+      ProcedureArgumentName(procedure, std::string(argument) + ".node_id") +
+          " must be positive");
+  const std::string &ip = RequireProcedureString(
+      RequireProcedureMapField(fields, "ip", procedure, argument), procedure,
+      std::string(argument) + ".ip");
+  RG_CHECK(!ip.empty(), common::ErrorCode::InvalidParameter,
+           ProcedureArgumentName(procedure, std::string(argument) + ".ip") +
+               " must not be empty");
+  const std::int32_t bolt_port = RequireProcedurePositiveInt32(
+      RequireProcedureMapField(fields, "bolt_port", procedure, argument),
+      procedure, std::string(argument) + ".bolt_port");
+  const std::int32_t raft_port = RequireProcedurePositiveInt32(
+      RequireProcedureMapField(fields, "raft_port", procedure, argument),
+      procedure, std::string(argument) + ".raft_port");
+  if (const Value *member_graph = FindProcedureOption(fields, "graph");
+      member_graph != nullptr) {
+    RG_CHECK(
+        RequireProcedureString(*member_graph, procedure,
+                               std::string(argument) + ".graph") == graph_name,
+        common::ErrorCode::InvalidParameter,
+        ProcedureArgumentName(procedure, std::string(argument) + ".graph") +
+            " must equal graph_name");
+  }
+
+  meta::RaftNodeInfo node_info;
+  node_info.set_node_id(static_cast<std::uint64_t>(node_id));
+  node_info.set_ip(ip);
+  node_info.set_bolt_port(bolt_port);
+  node_info.set_raft_poft(raft_port);
+  node_info.set_graph(std::string(graph_name));
+  return node_info;
+}
+
+std::uint64_t RequireRaftNodeId(const Value &value,
+                                const ast::BuiltinProcedure &procedure,
+                                std::string_view argument) {
+  const auto node_id = RequireProcedureInteger(value, procedure, argument);
+  RG_CHECK(node_id > 0, common::ErrorCode::InvalidParameter,
+           ProcedureArgumentName(procedure, argument) +
+               " must be greater than zero");
+  return static_cast<std::uint64_t>(node_id);
+}
+
 GraphManagement &RequireGraphManagement(
     RuntimeState *state, const ast::BuiltinProcedure &procedure) {
   RG_CHECK(state->system_database, common::ErrorCode::InvalidParameter,
@@ -643,6 +696,20 @@ GraphManagement &RequireGraphManagement(
 
 ProcedureRecord NodeRecord(graphdb::Vertex vertex) {
   return {{"node", Value(MaterializeGraphDBVertex(std::move(vertex)))}};
+}
+
+ProcedureRecord RaftChangeRecord(const ManagedRaftChangeResult &result) {
+  RG_CHECK(result.node_id <= static_cast<std::uint64_t>(
+                                 std::numeric_limits<std::int64_t>::max()),
+           common::ErrorCode::InvalidParameter,
+           "Raft node id cannot be represented as a Cypher integer");
+  RG_CHECK(result.raft_index <= static_cast<std::uint64_t>(
+                                    std::numeric_limits<std::int64_t>::max()),
+           common::ErrorCode::InvalidParameter,
+           "Raft index cannot be represented as a Cypher integer");
+  return {{"node_id", Value(static_cast<std::int64_t>(result.node_id))},
+          {"role", Value(result.is_learner ? "learner" : "voter")},
+          {"raft_index", Value(static_cast<std::int64_t>(result.raft_index))}};
 }
 
 }  // namespace
@@ -737,7 +804,88 @@ std::vector<ProcedureRecord> ExecuteProcedure(const ProcedureCallOp &data,
                {"ip", Value(node_info.ip())},
                {"bolt_port", Value(node_info.bolt_port())},
                {"raft_port", Value(node_info.raft_poft())},
-               {"is_leader", Value(node_info.is_leader())}});
+               {"is_leader", Value(node_info.is_leader())},
+               {"is_learner", Value(node_info.is_learner())}});
+        }
+        return records;
+      }
+      case ast::BuiltinProcedureKind::kAddRaftNode:
+      case ast::BuiltinProcedureKind::kAddRaftLearnerNode: {
+        const auto &graph_name =
+            RequireProcedureString(arguments[0], *procedure, "graph_name");
+        auto node_info =
+            ParseRaftMember(arguments[1], graph_name, *procedure, "member");
+        auto result = management.AddManagedRaftNode(
+            graph_name, node_info,
+            procedure->kind == ast::BuiltinProcedureKind::kAddRaftLearnerNode);
+        return {RaftChangeRecord(result)};
+      }
+      case ast::BuiltinProcedureKind::kPromoteRaftLearnerNode: {
+        auto result = management.PromoteManagedRaftLearnerNode(
+            RequireProcedureString(arguments[0], *procedure, "graph_name"),
+            RequireRaftNodeId(arguments[1], *procedure, "node_id"));
+        return {RaftChangeRecord(result)};
+      }
+      case ast::BuiltinProcedureKind::kRemoveRaftNode: {
+        auto result = management.RemoveManagedRaftNode(
+            RequireProcedureString(arguments[0], *procedure, "graph_name"),
+            RequireRaftNodeId(arguments[1], *procedure, "node_id"));
+        return {RaftChangeRecord(result)};
+      }
+      case ast::BuiltinProcedureKind::kTransferRaftLeader:
+        management.TransferManagedRaftLeader(
+            RequireProcedureString(arguments[0], *procedure, "graph_name"),
+            RequireRaftNodeId(arguments[1], *procedure, "node_id"));
+        return {ProcedureRecord{}};
+      case ast::BuiltinProcedureKind::kDemoteRaftNode: {
+        auto result = management.DemoteManagedRaftNode(
+            RequireProcedureString(arguments[0], *procedure, "graph_name"),
+            RequireRaftNodeId(arguments[1], *procedure, "node_id"));
+        return {RaftChangeRecord(result)};
+      }
+      case ast::BuiltinProcedureKind::kUpdateRaftNode: {
+        const auto &graph_name =
+            RequireProcedureString(arguments[0], *procedure, "graph_name");
+        auto result = management.UpdateManagedRaftNode(
+            graph_name,
+            ParseRaftMember(arguments[1], graph_name, *procedure, "member"));
+        return {RaftChangeRecord(result)};
+      }
+      case ast::BuiltinProcedureKind::kGetRaftStatus: {
+        const auto status = management.ManagedGraphRaftStatus(
+            RequireProcedureString(arguments[0], *procedure, "graph_name"));
+        auto integer = [&procedure](std::uint64_t value,
+                                    std::string_view field) -> Value {
+          RG_CHECK(value <= static_cast<std::uint64_t>(
+                                std::numeric_limits<std::int64_t>::max()),
+                   common::ErrorCode::InvalidParameter,
+                   ProcedureArgumentName(*procedure, field) +
+                       " cannot be represented as a Cypher integer");
+          return Value(static_cast<std::int64_t>(value));
+        };
+        std::vector<ProcedureRecord> records;
+        records.reserve(status.nodes.size());
+        for (const auto &node : status.nodes) {
+          records.push_back(
+              {{"node_id", integer(node.node_id, "node_id")},
+               {"ip", Value(node.ip)},
+               {"bolt_port", Value(node.bolt_port)},
+               {"raft_port", Value(node.raft_port)},
+               {"is_leader", Value(node.is_leader)},
+               {"is_learner", Value(node.is_learner)},
+               {"reachable", Value(node.reachable)},
+               {"match_index", integer(node.match_index, "match_index")},
+               {"next_index", integer(node.next_index, "next_index")},
+               {"local_node_id",
+                integer(status.local_node_id, "local_node_id")},
+               {"leader_id", integer(status.leader_id, "leader_id")},
+               {"term", integer(status.term, "term")},
+               {"commit_index", integer(status.commit_index, "commit_index")},
+               {"applied_index",
+                integer(status.applied_index, "applied_index")},
+               {"first_log", integer(status.first_log, "first_log")},
+               {"last_log", integer(status.last_log, "last_log")},
+               {"raft_state", Value(status.raft_state)}});
         }
         return records;
       }
@@ -900,6 +1048,13 @@ std::vector<ProcedureRecord> ExecuteProcedure(const ProcedureCallOp &data,
     case ast::BuiltinProcedureKind::kDeleteGraph:
     case ast::BuiltinProcedureKind::kClearGraph:
     case ast::BuiltinProcedureKind::kListGraph:
+    case ast::BuiltinProcedureKind::kAddRaftNode:
+    case ast::BuiltinProcedureKind::kAddRaftLearnerNode:
+    case ast::BuiltinProcedureKind::kPromoteRaftLearnerNode:
+    case ast::BuiltinProcedureKind::kRemoveRaftNode:
+    case ast::BuiltinProcedureKind::kTransferRaftLeader:
+    case ast::BuiltinProcedureKind::kDemoteRaftNode:
+    case ast::BuiltinProcedureKind::kUpdateRaftNode:
       (void)RequireGraphManagement(state, *procedure);
       RG_THROW(common::ErrorCode::InternalError,
                "system graph-management procedure reached graph execution");
@@ -935,7 +1090,59 @@ std::vector<ProcedureRecord> ExecuteProcedure(const ProcedureCallOp &data,
              {"ip", Value(node_info.ip())},
              {"bolt_port", Value(node_info.bolt_port())},
              {"raft_port", Value(node_info.raft_poft())},
-             {"is_leader", Value(node_info.is_leader())}});
+             {"is_leader", Value(node_info.is_leader())},
+             {"is_learner", Value(node_info.is_learner())}});
+      }
+      return records;
+    }
+    case ast::BuiltinProcedureKind::kGetRaftStatus: {
+      const auto &graph_name =
+          RequireProcedureString(arguments[0], *procedure, "graph_name");
+      RG_CHECK(graph_name == graph->db_meta().graph_name(),
+               common::ErrorCode::InvalidParameter,
+               procedure->name +
+                   "() can only inspect the graph bound to the current "
+                   "transaction");
+      auto *driver = graph->raft_driver();
+      RG_CHECK(driver != nullptr, common::ErrorCode::InvalidParameter,
+               "graph [" + graph_name + "] does not enable raft");
+      const auto status = driver->GetRaftStatus();
+      auto integer = [&procedure](std::uint64_t value,
+                                  std::string_view field) -> Value {
+        RG_CHECK(value <= static_cast<std::uint64_t>(
+                              std::numeric_limits<std::int64_t>::max()),
+                 common::ErrorCode::InvalidParameter,
+                 ProcedureArgumentName(*procedure, field) +
+                     " cannot be represented as a Cypher integer");
+        return Value(static_cast<std::int64_t>(value));
+      };
+      std::vector<ProcedureRecord> records;
+      records.reserve(status.nodes.size());
+      for (const auto &node : status.nodes) {
+        records.push_back(
+            {{"node_id", integer(node.node_info.node_id(), "node_id")},
+             {"ip", Value(node.node_info.ip())},
+             {"bolt_port", Value(node.node_info.bolt_port())},
+             {"raft_port", Value(node.node_info.raft_poft())},
+             {"is_leader", Value(node.node_info.is_leader())},
+             {"is_learner", Value(node.node_info.is_learner())},
+             {"reachable", Value(node.reachable)},
+             {"match_index", integer(node.match_index, "match_index")},
+             {"next_index", integer(node.next_index, "next_index")},
+             {"local_node_id",
+              integer(status.s.basicStatus_.id_, "local_node_id")},
+             {"leader_id",
+              integer(status.s.basicStatus_.softState_.lead_, "leader_id")},
+             {"term", integer(status.s.basicStatus_.hardState_.term(), "term")},
+             {"commit_index", integer(status.s.basicStatus_.hardState_.commit(),
+                                      "commit_index")},
+             {"applied_index",
+              integer(status.s.basicStatus_.applied_, "applied_index")},
+             {"first_log", integer(status.first_log, "first_log")},
+             {"last_log", integer(status.last_log, "last_log")},
+             {"raft_state",
+              Value(eraft::ToString(
+                  status.s.basicStatus_.softState_.raftState_))}});
       }
       return records;
     }
