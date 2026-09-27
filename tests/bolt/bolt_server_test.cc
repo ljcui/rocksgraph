@@ -163,15 +163,21 @@ TEST(BoltServerTest, StopDrainsQueuedWorkerTasks) {
   std::promise<void> release_task;
   auto release = release_task.get_future().share();
   std::atomic<int> completed{0};
-  auto strand = worker_pool->MakeStrand();
-  ASSERT_TRUE(worker_pool->Post(strand, [&] {
-    task_started.set_value();
-    release.wait();
-    completed.fetch_add(1);
-  }));
-  const bool queued =
-      worker_pool->Post(strand, [&] { completed.fetch_add(1); });
-  const auto started_status = started.wait_for(std::chrono::seconds(2));
+  bool queued = false;
+  std::future_status started_status;
+  {
+    // Strand handles reference the worker pool's Asio service. Release them
+    // before the server destroys the pool, otherwise their destructor can
+    // access the already-freed strand service.
+    auto strand = worker_pool->MakeStrand();
+    ASSERT_TRUE(worker_pool->Post(strand, [&] {
+      task_started.set_value();
+      release.wait();
+      completed.fetch_add(1);
+    }));
+    queued = worker_pool->Post(strand, [&] { completed.fetch_add(1); });
+    started_status = started.wait_for(std::chrono::seconds(2));
+  }
   std::weak_ptr<bolt::BoltWorkerPool> weak_pool = worker_pool;
   worker_pool.reset();
 

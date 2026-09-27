@@ -139,8 +139,8 @@ class GraphDBTestDatabase final {
     graph_->AddVertexPropertyIndex(index_name, unique, labels.front(),
                                    {std::string(property)});
     WaitForIndexReady([&] {
-      const auto index = graph_->meta_info().GetVertexPropertyIndex(index_name);
-      return index != nullptr && index->IsReady();
+      return graph_->meta_info().GetReadyVertexPropertyIndex(index_name) !=
+             nullptr;
     });
     return index_name;
   }
@@ -155,8 +155,8 @@ class GraphDBTestDatabase final {
     graph_->AddEdgePropertyIndex(index_name, unique, types.front(),
                                  {std::string(property)});
     WaitForIndexReady([&] {
-      const auto index = graph_->meta_info().GetEdgePropertyIndex(index_name);
-      return index != nullptr && index->IsReady();
+      return graph_->meta_info().GetReadyEdgePropertyIndex(index_name) !=
+             nullptr;
     });
     return index_name;
   }
