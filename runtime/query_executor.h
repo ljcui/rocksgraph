@@ -25,6 +25,7 @@ class PlannerStatistics;
 namespace rg {
 
 class PlanCache;
+class GraphManagement;
 
 struct QueryResult {
   std::vector<std::string> columns;
@@ -89,6 +90,15 @@ class QueryExecutor final {
                                        QueryOptions options = {});
 [[nodiscard]] std::unique_ptr<QueryResultCursor> ExecuteQueryCursor(
     graphdb::Transaction &transaction, std::string_view cypher,
+    QueryOptions options = {});
+
+// Executes one graph-management procedure without opening a GraphDB or a
+// transaction. Scalar YIELD/WHERE/RETURN processing is supported afterwards.
+[[nodiscard]] QueryResult ExecuteSystemQuery(GraphManagement &graph_management,
+                                             std::string_view cypher,
+                                             QueryOptions options = {});
+[[nodiscard]] std::unique_ptr<QueryResultCursor> ExecuteSystemQueryCursor(
+    GraphManagement &graph_management, std::string_view cypher,
     QueryOptions options = {});
 
 }  // namespace rg

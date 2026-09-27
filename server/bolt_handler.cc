@@ -82,6 +82,7 @@ struct BoltSessionContext {
 namespace {
 
 constexpr std::string_view kDefaultDatabaseName = "default";
+constexpr std::string_view kSystemDatabaseName = "system";
 
 rg::LocalDateTime LocalDateTimeFromEpoch(int64_t seconds, int32_t nanoseconds) {
   using namespace std::chrono;
@@ -732,6 +733,7 @@ static void ProcessRun(GraphManager* graph_manager,
     if (graph.empty()) {
       graph = kDefaultDatabaseName;
     }
+    const bool system_database = graph == kSystemDatabaseName;
 
     auto active_query = std::make_unique<ActiveBoltQuery>();
     active_query->graph_name = graph;
@@ -742,12 +744,17 @@ static void ProcessRun(GraphManager* graph_manager,
     for (const auto& [name, value] : *params) {
       query_options.parameters.emplace(name, ConvertParameter(value));
     }
-    active_query->graph_db = graph_manager->OpenGraph(graph);
-    active_query->transaction = active_query->graph_db->BeginTransaction();
     LOG_DEBUG("Execute {}", active_query->cypher.substr(0, 256));
-    active_query->result =
-        rg::ExecuteQueryCursor(*active_query->transaction, active_query->cypher,
-                               std::move(query_options));
+    if (system_database) {
+      active_query->result = rg::ExecuteSystemQueryCursor(
+          *graph_manager, active_query->cypher, std::move(query_options));
+    } else {
+      active_query->graph_db = graph_manager->OpenGraph(graph);
+      active_query->transaction = active_query->graph_db->BeginTransaction();
+      active_query->result = rg::ExecuteQueryCursor(*active_query->transaction,
+                                                    active_query->cypher,
+                                                    std::move(query_options));
+    }
 
     bolt::PackStream ps;
     ps.AppendSuccessFields(active_query->result->Columns());

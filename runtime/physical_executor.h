@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "runtime/execution_context.h"
@@ -29,9 +30,18 @@ class PhysicalResultCursor {
 };
 
 [[nodiscard]] std::unique_ptr<PhysicalResultCursor> StartPhysicalPlan(
-    const PhysicalPlan &plan, graphdb::Transaction &transaction,
+    const PhysicalPlan &plan, graphdb::Transaction *transaction,
     const QueryParameters &parameters,
     const std::vector<std::string> &result_columns,
     QueryExecutionOptions options = {});
+
+[[nodiscard]] inline std::unique_ptr<PhysicalResultCursor> StartPhysicalPlan(
+    const PhysicalPlan &plan, graphdb::Transaction &transaction,
+    const QueryParameters &parameters,
+    const std::vector<std::string> &result_columns,
+    QueryExecutionOptions options = {}) {
+  return StartPhysicalPlan(plan, &transaction, parameters, result_columns,
+                           std::move(options));
+}
 
 }  // namespace rg

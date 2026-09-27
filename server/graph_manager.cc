@@ -1,5 +1,6 @@
 #include "server/graph_manager.h"
 
+#include <algorithm>
 #include <boost/endian/conversion.hpp>
 #include <filesystem>
 #include <utility>
@@ -364,6 +365,43 @@ void GraphManager::DeleteGraph(const std::string &name) {
   std::string graph_path = iter->second->path();
   LOG_INFO("Erase graph:{}, path:{}", name, graph_path);
   graphs_.erase(iter);
+}
+
+void GraphManager::CreateManagedGraph(std::string_view name) {
+  CreateGraph(std::string(name));
+}
+
+void GraphManager::CreateManagedRaftGraph(
+    std::string_view name, const meta::RaftNodeInfos &node_infos) {
+  CreateGraphWithRaft(std::string(name), node_infos);
+}
+
+void GraphManager::ClearManagedGraph(std::string_view name) {
+  ClearGraph(std::string(name));
+}
+
+void GraphManager::DeleteManagedGraph(std::string_view name) {
+  DeleteGraph(std::string(name));
+}
+
+std::vector<rg::ManagedGraphInfo> GraphManager::ListManagedGraphs() const {
+  std::shared_lock<std::shared_mutex> read_lock(graphs_mutex_);
+  std::vector<rg::ManagedGraphInfo> graphs;
+  graphs.reserve(graphs_.size());
+  for (const auto &[name, graph] : graphs_) {
+    graphs.push_back({.id = graph->db_meta().graph_id(), .name = name});
+  }
+  std::ranges::sort(graphs, {}, &rg::ManagedGraphInfo::id);
+  return graphs;
+}
+
+meta::RaftNodeInfos GraphManager::ManagedGraphRaftNodeInfos(
+    std::string_view name) {
+  auto graph = OpenGraph(std::string(name));
+  auto *driver = graph->raft_driver();
+  RG_CHECK(driver != nullptr, common::ErrorCode::InvalidParameter,
+           "graph [{}] does not enable raft", name);
+  return driver->GetNodeInfosWithLeader();
 }
 
 }  // namespace server

@@ -22,6 +22,11 @@ enum class BuiltinProcedureKind {
   kCreateNodeVectorField,
   kCreateNodeVectorIndex,
   kKnnSearchNodes,
+  kCreateGraph,
+  kCreateGraphWithRaft,
+  kDeleteGraph,
+  kClearGraph,
+  kListGraph,
   kRaftNodeInfos,
 };
 

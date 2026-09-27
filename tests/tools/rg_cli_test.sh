@@ -125,3 +125,73 @@ if [[ ! -s "$test_dir/recovery.err" ]]; then
   echo "rg-cli did not report the failed query" >&2
   exit 1
 fi
+
+printf "CALL dbms.graph.createGraph('managed');\n" |
+  "$cli_bin" --ip=127.0.0.1 --port="$bolt_port" --graph=system \
+    --format=json >/dev/null
+
+managed_list=$(
+  printf "CALL dbms.graph.listGraph() YIELD name WHERE name = 'managed' RETURN name;\n" |
+    "$cli_bin" --ip=127.0.0.1 --port="$bolt_port" --graph=system \
+      --format=json
+)
+expected_managed_list=$'["name"]\n["managed"]'
+if [[ "$managed_list" != "$expected_managed_list" ]]; then
+  echo "managed graph was not listed:" >&2
+  printf '%s\n' "$managed_list" >&2
+  exit 1
+fi
+
+printf 'CREATE (:Managed);\n' |
+  "$cli_bin" --ip=127.0.0.1 --port="$bolt_port" --graph=managed \
+    --format=json >/dev/null
+
+printf "CALL dbms.graph.clearGraph('managed');\n" |
+  "$cli_bin" --ip=127.0.0.1 --port="$bolt_port" --graph=system \
+    --format=json >/dev/null
+
+managed_count=$(
+  printf 'MATCH (n) RETURN count(n) AS count;\n' |
+    "$cli_bin" --ip=127.0.0.1 --port="$bolt_port" --graph=managed \
+      --format=json
+)
+expected_managed_count=$'["count"]\n[0]'
+if [[ "$managed_count" != "$expected_managed_count" ]]; then
+  echo "managed graph was not cleared:" >&2
+  printf '%s\n' "$managed_count" >&2
+  exit 1
+fi
+
+printf "CALL dbms.graph.deleteGraph('managed');\n" |
+  "$cli_bin" --ip=127.0.0.1 --port="$bolt_port" --graph=system \
+    --format=json >/dev/null
+
+deleted_list=$(
+  printf "CALL dbms.graph.listGraph() YIELD name WHERE name = 'managed' RETURN name;\n" |
+    "$cli_bin" --ip=127.0.0.1 --port="$bolt_port" --graph=system \
+      --format=json
+)
+if [[ "$deleted_list" != '["name"]' ]]; then
+  echo "managed graph was not deleted:" >&2
+  printf '%s\n' "$deleted_list" >&2
+  exit 1
+fi
+
+system_query_output=$(
+  printf 'RETURN 1 AS value;\n' |
+    "$cli_bin" --ip=127.0.0.1 --port="$bolt_port" --graph=system \
+      --format=json 2>"$test_dir/system-query.err"
+)
+if [[ -n "$system_query_output" ]] ||
+  ! grep -q 'system database query must contain exactly one graph-management' \
+    "$test_dir/system-query.err"; then
+  echo "system database accepted a non-management query" >&2
+  printf '%s\n' "$system_query_output" >&2
+  cat "$test_dir/system-query.err" >&2
+  exit 1
+fi
+
+if [[ -e "$test_dir/data/system" ]]; then
+  echo "system database unexpectedly created a GraphDB directory" >&2
+  exit 1
+fi

@@ -858,6 +858,30 @@ uint64_t ExecuteCypherAndCommit(GraphDB* graph, const std::string& cypher) {
   return graph->GetRaftApplyIndex();
 }
 
+rg::QueryResult ExecuteSystemCypherAndCommit(
+    server::GraphManager* graph_manager, const std::string& cypher,
+    rg::QueryParameters parameters = {}) {
+  rg::QueryOptions options;
+  options.parameters = std::move(parameters);
+  return rg::ExecuteSystemQuery(*graph_manager, cypher, std::move(options));
+}
+
+rg::Value RaftMembersValue(const meta::RaftNodeInfos& node_infos) {
+  rg::Value::List members;
+  members.reserve(node_infos.nodes().size());
+  for (const auto& [node_id, node_info] : node_infos.nodes()) {
+    members.emplace_back(rg::Value::Map{
+        {"node_id", Value(static_cast<std::int64_t>(node_id))},
+        {"ip", Value(node_info.ip())},
+        {"bolt_port", Value(node_info.bolt_port())},
+        {"raft_port", Value(node_info.raft_poft())},
+        {"is_learner", Value(node_info.is_learner())},
+        {"graph", Value(node_info.graph())},
+    });
+  }
+  return rg::Value(std::move(members));
+}
+
 std::vector<std::string> CollectCypherStringColumn(GraphDB* graph,
                                                    const std::string& cypher) {
   auto txn = graph->BeginTransaction();
@@ -1609,6 +1633,42 @@ TEST(RaftCluster, createRaftGraphWithRaftUpdatesOnlyLocalMetadata) {
     EXPECT_THROW_CODE(server->graph_manager()->OpenGraph(kLocalGraphName),
                       NoSuchGraph);
   }
+}
+
+TEST(RaftCluster, createAndDeleteRaftGraphThroughSystemProcedures) {
+  constexpr char kLocalGraphName[] = "system_procedure_raft_graph";
+
+  TestServerCluster cluster("testdb_raft_cluster");
+  ASSERT_NO_THROW(cluster.Start());
+
+  auto* local_server = cluster.server(0);
+  ASSERT_NE(local_server, nullptr);
+  auto* graph_manager = local_server->graph_manager();
+  const auto node_infos = cluster.NodeInfosForGraph(kLocalGraphName);
+
+  ASSERT_NO_THROW(ExecuteSystemCypherAndCommit(
+      graph_manager,
+      "CALL dbms.graph.createGraphWithRaft($graph_name, $members)",
+      {{"graph_name", Value(kLocalGraphName)},
+       {"members", RaftMembersValue(node_infos)}}));
+  auto graph = graph_manager->OpenGraph(kLocalGraphName);
+  ASSERT_TRUE(graph->db_meta().enable_raft());
+  ASSERT_NE(graph->raft_driver(), nullptr);
+  graph.reset();
+
+  auto listed =
+      ExecuteSystemCypherAndCommit(graph_manager,
+                                   "CALL dbms.graph.listGraph() YIELD name "
+                                   "WHERE name = $graph_name RETURN name",
+                                   {{"graph_name", Value(kLocalGraphName)}});
+  ASSERT_EQ(listed.rows.size(), 1U);
+  ASSERT_EQ(listed.rows.front().size(), 1U);
+  EXPECT_EQ(listed.rows.front().front(), Value(kLocalGraphName));
+
+  ASSERT_NO_THROW(ExecuteSystemCypherAndCommit(
+      graph_manager, "CALL dbms.graph.deleteGraph($graph_name)",
+      {{"graph_name", Value(kLocalGraphName)}}));
+  EXPECT_THROW_CODE(graph_manager->OpenGraph(kLocalGraphName), NoSuchGraph);
 }
 
 TEST(RaftCluster, clearRaftGraphUpdatesOnlyLocalServer) {

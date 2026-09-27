@@ -36,7 +36,7 @@ struct RuntimeExpressionProgram {
 };
 
 struct RuntimeState {
-  RuntimeState(graphdb::Transaction &graphdb_transaction,
+  RuntimeState(graphdb::Transaction *graphdb_transaction,
                const QueryParameters &parameters,
                QueryExecutionOptions options);
 
@@ -48,6 +48,8 @@ struct RuntimeState {
   BoundQueryParameters bound_parameters;
   std::shared_ptr<QueryCancellationToken> cancellation;
   QueryMemoryTracker memory_tracker;
+  GraphManagement *graph_management = nullptr;
+  bool system_database = false;
   ExecutionContext context;
 
  private:

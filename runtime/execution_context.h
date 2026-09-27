@@ -23,6 +23,8 @@ class Transaction;
 
 namespace rg {
 
+class GraphManagement;
+
 using QueryParameters = Value::Map;
 
 class BoundQueryParameters final {
@@ -97,6 +99,8 @@ class QueryMemoryTracker final {
 struct QueryExecutionOptions {
   std::shared_ptr<QueryCancellationToken> cancellation;
   std::size_t memory_limit_bytes = std::numeric_limits<std::size_t>::max();
+  GraphManagement *graph_management = nullptr;
+  bool system_database = false;
 };
 
 struct ExecutionClock {

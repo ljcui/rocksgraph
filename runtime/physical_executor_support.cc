@@ -10,6 +10,7 @@
 #include "common/exception.h"
 #include "graphdb/graph_db.h"
 #include "runtime/expression_evaluator.h"
+#include "runtime/graph_management.h"
 #include "runtime/graphdb_access.h"
 #include "runtime/physical_executor_internal.h"
 
@@ -51,16 +52,18 @@ class RuntimeExpressionCompiler final : public ast::ASTConstWalker {
   RuntimeExpressionProgram program_;
 };
 
-RuntimeState::RuntimeState(graphdb::Transaction &graphdb_transaction,
+RuntimeState::RuntimeState(graphdb::Transaction *graphdb_transaction,
                            const QueryParameters &parameters,
                            QueryExecutionOptions options)
-    : transaction(&graphdb_transaction),
+    : transaction(graphdb_transaction),
       bound_parameters(parameters),
       cancellation(options.cancellation != nullptr
                        ? std::move(options.cancellation)
                        : std::make_shared<QueryCancellationToken>()),
       memory_tracker(options.memory_limit_bytes),
-      context{.transaction = &graphdb_transaction,
+      graph_management(options.graph_management),
+      system_database(options.system_database),
+      context{.transaction = graphdb_transaction,
               .parameters = nullptr,
               .bound_parameters = &bound_parameters,
               .cancellation = cancellation.get(),
@@ -541,6 +544,103 @@ std::vector<float> RequireProcedureFloatList(
   return result;
 }
 
+const Value &RequireProcedureMapField(const Value::Map &map,
+                                      std::string_view field,
+                                      const ast::BuiltinProcedure &procedure,
+                                      std::string_view argument) {
+  const auto found = map.find(std::string(field));
+  RG_CHECK(found != map.end(), common::ErrorCode::InvalidParameter,
+           ProcedureArgumentName(procedure, argument) + "." +
+               std::string(field) + " is required");
+  return found->second;
+}
+
+std::int32_t RequireProcedurePositiveInt32(
+    const Value &value, const ast::BuiltinProcedure &procedure,
+    std::string_view argument) {
+  const std::int64_t integer =
+      RequireProcedureInteger(value, procedure, argument);
+  RG_CHECK(integer > 0 && integer <= std::numeric_limits<std::int32_t>::max(),
+           common::ErrorCode::InvalidParameter,
+           ProcedureArgumentName(procedure, argument) +
+               " must be a positive 32-bit integer");
+  return static_cast<std::int32_t>(integer);
+}
+
+meta::RaftNodeInfos ParseRaftMembers(const Value &value,
+                                     std::string_view graph_name,
+                                     const ast::BuiltinProcedure &procedure) {
+  RG_CHECK(value.IsList(), common::ErrorCode::InvalidParameter,
+           ProcedureArgumentName(procedure, "members") + " must be a list");
+  RG_CHECK(!value.AsList().empty(), common::ErrorCode::InvalidParameter,
+           ProcedureArgumentName(procedure, "members") + " must not be empty");
+
+  meta::RaftNodeInfos node_infos;
+  for (std::size_t index = 0; index < value.AsList().size(); ++index) {
+    const std::string member = "members[" + std::to_string(index) + "]";
+    const Value::Map &fields =
+        RequireProcedureMap(value.AsList()[index], procedure, member);
+    const std::int64_t node_id = RequireProcedureInteger(
+        RequireProcedureMapField(fields, "node_id", procedure, member),
+        procedure, member + ".node_id");
+    RG_CHECK(node_id > 0, common::ErrorCode::InvalidParameter,
+             ProcedureArgumentName(procedure, member + ".node_id") +
+                 " must be positive");
+    RG_CHECK(!node_infos.nodes().contains(static_cast<std::uint64_t>(node_id)),
+             common::ErrorCode::InvalidParameter,
+             ProcedureArgumentName(procedure, "members") +
+                 " contains a duplicate node_id");
+
+    const std::string &ip = RequireProcedureString(
+        RequireProcedureMapField(fields, "ip", procedure, member), procedure,
+        member + ".ip");
+    RG_CHECK(!ip.empty(), common::ErrorCode::InvalidParameter,
+             ProcedureArgumentName(procedure, member + ".ip") +
+                 " must not be empty");
+    const std::int32_t bolt_port = RequireProcedurePositiveInt32(
+        RequireProcedureMapField(fields, "bolt_port", procedure, member),
+        procedure, member + ".bolt_port");
+    const std::int32_t raft_port = RequireProcedurePositiveInt32(
+        RequireProcedureMapField(fields, "raft_port", procedure, member),
+        procedure, member + ".raft_port");
+    const std::string &member_graph = RequireProcedureString(
+        RequireProcedureMapField(fields, "graph", procedure, member), procedure,
+        member + ".graph");
+    RG_CHECK(member_graph == graph_name, common::ErrorCode::InvalidParameter,
+             ProcedureArgumentName(procedure, member + ".graph") +
+                 " must equal graph_name");
+
+    bool is_learner = false;
+    if (const Value *learner = FindProcedureOption(fields, "is_learner");
+        learner != nullptr) {
+      RG_CHECK(learner->IsBool(), common::ErrorCode::InvalidParameter,
+               ProcedureArgumentName(procedure, member + ".is_learner") +
+                   " must be a boolean");
+      is_learner = learner->AsBool();
+    }
+
+    meta::RaftNodeInfo node_info;
+    node_info.set_node_id(static_cast<std::uint64_t>(node_id));
+    node_info.set_ip(ip);
+    node_info.set_bolt_port(bolt_port);
+    node_info.set_raft_poft(raft_port);
+    node_info.set_is_learner(is_learner);
+    node_info.set_graph(member_graph);
+    (*node_infos.mutable_nodes())[static_cast<std::uint64_t>(node_id)] =
+        std::move(node_info);
+  }
+  return node_infos;
+}
+
+GraphManagement &RequireGraphManagement(
+    RuntimeState *state, const ast::BuiltinProcedure &procedure) {
+  RG_CHECK(state->system_database, common::ErrorCode::InvalidParameter,
+           procedure.name + "() must be executed on the system database");
+  RG_CHECK(state->graph_management != nullptr, common::ErrorCode::InternalError,
+           procedure.name + "() has no graph management context");
+  return *state->graph_management;
+}
+
 ProcedureRecord NodeRecord(graphdb::Vertex vertex) {
   return {{"node", Value(MaterializeGraphDBVertex(std::move(vertex)))}};
 }
@@ -576,6 +676,79 @@ std::vector<ProcedureRecord> ExecuteProcedure(const ProcedureCallOp &data,
     arguments.push_back(Evaluate(argument, row, *state));
   }
 
+  if (state->system_database) {
+    GraphManagement &management = RequireGraphManagement(state, *procedure);
+    switch (procedure->kind) {
+      case ast::BuiltinProcedureKind::kCreateGraph:
+        management.CreateManagedGraph(
+            RequireProcedureString(arguments[0], *procedure, "graph_name"));
+        return {ProcedureRecord{}};
+      case ast::BuiltinProcedureKind::kCreateGraphWithRaft: {
+        const auto &graph_name =
+            RequireProcedureString(arguments[0], *procedure, "graph_name");
+        management.CreateManagedRaftGraph(
+            graph_name, ParseRaftMembers(arguments[1], graph_name, *procedure));
+        return {ProcedureRecord{}};
+      }
+      case ast::BuiltinProcedureKind::kDeleteGraph:
+        management.DeleteManagedGraph(
+            RequireProcedureString(arguments[0], *procedure, "graph_name"));
+        return {ProcedureRecord{}};
+      case ast::BuiltinProcedureKind::kClearGraph:
+        management.ClearManagedGraph(
+            RequireProcedureString(arguments[0], *procedure, "graph_name"));
+        return {ProcedureRecord{}};
+      case ast::BuiltinProcedureKind::kListGraph: {
+        std::vector<ProcedureRecord> records;
+        for (auto graph_info : management.ListManagedGraphs()) {
+          RG_CHECK(
+              graph_info.id <= static_cast<std::uint64_t>(
+                                   std::numeric_limits<std::int64_t>::max()),
+              common::ErrorCode::InvalidParameter,
+              "graph id cannot be represented as a Cypher integer");
+          records.push_back(
+              {{"id", Value(static_cast<std::int64_t>(graph_info.id))},
+               {"name", Value(std::move(graph_info.name))}});
+        }
+        return records;
+      }
+      case ast::BuiltinProcedureKind::kRaftNodeInfos: {
+        const auto &graph_name =
+            RequireProcedureString(arguments[0], *procedure, "graph_name");
+        const meta::RaftNodeInfos node_infos =
+            management.ManagedGraphRaftNodeInfos(graph_name);
+        std::vector<std::uint64_t> node_ids;
+        node_ids.reserve(node_infos.nodes().size());
+        for (const auto &[node_id, node_info] : node_infos.nodes()) {
+          (void)node_info;
+          node_ids.push_back(node_id);
+        }
+        std::sort(node_ids.begin(), node_ids.end());
+        std::vector<ProcedureRecord> records;
+        records.reserve(node_ids.size());
+        for (const std::uint64_t node_id : node_ids) {
+          RG_CHECK(node_id <= static_cast<std::uint64_t>(
+                                  std::numeric_limits<std::int64_t>::max()),
+                   common::ErrorCode::InvalidParameter,
+                   "Raft node id cannot be represented as a Cypher integer");
+          const auto &node_info = node_infos.nodes().at(node_id);
+          records.push_back(
+              {{"node_id", Value(static_cast<std::int64_t>(node_id))},
+               {"ip", Value(node_info.ip())},
+               {"bolt_port", Value(node_info.bolt_port())},
+               {"raft_port", Value(node_info.raft_poft())},
+               {"is_leader", Value(node_info.is_leader())}});
+        }
+        return records;
+      }
+      default:
+        RG_THROW(common::ErrorCode::InvalidParameter,
+                 "procedure is not available on the system database");
+    }
+  }
+
+  RG_CHECK(state->transaction != nullptr, common::ErrorCode::InternalError,
+           "graph procedure requires a transaction");
   graphdb::Transaction &transaction = *state->transaction;
   graphdb::GraphDB *graph = transaction.db();
   RG_CHECK(graph != nullptr, common::ErrorCode::InternalError,
@@ -722,6 +895,14 @@ std::vector<ProcedureRecord> ExecuteProcedure(const ProcedureCallOp &data,
       }
       return records;
     }
+    case ast::BuiltinProcedureKind::kCreateGraph:
+    case ast::BuiltinProcedureKind::kCreateGraphWithRaft:
+    case ast::BuiltinProcedureKind::kDeleteGraph:
+    case ast::BuiltinProcedureKind::kClearGraph:
+    case ast::BuiltinProcedureKind::kListGraph:
+      (void)RequireGraphManagement(state, *procedure);
+      RG_THROW(common::ErrorCode::InternalError,
+               "system graph-management procedure reached graph execution");
     case ast::BuiltinProcedureKind::kRaftNodeInfos: {
       const auto &graph_name =
           RequireProcedureString(arguments[0], *procedure, "graph_name");

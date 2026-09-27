@@ -9,6 +9,7 @@
 #include <unordered_map>
 
 #include "graphdb/graph_db.h"
+#include "runtime/graph_management.h"
 
 namespace rg {
 class PlanCache;
@@ -38,7 +39,7 @@ struct LocalNodeOptions {
   uint32_t raft_port = 0;
 };
 
-class GraphManager {
+class GraphManager final : public rg::GraphManagement {
  public:
   GraphManager() = default;
   ~GraphManager();
@@ -61,6 +62,16 @@ class GraphManager {
     return graphs_;
   }
 
+  void CreateManagedGraph(std::string_view name) override;
+  void CreateManagedRaftGraph(std::string_view name,
+                              const meta::RaftNodeInfos& node_infos) override;
+  void ClearManagedGraph(std::string_view name) override;
+  void DeleteManagedGraph(std::string_view name) override;
+  [[nodiscard]] std::vector<rg::ManagedGraphInfo> ListManagedGraphs()
+      const override;
+  [[nodiscard]] meta::RaftNodeInfos ManagedGraphRaftNodeInfos(
+      std::string_view name) override;
+
  private:
   graphdb::GraphDB* CreateGraphInternal(const std::string& name,
                                         const meta::RaftNodeInfos* node_infos);
@@ -74,7 +85,7 @@ class GraphManager {
   std::shared_ptr<rocksdb::Cache> raft_log_block_cache_;
   std::shared_ptr<graphdb::AssistantPool> assistant_pool_;
   std::unique_ptr<rg::PlanCache> plan_cache_;
-  std::shared_mutex graphs_mutex_;
+  mutable std::shared_mutex graphs_mutex_;
   std::mutex create_graph_mutex_;
   std::atomic<uint64_t> next_graph_id_ = 1;
   std::string path_;

@@ -923,6 +923,7 @@ TEST(QueryExecutorTest, ExecutesDbmsProcedures) {
             (std::vector<std::string>{"name", "signature", "description",
                                       "mode", "worksOnSystem"}));
   std::vector<std::pair<std::string, std::string>> names_and_modes;
+  std::vector<std::string> system_procedures;
   names_and_modes.reserve(result.rows.size());
   for (const auto &row : result.rows) {
     ASSERT_EQ(row.size(), 5U);
@@ -933,7 +934,9 @@ TEST(QueryExecutorTest, ExecutesDbmsProcedures) {
     ASSERT_TRUE(row[4].IsBool());
     EXPECT_FALSE(row[1].AsString().empty());
     EXPECT_FALSE(row[2].AsString().empty());
-    EXPECT_FALSE(row[4].AsBool());
+    if (row[4].AsBool()) {
+      system_procedures.push_back(row[0].AsString());
+    }
     names_and_modes.emplace_back(row[0].AsString(), row[3].AsString());
   }
   EXPECT_EQ(names_and_modes, (std::vector<std::pair<std::string, std::string>>{
@@ -948,8 +951,18 @@ TEST(QueryExecutorTest, ExecutesDbmsProcedures) {
                                  {"db.labels", "READ"},
                                  {"db.propertyKeys", "READ"},
                                  {"db.relationshipTypes", "READ"},
+                                 {"dbms.graph.clearGraph", "WRITE"},
+                                 {"dbms.graph.createGraph", "WRITE"},
+                                 {"dbms.graph.createGraphWithRaft", "WRITE"},
+                                 {"dbms.graph.deleteGraph", "WRITE"},
                                  {"dbms.graph.getRaftNodeInfos", "READ"},
+                                 {"dbms.graph.listGraph", "READ"},
                                  {"dbms.procedures", "READ"}}));
+  EXPECT_EQ(system_procedures,
+            (std::vector<std::string>{
+                "dbms.graph.clearGraph", "dbms.graph.createGraph",
+                "dbms.graph.createGraphWithRaft", "dbms.graph.deleteGraph",
+                "dbms.graph.getRaftNodeInfos", "dbms.graph.listGraph"}));
 }
 
 TEST(QueryExecutorTest, ExecutesIndexProceduresThroughCypher) {

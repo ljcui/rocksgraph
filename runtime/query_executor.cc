@@ -10,11 +10,14 @@
 
 #include "ast/ast_const_walker.h"
 #include "ast/ast_node.h"
+#include "ast/builtin_procedure.h"
 #include "common/exception.h"
 #include "graphdb/graph_db.h"
 #include "graphdb/transaction.h"
 #include "ir/logical_plan_printer.h"
+#include "planner/catalog.h"
 #include "planner/planned_query.h"
+#include "runtime/graph_management.h"
 #include "runtime/graphdb_planner_catalog.h"
 #include "runtime/physical_executor.h"
 #include "runtime/physical_plan.h"
@@ -24,6 +27,66 @@ namespace rg {
 namespace {
 
 bool IsExplain(const ast::Statement &statement);
+
+void ValidateSystemPhysicalPlan(const PhysicalPlan &plan) {
+  std::size_t procedure_count = 0;
+  class Validator {
+   public:
+    explicit Validator(std::size_t *procedure_count)
+        : procedure_count_(procedure_count) {}
+
+    void Walk(const PhysicalPlanNode &node) {
+      switch (node.kind) {
+        case PhysicalOperatorKind::kArgument:
+        case PhysicalOperatorKind::kFilter:
+        case PhysicalOperatorKind::kProjection:
+        case PhysicalOperatorKind::kHashDistinct:
+        case PhysicalOperatorKind::kOrderedDistinct:
+        case PhysicalOperatorKind::kHashAggregation:
+        case PhysicalOperatorKind::kOrderedAggregation:
+        case PhysicalOperatorKind::kFullSort:
+        case PhysicalOperatorKind::kPartialSort:
+        case PhysicalOperatorKind::kSkip:
+        case PhysicalOperatorKind::kLimit:
+        case PhysicalOperatorKind::kTopN:
+        case PhysicalOperatorKind::kPartialTopN:
+        case PhysicalOperatorKind::kProduceResults:
+        case PhysicalOperatorKind::kWriteBarrier:
+          break;
+        case PhysicalOperatorKind::kProcedureCall: {
+          const auto *data = std::get_if<ProcedureCallOp>(&node.data);
+          RG_CHECK(data != nullptr, common::ErrorCode::InternalError,
+                   "system procedure payload is invalid");
+          const auto *procedure =
+              ast::FindBuiltinProcedure(data->procedure_name);
+          RG_CHECK(procedure != nullptr, common::ErrorCode::InvalidParameter,
+                   "unknown system procedure: " + data->procedure_name);
+          RG_CHECK(procedure->works_on_system,
+                   common::ErrorCode::InvalidParameter,
+                   procedure->name +
+                       "() is not available on the system "
+                       "database");
+          ++*procedure_count_;
+          break;
+        }
+        default:
+          RG_THROW(common::ErrorCode::InvalidParameter,
+                   "system database only supports graph-management "
+                   "procedures and scalar result processing");
+      }
+      for (const auto &child : node.children) {
+        Walk(*child);
+      }
+    }
+
+   private:
+    std::size_t *procedure_count_;
+  } validator(&procedure_count);
+  validator.Walk(plan.Root());
+  RG_CHECK(procedure_count == 1, common::ErrorCode::InvalidParameter,
+           "system database query must contain exactly one graph-management "
+           "procedure");
+}
 
 planner::LogicalPlanBuilderOptions PlannerOptionsFor(
     const QueryOptions &options) {
@@ -93,6 +156,9 @@ std::shared_ptr<const CachedPlan> CompileCachedPlan(
   auto required_parameters = CollectQueryParameters(planned_query.Ast());
   auto physical_plan = std::make_shared<PhysicalPlan>(
       CreatePhysicalPlan(planned_query.LogicalPlan()));
+  if (options.execution.system_database) {
+    ValidateSystemPhysicalPlan(*physical_plan);
+  }
   std::optional<std::string> explain_plan;
   if (IsExplain(planned_query.Ast())) {
     explain_plan = ir::LogicalPlanToString(planned_query.LogicalPlan(),
@@ -158,17 +224,19 @@ class QueryResultCursorImpl final : public QueryResultCursor {
              "query execution requires an active transaction");
     auto physical_plan =
         std::make_shared<PhysicalPlan>(CreatePhysicalPlan(logical_plan));
-    return Create(std::move(physical_plan), transaction, parameters,
+    return Create(std::move(physical_plan), &transaction, parameters,
                   std::move(options));
   }
 
   [[nodiscard]] static std::unique_ptr<QueryResultCursorImpl> Create(
       std::shared_ptr<const PhysicalPlan> physical_plan,
-      graphdb::Transaction &transaction, const QueryParameters &parameters,
+      graphdb::Transaction *transaction, const QueryParameters &parameters,
       QueryExecutionOptions options) {
-    RG_CHECK(transaction.GetState() == graphdb::Transaction::State::kActive,
-             common::ErrorCode::InvalidParameter,
-             "query execution requires an active transaction");
+    if (transaction != nullptr) {
+      RG_CHECK(transaction->GetState() == graphdb::Transaction::State::kActive,
+               common::ErrorCode::InvalidParameter,
+               "query execution requires an active transaction");
+    }
     RG_CHECK(physical_plan != nullptr, common::ErrorCode::InternalError,
              "physical plan is null");
     auto cursor = std::unique_ptr<QueryResultCursorImpl>(
@@ -229,11 +297,11 @@ class QueryResultCursorImpl final : public QueryResultCursor {
 
  private:
   QueryResultCursorImpl(std::shared_ptr<const PhysicalPlan> physical_plan,
-                        graphdb::Transaction &transaction)
-      : physical_plan_(std::move(physical_plan)), transaction_(&transaction) {}
+                        graphdb::Transaction *transaction)
+      : physical_plan_(std::move(physical_plan)), transaction_(transaction) {}
 
   [[nodiscard]] bool IsActive() const noexcept {
-    return transaction_ != nullptr &&
+    return transaction_ == nullptr ||
            transaction_->GetState() == graphdb::Transaction::State::kActive;
   }
 
@@ -329,7 +397,7 @@ std::unique_ptr<QueryResultCursor> ExecuteQueryCursor(
       return std::make_unique<ExplainResultCursor>(cached_plan->ExplainPlan());
     }
     return QueryResultCursorImpl::Create(cached_plan->PhysicalPlanPtr(),
-                                         transaction, options.parameters,
+                                         &transaction, options.parameters,
                                          std::move(options.execution));
   }
 
@@ -341,6 +409,57 @@ std::unique_ptr<QueryResultCursor> ExecuteQueryCursor(
         planned_query.LogicalPlan(), {.include_metadata = true}));
   }
   return QueryResultCursorImpl::Create(planned_query.LogicalPlan(), transaction,
+                                       options.parameters,
+                                       std::move(options.execution));
+}
+
+QueryResult ExecuteSystemQuery(GraphManagement &graph_management,
+                               std::string_view cypher, QueryOptions options) {
+  return ConsumeCursor(
+      ExecuteSystemQueryCursor(graph_management, cypher, std::move(options)));
+}
+
+std::unique_ptr<QueryResultCursor> ExecuteSystemQueryCursor(
+    GraphManagement &graph_management, std::string_view cypher,
+    QueryOptions options) {
+  static const planner::EmptyPlannerCatalog kEmptyCatalog;
+  options.planner_catalog = &kEmptyCatalog;
+  options.execution.graph_management = &graph_management;
+  options.execution.system_database = true;
+
+  if (options.plan_cache != nullptr) {
+    const PlanCacheKey key{
+        .cypher = std::string(cypher),
+        .max_idp_candidates_per_relationship_count =
+            options.max_idp_candidates_per_relationship_count,
+        .graph_identity = 0,
+        .planner_catalog_identity = &kEmptyCatalog,
+        .planner_statistics_identity = options.planner_statistics,
+        .planner_catalog_version = 0,
+        .planning_context_version = options.plan_cache_generation};
+    auto cached_plan = options.plan_cache->LookupOrCompile(
+        key, [&] { return CompileCachedPlan(cypher, options); });
+    ValidateQueryParameters(cached_plan->RequiredParameters(),
+                            options.parameters);
+    if (cached_plan->IsExplain()) {
+      return std::make_unique<ExplainResultCursor>(cached_plan->ExplainPlan());
+    }
+    return QueryResultCursorImpl::Create(cached_plan->PhysicalPlanPtr(),
+                                         nullptr, options.parameters,
+                                         std::move(options.execution));
+  }
+
+  planner::PlannedQuery planned_query =
+      planner::PlanCypher(cypher, PlannerOptionsFor(options));
+  ValidateQueryParameters(planned_query.Ast(), options.parameters);
+  auto physical_plan = std::make_shared<PhysicalPlan>(
+      CreatePhysicalPlan(planned_query.LogicalPlan()));
+  ValidateSystemPhysicalPlan(*physical_plan);
+  if (IsExplain(planned_query.Ast())) {
+    return std::make_unique<ExplainResultCursor>(ir::LogicalPlanToString(
+        planned_query.LogicalPlan(), {.include_metadata = true}));
+  }
+  return QueryResultCursorImpl::Create(std::move(physical_plan), nullptr,
                                        options.parameters,
                                        std::move(options.execution));
 }
