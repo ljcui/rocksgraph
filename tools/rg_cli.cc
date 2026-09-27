@@ -21,13 +21,13 @@
 #include <any>
 #include <boost/asio.hpp>
 #include <boost/endian/conversion.hpp>
+#include <boost/json.hpp>
 #include <cctype>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
-#include <nlohmann/json.hpp>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -128,14 +128,15 @@ void PrintCsvRow(const std::vector<std::string>& values) {
   std::cout << '\n';
 }
 
-std::vector<std::string> DisplayValues(const nlohmann::json& values) {
+std::vector<std::string> DisplayValues(const boost::json::array& values) {
   std::vector<std::string> result;
   result.reserve(values.size());
   for (const auto& value : values) {
     if (value.is_string()) {
-      result.push_back(value.get<std::string>());
+      const auto& string = value.as_string();
+      result.emplace_back(string.data(), string.size());
     } else {
-      result.push_back(value.dump());
+      result.push_back(boost::json::serialize(value));
     }
   }
   return result;
@@ -158,9 +159,9 @@ bool FetchRecords(boost::asio::ip::tcp::socket& socket,
                  "Received a Bolt record before its header");
       }
 
-      nlohmann::json values = nlohmann::json::array();
+      boost::json::array values;
       for (const auto& item : record->values) {
-        values.push_back(bolt::ToJson(item));
+        values.emplace_back(bolt::ToJson(item));
       }
       if (values.size() != header->size()) {
         RG_THROW(common::ErrorCode::BoltDataError,
@@ -169,7 +170,7 @@ bool FetchRecords(boost::asio::ip::tcp::socket& socket,
       }
 
       if (output_format == OutputFormat::kJson) {
-        std::cout << values.dump() << '\n';
+        std::cout << boost::json::serialize(values) << '\n';
       } else {
         auto display_values = DisplayValues(values);
         if (output_format == OutputFormat::kTable) {
@@ -193,7 +194,11 @@ bool FetchRecords(boost::asio::ip::tcp::socket& socket,
         } else if (output_format == OutputFormat::kCsv) {
           PrintCsvRow(*header);
         } else {
-          std::cout << nlohmann::json(*header).dump() << '\n';
+          boost::json::array header_values;
+          for (const auto& field : *header) {
+            header_values.emplace_back(field);
+          }
+          std::cout << boost::json::serialize(header_values) << '\n';
         }
         continue;
       }

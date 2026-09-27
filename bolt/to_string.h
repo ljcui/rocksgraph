@@ -1,8 +1,8 @@
 #pragma once
 
+#include <boost/json.hpp>
 #include <cstdint>
 #include <limits>
-#include <nlohmann/json.hpp>
 #include <string>
 
 #include "bolt/graph.h"
@@ -75,16 +75,24 @@ rg::LocalDateTime LocalDateTimeFromEpoch(std::int64_t seconds,
                                    nanoseconds)};
 }
 
-nlohmann::json ToJsonObj(const bolt::Node& node);
-nlohmann::json ToJsonObj(const bolt::Relationship& rel);
-nlohmann::json ToJsonObj(const bolt::Path& path);
-nlohmann::json ToJsonObj(const std::any& item) {
+boost::json::value ToJsonObj(const bolt::Node& node);
+boost::json::value ToJsonObj(const bolt::Relationship& rel);
+boost::json::value ToJsonObj(const bolt::Path& path);
+
+std::string JsonString(const boost::json::value& value) {
+  const auto& string = value.as_string();
+  return {string.data(), string.size()};
+}
+
+boost::json::value ToJsonObj(const std::any& item) {
   if (!item.has_value()) {
     return nullptr;
   }
   if (item.type() == typeid(bolt::ByteArray)) {
     const auto& bytes = std::any_cast<const bolt::ByteArray&>(item).value;
-    return "<bytes:" + std::to_string(bytes.size()) + ">";
+    const auto value = "<bytes:" + std::to_string(bytes.size()) + ">";
+    return boost::json::value(
+        boost::json::string_view(value.data(), value.size()));
   } else if (item.type() == typeid(int64_t)) {
     return std::any_cast<int64_t>(item);
   } else if (item.type() == typeid(bool)) {
@@ -94,7 +102,9 @@ nlohmann::json ToJsonObj(const std::any& item) {
   } else if (item.type() == typeid(double)) {
     return std::any_cast<double>(item);
   } else if (item.type() == typeid(std::string)) {
-    return std::any_cast<const std::string&>(item);
+    const auto& value = std::any_cast<const std::string&>(item);
+    return boost::json::value(
+        boost::json::string_view(value.data(), value.size()));
   } else if (item.type() == typeid(const char*)) {
     return std::any_cast<const char*>(item);
   } else if (item.type() == typeid(bolt::Node)) {
@@ -123,15 +133,15 @@ nlohmann::json ToJsonObj(const std::any& item) {
         localDateTime.seconds, localDateTime.nanoseconds)));
   } else if (item.type() == typeid(std::vector<std::any>)) {
     const auto& vector = std::any_cast<const std::vector<std::any>&>(item);
-    nlohmann::json ret = nlohmann::json::array();
+    boost::json::array ret;
     for (auto& v : vector) {
-      ret.push_back(ToJsonObj(v));
+      ret.emplace_back(ToJsonObj(v));
     }
     return ret;
   } else if (item.type() == typeid(std::unordered_map<std::string, std::any>)) {
     const auto& map =
         std::any_cast<const std::unordered_map<std::string, std::any>&>(item);
-    nlohmann::json ret = nlohmann::json::object();
+    boost::json::object ret;
     for (auto& pair : map) {
       ret[pair.first] = ToJsonObj(pair.second);
     }
@@ -158,7 +168,7 @@ nlohmann::json ToJsonObj(const std::any& item) {
   }
 }
 
-nlohmann::json ToJsonObj(const bolt::Node& node) {
+boost::json::value ToJsonObj(const bolt::Node& node) {
   std::string ret("(");
   for (auto& label : node.labels) {
     ret.append(":").append(label);
@@ -171,14 +181,14 @@ nlohmann::json ToJsonObj(const bolt::Node& node) {
     }
     ret.append(pair.first);
     ret.append(":");
-    ret.append(ToJsonObj(pair.second).dump());
+    ret.append(boost::json::serialize(ToJsonObj(pair.second)));
     count++;
   }
   ret.append("})");
-  return ret;
+  return boost::json::value(boost::json::string_view(ret.data(), ret.size()));
 }
 
-nlohmann::json ToJsonObj(const bolt::Relationship& rel) {
+boost::json::value ToJsonObj(const bolt::Relationship& rel) {
   std::string ret;
   ret.append("[:").append(rel.type).append(" {");
   int count = 0;
@@ -188,45 +198,45 @@ nlohmann::json ToJsonObj(const bolt::Relationship& rel) {
     }
     ret.append(pair.first);
     ret.append(":");
-    ret.append(ToJsonObj(pair.second).dump());
+    ret.append(boost::json::serialize(ToJsonObj(pair.second)));
     count++;
   }
   ret.append("}]");
-  return ret;
+  return boost::json::value(boost::json::string_view(ret.data(), ret.size()));
 }
 
-nlohmann::json ToJsonObj(const bolt::Path& path) {
+boost::json::value ToJsonObj(const bolt::Path& path) {
   std::unordered_map<int64_t, size_t> nodes_index;
   for (size_t i = 0; i < path.nodes.size(); i++) {
     nodes_index[path.nodes[i].id] = i;
   }
-  auto ret = ToJsonObj(path.nodes[0]).get<std::string>();
+  auto ret = JsonString(ToJsonObj(path.nodes[0]));
   auto nodeId = path.nodes[0].id;
   bool forward = true;
   for (auto& rel : path.relationships) {
     forward = (rel.startId == nodeId);
     ret.append(forward ? "-" : "<-");
-    ret.append(ToJsonObj(rel).get<std::string>());
+    ret.append(JsonString(ToJsonObj(rel)));
     ret.append(forward ? "->" : "-");
-    ret.append(
-        ToJsonObj(path.nodes[nodes_index.at(forward ? rel.endId : rel.startId)])
-            .get<std::string>());
+    ret.append(JsonString(ToJsonObj(
+        path.nodes[nodes_index.at(forward ? rel.endId : rel.startId)])));
     nodeId = forward ? rel.endId : rel.startId;
   }
-  return ret;
+  return boost::json::value(boost::json::string_view(ret.data(), ret.size()));
 }
 }  // namespace detail
 
 std::string Print(const std::any& boltType) {
   auto j = detail::ToJsonObj(boltType);
   if (j.is_string()) {
-    return j.get<std::string>();
+    const auto& string = j.as_string();
+    return {string.data(), string.size()};
   } else {
-    return j.dump();
+    return boost::json::serialize(j);
   }
 }
 
-nlohmann::json ToJson(const std::any& boltType) {
+boost::json::value ToJson(const std::any& boltType) {
   return detail::ToJsonObj(boltType);
 }
 
