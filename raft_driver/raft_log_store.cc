@@ -2,7 +2,6 @@
 
 #include <boost/endian/conversion.hpp>
 
-#include "common/byte_utils.h"
 #include "common/logger.h"
 
 namespace raft {
@@ -14,9 +13,7 @@ std::string raft_log_key(uint64_t log_id) {
 }
 
 const char raft_hardstate_key[] = "hardState";
-const char raft_applyindex_key[] = "applyIndex";
 const char raft_confstate_key[] = "confState";
-const char raft_nodeinfos_key[] = "nodeInfos";
 
 bool RaftLogStorage::Init() {
   std::string value;
@@ -143,57 +140,6 @@ eraft::Error RaftLogStorage::SetHardState(const raftpb::HardState &hs,
   return nullptr;
 }
 
-eraft::Error RaftLogStorage::SetConfState(const raftpb::ConfState &hs,
-                                          rocksdb::WriteBatch &batch) {
-  std::string val;
-  hs.SerializeToString(&val);
-  batch.Put(meta_cf_, raft_confstate_key, val);
-  return nullptr;
-}
-
-eraft::Error RaftLogStorage::SetNodeInfos(const std::string &info,
-                                          rocksdb::WriteBatch &batch) {
-  std::string val;
-  batch.Put(meta_cf_, raft_nodeinfos_key, info);
-  return nullptr;
-}
-
-std::optional<std::string> RaftLogStorage::GetNodeInfos() {
-  std::optional<std::string> ret;
-  std::string val;
-  auto s = db_->Get(rocksdb::ReadOptions(), meta_cf_, raft_nodeinfos_key, &val);
-  if (s.ok()) {
-    ret = val;
-  } else if (!s.IsNotFound()) {
-    LOG_FATAL("failed to get nodes info: {}", s.ToString());
-  }
-  return ret;
-}
-
-eraft::Error RaftLogStorage::SetApplyIndex(uint64_t apply_index,
-                                           rocksdb::WriteBatch &batch) {
-  batch.Put(meta_cf_, raft_applyindex_key,
-            rocksdb::Slice(common::AsChars(apply_index), sizeof(apply_index)));
-  return nullptr;
-}
-
-uint64_t RaftLogStorage::GetApplyIndex() {
-  uint64_t apply_index = 0;
-  std::string val;
-  auto s =
-      db_->Get(rocksdb::ReadOptions(), meta_cf_, raft_applyindex_key, &val);
-  if (s.ok()) {
-    if (val.size() != sizeof(apply_index)) {
-      LOG_FATAL("invalid raft apply index size, expect:{}, actual:{}",
-                sizeof(apply_index), val.size());
-    }
-    apply_index = common::ReadValue<uint64_t>(val.data());
-  } else if (!s.IsNotFound()) {
-    LOG_FATAL("failed to get apply index: {}", s.ToString());
-  }
-  return apply_index;
-}
-
 eraft::Error RaftLogStorage::Append(std::vector<raftpb::Entry> entries,
                                     rocksdb::WriteBatch &batch) {
   if (entries.empty()) {
@@ -228,6 +174,9 @@ eraft::Error RaftLogStorage::Append(std::vector<raftpb::Entry> entries,
 
 std::tuple<raftpb::HardState, raftpb::ConfState, eraft::Error>
 RaftLogStorage::InitialState() {
+  if (initial_conf_state_.has_value()) {
+    return {hard_state_, *initial_conf_state_, nullptr};
+  }
   return {hard_state_, conf_state_, nullptr};
 }
 

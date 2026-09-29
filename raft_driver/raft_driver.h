@@ -9,6 +9,7 @@
 #include <future>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <shared_mutex>
 #include <string>
 #include <thread>
@@ -258,15 +259,20 @@ struct LocalNodeConfig {
 
 class RaftDriver {
  public:
-  RaftDriver(
-      std::function<void(uint64_t index, const meta::RaftRequest&)> apply,
-      uint64_t apply_id, LocalNodeConfig local_node,
-      const RaftLogStoreConfig& store_config, const RaftConfig& config);
-  RaftDriver(
-      std::function<void(uint64_t index, const meta::RaftRequest&)> apply,
-      uint64_t apply_id, LocalNodeConfig local_node,
-      std::vector<eraft::Peer> init_peers,
-      const RaftLogStoreConfig& store_config, const RaftConfig& config);
+  using ApplyRequest = std::function<void(uint64_t, const meta::RaftRequest&)>;
+  using ApplyConfChange = std::function<void(uint64_t, const raftpb::ConfState&,
+                                             const meta::RaftNodeInfos&)>;
+
+  RaftDriver(ApplyRequest apply, ApplyConfChange apply_conf_change,
+             uint64_t apply_id, std::optional<raftpb::ConfState> conf_state,
+             std::optional<meta::RaftNodeInfos> node_infos,
+             LocalNodeConfig local_node, const RaftLogStoreConfig& store_config,
+             const RaftConfig& config);
+  RaftDriver(ApplyRequest apply, ApplyConfChange apply_conf_change,
+             uint64_t apply_id, std::optional<raftpb::ConfState> conf_state,
+             std::optional<meta::RaftNodeInfos> node_infos,
+             LocalNodeConfig local_node, std::vector<eraft::Peer> init_peers,
+             const RaftLogStoreConfig& store_config, const RaftConfig& config);
   eraft::Error Run();
   void Stop();
   void Step(raftpb::Message msg);
@@ -282,6 +288,18 @@ class RaftDriver {
   RaftStatus GetRaftStatus();
 
  private:
+  struct ApplyOperation {
+    enum class Type { Request, ConfChange };
+
+    Type type = Type::Request;
+    uint64_t index = 0;
+    meta::RaftRequest request;
+    raftpb::ConfState conf_state;
+    meta::RaftNodeInfos node_infos;
+    std::shared_ptr<PromiseContext> context;
+    std::shared_future<void> raft_advanced;
+  };
+
   std::shared_ptr<PromiseContext> Propose(uint64_t uuid, raftpb::Message msg,
                                           uint64_t proposal_bytes);
   bool RemovePendingPromise(uint64_t uuid,
@@ -294,12 +312,16 @@ class RaftDriver {
   void Tick();
   void CheckAndCompactLog();
   void CheckReady();
-  void Apply(const std::vector<raftpb::Entry>& entries);
+  std::vector<ApplyOperation> PrepareApplyOperations(
+      const std::vector<raftpb::Entry>& entries);
+  void Apply(const std::vector<ApplyOperation>& operations);
 
   std::shared_ptr<RaftManager> manager_;
   std::shared_ptr<std::atomic<bool>> callback_alive_;
-  std::function<void(uint64_t, const meta::RaftRequest&)> apply_;
+  ApplyRequest apply_;
+  ApplyConfChange apply_conf_change_;
   std::atomic<uint64_t> apply_id_;
+  std::optional<raftpb::ConfState> initial_conf_state_;
   LocalNodeConfig local_node_;
   size_t shard_id_ = 0;
   uint64_t node_id_;

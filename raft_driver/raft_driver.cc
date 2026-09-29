@@ -564,14 +564,19 @@ bool LocalNodeConfig::Check() {
   return true;
 }
 
-RaftDriver::RaftDriver(
-    std::function<void(uint64_t index, const meta::RaftRequest&)> apply,
-    uint64_t apply_id, LocalNodeConfig local_node,
-    const RaftLogStoreConfig& store_config, const RaftConfig& config)
+RaftDriver::RaftDriver(ApplyRequest apply, ApplyConfChange apply_conf_change,
+                       uint64_t apply_id,
+                       std::optional<raftpb::ConfState> conf_state,
+                       std::optional<meta::RaftNodeInfos> node_infos,
+                       LocalNodeConfig local_node,
+                       const RaftLogStoreConfig& store_config,
+                       const RaftConfig& config)
     : manager_(RaftManager::Instance()),
       callback_alive_(std::make_shared<std::atomic<bool>>(false)),
       apply_(std::move(apply)),
+      apply_conf_change_(std::move(apply_conf_change)),
       apply_id_(apply_id),
+      initial_conf_state_(std::move(conf_state)),
       local_node_(std::move(local_node)),
       shard_id_(manager_->PickShard(local_node_.graph)),
       node_id_(0),
@@ -580,17 +585,26 @@ RaftDriver::RaftDriver(
       compact_interval_(store_config.gc_interval * 60 * 1000),
       compact_timer_(manager_->timer_service(shard_id_), compact_interval_),
       store_config_(store_config),
-      raft_config_(config) {}
+      raft_config_(config) {
+  if (node_infos.has_value()) {
+    node_infos_ = std::move(*node_infos);
+  }
+}
 
-RaftDriver::RaftDriver(
-    std::function<void(uint64_t index, const meta::RaftRequest&)> apply,
-    uint64_t apply_id, LocalNodeConfig local_node,
-    std::vector<eraft::Peer> init_peers, const RaftLogStoreConfig& store_config,
-    const RaftConfig& config)
+RaftDriver::RaftDriver(ApplyRequest apply, ApplyConfChange apply_conf_change,
+                       uint64_t apply_id,
+                       std::optional<raftpb::ConfState> conf_state,
+                       std::optional<meta::RaftNodeInfos> node_infos,
+                       LocalNodeConfig local_node,
+                       std::vector<eraft::Peer> init_peers,
+                       const RaftLogStoreConfig& store_config,
+                       const RaftConfig& config)
     : manager_(RaftManager::Instance()),
       callback_alive_(std::make_shared<std::atomic<bool>>(false)),
       apply_(std::move(apply)),
+      apply_conf_change_(std::move(apply_conf_change)),
       apply_id_(apply_id),
+      initial_conf_state_(std::move(conf_state)),
       local_node_(std::move(local_node)),
       shard_id_(manager_->PickShard(local_node_.graph)),
       node_id_(0),
@@ -600,7 +614,11 @@ RaftDriver::RaftDriver(
       compact_interval_(store_config.gc_interval * 60 * 1000),
       compact_timer_(manager_->timer_service(shard_id_), compact_interval_),
       store_config_(store_config),
-      raft_config_(config) {}
+      raft_config_(config) {
+  if (node_infos.has_value()) {
+    node_infos_ = std::move(*node_infos);
+  }
+}
 
 eraft::Error RaftDriver::Run() {
   stopped_.store(false);
@@ -610,6 +628,14 @@ eraft::Error RaftDriver::Run() {
   }
   if (store_config_.shared_block_cache == nullptr) {
     return eraft::Error("raft log store shared_block_cache is required");
+  }
+  if (!apply_ || !apply_conf_change_) {
+    return eraft::Error("raft state machine apply callbacks are required");
+  }
+  if (apply_id_.load() > 0 &&
+      (!initial_conf_state_.has_value() || node_infos_.nodes().empty())) {
+    return eraft::Error(
+        "persisted raft applied index requires ConfState and node infos");
   }
   rocksdb::Options options;
   options.create_if_missing = true;
@@ -639,10 +665,9 @@ eraft::Error RaftDriver::Run() {
   }
   storage_ = std::make_shared<RaftLogStorage>(db.release(), cf_handles[0],
                                               cf_handles[1]);
-  auto applied = std::max(apply_id_.load(), storage_->GetApplyIndex());
-  auto nodes = storage_->GetNodeInfos();
-  if (nodes.has_value()) {
-    node_infos_.ParseFromString(nodes.value());
+  auto applied = apply_id_.load();
+  if (initial_conf_state_.has_value()) {
+    storage_->SetInitialConfState(*initial_conf_state_);
   }
   for (auto& [id, node] : node_infos_.nodes()) {
     auto client = manager_->AcquireClient(node.ip(), node.raft_poft());
@@ -699,6 +724,8 @@ eraft::Error RaftDriver::Run() {
     // Persist and apply bootstrap ConfChange entries before Run returns, so a
     // crash after graph metadata is visible can still recover local node infos.
     CheckReady();
+    manager_->WaitForApplyService(shard_id_);
+    manager_->WaitForRaftService(shard_id_);
   }
   Tick();
   CheckAndCompactLog();
@@ -719,6 +746,7 @@ void RaftDriver::Stop() {
   manager_->WaitForTimerService(shard_id_);
   manager_->WaitForRaftService(shard_id_);
   manager_->WaitForApplyService(shard_id_);
+  manager_->WaitForRaftService(shard_id_);
   node_clients_.clear();
   if (storage_) {
     storage_->Close();
@@ -1159,75 +1187,78 @@ void RaftDriver::CheckReady() {
   if (!eraft::IsEmptySnap(ready.snapshot_)) {
     LOG_FATAL("snapshot should be empty");
   }
-  if (!ready.committedEntries_.empty()) {
-    bool has_confchange = false;
-    for (auto& entry : ready.committedEntries_) {
-      if (entry.type() == raftpb::EntryConfChange) {
-        has_confchange = true;
-        break;
+  if (ready.committedEntries_.empty()) {
+    rn_->Advance({});
+    if (rn_->HasReady()) {
+      CheckReady();
+    }
+    return;
+  }
+
+  // Prepare RawNode-owned state on the Raft thread and hand the state-machine
+  // operations to the shard's FIFO apply worker. The handoff is the durability
+  // boundary for Advance: GraphDB apply may still be running, while its durable
+  // applied index and proposal completion continue to advance strictly in log
+  // order on the apply worker.
+  auto operations = PrepareApplyOperations(ready.committedEntries_);
+  std::shared_ptr<std::promise<void>> raft_advanced;
+  for (auto& operation : operations) {
+    if (operation.type != ApplyOperation::Type::ConfChange) {
+      continue;
+    }
+    if (!raft_advanced) {
+      raft_advanced = std::make_shared<std::promise<void>>();
+      auto advanced = raft_advanced->get_future().share();
+      for (auto& candidate : operations) {
+        if (candidate.type == ApplyOperation::Type::ConfChange) {
+          candidate.raft_advanced = advanced;
+        }
       }
     }
-    if (!has_confchange) {
-      auto alive = callback_alive_;
-      manager_->apply_service(shard_id_).post(
-          [this, alive,
-           committedEntries = std::move(ready.committedEntries_)]() {
-            if (!alive->load() || stopped_.load()) {
-              return;
-            }
-            Apply(committedEntries);
-          });
-    } else {
-      LOG_INFO("there is ConfChange in committed entries, entries size: {}",
-               ready.committedEntries_.size());
-      Apply(ready.committedEntries_);
-    }
+    break;
+  }
+  if (!operations.empty()) {
+    manager_->apply_service(shard_id_).post(
+        [this, operations = std::move(operations)]() mutable {
+          Apply(operations);
+        });
   }
   rn_->Advance({});
+  if (raft_advanced) {
+    raft_advanced->set_value();
+  }
+  if (rn_->HasReady()) {
+    CheckReady();
+  }
 }
 
-void RaftDriver::Apply(const std::vector<raftpb::Entry>& entries) {
+std::vector<RaftDriver::ApplyOperation> RaftDriver::PrepareApplyOperations(
+    const std::vector<raftpb::Entry>& entries) {
+  std::vector<ApplyOperation> operations;
+  operations.reserve(entries.size());
   for (const auto& entry : entries) {
     switch (entry.type()) {
       case raftpb::EntryNormal: {
-        if (entry.data().empty()) {
-          continue;
+        ApplyOperation operation;
+        operation.type = ApplyOperation::Type::Request;
+        operation.index = entry.index();
+        if (!entry.data().empty() &&
+            !operation.request.ParseFromString(entry.data())) {
+          LOG_FATAL("failed to parse raft request at index {}", entry.index());
         }
-        meta::RaftRequest request;
-        request.ParseFromString(entry.data());
-        std::shared_ptr<raft::PromiseContext> context;
-        {
+        if (!entry.data().empty()) {
           std::lock_guard<std::mutex> guard(promise_mutex_);
-          auto iter = pending_promise_.find(request.id());
+          auto iter = pending_promise_.find(operation.request.id());
           if (iter != pending_promise_.end()) {
-            context = iter->second;
+            operation.context = iter->second;
             pending_promise_.erase(iter);
           }
         }
-        if (context) {
-          context->SetCommited(
+        if (operation.context) {
+          operation.context->SetCommited(
               PromiseContext::CommitResult{nullptr, entry.index()});
         }
-        eraft::Error apply_err = nullptr;
-        try {
-          apply_(entry.index(), request);
-        } catch (const std::exception& e) {
-          apply_err = eraft::Error(e.what());
-        } catch (...) {
-          apply_err = eraft::Error("unknown error");
-        }
-        if (apply_err == nullptr) {
-          apply_id_.store(entry.index());
-        }
-        if (context) {
-          context->SetApplied(
-              PromiseContext::ApplyResult{apply_err, entry.index()});
-          ReleaseProposalAccounting(context);
-        }
-        if (apply_err != nullptr) {
-          LOG_FATAL("failed to apply committed raft request at index {}: {}",
-                    entry.index(), apply_err.String());
-        }
+        operations.emplace_back(std::move(operation));
         break;
       }
       case raftpb::EntryConfChange: {
@@ -1300,34 +1331,71 @@ void RaftDriver::Apply(const std::vector<raftpb::Entry>& entries) {
           }
         }
 
+        ApplyOperation operation;
+        operation.type = ApplyOperation::Type::ConfChange;
+        operation.index = entry.index();
+        operation.conf_state = *confstate;
+        {
+          std::shared_lock<std::shared_mutex> lock(nodes_mutex_);
+          operation.node_infos = node_infos_;
+        }
         LOG_INFO("new conf state: {}", confstate->ShortDebugString());
-        rocksdb::WriteBatch wb;
-        storage_->SetConfState(*confstate, wb);
-        storage_->SetNodeInfos(node_infos_.SerializeAsString(), wb);
-        storage_->SetApplyIndex(entry.index(), wb);
-        storage_->WriteBatch(wb);
-
-        std::shared_ptr<raft::PromiseContext> context;
         {
           std::lock_guard<std::mutex> guard(promise_mutex_);
           auto iter = pending_promise_.find(cc.id());
           if (iter != pending_promise_.end()) {
-            context = iter->second;
+            operation.context = iter->second;
             pending_promise_.erase(iter);
           }
         }
-        if (context) {
-          context->SetCommited(
+        if (operation.context) {
+          operation.context->SetCommited(
               PromiseContext::CommitResult{nullptr, entry.index()});
-          context->SetApplied(
-              PromiseContext::ApplyResult{nullptr, entry.index()});
-          ReleaseProposalAccounting(context);
         }
+        operations.emplace_back(std::move(operation));
         break;
       }
       default: {
         LOG_ERROR("unhandled entry : {}", entry.ShortDebugString());
       }
+    }
+  }
+  return operations;
+}
+
+void RaftDriver::Apply(const std::vector<ApplyOperation>& operations) {
+  for (const auto& operation : operations) {
+    eraft::Error apply_err = nullptr;
+    try {
+      switch (operation.type) {
+        case ApplyOperation::Type::Request:
+          apply_(operation.index, operation.request);
+          break;
+        case ApplyOperation::Type::ConfChange:
+          apply_conf_change_(operation.index, operation.conf_state,
+                             operation.node_infos);
+          break;
+      }
+    } catch (const std::exception& e) {
+      apply_err = eraft::Error(e.what());
+    } catch (...) {
+      apply_err = eraft::Error("unknown error");
+    }
+    if (apply_err == nullptr) {
+      apply_id_.store(operation.index);
+    }
+    if (operation.context) {
+      if (operation.type == ApplyOperation::Type::ConfChange &&
+          operation.raft_advanced.valid()) {
+        operation.raft_advanced.wait();
+      }
+      operation.context->SetApplied(
+          PromiseContext::ApplyResult{apply_err, operation.index});
+      ReleaseProposalAccounting(operation.context);
+    }
+    if (apply_err != nullptr) {
+      LOG_FATAL("failed to apply committed raft entry at index {}: {}",
+                operation.index, apply_err.String());
     }
   }
 }

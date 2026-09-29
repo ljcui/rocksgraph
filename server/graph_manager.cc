@@ -319,21 +319,31 @@ void GraphManager::StartGraphRaft(GraphDB *graph_db,
   auto raft_config = BuildRaftConfig();
   auto *graph_db_ptr = graph_db;
   auto apply_id = graph_db->GetRaftApplyIndex();
+  auto conf_state = graph_db->GetRaftConfState();
+  auto persisted_node_infos = graph_db->GetRaftNodeInfos();
+
+  auto apply_request = [graph_db_ptr](uint64_t index,
+                                      const meta::RaftRequest &request) {
+    ApplyRaftRequest(graph_db_ptr, index, request);
+  };
+  auto apply_conf_change = [graph_db_ptr](uint64_t index,
+                                          const raftpb::ConfState &state,
+                                          const meta::RaftNodeInfos &infos) {
+    graph_db_ptr->ApplyRaftConfChange(index, state, infos);
+  };
 
   std::unique_ptr<raft::RaftDriver> raft_driver;
   if (node_infos == nullptr) {
     raft_driver = std::make_unique<raft::RaftDriver>(
-        [graph_db_ptr](uint64_t index, const meta::RaftRequest &request) {
-          ApplyRaftRequest(graph_db_ptr, index, request);
-        },
-        apply_id, std::move(local_node), store_config, raft_config);
+        std::move(apply_request), std::move(apply_conf_change), apply_id,
+        std::move(conf_state), std::move(persisted_node_infos),
+        std::move(local_node), store_config, raft_config);
   } else {
     auto init_peers = BuildInitPeers(*node_infos);
     raft_driver = std::make_unique<raft::RaftDriver>(
-        [graph_db_ptr](uint64_t index, const meta::RaftRequest &request) {
-          ApplyRaftRequest(graph_db_ptr, index, request);
-        },
-        apply_id, std::move(local_node), std::move(init_peers), store_config,
+        std::move(apply_request), std::move(apply_conf_change), apply_id,
+        std::move(conf_state), std::move(persisted_node_infos),
+        std::move(local_node), std::move(init_peers), store_config,
         raft_config);
   }
 

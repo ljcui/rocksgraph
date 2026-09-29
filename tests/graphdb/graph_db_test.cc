@@ -301,6 +301,53 @@ TEST(GraphDB, raftApplyUpdatesIdGeneratorCacheWithoutRestart) {
   EXPECT_EQ(graphDB->id_generator().GetNextEid(), kNextEid);
 }
 
+TEST(GraphDB, persistsRaftStateMachineMetadataAtomically) {
+  const std::string raft_state_db = "testdb_raft_state_machine_metadata";
+  fs::remove_all(raft_state_db);
+
+  raftpb::ConfState conf_state;
+  conf_state.add_voters(1);
+  conf_state.add_voters(2);
+  meta::RaftNodeInfos node_infos;
+  auto& node = (*node_infos.mutable_nodes())[1];
+  node.set_node_id(1);
+  node.set_graph("raft_graph");
+  node.set_ip("127.0.0.1");
+  node.set_bolt_port(7687);
+  node.set_raft_poft(7688);
+
+  {
+    auto graph_db = GraphDB::Open(raft_state_db, testutil::NewGraphDBOptions());
+    graph_db->db_meta().set_graph_name("raft_graph");
+    graph_db->ApplyRaftConfChange(7, conf_state, node_infos);
+
+    EXPECT_EQ(graph_db->GetRaftApplyIndex(), 7U);
+    ASSERT_TRUE(graph_db->GetRaftConfState().has_value());
+    EXPECT_EQ(graph_db->GetRaftConfState()->SerializeAsString(),
+              conf_state.SerializeAsString());
+    ASSERT_TRUE(graph_db->GetRaftNodeInfos().has_value());
+    EXPECT_EQ(graph_db->GetRaftNodeInfos()->SerializeAsString(),
+              node_infos.SerializeAsString());
+
+    meta::RaftRequest noop;
+    graph_db->ApplyRaftRequest(8, noop);
+    EXPECT_EQ(graph_db->GetRaftApplyIndex(), 8U);
+  }
+
+  {
+    auto graph_db = GraphDB::Open(raft_state_db, testutil::NewGraphDBOptions());
+    EXPECT_EQ(graph_db->GetRaftApplyIndex(), 8U);
+    ASSERT_TRUE(graph_db->GetRaftConfState().has_value());
+    EXPECT_EQ(graph_db->GetRaftConfState()->SerializeAsString(),
+              conf_state.SerializeAsString());
+    ASSERT_TRUE(graph_db->GetRaftNodeInfos().has_value());
+    EXPECT_EQ(graph_db->GetRaftNodeInfos()->SerializeAsString(),
+              node_infos.SerializeAsString());
+  }
+
+  fs::remove_all(raft_state_db);
+}
+
 TEST(GraphDB, updateProperty) {
   fs::remove_all(testdb);
   auto graphDB = GraphDB::Open(testdb, testutil::NewGraphDBOptions());

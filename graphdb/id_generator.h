@@ -34,7 +34,9 @@ enum class MetadataType : char {
   NextEdgeId = 7,
   RaftApplyIndex = 8,
   VertexVectorField = 9,
-  EdgePropertyIndex = 10
+  EdgePropertyIndex = 10,
+  RaftConfState = 11,
+  RaftNodeInfos = 12
 };
 
 class IdGenerator {

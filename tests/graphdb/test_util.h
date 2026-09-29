@@ -150,7 +150,12 @@ inline std::unique_ptr<raft::RaftDriver> NewSingleNodeRaftDriver(
       [graph_db](uint64_t index, const meta::RaftRequest& request) {
         ApplyRaftRequest(graph_db, index, request);
       },
-      graph_db->GetRaftApplyIndex(), std::move(local_node),
+      [graph_db](uint64_t index, const raftpb::ConfState& conf_state,
+                 const meta::RaftNodeInfos& node_infos) {
+        graph_db->ApplyRaftConfChange(index, conf_state, node_infos);
+      },
+      graph_db->GetRaftApplyIndex(), graph_db->GetRaftConfState(),
+      graph_db->GetRaftNodeInfos(), std::move(local_node),
       std::move(init_peers), store_config, raft_config);
 }
 

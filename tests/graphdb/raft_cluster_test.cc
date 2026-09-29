@@ -526,6 +526,50 @@ std::vector<eraft::Peer> MakeInitPeers(const raft::LocalNodeConfig& local_node,
   return init_peers;
 }
 
+class TestRaftStateMachine {
+ public:
+  void SetAppliedIndex(uint64_t index) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    applied_index_ = index;
+  }
+
+  void ApplyConfChange(uint64_t index, const raftpb::ConfState& conf_state,
+                       const meta::RaftNodeInfos& node_infos) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    conf_state_ = conf_state;
+    node_infos_ = node_infos;
+    applied_index_ = index;
+  }
+
+  raft::RaftDriver::ApplyConfChange ConfChangeCallback() {
+    return [this](uint64_t index, const raftpb::ConfState& conf_state,
+                  const meta::RaftNodeInfos& node_infos) {
+      ApplyConfChange(index, conf_state, node_infos);
+    };
+  }
+
+  uint64_t AppliedIndex() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return applied_index_;
+  }
+
+  std::optional<raftpb::ConfState> ConfState() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return conf_state_;
+  }
+
+  std::optional<meta::RaftNodeInfos> NodeInfos() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return node_infos_;
+  }
+
+ private:
+  mutable std::mutex mutex_;
+  uint64_t applied_index_ = 0;
+  std::optional<raftpb::ConfState> conf_state_;
+  std::optional<meta::RaftNodeInfos> node_infos_;
+};
+
 bool WaitForRaftDriverLeader(
     raft::RaftDriver* driver, uint64_t expected_leader_id = 1,
     std::chrono::milliseconds timeout = std::chrono::seconds(5)) {
@@ -2169,11 +2213,10 @@ TEST(RaftCluster, stoppedLeaderFailsOverAndCatchesUpAfterRestart) {
   }
 }
 
-TEST(RaftLogStorage, persistsStateEntriesAndMetadataAcrossReopen) {
+TEST(RaftLogStorage, persistsHardStateAndEntriesAcrossReopen) {
   const std::string raft_path = "testdb_raft_log_storage_persistence";
   fs::remove_all(raft_path);
 
-  auto local_node = MakeLocalNodeConfig("log_storage_persistence_graph");
   {
     auto storage = OpenRaftLogStorage(raft_path);
     ASSERT_FALSE(storage->Init());
@@ -2184,9 +2227,6 @@ TEST(RaftLogStorage, persistsStateEntriesAndMetadataAcrossReopen) {
     auto last_index = storage->LastIndex();
     EXPECT_EQ(last_index.second, nullptr);
     EXPECT_EQ(last_index.first, 0U);
-    EXPECT_EQ(storage->GetApplyIndex(), 0U);
-    EXPECT_FALSE(storage->GetNodeInfos().has_value());
-
     raftpb::HardState hard_state;
     hard_state.set_term(3);
     hard_state.set_vote(1);
@@ -2196,15 +2236,8 @@ TEST(RaftLogStorage, persistsStateEntriesAndMetadataAcrossReopen) {
     conf_state.add_voters(1);
     conf_state.add_voters(2);
 
-    meta::RaftNodeInfos node_infos;
-    (*node_infos.mutable_nodes())[1] = MakeNodeInfo(local_node, 1);
-
     rocksdb::WriteBatch wb;
     EXPECT_EQ(storage->SetHardState(hard_state, wb), nullptr);
-    EXPECT_EQ(storage->SetConfState(conf_state, wb), nullptr);
-    EXPECT_EQ(storage->SetNodeInfos(node_infos.SerializeAsString(), wb),
-              nullptr);
-    EXPECT_EQ(storage->SetApplyIndex(2, wb), nullptr);
     EXPECT_EQ(storage->Append(
                   {MakeLogEntry(1, 1, "one"), MakeLogEntry(2, 1, "two")}, wb),
               nullptr);
@@ -2221,17 +2254,7 @@ TEST(RaftLogStorage, persistsStateEntriesAndMetadataAcrossReopen) {
     EXPECT_EQ(hard_state.term(), 3U);
     EXPECT_EQ(hard_state.vote(), 1U);
     EXPECT_EQ(hard_state.commit(), 2U);
-    ASSERT_EQ(conf_state.voters_size(), 2);
-    EXPECT_EQ(conf_state.voters(0), 1U);
-    EXPECT_EQ(conf_state.voters(1), 2U);
-    EXPECT_EQ(storage->GetApplyIndex(), 2U);
-
-    auto node_infos_data = storage->GetNodeInfos();
-    ASSERT_TRUE(node_infos_data.has_value());
-    meta::RaftNodeInfos node_infos;
-    ASSERT_TRUE(node_infos.ParseFromString(*node_infos_data));
-    ASSERT_TRUE(node_infos.nodes().count(1));
-    EXPECT_EQ(node_infos.nodes().at(1).graph(), local_node.graph);
+    EXPECT_TRUE(conf_state.voters().empty());
 
     auto first_index = storage->FirstIndex();
     EXPECT_EQ(first_index.second, nullptr);
@@ -2348,6 +2371,10 @@ TEST(RaftDriver, startupCompactsLogWhenAppliedIndexExceedsRetention) {
   auto local_node = MakeLocalNodeConfig("driver_compaction_graph");
   constexpr uint64_t kAppliedIndex = 100001;
   constexpr uint64_t kLastIndex = kAppliedIndex + 1;
+  raftpb::ConfState conf_state;
+  conf_state.add_voters(1);
+  meta::RaftNodeInfos node_infos;
+  (*node_infos.mutable_nodes())[1] = MakeNodeInfo(local_node, 1);
   {
     auto storage = OpenRaftLogStorage(raft_path);
     ASSERT_FALSE(storage->Init());
@@ -2357,12 +2384,6 @@ TEST(RaftDriver, startupCompactsLogWhenAppliedIndexExceedsRetention) {
     hard_state.set_vote(1);
     hard_state.set_commit(kAppliedIndex);
 
-    raftpb::ConfState conf_state;
-    conf_state.add_voters(1);
-
-    meta::RaftNodeInfos node_infos;
-    (*node_infos.mutable_nodes())[1] = MakeNodeInfo(local_node, 1);
-
     std::vector<raftpb::Entry> entries;
     entries.reserve(kLastIndex);
     for (uint64_t i = 1; i <= kLastIndex; ++i) {
@@ -2371,10 +2392,6 @@ TEST(RaftDriver, startupCompactsLogWhenAppliedIndexExceedsRetention) {
 
     rocksdb::WriteBatch wb;
     ASSERT_EQ(storage->SetHardState(hard_state, wb), nullptr);
-    ASSERT_EQ(storage->SetConfState(conf_state, wb), nullptr);
-    ASSERT_EQ(storage->SetNodeInfos(node_infos.SerializeAsString(), wb),
-              nullptr);
-    ASSERT_EQ(storage->SetApplyIndex(kAppliedIndex, wb), nullptr);
     ASSERT_EQ(storage->Append(std::move(entries), wb), nullptr);
     storage->WriteBatch(wb);
     storage.Close();
@@ -2384,8 +2401,14 @@ TEST(RaftDriver, startupCompactsLogWhenAppliedIndexExceedsRetention) {
   store_config.keep_logs = 0;
   auto raft_config = MakeRaftConfig();
 
+  TestRaftStateMachine state_machine;
+  state_machine.SetAppliedIndex(kAppliedIndex);
+  state_machine.ApplyConfChange(kAppliedIndex, conf_state, node_infos);
   raft::RaftDriver driver([](uint64_t, const meta::RaftRequest&) {},
-                          kAppliedIndex, local_node, store_config, raft_config);
+                          state_machine.ConfChangeCallback(),
+                          state_machine.AppliedIndex(),
+                          state_machine.ConfState(), state_machine.NodeInfos(),
+                          local_node, store_config, raft_config);
 
   auto err = driver.Run();
   if (err != nullptr) {
@@ -2445,13 +2468,14 @@ TEST(RaftDriver, proposeWriteBatchTimesOutWhenApplyStalls) {
   init_peers.emplace_back(std::move(peer));
 
   std::atomic<uint64_t> applied_index{0};
+  TestRaftStateMachine state_machine;
   raft::RaftDriver driver(
       [&applied_index](uint64_t index, const meta::RaftRequest&) {
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
         applied_index.store(index);
       },
-      0, std::move(local_node), std::move(init_peers), store_config,
-      raft_config);
+      state_machine.ConfChangeCallback(), 0, std::nullopt, std::nullopt,
+      std::move(local_node), std::move(init_peers), store_config, raft_config);
 
   auto err = driver.Run();
   if (err != nullptr) {
@@ -2484,6 +2508,111 @@ TEST(RaftDriver, proposeWriteBatchTimesOutWhenApplyStalls) {
   fs::remove_all(raft_path);
 }
 
+TEST(RaftDriver, raftThreadRemainsResponsiveWhileApplyStalls) {
+  const std::string raft_path = "testdb_raft_async_apply";
+  fs::remove_all(raft_path);
+
+  auto local_node = MakeLocalNodeConfig("async_apply_graph");
+  auto store_config = MakeRaftLogStoreConfig(raft_path);
+  auto raft_config = MakeRaftConfig();
+  raft_config.proposal_timeout = 5000;
+
+  meta::RaftNodeInfo node_info = MakeNodeInfo(local_node, 1);
+  std::vector<eraft::Peer> init_peers;
+  eraft::Peer peer;
+  peer.id_ = 1;
+  peer.context_ = node_info.SerializeAsString();
+  init_peers.emplace_back(std::move(peer));
+
+  std::promise<void> apply_started;
+  auto apply_started_future = apply_started.get_future();
+  std::promise<void> release_apply;
+  auto release_apply_future = release_apply.get_future().share();
+  std::atomic<bool> first_graph_write{true};
+  std::atomic<uint64_t> applied_index{0};
+  TestRaftStateMachine state_machine;
+  raft::RaftDriver driver(
+      [&apply_started, &release_apply_future, &first_graph_write,
+       &applied_index](uint64_t index, const meta::RaftRequest& request) {
+        if (request.wb_kind() == meta::WriteBatchKind::GRAPH_WRITE &&
+            first_graph_write.exchange(false)) {
+          apply_started.set_value();
+          release_apply_future.wait();
+        }
+        applied_index.store(index);
+      },
+      state_machine.ConfChangeCallback(), 0, std::nullopt, std::nullopt,
+      std::move(local_node), std::move(init_peers), store_config, raft_config);
+
+  auto err = driver.Run();
+  if (err != nullptr) {
+    driver.Stop();
+    FAIL() << err.String();
+  }
+  if (!testutil::WaitUntilRaftLeader(&driver)) {
+    driver.Stop();
+    FAIL() << "raft driver did not become leader";
+  }
+
+  rocksdb::WriteBatch first_wb;
+  ASSERT_TRUE(first_wb.Put("first", "value").ok());
+  auto first_result_future =
+      std::async(std::launch::async, [&driver, &first_wb] {
+        return driver.ProposeWriteBatch(meta::WriteBatchKind::GRAPH_WRITE,
+                                        first_wb);
+      });
+
+  const bool started = apply_started_future.wait_for(std::chrono::seconds(5)) ==
+                       std::future_status::ready;
+  std::future<raft::RaftStatus> status_future;
+  bool status_ready = false;
+  std::shared_ptr<raft::PromiseContext> second_context;
+  std::future<raft::PromiseContext::CommitResult> second_committed_future;
+  std::future<raft::PromiseContext::ApplyResult> second_applied_future;
+  bool second_committed_before_release = false;
+  if (started) {
+    status_future = std::async(std::launch::async,
+                               [&driver] { return driver.GetRaftStatus(); });
+    status_ready = status_future.wait_for(std::chrono::milliseconds(500)) ==
+                   std::future_status::ready;
+
+    rocksdb::WriteBatch second_wb;
+    EXPECT_TRUE(second_wb.Put("second", "value").ok());
+    meta::RaftRequest second_request;
+    second_request.set_wb_kind(meta::WriteBatchKind::GRAPH_WRITE);
+    second_request.set_wb_data(second_wb.Data());
+    second_context = driver.ProposeRaftRequest(std::move(second_request));
+    second_committed_future = second_context->commited.get_future();
+    second_applied_future = second_context->applied.get_future();
+    second_committed_before_release =
+        second_committed_future.wait_for(std::chrono::seconds(2)) ==
+        std::future_status::ready;
+  }
+  release_apply.set_value();
+
+  EXPECT_TRUE(started);
+  EXPECT_TRUE(status_ready)
+      << "Raft scheduler was blocked by the state-machine apply callback";
+  EXPECT_TRUE(second_committed_before_release)
+      << "Raft did not Advance after handing the first Ready to apply";
+  if (status_future.valid()) {
+    status_future.wait();
+  }
+  auto first_result = first_result_future.get();
+  ASSERT_EQ(first_result.err, nullptr);
+  if (second_context) {
+    auto second_committed = second_committed_future.get();
+    EXPECT_EQ(second_committed.err, nullptr);
+    auto second_applied = second_applied_future.get();
+    EXPECT_EQ(second_applied.err, nullptr);
+    EXPECT_GT(second_applied.index, first_result.index);
+    EXPECT_EQ(applied_index.load(), second_applied.index);
+  }
+
+  driver.Stop();
+  fs::remove_all(raft_path);
+}
+
 TEST(RaftDriver, restartRecoversNodeInfosAndContinuesApplying) {
   const std::string raft_path = "testdb_raft_restart_recovery";
   fs::remove_all(raft_path);
@@ -2491,15 +2620,20 @@ TEST(RaftDriver, restartRecoversNodeInfosAndContinuesApplying) {
   auto local_node = MakeLocalNodeConfig("restart_recovery_graph");
   auto store_config = MakeRaftLogStoreConfig(raft_path);
   auto raft_config = MakeRaftConfig();
+  TestRaftStateMachine state_machine;
 
   uint64_t first_applied_index = 0;
   {
     std::atomic<uint64_t> applied_index{0};
     raft::RaftDriver driver(
-        [&applied_index](uint64_t index, const meta::RaftRequest&) {
+        [&applied_index, &state_machine](uint64_t index,
+                                         const meta::RaftRequest&) {
           applied_index.store(index);
+          state_machine.SetAppliedIndex(index);
         },
-        0, local_node, MakeInitPeers(local_node), store_config, raft_config);
+        state_machine.ConfChangeCallback(), state_machine.AppliedIndex(),
+        state_machine.ConfState(), state_machine.NodeInfos(), local_node,
+        MakeInitPeers(local_node), store_config, raft_config);
 
     auto err = driver.Run();
     if (err != nullptr) {
@@ -2534,10 +2668,14 @@ TEST(RaftDriver, restartRecoversNodeInfosAndContinuesApplying) {
   {
     std::atomic<uint64_t> applied_index{first_applied_index};
     raft::RaftDriver driver(
-        [&applied_index](uint64_t index, const meta::RaftRequest&) {
+        [&applied_index, &state_machine](uint64_t index,
+                                         const meta::RaftRequest&) {
           applied_index.store(index);
+          state_machine.SetAppliedIndex(index);
         },
-        first_applied_index, local_node, store_config, raft_config);
+        state_machine.ConfChangeCallback(), state_machine.AppliedIndex(),
+        state_machine.ConfState(), state_machine.NodeInfos(), local_node,
+        store_config, raft_config);
 
     auto err = driver.Run();
     if (err != nullptr) {
@@ -2585,8 +2723,10 @@ TEST(RaftDriver, freshBootstrapWithoutInitialPeersFails) {
   auto store_config = MakeRaftLogStoreConfig(raft_path);
   auto raft_config = MakeRaftConfig();
 
-  raft::RaftDriver driver([](uint64_t, const meta::RaftRequest&) {}, 0,
-                          local_node, store_config, raft_config);
+  TestRaftStateMachine state_machine;
+  raft::RaftDriver driver([](uint64_t, const meta::RaftRequest&) {},
+                          state_machine.ConfChangeCallback(), 0, std::nullopt,
+                          std::nullopt, local_node, store_config, raft_config);
 
   auto err = driver.Run();
   EXPECT_NE(err, nullptr);
@@ -2673,9 +2813,11 @@ TEST(RaftDriver, freshBootstrapRejectsInvalidInitialPeerContext) {
   peer.context_ = "not a serialized raft node info";
   init_peers.emplace_back(std::move(peer));
 
-  raft::RaftDriver driver([](uint64_t, const meta::RaftRequest&) {}, 0,
-                          local_node, std::move(init_peers), store_config,
-                          raft_config);
+  TestRaftStateMachine state_machine;
+  raft::RaftDriver driver([](uint64_t, const meta::RaftRequest&) {},
+                          state_machine.ConfChangeCallback(), 0, std::nullopt,
+                          std::nullopt, local_node, std::move(init_peers),
+                          store_config, raft_config);
 
   auto err = driver.Run();
   EXPECT_NE(err, nullptr);
@@ -2695,9 +2837,11 @@ TEST(RaftDriver, freshBootstrapRejectsMissingLocalInitialPeer) {
   auto store_config = MakeRaftLogStoreConfig(raft_path);
   auto raft_config = MakeRaftConfig();
 
-  raft::RaftDriver driver([](uint64_t, const meta::RaftRequest&) {}, 0,
-                          local_node, MakeInitPeers(other_node), store_config,
-                          raft_config);
+  TestRaftStateMachine state_machine;
+  raft::RaftDriver driver([](uint64_t, const meta::RaftRequest&) {},
+                          state_machine.ConfChangeCallback(), 0, std::nullopt,
+                          std::nullopt, local_node, MakeInitPeers(other_node),
+                          store_config, raft_config);
 
   auto err = driver.Run();
   EXPECT_NE(err, nullptr);
@@ -2722,9 +2866,11 @@ TEST(RaftDriver, freshBootstrapRejectsDuplicateLocalInitialPeers) {
   duplicate_peer.context_ = MakeNodeInfo(local_node, 2).SerializeAsString();
   init_peers.emplace_back(std::move(duplicate_peer));
 
-  raft::RaftDriver driver([](uint64_t, const meta::RaftRequest&) {}, 0,
-                          local_node, std::move(init_peers), store_config,
-                          raft_config);
+  TestRaftStateMachine state_machine;
+  raft::RaftDriver driver([](uint64_t, const meta::RaftRequest&) {},
+                          state_machine.ConfChangeCallback(), 0, std::nullopt,
+                          std::nullopt, local_node, std::move(init_peers),
+                          store_config, raft_config);
 
   auto err = driver.Run();
   EXPECT_NE(err, nullptr);
@@ -2742,11 +2888,16 @@ TEST(RaftDriver, restartRejectsLocalNodeMissingFromPersistedNodeInfos) {
   auto local_node = MakeLocalNodeConfig("restart_identity_mismatch_graph");
   auto store_config = MakeRaftLogStoreConfig(raft_path);
   auto raft_config = MakeRaftConfig();
+  TestRaftStateMachine state_machine;
 
   {
-    raft::RaftDriver driver([](uint64_t, const meta::RaftRequest&) {}, 0,
-                            local_node, MakeInitPeers(local_node), store_config,
-                            raft_config);
+    raft::RaftDriver driver(
+        [&state_machine](uint64_t index, const meta::RaftRequest&) {
+          state_machine.SetAppliedIndex(index);
+        },
+        state_machine.ConfChangeCallback(), state_machine.AppliedIndex(),
+        state_machine.ConfState(), state_machine.NodeInfos(), local_node,
+        MakeInitPeers(local_node), store_config, raft_config);
 
     auto err = driver.Run();
     if (err != nullptr) {
@@ -2764,8 +2915,13 @@ TEST(RaftDriver, restartRejectsLocalNodeMissingFromPersistedNodeInfos) {
 
   auto mismatched_node = local_node;
   mismatched_node.bolt_port = AllocateFreePort();
-  raft::RaftDriver driver([](uint64_t, const meta::RaftRequest&) {}, 0,
-                          mismatched_node, store_config, raft_config);
+  raft::RaftDriver driver(
+      [&state_machine](uint64_t index, const meta::RaftRequest&) {
+        state_machine.SetAppliedIndex(index);
+      },
+      state_machine.ConfChangeCallback(), state_machine.AppliedIndex(),
+      state_machine.ConfState(), state_machine.NodeInfos(), mismatched_node,
+      store_config, raft_config);
 
   auto err = driver.Run();
   EXPECT_NE(err, nullptr);
@@ -2785,11 +2941,17 @@ TEST(RaftDriver, concurrentLeaderProposalsAllApply) {
   auto raft_config = MakeRaftConfig();
 
   std::atomic<uint64_t> applied_count{0};
+  TestRaftStateMachine state_machine;
   raft::RaftDriver driver(
-      [&applied_count](uint64_t, const meta::RaftRequest&) {
-        applied_count.fetch_add(1);
+      [&applied_count, &state_machine](uint64_t index,
+                                       const meta::RaftRequest& request) {
+        state_machine.SetAppliedIndex(index);
+        if (request.wb_kind() == meta::WriteBatchKind::GRAPH_WRITE) {
+          applied_count.fetch_add(1);
+        }
       },
-      0, local_node, MakeInitPeers(local_node), store_config, raft_config);
+      state_machine.ConfChangeCallback(), 0, std::nullopt, std::nullopt,
+      local_node, MakeInitPeers(local_node), store_config, raft_config);
 
   auto err = driver.Run();
   if (err != nullptr) {
@@ -2837,8 +2999,11 @@ TEST(RaftDriver, concurrentLeaderProposalsAllApply) {
 
 TEST(RaftDriver, rejectUnknownWriteBatchKind) {
   auto local_node = MakeLocalNodeConfig("unknown_wb_kind_graph");
-  raft::RaftDriver driver([](uint64_t, const meta::RaftRequest&) {}, 0,
-                          std::move(local_node), {}, MakeRaftConfig());
+  TestRaftStateMachine state_machine;
+  raft::RaftDriver driver([](uint64_t, const meta::RaftRequest&) {},
+                          state_machine.ConfChangeCallback(), 0, std::nullopt,
+                          std::nullopt, std::move(local_node), {},
+                          MakeRaftConfig());
 
   meta::RaftRequest request;
   EXPECT_THROW(driver.ProposeRaftRequest(std::move(request)), std::exception);
@@ -2852,9 +3017,11 @@ TEST(RaftDriver, rejectWriteBatchAfterStop) {
   auto store_config = MakeRaftLogStoreConfig(raft_path);
   auto raft_config = MakeRaftConfig();
 
-  raft::RaftDriver driver([](uint64_t, const meta::RaftRequest&) {}, 0,
-                          local_node, MakeInitPeers(local_node), store_config,
-                          raft_config);
+  TestRaftStateMachine state_machine;
+  raft::RaftDriver driver([](uint64_t, const meta::RaftRequest&) {},
+                          state_machine.ConfChangeCallback(), 0, std::nullopt,
+                          std::nullopt, local_node, MakeInitPeers(local_node),
+                          store_config, raft_config);
 
   auto err = driver.Run();
   if (err != nullptr) {
@@ -2888,9 +3055,11 @@ TEST(RaftDriver, learnerConfChangeUpdatesNodeInfos) {
   auto store_config = MakeRaftLogStoreConfig(raft_path);
   auto raft_config = MakeRaftConfig();
 
-  raft::RaftDriver driver([](uint64_t, const meta::RaftRequest&) {}, 0,
-                          local_node, MakeInitPeers(local_node), store_config,
-                          raft_config);
+  TestRaftStateMachine state_machine;
+  raft::RaftDriver driver([](uint64_t, const meta::RaftRequest&) {},
+                          state_machine.ConfChangeCallback(), 0, std::nullopt,
+                          std::nullopt, local_node, MakeInitPeers(local_node),
+                          store_config, raft_config);
 
   auto err = driver.Run();
   if (err != nullptr) {
@@ -2955,11 +3124,16 @@ TEST(RaftDriver, restartRejectsDuplicatePersistedNodeInfos) {
   auto local_node = MakeLocalNodeConfig("restart_duplicate_node_infos_graph");
   auto store_config = MakeRaftLogStoreConfig(raft_path);
   auto raft_config = MakeRaftConfig();
+  TestRaftStateMachine state_machine;
 
   {
-    raft::RaftDriver driver([](uint64_t, const meta::RaftRequest&) {}, 0,
-                            local_node, MakeInitPeers(local_node), store_config,
-                            raft_config);
+    raft::RaftDriver driver(
+        [&state_machine](uint64_t index, const meta::RaftRequest&) {
+          state_machine.SetAppliedIndex(index);
+        },
+        state_machine.ConfChangeCallback(), state_machine.AppliedIndex(),
+        state_machine.ConfState(), state_machine.NodeInfos(), local_node,
+        MakeInitPeers(local_node), store_config, raft_config);
 
     auto err = driver.Run();
     if (err != nullptr) {
@@ -2988,8 +3162,13 @@ TEST(RaftDriver, restartRejectsDuplicatePersistedNodeInfos) {
     driver.Stop();
   }
 
-  raft::RaftDriver driver([](uint64_t, const meta::RaftRequest&) {}, 0,
-                          local_node, store_config, raft_config);
+  raft::RaftDriver driver(
+      [&state_machine](uint64_t index, const meta::RaftRequest&) {
+        state_machine.SetAppliedIndex(index);
+      },
+      state_machine.ConfChangeCallback(), state_machine.AppliedIndex(),
+      state_machine.ConfState(), state_machine.NodeInfos(), local_node,
+      store_config, raft_config);
 
   auto err = driver.Run();
   EXPECT_NE(err, nullptr);
@@ -3010,8 +3189,10 @@ TEST(RaftDriver, rejectOversizedWriteBatch) {
   raft::RaftConfig raft_config;
   raft_config.max_proposal_bytes = 32;
 
-  raft::RaftDriver driver([](uint64_t, const meta::RaftRequest&) {}, 0,
-                          std::move(local_node), {}, raft_config);
+  TestRaftStateMachine state_machine;
+  raft::RaftDriver driver([](uint64_t, const meta::RaftRequest&) {},
+                          state_machine.ConfChangeCallback(), 0, std::nullopt,
+                          std::nullopt, std::move(local_node), {}, raft_config);
 
   rocksdb::WriteBatch wb;
   ASSERT_TRUE(wb.Put("k", std::string(1024, 'v')).ok());
@@ -3056,12 +3237,13 @@ TEST(RaftDriver, rejectWriteBatchWhenPendingQueueIsFull) {
   peer.context_ = node_info.SerializeAsString();
   init_peers.emplace_back(std::move(peer));
 
+  TestRaftStateMachine state_machine;
   raft::RaftDriver driver(
       [](uint64_t, const meta::RaftRequest&) {
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
       },
-      0, std::move(local_node), std::move(init_peers), store_config,
-      raft_config);
+      state_machine.ConfChangeCallback(), 0, std::nullopt, std::nullopt,
+      std::move(local_node), std::move(init_peers), store_config, raft_config);
 
   auto err = driver.Run();
   if (err != nullptr) {
@@ -3140,12 +3322,13 @@ TEST(RaftDriver, rejectWriteBatchWhenPendingBytesAreFull) {
   peer.context_ = node_info.SerializeAsString();
   init_peers.emplace_back(std::move(peer));
 
+  TestRaftStateMachine state_machine;
   raft::RaftDriver driver(
       [](uint64_t, const meta::RaftRequest&) {
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
       },
-      0, std::move(local_node), std::move(init_peers), store_config,
-      raft_config);
+      state_machine.ConfChangeCallback(), 0, std::nullopt, std::nullopt,
+      std::move(local_node), std::move(init_peers), store_config, raft_config);
 
   auto err = driver.Run();
   if (err != nullptr) {

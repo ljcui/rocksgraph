@@ -16,6 +16,10 @@ namespace {
 
 const std::string kRaftApplyIndexKey(
     1, static_cast<char>(MetadataType::RaftApplyIndex));
+const std::string kRaftConfStateKey(
+    1, static_cast<char>(MetadataType::RaftConfState));
+const std::string kRaftNodeInfosKey(
+    1, static_cast<char>(MetadataType::RaftNodeInfos));
 
 class IdGeneratorMetaBatchHandler : public rocksdb::WriteBatch::Handler {
  public:
@@ -97,6 +101,44 @@ uint64_t GraphDB::GetRaftApplyIndex() const {
   return ReadValue<uint64_t>(val.data());
 }
 
+std::optional<raftpb::ConfState> GraphDB::GetRaftConfState() const {
+  std::string val;
+  auto s = db_->Get({}, graph_cf_.meta_info, kRaftConfStateKey, &val);
+  if (s.IsNotFound()) {
+    return std::nullopt;
+  }
+  if (!s.ok()) {
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "failed to load raft conf state: {}", s.ToString());
+  }
+  raftpb::ConfState conf_state;
+  if (!conf_state.ParseFromString(val)) {
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "failed to parse raft conf state for graph [{}]",
+             db_meta_.graph_name());
+  }
+  return conf_state;
+}
+
+std::optional<meta::RaftNodeInfos> GraphDB::GetRaftNodeInfos() const {
+  std::string val;
+  auto s = db_->Get({}, graph_cf_.meta_info, kRaftNodeInfosKey, &val);
+  if (s.IsNotFound()) {
+    return std::nullopt;
+  }
+  if (!s.ok()) {
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "failed to load raft node infos: {}", s.ToString());
+  }
+  meta::RaftNodeInfos node_infos;
+  if (!node_infos.ParseFromString(val)) {
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "failed to parse raft node infos for graph [{}]",
+             db_meta_.graph_name());
+  }
+  return node_infos;
+}
+
 void GraphDB::ApplyRaftRequest(uint64_t index,
                                const meta::RaftRequest& request) {
   switch (request.wb_kind()) {
@@ -116,6 +158,24 @@ void GraphDB::ApplyRaftRequest(uint64_t index,
       return;
     }
     case meta::WriteBatchKind::UNKNOWN:
+      if (request.wb_data().empty()) {
+        rocksdb::WriteBatch wb;
+        auto s = SetRaftApplyIndex(index, &wb);
+        if (!s.ok()) {
+          RG_THROW(common::ErrorCode::StorageEngineError,
+                   "failed to persist raft apply index for graph [{}] at "
+                   "index {}: {}",
+                   db_meta_.graph_name(), index, s.ToString());
+        }
+        s = db_->Write({}, &wb);
+        if (!s.ok()) {
+          RG_THROW(common::ErrorCode::StorageEngineError,
+                   "failed to persist raft noop for graph [{}] at index {}: "
+                   "{}",
+                   db_meta_.graph_name(), index, s.ToString());
+        }
+        return;
+      }
       RG_THROW(common::ErrorCode::InvalidParameter,
                "write batch kind must be specified for graph [{}] at index "
                "{}",
@@ -125,6 +185,50 @@ void GraphDB::ApplyRaftRequest(uint64_t index,
                "unsupported write batch kind {} for graph [{}] at index {}",
                static_cast<int>(request.wb_kind()), db_meta_.graph_name(),
                index);
+  }
+}
+
+void GraphDB::ApplyRaftConfChange(uint64_t index,
+                                  const raftpb::ConfState& conf_state,
+                                  const meta::RaftNodeInfos& node_infos) {
+  std::string conf_state_data;
+  if (!conf_state.SerializeToString(&conf_state_data)) {
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "failed to serialize raft conf state for graph [{}]",
+             db_meta_.graph_name());
+  }
+  std::string node_infos_data;
+  if (!node_infos.SerializeToString(&node_infos_data)) {
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "failed to serialize raft node infos for graph [{}]",
+             db_meta_.graph_name());
+  }
+  rocksdb::WriteBatch wb;
+  auto s = wb.Put(graph_cf_.meta_info, kRaftConfStateKey, conf_state_data);
+  if (!s.ok()) {
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "failed to prepare raft conf state for graph [{}]: {}",
+             db_meta_.graph_name(), s.ToString());
+  }
+  s = wb.Put(graph_cf_.meta_info, kRaftNodeInfosKey, node_infos_data);
+  if (!s.ok()) {
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "failed to prepare raft node infos for graph [{}]: {}",
+             db_meta_.graph_name(), s.ToString());
+  }
+  s = SetRaftApplyIndex(index, &wb);
+  if (!s.ok()) {
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "failed to prepare raft apply index for graph [{}] at index {}: "
+             "{}",
+             db_meta_.graph_name(), index, s.ToString());
+  }
+  s = db_->Write({}, &wb);
+  if (!s.ok()) {
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "failed to apply raft conf change for graph [{}] at index {}: "
+             "{}",
+             db_meta_.graph_name(), index, s.ToString());
   }
 }
 

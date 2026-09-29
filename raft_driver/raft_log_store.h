@@ -3,6 +3,8 @@
 #include <rocksdb/db.h>
 
 #include <boost/noncopyable.hpp>
+#include <optional>
+#include <utility>
 
 #include "etcd_raft/rawnode.h"
 namespace raft {
@@ -23,16 +25,12 @@ struct RaftLogStorage : private boost::noncopyable, eraft::Storage {
 
   bool Init();
   void Close();
+  void SetInitialConfState(raftpb::ConfState conf_state) {
+    initial_conf_state_ = std::move(conf_state);
+  }
   void Compact(uint64_t index);
   eraft::Error SetHardState(const raftpb::HardState& hs,
                             rocksdb::WriteBatch& batch);
-  eraft::Error SetConfState(const raftpb::ConfState& hs,
-                            rocksdb::WriteBatch& batch);
-  eraft::Error SetNodeInfos(const std::string& info,
-                            rocksdb::WriteBatch& batch);
-  std::optional<std::string> GetNodeInfos();
-  eraft::Error SetApplyIndex(uint64_t apply_index, rocksdb::WriteBatch& batch);
-  uint64_t GetApplyIndex();
   eraft::Error Append(std::vector<raftpb::Entry> entries,
                       rocksdb::WriteBatch& batch);
   void WriteBatch(rocksdb::WriteBatch& batch);
@@ -50,5 +48,6 @@ struct RaftLogStorage : private boost::noncopyable, eraft::Storage {
   uint64_t last_entry_index_ = 0;
   raftpb::HardState hard_state_;
   raftpb::ConfState conf_state_;
+  std::optional<raftpb::ConfState> initial_conf_state_;
 };
 }  // namespace raft
