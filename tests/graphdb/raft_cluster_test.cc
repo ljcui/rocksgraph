@@ -167,6 +167,37 @@ class TestServerCluster final {
     servers_[index] = std::move(server);
   }
 
+  size_t AddServer() {
+    TestServerConfig config;
+    config.node_id = static_cast<uint64_t>(server_configs_.size() + 1);
+    config.bolt_port = AllocateFreePort();
+    do {
+      config.raft_port = AllocateFreePort();
+    } while (config.raft_port == config.bolt_port);
+    config.data_path = base_path_ + "/node" + std::to_string(config.node_id);
+    server_configs_.emplace_back(std::move(config));
+    servers_.resize(server_configs_.size());
+    const size_t index = server_configs_.size() - 1;
+    StartServer(index);
+    return index;
+  }
+
+  meta::RaftNodeInfo NodeInfo(size_t index, const std::string& graph_name,
+                              bool learner = false) const {
+    if (index >= server_configs_.size()) {
+      throw std::out_of_range("raft test server index is out of range");
+    }
+    const auto& config = server_configs_[index];
+    meta::RaftNodeInfo node;
+    node.set_node_id(config.node_id);
+    node.set_ip("127.0.0.1");
+    node.set_bolt_port(config.bolt_port);
+    node.set_raft_poft(config.raft_port);
+    node.set_graph(graph_name);
+    node.set_is_learner(learner);
+    return node;
+  }
+
   void CreateRaftGraphOnAllServers(const std::string& graph_name,
                                    const meta::RaftNodeInfos& node_infos) {
     for (const auto& server : servers_) {
@@ -1622,6 +1653,80 @@ TEST(RaftCluster, restartedFollowerCatchesUpMultipleTransactions) {
   read_txn->Commit();
 }
 
+TEST(RaftCluster, emptyLearnerReceivesSnapshotAndIncrementalLogs) {
+  TestServerCluster cluster("testdb_raft_cluster");
+  ASSERT_NO_THROW(cluster.Start());
+
+  auto leader_index = cluster.WaitForLeaderIndex(std::chrono::seconds(15));
+  ASSERT_TRUE(leader_index.has_value()) << cluster.StatusSummary();
+  auto* leader = cluster.server(*leader_index);
+  ASSERT_NE(leader, nullptr);
+  auto leader_graph = leader->graph_manager()->OpenGraph(kGraphName);
+
+  std::vector<int64_t> vertex_ids;
+  for (int i = 0; i < 8; ++i) {
+    auto txn = leader_graph->BeginTransaction();
+    auto vertex = txn->CreateVertex(
+        {"snapshot_person"},
+        {{"name", Value("before_snapshot_" + std::to_string(i))}});
+    vertex_ids.push_back(vertex.GetId());
+    txn->Commit();
+  }
+
+  const size_t joining_index = cluster.AddServer();
+  auto joining_info = cluster.NodeInfo(joining_index, kGraphName, true);
+  meta::RaftNodeInfos joining_nodes;
+  (*joining_nodes.mutable_nodes())[joining_info.node_id()] = joining_info;
+  ASSERT_NO_THROW(cluster.server(joining_index)
+                      ->graph_manager()
+                      ->CreateGraphWithRaft(kGraphName, joining_nodes));
+
+  auto add_result = leader->graph_manager()->AddManagedRaftNode(
+      kGraphName, joining_info, true);
+  ASSERT_TRUE(WaitUntil(
+      [&cluster, joining_index, add_result]() {
+        auto graph = cluster.server(joining_index)
+                         ->graph_manager()
+                         ->OpenGraph(kGraphName);
+        return graph->GetRaftApplyIndex() >= add_result.raft_index;
+      },
+      std::chrono::seconds(30)))
+      << cluster.StatusSummary();
+
+  auto joining_graph =
+      cluster.server(joining_index)->graph_manager()->OpenGraph(kGraphName);
+  {
+    auto txn = joining_graph->BeginTransaction();
+    for (auto vertex_id : vertex_ids) {
+      auto vertex = txn->GetVertexById(vertex_id);
+      EXPECT_TRUE(vertex.GetAllProperty().contains("name"));
+    }
+    txn->Commit();
+  }
+
+  auto after_snapshot_txn = leader_graph->BeginTransaction();
+  auto after_snapshot_vertex = after_snapshot_txn->CreateVertex(
+      {"snapshot_person"}, {{"name", Value("after_snapshot")}});
+  const auto after_snapshot_id = after_snapshot_vertex.GetId();
+  after_snapshot_txn->Commit();
+  const auto final_index = leader_graph->GetRaftApplyIndex();
+
+  ASSERT_TRUE(WaitUntil(
+      [&joining_graph, final_index]() {
+        return joining_graph->GetRaftApplyIndex() >= final_index;
+      },
+      std::chrono::seconds(15)));
+  auto read_txn = joining_graph->BeginTransaction();
+  EXPECT_EQ(
+      read_txn->GetVertexById(after_snapshot_id).GetAllProperty().at("name"),
+      Value("after_snapshot"));
+  read_txn->Commit();
+
+  auto promoted = leader->graph_manager()->PromoteManagedRaftLearnerNode(
+      kGraphName, joining_info.node_id());
+  EXPECT_FALSE(promoted.is_learner);
+}
+
 TEST(RaftCluster, nodeInfosMarkOnlyCurrentLeader) {
   TestServerCluster cluster("testdb_raft_cluster");
   ASSERT_NO_THROW(cluster.Start());
@@ -1838,17 +1943,21 @@ TEST(RaftCluster, manageRaftMembershipThroughSystemProcedures) {
       },
       std::chrono::seconds(15)));
 
-  auto direct_voter = removed_info;
-  direct_voter.set_node_id(100);
-  direct_voter.set_bolt_port(AllocateFreePort());
-  direct_voter.set_raft_poft(AllocateFreePort());
+  const size_t direct_voter_index = cluster.AddServer();
+  auto direct_voter = cluster.NodeInfo(direct_voter_index, kGraphName, true);
+  meta::RaftNodeInfos direct_voter_join;
+  (*direct_voter_join.mutable_nodes())[direct_voter.node_id()] = direct_voter;
+  ASSERT_NO_THROW(cluster.server(direct_voter_index)
+                      ->graph_manager()
+                      ->CreateGraphWithRaft(kGraphName, direct_voter_join));
   ASSERT_NO_THROW(ExecuteSystemCypherAndCommit(
       new_management, "CALL dbms.graph.addRaftNode($graph_name, $member)",
       {{"graph_name", Value(kGraphName)},
        {"member", RaftMemberValue(direct_voter)}}));
   ASSERT_NO_THROW(ExecuteSystemCypherAndCommit(
       new_management, "CALL dbms.graph.removeRaftNode($graph_name, $node_id)",
-      {{"graph_name", Value(kGraphName)}, {"node_id", Value(100)}}));
+      {{"graph_name", Value(kGraphName)},
+       {"node_id", Value(static_cast<std::int64_t>(direct_voter.node_id()))}}));
 }
 
 TEST(RaftCluster, clearRaftGraphUpdatesOnlyLocalServer) {
@@ -2364,7 +2473,46 @@ TEST(RaftLogStorage, compactMovesFirstIndexAndRejectsCompactedEntries) {
   fs::remove_all(raft_path);
 }
 
-TEST(RaftDriver, startupCompactsLogWhenAppliedIndexExceedsRetention) {
+TEST(RaftLogStorage, persistsSnapshotAndUsesItForCompactedLog) {
+  const std::string raft_path = "testdb_raft_log_storage_snapshot";
+  fs::remove_all(raft_path);
+
+  raftpb::ConfState conf_state;
+  conf_state.add_voters(1);
+  conf_state.add_learners(2);
+  {
+    auto storage = OpenRaftLogStorage(raft_path);
+    ASSERT_FALSE(storage->Init());
+    rocksdb::WriteBatch wb;
+    ASSERT_EQ(
+        storage->Append(
+            {MakeLogEntry(1, 1), MakeLogEntry(2, 1), MakeLogEntry(3, 2)}, wb),
+        nullptr);
+    storage->WriteBatch(wb);
+    ASSERT_EQ(storage->CreateSnapshot(3, 2, conf_state, "descriptor"), nullptr);
+    storage->Compact(3);
+    EXPECT_EQ(storage->FirstIndex().first, 4U);
+    storage.Close();
+  }
+
+  {
+    auto storage = OpenRaftLogStorage(raft_path);
+    ASSERT_TRUE(storage->Init());
+    auto [hard_state, restored_conf_state, state_err] = storage->InitialState();
+    EXPECT_EQ(state_err, nullptr);
+    EXPECT_EQ(restored_conf_state.voters_size(), 1);
+    EXPECT_EQ(restored_conf_state.learners_size(), 1);
+    auto [snapshot, snapshot_err] = storage->Snapshot();
+    EXPECT_EQ(snapshot_err, nullptr);
+    EXPECT_EQ(snapshot.metadata().index(), 3U);
+    EXPECT_EQ(snapshot.metadata().term(), 2U);
+    EXPECT_EQ(snapshot.data(), "descriptor");
+  }
+
+  fs::remove_all(raft_path);
+}
+
+TEST(RaftDriver, startupDoesNotCompactLogWithoutCoveringSnapshot) {
   const std::string raft_path = "testdb_raft_driver_compaction";
   fs::remove_all(raft_path);
 
@@ -2416,15 +2564,8 @@ TEST(RaftDriver, startupCompactsLogWhenAppliedIndexExceedsRetention) {
     FAIL() << err.String();
   }
 
-  ASSERT_TRUE(WaitUntil(
-      [&driver]() {
-        auto status = driver.GetRaftStatus();
-        return status.first_log >= kAppliedIndex;
-      },
-      std::chrono::seconds(5)));
-
   auto status = driver.GetRaftStatus();
-  EXPECT_EQ(status.first_log, kAppliedIndex);
+  EXPECT_EQ(status.first_log, 0U);
   EXPECT_GE(status.last_log, kLastIndex);
 
   driver.Stop();

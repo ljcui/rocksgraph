@@ -94,6 +94,8 @@ class GraphDB {
   void ApplyRaftRequest(uint64_t index, const meta::RaftRequest& request);
   void ApplyRaftConfChange(uint64_t index, const raftpb::ConfState& conf_state,
                            const meta::RaftNodeInfos& node_infos);
+  raft::SnapshotBuildResult CreateRaftSnapshot();
+  void ApplyRaftSnapshot(const meta::GraphSnapshotDescriptor& descriptor);
   rocksdb::Status SetRaftApplyIndex(uint64_t apply_index,
                                     rocksdb::WriteBatch* wb) const;
   bool& drop_on_close() { return drop_on_close_; }
@@ -106,6 +108,10 @@ class GraphDB {
   std::mutex& vector_index_commit_mutex() { return vector_index_commit_mutex_; }
 
  private:
+  void OpenStorage(bool initialize_meta = true);
+  void InitializeMetaInfo();
+  rocksdb::Status CloseStorage();
+  void RefreshPlanCacheIdentity();
   void ClearDataInternal();
   void DrainAssistant();
   void ResumeBackgroundIndexBuilds();
@@ -163,6 +169,8 @@ class GraphDB {
   mutable std::shared_mutex raft_mutex_;
   std::unique_ptr<raft::RaftDriver> raft_driver_;
   bool drop_on_close_ = false;
+  mutable std::shared_mutex storage_mutex_;
+  std::mutex snapshot_restore_mutex_;
   std::mutex clear_data_mutex_;
   std::mutex index_ddl_propose_mutex_;
   std::mutex index_ddl_mutex_;

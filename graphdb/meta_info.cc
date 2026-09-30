@@ -685,6 +685,25 @@ void MetaInfo::ClearVertexVectorIndexes() {
   building_vertex_vector_indexes_.clear();
 }
 
+void MetaInfo::Reset() {
+  std::unique_lock lock(mutex_);
+  ready_vertex_property_indexes_by_name_.clear();
+  ready_vertex_property_indexes_by_schema_.clear();
+  building_vertex_property_indexes_by_name_.clear();
+  building_vertex_property_indexes_by_schema_.clear();
+  ready_edge_property_indexes_by_name_.clear();
+  ready_edge_property_indexes_by_schema_.clear();
+  building_edge_property_indexes_by_name_.clear();
+  building_edge_property_indexes_by_schema_.clear();
+  ready_vertex_vector_indexes_.clear();
+  building_vertex_vector_indexes_.clear();
+  vertex_vector_fields_.clear();
+  ready_vertex_ft_indexes_.clear();
+  building_vertex_ft_indexes_.clear();
+  id_generator_.Reset();
+  AdvancePlannerCatalogVersion();
+}
+
 void MetaInfo::Init(rocksdb::TransactionDB* db,
                     boost::asio::io_service& service,
                     boost::asio::io_service::strand* strand, GraphCF* graph_cf,

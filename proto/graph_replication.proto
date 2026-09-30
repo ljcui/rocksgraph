@@ -19,6 +19,47 @@ message RaftRequest {
 message RaftMessage {
     string graph = 1;
     raftpb.Message message = 2;
+    GraphSnapshotChunk snapshot_chunk = 3;
+    GraphSnapshotStatus snapshot_status = 4;
+    RaftNodeInfo source_node = 5;
+}
+
+message GraphSnapshotFile {
+    string name = 1;
+    uint64 size = 2;
+    uint32 checksum = 3;
+}
+
+message GraphSnapshotDescriptor {
+    uint32 format_version = 1;
+    string snapshot_id = 2;
+    string graph = 3;
+    uint64 index = 4;
+    uint64 term = 5;
+    uint64 total_size = 6;
+    repeated GraphSnapshotFile files = 7;
+    RaftNodeInfos node_infos = 8;
+}
+
+message GraphSnapshotChunk {
+    GraphSnapshotDescriptor snapshot_descriptor = 1;
+    uint64 source_node_id = 2;
+    uint64 target_node_id = 3;
+    string file_name = 4;
+    uint64 offset = 5;
+    bytes data = 6;
+    uint32 checksum = 7;
+    bool file_done = 8;
+    bool snapshot_done = 9;
+    string snapshot_id = 10;
+}
+
+message GraphSnapshotStatus {
+    string snapshot_id = 1;
+    uint64 source_node_id = 2;
+    uint64 target_node_id = 3;
+    bool success = 4;
+    string error = 5;
 }
 
 message RaftNodeInfo {

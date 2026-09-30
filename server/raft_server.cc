@@ -29,7 +29,8 @@ bool RaftServer::Start(GraphManager* graph_manager, uint32_t port) {
   threads_.emplace_back([this, port, &promise]() {
     bool promise_done = false;
     try {
-      protobuf_handler_ = [this](std::string graph_name, raftpb::Message msg) {
+      protobuf_handler_ = [this](meta::RaftMessage envelope) {
+        const std::string graph_name = envelope.graph();
         if (graph_manager_ == nullptr) {
           LOG_WARN(
               "receive raft message for graph [{}] while graph manager is null",
@@ -44,7 +45,20 @@ bool RaftServer::Start(GraphManager* graph_manager, uint32_t port) {
                      graph_name);
             return;
           }
-          raft_driver->Step(std::move(msg));
+          if (envelope.has_message()) {
+            std::optional<meta::RaftNodeInfo> source_node;
+            if (envelope.has_source_node()) {
+              source_node.emplace(std::move(*envelope.mutable_source_node()));
+            }
+            raft_driver->Step(std::move(*envelope.mutable_message()),
+                              std::move(source_node));
+          } else if (envelope.has_snapshot_chunk()) {
+            raft_driver->ReceiveSnapshotChunk(
+                std::move(*envelope.mutable_snapshot_chunk()));
+          } else if (envelope.has_snapshot_status()) {
+            raft_driver->ReceiveSnapshotStatus(
+                std::move(*envelope.mutable_snapshot_status()));
+          }
         } catch (const std::exception& e) {
           LOG_WARN("failed to route raft message for graph [{}]: {}",
                    graph_name, e.what());
@@ -52,7 +66,7 @@ bool RaftServer::Start(GraphManager* graph_manager, uint32_t port) {
       };
 
       raft::IOService<raft::RaftConnection, decltype(protobuf_handler_)>
-          raft_service(listener_, port, 1, protobuf_handler_);
+          raft_service(listener_, port, 2, protobuf_handler_);
       boost::asio::io_service::work holder(listener_);
 
       started_.store(true);

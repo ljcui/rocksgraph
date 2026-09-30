@@ -38,6 +38,33 @@ void IdGenerator::Bind(rocksdb::TransactionDB *db, GraphCF *graph_cf) {
   graph_cf_ = graph_cf;
 }
 
+void IdGenerator::Reset() {
+  std::scoped_lock create_locks(vertex_label_create_mutex_,
+                                edge_type_create_mutex_, property_create_mutex_,
+                                vid_refill_mutex_, eid_refill_mutex_);
+  std::unique_lock vertex_lock(vertex_labels_mutex_);
+  std::unique_lock edge_lock(edge_types_mutex_);
+  std::unique_lock property_lock(properties_mutex_);
+  vertex_labels_name_to_id_.clear();
+  vertex_labels_id_to_name_.clear();
+  edge_types_name_to_id_.clear();
+  edge_types_id_to_name_.clear();
+  properties_name_to_id_.clear();
+  properties_id_to_name_.clear();
+  next_vid_ = 1;
+  vid_range_end_ = 1;
+  persisted_next_vid_ = 1;
+  next_eid_ = 1;
+  eid_range_end_ = 1;
+  persisted_next_eid_ = 1;
+  label_next_lid_ = 1;
+  label_next_pid_ = 1;
+  label_next_tid_ = 1;
+  index_next_id_ = 1;
+  db_ = nullptr;
+  graph_cf_ = nullptr;
+}
+
 void IdGenerator::SetRaftDriver(raft::RaftDriver *raft_driver) {
   raft_driver_ = raft_driver;
 }

@@ -6,7 +6,7 @@
 #include <thread>
 #include <vector>
 
-#include "etcd_raft/raftpb/raft.pb.h"
+#include "proto/graph_replication.pb.h"
 
 namespace server {
 
@@ -30,7 +30,7 @@ class RaftServer final {
   std::atomic<bool> started_{false};
   GraphManager* graph_manager_ = nullptr;
   boost::asio::io_service listener_{BOOST_ASIO_CONCURRENCY_HINT_UNSAFE};
-  std::function<void(std::string, raftpb::Message)> protobuf_handler_{};
+  std::function<void(meta::RaftMessage)> protobuf_handler_{};
 };
 
 }  // namespace server

@@ -40,6 +40,9 @@ PROTOBUF_CONSTEXPR RaftMessage::RaftMessage(
     ::_pbi::ConstantInitialized): _impl_{
     /*decltype(_impl_.graph_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
   , /*decltype(_impl_.message_)*/nullptr
+  , /*decltype(_impl_.snapshot_chunk_)*/nullptr
+  , /*decltype(_impl_.snapshot_status_)*/nullptr
+  , /*decltype(_impl_.source_node_)*/nullptr
   , /*decltype(_impl_._cached_size_)*/{}} {}
 struct RaftMessageDefaultTypeInternal {
   PROTOBUF_CONSTEXPR RaftMessageDefaultTypeInternal()
@@ -50,6 +53,80 @@ struct RaftMessageDefaultTypeInternal {
   };
 };
 PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 RaftMessageDefaultTypeInternal _RaftMessage_default_instance_;
+PROTOBUF_CONSTEXPR GraphSnapshotFile::GraphSnapshotFile(
+    ::_pbi::ConstantInitialized): _impl_{
+    /*decltype(_impl_.name_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
+  , /*decltype(_impl_.size_)*/uint64_t{0u}
+  , /*decltype(_impl_.checksum_)*/0u
+  , /*decltype(_impl_._cached_size_)*/{}} {}
+struct GraphSnapshotFileDefaultTypeInternal {
+  PROTOBUF_CONSTEXPR GraphSnapshotFileDefaultTypeInternal()
+      : _instance(::_pbi::ConstantInitialized{}) {}
+  ~GraphSnapshotFileDefaultTypeInternal() {}
+  union {
+    GraphSnapshotFile _instance;
+  };
+};
+PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 GraphSnapshotFileDefaultTypeInternal _GraphSnapshotFile_default_instance_;
+PROTOBUF_CONSTEXPR GraphSnapshotDescriptor::GraphSnapshotDescriptor(
+    ::_pbi::ConstantInitialized): _impl_{
+    /*decltype(_impl_.files_)*/{}
+  , /*decltype(_impl_.snapshot_id_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
+  , /*decltype(_impl_.graph_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
+  , /*decltype(_impl_.node_infos_)*/nullptr
+  , /*decltype(_impl_.index_)*/uint64_t{0u}
+  , /*decltype(_impl_.term_)*/uint64_t{0u}
+  , /*decltype(_impl_.total_size_)*/uint64_t{0u}
+  , /*decltype(_impl_.format_version_)*/0u
+  , /*decltype(_impl_._cached_size_)*/{}} {}
+struct GraphSnapshotDescriptorDefaultTypeInternal {
+  PROTOBUF_CONSTEXPR GraphSnapshotDescriptorDefaultTypeInternal()
+      : _instance(::_pbi::ConstantInitialized{}) {}
+  ~GraphSnapshotDescriptorDefaultTypeInternal() {}
+  union {
+    GraphSnapshotDescriptor _instance;
+  };
+};
+PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 GraphSnapshotDescriptorDefaultTypeInternal _GraphSnapshotDescriptor_default_instance_;
+PROTOBUF_CONSTEXPR GraphSnapshotChunk::GraphSnapshotChunk(
+    ::_pbi::ConstantInitialized): _impl_{
+    /*decltype(_impl_.file_name_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
+  , /*decltype(_impl_.data_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
+  , /*decltype(_impl_.snapshot_id_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
+  , /*decltype(_impl_.snapshot_descriptor_)*/nullptr
+  , /*decltype(_impl_.source_node_id_)*/uint64_t{0u}
+  , /*decltype(_impl_.target_node_id_)*/uint64_t{0u}
+  , /*decltype(_impl_.offset_)*/uint64_t{0u}
+  , /*decltype(_impl_.checksum_)*/0u
+  , /*decltype(_impl_.file_done_)*/false
+  , /*decltype(_impl_.snapshot_done_)*/false
+  , /*decltype(_impl_._cached_size_)*/{}} {}
+struct GraphSnapshotChunkDefaultTypeInternal {
+  PROTOBUF_CONSTEXPR GraphSnapshotChunkDefaultTypeInternal()
+      : _instance(::_pbi::ConstantInitialized{}) {}
+  ~GraphSnapshotChunkDefaultTypeInternal() {}
+  union {
+    GraphSnapshotChunk _instance;
+  };
+};
+PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 GraphSnapshotChunkDefaultTypeInternal _GraphSnapshotChunk_default_instance_;
+PROTOBUF_CONSTEXPR GraphSnapshotStatus::GraphSnapshotStatus(
+    ::_pbi::ConstantInitialized): _impl_{
+    /*decltype(_impl_.snapshot_id_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
+  , /*decltype(_impl_.error_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
+  , /*decltype(_impl_.source_node_id_)*/uint64_t{0u}
+  , /*decltype(_impl_.target_node_id_)*/uint64_t{0u}
+  , /*decltype(_impl_.success_)*/false
+  , /*decltype(_impl_._cached_size_)*/{}} {}
+struct GraphSnapshotStatusDefaultTypeInternal {
+  PROTOBUF_CONSTEXPR GraphSnapshotStatusDefaultTypeInternal()
+      : _instance(::_pbi::ConstantInitialized{}) {}
+  ~GraphSnapshotStatusDefaultTypeInternal() {}
+  union {
+    GraphSnapshotStatus _instance;
+  };
+};
+PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 GraphSnapshotStatusDefaultTypeInternal _GraphSnapshotStatus_default_instance_;
 PROTOBUF_CONSTEXPR RaftNodeInfo::RaftNodeInfo(
     ::_pbi::ConstantInitialized): _impl_{
     /*decltype(_impl_.ip_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
@@ -94,7 +171,7 @@ struct RaftNodeInfosDefaultTypeInternal {
 };
 PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 RaftNodeInfosDefaultTypeInternal _RaftNodeInfos_default_instance_;
 }  // namespace meta
-static ::_pb::Metadata file_level_metadata_graph_5freplication_2eproto[5];
+static ::_pb::Metadata file_level_metadata_graph_5freplication_2eproto[9];
 static const ::_pb::EnumDescriptor* file_level_enum_descriptors_graph_5freplication_2eproto[1];
 static constexpr ::_pb::ServiceDescriptor const** file_level_service_descriptors_graph_5freplication_2eproto = nullptr;
 
@@ -116,6 +193,59 @@ const uint32_t TableStruct_graph_5freplication_2eproto::offsets[] PROTOBUF_SECTI
   ~0u,  // no _inlined_string_donated_
   PROTOBUF_FIELD_OFFSET(::meta::RaftMessage, _impl_.graph_),
   PROTOBUF_FIELD_OFFSET(::meta::RaftMessage, _impl_.message_),
+  PROTOBUF_FIELD_OFFSET(::meta::RaftMessage, _impl_.snapshot_chunk_),
+  PROTOBUF_FIELD_OFFSET(::meta::RaftMessage, _impl_.snapshot_status_),
+  PROTOBUF_FIELD_OFFSET(::meta::RaftMessage, _impl_.source_node_),
+  ~0u,  // no _has_bits_
+  PROTOBUF_FIELD_OFFSET(::meta::GraphSnapshotFile, _internal_metadata_),
+  ~0u,  // no _extensions_
+  ~0u,  // no _oneof_case_
+  ~0u,  // no _weak_field_map_
+  ~0u,  // no _inlined_string_donated_
+  PROTOBUF_FIELD_OFFSET(::meta::GraphSnapshotFile, _impl_.name_),
+  PROTOBUF_FIELD_OFFSET(::meta::GraphSnapshotFile, _impl_.size_),
+  PROTOBUF_FIELD_OFFSET(::meta::GraphSnapshotFile, _impl_.checksum_),
+  ~0u,  // no _has_bits_
+  PROTOBUF_FIELD_OFFSET(::meta::GraphSnapshotDescriptor, _internal_metadata_),
+  ~0u,  // no _extensions_
+  ~0u,  // no _oneof_case_
+  ~0u,  // no _weak_field_map_
+  ~0u,  // no _inlined_string_donated_
+  PROTOBUF_FIELD_OFFSET(::meta::GraphSnapshotDescriptor, _impl_.format_version_),
+  PROTOBUF_FIELD_OFFSET(::meta::GraphSnapshotDescriptor, _impl_.snapshot_id_),
+  PROTOBUF_FIELD_OFFSET(::meta::GraphSnapshotDescriptor, _impl_.graph_),
+  PROTOBUF_FIELD_OFFSET(::meta::GraphSnapshotDescriptor, _impl_.index_),
+  PROTOBUF_FIELD_OFFSET(::meta::GraphSnapshotDescriptor, _impl_.term_),
+  PROTOBUF_FIELD_OFFSET(::meta::GraphSnapshotDescriptor, _impl_.total_size_),
+  PROTOBUF_FIELD_OFFSET(::meta::GraphSnapshotDescriptor, _impl_.files_),
+  PROTOBUF_FIELD_OFFSET(::meta::GraphSnapshotDescriptor, _impl_.node_infos_),
+  ~0u,  // no _has_bits_
+  PROTOBUF_FIELD_OFFSET(::meta::GraphSnapshotChunk, _internal_metadata_),
+  ~0u,  // no _extensions_
+  ~0u,  // no _oneof_case_
+  ~0u,  // no _weak_field_map_
+  ~0u,  // no _inlined_string_donated_
+  PROTOBUF_FIELD_OFFSET(::meta::GraphSnapshotChunk, _impl_.snapshot_descriptor_),
+  PROTOBUF_FIELD_OFFSET(::meta::GraphSnapshotChunk, _impl_.source_node_id_),
+  PROTOBUF_FIELD_OFFSET(::meta::GraphSnapshotChunk, _impl_.target_node_id_),
+  PROTOBUF_FIELD_OFFSET(::meta::GraphSnapshotChunk, _impl_.file_name_),
+  PROTOBUF_FIELD_OFFSET(::meta::GraphSnapshotChunk, _impl_.offset_),
+  PROTOBUF_FIELD_OFFSET(::meta::GraphSnapshotChunk, _impl_.data_),
+  PROTOBUF_FIELD_OFFSET(::meta::GraphSnapshotChunk, _impl_.checksum_),
+  PROTOBUF_FIELD_OFFSET(::meta::GraphSnapshotChunk, _impl_.file_done_),
+  PROTOBUF_FIELD_OFFSET(::meta::GraphSnapshotChunk, _impl_.snapshot_done_),
+  PROTOBUF_FIELD_OFFSET(::meta::GraphSnapshotChunk, _impl_.snapshot_id_),
+  ~0u,  // no _has_bits_
+  PROTOBUF_FIELD_OFFSET(::meta::GraphSnapshotStatus, _internal_metadata_),
+  ~0u,  // no _extensions_
+  ~0u,  // no _oneof_case_
+  ~0u,  // no _weak_field_map_
+  ~0u,  // no _inlined_string_donated_
+  PROTOBUF_FIELD_OFFSET(::meta::GraphSnapshotStatus, _impl_.snapshot_id_),
+  PROTOBUF_FIELD_OFFSET(::meta::GraphSnapshotStatus, _impl_.source_node_id_),
+  PROTOBUF_FIELD_OFFSET(::meta::GraphSnapshotStatus, _impl_.target_node_id_),
+  PROTOBUF_FIELD_OFFSET(::meta::GraphSnapshotStatus, _impl_.success_),
+  PROTOBUF_FIELD_OFFSET(::meta::GraphSnapshotStatus, _impl_.error_),
   ~0u,  // no _has_bits_
   PROTOBUF_FIELD_OFFSET(::meta::RaftNodeInfo, _internal_metadata_),
   ~0u,  // no _extensions_
@@ -150,14 +280,22 @@ const uint32_t TableStruct_graph_5freplication_2eproto::offsets[] PROTOBUF_SECTI
 static const ::_pbi::MigrationSchema schemas[] PROTOBUF_SECTION_VARIABLE(protodesc_cold) = {
   { 0, -1, -1, sizeof(::meta::RaftRequest)},
   { 9, -1, -1, sizeof(::meta::RaftMessage)},
-  { 17, -1, -1, sizeof(::meta::RaftNodeInfo)},
-  { 30, 38, -1, sizeof(::meta::RaftNodeInfos_NodesEntry_DoNotUse)},
-  { 40, -1, -1, sizeof(::meta::RaftNodeInfos)},
+  { 20, -1, -1, sizeof(::meta::GraphSnapshotFile)},
+  { 29, -1, -1, sizeof(::meta::GraphSnapshotDescriptor)},
+  { 43, -1, -1, sizeof(::meta::GraphSnapshotChunk)},
+  { 59, -1, -1, sizeof(::meta::GraphSnapshotStatus)},
+  { 70, -1, -1, sizeof(::meta::RaftNodeInfo)},
+  { 83, 91, -1, sizeof(::meta::RaftNodeInfos_NodesEntry_DoNotUse)},
+  { 93, -1, -1, sizeof(::meta::RaftNodeInfos)},
 };
 
 static const ::_pb::Message* const file_default_instances[] = {
   &::meta::_RaftRequest_default_instance_._instance,
   &::meta::_RaftMessage_default_instance_._instance,
+  &::meta::_GraphSnapshotFile_default_instance_._instance,
+  &::meta::_GraphSnapshotDescriptor_default_instance_._instance,
+  &::meta::_GraphSnapshotChunk_default_instance_._instance,
+  &::meta::_GraphSnapshotStatus_default_instance_._instance,
   &::meta::_RaftNodeInfo_default_instance_._instance,
   &::meta::_RaftNodeInfos_NodesEntry_DoNotUse_default_instance_._instance,
   &::meta::_RaftNodeInfos_default_instance_._instance,
@@ -167,26 +305,47 @@ const char descriptor_table_protodef_graph_5freplication_2eproto[] PROTOBUF_SECT
   "\n\027graph_replication.proto\022\004meta\032\nraft.pr"
   "oto\"Q\n\013RaftRequest\022\n\n\002id\030\001 \001(\004\022%\n\007wb_kin"
   "d\030\002 \001(\0162\024.meta.WriteBatchKind\022\017\n\007wb_data"
-  "\030\003 \001(\014\">\n\013RaftMessage\022\r\n\005graph\030\001 \001(\t\022 \n\007"
-  "message\030\002 \001(\0132\017.raftpb.Message\"\207\001\n\014RaftN"
-  "odeInfo\022\017\n\007node_id\030\001 \001(\004\022\n\n\002ip\030\002 \001(\t\022\021\n\t"
-  "bolt_port\030\003 \001(\005\022\021\n\traft_poft\030\004 \001(\005\022\021\n\tis"
-  "_leader\030\005 \001(\010\022\022\n\nis_learner\030\006 \001(\010\022\r\n\005gra"
-  "ph\030\007 \001(\t\"\200\001\n\rRaftNodeInfos\022-\n\005nodes\030\001 \003("
-  "\0132\036.meta.RaftNodeInfos.NodesEntry\032@\n\nNod"
-  "esEntry\022\013\n\003key\030\001 \001(\004\022!\n\005value\030\002 \001(\0132\022.me"
-  "ta.RaftNodeInfo:\0028\001*U\n\016WriteBatchKind\022\013\n"
-  "\007UNKNOWN\020\000\022\017\n\013GRAPH_WRITE\020\001\022\020\n\014ID_GENERA"
-  "TOR\020\002\022\023\n\017GRAPH_INDEX_DDL\020\003b\006proto3"
+  "\030\003 \001(\014\"\315\001\n\013RaftMessage\022\r\n\005graph\030\001 \001(\t\022 \n"
+  "\007message\030\002 \001(\0132\017.raftpb.Message\0220\n\016snaps"
+  "hot_chunk\030\003 \001(\0132\030.meta.GraphSnapshotChun"
+  "k\0222\n\017snapshot_status\030\004 \001(\0132\031.meta.GraphS"
+  "napshotStatus\022\'\n\013source_node\030\005 \001(\0132\022.met"
+  "a.RaftNodeInfo\"A\n\021GraphSnapshotFile\022\014\n\004n"
+  "ame\030\001 \001(\t\022\014\n\004size\030\002 \001(\004\022\020\n\010checksum\030\003 \001("
+  "\r\"\327\001\n\027GraphSnapshotDescriptor\022\026\n\016format_"
+  "version\030\001 \001(\r\022\023\n\013snapshot_id\030\002 \001(\t\022\r\n\005gr"
+  "aph\030\003 \001(\t\022\r\n\005index\030\004 \001(\004\022\014\n\004term\030\005 \001(\004\022\022"
+  "\n\ntotal_size\030\006 \001(\004\022&\n\005files\030\007 \003(\0132\027.meta"
+  ".GraphSnapshotFile\022\'\n\nnode_infos\030\010 \001(\0132\023"
+  ".meta.RaftNodeInfos\"\202\002\n\022GraphSnapshotChu"
+  "nk\022:\n\023snapshot_descriptor\030\001 \001(\0132\035.meta.G"
+  "raphSnapshotDescriptor\022\026\n\016source_node_id"
+  "\030\002 \001(\004\022\026\n\016target_node_id\030\003 \001(\004\022\021\n\tfile_n"
+  "ame\030\004 \001(\t\022\016\n\006offset\030\005 \001(\004\022\014\n\004data\030\006 \001(\014\022"
+  "\020\n\010checksum\030\007 \001(\r\022\021\n\tfile_done\030\010 \001(\010\022\025\n\r"
+  "snapshot_done\030\t \001(\010\022\023\n\013snapshot_id\030\n \001(\t"
+  "\"z\n\023GraphSnapshotStatus\022\023\n\013snapshot_id\030\001"
+  " \001(\t\022\026\n\016source_node_id\030\002 \001(\004\022\026\n\016target_n"
+  "ode_id\030\003 \001(\004\022\017\n\007success\030\004 \001(\010\022\r\n\005error\030\005"
+  " \001(\t\"\207\001\n\014RaftNodeInfo\022\017\n\007node_id\030\001 \001(\004\022\n"
+  "\n\002ip\030\002 \001(\t\022\021\n\tbolt_port\030\003 \001(\005\022\021\n\traft_po"
+  "ft\030\004 \001(\005\022\021\n\tis_leader\030\005 \001(\010\022\022\n\nis_learne"
+  "r\030\006 \001(\010\022\r\n\005graph\030\007 \001(\t\"\200\001\n\rRaftNodeInfos"
+  "\022-\n\005nodes\030\001 \003(\0132\036.meta.RaftNodeInfos.Nod"
+  "esEntry\032@\n\nNodesEntry\022\013\n\003key\030\001 \001(\004\022!\n\005va"
+  "lue\030\002 \001(\0132\022.meta.RaftNodeInfo:\0028\001*U\n\016Wri"
+  "teBatchKind\022\013\n\007UNKNOWN\020\000\022\017\n\013GRAPH_WRITE\020"
+  "\001\022\020\n\014ID_GENERATOR\020\002\022\023\n\017GRAPH_INDEX_DDL\020\003"
+  "b\006proto3"
   ;
 static const ::_pbi::DescriptorTable* const descriptor_table_graph_5freplication_2eproto_deps[1] = {
   &::descriptor_table_raft_2eproto,
 };
 static ::_pbi::once_flag descriptor_table_graph_5freplication_2eproto_once;
 const ::_pbi::DescriptorTable descriptor_table_graph_5freplication_2eproto = {
-    false, false, 554, descriptor_table_protodef_graph_5freplication_2eproto,
+    false, false, 1368, descriptor_table_protodef_graph_5freplication_2eproto,
     "graph_replication.proto",
-    &descriptor_table_graph_5freplication_2eproto_once, descriptor_table_graph_5freplication_2eproto_deps, 1, 5,
+    &descriptor_table_graph_5freplication_2eproto_once, descriptor_table_graph_5freplication_2eproto_deps, 1, 9,
     schemas, file_default_instances, TableStruct_graph_5freplication_2eproto::offsets,
     file_level_metadata_graph_5freplication_2eproto, file_level_enum_descriptors_graph_5freplication_2eproto,
     file_level_service_descriptors_graph_5freplication_2eproto,
@@ -481,11 +640,26 @@ void RaftRequest::InternalSwap(RaftRequest* other) {
 class RaftMessage::_Internal {
  public:
   static const ::raftpb::Message& message(const RaftMessage* msg);
+  static const ::meta::GraphSnapshotChunk& snapshot_chunk(const RaftMessage* msg);
+  static const ::meta::GraphSnapshotStatus& snapshot_status(const RaftMessage* msg);
+  static const ::meta::RaftNodeInfo& source_node(const RaftMessage* msg);
 };
 
 const ::raftpb::Message&
 RaftMessage::_Internal::message(const RaftMessage* msg) {
   return *msg->_impl_.message_;
+}
+const ::meta::GraphSnapshotChunk&
+RaftMessage::_Internal::snapshot_chunk(const RaftMessage* msg) {
+  return *msg->_impl_.snapshot_chunk_;
+}
+const ::meta::GraphSnapshotStatus&
+RaftMessage::_Internal::snapshot_status(const RaftMessage* msg) {
+  return *msg->_impl_.snapshot_status_;
+}
+const ::meta::RaftNodeInfo&
+RaftMessage::_Internal::source_node(const RaftMessage* msg) {
+  return *msg->_impl_.source_node_;
 }
 void RaftMessage::clear_message() {
   if (GetArenaForAllocation() == nullptr && _impl_.message_ != nullptr) {
@@ -505,6 +679,9 @@ RaftMessage::RaftMessage(const RaftMessage& from)
   new (&_impl_) Impl_{
       decltype(_impl_.graph_){}
     , decltype(_impl_.message_){nullptr}
+    , decltype(_impl_.snapshot_chunk_){nullptr}
+    , decltype(_impl_.snapshot_status_){nullptr}
+    , decltype(_impl_.source_node_){nullptr}
     , /*decltype(_impl_._cached_size_)*/{}};
 
   _internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
@@ -519,6 +696,15 @@ RaftMessage::RaftMessage(const RaftMessage& from)
   if (from._internal_has_message()) {
     _this->_impl_.message_ = new ::raftpb::Message(*from._impl_.message_);
   }
+  if (from._internal_has_snapshot_chunk()) {
+    _this->_impl_.snapshot_chunk_ = new ::meta::GraphSnapshotChunk(*from._impl_.snapshot_chunk_);
+  }
+  if (from._internal_has_snapshot_status()) {
+    _this->_impl_.snapshot_status_ = new ::meta::GraphSnapshotStatus(*from._impl_.snapshot_status_);
+  }
+  if (from._internal_has_source_node()) {
+    _this->_impl_.source_node_ = new ::meta::RaftNodeInfo(*from._impl_.source_node_);
+  }
   // @@protoc_insertion_point(copy_constructor:meta.RaftMessage)
 }
 
@@ -529,6 +715,9 @@ inline void RaftMessage::SharedCtor(
   new (&_impl_) Impl_{
       decltype(_impl_.graph_){}
     , decltype(_impl_.message_){nullptr}
+    , decltype(_impl_.snapshot_chunk_){nullptr}
+    , decltype(_impl_.snapshot_status_){nullptr}
+    , decltype(_impl_.source_node_){nullptr}
     , /*decltype(_impl_._cached_size_)*/{}
   };
   _impl_.graph_.InitDefault();
@@ -550,6 +739,9 @@ inline void RaftMessage::SharedDtor() {
   GOOGLE_DCHECK(GetArenaForAllocation() == nullptr);
   _impl_.graph_.Destroy();
   if (this != internal_default_instance()) delete _impl_.message_;
+  if (this != internal_default_instance()) delete _impl_.snapshot_chunk_;
+  if (this != internal_default_instance()) delete _impl_.snapshot_status_;
+  if (this != internal_default_instance()) delete _impl_.source_node_;
 }
 
 void RaftMessage::SetCachedSize(int size) const {
@@ -567,6 +759,18 @@ void RaftMessage::Clear() {
     delete _impl_.message_;
   }
   _impl_.message_ = nullptr;
+  if (GetArenaForAllocation() == nullptr && _impl_.snapshot_chunk_ != nullptr) {
+    delete _impl_.snapshot_chunk_;
+  }
+  _impl_.snapshot_chunk_ = nullptr;
+  if (GetArenaForAllocation() == nullptr && _impl_.snapshot_status_ != nullptr) {
+    delete _impl_.snapshot_status_;
+  }
+  _impl_.snapshot_status_ = nullptr;
+  if (GetArenaForAllocation() == nullptr && _impl_.source_node_ != nullptr) {
+    delete _impl_.source_node_;
+  }
+  _impl_.source_node_ = nullptr;
   _internal_metadata_.Clear<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>();
 }
 
@@ -590,6 +794,30 @@ const char* RaftMessage::_InternalParse(const char* ptr, ::_pbi::ParseContext* c
       case 2:
         if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 18)) {
           ptr = ctx->ParseMessage(_internal_mutable_message(), ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // .meta.GraphSnapshotChunk snapshot_chunk = 3;
+      case 3:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 26)) {
+          ptr = ctx->ParseMessage(_internal_mutable_snapshot_chunk(), ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // .meta.GraphSnapshotStatus snapshot_status = 4;
+      case 4:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 34)) {
+          ptr = ctx->ParseMessage(_internal_mutable_snapshot_status(), ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // .meta.RaftNodeInfo source_node = 5;
+      case 5:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 42)) {
+          ptr = ctx->ParseMessage(_internal_mutable_source_node(), ptr);
           CHK_(ptr);
         } else
           goto handle_unusual;
@@ -640,6 +868,27 @@ uint8_t* RaftMessage::_InternalSerialize(
         _Internal::message(this).GetCachedSize(), target, stream);
   }
 
+  // .meta.GraphSnapshotChunk snapshot_chunk = 3;
+  if (this->_internal_has_snapshot_chunk()) {
+    target = ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::
+      InternalWriteMessage(3, _Internal::snapshot_chunk(this),
+        _Internal::snapshot_chunk(this).GetCachedSize(), target, stream);
+  }
+
+  // .meta.GraphSnapshotStatus snapshot_status = 4;
+  if (this->_internal_has_snapshot_status()) {
+    target = ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::
+      InternalWriteMessage(4, _Internal::snapshot_status(this),
+        _Internal::snapshot_status(this).GetCachedSize(), target, stream);
+  }
+
+  // .meta.RaftNodeInfo source_node = 5;
+  if (this->_internal_has_source_node()) {
+    target = ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::
+      InternalWriteMessage(5, _Internal::source_node(this),
+        _Internal::source_node(this).GetCachedSize(), target, stream);
+  }
+
   if (PROTOBUF_PREDICT_FALSE(_internal_metadata_.have_unknown_fields())) {
     target = ::_pbi::WireFormat::InternalSerializeUnknownFieldsToArray(
         _internal_metadata_.unknown_fields<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(::PROTOBUF_NAMESPACE_ID::UnknownFieldSet::default_instance), target, stream);
@@ -670,6 +919,27 @@ size_t RaftMessage::ByteSizeLong() const {
         *_impl_.message_);
   }
 
+  // .meta.GraphSnapshotChunk snapshot_chunk = 3;
+  if (this->_internal_has_snapshot_chunk()) {
+    total_size += 1 +
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::MessageSize(
+        *_impl_.snapshot_chunk_);
+  }
+
+  // .meta.GraphSnapshotStatus snapshot_status = 4;
+  if (this->_internal_has_snapshot_status()) {
+    total_size += 1 +
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::MessageSize(
+        *_impl_.snapshot_status_);
+  }
+
+  // .meta.RaftNodeInfo source_node = 5;
+  if (this->_internal_has_source_node()) {
+    total_size += 1 +
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::MessageSize(
+        *_impl_.source_node_);
+  }
+
   return MaybeComputeUnknownFieldsSize(total_size, &_impl_._cached_size_);
 }
 
@@ -695,6 +965,18 @@ void RaftMessage::MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PR
     _this->_internal_mutable_message()->::raftpb::Message::MergeFrom(
         from._internal_message());
   }
+  if (from._internal_has_snapshot_chunk()) {
+    _this->_internal_mutable_snapshot_chunk()->::meta::GraphSnapshotChunk::MergeFrom(
+        from._internal_snapshot_chunk());
+  }
+  if (from._internal_has_snapshot_status()) {
+    _this->_internal_mutable_snapshot_status()->::meta::GraphSnapshotStatus::MergeFrom(
+        from._internal_snapshot_status());
+  }
+  if (from._internal_has_source_node()) {
+    _this->_internal_mutable_source_node()->::meta::RaftNodeInfo::MergeFrom(
+        from._internal_source_node());
+  }
   _this->_internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
 }
 
@@ -718,13 +1000,1549 @@ void RaftMessage::InternalSwap(RaftMessage* other) {
       &_impl_.graph_, lhs_arena,
       &other->_impl_.graph_, rhs_arena
   );
-  swap(_impl_.message_, other->_impl_.message_);
+  ::PROTOBUF_NAMESPACE_ID::internal::memswap<
+      PROTOBUF_FIELD_OFFSET(RaftMessage, _impl_.source_node_)
+      + sizeof(RaftMessage::_impl_.source_node_)
+      - PROTOBUF_FIELD_OFFSET(RaftMessage, _impl_.message_)>(
+          reinterpret_cast<char*>(&_impl_.message_),
+          reinterpret_cast<char*>(&other->_impl_.message_));
 }
 
 ::PROTOBUF_NAMESPACE_ID::Metadata RaftMessage::GetMetadata() const {
   return ::_pbi::AssignDescriptors(
       &descriptor_table_graph_5freplication_2eproto_getter, &descriptor_table_graph_5freplication_2eproto_once,
       file_level_metadata_graph_5freplication_2eproto[1]);
+}
+
+// ===================================================================
+
+class GraphSnapshotFile::_Internal {
+ public:
+};
+
+GraphSnapshotFile::GraphSnapshotFile(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+                         bool is_message_owned)
+  : ::PROTOBUF_NAMESPACE_ID::Message(arena, is_message_owned) {
+  SharedCtor(arena, is_message_owned);
+  // @@protoc_insertion_point(arena_constructor:meta.GraphSnapshotFile)
+}
+GraphSnapshotFile::GraphSnapshotFile(const GraphSnapshotFile& from)
+  : ::PROTOBUF_NAMESPACE_ID::Message() {
+  GraphSnapshotFile* const _this = this; (void)_this;
+  new (&_impl_) Impl_{
+      decltype(_impl_.name_){}
+    , decltype(_impl_.size_){}
+    , decltype(_impl_.checksum_){}
+    , /*decltype(_impl_._cached_size_)*/{}};
+
+  _internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
+  _impl_.name_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.name_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (!from._internal_name().empty()) {
+    _this->_impl_.name_.Set(from._internal_name(), 
+      _this->GetArenaForAllocation());
+  }
+  ::memcpy(&_impl_.size_, &from._impl_.size_,
+    static_cast<size_t>(reinterpret_cast<char*>(&_impl_.checksum_) -
+    reinterpret_cast<char*>(&_impl_.size_)) + sizeof(_impl_.checksum_));
+  // @@protoc_insertion_point(copy_constructor:meta.GraphSnapshotFile)
+}
+
+inline void GraphSnapshotFile::SharedCtor(
+    ::_pb::Arena* arena, bool is_message_owned) {
+  (void)arena;
+  (void)is_message_owned;
+  new (&_impl_) Impl_{
+      decltype(_impl_.name_){}
+    , decltype(_impl_.size_){uint64_t{0u}}
+    , decltype(_impl_.checksum_){0u}
+    , /*decltype(_impl_._cached_size_)*/{}
+  };
+  _impl_.name_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.name_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+}
+
+GraphSnapshotFile::~GraphSnapshotFile() {
+  // @@protoc_insertion_point(destructor:meta.GraphSnapshotFile)
+  if (auto *arena = _internal_metadata_.DeleteReturnArena<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>()) {
+  (void)arena;
+    return;
+  }
+  SharedDtor();
+}
+
+inline void GraphSnapshotFile::SharedDtor() {
+  GOOGLE_DCHECK(GetArenaForAllocation() == nullptr);
+  _impl_.name_.Destroy();
+}
+
+void GraphSnapshotFile::SetCachedSize(int size) const {
+  _impl_._cached_size_.Set(size);
+}
+
+void GraphSnapshotFile::Clear() {
+// @@protoc_insertion_point(message_clear_start:meta.GraphSnapshotFile)
+  uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void) cached_has_bits;
+
+  _impl_.name_.ClearToEmpty();
+  ::memset(&_impl_.size_, 0, static_cast<size_t>(
+      reinterpret_cast<char*>(&_impl_.checksum_) -
+      reinterpret_cast<char*>(&_impl_.size_)) + sizeof(_impl_.checksum_));
+  _internal_metadata_.Clear<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>();
+}
+
+const char* GraphSnapshotFile::_InternalParse(const char* ptr, ::_pbi::ParseContext* ctx) {
+#define CHK_(x) if (PROTOBUF_PREDICT_FALSE(!(x))) goto failure
+  while (!ctx->Done(&ptr)) {
+    uint32_t tag;
+    ptr = ::_pbi::ReadTag(ptr, &tag);
+    switch (tag >> 3) {
+      // string name = 1;
+      case 1:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 10)) {
+          auto str = _internal_mutable_name();
+          ptr = ::_pbi::InlineGreedyStringParser(str, ptr, ctx);
+          CHK_(ptr);
+          CHK_(::_pbi::VerifyUTF8(str, "meta.GraphSnapshotFile.name"));
+        } else
+          goto handle_unusual;
+        continue;
+      // uint64 size = 2;
+      case 2:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 16)) {
+          _impl_.size_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint64(&ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // uint32 checksum = 3;
+      case 3:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 24)) {
+          _impl_.checksum_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint32(&ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      default:
+        goto handle_unusual;
+    }  // switch
+  handle_unusual:
+    if ((tag == 0) || ((tag & 7) == 4)) {
+      CHK_(ptr);
+      ctx->SetLastTag(tag);
+      goto message_done;
+    }
+    ptr = UnknownFieldParse(
+        tag,
+        _internal_metadata_.mutable_unknown_fields<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(),
+        ptr, ctx);
+    CHK_(ptr != nullptr);
+  }  // while
+message_done:
+  return ptr;
+failure:
+  ptr = nullptr;
+  goto message_done;
+#undef CHK_
+}
+
+uint8_t* GraphSnapshotFile::_InternalSerialize(
+    uint8_t* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const {
+  // @@protoc_insertion_point(serialize_to_array_start:meta.GraphSnapshotFile)
+  uint32_t cached_has_bits = 0;
+  (void) cached_has_bits;
+
+  // string name = 1;
+  if (!this->_internal_name().empty()) {
+    ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::VerifyUtf8String(
+      this->_internal_name().data(), static_cast<int>(this->_internal_name().length()),
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::SERIALIZE,
+      "meta.GraphSnapshotFile.name");
+    target = stream->WriteStringMaybeAliased(
+        1, this->_internal_name(), target);
+  }
+
+  // uint64 size = 2;
+  if (this->_internal_size() != 0) {
+    target = stream->EnsureSpace(target);
+    target = ::_pbi::WireFormatLite::WriteUInt64ToArray(2, this->_internal_size(), target);
+  }
+
+  // uint32 checksum = 3;
+  if (this->_internal_checksum() != 0) {
+    target = stream->EnsureSpace(target);
+    target = ::_pbi::WireFormatLite::WriteUInt32ToArray(3, this->_internal_checksum(), target);
+  }
+
+  if (PROTOBUF_PREDICT_FALSE(_internal_metadata_.have_unknown_fields())) {
+    target = ::_pbi::WireFormat::InternalSerializeUnknownFieldsToArray(
+        _internal_metadata_.unknown_fields<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(::PROTOBUF_NAMESPACE_ID::UnknownFieldSet::default_instance), target, stream);
+  }
+  // @@protoc_insertion_point(serialize_to_array_end:meta.GraphSnapshotFile)
+  return target;
+}
+
+size_t GraphSnapshotFile::ByteSizeLong() const {
+// @@protoc_insertion_point(message_byte_size_start:meta.GraphSnapshotFile)
+  size_t total_size = 0;
+
+  uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void) cached_has_bits;
+
+  // string name = 1;
+  if (!this->_internal_name().empty()) {
+    total_size += 1 +
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::StringSize(
+        this->_internal_name());
+  }
+
+  // uint64 size = 2;
+  if (this->_internal_size() != 0) {
+    total_size += ::_pbi::WireFormatLite::UInt64SizePlusOne(this->_internal_size());
+  }
+
+  // uint32 checksum = 3;
+  if (this->_internal_checksum() != 0) {
+    total_size += ::_pbi::WireFormatLite::UInt32SizePlusOne(this->_internal_checksum());
+  }
+
+  return MaybeComputeUnknownFieldsSize(total_size, &_impl_._cached_size_);
+}
+
+const ::PROTOBUF_NAMESPACE_ID::Message::ClassData GraphSnapshotFile::_class_data_ = {
+    ::PROTOBUF_NAMESPACE_ID::Message::CopyWithSourceCheck,
+    GraphSnapshotFile::MergeImpl
+};
+const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*GraphSnapshotFile::GetClassData() const { return &_class_data_; }
+
+
+void GraphSnapshotFile::MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg) {
+  auto* const _this = static_cast<GraphSnapshotFile*>(&to_msg);
+  auto& from = static_cast<const GraphSnapshotFile&>(from_msg);
+  // @@protoc_insertion_point(class_specific_merge_from_start:meta.GraphSnapshotFile)
+  GOOGLE_DCHECK_NE(&from, _this);
+  uint32_t cached_has_bits = 0;
+  (void) cached_has_bits;
+
+  if (!from._internal_name().empty()) {
+    _this->_internal_set_name(from._internal_name());
+  }
+  if (from._internal_size() != 0) {
+    _this->_internal_set_size(from._internal_size());
+  }
+  if (from._internal_checksum() != 0) {
+    _this->_internal_set_checksum(from._internal_checksum());
+  }
+  _this->_internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
+}
+
+void GraphSnapshotFile::CopyFrom(const GraphSnapshotFile& from) {
+// @@protoc_insertion_point(class_specific_copy_from_start:meta.GraphSnapshotFile)
+  if (&from == this) return;
+  Clear();
+  MergeFrom(from);
+}
+
+bool GraphSnapshotFile::IsInitialized() const {
+  return true;
+}
+
+void GraphSnapshotFile::InternalSwap(GraphSnapshotFile* other) {
+  using std::swap;
+  auto* lhs_arena = GetArenaForAllocation();
+  auto* rhs_arena = other->GetArenaForAllocation();
+  _internal_metadata_.InternalSwap(&other->_internal_metadata_);
+  ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr::InternalSwap(
+      &_impl_.name_, lhs_arena,
+      &other->_impl_.name_, rhs_arena
+  );
+  ::PROTOBUF_NAMESPACE_ID::internal::memswap<
+      PROTOBUF_FIELD_OFFSET(GraphSnapshotFile, _impl_.checksum_)
+      + sizeof(GraphSnapshotFile::_impl_.checksum_)
+      - PROTOBUF_FIELD_OFFSET(GraphSnapshotFile, _impl_.size_)>(
+          reinterpret_cast<char*>(&_impl_.size_),
+          reinterpret_cast<char*>(&other->_impl_.size_));
+}
+
+::PROTOBUF_NAMESPACE_ID::Metadata GraphSnapshotFile::GetMetadata() const {
+  return ::_pbi::AssignDescriptors(
+      &descriptor_table_graph_5freplication_2eproto_getter, &descriptor_table_graph_5freplication_2eproto_once,
+      file_level_metadata_graph_5freplication_2eproto[2]);
+}
+
+// ===================================================================
+
+class GraphSnapshotDescriptor::_Internal {
+ public:
+  static const ::meta::RaftNodeInfos& node_infos(const GraphSnapshotDescriptor* msg);
+};
+
+const ::meta::RaftNodeInfos&
+GraphSnapshotDescriptor::_Internal::node_infos(const GraphSnapshotDescriptor* msg) {
+  return *msg->_impl_.node_infos_;
+}
+GraphSnapshotDescriptor::GraphSnapshotDescriptor(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+                         bool is_message_owned)
+  : ::PROTOBUF_NAMESPACE_ID::Message(arena, is_message_owned) {
+  SharedCtor(arena, is_message_owned);
+  // @@protoc_insertion_point(arena_constructor:meta.GraphSnapshotDescriptor)
+}
+GraphSnapshotDescriptor::GraphSnapshotDescriptor(const GraphSnapshotDescriptor& from)
+  : ::PROTOBUF_NAMESPACE_ID::Message() {
+  GraphSnapshotDescriptor* const _this = this; (void)_this;
+  new (&_impl_) Impl_{
+      decltype(_impl_.files_){from._impl_.files_}
+    , decltype(_impl_.snapshot_id_){}
+    , decltype(_impl_.graph_){}
+    , decltype(_impl_.node_infos_){nullptr}
+    , decltype(_impl_.index_){}
+    , decltype(_impl_.term_){}
+    , decltype(_impl_.total_size_){}
+    , decltype(_impl_.format_version_){}
+    , /*decltype(_impl_._cached_size_)*/{}};
+
+  _internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
+  _impl_.snapshot_id_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.snapshot_id_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (!from._internal_snapshot_id().empty()) {
+    _this->_impl_.snapshot_id_.Set(from._internal_snapshot_id(), 
+      _this->GetArenaForAllocation());
+  }
+  _impl_.graph_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.graph_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (!from._internal_graph().empty()) {
+    _this->_impl_.graph_.Set(from._internal_graph(), 
+      _this->GetArenaForAllocation());
+  }
+  if (from._internal_has_node_infos()) {
+    _this->_impl_.node_infos_ = new ::meta::RaftNodeInfos(*from._impl_.node_infos_);
+  }
+  ::memcpy(&_impl_.index_, &from._impl_.index_,
+    static_cast<size_t>(reinterpret_cast<char*>(&_impl_.format_version_) -
+    reinterpret_cast<char*>(&_impl_.index_)) + sizeof(_impl_.format_version_));
+  // @@protoc_insertion_point(copy_constructor:meta.GraphSnapshotDescriptor)
+}
+
+inline void GraphSnapshotDescriptor::SharedCtor(
+    ::_pb::Arena* arena, bool is_message_owned) {
+  (void)arena;
+  (void)is_message_owned;
+  new (&_impl_) Impl_{
+      decltype(_impl_.files_){arena}
+    , decltype(_impl_.snapshot_id_){}
+    , decltype(_impl_.graph_){}
+    , decltype(_impl_.node_infos_){nullptr}
+    , decltype(_impl_.index_){uint64_t{0u}}
+    , decltype(_impl_.term_){uint64_t{0u}}
+    , decltype(_impl_.total_size_){uint64_t{0u}}
+    , decltype(_impl_.format_version_){0u}
+    , /*decltype(_impl_._cached_size_)*/{}
+  };
+  _impl_.snapshot_id_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.snapshot_id_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  _impl_.graph_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.graph_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+}
+
+GraphSnapshotDescriptor::~GraphSnapshotDescriptor() {
+  // @@protoc_insertion_point(destructor:meta.GraphSnapshotDescriptor)
+  if (auto *arena = _internal_metadata_.DeleteReturnArena<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>()) {
+  (void)arena;
+    return;
+  }
+  SharedDtor();
+}
+
+inline void GraphSnapshotDescriptor::SharedDtor() {
+  GOOGLE_DCHECK(GetArenaForAllocation() == nullptr);
+  _impl_.files_.~RepeatedPtrField();
+  _impl_.snapshot_id_.Destroy();
+  _impl_.graph_.Destroy();
+  if (this != internal_default_instance()) delete _impl_.node_infos_;
+}
+
+void GraphSnapshotDescriptor::SetCachedSize(int size) const {
+  _impl_._cached_size_.Set(size);
+}
+
+void GraphSnapshotDescriptor::Clear() {
+// @@protoc_insertion_point(message_clear_start:meta.GraphSnapshotDescriptor)
+  uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void) cached_has_bits;
+
+  _impl_.files_.Clear();
+  _impl_.snapshot_id_.ClearToEmpty();
+  _impl_.graph_.ClearToEmpty();
+  if (GetArenaForAllocation() == nullptr && _impl_.node_infos_ != nullptr) {
+    delete _impl_.node_infos_;
+  }
+  _impl_.node_infos_ = nullptr;
+  ::memset(&_impl_.index_, 0, static_cast<size_t>(
+      reinterpret_cast<char*>(&_impl_.format_version_) -
+      reinterpret_cast<char*>(&_impl_.index_)) + sizeof(_impl_.format_version_));
+  _internal_metadata_.Clear<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>();
+}
+
+const char* GraphSnapshotDescriptor::_InternalParse(const char* ptr, ::_pbi::ParseContext* ctx) {
+#define CHK_(x) if (PROTOBUF_PREDICT_FALSE(!(x))) goto failure
+  while (!ctx->Done(&ptr)) {
+    uint32_t tag;
+    ptr = ::_pbi::ReadTag(ptr, &tag);
+    switch (tag >> 3) {
+      // uint32 format_version = 1;
+      case 1:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 8)) {
+          _impl_.format_version_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint32(&ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // string snapshot_id = 2;
+      case 2:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 18)) {
+          auto str = _internal_mutable_snapshot_id();
+          ptr = ::_pbi::InlineGreedyStringParser(str, ptr, ctx);
+          CHK_(ptr);
+          CHK_(::_pbi::VerifyUTF8(str, "meta.GraphSnapshotDescriptor.snapshot_id"));
+        } else
+          goto handle_unusual;
+        continue;
+      // string graph = 3;
+      case 3:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 26)) {
+          auto str = _internal_mutable_graph();
+          ptr = ::_pbi::InlineGreedyStringParser(str, ptr, ctx);
+          CHK_(ptr);
+          CHK_(::_pbi::VerifyUTF8(str, "meta.GraphSnapshotDescriptor.graph"));
+        } else
+          goto handle_unusual;
+        continue;
+      // uint64 index = 4;
+      case 4:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 32)) {
+          _impl_.index_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint64(&ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // uint64 term = 5;
+      case 5:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 40)) {
+          _impl_.term_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint64(&ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // uint64 total_size = 6;
+      case 6:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 48)) {
+          _impl_.total_size_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint64(&ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // repeated .meta.GraphSnapshotFile files = 7;
+      case 7:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 58)) {
+          ptr -= 1;
+          do {
+            ptr += 1;
+            ptr = ctx->ParseMessage(_internal_add_files(), ptr);
+            CHK_(ptr);
+            if (!ctx->DataAvailable(ptr)) break;
+          } while (::PROTOBUF_NAMESPACE_ID::internal::ExpectTag<58>(ptr));
+        } else
+          goto handle_unusual;
+        continue;
+      // .meta.RaftNodeInfos node_infos = 8;
+      case 8:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 66)) {
+          ptr = ctx->ParseMessage(_internal_mutable_node_infos(), ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      default:
+        goto handle_unusual;
+    }  // switch
+  handle_unusual:
+    if ((tag == 0) || ((tag & 7) == 4)) {
+      CHK_(ptr);
+      ctx->SetLastTag(tag);
+      goto message_done;
+    }
+    ptr = UnknownFieldParse(
+        tag,
+        _internal_metadata_.mutable_unknown_fields<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(),
+        ptr, ctx);
+    CHK_(ptr != nullptr);
+  }  // while
+message_done:
+  return ptr;
+failure:
+  ptr = nullptr;
+  goto message_done;
+#undef CHK_
+}
+
+uint8_t* GraphSnapshotDescriptor::_InternalSerialize(
+    uint8_t* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const {
+  // @@protoc_insertion_point(serialize_to_array_start:meta.GraphSnapshotDescriptor)
+  uint32_t cached_has_bits = 0;
+  (void) cached_has_bits;
+
+  // uint32 format_version = 1;
+  if (this->_internal_format_version() != 0) {
+    target = stream->EnsureSpace(target);
+    target = ::_pbi::WireFormatLite::WriteUInt32ToArray(1, this->_internal_format_version(), target);
+  }
+
+  // string snapshot_id = 2;
+  if (!this->_internal_snapshot_id().empty()) {
+    ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::VerifyUtf8String(
+      this->_internal_snapshot_id().data(), static_cast<int>(this->_internal_snapshot_id().length()),
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::SERIALIZE,
+      "meta.GraphSnapshotDescriptor.snapshot_id");
+    target = stream->WriteStringMaybeAliased(
+        2, this->_internal_snapshot_id(), target);
+  }
+
+  // string graph = 3;
+  if (!this->_internal_graph().empty()) {
+    ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::VerifyUtf8String(
+      this->_internal_graph().data(), static_cast<int>(this->_internal_graph().length()),
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::SERIALIZE,
+      "meta.GraphSnapshotDescriptor.graph");
+    target = stream->WriteStringMaybeAliased(
+        3, this->_internal_graph(), target);
+  }
+
+  // uint64 index = 4;
+  if (this->_internal_index() != 0) {
+    target = stream->EnsureSpace(target);
+    target = ::_pbi::WireFormatLite::WriteUInt64ToArray(4, this->_internal_index(), target);
+  }
+
+  // uint64 term = 5;
+  if (this->_internal_term() != 0) {
+    target = stream->EnsureSpace(target);
+    target = ::_pbi::WireFormatLite::WriteUInt64ToArray(5, this->_internal_term(), target);
+  }
+
+  // uint64 total_size = 6;
+  if (this->_internal_total_size() != 0) {
+    target = stream->EnsureSpace(target);
+    target = ::_pbi::WireFormatLite::WriteUInt64ToArray(6, this->_internal_total_size(), target);
+  }
+
+  // repeated .meta.GraphSnapshotFile files = 7;
+  for (unsigned i = 0,
+      n = static_cast<unsigned>(this->_internal_files_size()); i < n; i++) {
+    const auto& repfield = this->_internal_files(i);
+    target = ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::
+        InternalWriteMessage(7, repfield, repfield.GetCachedSize(), target, stream);
+  }
+
+  // .meta.RaftNodeInfos node_infos = 8;
+  if (this->_internal_has_node_infos()) {
+    target = ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::
+      InternalWriteMessage(8, _Internal::node_infos(this),
+        _Internal::node_infos(this).GetCachedSize(), target, stream);
+  }
+
+  if (PROTOBUF_PREDICT_FALSE(_internal_metadata_.have_unknown_fields())) {
+    target = ::_pbi::WireFormat::InternalSerializeUnknownFieldsToArray(
+        _internal_metadata_.unknown_fields<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(::PROTOBUF_NAMESPACE_ID::UnknownFieldSet::default_instance), target, stream);
+  }
+  // @@protoc_insertion_point(serialize_to_array_end:meta.GraphSnapshotDescriptor)
+  return target;
+}
+
+size_t GraphSnapshotDescriptor::ByteSizeLong() const {
+// @@protoc_insertion_point(message_byte_size_start:meta.GraphSnapshotDescriptor)
+  size_t total_size = 0;
+
+  uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void) cached_has_bits;
+
+  // repeated .meta.GraphSnapshotFile files = 7;
+  total_size += 1UL * this->_internal_files_size();
+  for (const auto& msg : this->_impl_.files_) {
+    total_size +=
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::MessageSize(msg);
+  }
+
+  // string snapshot_id = 2;
+  if (!this->_internal_snapshot_id().empty()) {
+    total_size += 1 +
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::StringSize(
+        this->_internal_snapshot_id());
+  }
+
+  // string graph = 3;
+  if (!this->_internal_graph().empty()) {
+    total_size += 1 +
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::StringSize(
+        this->_internal_graph());
+  }
+
+  // .meta.RaftNodeInfos node_infos = 8;
+  if (this->_internal_has_node_infos()) {
+    total_size += 1 +
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::MessageSize(
+        *_impl_.node_infos_);
+  }
+
+  // uint64 index = 4;
+  if (this->_internal_index() != 0) {
+    total_size += ::_pbi::WireFormatLite::UInt64SizePlusOne(this->_internal_index());
+  }
+
+  // uint64 term = 5;
+  if (this->_internal_term() != 0) {
+    total_size += ::_pbi::WireFormatLite::UInt64SizePlusOne(this->_internal_term());
+  }
+
+  // uint64 total_size = 6;
+  if (this->_internal_total_size() != 0) {
+    total_size += ::_pbi::WireFormatLite::UInt64SizePlusOne(this->_internal_total_size());
+  }
+
+  // uint32 format_version = 1;
+  if (this->_internal_format_version() != 0) {
+    total_size += ::_pbi::WireFormatLite::UInt32SizePlusOne(this->_internal_format_version());
+  }
+
+  return MaybeComputeUnknownFieldsSize(total_size, &_impl_._cached_size_);
+}
+
+const ::PROTOBUF_NAMESPACE_ID::Message::ClassData GraphSnapshotDescriptor::_class_data_ = {
+    ::PROTOBUF_NAMESPACE_ID::Message::CopyWithSourceCheck,
+    GraphSnapshotDescriptor::MergeImpl
+};
+const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*GraphSnapshotDescriptor::GetClassData() const { return &_class_data_; }
+
+
+void GraphSnapshotDescriptor::MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg) {
+  auto* const _this = static_cast<GraphSnapshotDescriptor*>(&to_msg);
+  auto& from = static_cast<const GraphSnapshotDescriptor&>(from_msg);
+  // @@protoc_insertion_point(class_specific_merge_from_start:meta.GraphSnapshotDescriptor)
+  GOOGLE_DCHECK_NE(&from, _this);
+  uint32_t cached_has_bits = 0;
+  (void) cached_has_bits;
+
+  _this->_impl_.files_.MergeFrom(from._impl_.files_);
+  if (!from._internal_snapshot_id().empty()) {
+    _this->_internal_set_snapshot_id(from._internal_snapshot_id());
+  }
+  if (!from._internal_graph().empty()) {
+    _this->_internal_set_graph(from._internal_graph());
+  }
+  if (from._internal_has_node_infos()) {
+    _this->_internal_mutable_node_infos()->::meta::RaftNodeInfos::MergeFrom(
+        from._internal_node_infos());
+  }
+  if (from._internal_index() != 0) {
+    _this->_internal_set_index(from._internal_index());
+  }
+  if (from._internal_term() != 0) {
+    _this->_internal_set_term(from._internal_term());
+  }
+  if (from._internal_total_size() != 0) {
+    _this->_internal_set_total_size(from._internal_total_size());
+  }
+  if (from._internal_format_version() != 0) {
+    _this->_internal_set_format_version(from._internal_format_version());
+  }
+  _this->_internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
+}
+
+void GraphSnapshotDescriptor::CopyFrom(const GraphSnapshotDescriptor& from) {
+// @@protoc_insertion_point(class_specific_copy_from_start:meta.GraphSnapshotDescriptor)
+  if (&from == this) return;
+  Clear();
+  MergeFrom(from);
+}
+
+bool GraphSnapshotDescriptor::IsInitialized() const {
+  return true;
+}
+
+void GraphSnapshotDescriptor::InternalSwap(GraphSnapshotDescriptor* other) {
+  using std::swap;
+  auto* lhs_arena = GetArenaForAllocation();
+  auto* rhs_arena = other->GetArenaForAllocation();
+  _internal_metadata_.InternalSwap(&other->_internal_metadata_);
+  _impl_.files_.InternalSwap(&other->_impl_.files_);
+  ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr::InternalSwap(
+      &_impl_.snapshot_id_, lhs_arena,
+      &other->_impl_.snapshot_id_, rhs_arena
+  );
+  ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr::InternalSwap(
+      &_impl_.graph_, lhs_arena,
+      &other->_impl_.graph_, rhs_arena
+  );
+  ::PROTOBUF_NAMESPACE_ID::internal::memswap<
+      PROTOBUF_FIELD_OFFSET(GraphSnapshotDescriptor, _impl_.format_version_)
+      + sizeof(GraphSnapshotDescriptor::_impl_.format_version_)
+      - PROTOBUF_FIELD_OFFSET(GraphSnapshotDescriptor, _impl_.node_infos_)>(
+          reinterpret_cast<char*>(&_impl_.node_infos_),
+          reinterpret_cast<char*>(&other->_impl_.node_infos_));
+}
+
+::PROTOBUF_NAMESPACE_ID::Metadata GraphSnapshotDescriptor::GetMetadata() const {
+  return ::_pbi::AssignDescriptors(
+      &descriptor_table_graph_5freplication_2eproto_getter, &descriptor_table_graph_5freplication_2eproto_once,
+      file_level_metadata_graph_5freplication_2eproto[3]);
+}
+
+// ===================================================================
+
+class GraphSnapshotChunk::_Internal {
+ public:
+  static const ::meta::GraphSnapshotDescriptor& snapshot_descriptor(const GraphSnapshotChunk* msg);
+};
+
+const ::meta::GraphSnapshotDescriptor&
+GraphSnapshotChunk::_Internal::snapshot_descriptor(const GraphSnapshotChunk* msg) {
+  return *msg->_impl_.snapshot_descriptor_;
+}
+GraphSnapshotChunk::GraphSnapshotChunk(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+                         bool is_message_owned)
+  : ::PROTOBUF_NAMESPACE_ID::Message(arena, is_message_owned) {
+  SharedCtor(arena, is_message_owned);
+  // @@protoc_insertion_point(arena_constructor:meta.GraphSnapshotChunk)
+}
+GraphSnapshotChunk::GraphSnapshotChunk(const GraphSnapshotChunk& from)
+  : ::PROTOBUF_NAMESPACE_ID::Message() {
+  GraphSnapshotChunk* const _this = this; (void)_this;
+  new (&_impl_) Impl_{
+      decltype(_impl_.file_name_){}
+    , decltype(_impl_.data_){}
+    , decltype(_impl_.snapshot_id_){}
+    , decltype(_impl_.snapshot_descriptor_){nullptr}
+    , decltype(_impl_.source_node_id_){}
+    , decltype(_impl_.target_node_id_){}
+    , decltype(_impl_.offset_){}
+    , decltype(_impl_.checksum_){}
+    , decltype(_impl_.file_done_){}
+    , decltype(_impl_.snapshot_done_){}
+    , /*decltype(_impl_._cached_size_)*/{}};
+
+  _internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
+  _impl_.file_name_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.file_name_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (!from._internal_file_name().empty()) {
+    _this->_impl_.file_name_.Set(from._internal_file_name(), 
+      _this->GetArenaForAllocation());
+  }
+  _impl_.data_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.data_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (!from._internal_data().empty()) {
+    _this->_impl_.data_.Set(from._internal_data(), 
+      _this->GetArenaForAllocation());
+  }
+  _impl_.snapshot_id_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.snapshot_id_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (!from._internal_snapshot_id().empty()) {
+    _this->_impl_.snapshot_id_.Set(from._internal_snapshot_id(), 
+      _this->GetArenaForAllocation());
+  }
+  if (from._internal_has_snapshot_descriptor()) {
+    _this->_impl_.snapshot_descriptor_ = new ::meta::GraphSnapshotDescriptor(*from._impl_.snapshot_descriptor_);
+  }
+  ::memcpy(&_impl_.source_node_id_, &from._impl_.source_node_id_,
+    static_cast<size_t>(reinterpret_cast<char*>(&_impl_.snapshot_done_) -
+    reinterpret_cast<char*>(&_impl_.source_node_id_)) + sizeof(_impl_.snapshot_done_));
+  // @@protoc_insertion_point(copy_constructor:meta.GraphSnapshotChunk)
+}
+
+inline void GraphSnapshotChunk::SharedCtor(
+    ::_pb::Arena* arena, bool is_message_owned) {
+  (void)arena;
+  (void)is_message_owned;
+  new (&_impl_) Impl_{
+      decltype(_impl_.file_name_){}
+    , decltype(_impl_.data_){}
+    , decltype(_impl_.snapshot_id_){}
+    , decltype(_impl_.snapshot_descriptor_){nullptr}
+    , decltype(_impl_.source_node_id_){uint64_t{0u}}
+    , decltype(_impl_.target_node_id_){uint64_t{0u}}
+    , decltype(_impl_.offset_){uint64_t{0u}}
+    , decltype(_impl_.checksum_){0u}
+    , decltype(_impl_.file_done_){false}
+    , decltype(_impl_.snapshot_done_){false}
+    , /*decltype(_impl_._cached_size_)*/{}
+  };
+  _impl_.file_name_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.file_name_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  _impl_.data_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.data_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  _impl_.snapshot_id_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.snapshot_id_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+}
+
+GraphSnapshotChunk::~GraphSnapshotChunk() {
+  // @@protoc_insertion_point(destructor:meta.GraphSnapshotChunk)
+  if (auto *arena = _internal_metadata_.DeleteReturnArena<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>()) {
+  (void)arena;
+    return;
+  }
+  SharedDtor();
+}
+
+inline void GraphSnapshotChunk::SharedDtor() {
+  GOOGLE_DCHECK(GetArenaForAllocation() == nullptr);
+  _impl_.file_name_.Destroy();
+  _impl_.data_.Destroy();
+  _impl_.snapshot_id_.Destroy();
+  if (this != internal_default_instance()) delete _impl_.snapshot_descriptor_;
+}
+
+void GraphSnapshotChunk::SetCachedSize(int size) const {
+  _impl_._cached_size_.Set(size);
+}
+
+void GraphSnapshotChunk::Clear() {
+// @@protoc_insertion_point(message_clear_start:meta.GraphSnapshotChunk)
+  uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void) cached_has_bits;
+
+  _impl_.file_name_.ClearToEmpty();
+  _impl_.data_.ClearToEmpty();
+  _impl_.snapshot_id_.ClearToEmpty();
+  if (GetArenaForAllocation() == nullptr && _impl_.snapshot_descriptor_ != nullptr) {
+    delete _impl_.snapshot_descriptor_;
+  }
+  _impl_.snapshot_descriptor_ = nullptr;
+  ::memset(&_impl_.source_node_id_, 0, static_cast<size_t>(
+      reinterpret_cast<char*>(&_impl_.snapshot_done_) -
+      reinterpret_cast<char*>(&_impl_.source_node_id_)) + sizeof(_impl_.snapshot_done_));
+  _internal_metadata_.Clear<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>();
+}
+
+const char* GraphSnapshotChunk::_InternalParse(const char* ptr, ::_pbi::ParseContext* ctx) {
+#define CHK_(x) if (PROTOBUF_PREDICT_FALSE(!(x))) goto failure
+  while (!ctx->Done(&ptr)) {
+    uint32_t tag;
+    ptr = ::_pbi::ReadTag(ptr, &tag);
+    switch (tag >> 3) {
+      // .meta.GraphSnapshotDescriptor snapshot_descriptor = 1;
+      case 1:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 10)) {
+          ptr = ctx->ParseMessage(_internal_mutable_snapshot_descriptor(), ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // uint64 source_node_id = 2;
+      case 2:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 16)) {
+          _impl_.source_node_id_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint64(&ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // uint64 target_node_id = 3;
+      case 3:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 24)) {
+          _impl_.target_node_id_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint64(&ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // string file_name = 4;
+      case 4:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 34)) {
+          auto str = _internal_mutable_file_name();
+          ptr = ::_pbi::InlineGreedyStringParser(str, ptr, ctx);
+          CHK_(ptr);
+          CHK_(::_pbi::VerifyUTF8(str, "meta.GraphSnapshotChunk.file_name"));
+        } else
+          goto handle_unusual;
+        continue;
+      // uint64 offset = 5;
+      case 5:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 40)) {
+          _impl_.offset_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint64(&ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // bytes data = 6;
+      case 6:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 50)) {
+          auto str = _internal_mutable_data();
+          ptr = ::_pbi::InlineGreedyStringParser(str, ptr, ctx);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // uint32 checksum = 7;
+      case 7:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 56)) {
+          _impl_.checksum_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint32(&ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // bool file_done = 8;
+      case 8:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 64)) {
+          _impl_.file_done_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint64(&ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // bool snapshot_done = 9;
+      case 9:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 72)) {
+          _impl_.snapshot_done_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint64(&ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // string snapshot_id = 10;
+      case 10:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 82)) {
+          auto str = _internal_mutable_snapshot_id();
+          ptr = ::_pbi::InlineGreedyStringParser(str, ptr, ctx);
+          CHK_(ptr);
+          CHK_(::_pbi::VerifyUTF8(str, "meta.GraphSnapshotChunk.snapshot_id"));
+        } else
+          goto handle_unusual;
+        continue;
+      default:
+        goto handle_unusual;
+    }  // switch
+  handle_unusual:
+    if ((tag == 0) || ((tag & 7) == 4)) {
+      CHK_(ptr);
+      ctx->SetLastTag(tag);
+      goto message_done;
+    }
+    ptr = UnknownFieldParse(
+        tag,
+        _internal_metadata_.mutable_unknown_fields<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(),
+        ptr, ctx);
+    CHK_(ptr != nullptr);
+  }  // while
+message_done:
+  return ptr;
+failure:
+  ptr = nullptr;
+  goto message_done;
+#undef CHK_
+}
+
+uint8_t* GraphSnapshotChunk::_InternalSerialize(
+    uint8_t* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const {
+  // @@protoc_insertion_point(serialize_to_array_start:meta.GraphSnapshotChunk)
+  uint32_t cached_has_bits = 0;
+  (void) cached_has_bits;
+
+  // .meta.GraphSnapshotDescriptor snapshot_descriptor = 1;
+  if (this->_internal_has_snapshot_descriptor()) {
+    target = ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::
+      InternalWriteMessage(1, _Internal::snapshot_descriptor(this),
+        _Internal::snapshot_descriptor(this).GetCachedSize(), target, stream);
+  }
+
+  // uint64 source_node_id = 2;
+  if (this->_internal_source_node_id() != 0) {
+    target = stream->EnsureSpace(target);
+    target = ::_pbi::WireFormatLite::WriteUInt64ToArray(2, this->_internal_source_node_id(), target);
+  }
+
+  // uint64 target_node_id = 3;
+  if (this->_internal_target_node_id() != 0) {
+    target = stream->EnsureSpace(target);
+    target = ::_pbi::WireFormatLite::WriteUInt64ToArray(3, this->_internal_target_node_id(), target);
+  }
+
+  // string file_name = 4;
+  if (!this->_internal_file_name().empty()) {
+    ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::VerifyUtf8String(
+      this->_internal_file_name().data(), static_cast<int>(this->_internal_file_name().length()),
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::SERIALIZE,
+      "meta.GraphSnapshotChunk.file_name");
+    target = stream->WriteStringMaybeAliased(
+        4, this->_internal_file_name(), target);
+  }
+
+  // uint64 offset = 5;
+  if (this->_internal_offset() != 0) {
+    target = stream->EnsureSpace(target);
+    target = ::_pbi::WireFormatLite::WriteUInt64ToArray(5, this->_internal_offset(), target);
+  }
+
+  // bytes data = 6;
+  if (!this->_internal_data().empty()) {
+    target = stream->WriteBytesMaybeAliased(
+        6, this->_internal_data(), target);
+  }
+
+  // uint32 checksum = 7;
+  if (this->_internal_checksum() != 0) {
+    target = stream->EnsureSpace(target);
+    target = ::_pbi::WireFormatLite::WriteUInt32ToArray(7, this->_internal_checksum(), target);
+  }
+
+  // bool file_done = 8;
+  if (this->_internal_file_done() != 0) {
+    target = stream->EnsureSpace(target);
+    target = ::_pbi::WireFormatLite::WriteBoolToArray(8, this->_internal_file_done(), target);
+  }
+
+  // bool snapshot_done = 9;
+  if (this->_internal_snapshot_done() != 0) {
+    target = stream->EnsureSpace(target);
+    target = ::_pbi::WireFormatLite::WriteBoolToArray(9, this->_internal_snapshot_done(), target);
+  }
+
+  // string snapshot_id = 10;
+  if (!this->_internal_snapshot_id().empty()) {
+    ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::VerifyUtf8String(
+      this->_internal_snapshot_id().data(), static_cast<int>(this->_internal_snapshot_id().length()),
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::SERIALIZE,
+      "meta.GraphSnapshotChunk.snapshot_id");
+    target = stream->WriteStringMaybeAliased(
+        10, this->_internal_snapshot_id(), target);
+  }
+
+  if (PROTOBUF_PREDICT_FALSE(_internal_metadata_.have_unknown_fields())) {
+    target = ::_pbi::WireFormat::InternalSerializeUnknownFieldsToArray(
+        _internal_metadata_.unknown_fields<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(::PROTOBUF_NAMESPACE_ID::UnknownFieldSet::default_instance), target, stream);
+  }
+  // @@protoc_insertion_point(serialize_to_array_end:meta.GraphSnapshotChunk)
+  return target;
+}
+
+size_t GraphSnapshotChunk::ByteSizeLong() const {
+// @@protoc_insertion_point(message_byte_size_start:meta.GraphSnapshotChunk)
+  size_t total_size = 0;
+
+  uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void) cached_has_bits;
+
+  // string file_name = 4;
+  if (!this->_internal_file_name().empty()) {
+    total_size += 1 +
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::StringSize(
+        this->_internal_file_name());
+  }
+
+  // bytes data = 6;
+  if (!this->_internal_data().empty()) {
+    total_size += 1 +
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::BytesSize(
+        this->_internal_data());
+  }
+
+  // string snapshot_id = 10;
+  if (!this->_internal_snapshot_id().empty()) {
+    total_size += 1 +
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::StringSize(
+        this->_internal_snapshot_id());
+  }
+
+  // .meta.GraphSnapshotDescriptor snapshot_descriptor = 1;
+  if (this->_internal_has_snapshot_descriptor()) {
+    total_size += 1 +
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::MessageSize(
+        *_impl_.snapshot_descriptor_);
+  }
+
+  // uint64 source_node_id = 2;
+  if (this->_internal_source_node_id() != 0) {
+    total_size += ::_pbi::WireFormatLite::UInt64SizePlusOne(this->_internal_source_node_id());
+  }
+
+  // uint64 target_node_id = 3;
+  if (this->_internal_target_node_id() != 0) {
+    total_size += ::_pbi::WireFormatLite::UInt64SizePlusOne(this->_internal_target_node_id());
+  }
+
+  // uint64 offset = 5;
+  if (this->_internal_offset() != 0) {
+    total_size += ::_pbi::WireFormatLite::UInt64SizePlusOne(this->_internal_offset());
+  }
+
+  // uint32 checksum = 7;
+  if (this->_internal_checksum() != 0) {
+    total_size += ::_pbi::WireFormatLite::UInt32SizePlusOne(this->_internal_checksum());
+  }
+
+  // bool file_done = 8;
+  if (this->_internal_file_done() != 0) {
+    total_size += 1 + 1;
+  }
+
+  // bool snapshot_done = 9;
+  if (this->_internal_snapshot_done() != 0) {
+    total_size += 1 + 1;
+  }
+
+  return MaybeComputeUnknownFieldsSize(total_size, &_impl_._cached_size_);
+}
+
+const ::PROTOBUF_NAMESPACE_ID::Message::ClassData GraphSnapshotChunk::_class_data_ = {
+    ::PROTOBUF_NAMESPACE_ID::Message::CopyWithSourceCheck,
+    GraphSnapshotChunk::MergeImpl
+};
+const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*GraphSnapshotChunk::GetClassData() const { return &_class_data_; }
+
+
+void GraphSnapshotChunk::MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg) {
+  auto* const _this = static_cast<GraphSnapshotChunk*>(&to_msg);
+  auto& from = static_cast<const GraphSnapshotChunk&>(from_msg);
+  // @@protoc_insertion_point(class_specific_merge_from_start:meta.GraphSnapshotChunk)
+  GOOGLE_DCHECK_NE(&from, _this);
+  uint32_t cached_has_bits = 0;
+  (void) cached_has_bits;
+
+  if (!from._internal_file_name().empty()) {
+    _this->_internal_set_file_name(from._internal_file_name());
+  }
+  if (!from._internal_data().empty()) {
+    _this->_internal_set_data(from._internal_data());
+  }
+  if (!from._internal_snapshot_id().empty()) {
+    _this->_internal_set_snapshot_id(from._internal_snapshot_id());
+  }
+  if (from._internal_has_snapshot_descriptor()) {
+    _this->_internal_mutable_snapshot_descriptor()->::meta::GraphSnapshotDescriptor::MergeFrom(
+        from._internal_snapshot_descriptor());
+  }
+  if (from._internal_source_node_id() != 0) {
+    _this->_internal_set_source_node_id(from._internal_source_node_id());
+  }
+  if (from._internal_target_node_id() != 0) {
+    _this->_internal_set_target_node_id(from._internal_target_node_id());
+  }
+  if (from._internal_offset() != 0) {
+    _this->_internal_set_offset(from._internal_offset());
+  }
+  if (from._internal_checksum() != 0) {
+    _this->_internal_set_checksum(from._internal_checksum());
+  }
+  if (from._internal_file_done() != 0) {
+    _this->_internal_set_file_done(from._internal_file_done());
+  }
+  if (from._internal_snapshot_done() != 0) {
+    _this->_internal_set_snapshot_done(from._internal_snapshot_done());
+  }
+  _this->_internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
+}
+
+void GraphSnapshotChunk::CopyFrom(const GraphSnapshotChunk& from) {
+// @@protoc_insertion_point(class_specific_copy_from_start:meta.GraphSnapshotChunk)
+  if (&from == this) return;
+  Clear();
+  MergeFrom(from);
+}
+
+bool GraphSnapshotChunk::IsInitialized() const {
+  return true;
+}
+
+void GraphSnapshotChunk::InternalSwap(GraphSnapshotChunk* other) {
+  using std::swap;
+  auto* lhs_arena = GetArenaForAllocation();
+  auto* rhs_arena = other->GetArenaForAllocation();
+  _internal_metadata_.InternalSwap(&other->_internal_metadata_);
+  ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr::InternalSwap(
+      &_impl_.file_name_, lhs_arena,
+      &other->_impl_.file_name_, rhs_arena
+  );
+  ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr::InternalSwap(
+      &_impl_.data_, lhs_arena,
+      &other->_impl_.data_, rhs_arena
+  );
+  ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr::InternalSwap(
+      &_impl_.snapshot_id_, lhs_arena,
+      &other->_impl_.snapshot_id_, rhs_arena
+  );
+  ::PROTOBUF_NAMESPACE_ID::internal::memswap<
+      PROTOBUF_FIELD_OFFSET(GraphSnapshotChunk, _impl_.snapshot_done_)
+      + sizeof(GraphSnapshotChunk::_impl_.snapshot_done_)
+      - PROTOBUF_FIELD_OFFSET(GraphSnapshotChunk, _impl_.snapshot_descriptor_)>(
+          reinterpret_cast<char*>(&_impl_.snapshot_descriptor_),
+          reinterpret_cast<char*>(&other->_impl_.snapshot_descriptor_));
+}
+
+::PROTOBUF_NAMESPACE_ID::Metadata GraphSnapshotChunk::GetMetadata() const {
+  return ::_pbi::AssignDescriptors(
+      &descriptor_table_graph_5freplication_2eproto_getter, &descriptor_table_graph_5freplication_2eproto_once,
+      file_level_metadata_graph_5freplication_2eproto[4]);
+}
+
+// ===================================================================
+
+class GraphSnapshotStatus::_Internal {
+ public:
+};
+
+GraphSnapshotStatus::GraphSnapshotStatus(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+                         bool is_message_owned)
+  : ::PROTOBUF_NAMESPACE_ID::Message(arena, is_message_owned) {
+  SharedCtor(arena, is_message_owned);
+  // @@protoc_insertion_point(arena_constructor:meta.GraphSnapshotStatus)
+}
+GraphSnapshotStatus::GraphSnapshotStatus(const GraphSnapshotStatus& from)
+  : ::PROTOBUF_NAMESPACE_ID::Message() {
+  GraphSnapshotStatus* const _this = this; (void)_this;
+  new (&_impl_) Impl_{
+      decltype(_impl_.snapshot_id_){}
+    , decltype(_impl_.error_){}
+    , decltype(_impl_.source_node_id_){}
+    , decltype(_impl_.target_node_id_){}
+    , decltype(_impl_.success_){}
+    , /*decltype(_impl_._cached_size_)*/{}};
+
+  _internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
+  _impl_.snapshot_id_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.snapshot_id_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (!from._internal_snapshot_id().empty()) {
+    _this->_impl_.snapshot_id_.Set(from._internal_snapshot_id(), 
+      _this->GetArenaForAllocation());
+  }
+  _impl_.error_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.error_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (!from._internal_error().empty()) {
+    _this->_impl_.error_.Set(from._internal_error(), 
+      _this->GetArenaForAllocation());
+  }
+  ::memcpy(&_impl_.source_node_id_, &from._impl_.source_node_id_,
+    static_cast<size_t>(reinterpret_cast<char*>(&_impl_.success_) -
+    reinterpret_cast<char*>(&_impl_.source_node_id_)) + sizeof(_impl_.success_));
+  // @@protoc_insertion_point(copy_constructor:meta.GraphSnapshotStatus)
+}
+
+inline void GraphSnapshotStatus::SharedCtor(
+    ::_pb::Arena* arena, bool is_message_owned) {
+  (void)arena;
+  (void)is_message_owned;
+  new (&_impl_) Impl_{
+      decltype(_impl_.snapshot_id_){}
+    , decltype(_impl_.error_){}
+    , decltype(_impl_.source_node_id_){uint64_t{0u}}
+    , decltype(_impl_.target_node_id_){uint64_t{0u}}
+    , decltype(_impl_.success_){false}
+    , /*decltype(_impl_._cached_size_)*/{}
+  };
+  _impl_.snapshot_id_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.snapshot_id_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  _impl_.error_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.error_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+}
+
+GraphSnapshotStatus::~GraphSnapshotStatus() {
+  // @@protoc_insertion_point(destructor:meta.GraphSnapshotStatus)
+  if (auto *arena = _internal_metadata_.DeleteReturnArena<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>()) {
+  (void)arena;
+    return;
+  }
+  SharedDtor();
+}
+
+inline void GraphSnapshotStatus::SharedDtor() {
+  GOOGLE_DCHECK(GetArenaForAllocation() == nullptr);
+  _impl_.snapshot_id_.Destroy();
+  _impl_.error_.Destroy();
+}
+
+void GraphSnapshotStatus::SetCachedSize(int size) const {
+  _impl_._cached_size_.Set(size);
+}
+
+void GraphSnapshotStatus::Clear() {
+// @@protoc_insertion_point(message_clear_start:meta.GraphSnapshotStatus)
+  uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void) cached_has_bits;
+
+  _impl_.snapshot_id_.ClearToEmpty();
+  _impl_.error_.ClearToEmpty();
+  ::memset(&_impl_.source_node_id_, 0, static_cast<size_t>(
+      reinterpret_cast<char*>(&_impl_.success_) -
+      reinterpret_cast<char*>(&_impl_.source_node_id_)) + sizeof(_impl_.success_));
+  _internal_metadata_.Clear<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>();
+}
+
+const char* GraphSnapshotStatus::_InternalParse(const char* ptr, ::_pbi::ParseContext* ctx) {
+#define CHK_(x) if (PROTOBUF_PREDICT_FALSE(!(x))) goto failure
+  while (!ctx->Done(&ptr)) {
+    uint32_t tag;
+    ptr = ::_pbi::ReadTag(ptr, &tag);
+    switch (tag >> 3) {
+      // string snapshot_id = 1;
+      case 1:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 10)) {
+          auto str = _internal_mutable_snapshot_id();
+          ptr = ::_pbi::InlineGreedyStringParser(str, ptr, ctx);
+          CHK_(ptr);
+          CHK_(::_pbi::VerifyUTF8(str, "meta.GraphSnapshotStatus.snapshot_id"));
+        } else
+          goto handle_unusual;
+        continue;
+      // uint64 source_node_id = 2;
+      case 2:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 16)) {
+          _impl_.source_node_id_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint64(&ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // uint64 target_node_id = 3;
+      case 3:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 24)) {
+          _impl_.target_node_id_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint64(&ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // bool success = 4;
+      case 4:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 32)) {
+          _impl_.success_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint64(&ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // string error = 5;
+      case 5:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 42)) {
+          auto str = _internal_mutable_error();
+          ptr = ::_pbi::InlineGreedyStringParser(str, ptr, ctx);
+          CHK_(ptr);
+          CHK_(::_pbi::VerifyUTF8(str, "meta.GraphSnapshotStatus.error"));
+        } else
+          goto handle_unusual;
+        continue;
+      default:
+        goto handle_unusual;
+    }  // switch
+  handle_unusual:
+    if ((tag == 0) || ((tag & 7) == 4)) {
+      CHK_(ptr);
+      ctx->SetLastTag(tag);
+      goto message_done;
+    }
+    ptr = UnknownFieldParse(
+        tag,
+        _internal_metadata_.mutable_unknown_fields<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(),
+        ptr, ctx);
+    CHK_(ptr != nullptr);
+  }  // while
+message_done:
+  return ptr;
+failure:
+  ptr = nullptr;
+  goto message_done;
+#undef CHK_
+}
+
+uint8_t* GraphSnapshotStatus::_InternalSerialize(
+    uint8_t* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const {
+  // @@protoc_insertion_point(serialize_to_array_start:meta.GraphSnapshotStatus)
+  uint32_t cached_has_bits = 0;
+  (void) cached_has_bits;
+
+  // string snapshot_id = 1;
+  if (!this->_internal_snapshot_id().empty()) {
+    ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::VerifyUtf8String(
+      this->_internal_snapshot_id().data(), static_cast<int>(this->_internal_snapshot_id().length()),
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::SERIALIZE,
+      "meta.GraphSnapshotStatus.snapshot_id");
+    target = stream->WriteStringMaybeAliased(
+        1, this->_internal_snapshot_id(), target);
+  }
+
+  // uint64 source_node_id = 2;
+  if (this->_internal_source_node_id() != 0) {
+    target = stream->EnsureSpace(target);
+    target = ::_pbi::WireFormatLite::WriteUInt64ToArray(2, this->_internal_source_node_id(), target);
+  }
+
+  // uint64 target_node_id = 3;
+  if (this->_internal_target_node_id() != 0) {
+    target = stream->EnsureSpace(target);
+    target = ::_pbi::WireFormatLite::WriteUInt64ToArray(3, this->_internal_target_node_id(), target);
+  }
+
+  // bool success = 4;
+  if (this->_internal_success() != 0) {
+    target = stream->EnsureSpace(target);
+    target = ::_pbi::WireFormatLite::WriteBoolToArray(4, this->_internal_success(), target);
+  }
+
+  // string error = 5;
+  if (!this->_internal_error().empty()) {
+    ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::VerifyUtf8String(
+      this->_internal_error().data(), static_cast<int>(this->_internal_error().length()),
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::SERIALIZE,
+      "meta.GraphSnapshotStatus.error");
+    target = stream->WriteStringMaybeAliased(
+        5, this->_internal_error(), target);
+  }
+
+  if (PROTOBUF_PREDICT_FALSE(_internal_metadata_.have_unknown_fields())) {
+    target = ::_pbi::WireFormat::InternalSerializeUnknownFieldsToArray(
+        _internal_metadata_.unknown_fields<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(::PROTOBUF_NAMESPACE_ID::UnknownFieldSet::default_instance), target, stream);
+  }
+  // @@protoc_insertion_point(serialize_to_array_end:meta.GraphSnapshotStatus)
+  return target;
+}
+
+size_t GraphSnapshotStatus::ByteSizeLong() const {
+// @@protoc_insertion_point(message_byte_size_start:meta.GraphSnapshotStatus)
+  size_t total_size = 0;
+
+  uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void) cached_has_bits;
+
+  // string snapshot_id = 1;
+  if (!this->_internal_snapshot_id().empty()) {
+    total_size += 1 +
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::StringSize(
+        this->_internal_snapshot_id());
+  }
+
+  // string error = 5;
+  if (!this->_internal_error().empty()) {
+    total_size += 1 +
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::StringSize(
+        this->_internal_error());
+  }
+
+  // uint64 source_node_id = 2;
+  if (this->_internal_source_node_id() != 0) {
+    total_size += ::_pbi::WireFormatLite::UInt64SizePlusOne(this->_internal_source_node_id());
+  }
+
+  // uint64 target_node_id = 3;
+  if (this->_internal_target_node_id() != 0) {
+    total_size += ::_pbi::WireFormatLite::UInt64SizePlusOne(this->_internal_target_node_id());
+  }
+
+  // bool success = 4;
+  if (this->_internal_success() != 0) {
+    total_size += 1 + 1;
+  }
+
+  return MaybeComputeUnknownFieldsSize(total_size, &_impl_._cached_size_);
+}
+
+const ::PROTOBUF_NAMESPACE_ID::Message::ClassData GraphSnapshotStatus::_class_data_ = {
+    ::PROTOBUF_NAMESPACE_ID::Message::CopyWithSourceCheck,
+    GraphSnapshotStatus::MergeImpl
+};
+const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*GraphSnapshotStatus::GetClassData() const { return &_class_data_; }
+
+
+void GraphSnapshotStatus::MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg) {
+  auto* const _this = static_cast<GraphSnapshotStatus*>(&to_msg);
+  auto& from = static_cast<const GraphSnapshotStatus&>(from_msg);
+  // @@protoc_insertion_point(class_specific_merge_from_start:meta.GraphSnapshotStatus)
+  GOOGLE_DCHECK_NE(&from, _this);
+  uint32_t cached_has_bits = 0;
+  (void) cached_has_bits;
+
+  if (!from._internal_snapshot_id().empty()) {
+    _this->_internal_set_snapshot_id(from._internal_snapshot_id());
+  }
+  if (!from._internal_error().empty()) {
+    _this->_internal_set_error(from._internal_error());
+  }
+  if (from._internal_source_node_id() != 0) {
+    _this->_internal_set_source_node_id(from._internal_source_node_id());
+  }
+  if (from._internal_target_node_id() != 0) {
+    _this->_internal_set_target_node_id(from._internal_target_node_id());
+  }
+  if (from._internal_success() != 0) {
+    _this->_internal_set_success(from._internal_success());
+  }
+  _this->_internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
+}
+
+void GraphSnapshotStatus::CopyFrom(const GraphSnapshotStatus& from) {
+// @@protoc_insertion_point(class_specific_copy_from_start:meta.GraphSnapshotStatus)
+  if (&from == this) return;
+  Clear();
+  MergeFrom(from);
+}
+
+bool GraphSnapshotStatus::IsInitialized() const {
+  return true;
+}
+
+void GraphSnapshotStatus::InternalSwap(GraphSnapshotStatus* other) {
+  using std::swap;
+  auto* lhs_arena = GetArenaForAllocation();
+  auto* rhs_arena = other->GetArenaForAllocation();
+  _internal_metadata_.InternalSwap(&other->_internal_metadata_);
+  ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr::InternalSwap(
+      &_impl_.snapshot_id_, lhs_arena,
+      &other->_impl_.snapshot_id_, rhs_arena
+  );
+  ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr::InternalSwap(
+      &_impl_.error_, lhs_arena,
+      &other->_impl_.error_, rhs_arena
+  );
+  ::PROTOBUF_NAMESPACE_ID::internal::memswap<
+      PROTOBUF_FIELD_OFFSET(GraphSnapshotStatus, _impl_.success_)
+      + sizeof(GraphSnapshotStatus::_impl_.success_)
+      - PROTOBUF_FIELD_OFFSET(GraphSnapshotStatus, _impl_.source_node_id_)>(
+          reinterpret_cast<char*>(&_impl_.source_node_id_),
+          reinterpret_cast<char*>(&other->_impl_.source_node_id_));
+}
+
+::PROTOBUF_NAMESPACE_ID::Metadata GraphSnapshotStatus::GetMetadata() const {
+  return ::_pbi::AssignDescriptors(
+      &descriptor_table_graph_5freplication_2eproto_getter, &descriptor_table_graph_5freplication_2eproto_once,
+      file_level_metadata_graph_5freplication_2eproto[5]);
 }
 
 // ===================================================================
@@ -1109,7 +2927,7 @@ void RaftNodeInfo::InternalSwap(RaftNodeInfo* other) {
 ::PROTOBUF_NAMESPACE_ID::Metadata RaftNodeInfo::GetMetadata() const {
   return ::_pbi::AssignDescriptors(
       &descriptor_table_graph_5freplication_2eproto_getter, &descriptor_table_graph_5freplication_2eproto_once,
-      file_level_metadata_graph_5freplication_2eproto[2]);
+      file_level_metadata_graph_5freplication_2eproto[6]);
 }
 
 // ===================================================================
@@ -1123,7 +2941,7 @@ void RaftNodeInfos_NodesEntry_DoNotUse::MergeFrom(const RaftNodeInfos_NodesEntry
 ::PROTOBUF_NAMESPACE_ID::Metadata RaftNodeInfos_NodesEntry_DoNotUse::GetMetadata() const {
   return ::_pbi::AssignDescriptors(
       &descriptor_table_graph_5freplication_2eproto_getter, &descriptor_table_graph_5freplication_2eproto_once,
-      file_level_metadata_graph_5freplication_2eproto[3]);
+      file_level_metadata_graph_5freplication_2eproto[7]);
 }
 
 // ===================================================================
@@ -1329,7 +3147,7 @@ void RaftNodeInfos::InternalSwap(RaftNodeInfos* other) {
 ::PROTOBUF_NAMESPACE_ID::Metadata RaftNodeInfos::GetMetadata() const {
   return ::_pbi::AssignDescriptors(
       &descriptor_table_graph_5freplication_2eproto_getter, &descriptor_table_graph_5freplication_2eproto_once,
-      file_level_metadata_graph_5freplication_2eproto[4]);
+      file_level_metadata_graph_5freplication_2eproto[8]);
 }
 
 // @@protoc_insertion_point(namespace_scope)
@@ -1342,6 +3160,22 @@ Arena::CreateMaybeMessage< ::meta::RaftRequest >(Arena* arena) {
 template<> PROTOBUF_NOINLINE ::meta::RaftMessage*
 Arena::CreateMaybeMessage< ::meta::RaftMessage >(Arena* arena) {
   return Arena::CreateMessageInternal< ::meta::RaftMessage >(arena);
+}
+template<> PROTOBUF_NOINLINE ::meta::GraphSnapshotFile*
+Arena::CreateMaybeMessage< ::meta::GraphSnapshotFile >(Arena* arena) {
+  return Arena::CreateMessageInternal< ::meta::GraphSnapshotFile >(arena);
+}
+template<> PROTOBUF_NOINLINE ::meta::GraphSnapshotDescriptor*
+Arena::CreateMaybeMessage< ::meta::GraphSnapshotDescriptor >(Arena* arena) {
+  return Arena::CreateMessageInternal< ::meta::GraphSnapshotDescriptor >(arena);
+}
+template<> PROTOBUF_NOINLINE ::meta::GraphSnapshotChunk*
+Arena::CreateMaybeMessage< ::meta::GraphSnapshotChunk >(Arena* arena) {
+  return Arena::CreateMessageInternal< ::meta::GraphSnapshotChunk >(arena);
+}
+template<> PROTOBUF_NOINLINE ::meta::GraphSnapshotStatus*
+Arena::CreateMaybeMessage< ::meta::GraphSnapshotStatus >(Arena* arena) {
+  return Arena::CreateMessageInternal< ::meta::GraphSnapshotStatus >(arena);
 }
 template<> PROTOBUF_NOINLINE ::meta::RaftNodeInfo*
 Arena::CreateMaybeMessage< ::meta::RaftNodeInfo >(Arena* arena) {

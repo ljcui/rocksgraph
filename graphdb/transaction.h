@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <shared_mutex>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -33,8 +34,9 @@ class Transaction {
   Transaction(const Transaction&) = delete;
   void operator=(const Transaction&) = delete;
 
-  Transaction(rocksdb::Transaction* txn, GraphDB* graph_db)
-      : txn_(txn), db_(graph_db) {}
+  Transaction(rocksdb::Transaction* txn, GraphDB* graph_db,
+              std::shared_lock<std::shared_mutex> storage_lock)
+      : txn_(txn), db_(graph_db), storage_lock_(std::move(storage_lock)) {}
   ~Transaction() { delete txn_; }
   Vertex CreateVertex(const std::unordered_set<std::string>& labels,
                       const std::unordered_map<std::string, rg::Value>& values);
@@ -127,6 +129,7 @@ class Transaction {
 
   rocksdb::Transaction* txn_;
   GraphDB* db_;
+  std::shared_lock<std::shared_mutex> storage_lock_;
   std::vector<PendingPropertyWAL> pending_property_wals_;
   std::vector<PendingEdgePropertyWAL> pending_edge_property_wals_;
   std::vector<PendingFullTextWAL> pending_fulltext_wals_;

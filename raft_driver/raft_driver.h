@@ -5,6 +5,7 @@
 #include <atomic>
 #include <boost/asio.hpp>
 #include <deque>
+#include <filesystem>
 #include <functional>
 #include <future>
 #include <memory>
@@ -242,6 +243,7 @@ struct RaftConfig {
 
 struct RaftLogStoreConfig {
   std::string path;
+  std::string snapshot_path;
   std::shared_ptr<rocksdb::Cache> shared_block_cache;
   uint64_t total_threads = 0;
   uint64_t keep_logs = 0;
@@ -257,25 +259,47 @@ struct LocalNodeConfig {
   bool Check();
 };
 
+struct SnapshotBuildResult {
+  eraft::Error err;
+  meta::GraphSnapshotDescriptor descriptor;
+  raftpb::ConfState conf_state;
+};
+
 class RaftDriver {
  public:
   using ApplyRequest = std::function<void(uint64_t, const meta::RaftRequest&)>;
   using ApplyConfChange = std::function<void(uint64_t, const raftpb::ConfState&,
                                              const meta::RaftNodeInfos&)>;
+  using CreateSnapshot = std::function<SnapshotBuildResult()>;
+  using ApplySnapshot =
+      std::function<void(const meta::GraphSnapshotDescriptor&)>;
 
   RaftDriver(ApplyRequest apply, ApplyConfChange apply_conf_change,
              uint64_t apply_id, std::optional<raftpb::ConfState> conf_state,
              std::optional<meta::RaftNodeInfos> node_infos,
              LocalNodeConfig local_node, const RaftLogStoreConfig& store_config,
-             const RaftConfig& config);
+             const RaftConfig& config, CreateSnapshot create_snapshot = {},
+             ApplySnapshot apply_snapshot = {});
   RaftDriver(ApplyRequest apply, ApplyConfChange apply_conf_change,
              uint64_t apply_id, std::optional<raftpb::ConfState> conf_state,
              std::optional<meta::RaftNodeInfos> node_infos,
              LocalNodeConfig local_node, std::vector<eraft::Peer> init_peers,
              const RaftLogStoreConfig& store_config, const RaftConfig& config);
+  RaftDriver(ApplyRequest apply, ApplyConfChange apply_conf_change,
+             uint64_t apply_id, std::optional<raftpb::ConfState> conf_state,
+             std::optional<meta::RaftNodeInfos> node_infos,
+             LocalNodeConfig local_node, std::vector<eraft::Peer> init_peers,
+             const RaftLogStoreConfig& store_config, const RaftConfig& config,
+             CreateSnapshot create_snapshot, ApplySnapshot apply_snapshot,
+             bool join_existing,
+             std::optional<meta::RaftNodeInfos> join_node_infos);
   eraft::Error Run();
   void Stop();
-  void Step(raftpb::Message msg);
+  void Step(raftpb::Message msg,
+            std::optional<meta::RaftNodeInfo> source_node = std::nullopt);
+  void ReceiveSnapshotChunk(meta::GraphSnapshotChunk chunk);
+  void ReceiveSnapshotStatus(meta::GraphSnapshotStatus status);
+  eraft::Error CreateSnapshotAndCompact();
   PromiseContext::ApplyResult ProposeWriteBatch(meta::WriteBatchKind kind,
                                                 const rocksdb::WriteBatch& wb);
   PromiseContext::ApplyResult ProposeConfChangeAndWait(raftpb::ConfChange cc);
@@ -312,6 +336,13 @@ class RaftDriver {
   void Tick();
   void CheckAndCompactLog();
   void CheckReady();
+  void SendReadyMessages(const std::vector<raftpb::Message>& messages);
+  meta::RaftNodeInfo LocalNodeInfo() const;
+  void StartSnapshotTransfer(const raftpb::Message& message);
+  void HandleSnapshotStatus(meta::GraphSnapshotStatus status);
+  void ApplyReadySnapshot(eraft::Ready ready);
+  void UpdateNodeInfosFromSnapshot(
+      const meta::GraphSnapshotDescriptor& descriptor);
   std::vector<ApplyOperation> PrepareApplyOperations(
       const std::vector<raftpb::Entry>& entries);
   void Apply(const std::vector<ApplyOperation>& operations);
@@ -320,12 +351,15 @@ class RaftDriver {
   std::shared_ptr<std::atomic<bool>> callback_alive_;
   ApplyRequest apply_;
   ApplyConfChange apply_conf_change_;
+  CreateSnapshot create_snapshot_;
+  ApplySnapshot apply_snapshot_;
   std::atomic<uint64_t> apply_id_;
   std::optional<raftpb::ConfState> initial_conf_state_;
   LocalNodeConfig local_node_;
   size_t shard_id_ = 0;
   uint64_t node_id_;
   std::vector<eraft::Peer> init_peers_;
+  bool join_existing_ = false;
   boost::posix_time::millisec tick_interval_;
   boost::asio::deadline_timer tick_timer_;
   boost::posix_time::millisec compact_interval_;
@@ -343,6 +377,18 @@ class RaftDriver {
   uint64_t pending_proposals_ = 0;
   uint64_t pending_proposal_bytes_ = 0;
   std::unordered_set<uint64_t> mark_unreachable_;
+  struct IncomingSnapshot {
+    meta::GraphSnapshotDescriptor descriptor;
+    std::unordered_set<std::string> completed_files;
+  };
+  std::mutex snapshot_mutex_;
+  std::unordered_map<std::string, IncomingSnapshot> incoming_snapshots_;
+  std::unordered_map<std::string, raftpb::Message> pending_snapshot_messages_;
+  std::vector<std::jthread> snapshot_threads_;
+  // RawNode cannot be queried again until the asynchronous graph restore has
+  // persisted and advanced the snapshot Ready. This flag is only accessed on
+  // the raft service thread.
+  bool snapshot_ready_pending_ = false;
   RaftLogStoreConfig store_config_;
   RaftConfig raft_config_;
   std::atomic<bool> stopped_ = false;

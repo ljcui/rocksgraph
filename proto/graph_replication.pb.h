@@ -50,6 +50,18 @@ struct TableStruct_graph_5freplication_2eproto {
 };
 extern const ::PROTOBUF_NAMESPACE_ID::internal::DescriptorTable descriptor_table_graph_5freplication_2eproto;
 namespace meta {
+class GraphSnapshotChunk;
+struct GraphSnapshotChunkDefaultTypeInternal;
+extern GraphSnapshotChunkDefaultTypeInternal _GraphSnapshotChunk_default_instance_;
+class GraphSnapshotDescriptor;
+struct GraphSnapshotDescriptorDefaultTypeInternal;
+extern GraphSnapshotDescriptorDefaultTypeInternal _GraphSnapshotDescriptor_default_instance_;
+class GraphSnapshotFile;
+struct GraphSnapshotFileDefaultTypeInternal;
+extern GraphSnapshotFileDefaultTypeInternal _GraphSnapshotFile_default_instance_;
+class GraphSnapshotStatus;
+struct GraphSnapshotStatusDefaultTypeInternal;
+extern GraphSnapshotStatusDefaultTypeInternal _GraphSnapshotStatus_default_instance_;
 class RaftMessage;
 struct RaftMessageDefaultTypeInternal;
 extern RaftMessageDefaultTypeInternal _RaftMessage_default_instance_;
@@ -67,6 +79,10 @@ struct RaftRequestDefaultTypeInternal;
 extern RaftRequestDefaultTypeInternal _RaftRequest_default_instance_;
 }  // namespace meta
 PROTOBUF_NAMESPACE_OPEN
+template<> ::meta::GraphSnapshotChunk* Arena::CreateMaybeMessage<::meta::GraphSnapshotChunk>(Arena*);
+template<> ::meta::GraphSnapshotDescriptor* Arena::CreateMaybeMessage<::meta::GraphSnapshotDescriptor>(Arena*);
+template<> ::meta::GraphSnapshotFile* Arena::CreateMaybeMessage<::meta::GraphSnapshotFile>(Arena*);
+template<> ::meta::GraphSnapshotStatus* Arena::CreateMaybeMessage<::meta::GraphSnapshotStatus>(Arena*);
 template<> ::meta::RaftMessage* Arena::CreateMaybeMessage<::meta::RaftMessage>(Arena*);
 template<> ::meta::RaftNodeInfo* Arena::CreateMaybeMessage<::meta::RaftNodeInfo>(Arena*);
 template<> ::meta::RaftNodeInfos* Arena::CreateMaybeMessage<::meta::RaftNodeInfos>(Arena*);
@@ -402,6 +418,9 @@ class RaftMessage final :
   enum : int {
     kGraphFieldNumber = 1,
     kMessageFieldNumber = 2,
+    kSnapshotChunkFieldNumber = 3,
+    kSnapshotStatusFieldNumber = 4,
+    kSourceNodeFieldNumber = 5,
   };
   // string graph = 1;
   void clear_graph();
@@ -435,6 +454,60 @@ class RaftMessage final :
       ::raftpb::Message* message);
   ::raftpb::Message* unsafe_arena_release_message();
 
+  // .meta.GraphSnapshotChunk snapshot_chunk = 3;
+  bool has_snapshot_chunk() const;
+  private:
+  bool _internal_has_snapshot_chunk() const;
+  public:
+  void clear_snapshot_chunk();
+  const ::meta::GraphSnapshotChunk& snapshot_chunk() const;
+  PROTOBUF_NODISCARD ::meta::GraphSnapshotChunk* release_snapshot_chunk();
+  ::meta::GraphSnapshotChunk* mutable_snapshot_chunk();
+  void set_allocated_snapshot_chunk(::meta::GraphSnapshotChunk* snapshot_chunk);
+  private:
+  const ::meta::GraphSnapshotChunk& _internal_snapshot_chunk() const;
+  ::meta::GraphSnapshotChunk* _internal_mutable_snapshot_chunk();
+  public:
+  void unsafe_arena_set_allocated_snapshot_chunk(
+      ::meta::GraphSnapshotChunk* snapshot_chunk);
+  ::meta::GraphSnapshotChunk* unsafe_arena_release_snapshot_chunk();
+
+  // .meta.GraphSnapshotStatus snapshot_status = 4;
+  bool has_snapshot_status() const;
+  private:
+  bool _internal_has_snapshot_status() const;
+  public:
+  void clear_snapshot_status();
+  const ::meta::GraphSnapshotStatus& snapshot_status() const;
+  PROTOBUF_NODISCARD ::meta::GraphSnapshotStatus* release_snapshot_status();
+  ::meta::GraphSnapshotStatus* mutable_snapshot_status();
+  void set_allocated_snapshot_status(::meta::GraphSnapshotStatus* snapshot_status);
+  private:
+  const ::meta::GraphSnapshotStatus& _internal_snapshot_status() const;
+  ::meta::GraphSnapshotStatus* _internal_mutable_snapshot_status();
+  public:
+  void unsafe_arena_set_allocated_snapshot_status(
+      ::meta::GraphSnapshotStatus* snapshot_status);
+  ::meta::GraphSnapshotStatus* unsafe_arena_release_snapshot_status();
+
+  // .meta.RaftNodeInfo source_node = 5;
+  bool has_source_node() const;
+  private:
+  bool _internal_has_source_node() const;
+  public:
+  void clear_source_node();
+  const ::meta::RaftNodeInfo& source_node() const;
+  PROTOBUF_NODISCARD ::meta::RaftNodeInfo* release_source_node();
+  ::meta::RaftNodeInfo* mutable_source_node();
+  void set_allocated_source_node(::meta::RaftNodeInfo* source_node);
+  private:
+  const ::meta::RaftNodeInfo& _internal_source_node() const;
+  ::meta::RaftNodeInfo* _internal_mutable_source_node();
+  public:
+  void unsafe_arena_set_allocated_source_node(
+      ::meta::RaftNodeInfo* source_node);
+  ::meta::RaftNodeInfo* unsafe_arena_release_source_node();
+
   // @@protoc_insertion_point(class_scope:meta.RaftMessage)
  private:
   class _Internal;
@@ -445,6 +518,910 @@ class RaftMessage final :
   struct Impl_ {
     ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr graph_;
     ::raftpb::Message* message_;
+    ::meta::GraphSnapshotChunk* snapshot_chunk_;
+    ::meta::GraphSnapshotStatus* snapshot_status_;
+    ::meta::RaftNodeInfo* source_node_;
+    mutable ::PROTOBUF_NAMESPACE_ID::internal::CachedSize _cached_size_;
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_graph_5freplication_2eproto;
+};
+// -------------------------------------------------------------------
+
+class GraphSnapshotFile final :
+    public ::PROTOBUF_NAMESPACE_ID::Message /* @@protoc_insertion_point(class_definition:meta.GraphSnapshotFile) */ {
+ public:
+  inline GraphSnapshotFile() : GraphSnapshotFile(nullptr) {}
+  ~GraphSnapshotFile() override;
+  explicit PROTOBUF_CONSTEXPR GraphSnapshotFile(::PROTOBUF_NAMESPACE_ID::internal::ConstantInitialized);
+
+  GraphSnapshotFile(const GraphSnapshotFile& from);
+  GraphSnapshotFile(GraphSnapshotFile&& from) noexcept
+    : GraphSnapshotFile() {
+    *this = ::std::move(from);
+  }
+
+  inline GraphSnapshotFile& operator=(const GraphSnapshotFile& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline GraphSnapshotFile& operator=(GraphSnapshotFile&& from) noexcept {
+    if (this == &from) return *this;
+    if (GetOwningArena() == from.GetOwningArena()
+  #ifdef PROTOBUF_FORCE_COPY_IN_MOVE
+        && GetOwningArena() != nullptr
+  #endif  // !PROTOBUF_FORCE_COPY_IN_MOVE
+    ) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* descriptor() {
+    return GetDescriptor();
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* GetDescriptor() {
+    return default_instance().GetMetadata().descriptor;
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Reflection* GetReflection() {
+    return default_instance().GetMetadata().reflection;
+  }
+  static const GraphSnapshotFile& default_instance() {
+    return *internal_default_instance();
+  }
+  static inline const GraphSnapshotFile* internal_default_instance() {
+    return reinterpret_cast<const GraphSnapshotFile*>(
+               &_GraphSnapshotFile_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages =
+    2;
+
+  friend void swap(GraphSnapshotFile& a, GraphSnapshotFile& b) {
+    a.Swap(&b);
+  }
+  inline void Swap(GraphSnapshotFile* other) {
+    if (other == this) return;
+  #ifdef PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() != nullptr &&
+        GetOwningArena() == other->GetOwningArena()) {
+   #else  // PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() == other->GetOwningArena()) {
+  #endif  // !PROTOBUF_FORCE_COPY_IN_SWAP
+      InternalSwap(other);
+    } else {
+      ::PROTOBUF_NAMESPACE_ID::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(GraphSnapshotFile* other) {
+    if (other == this) return;
+    GOOGLE_DCHECK(GetOwningArena() == other->GetOwningArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  GraphSnapshotFile* New(::PROTOBUF_NAMESPACE_ID::Arena* arena = nullptr) const final {
+    return CreateMaybeMessage<GraphSnapshotFile>(arena);
+  }
+  using ::PROTOBUF_NAMESPACE_ID::Message::CopyFrom;
+  void CopyFrom(const GraphSnapshotFile& from);
+  using ::PROTOBUF_NAMESPACE_ID::Message::MergeFrom;
+  void MergeFrom( const GraphSnapshotFile& from) {
+    GraphSnapshotFile::MergeImpl(*this, from);
+  }
+  private:
+  static void MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg);
+  public:
+  PROTOBUF_ATTRIBUTE_REINITIALIZES void Clear() final;
+  bool IsInitialized() const final;
+
+  size_t ByteSizeLong() const final;
+  const char* _InternalParse(const char* ptr, ::PROTOBUF_NAMESPACE_ID::internal::ParseContext* ctx) final;
+  uint8_t* _InternalSerialize(
+      uint8_t* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const final;
+  int GetCachedSize() const final { return _impl_._cached_size_.Get(); }
+
+  private:
+  void SharedCtor(::PROTOBUF_NAMESPACE_ID::Arena* arena, bool is_message_owned);
+  void SharedDtor();
+  void SetCachedSize(int size) const final;
+  void InternalSwap(GraphSnapshotFile* other);
+
+  private:
+  friend class ::PROTOBUF_NAMESPACE_ID::internal::AnyMetadata;
+  static ::PROTOBUF_NAMESPACE_ID::StringPiece FullMessageName() {
+    return "meta.GraphSnapshotFile";
+  }
+  protected:
+  explicit GraphSnapshotFile(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+                       bool is_message_owned = false);
+  public:
+
+  static const ClassData _class_data_;
+  const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*GetClassData() const final;
+
+  ::PROTOBUF_NAMESPACE_ID::Metadata GetMetadata() const final;
+
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+
+  enum : int {
+    kNameFieldNumber = 1,
+    kSizeFieldNumber = 2,
+    kChecksumFieldNumber = 3,
+  };
+  // string name = 1;
+  void clear_name();
+  const std::string& name() const;
+  template <typename ArgT0 = const std::string&, typename... ArgT>
+  void set_name(ArgT0&& arg0, ArgT... args);
+  std::string* mutable_name();
+  PROTOBUF_NODISCARD std::string* release_name();
+  void set_allocated_name(std::string* name);
+  private:
+  const std::string& _internal_name() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_name(const std::string& value);
+  std::string* _internal_mutable_name();
+  public:
+
+  // uint64 size = 2;
+  void clear_size();
+  uint64_t size() const;
+  void set_size(uint64_t value);
+  private:
+  uint64_t _internal_size() const;
+  void _internal_set_size(uint64_t value);
+  public:
+
+  // uint32 checksum = 3;
+  void clear_checksum();
+  uint32_t checksum() const;
+  void set_checksum(uint32_t value);
+  private:
+  uint32_t _internal_checksum() const;
+  void _internal_set_checksum(uint32_t value);
+  public:
+
+  // @@protoc_insertion_point(class_scope:meta.GraphSnapshotFile)
+ private:
+  class _Internal;
+
+  template <typename T> friend class ::PROTOBUF_NAMESPACE_ID::Arena::InternalHelper;
+  typedef void InternalArenaConstructable_;
+  typedef void DestructorSkippable_;
+  struct Impl_ {
+    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr name_;
+    uint64_t size_;
+    uint32_t checksum_;
+    mutable ::PROTOBUF_NAMESPACE_ID::internal::CachedSize _cached_size_;
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_graph_5freplication_2eproto;
+};
+// -------------------------------------------------------------------
+
+class GraphSnapshotDescriptor final :
+    public ::PROTOBUF_NAMESPACE_ID::Message /* @@protoc_insertion_point(class_definition:meta.GraphSnapshotDescriptor) */ {
+ public:
+  inline GraphSnapshotDescriptor() : GraphSnapshotDescriptor(nullptr) {}
+  ~GraphSnapshotDescriptor() override;
+  explicit PROTOBUF_CONSTEXPR GraphSnapshotDescriptor(::PROTOBUF_NAMESPACE_ID::internal::ConstantInitialized);
+
+  GraphSnapshotDescriptor(const GraphSnapshotDescriptor& from);
+  GraphSnapshotDescriptor(GraphSnapshotDescriptor&& from) noexcept
+    : GraphSnapshotDescriptor() {
+    *this = ::std::move(from);
+  }
+
+  inline GraphSnapshotDescriptor& operator=(const GraphSnapshotDescriptor& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline GraphSnapshotDescriptor& operator=(GraphSnapshotDescriptor&& from) noexcept {
+    if (this == &from) return *this;
+    if (GetOwningArena() == from.GetOwningArena()
+  #ifdef PROTOBUF_FORCE_COPY_IN_MOVE
+        && GetOwningArena() != nullptr
+  #endif  // !PROTOBUF_FORCE_COPY_IN_MOVE
+    ) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* descriptor() {
+    return GetDescriptor();
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* GetDescriptor() {
+    return default_instance().GetMetadata().descriptor;
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Reflection* GetReflection() {
+    return default_instance().GetMetadata().reflection;
+  }
+  static const GraphSnapshotDescriptor& default_instance() {
+    return *internal_default_instance();
+  }
+  static inline const GraphSnapshotDescriptor* internal_default_instance() {
+    return reinterpret_cast<const GraphSnapshotDescriptor*>(
+               &_GraphSnapshotDescriptor_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages =
+    3;
+
+  friend void swap(GraphSnapshotDescriptor& a, GraphSnapshotDescriptor& b) {
+    a.Swap(&b);
+  }
+  inline void Swap(GraphSnapshotDescriptor* other) {
+    if (other == this) return;
+  #ifdef PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() != nullptr &&
+        GetOwningArena() == other->GetOwningArena()) {
+   #else  // PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() == other->GetOwningArena()) {
+  #endif  // !PROTOBUF_FORCE_COPY_IN_SWAP
+      InternalSwap(other);
+    } else {
+      ::PROTOBUF_NAMESPACE_ID::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(GraphSnapshotDescriptor* other) {
+    if (other == this) return;
+    GOOGLE_DCHECK(GetOwningArena() == other->GetOwningArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  GraphSnapshotDescriptor* New(::PROTOBUF_NAMESPACE_ID::Arena* arena = nullptr) const final {
+    return CreateMaybeMessage<GraphSnapshotDescriptor>(arena);
+  }
+  using ::PROTOBUF_NAMESPACE_ID::Message::CopyFrom;
+  void CopyFrom(const GraphSnapshotDescriptor& from);
+  using ::PROTOBUF_NAMESPACE_ID::Message::MergeFrom;
+  void MergeFrom( const GraphSnapshotDescriptor& from) {
+    GraphSnapshotDescriptor::MergeImpl(*this, from);
+  }
+  private:
+  static void MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg);
+  public:
+  PROTOBUF_ATTRIBUTE_REINITIALIZES void Clear() final;
+  bool IsInitialized() const final;
+
+  size_t ByteSizeLong() const final;
+  const char* _InternalParse(const char* ptr, ::PROTOBUF_NAMESPACE_ID::internal::ParseContext* ctx) final;
+  uint8_t* _InternalSerialize(
+      uint8_t* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const final;
+  int GetCachedSize() const final { return _impl_._cached_size_.Get(); }
+
+  private:
+  void SharedCtor(::PROTOBUF_NAMESPACE_ID::Arena* arena, bool is_message_owned);
+  void SharedDtor();
+  void SetCachedSize(int size) const final;
+  void InternalSwap(GraphSnapshotDescriptor* other);
+
+  private:
+  friend class ::PROTOBUF_NAMESPACE_ID::internal::AnyMetadata;
+  static ::PROTOBUF_NAMESPACE_ID::StringPiece FullMessageName() {
+    return "meta.GraphSnapshotDescriptor";
+  }
+  protected:
+  explicit GraphSnapshotDescriptor(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+                       bool is_message_owned = false);
+  public:
+
+  static const ClassData _class_data_;
+  const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*GetClassData() const final;
+
+  ::PROTOBUF_NAMESPACE_ID::Metadata GetMetadata() const final;
+
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+
+  enum : int {
+    kFilesFieldNumber = 7,
+    kSnapshotIdFieldNumber = 2,
+    kGraphFieldNumber = 3,
+    kNodeInfosFieldNumber = 8,
+    kIndexFieldNumber = 4,
+    kTermFieldNumber = 5,
+    kTotalSizeFieldNumber = 6,
+    kFormatVersionFieldNumber = 1,
+  };
+  // repeated .meta.GraphSnapshotFile files = 7;
+  int files_size() const;
+  private:
+  int _internal_files_size() const;
+  public:
+  void clear_files();
+  ::meta::GraphSnapshotFile* mutable_files(int index);
+  ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField< ::meta::GraphSnapshotFile >*
+      mutable_files();
+  private:
+  const ::meta::GraphSnapshotFile& _internal_files(int index) const;
+  ::meta::GraphSnapshotFile* _internal_add_files();
+  public:
+  const ::meta::GraphSnapshotFile& files(int index) const;
+  ::meta::GraphSnapshotFile* add_files();
+  const ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField< ::meta::GraphSnapshotFile >&
+      files() const;
+
+  // string snapshot_id = 2;
+  void clear_snapshot_id();
+  const std::string& snapshot_id() const;
+  template <typename ArgT0 = const std::string&, typename... ArgT>
+  void set_snapshot_id(ArgT0&& arg0, ArgT... args);
+  std::string* mutable_snapshot_id();
+  PROTOBUF_NODISCARD std::string* release_snapshot_id();
+  void set_allocated_snapshot_id(std::string* snapshot_id);
+  private:
+  const std::string& _internal_snapshot_id() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_snapshot_id(const std::string& value);
+  std::string* _internal_mutable_snapshot_id();
+  public:
+
+  // string graph = 3;
+  void clear_graph();
+  const std::string& graph() const;
+  template <typename ArgT0 = const std::string&, typename... ArgT>
+  void set_graph(ArgT0&& arg0, ArgT... args);
+  std::string* mutable_graph();
+  PROTOBUF_NODISCARD std::string* release_graph();
+  void set_allocated_graph(std::string* graph);
+  private:
+  const std::string& _internal_graph() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_graph(const std::string& value);
+  std::string* _internal_mutable_graph();
+  public:
+
+  // .meta.RaftNodeInfos node_infos = 8;
+  bool has_node_infos() const;
+  private:
+  bool _internal_has_node_infos() const;
+  public:
+  void clear_node_infos();
+  const ::meta::RaftNodeInfos& node_infos() const;
+  PROTOBUF_NODISCARD ::meta::RaftNodeInfos* release_node_infos();
+  ::meta::RaftNodeInfos* mutable_node_infos();
+  void set_allocated_node_infos(::meta::RaftNodeInfos* node_infos);
+  private:
+  const ::meta::RaftNodeInfos& _internal_node_infos() const;
+  ::meta::RaftNodeInfos* _internal_mutable_node_infos();
+  public:
+  void unsafe_arena_set_allocated_node_infos(
+      ::meta::RaftNodeInfos* node_infos);
+  ::meta::RaftNodeInfos* unsafe_arena_release_node_infos();
+
+  // uint64 index = 4;
+  void clear_index();
+  uint64_t index() const;
+  void set_index(uint64_t value);
+  private:
+  uint64_t _internal_index() const;
+  void _internal_set_index(uint64_t value);
+  public:
+
+  // uint64 term = 5;
+  void clear_term();
+  uint64_t term() const;
+  void set_term(uint64_t value);
+  private:
+  uint64_t _internal_term() const;
+  void _internal_set_term(uint64_t value);
+  public:
+
+  // uint64 total_size = 6;
+  void clear_total_size();
+  uint64_t total_size() const;
+  void set_total_size(uint64_t value);
+  private:
+  uint64_t _internal_total_size() const;
+  void _internal_set_total_size(uint64_t value);
+  public:
+
+  // uint32 format_version = 1;
+  void clear_format_version();
+  uint32_t format_version() const;
+  void set_format_version(uint32_t value);
+  private:
+  uint32_t _internal_format_version() const;
+  void _internal_set_format_version(uint32_t value);
+  public:
+
+  // @@protoc_insertion_point(class_scope:meta.GraphSnapshotDescriptor)
+ private:
+  class _Internal;
+
+  template <typename T> friend class ::PROTOBUF_NAMESPACE_ID::Arena::InternalHelper;
+  typedef void InternalArenaConstructable_;
+  typedef void DestructorSkippable_;
+  struct Impl_ {
+    ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField< ::meta::GraphSnapshotFile > files_;
+    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr snapshot_id_;
+    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr graph_;
+    ::meta::RaftNodeInfos* node_infos_;
+    uint64_t index_;
+    uint64_t term_;
+    uint64_t total_size_;
+    uint32_t format_version_;
+    mutable ::PROTOBUF_NAMESPACE_ID::internal::CachedSize _cached_size_;
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_graph_5freplication_2eproto;
+};
+// -------------------------------------------------------------------
+
+class GraphSnapshotChunk final :
+    public ::PROTOBUF_NAMESPACE_ID::Message /* @@protoc_insertion_point(class_definition:meta.GraphSnapshotChunk) */ {
+ public:
+  inline GraphSnapshotChunk() : GraphSnapshotChunk(nullptr) {}
+  ~GraphSnapshotChunk() override;
+  explicit PROTOBUF_CONSTEXPR GraphSnapshotChunk(::PROTOBUF_NAMESPACE_ID::internal::ConstantInitialized);
+
+  GraphSnapshotChunk(const GraphSnapshotChunk& from);
+  GraphSnapshotChunk(GraphSnapshotChunk&& from) noexcept
+    : GraphSnapshotChunk() {
+    *this = ::std::move(from);
+  }
+
+  inline GraphSnapshotChunk& operator=(const GraphSnapshotChunk& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline GraphSnapshotChunk& operator=(GraphSnapshotChunk&& from) noexcept {
+    if (this == &from) return *this;
+    if (GetOwningArena() == from.GetOwningArena()
+  #ifdef PROTOBUF_FORCE_COPY_IN_MOVE
+        && GetOwningArena() != nullptr
+  #endif  // !PROTOBUF_FORCE_COPY_IN_MOVE
+    ) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* descriptor() {
+    return GetDescriptor();
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* GetDescriptor() {
+    return default_instance().GetMetadata().descriptor;
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Reflection* GetReflection() {
+    return default_instance().GetMetadata().reflection;
+  }
+  static const GraphSnapshotChunk& default_instance() {
+    return *internal_default_instance();
+  }
+  static inline const GraphSnapshotChunk* internal_default_instance() {
+    return reinterpret_cast<const GraphSnapshotChunk*>(
+               &_GraphSnapshotChunk_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages =
+    4;
+
+  friend void swap(GraphSnapshotChunk& a, GraphSnapshotChunk& b) {
+    a.Swap(&b);
+  }
+  inline void Swap(GraphSnapshotChunk* other) {
+    if (other == this) return;
+  #ifdef PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() != nullptr &&
+        GetOwningArena() == other->GetOwningArena()) {
+   #else  // PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() == other->GetOwningArena()) {
+  #endif  // !PROTOBUF_FORCE_COPY_IN_SWAP
+      InternalSwap(other);
+    } else {
+      ::PROTOBUF_NAMESPACE_ID::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(GraphSnapshotChunk* other) {
+    if (other == this) return;
+    GOOGLE_DCHECK(GetOwningArena() == other->GetOwningArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  GraphSnapshotChunk* New(::PROTOBUF_NAMESPACE_ID::Arena* arena = nullptr) const final {
+    return CreateMaybeMessage<GraphSnapshotChunk>(arena);
+  }
+  using ::PROTOBUF_NAMESPACE_ID::Message::CopyFrom;
+  void CopyFrom(const GraphSnapshotChunk& from);
+  using ::PROTOBUF_NAMESPACE_ID::Message::MergeFrom;
+  void MergeFrom( const GraphSnapshotChunk& from) {
+    GraphSnapshotChunk::MergeImpl(*this, from);
+  }
+  private:
+  static void MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg);
+  public:
+  PROTOBUF_ATTRIBUTE_REINITIALIZES void Clear() final;
+  bool IsInitialized() const final;
+
+  size_t ByteSizeLong() const final;
+  const char* _InternalParse(const char* ptr, ::PROTOBUF_NAMESPACE_ID::internal::ParseContext* ctx) final;
+  uint8_t* _InternalSerialize(
+      uint8_t* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const final;
+  int GetCachedSize() const final { return _impl_._cached_size_.Get(); }
+
+  private:
+  void SharedCtor(::PROTOBUF_NAMESPACE_ID::Arena* arena, bool is_message_owned);
+  void SharedDtor();
+  void SetCachedSize(int size) const final;
+  void InternalSwap(GraphSnapshotChunk* other);
+
+  private:
+  friend class ::PROTOBUF_NAMESPACE_ID::internal::AnyMetadata;
+  static ::PROTOBUF_NAMESPACE_ID::StringPiece FullMessageName() {
+    return "meta.GraphSnapshotChunk";
+  }
+  protected:
+  explicit GraphSnapshotChunk(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+                       bool is_message_owned = false);
+  public:
+
+  static const ClassData _class_data_;
+  const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*GetClassData() const final;
+
+  ::PROTOBUF_NAMESPACE_ID::Metadata GetMetadata() const final;
+
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+
+  enum : int {
+    kFileNameFieldNumber = 4,
+    kDataFieldNumber = 6,
+    kSnapshotIdFieldNumber = 10,
+    kSnapshotDescriptorFieldNumber = 1,
+    kSourceNodeIdFieldNumber = 2,
+    kTargetNodeIdFieldNumber = 3,
+    kOffsetFieldNumber = 5,
+    kChecksumFieldNumber = 7,
+    kFileDoneFieldNumber = 8,
+    kSnapshotDoneFieldNumber = 9,
+  };
+  // string file_name = 4;
+  void clear_file_name();
+  const std::string& file_name() const;
+  template <typename ArgT0 = const std::string&, typename... ArgT>
+  void set_file_name(ArgT0&& arg0, ArgT... args);
+  std::string* mutable_file_name();
+  PROTOBUF_NODISCARD std::string* release_file_name();
+  void set_allocated_file_name(std::string* file_name);
+  private:
+  const std::string& _internal_file_name() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_file_name(const std::string& value);
+  std::string* _internal_mutable_file_name();
+  public:
+
+  // bytes data = 6;
+  void clear_data();
+  const std::string& data() const;
+  template <typename ArgT0 = const std::string&, typename... ArgT>
+  void set_data(ArgT0&& arg0, ArgT... args);
+  std::string* mutable_data();
+  PROTOBUF_NODISCARD std::string* release_data();
+  void set_allocated_data(std::string* data);
+  private:
+  const std::string& _internal_data() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_data(const std::string& value);
+  std::string* _internal_mutable_data();
+  public:
+
+  // string snapshot_id = 10;
+  void clear_snapshot_id();
+  const std::string& snapshot_id() const;
+  template <typename ArgT0 = const std::string&, typename... ArgT>
+  void set_snapshot_id(ArgT0&& arg0, ArgT... args);
+  std::string* mutable_snapshot_id();
+  PROTOBUF_NODISCARD std::string* release_snapshot_id();
+  void set_allocated_snapshot_id(std::string* snapshot_id);
+  private:
+  const std::string& _internal_snapshot_id() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_snapshot_id(const std::string& value);
+  std::string* _internal_mutable_snapshot_id();
+  public:
+
+  // .meta.GraphSnapshotDescriptor snapshot_descriptor = 1;
+  bool has_snapshot_descriptor() const;
+  private:
+  bool _internal_has_snapshot_descriptor() const;
+  public:
+  void clear_snapshot_descriptor();
+  const ::meta::GraphSnapshotDescriptor& snapshot_descriptor() const;
+  PROTOBUF_NODISCARD ::meta::GraphSnapshotDescriptor* release_snapshot_descriptor();
+  ::meta::GraphSnapshotDescriptor* mutable_snapshot_descriptor();
+  void set_allocated_snapshot_descriptor(::meta::GraphSnapshotDescriptor* snapshot_descriptor);
+  private:
+  const ::meta::GraphSnapshotDescriptor& _internal_snapshot_descriptor() const;
+  ::meta::GraphSnapshotDescriptor* _internal_mutable_snapshot_descriptor();
+  public:
+  void unsafe_arena_set_allocated_snapshot_descriptor(
+      ::meta::GraphSnapshotDescriptor* snapshot_descriptor);
+  ::meta::GraphSnapshotDescriptor* unsafe_arena_release_snapshot_descriptor();
+
+  // uint64 source_node_id = 2;
+  void clear_source_node_id();
+  uint64_t source_node_id() const;
+  void set_source_node_id(uint64_t value);
+  private:
+  uint64_t _internal_source_node_id() const;
+  void _internal_set_source_node_id(uint64_t value);
+  public:
+
+  // uint64 target_node_id = 3;
+  void clear_target_node_id();
+  uint64_t target_node_id() const;
+  void set_target_node_id(uint64_t value);
+  private:
+  uint64_t _internal_target_node_id() const;
+  void _internal_set_target_node_id(uint64_t value);
+  public:
+
+  // uint64 offset = 5;
+  void clear_offset();
+  uint64_t offset() const;
+  void set_offset(uint64_t value);
+  private:
+  uint64_t _internal_offset() const;
+  void _internal_set_offset(uint64_t value);
+  public:
+
+  // uint32 checksum = 7;
+  void clear_checksum();
+  uint32_t checksum() const;
+  void set_checksum(uint32_t value);
+  private:
+  uint32_t _internal_checksum() const;
+  void _internal_set_checksum(uint32_t value);
+  public:
+
+  // bool file_done = 8;
+  void clear_file_done();
+  bool file_done() const;
+  void set_file_done(bool value);
+  private:
+  bool _internal_file_done() const;
+  void _internal_set_file_done(bool value);
+  public:
+
+  // bool snapshot_done = 9;
+  void clear_snapshot_done();
+  bool snapshot_done() const;
+  void set_snapshot_done(bool value);
+  private:
+  bool _internal_snapshot_done() const;
+  void _internal_set_snapshot_done(bool value);
+  public:
+
+  // @@protoc_insertion_point(class_scope:meta.GraphSnapshotChunk)
+ private:
+  class _Internal;
+
+  template <typename T> friend class ::PROTOBUF_NAMESPACE_ID::Arena::InternalHelper;
+  typedef void InternalArenaConstructable_;
+  typedef void DestructorSkippable_;
+  struct Impl_ {
+    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr file_name_;
+    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr data_;
+    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr snapshot_id_;
+    ::meta::GraphSnapshotDescriptor* snapshot_descriptor_;
+    uint64_t source_node_id_;
+    uint64_t target_node_id_;
+    uint64_t offset_;
+    uint32_t checksum_;
+    bool file_done_;
+    bool snapshot_done_;
+    mutable ::PROTOBUF_NAMESPACE_ID::internal::CachedSize _cached_size_;
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_graph_5freplication_2eproto;
+};
+// -------------------------------------------------------------------
+
+class GraphSnapshotStatus final :
+    public ::PROTOBUF_NAMESPACE_ID::Message /* @@protoc_insertion_point(class_definition:meta.GraphSnapshotStatus) */ {
+ public:
+  inline GraphSnapshotStatus() : GraphSnapshotStatus(nullptr) {}
+  ~GraphSnapshotStatus() override;
+  explicit PROTOBUF_CONSTEXPR GraphSnapshotStatus(::PROTOBUF_NAMESPACE_ID::internal::ConstantInitialized);
+
+  GraphSnapshotStatus(const GraphSnapshotStatus& from);
+  GraphSnapshotStatus(GraphSnapshotStatus&& from) noexcept
+    : GraphSnapshotStatus() {
+    *this = ::std::move(from);
+  }
+
+  inline GraphSnapshotStatus& operator=(const GraphSnapshotStatus& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline GraphSnapshotStatus& operator=(GraphSnapshotStatus&& from) noexcept {
+    if (this == &from) return *this;
+    if (GetOwningArena() == from.GetOwningArena()
+  #ifdef PROTOBUF_FORCE_COPY_IN_MOVE
+        && GetOwningArena() != nullptr
+  #endif  // !PROTOBUF_FORCE_COPY_IN_MOVE
+    ) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* descriptor() {
+    return GetDescriptor();
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* GetDescriptor() {
+    return default_instance().GetMetadata().descriptor;
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Reflection* GetReflection() {
+    return default_instance().GetMetadata().reflection;
+  }
+  static const GraphSnapshotStatus& default_instance() {
+    return *internal_default_instance();
+  }
+  static inline const GraphSnapshotStatus* internal_default_instance() {
+    return reinterpret_cast<const GraphSnapshotStatus*>(
+               &_GraphSnapshotStatus_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages =
+    5;
+
+  friend void swap(GraphSnapshotStatus& a, GraphSnapshotStatus& b) {
+    a.Swap(&b);
+  }
+  inline void Swap(GraphSnapshotStatus* other) {
+    if (other == this) return;
+  #ifdef PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() != nullptr &&
+        GetOwningArena() == other->GetOwningArena()) {
+   #else  // PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetOwningArena() == other->GetOwningArena()) {
+  #endif  // !PROTOBUF_FORCE_COPY_IN_SWAP
+      InternalSwap(other);
+    } else {
+      ::PROTOBUF_NAMESPACE_ID::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(GraphSnapshotStatus* other) {
+    if (other == this) return;
+    GOOGLE_DCHECK(GetOwningArena() == other->GetOwningArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  GraphSnapshotStatus* New(::PROTOBUF_NAMESPACE_ID::Arena* arena = nullptr) const final {
+    return CreateMaybeMessage<GraphSnapshotStatus>(arena);
+  }
+  using ::PROTOBUF_NAMESPACE_ID::Message::CopyFrom;
+  void CopyFrom(const GraphSnapshotStatus& from);
+  using ::PROTOBUF_NAMESPACE_ID::Message::MergeFrom;
+  void MergeFrom( const GraphSnapshotStatus& from) {
+    GraphSnapshotStatus::MergeImpl(*this, from);
+  }
+  private:
+  static void MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg);
+  public:
+  PROTOBUF_ATTRIBUTE_REINITIALIZES void Clear() final;
+  bool IsInitialized() const final;
+
+  size_t ByteSizeLong() const final;
+  const char* _InternalParse(const char* ptr, ::PROTOBUF_NAMESPACE_ID::internal::ParseContext* ctx) final;
+  uint8_t* _InternalSerialize(
+      uint8_t* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const final;
+  int GetCachedSize() const final { return _impl_._cached_size_.Get(); }
+
+  private:
+  void SharedCtor(::PROTOBUF_NAMESPACE_ID::Arena* arena, bool is_message_owned);
+  void SharedDtor();
+  void SetCachedSize(int size) const final;
+  void InternalSwap(GraphSnapshotStatus* other);
+
+  private:
+  friend class ::PROTOBUF_NAMESPACE_ID::internal::AnyMetadata;
+  static ::PROTOBUF_NAMESPACE_ID::StringPiece FullMessageName() {
+    return "meta.GraphSnapshotStatus";
+  }
+  protected:
+  explicit GraphSnapshotStatus(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+                       bool is_message_owned = false);
+  public:
+
+  static const ClassData _class_data_;
+  const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*GetClassData() const final;
+
+  ::PROTOBUF_NAMESPACE_ID::Metadata GetMetadata() const final;
+
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+
+  enum : int {
+    kSnapshotIdFieldNumber = 1,
+    kErrorFieldNumber = 5,
+    kSourceNodeIdFieldNumber = 2,
+    kTargetNodeIdFieldNumber = 3,
+    kSuccessFieldNumber = 4,
+  };
+  // string snapshot_id = 1;
+  void clear_snapshot_id();
+  const std::string& snapshot_id() const;
+  template <typename ArgT0 = const std::string&, typename... ArgT>
+  void set_snapshot_id(ArgT0&& arg0, ArgT... args);
+  std::string* mutable_snapshot_id();
+  PROTOBUF_NODISCARD std::string* release_snapshot_id();
+  void set_allocated_snapshot_id(std::string* snapshot_id);
+  private:
+  const std::string& _internal_snapshot_id() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_snapshot_id(const std::string& value);
+  std::string* _internal_mutable_snapshot_id();
+  public:
+
+  // string error = 5;
+  void clear_error();
+  const std::string& error() const;
+  template <typename ArgT0 = const std::string&, typename... ArgT>
+  void set_error(ArgT0&& arg0, ArgT... args);
+  std::string* mutable_error();
+  PROTOBUF_NODISCARD std::string* release_error();
+  void set_allocated_error(std::string* error);
+  private:
+  const std::string& _internal_error() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_error(const std::string& value);
+  std::string* _internal_mutable_error();
+  public:
+
+  // uint64 source_node_id = 2;
+  void clear_source_node_id();
+  uint64_t source_node_id() const;
+  void set_source_node_id(uint64_t value);
+  private:
+  uint64_t _internal_source_node_id() const;
+  void _internal_set_source_node_id(uint64_t value);
+  public:
+
+  // uint64 target_node_id = 3;
+  void clear_target_node_id();
+  uint64_t target_node_id() const;
+  void set_target_node_id(uint64_t value);
+  private:
+  uint64_t _internal_target_node_id() const;
+  void _internal_set_target_node_id(uint64_t value);
+  public:
+
+  // bool success = 4;
+  void clear_success();
+  bool success() const;
+  void set_success(bool value);
+  private:
+  bool _internal_success() const;
+  void _internal_set_success(bool value);
+  public:
+
+  // @@protoc_insertion_point(class_scope:meta.GraphSnapshotStatus)
+ private:
+  class _Internal;
+
+  template <typename T> friend class ::PROTOBUF_NAMESPACE_ID::Arena::InternalHelper;
+  typedef void InternalArenaConstructable_;
+  typedef void DestructorSkippable_;
+  struct Impl_ {
+    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr snapshot_id_;
+    ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr error_;
+    uint64_t source_node_id_;
+    uint64_t target_node_id_;
+    bool success_;
     mutable ::PROTOBUF_NAMESPACE_ID::internal::CachedSize _cached_size_;
   };
   union { Impl_ _impl_; };
@@ -500,7 +1477,7 @@ class RaftNodeInfo final :
                &_RaftNodeInfo_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    2;
+    6;
 
   friend void swap(RaftNodeInfo& a, RaftNodeInfo& b) {
     a.Swap(&b);
@@ -748,7 +1725,7 @@ class RaftNodeInfos final :
                &_RaftNodeInfos_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    4;
+    8;
 
   friend void swap(RaftNodeInfos& a, RaftNodeInfos& b) {
     a.Swap(&b);
@@ -1101,6 +2078,1212 @@ inline void RaftMessage::set_allocated_message(::raftpb::Message* message) {
   // @@protoc_insertion_point(field_set_allocated:meta.RaftMessage.message)
 }
 
+// .meta.GraphSnapshotChunk snapshot_chunk = 3;
+inline bool RaftMessage::_internal_has_snapshot_chunk() const {
+  return this != internal_default_instance() && _impl_.snapshot_chunk_ != nullptr;
+}
+inline bool RaftMessage::has_snapshot_chunk() const {
+  return _internal_has_snapshot_chunk();
+}
+inline void RaftMessage::clear_snapshot_chunk() {
+  if (GetArenaForAllocation() == nullptr && _impl_.snapshot_chunk_ != nullptr) {
+    delete _impl_.snapshot_chunk_;
+  }
+  _impl_.snapshot_chunk_ = nullptr;
+}
+inline const ::meta::GraphSnapshotChunk& RaftMessage::_internal_snapshot_chunk() const {
+  const ::meta::GraphSnapshotChunk* p = _impl_.snapshot_chunk_;
+  return p != nullptr ? *p : reinterpret_cast<const ::meta::GraphSnapshotChunk&>(
+      ::meta::_GraphSnapshotChunk_default_instance_);
+}
+inline const ::meta::GraphSnapshotChunk& RaftMessage::snapshot_chunk() const {
+  // @@protoc_insertion_point(field_get:meta.RaftMessage.snapshot_chunk)
+  return _internal_snapshot_chunk();
+}
+inline void RaftMessage::unsafe_arena_set_allocated_snapshot_chunk(
+    ::meta::GraphSnapshotChunk* snapshot_chunk) {
+  if (GetArenaForAllocation() == nullptr) {
+    delete reinterpret_cast<::PROTOBUF_NAMESPACE_ID::MessageLite*>(_impl_.snapshot_chunk_);
+  }
+  _impl_.snapshot_chunk_ = snapshot_chunk;
+  if (snapshot_chunk) {
+    
+  } else {
+    
+  }
+  // @@protoc_insertion_point(field_unsafe_arena_set_allocated:meta.RaftMessage.snapshot_chunk)
+}
+inline ::meta::GraphSnapshotChunk* RaftMessage::release_snapshot_chunk() {
+  
+  ::meta::GraphSnapshotChunk* temp = _impl_.snapshot_chunk_;
+  _impl_.snapshot_chunk_ = nullptr;
+#ifdef PROTOBUF_FORCE_COPY_IN_RELEASE
+  auto* old =  reinterpret_cast<::PROTOBUF_NAMESPACE_ID::MessageLite*>(temp);
+  temp = ::PROTOBUF_NAMESPACE_ID::internal::DuplicateIfNonNull(temp);
+  if (GetArenaForAllocation() == nullptr) { delete old; }
+#else  // PROTOBUF_FORCE_COPY_IN_RELEASE
+  if (GetArenaForAllocation() != nullptr) {
+    temp = ::PROTOBUF_NAMESPACE_ID::internal::DuplicateIfNonNull(temp);
+  }
+#endif  // !PROTOBUF_FORCE_COPY_IN_RELEASE
+  return temp;
+}
+inline ::meta::GraphSnapshotChunk* RaftMessage::unsafe_arena_release_snapshot_chunk() {
+  // @@protoc_insertion_point(field_release:meta.RaftMessage.snapshot_chunk)
+  
+  ::meta::GraphSnapshotChunk* temp = _impl_.snapshot_chunk_;
+  _impl_.snapshot_chunk_ = nullptr;
+  return temp;
+}
+inline ::meta::GraphSnapshotChunk* RaftMessage::_internal_mutable_snapshot_chunk() {
+  
+  if (_impl_.snapshot_chunk_ == nullptr) {
+    auto* p = CreateMaybeMessage<::meta::GraphSnapshotChunk>(GetArenaForAllocation());
+    _impl_.snapshot_chunk_ = p;
+  }
+  return _impl_.snapshot_chunk_;
+}
+inline ::meta::GraphSnapshotChunk* RaftMessage::mutable_snapshot_chunk() {
+  ::meta::GraphSnapshotChunk* _msg = _internal_mutable_snapshot_chunk();
+  // @@protoc_insertion_point(field_mutable:meta.RaftMessage.snapshot_chunk)
+  return _msg;
+}
+inline void RaftMessage::set_allocated_snapshot_chunk(::meta::GraphSnapshotChunk* snapshot_chunk) {
+  ::PROTOBUF_NAMESPACE_ID::Arena* message_arena = GetArenaForAllocation();
+  if (message_arena == nullptr) {
+    delete _impl_.snapshot_chunk_;
+  }
+  if (snapshot_chunk) {
+    ::PROTOBUF_NAMESPACE_ID::Arena* submessage_arena =
+        ::PROTOBUF_NAMESPACE_ID::Arena::InternalGetOwningArena(snapshot_chunk);
+    if (message_arena != submessage_arena) {
+      snapshot_chunk = ::PROTOBUF_NAMESPACE_ID::internal::GetOwnedMessage(
+          message_arena, snapshot_chunk, submessage_arena);
+    }
+    
+  } else {
+    
+  }
+  _impl_.snapshot_chunk_ = snapshot_chunk;
+  // @@protoc_insertion_point(field_set_allocated:meta.RaftMessage.snapshot_chunk)
+}
+
+// .meta.GraphSnapshotStatus snapshot_status = 4;
+inline bool RaftMessage::_internal_has_snapshot_status() const {
+  return this != internal_default_instance() && _impl_.snapshot_status_ != nullptr;
+}
+inline bool RaftMessage::has_snapshot_status() const {
+  return _internal_has_snapshot_status();
+}
+inline void RaftMessage::clear_snapshot_status() {
+  if (GetArenaForAllocation() == nullptr && _impl_.snapshot_status_ != nullptr) {
+    delete _impl_.snapshot_status_;
+  }
+  _impl_.snapshot_status_ = nullptr;
+}
+inline const ::meta::GraphSnapshotStatus& RaftMessage::_internal_snapshot_status() const {
+  const ::meta::GraphSnapshotStatus* p = _impl_.snapshot_status_;
+  return p != nullptr ? *p : reinterpret_cast<const ::meta::GraphSnapshotStatus&>(
+      ::meta::_GraphSnapshotStatus_default_instance_);
+}
+inline const ::meta::GraphSnapshotStatus& RaftMessage::snapshot_status() const {
+  // @@protoc_insertion_point(field_get:meta.RaftMessage.snapshot_status)
+  return _internal_snapshot_status();
+}
+inline void RaftMessage::unsafe_arena_set_allocated_snapshot_status(
+    ::meta::GraphSnapshotStatus* snapshot_status) {
+  if (GetArenaForAllocation() == nullptr) {
+    delete reinterpret_cast<::PROTOBUF_NAMESPACE_ID::MessageLite*>(_impl_.snapshot_status_);
+  }
+  _impl_.snapshot_status_ = snapshot_status;
+  if (snapshot_status) {
+    
+  } else {
+    
+  }
+  // @@protoc_insertion_point(field_unsafe_arena_set_allocated:meta.RaftMessage.snapshot_status)
+}
+inline ::meta::GraphSnapshotStatus* RaftMessage::release_snapshot_status() {
+  
+  ::meta::GraphSnapshotStatus* temp = _impl_.snapshot_status_;
+  _impl_.snapshot_status_ = nullptr;
+#ifdef PROTOBUF_FORCE_COPY_IN_RELEASE
+  auto* old =  reinterpret_cast<::PROTOBUF_NAMESPACE_ID::MessageLite*>(temp);
+  temp = ::PROTOBUF_NAMESPACE_ID::internal::DuplicateIfNonNull(temp);
+  if (GetArenaForAllocation() == nullptr) { delete old; }
+#else  // PROTOBUF_FORCE_COPY_IN_RELEASE
+  if (GetArenaForAllocation() != nullptr) {
+    temp = ::PROTOBUF_NAMESPACE_ID::internal::DuplicateIfNonNull(temp);
+  }
+#endif  // !PROTOBUF_FORCE_COPY_IN_RELEASE
+  return temp;
+}
+inline ::meta::GraphSnapshotStatus* RaftMessage::unsafe_arena_release_snapshot_status() {
+  // @@protoc_insertion_point(field_release:meta.RaftMessage.snapshot_status)
+  
+  ::meta::GraphSnapshotStatus* temp = _impl_.snapshot_status_;
+  _impl_.snapshot_status_ = nullptr;
+  return temp;
+}
+inline ::meta::GraphSnapshotStatus* RaftMessage::_internal_mutable_snapshot_status() {
+  
+  if (_impl_.snapshot_status_ == nullptr) {
+    auto* p = CreateMaybeMessage<::meta::GraphSnapshotStatus>(GetArenaForAllocation());
+    _impl_.snapshot_status_ = p;
+  }
+  return _impl_.snapshot_status_;
+}
+inline ::meta::GraphSnapshotStatus* RaftMessage::mutable_snapshot_status() {
+  ::meta::GraphSnapshotStatus* _msg = _internal_mutable_snapshot_status();
+  // @@protoc_insertion_point(field_mutable:meta.RaftMessage.snapshot_status)
+  return _msg;
+}
+inline void RaftMessage::set_allocated_snapshot_status(::meta::GraphSnapshotStatus* snapshot_status) {
+  ::PROTOBUF_NAMESPACE_ID::Arena* message_arena = GetArenaForAllocation();
+  if (message_arena == nullptr) {
+    delete _impl_.snapshot_status_;
+  }
+  if (snapshot_status) {
+    ::PROTOBUF_NAMESPACE_ID::Arena* submessage_arena =
+        ::PROTOBUF_NAMESPACE_ID::Arena::InternalGetOwningArena(snapshot_status);
+    if (message_arena != submessage_arena) {
+      snapshot_status = ::PROTOBUF_NAMESPACE_ID::internal::GetOwnedMessage(
+          message_arena, snapshot_status, submessage_arena);
+    }
+    
+  } else {
+    
+  }
+  _impl_.snapshot_status_ = snapshot_status;
+  // @@protoc_insertion_point(field_set_allocated:meta.RaftMessage.snapshot_status)
+}
+
+// .meta.RaftNodeInfo source_node = 5;
+inline bool RaftMessage::_internal_has_source_node() const {
+  return this != internal_default_instance() && _impl_.source_node_ != nullptr;
+}
+inline bool RaftMessage::has_source_node() const {
+  return _internal_has_source_node();
+}
+inline void RaftMessage::clear_source_node() {
+  if (GetArenaForAllocation() == nullptr && _impl_.source_node_ != nullptr) {
+    delete _impl_.source_node_;
+  }
+  _impl_.source_node_ = nullptr;
+}
+inline const ::meta::RaftNodeInfo& RaftMessage::_internal_source_node() const {
+  const ::meta::RaftNodeInfo* p = _impl_.source_node_;
+  return p != nullptr ? *p : reinterpret_cast<const ::meta::RaftNodeInfo&>(
+      ::meta::_RaftNodeInfo_default_instance_);
+}
+inline const ::meta::RaftNodeInfo& RaftMessage::source_node() const {
+  // @@protoc_insertion_point(field_get:meta.RaftMessage.source_node)
+  return _internal_source_node();
+}
+inline void RaftMessage::unsafe_arena_set_allocated_source_node(
+    ::meta::RaftNodeInfo* source_node) {
+  if (GetArenaForAllocation() == nullptr) {
+    delete reinterpret_cast<::PROTOBUF_NAMESPACE_ID::MessageLite*>(_impl_.source_node_);
+  }
+  _impl_.source_node_ = source_node;
+  if (source_node) {
+    
+  } else {
+    
+  }
+  // @@protoc_insertion_point(field_unsafe_arena_set_allocated:meta.RaftMessage.source_node)
+}
+inline ::meta::RaftNodeInfo* RaftMessage::release_source_node() {
+  
+  ::meta::RaftNodeInfo* temp = _impl_.source_node_;
+  _impl_.source_node_ = nullptr;
+#ifdef PROTOBUF_FORCE_COPY_IN_RELEASE
+  auto* old =  reinterpret_cast<::PROTOBUF_NAMESPACE_ID::MessageLite*>(temp);
+  temp = ::PROTOBUF_NAMESPACE_ID::internal::DuplicateIfNonNull(temp);
+  if (GetArenaForAllocation() == nullptr) { delete old; }
+#else  // PROTOBUF_FORCE_COPY_IN_RELEASE
+  if (GetArenaForAllocation() != nullptr) {
+    temp = ::PROTOBUF_NAMESPACE_ID::internal::DuplicateIfNonNull(temp);
+  }
+#endif  // !PROTOBUF_FORCE_COPY_IN_RELEASE
+  return temp;
+}
+inline ::meta::RaftNodeInfo* RaftMessage::unsafe_arena_release_source_node() {
+  // @@protoc_insertion_point(field_release:meta.RaftMessage.source_node)
+  
+  ::meta::RaftNodeInfo* temp = _impl_.source_node_;
+  _impl_.source_node_ = nullptr;
+  return temp;
+}
+inline ::meta::RaftNodeInfo* RaftMessage::_internal_mutable_source_node() {
+  
+  if (_impl_.source_node_ == nullptr) {
+    auto* p = CreateMaybeMessage<::meta::RaftNodeInfo>(GetArenaForAllocation());
+    _impl_.source_node_ = p;
+  }
+  return _impl_.source_node_;
+}
+inline ::meta::RaftNodeInfo* RaftMessage::mutable_source_node() {
+  ::meta::RaftNodeInfo* _msg = _internal_mutable_source_node();
+  // @@protoc_insertion_point(field_mutable:meta.RaftMessage.source_node)
+  return _msg;
+}
+inline void RaftMessage::set_allocated_source_node(::meta::RaftNodeInfo* source_node) {
+  ::PROTOBUF_NAMESPACE_ID::Arena* message_arena = GetArenaForAllocation();
+  if (message_arena == nullptr) {
+    delete _impl_.source_node_;
+  }
+  if (source_node) {
+    ::PROTOBUF_NAMESPACE_ID::Arena* submessage_arena =
+        ::PROTOBUF_NAMESPACE_ID::Arena::InternalGetOwningArena(source_node);
+    if (message_arena != submessage_arena) {
+      source_node = ::PROTOBUF_NAMESPACE_ID::internal::GetOwnedMessage(
+          message_arena, source_node, submessage_arena);
+    }
+    
+  } else {
+    
+  }
+  _impl_.source_node_ = source_node;
+  // @@protoc_insertion_point(field_set_allocated:meta.RaftMessage.source_node)
+}
+
+// -------------------------------------------------------------------
+
+// GraphSnapshotFile
+
+// string name = 1;
+inline void GraphSnapshotFile::clear_name() {
+  _impl_.name_.ClearToEmpty();
+}
+inline const std::string& GraphSnapshotFile::name() const {
+  // @@protoc_insertion_point(field_get:meta.GraphSnapshotFile.name)
+  return _internal_name();
+}
+template <typename ArgT0, typename... ArgT>
+inline PROTOBUF_ALWAYS_INLINE
+void GraphSnapshotFile::set_name(ArgT0&& arg0, ArgT... args) {
+ 
+ _impl_.name_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
+  // @@protoc_insertion_point(field_set:meta.GraphSnapshotFile.name)
+}
+inline std::string* GraphSnapshotFile::mutable_name() {
+  std::string* _s = _internal_mutable_name();
+  // @@protoc_insertion_point(field_mutable:meta.GraphSnapshotFile.name)
+  return _s;
+}
+inline const std::string& GraphSnapshotFile::_internal_name() const {
+  return _impl_.name_.Get();
+}
+inline void GraphSnapshotFile::_internal_set_name(const std::string& value) {
+  
+  _impl_.name_.Set(value, GetArenaForAllocation());
+}
+inline std::string* GraphSnapshotFile::_internal_mutable_name() {
+  
+  return _impl_.name_.Mutable(GetArenaForAllocation());
+}
+inline std::string* GraphSnapshotFile::release_name() {
+  // @@protoc_insertion_point(field_release:meta.GraphSnapshotFile.name)
+  return _impl_.name_.Release();
+}
+inline void GraphSnapshotFile::set_allocated_name(std::string* name) {
+  if (name != nullptr) {
+    
+  } else {
+    
+  }
+  _impl_.name_.SetAllocated(name, GetArenaForAllocation());
+#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (_impl_.name_.IsDefault()) {
+    _impl_.name_.Set("", GetArenaForAllocation());
+  }
+#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:meta.GraphSnapshotFile.name)
+}
+
+// uint64 size = 2;
+inline void GraphSnapshotFile::clear_size() {
+  _impl_.size_ = uint64_t{0u};
+}
+inline uint64_t GraphSnapshotFile::_internal_size() const {
+  return _impl_.size_;
+}
+inline uint64_t GraphSnapshotFile::size() const {
+  // @@protoc_insertion_point(field_get:meta.GraphSnapshotFile.size)
+  return _internal_size();
+}
+inline void GraphSnapshotFile::_internal_set_size(uint64_t value) {
+  
+  _impl_.size_ = value;
+}
+inline void GraphSnapshotFile::set_size(uint64_t value) {
+  _internal_set_size(value);
+  // @@protoc_insertion_point(field_set:meta.GraphSnapshotFile.size)
+}
+
+// uint32 checksum = 3;
+inline void GraphSnapshotFile::clear_checksum() {
+  _impl_.checksum_ = 0u;
+}
+inline uint32_t GraphSnapshotFile::_internal_checksum() const {
+  return _impl_.checksum_;
+}
+inline uint32_t GraphSnapshotFile::checksum() const {
+  // @@protoc_insertion_point(field_get:meta.GraphSnapshotFile.checksum)
+  return _internal_checksum();
+}
+inline void GraphSnapshotFile::_internal_set_checksum(uint32_t value) {
+  
+  _impl_.checksum_ = value;
+}
+inline void GraphSnapshotFile::set_checksum(uint32_t value) {
+  _internal_set_checksum(value);
+  // @@protoc_insertion_point(field_set:meta.GraphSnapshotFile.checksum)
+}
+
+// -------------------------------------------------------------------
+
+// GraphSnapshotDescriptor
+
+// uint32 format_version = 1;
+inline void GraphSnapshotDescriptor::clear_format_version() {
+  _impl_.format_version_ = 0u;
+}
+inline uint32_t GraphSnapshotDescriptor::_internal_format_version() const {
+  return _impl_.format_version_;
+}
+inline uint32_t GraphSnapshotDescriptor::format_version() const {
+  // @@protoc_insertion_point(field_get:meta.GraphSnapshotDescriptor.format_version)
+  return _internal_format_version();
+}
+inline void GraphSnapshotDescriptor::_internal_set_format_version(uint32_t value) {
+  
+  _impl_.format_version_ = value;
+}
+inline void GraphSnapshotDescriptor::set_format_version(uint32_t value) {
+  _internal_set_format_version(value);
+  // @@protoc_insertion_point(field_set:meta.GraphSnapshotDescriptor.format_version)
+}
+
+// string snapshot_id = 2;
+inline void GraphSnapshotDescriptor::clear_snapshot_id() {
+  _impl_.snapshot_id_.ClearToEmpty();
+}
+inline const std::string& GraphSnapshotDescriptor::snapshot_id() const {
+  // @@protoc_insertion_point(field_get:meta.GraphSnapshotDescriptor.snapshot_id)
+  return _internal_snapshot_id();
+}
+template <typename ArgT0, typename... ArgT>
+inline PROTOBUF_ALWAYS_INLINE
+void GraphSnapshotDescriptor::set_snapshot_id(ArgT0&& arg0, ArgT... args) {
+ 
+ _impl_.snapshot_id_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
+  // @@protoc_insertion_point(field_set:meta.GraphSnapshotDescriptor.snapshot_id)
+}
+inline std::string* GraphSnapshotDescriptor::mutable_snapshot_id() {
+  std::string* _s = _internal_mutable_snapshot_id();
+  // @@protoc_insertion_point(field_mutable:meta.GraphSnapshotDescriptor.snapshot_id)
+  return _s;
+}
+inline const std::string& GraphSnapshotDescriptor::_internal_snapshot_id() const {
+  return _impl_.snapshot_id_.Get();
+}
+inline void GraphSnapshotDescriptor::_internal_set_snapshot_id(const std::string& value) {
+  
+  _impl_.snapshot_id_.Set(value, GetArenaForAllocation());
+}
+inline std::string* GraphSnapshotDescriptor::_internal_mutable_snapshot_id() {
+  
+  return _impl_.snapshot_id_.Mutable(GetArenaForAllocation());
+}
+inline std::string* GraphSnapshotDescriptor::release_snapshot_id() {
+  // @@protoc_insertion_point(field_release:meta.GraphSnapshotDescriptor.snapshot_id)
+  return _impl_.snapshot_id_.Release();
+}
+inline void GraphSnapshotDescriptor::set_allocated_snapshot_id(std::string* snapshot_id) {
+  if (snapshot_id != nullptr) {
+    
+  } else {
+    
+  }
+  _impl_.snapshot_id_.SetAllocated(snapshot_id, GetArenaForAllocation());
+#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (_impl_.snapshot_id_.IsDefault()) {
+    _impl_.snapshot_id_.Set("", GetArenaForAllocation());
+  }
+#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:meta.GraphSnapshotDescriptor.snapshot_id)
+}
+
+// string graph = 3;
+inline void GraphSnapshotDescriptor::clear_graph() {
+  _impl_.graph_.ClearToEmpty();
+}
+inline const std::string& GraphSnapshotDescriptor::graph() const {
+  // @@protoc_insertion_point(field_get:meta.GraphSnapshotDescriptor.graph)
+  return _internal_graph();
+}
+template <typename ArgT0, typename... ArgT>
+inline PROTOBUF_ALWAYS_INLINE
+void GraphSnapshotDescriptor::set_graph(ArgT0&& arg0, ArgT... args) {
+ 
+ _impl_.graph_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
+  // @@protoc_insertion_point(field_set:meta.GraphSnapshotDescriptor.graph)
+}
+inline std::string* GraphSnapshotDescriptor::mutable_graph() {
+  std::string* _s = _internal_mutable_graph();
+  // @@protoc_insertion_point(field_mutable:meta.GraphSnapshotDescriptor.graph)
+  return _s;
+}
+inline const std::string& GraphSnapshotDescriptor::_internal_graph() const {
+  return _impl_.graph_.Get();
+}
+inline void GraphSnapshotDescriptor::_internal_set_graph(const std::string& value) {
+  
+  _impl_.graph_.Set(value, GetArenaForAllocation());
+}
+inline std::string* GraphSnapshotDescriptor::_internal_mutable_graph() {
+  
+  return _impl_.graph_.Mutable(GetArenaForAllocation());
+}
+inline std::string* GraphSnapshotDescriptor::release_graph() {
+  // @@protoc_insertion_point(field_release:meta.GraphSnapshotDescriptor.graph)
+  return _impl_.graph_.Release();
+}
+inline void GraphSnapshotDescriptor::set_allocated_graph(std::string* graph) {
+  if (graph != nullptr) {
+    
+  } else {
+    
+  }
+  _impl_.graph_.SetAllocated(graph, GetArenaForAllocation());
+#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (_impl_.graph_.IsDefault()) {
+    _impl_.graph_.Set("", GetArenaForAllocation());
+  }
+#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:meta.GraphSnapshotDescriptor.graph)
+}
+
+// uint64 index = 4;
+inline void GraphSnapshotDescriptor::clear_index() {
+  _impl_.index_ = uint64_t{0u};
+}
+inline uint64_t GraphSnapshotDescriptor::_internal_index() const {
+  return _impl_.index_;
+}
+inline uint64_t GraphSnapshotDescriptor::index() const {
+  // @@protoc_insertion_point(field_get:meta.GraphSnapshotDescriptor.index)
+  return _internal_index();
+}
+inline void GraphSnapshotDescriptor::_internal_set_index(uint64_t value) {
+  
+  _impl_.index_ = value;
+}
+inline void GraphSnapshotDescriptor::set_index(uint64_t value) {
+  _internal_set_index(value);
+  // @@protoc_insertion_point(field_set:meta.GraphSnapshotDescriptor.index)
+}
+
+// uint64 term = 5;
+inline void GraphSnapshotDescriptor::clear_term() {
+  _impl_.term_ = uint64_t{0u};
+}
+inline uint64_t GraphSnapshotDescriptor::_internal_term() const {
+  return _impl_.term_;
+}
+inline uint64_t GraphSnapshotDescriptor::term() const {
+  // @@protoc_insertion_point(field_get:meta.GraphSnapshotDescriptor.term)
+  return _internal_term();
+}
+inline void GraphSnapshotDescriptor::_internal_set_term(uint64_t value) {
+  
+  _impl_.term_ = value;
+}
+inline void GraphSnapshotDescriptor::set_term(uint64_t value) {
+  _internal_set_term(value);
+  // @@protoc_insertion_point(field_set:meta.GraphSnapshotDescriptor.term)
+}
+
+// uint64 total_size = 6;
+inline void GraphSnapshotDescriptor::clear_total_size() {
+  _impl_.total_size_ = uint64_t{0u};
+}
+inline uint64_t GraphSnapshotDescriptor::_internal_total_size() const {
+  return _impl_.total_size_;
+}
+inline uint64_t GraphSnapshotDescriptor::total_size() const {
+  // @@protoc_insertion_point(field_get:meta.GraphSnapshotDescriptor.total_size)
+  return _internal_total_size();
+}
+inline void GraphSnapshotDescriptor::_internal_set_total_size(uint64_t value) {
+  
+  _impl_.total_size_ = value;
+}
+inline void GraphSnapshotDescriptor::set_total_size(uint64_t value) {
+  _internal_set_total_size(value);
+  // @@protoc_insertion_point(field_set:meta.GraphSnapshotDescriptor.total_size)
+}
+
+// repeated .meta.GraphSnapshotFile files = 7;
+inline int GraphSnapshotDescriptor::_internal_files_size() const {
+  return _impl_.files_.size();
+}
+inline int GraphSnapshotDescriptor::files_size() const {
+  return _internal_files_size();
+}
+inline void GraphSnapshotDescriptor::clear_files() {
+  _impl_.files_.Clear();
+}
+inline ::meta::GraphSnapshotFile* GraphSnapshotDescriptor::mutable_files(int index) {
+  // @@protoc_insertion_point(field_mutable:meta.GraphSnapshotDescriptor.files)
+  return _impl_.files_.Mutable(index);
+}
+inline ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField< ::meta::GraphSnapshotFile >*
+GraphSnapshotDescriptor::mutable_files() {
+  // @@protoc_insertion_point(field_mutable_list:meta.GraphSnapshotDescriptor.files)
+  return &_impl_.files_;
+}
+inline const ::meta::GraphSnapshotFile& GraphSnapshotDescriptor::_internal_files(int index) const {
+  return _impl_.files_.Get(index);
+}
+inline const ::meta::GraphSnapshotFile& GraphSnapshotDescriptor::files(int index) const {
+  // @@protoc_insertion_point(field_get:meta.GraphSnapshotDescriptor.files)
+  return _internal_files(index);
+}
+inline ::meta::GraphSnapshotFile* GraphSnapshotDescriptor::_internal_add_files() {
+  return _impl_.files_.Add();
+}
+inline ::meta::GraphSnapshotFile* GraphSnapshotDescriptor::add_files() {
+  ::meta::GraphSnapshotFile* _add = _internal_add_files();
+  // @@protoc_insertion_point(field_add:meta.GraphSnapshotDescriptor.files)
+  return _add;
+}
+inline const ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField< ::meta::GraphSnapshotFile >&
+GraphSnapshotDescriptor::files() const {
+  // @@protoc_insertion_point(field_list:meta.GraphSnapshotDescriptor.files)
+  return _impl_.files_;
+}
+
+// .meta.RaftNodeInfos node_infos = 8;
+inline bool GraphSnapshotDescriptor::_internal_has_node_infos() const {
+  return this != internal_default_instance() && _impl_.node_infos_ != nullptr;
+}
+inline bool GraphSnapshotDescriptor::has_node_infos() const {
+  return _internal_has_node_infos();
+}
+inline void GraphSnapshotDescriptor::clear_node_infos() {
+  if (GetArenaForAllocation() == nullptr && _impl_.node_infos_ != nullptr) {
+    delete _impl_.node_infos_;
+  }
+  _impl_.node_infos_ = nullptr;
+}
+inline const ::meta::RaftNodeInfos& GraphSnapshotDescriptor::_internal_node_infos() const {
+  const ::meta::RaftNodeInfos* p = _impl_.node_infos_;
+  return p != nullptr ? *p : reinterpret_cast<const ::meta::RaftNodeInfos&>(
+      ::meta::_RaftNodeInfos_default_instance_);
+}
+inline const ::meta::RaftNodeInfos& GraphSnapshotDescriptor::node_infos() const {
+  // @@protoc_insertion_point(field_get:meta.GraphSnapshotDescriptor.node_infos)
+  return _internal_node_infos();
+}
+inline void GraphSnapshotDescriptor::unsafe_arena_set_allocated_node_infos(
+    ::meta::RaftNodeInfos* node_infos) {
+  if (GetArenaForAllocation() == nullptr) {
+    delete reinterpret_cast<::PROTOBUF_NAMESPACE_ID::MessageLite*>(_impl_.node_infos_);
+  }
+  _impl_.node_infos_ = node_infos;
+  if (node_infos) {
+    
+  } else {
+    
+  }
+  // @@protoc_insertion_point(field_unsafe_arena_set_allocated:meta.GraphSnapshotDescriptor.node_infos)
+}
+inline ::meta::RaftNodeInfos* GraphSnapshotDescriptor::release_node_infos() {
+  
+  ::meta::RaftNodeInfos* temp = _impl_.node_infos_;
+  _impl_.node_infos_ = nullptr;
+#ifdef PROTOBUF_FORCE_COPY_IN_RELEASE
+  auto* old =  reinterpret_cast<::PROTOBUF_NAMESPACE_ID::MessageLite*>(temp);
+  temp = ::PROTOBUF_NAMESPACE_ID::internal::DuplicateIfNonNull(temp);
+  if (GetArenaForAllocation() == nullptr) { delete old; }
+#else  // PROTOBUF_FORCE_COPY_IN_RELEASE
+  if (GetArenaForAllocation() != nullptr) {
+    temp = ::PROTOBUF_NAMESPACE_ID::internal::DuplicateIfNonNull(temp);
+  }
+#endif  // !PROTOBUF_FORCE_COPY_IN_RELEASE
+  return temp;
+}
+inline ::meta::RaftNodeInfos* GraphSnapshotDescriptor::unsafe_arena_release_node_infos() {
+  // @@protoc_insertion_point(field_release:meta.GraphSnapshotDescriptor.node_infos)
+  
+  ::meta::RaftNodeInfos* temp = _impl_.node_infos_;
+  _impl_.node_infos_ = nullptr;
+  return temp;
+}
+inline ::meta::RaftNodeInfos* GraphSnapshotDescriptor::_internal_mutable_node_infos() {
+  
+  if (_impl_.node_infos_ == nullptr) {
+    auto* p = CreateMaybeMessage<::meta::RaftNodeInfos>(GetArenaForAllocation());
+    _impl_.node_infos_ = p;
+  }
+  return _impl_.node_infos_;
+}
+inline ::meta::RaftNodeInfos* GraphSnapshotDescriptor::mutable_node_infos() {
+  ::meta::RaftNodeInfos* _msg = _internal_mutable_node_infos();
+  // @@protoc_insertion_point(field_mutable:meta.GraphSnapshotDescriptor.node_infos)
+  return _msg;
+}
+inline void GraphSnapshotDescriptor::set_allocated_node_infos(::meta::RaftNodeInfos* node_infos) {
+  ::PROTOBUF_NAMESPACE_ID::Arena* message_arena = GetArenaForAllocation();
+  if (message_arena == nullptr) {
+    delete _impl_.node_infos_;
+  }
+  if (node_infos) {
+    ::PROTOBUF_NAMESPACE_ID::Arena* submessage_arena =
+        ::PROTOBUF_NAMESPACE_ID::Arena::InternalGetOwningArena(node_infos);
+    if (message_arena != submessage_arena) {
+      node_infos = ::PROTOBUF_NAMESPACE_ID::internal::GetOwnedMessage(
+          message_arena, node_infos, submessage_arena);
+    }
+    
+  } else {
+    
+  }
+  _impl_.node_infos_ = node_infos;
+  // @@protoc_insertion_point(field_set_allocated:meta.GraphSnapshotDescriptor.node_infos)
+}
+
+// -------------------------------------------------------------------
+
+// GraphSnapshotChunk
+
+// .meta.GraphSnapshotDescriptor snapshot_descriptor = 1;
+inline bool GraphSnapshotChunk::_internal_has_snapshot_descriptor() const {
+  return this != internal_default_instance() && _impl_.snapshot_descriptor_ != nullptr;
+}
+inline bool GraphSnapshotChunk::has_snapshot_descriptor() const {
+  return _internal_has_snapshot_descriptor();
+}
+inline void GraphSnapshotChunk::clear_snapshot_descriptor() {
+  if (GetArenaForAllocation() == nullptr && _impl_.snapshot_descriptor_ != nullptr) {
+    delete _impl_.snapshot_descriptor_;
+  }
+  _impl_.snapshot_descriptor_ = nullptr;
+}
+inline const ::meta::GraphSnapshotDescriptor& GraphSnapshotChunk::_internal_snapshot_descriptor() const {
+  const ::meta::GraphSnapshotDescriptor* p = _impl_.snapshot_descriptor_;
+  return p != nullptr ? *p : reinterpret_cast<const ::meta::GraphSnapshotDescriptor&>(
+      ::meta::_GraphSnapshotDescriptor_default_instance_);
+}
+inline const ::meta::GraphSnapshotDescriptor& GraphSnapshotChunk::snapshot_descriptor() const {
+  // @@protoc_insertion_point(field_get:meta.GraphSnapshotChunk.snapshot_descriptor)
+  return _internal_snapshot_descriptor();
+}
+inline void GraphSnapshotChunk::unsafe_arena_set_allocated_snapshot_descriptor(
+    ::meta::GraphSnapshotDescriptor* snapshot_descriptor) {
+  if (GetArenaForAllocation() == nullptr) {
+    delete reinterpret_cast<::PROTOBUF_NAMESPACE_ID::MessageLite*>(_impl_.snapshot_descriptor_);
+  }
+  _impl_.snapshot_descriptor_ = snapshot_descriptor;
+  if (snapshot_descriptor) {
+    
+  } else {
+    
+  }
+  // @@protoc_insertion_point(field_unsafe_arena_set_allocated:meta.GraphSnapshotChunk.snapshot_descriptor)
+}
+inline ::meta::GraphSnapshotDescriptor* GraphSnapshotChunk::release_snapshot_descriptor() {
+  
+  ::meta::GraphSnapshotDescriptor* temp = _impl_.snapshot_descriptor_;
+  _impl_.snapshot_descriptor_ = nullptr;
+#ifdef PROTOBUF_FORCE_COPY_IN_RELEASE
+  auto* old =  reinterpret_cast<::PROTOBUF_NAMESPACE_ID::MessageLite*>(temp);
+  temp = ::PROTOBUF_NAMESPACE_ID::internal::DuplicateIfNonNull(temp);
+  if (GetArenaForAllocation() == nullptr) { delete old; }
+#else  // PROTOBUF_FORCE_COPY_IN_RELEASE
+  if (GetArenaForAllocation() != nullptr) {
+    temp = ::PROTOBUF_NAMESPACE_ID::internal::DuplicateIfNonNull(temp);
+  }
+#endif  // !PROTOBUF_FORCE_COPY_IN_RELEASE
+  return temp;
+}
+inline ::meta::GraphSnapshotDescriptor* GraphSnapshotChunk::unsafe_arena_release_snapshot_descriptor() {
+  // @@protoc_insertion_point(field_release:meta.GraphSnapshotChunk.snapshot_descriptor)
+  
+  ::meta::GraphSnapshotDescriptor* temp = _impl_.snapshot_descriptor_;
+  _impl_.snapshot_descriptor_ = nullptr;
+  return temp;
+}
+inline ::meta::GraphSnapshotDescriptor* GraphSnapshotChunk::_internal_mutable_snapshot_descriptor() {
+  
+  if (_impl_.snapshot_descriptor_ == nullptr) {
+    auto* p = CreateMaybeMessage<::meta::GraphSnapshotDescriptor>(GetArenaForAllocation());
+    _impl_.snapshot_descriptor_ = p;
+  }
+  return _impl_.snapshot_descriptor_;
+}
+inline ::meta::GraphSnapshotDescriptor* GraphSnapshotChunk::mutable_snapshot_descriptor() {
+  ::meta::GraphSnapshotDescriptor* _msg = _internal_mutable_snapshot_descriptor();
+  // @@protoc_insertion_point(field_mutable:meta.GraphSnapshotChunk.snapshot_descriptor)
+  return _msg;
+}
+inline void GraphSnapshotChunk::set_allocated_snapshot_descriptor(::meta::GraphSnapshotDescriptor* snapshot_descriptor) {
+  ::PROTOBUF_NAMESPACE_ID::Arena* message_arena = GetArenaForAllocation();
+  if (message_arena == nullptr) {
+    delete _impl_.snapshot_descriptor_;
+  }
+  if (snapshot_descriptor) {
+    ::PROTOBUF_NAMESPACE_ID::Arena* submessage_arena =
+        ::PROTOBUF_NAMESPACE_ID::Arena::InternalGetOwningArena(snapshot_descriptor);
+    if (message_arena != submessage_arena) {
+      snapshot_descriptor = ::PROTOBUF_NAMESPACE_ID::internal::GetOwnedMessage(
+          message_arena, snapshot_descriptor, submessage_arena);
+    }
+    
+  } else {
+    
+  }
+  _impl_.snapshot_descriptor_ = snapshot_descriptor;
+  // @@protoc_insertion_point(field_set_allocated:meta.GraphSnapshotChunk.snapshot_descriptor)
+}
+
+// uint64 source_node_id = 2;
+inline void GraphSnapshotChunk::clear_source_node_id() {
+  _impl_.source_node_id_ = uint64_t{0u};
+}
+inline uint64_t GraphSnapshotChunk::_internal_source_node_id() const {
+  return _impl_.source_node_id_;
+}
+inline uint64_t GraphSnapshotChunk::source_node_id() const {
+  // @@protoc_insertion_point(field_get:meta.GraphSnapshotChunk.source_node_id)
+  return _internal_source_node_id();
+}
+inline void GraphSnapshotChunk::_internal_set_source_node_id(uint64_t value) {
+  
+  _impl_.source_node_id_ = value;
+}
+inline void GraphSnapshotChunk::set_source_node_id(uint64_t value) {
+  _internal_set_source_node_id(value);
+  // @@protoc_insertion_point(field_set:meta.GraphSnapshotChunk.source_node_id)
+}
+
+// uint64 target_node_id = 3;
+inline void GraphSnapshotChunk::clear_target_node_id() {
+  _impl_.target_node_id_ = uint64_t{0u};
+}
+inline uint64_t GraphSnapshotChunk::_internal_target_node_id() const {
+  return _impl_.target_node_id_;
+}
+inline uint64_t GraphSnapshotChunk::target_node_id() const {
+  // @@protoc_insertion_point(field_get:meta.GraphSnapshotChunk.target_node_id)
+  return _internal_target_node_id();
+}
+inline void GraphSnapshotChunk::_internal_set_target_node_id(uint64_t value) {
+  
+  _impl_.target_node_id_ = value;
+}
+inline void GraphSnapshotChunk::set_target_node_id(uint64_t value) {
+  _internal_set_target_node_id(value);
+  // @@protoc_insertion_point(field_set:meta.GraphSnapshotChunk.target_node_id)
+}
+
+// string file_name = 4;
+inline void GraphSnapshotChunk::clear_file_name() {
+  _impl_.file_name_.ClearToEmpty();
+}
+inline const std::string& GraphSnapshotChunk::file_name() const {
+  // @@protoc_insertion_point(field_get:meta.GraphSnapshotChunk.file_name)
+  return _internal_file_name();
+}
+template <typename ArgT0, typename... ArgT>
+inline PROTOBUF_ALWAYS_INLINE
+void GraphSnapshotChunk::set_file_name(ArgT0&& arg0, ArgT... args) {
+ 
+ _impl_.file_name_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
+  // @@protoc_insertion_point(field_set:meta.GraphSnapshotChunk.file_name)
+}
+inline std::string* GraphSnapshotChunk::mutable_file_name() {
+  std::string* _s = _internal_mutable_file_name();
+  // @@protoc_insertion_point(field_mutable:meta.GraphSnapshotChunk.file_name)
+  return _s;
+}
+inline const std::string& GraphSnapshotChunk::_internal_file_name() const {
+  return _impl_.file_name_.Get();
+}
+inline void GraphSnapshotChunk::_internal_set_file_name(const std::string& value) {
+  
+  _impl_.file_name_.Set(value, GetArenaForAllocation());
+}
+inline std::string* GraphSnapshotChunk::_internal_mutable_file_name() {
+  
+  return _impl_.file_name_.Mutable(GetArenaForAllocation());
+}
+inline std::string* GraphSnapshotChunk::release_file_name() {
+  // @@protoc_insertion_point(field_release:meta.GraphSnapshotChunk.file_name)
+  return _impl_.file_name_.Release();
+}
+inline void GraphSnapshotChunk::set_allocated_file_name(std::string* file_name) {
+  if (file_name != nullptr) {
+    
+  } else {
+    
+  }
+  _impl_.file_name_.SetAllocated(file_name, GetArenaForAllocation());
+#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (_impl_.file_name_.IsDefault()) {
+    _impl_.file_name_.Set("", GetArenaForAllocation());
+  }
+#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:meta.GraphSnapshotChunk.file_name)
+}
+
+// uint64 offset = 5;
+inline void GraphSnapshotChunk::clear_offset() {
+  _impl_.offset_ = uint64_t{0u};
+}
+inline uint64_t GraphSnapshotChunk::_internal_offset() const {
+  return _impl_.offset_;
+}
+inline uint64_t GraphSnapshotChunk::offset() const {
+  // @@protoc_insertion_point(field_get:meta.GraphSnapshotChunk.offset)
+  return _internal_offset();
+}
+inline void GraphSnapshotChunk::_internal_set_offset(uint64_t value) {
+  
+  _impl_.offset_ = value;
+}
+inline void GraphSnapshotChunk::set_offset(uint64_t value) {
+  _internal_set_offset(value);
+  // @@protoc_insertion_point(field_set:meta.GraphSnapshotChunk.offset)
+}
+
+// bytes data = 6;
+inline void GraphSnapshotChunk::clear_data() {
+  _impl_.data_.ClearToEmpty();
+}
+inline const std::string& GraphSnapshotChunk::data() const {
+  // @@protoc_insertion_point(field_get:meta.GraphSnapshotChunk.data)
+  return _internal_data();
+}
+template <typename ArgT0, typename... ArgT>
+inline PROTOBUF_ALWAYS_INLINE
+void GraphSnapshotChunk::set_data(ArgT0&& arg0, ArgT... args) {
+ 
+ _impl_.data_.SetBytes(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
+  // @@protoc_insertion_point(field_set:meta.GraphSnapshotChunk.data)
+}
+inline std::string* GraphSnapshotChunk::mutable_data() {
+  std::string* _s = _internal_mutable_data();
+  // @@protoc_insertion_point(field_mutable:meta.GraphSnapshotChunk.data)
+  return _s;
+}
+inline const std::string& GraphSnapshotChunk::_internal_data() const {
+  return _impl_.data_.Get();
+}
+inline void GraphSnapshotChunk::_internal_set_data(const std::string& value) {
+  
+  _impl_.data_.Set(value, GetArenaForAllocation());
+}
+inline std::string* GraphSnapshotChunk::_internal_mutable_data() {
+  
+  return _impl_.data_.Mutable(GetArenaForAllocation());
+}
+inline std::string* GraphSnapshotChunk::release_data() {
+  // @@protoc_insertion_point(field_release:meta.GraphSnapshotChunk.data)
+  return _impl_.data_.Release();
+}
+inline void GraphSnapshotChunk::set_allocated_data(std::string* data) {
+  if (data != nullptr) {
+    
+  } else {
+    
+  }
+  _impl_.data_.SetAllocated(data, GetArenaForAllocation());
+#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (_impl_.data_.IsDefault()) {
+    _impl_.data_.Set("", GetArenaForAllocation());
+  }
+#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:meta.GraphSnapshotChunk.data)
+}
+
+// uint32 checksum = 7;
+inline void GraphSnapshotChunk::clear_checksum() {
+  _impl_.checksum_ = 0u;
+}
+inline uint32_t GraphSnapshotChunk::_internal_checksum() const {
+  return _impl_.checksum_;
+}
+inline uint32_t GraphSnapshotChunk::checksum() const {
+  // @@protoc_insertion_point(field_get:meta.GraphSnapshotChunk.checksum)
+  return _internal_checksum();
+}
+inline void GraphSnapshotChunk::_internal_set_checksum(uint32_t value) {
+  
+  _impl_.checksum_ = value;
+}
+inline void GraphSnapshotChunk::set_checksum(uint32_t value) {
+  _internal_set_checksum(value);
+  // @@protoc_insertion_point(field_set:meta.GraphSnapshotChunk.checksum)
+}
+
+// bool file_done = 8;
+inline void GraphSnapshotChunk::clear_file_done() {
+  _impl_.file_done_ = false;
+}
+inline bool GraphSnapshotChunk::_internal_file_done() const {
+  return _impl_.file_done_;
+}
+inline bool GraphSnapshotChunk::file_done() const {
+  // @@protoc_insertion_point(field_get:meta.GraphSnapshotChunk.file_done)
+  return _internal_file_done();
+}
+inline void GraphSnapshotChunk::_internal_set_file_done(bool value) {
+  
+  _impl_.file_done_ = value;
+}
+inline void GraphSnapshotChunk::set_file_done(bool value) {
+  _internal_set_file_done(value);
+  // @@protoc_insertion_point(field_set:meta.GraphSnapshotChunk.file_done)
+}
+
+// bool snapshot_done = 9;
+inline void GraphSnapshotChunk::clear_snapshot_done() {
+  _impl_.snapshot_done_ = false;
+}
+inline bool GraphSnapshotChunk::_internal_snapshot_done() const {
+  return _impl_.snapshot_done_;
+}
+inline bool GraphSnapshotChunk::snapshot_done() const {
+  // @@protoc_insertion_point(field_get:meta.GraphSnapshotChunk.snapshot_done)
+  return _internal_snapshot_done();
+}
+inline void GraphSnapshotChunk::_internal_set_snapshot_done(bool value) {
+  
+  _impl_.snapshot_done_ = value;
+}
+inline void GraphSnapshotChunk::set_snapshot_done(bool value) {
+  _internal_set_snapshot_done(value);
+  // @@protoc_insertion_point(field_set:meta.GraphSnapshotChunk.snapshot_done)
+}
+
+// string snapshot_id = 10;
+inline void GraphSnapshotChunk::clear_snapshot_id() {
+  _impl_.snapshot_id_.ClearToEmpty();
+}
+inline const std::string& GraphSnapshotChunk::snapshot_id() const {
+  // @@protoc_insertion_point(field_get:meta.GraphSnapshotChunk.snapshot_id)
+  return _internal_snapshot_id();
+}
+template <typename ArgT0, typename... ArgT>
+inline PROTOBUF_ALWAYS_INLINE
+void GraphSnapshotChunk::set_snapshot_id(ArgT0&& arg0, ArgT... args) {
+ 
+ _impl_.snapshot_id_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
+  // @@protoc_insertion_point(field_set:meta.GraphSnapshotChunk.snapshot_id)
+}
+inline std::string* GraphSnapshotChunk::mutable_snapshot_id() {
+  std::string* _s = _internal_mutable_snapshot_id();
+  // @@protoc_insertion_point(field_mutable:meta.GraphSnapshotChunk.snapshot_id)
+  return _s;
+}
+inline const std::string& GraphSnapshotChunk::_internal_snapshot_id() const {
+  return _impl_.snapshot_id_.Get();
+}
+inline void GraphSnapshotChunk::_internal_set_snapshot_id(const std::string& value) {
+  
+  _impl_.snapshot_id_.Set(value, GetArenaForAllocation());
+}
+inline std::string* GraphSnapshotChunk::_internal_mutable_snapshot_id() {
+  
+  return _impl_.snapshot_id_.Mutable(GetArenaForAllocation());
+}
+inline std::string* GraphSnapshotChunk::release_snapshot_id() {
+  // @@protoc_insertion_point(field_release:meta.GraphSnapshotChunk.snapshot_id)
+  return _impl_.snapshot_id_.Release();
+}
+inline void GraphSnapshotChunk::set_allocated_snapshot_id(std::string* snapshot_id) {
+  if (snapshot_id != nullptr) {
+    
+  } else {
+    
+  }
+  _impl_.snapshot_id_.SetAllocated(snapshot_id, GetArenaForAllocation());
+#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (_impl_.snapshot_id_.IsDefault()) {
+    _impl_.snapshot_id_.Set("", GetArenaForAllocation());
+  }
+#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:meta.GraphSnapshotChunk.snapshot_id)
+}
+
+// -------------------------------------------------------------------
+
+// GraphSnapshotStatus
+
+// string snapshot_id = 1;
+inline void GraphSnapshotStatus::clear_snapshot_id() {
+  _impl_.snapshot_id_.ClearToEmpty();
+}
+inline const std::string& GraphSnapshotStatus::snapshot_id() const {
+  // @@protoc_insertion_point(field_get:meta.GraphSnapshotStatus.snapshot_id)
+  return _internal_snapshot_id();
+}
+template <typename ArgT0, typename... ArgT>
+inline PROTOBUF_ALWAYS_INLINE
+void GraphSnapshotStatus::set_snapshot_id(ArgT0&& arg0, ArgT... args) {
+ 
+ _impl_.snapshot_id_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
+  // @@protoc_insertion_point(field_set:meta.GraphSnapshotStatus.snapshot_id)
+}
+inline std::string* GraphSnapshotStatus::mutable_snapshot_id() {
+  std::string* _s = _internal_mutable_snapshot_id();
+  // @@protoc_insertion_point(field_mutable:meta.GraphSnapshotStatus.snapshot_id)
+  return _s;
+}
+inline const std::string& GraphSnapshotStatus::_internal_snapshot_id() const {
+  return _impl_.snapshot_id_.Get();
+}
+inline void GraphSnapshotStatus::_internal_set_snapshot_id(const std::string& value) {
+  
+  _impl_.snapshot_id_.Set(value, GetArenaForAllocation());
+}
+inline std::string* GraphSnapshotStatus::_internal_mutable_snapshot_id() {
+  
+  return _impl_.snapshot_id_.Mutable(GetArenaForAllocation());
+}
+inline std::string* GraphSnapshotStatus::release_snapshot_id() {
+  // @@protoc_insertion_point(field_release:meta.GraphSnapshotStatus.snapshot_id)
+  return _impl_.snapshot_id_.Release();
+}
+inline void GraphSnapshotStatus::set_allocated_snapshot_id(std::string* snapshot_id) {
+  if (snapshot_id != nullptr) {
+    
+  } else {
+    
+  }
+  _impl_.snapshot_id_.SetAllocated(snapshot_id, GetArenaForAllocation());
+#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (_impl_.snapshot_id_.IsDefault()) {
+    _impl_.snapshot_id_.Set("", GetArenaForAllocation());
+  }
+#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:meta.GraphSnapshotStatus.snapshot_id)
+}
+
+// uint64 source_node_id = 2;
+inline void GraphSnapshotStatus::clear_source_node_id() {
+  _impl_.source_node_id_ = uint64_t{0u};
+}
+inline uint64_t GraphSnapshotStatus::_internal_source_node_id() const {
+  return _impl_.source_node_id_;
+}
+inline uint64_t GraphSnapshotStatus::source_node_id() const {
+  // @@protoc_insertion_point(field_get:meta.GraphSnapshotStatus.source_node_id)
+  return _internal_source_node_id();
+}
+inline void GraphSnapshotStatus::_internal_set_source_node_id(uint64_t value) {
+  
+  _impl_.source_node_id_ = value;
+}
+inline void GraphSnapshotStatus::set_source_node_id(uint64_t value) {
+  _internal_set_source_node_id(value);
+  // @@protoc_insertion_point(field_set:meta.GraphSnapshotStatus.source_node_id)
+}
+
+// uint64 target_node_id = 3;
+inline void GraphSnapshotStatus::clear_target_node_id() {
+  _impl_.target_node_id_ = uint64_t{0u};
+}
+inline uint64_t GraphSnapshotStatus::_internal_target_node_id() const {
+  return _impl_.target_node_id_;
+}
+inline uint64_t GraphSnapshotStatus::target_node_id() const {
+  // @@protoc_insertion_point(field_get:meta.GraphSnapshotStatus.target_node_id)
+  return _internal_target_node_id();
+}
+inline void GraphSnapshotStatus::_internal_set_target_node_id(uint64_t value) {
+  
+  _impl_.target_node_id_ = value;
+}
+inline void GraphSnapshotStatus::set_target_node_id(uint64_t value) {
+  _internal_set_target_node_id(value);
+  // @@protoc_insertion_point(field_set:meta.GraphSnapshotStatus.target_node_id)
+}
+
+// bool success = 4;
+inline void GraphSnapshotStatus::clear_success() {
+  _impl_.success_ = false;
+}
+inline bool GraphSnapshotStatus::_internal_success() const {
+  return _impl_.success_;
+}
+inline bool GraphSnapshotStatus::success() const {
+  // @@protoc_insertion_point(field_get:meta.GraphSnapshotStatus.success)
+  return _internal_success();
+}
+inline void GraphSnapshotStatus::_internal_set_success(bool value) {
+  
+  _impl_.success_ = value;
+}
+inline void GraphSnapshotStatus::set_success(bool value) {
+  _internal_set_success(value);
+  // @@protoc_insertion_point(field_set:meta.GraphSnapshotStatus.success)
+}
+
+// string error = 5;
+inline void GraphSnapshotStatus::clear_error() {
+  _impl_.error_.ClearToEmpty();
+}
+inline const std::string& GraphSnapshotStatus::error() const {
+  // @@protoc_insertion_point(field_get:meta.GraphSnapshotStatus.error)
+  return _internal_error();
+}
+template <typename ArgT0, typename... ArgT>
+inline PROTOBUF_ALWAYS_INLINE
+void GraphSnapshotStatus::set_error(ArgT0&& arg0, ArgT... args) {
+ 
+ _impl_.error_.Set(static_cast<ArgT0 &&>(arg0), args..., GetArenaForAllocation());
+  // @@protoc_insertion_point(field_set:meta.GraphSnapshotStatus.error)
+}
+inline std::string* GraphSnapshotStatus::mutable_error() {
+  std::string* _s = _internal_mutable_error();
+  // @@protoc_insertion_point(field_mutable:meta.GraphSnapshotStatus.error)
+  return _s;
+}
+inline const std::string& GraphSnapshotStatus::_internal_error() const {
+  return _impl_.error_.Get();
+}
+inline void GraphSnapshotStatus::_internal_set_error(const std::string& value) {
+  
+  _impl_.error_.Set(value, GetArenaForAllocation());
+}
+inline std::string* GraphSnapshotStatus::_internal_mutable_error() {
+  
+  return _impl_.error_.Mutable(GetArenaForAllocation());
+}
+inline std::string* GraphSnapshotStatus::release_error() {
+  // @@protoc_insertion_point(field_release:meta.GraphSnapshotStatus.error)
+  return _impl_.error_.Release();
+}
+inline void GraphSnapshotStatus::set_allocated_error(std::string* error) {
+  if (error != nullptr) {
+    
+  } else {
+    
+  }
+  _impl_.error_.SetAllocated(error, GetArenaForAllocation());
+#ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (_impl_.error_.IsDefault()) {
+    _impl_.error_.Set("", GetArenaForAllocation());
+  }
+#endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:meta.GraphSnapshotStatus.error)
+}
+
 // -------------------------------------------------------------------
 
 // RaftNodeInfo
@@ -1343,6 +3526,14 @@ RaftNodeInfos::mutable_nodes() {
 #ifdef __GNUC__
   #pragma GCC diagnostic pop
 #endif  // __GNUC__
+// -------------------------------------------------------------------
+
+// -------------------------------------------------------------------
+
+// -------------------------------------------------------------------
+
+// -------------------------------------------------------------------
+
 // -------------------------------------------------------------------
 
 // -------------------------------------------------------------------

@@ -29,6 +29,11 @@ struct RaftLogStorage : private boost::noncopyable, eraft::Storage {
     initial_conf_state_ = std::move(conf_state);
   }
   void Compact(uint64_t index);
+  eraft::Error CreateSnapshot(uint64_t index, uint64_t term,
+                              const raftpb::ConfState& conf_state,
+                              std::string data);
+  eraft::Error ApplySnapshot(const raftpb::Snapshot& snapshot,
+                             rocksdb::WriteBatch& batch);
   eraft::Error SetHardState(const raftpb::HardState& hs,
                             rocksdb::WriteBatch& batch);
   eraft::Error Append(std::vector<raftpb::Entry> entries,
@@ -48,6 +53,7 @@ struct RaftLogStorage : private boost::noncopyable, eraft::Storage {
   uint64_t last_entry_index_ = 0;
   raftpb::HardState hard_state_;
   raftpb::ConfState conf_state_;
+  raftpb::Snapshot snapshot_;
   std::optional<raftpb::ConfState> initial_conf_state_;
 };
 }  // namespace raft

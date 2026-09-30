@@ -3,12 +3,16 @@
 #include <gflags/gflags.h>
 #include <pthread.h>
 
+#include <array>
 #include <boost/asio.hpp>
 #include <boost/endian/conversion.hpp>
 #include <boost/lexical_cast.hpp>
 #include <filesystem>
+#include <fstream>
 #include <future>
+#include <limits>
 #include <shared_mutex>
+#include <string_view>
 
 #include "common/exception.h"
 #include "common/logger.h"
@@ -19,6 +23,183 @@ using namespace std::chrono;
 
 namespace raft {
 namespace {
+constexpr uint32_t kSnapshotFormatVersion = 1;
+constexpr size_t kSnapshotChunkSize = 1024 * 1024;
+constexpr std::array<uint8_t, 4> kRaftMagicCode = {0x17, 0xB0, 0x60, 0x60};
+
+uint32_t SnapshotChecksum(std::string_view data) {
+  uint32_t crc = 0xffffffffU;
+  for (unsigned char byte : data) {
+    crc ^= byte;
+    for (int bit = 0; bit < 8; ++bit) {
+      crc = (crc >> 1) ^ (0xedb88320U & (0U - (crc & 1U)));
+    }
+  }
+  return ~crc;
+}
+
+std::pair<uint32_t, eraft::Error> SnapshotFileChecksum(
+    const std::filesystem::path& path) {
+  std::ifstream input(path, std::ios::binary);
+  if (!input) {
+    return {0, eraft::Error("failed to open snapshot file " + path.string())};
+  }
+  uint32_t crc = 0xffffffffU;
+  std::array<char, 64 * 1024> buffer{};
+  while (input) {
+    input.read(buffer.data(), buffer.size());
+    const auto count = input.gcount();
+    for (std::streamsize i = 0; i < count; ++i) {
+      crc ^= static_cast<unsigned char>(buffer[static_cast<size_t>(i)]);
+      for (int bit = 0; bit < 8; ++bit) {
+        crc = (crc >> 1) ^ (0xedb88320U & (0U - (crc & 1U)));
+      }
+    }
+  }
+  if (!input.eof()) {
+    return {0, eraft::Error("failed to read snapshot file " + path.string())};
+  }
+  return {~crc, nullptr};
+}
+
+bool IsSafeSnapshotFileName(std::string_view name) {
+  if (name.empty()) {
+    return false;
+  }
+  std::filesystem::path path(name);
+  if (path.is_absolute()) {
+    return false;
+  }
+  for (const auto& part : path) {
+    if (part == "..") {
+      return false;
+    }
+  }
+  return true;
+}
+
+std::string SnapshotTransferKey(std::string_view snapshot_id,
+                                uint64_t target_node_id) {
+  return fmt::format("{}:{}", snapshot_id, target_node_id);
+}
+
+std::string EnvelopeToNetString(const meta::RaftMessage& envelope) {
+  uint32_t msg_size = envelope.ByteSizeLong();
+  std::string str;
+  str.reserve(msg_size + sizeof(uint32_t));
+  boost::endian::native_to_big_inplace(msg_size);
+  str.append(reinterpret_cast<const char*>(&msg_size), sizeof(msg_size));
+  str.append(envelope.SerializeAsString());
+  return str;
+}
+
+eraft::Error WriteEnvelope(tcp::socket* socket,
+                           const meta::RaftMessage& envelope) {
+  auto data = EnvelopeToNetString(envelope);
+  boost::system::error_code ec;
+  boost::asio::write(*socket, boost::asio::buffer(data), ec);
+  if (ec) {
+    return eraft::Error("failed to send snapshot frame: " + ec.message());
+  }
+  return nullptr;
+}
+
+eraft::Error ConnectSnapshotSocket(const std::string& ip, int port,
+                                   tcp::socket* socket) {
+  boost::system::error_code ec;
+  socket->connect(
+      tcp::endpoint(boost::asio::ip::address::from_string(ip), port), ec);
+  if (ec) {
+    return eraft::Error("failed to connect snapshot transport: " +
+                        ec.message());
+  }
+  boost::asio::write(*socket, boost::asio::buffer(kRaftMagicCode), ec);
+  if (ec) {
+    return eraft::Error("failed to send snapshot transport magic: " +
+                        ec.message());
+  }
+  return nullptr;
+}
+
+eraft::Error SendSnapshotFiles(
+    const meta::RaftNodeInfo& target, uint64_t source_node_id,
+    const std::filesystem::path& root,
+    const meta::GraphSnapshotDescriptor& descriptor) {
+  boost::asio::io_service service;
+  tcp::socket socket(service);
+  auto err = ConnectSnapshotSocket(target.ip(), target.raft_poft(), &socket);
+  if (err != nullptr) {
+    return err;
+  }
+
+  bool include_descriptor = true;
+  std::vector<char> buffer(kSnapshotChunkSize);
+  for (const auto& file : descriptor.files()) {
+    if (!IsSafeSnapshotFileName(file.name())) {
+      return eraft::Error("unsafe snapshot file name " + file.name());
+    }
+    std::ifstream input(root / file.name(), std::ios::binary);
+    if (!input) {
+      return eraft::Error("failed to open snapshot file " + file.name());
+    }
+    uint64_t offset = 0;
+    do {
+      input.read(buffer.data(), buffer.size());
+      const auto count = input.gcount();
+      if (count == 0 && !input.eof()) {
+        return eraft::Error("failed to read snapshot file " + file.name());
+      }
+      meta::RaftMessage envelope;
+      envelope.set_graph(descriptor.graph());
+      auto* chunk = envelope.mutable_snapshot_chunk();
+      if (include_descriptor) {
+        *chunk->mutable_snapshot_descriptor() = descriptor;
+        include_descriptor = false;
+      }
+      chunk->set_source_node_id(source_node_id);
+      chunk->set_target_node_id(target.node_id());
+      chunk->set_snapshot_id(descriptor.snapshot_id());
+      chunk->set_file_name(file.name());
+      chunk->set_offset(offset);
+      chunk->set_data(buffer.data(), static_cast<size_t>(count));
+      chunk->set_checksum(SnapshotChecksum(chunk->data()));
+      chunk->set_file_done(input.eof());
+      err = WriteEnvelope(&socket, envelope);
+      if (err != nullptr) {
+        return err;
+      }
+      offset += static_cast<uint64_t>(count);
+    } while (!input.eof());
+  }
+
+  meta::RaftMessage envelope;
+  envelope.set_graph(descriptor.graph());
+  auto* chunk = envelope.mutable_snapshot_chunk();
+  if (include_descriptor) {
+    *chunk->mutable_snapshot_descriptor() = descriptor;
+  }
+  chunk->set_source_node_id(source_node_id);
+  chunk->set_target_node_id(target.node_id());
+  chunk->set_snapshot_id(descriptor.snapshot_id());
+  chunk->set_snapshot_done(true);
+  return WriteEnvelope(&socket, envelope);
+}
+
+eraft::Error SendSnapshotStatusFrame(const meta::RaftNodeInfo& target,
+                                     const std::string& graph,
+                                     const meta::GraphSnapshotStatus& status) {
+  boost::asio::io_service service;
+  tcp::socket socket(service);
+  auto err = ConnectSnapshotSocket(target.ip(), target.raft_poft(), &socket);
+  if (err != nullptr) {
+    return err;
+  }
+  meta::RaftMessage envelope;
+  envelope.set_graph(graph);
+  *envelope.mutable_snapshot_status() = status;
+  return WriteEnvelope(&socket, envelope);
+}
+
 size_t NormalizeRaftShardCount(size_t shard_count) {
   return shard_count == 0 ? 1 : shard_count;
 }
@@ -472,18 +653,13 @@ void RaftManager::WaitForApplyService(size_t shard_id) {
 }
 
 std::string MessageToNetString(const std::string& graph,
-                               const raftpb::Message& msg) {
+                               const raftpb::Message& msg,
+                               const meta::RaftNodeInfo& source_node) {
   meta::RaftMessage envelope;
   envelope.set_graph(graph);
   envelope.mutable_message()->CopyFrom(msg);
-
-  uint32_t msg_size = envelope.ByteSizeLong();
-  std::string str;
-  str.reserve(msg_size + sizeof(uint32_t));
-  boost::endian::native_to_big_inplace(msg_size);
-  str.append(reinterpret_cast<const char*>(&msg_size), sizeof(msg_size));
-  str.append(envelope.SerializeAsString());
-  return str;
+  envelope.mutable_source_node()->CopyFrom(source_node);
+  return EnvelopeToNetString(envelope);
 }
 
 bool RaftConfig::Check() {
@@ -570,26 +746,13 @@ RaftDriver::RaftDriver(ApplyRequest apply, ApplyConfChange apply_conf_change,
                        std::optional<meta::RaftNodeInfos> node_infos,
                        LocalNodeConfig local_node,
                        const RaftLogStoreConfig& store_config,
-                       const RaftConfig& config)
-    : manager_(RaftManager::Instance()),
-      callback_alive_(std::make_shared<std::atomic<bool>>(false)),
-      apply_(std::move(apply)),
-      apply_conf_change_(std::move(apply_conf_change)),
-      apply_id_(apply_id),
-      initial_conf_state_(std::move(conf_state)),
-      local_node_(std::move(local_node)),
-      shard_id_(manager_->PickShard(local_node_.graph)),
-      node_id_(0),
-      tick_interval_(config.tick_interval),
-      tick_timer_(manager_->timer_service(shard_id_), tick_interval_),
-      compact_interval_(store_config.gc_interval * 60 * 1000),
-      compact_timer_(manager_->timer_service(shard_id_), compact_interval_),
-      store_config_(store_config),
-      raft_config_(config) {
-  if (node_infos.has_value()) {
-    node_infos_ = std::move(*node_infos);
-  }
-}
+                       const RaftConfig& config, CreateSnapshot create_snapshot,
+                       ApplySnapshot apply_snapshot)
+    : RaftDriver(std::move(apply), std::move(apply_conf_change), apply_id,
+                 std::move(conf_state), std::move(node_infos),
+                 std::move(local_node), {}, store_config, config,
+                 std::move(create_snapshot), std::move(apply_snapshot), false,
+                 std::nullopt) {}
 
 RaftDriver::RaftDriver(ApplyRequest apply, ApplyConfChange apply_conf_change,
                        uint64_t apply_id,
@@ -599,16 +762,34 @@ RaftDriver::RaftDriver(ApplyRequest apply, ApplyConfChange apply_conf_change,
                        std::vector<eraft::Peer> init_peers,
                        const RaftLogStoreConfig& store_config,
                        const RaftConfig& config)
+    : RaftDriver(std::move(apply), std::move(apply_conf_change), apply_id,
+                 std::move(conf_state), std::move(node_infos),
+                 std::move(local_node), std::move(init_peers), store_config,
+                 config, {}, {}, false, std::nullopt) {}
+
+RaftDriver::RaftDriver(ApplyRequest apply, ApplyConfChange apply_conf_change,
+                       uint64_t apply_id,
+                       std::optional<raftpb::ConfState> conf_state,
+                       std::optional<meta::RaftNodeInfos> node_infos,
+                       LocalNodeConfig local_node,
+                       std::vector<eraft::Peer> init_peers,
+                       const RaftLogStoreConfig& store_config,
+                       const RaftConfig& config, CreateSnapshot create_snapshot,
+                       ApplySnapshot apply_snapshot, bool join_existing,
+                       std::optional<meta::RaftNodeInfos> join_node_infos)
     : manager_(RaftManager::Instance()),
       callback_alive_(std::make_shared<std::atomic<bool>>(false)),
       apply_(std::move(apply)),
       apply_conf_change_(std::move(apply_conf_change)),
+      create_snapshot_(std::move(create_snapshot)),
+      apply_snapshot_(std::move(apply_snapshot)),
       apply_id_(apply_id),
       initial_conf_state_(std::move(conf_state)),
       local_node_(std::move(local_node)),
       shard_id_(manager_->PickShard(local_node_.graph)),
       node_id_(0),
       init_peers_(std::move(init_peers)),
+      join_existing_(join_existing),
       tick_interval_(config.tick_interval),
       tick_timer_(manager_->timer_service(shard_id_), tick_interval_),
       compact_interval_(store_config.gc_interval * 60 * 1000),
@@ -617,6 +798,8 @@ RaftDriver::RaftDriver(ApplyRequest apply, ApplyConfChange apply_conf_change,
       raft_config_(config) {
   if (node_infos.has_value()) {
     node_infos_ = std::move(*node_infos);
+  } else if (join_node_infos.has_value()) {
+    node_infos_ = std::move(*join_node_infos);
   }
 }
 
@@ -632,6 +815,15 @@ eraft::Error RaftDriver::Run() {
   if (!apply_ || !apply_conf_change_) {
     return eraft::Error("raft state machine apply callbacks are required");
   }
+  if (store_config_.snapshot_path.empty()) {
+    store_config_.snapshot_path =
+        (std::filesystem::path(store_config_.path).parent_path() / "snapshots")
+            .string();
+  }
+  std::filesystem::create_directories(
+      std::filesystem::path(store_config_.snapshot_path) / "outgoing");
+  std::filesystem::create_directories(
+      std::filesystem::path(store_config_.snapshot_path) / "incoming");
   if (apply_id_.load() > 0 &&
       (!initial_conf_state_.has_value() || node_infos_.nodes().empty())) {
     return eraft::Error(
@@ -717,15 +909,21 @@ eraft::Error RaftDriver::Run() {
     return err;
   }
   if (!exist) {
-    err = rn_->Bootstrap(init_peers_);
-    if (err != nullptr) {
-      return err;
+    if (!join_existing_) {
+      err = rn_->Bootstrap(init_peers_);
+      if (err != nullptr) {
+        return err;
+      }
+      // Persist and apply bootstrap ConfChange entries before Run returns, so
+      // a crash after graph metadata is visible can still recover local node
+      // infos.
+      CheckReady();
+      manager_->WaitForApplyService(shard_id_);
+      manager_->WaitForRaftService(shard_id_);
+    } else {
+      LOG_INFO("raft node {} is waiting to join graph [{}]", node_id_,
+               local_node_.graph);
     }
-    // Persist and apply bootstrap ConfChange entries before Run returns, so a
-    // crash after graph metadata is visible can still recover local node infos.
-    CheckReady();
-    manager_->WaitForApplyService(shard_id_);
-    manager_->WaitForRaftService(shard_id_);
   }
   Tick();
   CheckAndCompactLog();
@@ -747,6 +945,13 @@ void RaftDriver::Stop() {
   manager_->WaitForRaftService(shard_id_);
   manager_->WaitForApplyService(shard_id_);
   manager_->WaitForRaftService(shard_id_);
+  {
+    std::lock_guard<std::mutex> lock(snapshot_mutex_);
+    pending_snapshot_messages_.clear();
+    incoming_snapshots_.clear();
+  }
+  snapshot_threads_.clear();
+  manager_->WaitForRaftService(shard_id_);
   node_clients_.clear();
   if (storage_) {
     storage_->Close();
@@ -754,22 +959,221 @@ void RaftDriver::Stop() {
   LOG_INFO("bolt raft driver stopped");
 }
 
-void RaftDriver::Step(raftpb::Message msg) {
+void RaftDriver::Step(raftpb::Message msg,
+                      std::optional<meta::RaftNodeInfo> source_node) {
   if (stopped_.load()) {
     return;
   }
   auto alive = callback_alive_;
+  manager_->raft_service(shard_id_).post([this, alive, msg = std::move(msg),
+                                          source_node = std::move(
+                                              source_node)]() mutable {
+    if (!alive->load() || stopped_.load()) {
+      return;
+    }
+    if (source_node.has_value() && source_node->node_id() == msg.from() &&
+        source_node->node_id() != 0 &&
+        source_node->graph() == local_node_.graph &&
+        !source_node->ip().empty() && source_node->raft_poft() > 0) {
+      std::unique_lock<std::shared_mutex> lock(nodes_mutex_);
+      if (!node_clients_.count(source_node->node_id())) {
+        node_clients_.emplace(source_node->node_id(),
+                              manager_->AcquireClient(
+                                  source_node->ip(), source_node->raft_poft()));
+      }
+    }
+    auto err = rn_->Step(std::move(msg));
+    if (err != nullptr) {
+      LOG_WARN("failed to step message, err: {}", err.String());
+      return;
+    }
+    CheckReady();
+  });
+}
+
+void RaftDriver::ReceiveSnapshotChunk(meta::GraphSnapshotChunk chunk) {
+  if (stopped_.load() || chunk.target_node_id() != node_id_) {
+    return;
+  }
+
+  meta::GraphSnapshotStatus status;
+  status.set_snapshot_id(chunk.snapshot_id());
+  status.set_source_node_id(chunk.source_node_id());
+  status.set_target_node_id(node_id_);
+  status.set_success(false);
+  std::optional<meta::RaftNodeInfo> source;
+  bool send_status = false;
+
+  try {
+    std::lock_guard<std::mutex> lock(snapshot_mutex_);
+    if (chunk.has_snapshot_descriptor()) {
+      const auto& descriptor = chunk.snapshot_descriptor();
+      status.set_snapshot_id(descriptor.snapshot_id());
+      RG_CHECK(descriptor.format_version() == kSnapshotFormatVersion,
+               common::ErrorCode::InvalidParameter,
+               "unsupported graph snapshot format {}",
+               descriptor.format_version());
+      RG_CHECK(descriptor.graph() == local_node_.graph,
+               common::ErrorCode::InvalidParameter,
+               "snapshot graph [{}] does not match local graph [{}]",
+               descriptor.graph(), local_node_.graph);
+      RG_CHECK(!descriptor.snapshot_id().empty(),
+               common::ErrorCode::InvalidParameter,
+               "snapshot id should not be empty");
+      auto source_iter =
+          descriptor.node_infos().nodes().find(chunk.source_node_id());
+      RG_CHECK(source_iter != descriptor.node_infos().nodes().end(),
+               common::ErrorCode::InvalidParameter,
+               "snapshot source node {} is missing from descriptor",
+               chunk.source_node_id());
+      source = source_iter->second;
+
+      auto incoming_root = std::filesystem::path(store_config_.snapshot_path) /
+                           "incoming" / descriptor.snapshot_id();
+      std::error_code ec;
+      std::filesystem::remove_all(incoming_root, ec);
+      if (ec) {
+        RG_THROW(common::ErrorCode::StorageEngineError,
+                 "failed to reset incoming snapshot directory: {}",
+                 ec.message());
+      }
+      std::filesystem::create_directories(incoming_root / "data");
+      incoming_snapshots_[descriptor.snapshot_id()] =
+          IncomingSnapshot{.descriptor = descriptor};
+    }
+
+    auto incoming = incoming_snapshots_.find(status.snapshot_id());
+    RG_CHECK(incoming != incoming_snapshots_.end(),
+             common::ErrorCode::InvalidParameter,
+             "snapshot chunk arrived before its descriptor");
+    const auto& descriptor = incoming->second.descriptor;
+    RG_CHECK(chunk.snapshot_id() == descriptor.snapshot_id(),
+             common::ErrorCode::InvalidParameter,
+             "snapshot chunk id [{}] does not match descriptor [{}]",
+             chunk.snapshot_id(), descriptor.snapshot_id());
+    if (!source.has_value()) {
+      auto source_iter =
+          descriptor.node_infos().nodes().find(chunk.source_node_id());
+      RG_CHECK(source_iter != descriptor.node_infos().nodes().end(),
+               common::ErrorCode::InvalidParameter,
+               "snapshot source node {} is missing from descriptor",
+               chunk.source_node_id());
+      source = source_iter->second;
+    }
+
+    if (!chunk.file_name().empty()) {
+      RG_CHECK(IsSafeSnapshotFileName(chunk.file_name()),
+               common::ErrorCode::InvalidParameter,
+               "unsafe snapshot file name [{}]", chunk.file_name());
+      const meta::GraphSnapshotFile* expected = nullptr;
+      for (const auto& file : descriptor.files()) {
+        if (file.name() == chunk.file_name()) {
+          expected = &file;
+          break;
+        }
+      }
+      RG_CHECK(expected != nullptr, common::ErrorCode::InvalidParameter,
+               "snapshot file [{}] is not present in the manifest",
+               chunk.file_name());
+      RG_CHECK(!incoming->second.completed_files.contains(chunk.file_name()),
+               common::ErrorCode::InvalidParameter,
+               "snapshot file [{}] was already completed", chunk.file_name());
+      RG_CHECK(chunk.offset() <= expected->size() &&
+                   chunk.data().size() <= expected->size() - chunk.offset(),
+               common::ErrorCode::StorageEngineError,
+               "snapshot chunk for file [{}] exceeds its manifest size",
+               chunk.file_name());
+      RG_CHECK(SnapshotChecksum(chunk.data()) == chunk.checksum(),
+               common::ErrorCode::StorageEngineError,
+               "snapshot chunk checksum mismatch for file [{}] at offset {}",
+               chunk.file_name(), chunk.offset());
+
+      auto file_path = std::filesystem::path(store_config_.snapshot_path) /
+                       "incoming" / descriptor.snapshot_id() / "data" /
+                       chunk.file_name();
+      std::filesystem::create_directories(file_path.parent_path());
+      if (chunk.offset() == 0) {
+        std::ofstream output(file_path, std::ios::binary | std::ios::trunc);
+        RG_CHECK(output.good(), common::ErrorCode::StorageEngineError,
+                 "failed to create incoming snapshot file [{}]",
+                 file_path.string());
+        output.write(chunk.data().data(), chunk.data().size());
+        RG_CHECK(output.good(), common::ErrorCode::StorageEngineError,
+                 "failed to write incoming snapshot file [{}]",
+                 file_path.string());
+      } else {
+        std::error_code ec;
+        const auto current_size = std::filesystem::file_size(file_path, ec);
+        RG_CHECK(!ec && current_size == chunk.offset(),
+                 common::ErrorCode::StorageEngineError,
+                 "snapshot file [{}] expected offset {}, actual {}",
+                 chunk.file_name(), chunk.offset(), ec ? 0 : current_size);
+        std::ofstream output(file_path, std::ios::binary | std::ios::app);
+        RG_CHECK(output.good(), common::ErrorCode::StorageEngineError,
+                 "failed to append incoming snapshot file [{}]",
+                 file_path.string());
+        output.write(chunk.data().data(), chunk.data().size());
+        RG_CHECK(output.good(), common::ErrorCode::StorageEngineError,
+                 "failed to append incoming snapshot file [{}]",
+                 file_path.string());
+      }
+
+      if (chunk.file_done()) {
+        std::error_code ec;
+        const auto size = std::filesystem::file_size(file_path, ec);
+        RG_CHECK(!ec && size == expected->size(),
+                 common::ErrorCode::StorageEngineError,
+                 "snapshot file [{}] size mismatch", chunk.file_name());
+        auto [checksum, checksum_err] = SnapshotFileChecksum(file_path);
+        RG_CHECK(checksum_err == nullptr && checksum == expected->checksum(),
+                 common::ErrorCode::StorageEngineError,
+                 "snapshot file [{}] checksum mismatch", chunk.file_name());
+        incoming->second.completed_files.insert(chunk.file_name());
+      }
+    }
+
+    if (chunk.snapshot_done()) {
+      RG_CHECK(incoming->second.completed_files.size() ==
+                   static_cast<size_t>(descriptor.files_size()),
+               common::ErrorCode::StorageEngineError,
+               "snapshot [{}] is incomplete", descriptor.snapshot_id());
+      status.set_success(true);
+      send_status = true;
+      incoming_snapshots_.erase(incoming);
+    }
+  } catch (const std::exception& e) {
+    status.set_error(e.what());
+    send_status = true;
+  }
+
+  if (!send_status || !source.has_value()) {
+    return;
+  }
+  auto graph = local_node_.graph;
+  {
+    std::lock_guard<std::mutex> lock(snapshot_mutex_);
+    snapshot_threads_.emplace_back([source = std::move(*source),
+                                    graph = std::move(graph),
+                                    status = std::move(status)]() {
+      auto err = SendSnapshotStatusFrame(source, graph, status);
+      if (err != nullptr) {
+        LOG_WARN("failed to send graph snapshot status: {}", err.String());
+      }
+    });
+  }
+}
+
+void RaftDriver::ReceiveSnapshotStatus(meta::GraphSnapshotStatus status) {
+  if (stopped_.load() || status.source_node_id() != node_id_) {
+    return;
+  }
+  auto alive = callback_alive_;
   manager_->raft_service(shard_id_).post(
-      [this, alive, msg = std::move(msg)]() mutable {
+      [this, alive, status = std::move(status)]() mutable {
         if (!alive->load() || stopped_.load()) {
           return;
         }
-        auto err = rn_->Step(std::move(msg));
-        if (err != nullptr) {
-          LOG_WARN("failed to step message, err: {}", err.String());
-          return;
-        }
-        CheckReady();
+        HandleSnapshotStatus(std::move(status));
       });
 }
 
@@ -1103,6 +1507,79 @@ RaftStatus RaftDriver::GetRaftStatus() {
   return future.get();
 }
 
+eraft::Error RaftDriver::CreateSnapshotAndCompact() {
+  if (!create_snapshot_) {
+    return eraft::Error("graph snapshot callbacks are not configured");
+  }
+  if (stopped_.load()) {
+    return eraft::Error("raft driver stopped");
+  }
+
+  std::promise<SnapshotBuildResult> build_promise;
+  auto build_future = build_promise.get_future();
+  auto alive = callback_alive_;
+  manager_->apply_service(shard_id_).post(
+      [this, alive, &build_promise]() mutable {
+        if (!alive->load() || stopped_.load()) {
+          SnapshotBuildResult result;
+          result.err = eraft::Error("raft driver stopped");
+          build_promise.set_value(std::move(result));
+          return;
+        }
+        try {
+          build_promise.set_value(create_snapshot_());
+        } catch (const std::exception& e) {
+          SnapshotBuildResult result;
+          result.err = eraft::Error(e.what());
+          build_promise.set_value(std::move(result));
+        }
+      });
+  auto result = build_future.get();
+  if (result.err != nullptr) {
+    return result.err;
+  }
+
+  std::promise<eraft::Error> persist_promise;
+  auto persist_future = persist_promise.get_future();
+  manager_->raft_service(shard_id_).post(
+      [this, alive, result = std::move(result), &persist_promise]() mutable {
+        if (!alive->load() || stopped_.load()) {
+          persist_promise.set_value(eraft::Error("raft driver stopped"));
+          return;
+        }
+        const auto index = result.descriptor.index();
+        if (index == 0) {
+          persist_promise.set_value(
+              eraft::Error("cannot create a snapshot at raft index zero"));
+          return;
+        }
+        auto [term, term_err] = storage_->Term(index);
+        if (term_err != nullptr) {
+          persist_promise.set_value(std::move(term_err));
+          return;
+        }
+        result.descriptor.set_term(term);
+        result.descriptor.set_format_version(kSnapshotFormatVersion);
+        std::string data;
+        if (!result.descriptor.SerializeToString(&data)) {
+          persist_promise.set_value(
+              eraft::Error("failed to serialize graph snapshot descriptor"));
+          return;
+        }
+        auto err = storage_->CreateSnapshot(index, term, result.conf_state,
+                                            std::move(data));
+        if (err == nullptr || err == eraft::ErrSnapOutOfDate) {
+          storage_->Compact(index);
+          LOG_INFO("created graph snapshot [{}] at raft index {} term {}",
+                   result.descriptor.snapshot_id(), index, term);
+          persist_promise.set_value(nullptr);
+          return;
+        }
+        persist_promise.set_value(std::move(err));
+      });
+  return persist_future.get();
+}
+
 void RaftDriver::CheckAndCompactLog() {
   auto alive = callback_alive_;
   manager_->raft_service(shard_id_).post([this, alive]() mutable {
@@ -1114,9 +1591,18 @@ void RaftDriver::CheckAndCompactLog() {
     if (applied > first) {
       if (applied - first >= store_config_.keep_logs + 100000) {
         auto compacted = applied - store_config_.keep_logs;
-        storage_->Compact(compacted);
-        LOG_INFO("compact raft log, compacted index:{}, applied index:{}",
-                 compacted, applied);
+        auto [snapshot, snapshot_err] = storage_->Snapshot();
+        if (snapshot_err == nullptr &&
+            snapshot.metadata().index() >= compacted) {
+          storage_->Compact(compacted);
+          LOG_INFO("compact raft log, compacted index:{}, applied index:{}",
+                   compacted, applied);
+        } else {
+          LOG_WARN(
+              "skip raft log compaction at {} because no covering graph "
+              "snapshot is available",
+              compacted);
+        }
       }
     }
   });
@@ -1135,7 +1621,226 @@ void RaftDriver::CheckAndCompactLog() {
   });
 }
 
+void RaftDriver::StartSnapshotTransfer(const raftpb::Message& message) {
+  meta::GraphSnapshotDescriptor descriptor;
+  if (!descriptor.ParseFromString(message.snapshot().data())) {
+    LOG_ERROR("failed to parse graph snapshot descriptor for node {}",
+              message.to());
+    rn_->ReportSnapshot(message.to(), eraft::SnapshotFailure);
+    return;
+  }
+  auto transfer_message = message;
+  meta::RaftNodeInfo target_node;
+  auto target = descriptor.node_infos().nodes().find(message.to());
+  if (target == descriptor.node_infos().nodes().end()) {
+    // A snapshot may have been created just before the membership entry that
+    // introduced this learner was applied. The checkpoint is still valid;
+    // use the current committed endpoint only to route the bulk transfer.
+    std::shared_lock<std::shared_mutex> lock(nodes_mutex_);
+    target = node_infos_.nodes().find(message.to());
+    if (target == node_infos_.nodes().end()) {
+      LOG_ERROR(
+          "snapshot target node {} is missing from descriptor and current "
+          "node infos",
+          message.to());
+      rn_->ReportSnapshot(message.to(), eraft::SnapshotFailure);
+      return;
+    }
+    target_node = target->second;
+    (*descriptor.mutable_node_infos()->mutable_nodes())[message.to()] =
+        target_node;
+    if (!descriptor.SerializeToString(
+            transfer_message.mutable_snapshot()->mutable_data())) {
+      rn_->ReportSnapshot(message.to(), eraft::SnapshotFailure);
+      return;
+    }
+  } else {
+    target_node = target->second;
+  }
+
+  const auto key = SnapshotTransferKey(descriptor.snapshot_id(), message.to());
+  {
+    std::lock_guard<std::mutex> lock(snapshot_mutex_);
+    pending_snapshot_messages_[key] = std::move(transfer_message);
+  }
+  const auto root = std::filesystem::path(store_config_.snapshot_path) /
+                    "outgoing" / descriptor.snapshot_id() / "data";
+  auto alive = callback_alive_;
+  std::lock_guard<std::mutex> snapshot_lock(snapshot_mutex_);
+  snapshot_threads_.emplace_back([this, alive, target = std::move(target_node),
+                                  descriptor = std::move(descriptor),
+                                  root]() mutable {
+    auto err = SendSnapshotFiles(target, node_id_, root, descriptor);
+    if (err == nullptr) {
+      return;
+    }
+    meta::GraphSnapshotStatus status;
+    status.set_snapshot_id(descriptor.snapshot_id());
+    status.set_source_node_id(node_id_);
+    status.set_target_node_id(target.node_id());
+    status.set_success(false);
+    status.set_error(err.String());
+    manager_->raft_service(shard_id_).post(
+        [this, alive, status = std::move(status)]() mutable {
+          if (!alive->load() || stopped_.load()) {
+            return;
+          }
+          HandleSnapshotStatus(std::move(status));
+        });
+  });
+}
+
+void RaftDriver::HandleSnapshotStatus(meta::GraphSnapshotStatus status) {
+  const auto key =
+      SnapshotTransferKey(status.snapshot_id(), status.target_node_id());
+  raftpb::Message message;
+  {
+    std::lock_guard<std::mutex> lock(snapshot_mutex_);
+    auto pending = pending_snapshot_messages_.find(key);
+    if (pending == pending_snapshot_messages_.end()) {
+      LOG_WARN("ignore status for unknown snapshot transfer [{}] to node {}",
+               status.snapshot_id(), status.target_node_id());
+      return;
+    }
+    message = std::move(pending->second);
+    pending_snapshot_messages_.erase(pending);
+  }
+
+  if (!status.success()) {
+    LOG_WARN("snapshot [{}] transfer to node {} failed: {}",
+             status.snapshot_id(), status.target_node_id(), status.error());
+    rn_->ReportSnapshot(status.target_node_id(), eraft::SnapshotFailure);
+    CheckReady();
+    return;
+  }
+
+  std::shared_lock<std::shared_mutex> lock(nodes_mutex_);
+  auto client = node_clients_.find(message.to());
+  if (client == node_clients_.end() || !client->second->connected()) {
+    LOG_WARN(
+        "snapshot [{}] data reached node {}, but its raft transport is "
+        "not connected",
+        status.snapshot_id(), message.to());
+    rn_->ReportSnapshot(message.to(), eraft::SnapshotFailure);
+    CheckReady();
+    return;
+  }
+  client->second->Send(
+      MessageToNetString(local_node_.graph, message, LocalNodeInfo()));
+  rn_->ReportSnapshot(message.to(), eraft::SnapshotFinish);
+  mark_unreachable_.erase(message.to());
+  lock.unlock();
+  CheckReady();
+}
+
+void RaftDriver::SendReadyMessages(
+    const std::vector<raftpb::Message>& messages) {
+  const auto source_node = LocalNodeInfo();
+  std::shared_lock<std::shared_mutex> lock(nodes_mutex_);
+  for (const auto& msg : messages) {
+    if (msg.type() == raftpb::MsgSnap) {
+      lock.unlock();
+      StartSnapshotTransfer(msg);
+      lock.lock();
+      continue;
+    }
+    auto iter = node_clients_.find(msg.to());
+    if (iter != node_clients_.end()) {
+      if (iter->second->connected()) {
+        iter->second->Send(
+            MessageToNetString(local_node_.graph, msg, source_node));
+        mark_unreachable_.erase(msg.to());
+      } else if (!mark_unreachable_.count(msg.to())) {
+        LOG_WARN("report raft node {} is unreachable, {}", msg.to(),
+                 msg.ShortDebugString());
+        rn_->ReportUnreachable(msg.to());
+        mark_unreachable_.insert(msg.to());
+      }
+    } else {
+      LOG_WARN("send msg but peer client id {} not exists", msg.to());
+    }
+  }
+}
+
+meta::RaftNodeInfo RaftDriver::LocalNodeInfo() const {
+  meta::RaftNodeInfo node;
+  node.set_node_id(node_id_);
+  node.set_ip(local_node_.ip);
+  node.set_bolt_port(local_node_.bolt_port);
+  node.set_raft_poft(local_node_.raft_poft);
+  node.set_graph(local_node_.graph);
+  return node;
+}
+
+void RaftDriver::UpdateNodeInfosFromSnapshot(
+    const meta::GraphSnapshotDescriptor& descriptor) {
+  std::unique_lock<std::shared_mutex> lock(nodes_mutex_);
+  node_clients_.clear();
+  node_infos_ = descriptor.node_infos();
+  for (const auto& [id, node] : node_infos_.nodes()) {
+    if (id == node_id_) {
+      continue;
+    }
+    node_clients_[id] = manager_->AcquireClient(node.ip(), node.raft_poft());
+  }
+}
+
+void RaftDriver::ApplyReadySnapshot(eraft::Ready ready) {
+  snapshot_ready_pending_ = true;
+  meta::GraphSnapshotDescriptor descriptor;
+  if (!descriptor.ParseFromString(ready.snapshot_.data())) {
+    LOG_FATAL("failed to parse incoming graph snapshot descriptor");
+  }
+  auto alive = callback_alive_;
+  manager_->apply_service(shard_id_).post(
+      [this, alive, ready = std::move(ready),
+       descriptor = std::move(descriptor)]() mutable {
+        try {
+          if (!alive->load() || stopped_.load()) {
+            return;
+          }
+          if (!apply_snapshot_) {
+            RG_THROW(common::ErrorCode::StorageEngineError,
+                     "graph snapshot apply callback is not configured");
+          }
+          apply_snapshot_(descriptor);
+        } catch (const std::exception& e) {
+          LOG_FATAL("failed to install graph snapshot [{}]: {}",
+                    descriptor.snapshot_id(), e.what());
+        }
+
+        manager_->raft_service(shard_id_).post(
+            [this, alive, ready = std::move(ready),
+             descriptor = std::move(descriptor)]() mutable {
+              if (!alive->load() || stopped_.load()) {
+                return;
+              }
+              rocksdb::WriteBatch batch;
+              auto err = storage_->ApplySnapshot(ready.snapshot_, batch);
+              if (err != nullptr && err != eraft::ErrSnapOutOfDate) {
+                LOG_FATAL("failed to persist incoming raft snapshot: {}",
+                          err.String());
+              }
+              if (!eraft::IsEmptyHardState(ready.hardState_)) {
+                storage_->SetHardState(ready.hardState_, batch);
+              }
+              storage_->WriteBatch(batch);
+              apply_id_.store(ready.snapshot_.metadata().index());
+              UpdateNodeInfosFromSnapshot(descriptor);
+              SendReadyMessages(ready.messages_);
+              rn_->Advance({});
+              snapshot_ready_pending_ = false;
+              if (rn_->HasReady()) {
+                CheckReady();
+              }
+            });
+      });
+}
+
 void RaftDriver::CheckReady() {
+  if (snapshot_ready_pending_) {
+    return;
+  }
   if (!rn_->HasReady()) {
     return;
   }
@@ -1150,6 +1855,10 @@ void RaftDriver::CheckReady() {
           "leadership changed, current leader {}", ready.softState_->lead_)));
     }
   }
+  if (!eraft::IsEmptySnap(ready.snapshot_)) {
+    ApplyReadySnapshot(std::move(ready));
+    return;
+  }
   rocksdb::WriteBatch batch;
   if (!ready.entries_.empty()) {
     storage_->Append(std::move(ready.entries_), batch);
@@ -1157,36 +1866,8 @@ void RaftDriver::CheckReady() {
   if (!eraft::IsEmptyHardState(ready.hardState_)) {
     storage_->SetHardState(ready.hardState_, batch);
   }
-  if (!eraft::IsEmptySnap(ready.snapshot_)) {
-    LOG_FATAL("snapshot should be empty");
-  }
   storage_->WriteBatch(batch);
-  {
-    std::shared_lock<std::shared_mutex> lock(nodes_mutex_);
-    for (const auto& msg : ready.messages_) {
-      auto iter = node_clients_.find(msg.to());
-      if (iter != node_clients_.end()) {
-        if (iter->second->connected()) {
-          iter->second->Send(MessageToNetString(local_node_.graph, msg));
-          if (mark_unreachable_.count(msg.to())) {
-            mark_unreachable_.erase(msg.to());
-          }
-        } else {
-          if (!mark_unreachable_.count(msg.to())) {
-            LOG_WARN("report raft node {} is unreachable, {}", msg.to(),
-                     msg.ShortDebugString());
-            rn_->ReportUnreachable(msg.to());
-            mark_unreachable_.insert(msg.to());
-          }
-        }
-      } else {
-        LOG_WARN("send msg but peer client id {} not exists", msg.to());
-      }
-    }
-  }
-  if (!eraft::IsEmptySnap(ready.snapshot_)) {
-    LOG_FATAL("snapshot should be empty");
-  }
+  SendReadyMessages(ready.messages_);
   if (ready.committedEntries_.empty()) {
     rn_->Advance({});
     if (rn_->HasReady()) {

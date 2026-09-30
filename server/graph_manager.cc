@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <boost/endian/conversion.hpp>
+#include <chrono>
 #include <filesystem>
+#include <thread>
 #include <utility>
 
 #include "common/exception.h"
@@ -105,6 +107,8 @@ raft::RaftLogStoreConfig BuildRaftLogStoreConfig(
     std::shared_ptr<rocksdb::Cache> shared_block_cache) {
   raft::RaftLogStoreConfig store_config;
   store_config.path = path;
+  store_config.snapshot_path =
+      (std::filesystem::path(path).parent_path() / "snapshots").string();
   store_config.shared_block_cache = std::move(shared_block_cache);
   store_config.total_threads = 2;
   store_config.keep_logs = 100000;
@@ -130,6 +134,18 @@ std::vector<eraft::Peer> BuildInitPeers(const meta::RaftNodeInfos &node_infos) {
     init_peers.emplace_back(std::move(peer));
   }
   return init_peers;
+}
+
+bool IsJoinConfiguration(const meta::RaftNodeInfos &node_infos,
+                         const raft::LocalNodeConfig &local_node) {
+  if (node_infos.nodes_size() != 1) {
+    return false;
+  }
+  const auto &node = node_infos.nodes().begin()->second;
+  return node.is_learner() && node.graph() == local_node.graph &&
+         node.ip() == local_node.ip &&
+         node.bolt_port() == local_node.bolt_port &&
+         node.raft_poft() == local_node.raft_poft;
 }
 
 std::uint64_t ProposeRaftConfChange(raft::RaftDriver *driver,
@@ -293,6 +309,11 @@ GraphDB *GraphManager::CreateGraphWithId(
                    .vt_apply_interval_ = options_.vt_apply_interval});
   graph_db->db_meta() = meta;
   if (node_infos) {
+    const auto local_node =
+        BuildLocalNodeConfig(meta.graph_name(), local_node_options_);
+    if (IsJoinConfiguration(*node_infos, local_node)) {
+      graph_db->ApplyRaftConfChange(0, raftpb::ConfState{}, *node_infos);
+    }
     StartGraphRaft(graph_db.get(), node_infos);
   }
   rocksdb::WriteBatch wb;
@@ -321,6 +342,17 @@ void GraphManager::StartGraphRaft(GraphDB *graph_db,
   auto apply_id = graph_db->GetRaftApplyIndex();
   auto conf_state = graph_db->GetRaftConfState();
   auto persisted_node_infos = graph_db->GetRaftNodeInfos();
+  const meta::RaftNodeInfos *startup_node_infos = node_infos;
+  if (startup_node_infos == nullptr && persisted_node_infos.has_value()) {
+    startup_node_infos = &*persisted_node_infos;
+  }
+  const bool join_existing =
+      apply_id == 0 && startup_node_infos != nullptr &&
+      IsJoinConfiguration(*startup_node_infos, local_node);
+  std::optional<meta::RaftNodeInfos> join_node_infos;
+  if (join_existing) {
+    join_node_infos = *startup_node_infos;
+  }
 
   auto apply_request = [graph_db_ptr](uint64_t index,
                                       const meta::RaftRequest &request) {
@@ -331,20 +363,36 @@ void GraphManager::StartGraphRaft(GraphDB *graph_db,
                                           const meta::RaftNodeInfos &infos) {
     graph_db_ptr->ApplyRaftConfChange(index, state, infos);
   };
+  auto create_snapshot = [graph_db_ptr]() {
+    return graph_db_ptr->CreateRaftSnapshot();
+  };
+  auto apply_snapshot =
+      [graph_db_ptr](const meta::GraphSnapshotDescriptor &descriptor) {
+        graph_db_ptr->ApplyRaftSnapshot(descriptor);
+      };
 
   std::unique_ptr<raft::RaftDriver> raft_driver;
-  if (node_infos == nullptr) {
+  if (join_existing) {
     raft_driver = std::make_unique<raft::RaftDriver>(
         std::move(apply_request), std::move(apply_conf_change), apply_id,
         std::move(conf_state), std::move(persisted_node_infos),
-        std::move(local_node), store_config, raft_config);
+        std::move(local_node), std::vector<eraft::Peer>{}, store_config,
+        raft_config, std::move(create_snapshot), std::move(apply_snapshot),
+        true, std::move(join_node_infos));
+  } else if (node_infos == nullptr) {
+    raft_driver = std::make_unique<raft::RaftDriver>(
+        std::move(apply_request), std::move(apply_conf_change), apply_id,
+        std::move(conf_state), std::move(persisted_node_infos),
+        std::move(local_node), store_config, raft_config,
+        std::move(create_snapshot), std::move(apply_snapshot));
   } else {
     auto init_peers = BuildInitPeers(*node_infos);
     raft_driver = std::make_unique<raft::RaftDriver>(
         std::move(apply_request), std::move(apply_conf_change), apply_id,
         std::move(conf_state), std::move(persisted_node_infos),
-        std::move(local_node), std::move(init_peers), store_config,
-        raft_config);
+        std::move(local_node), std::move(init_peers), store_config, raft_config,
+        std::move(create_snapshot), std::move(apply_snapshot), false,
+        std::nullopt);
   }
 
   auto err = raft_driver->Run();
@@ -450,14 +498,50 @@ rg::ManagedRaftChangeResult GraphManager::AddManagedRaftNode(
              node_info.ip(), node_info.raft_poft(), existing_id);
   }
 
+  // A new replica always joins as a learner. This keeps an empty replica out
+  // of quorum until its graph snapshot and subsequent log entries are applied.
   auto conf_change = raftpb::ConfChange();
-  conf_change.set_type(learner ? raftpb::ConfChangeAddLearnerNode
-                               : raftpb::ConfChangeAddNode);
+  conf_change.set_type(raftpb::ConfChangeAddLearnerNode);
   conf_change.set_node_id(node_info.node_id());
   conf_change.set_context(node_info.SerializeAsString());
-  return {.node_id = node_info.node_id(),
-          .raft_index = ProposeRaftConfChange(driver, std::move(conf_change)),
-          .is_learner = learner};
+  auto raft_index = ProposeRaftConfChange(driver, std::move(conf_change));
+  auto snapshot_err = driver->CreateSnapshotAndCompact();
+  if (snapshot_err != nullptr) {
+    RG_THROW(common::ErrorCode::StorageEngineError,
+             "failed to prepare snapshot for raft node [{}]: {}",
+             node_info.node_id(), snapshot_err.String());
+  }
+
+  if (learner) {
+    return {.node_id = node_info.node_id(),
+            .raft_index = raft_index,
+            .is_learner = true};
+  }
+
+  const auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds(30);
+  while (std::chrono::steady_clock::now() < deadline) {
+    const auto status = driver->GetRaftStatus();
+    const auto progress = status.s.progress_.find(node_info.node_id());
+    if (progress != status.s.progress_.end() &&
+        progress->second.match_ >= status.s.basicStatus_.hardState_.commit()) {
+      auto promoted = node_info;
+      promoted.set_is_learner(false);
+      promoted.set_is_leader(false);
+      raftpb::ConfChange promote;
+      promote.set_type(raftpb::ConfChangeAddNode);
+      promote.set_node_id(node_info.node_id());
+      promote.set_context(promoted.SerializeAsString());
+      raft_index = ProposeRaftConfChange(driver, std::move(promote));
+      return {.node_id = node_info.node_id(),
+              .raft_index = raft_index,
+              .is_learner = false};
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  }
+  RG_THROW(common::ErrorCode::StorageEngineError,
+           "raft learner [{}] did not catch up before promotion timeout",
+           node_info.node_id());
 }
 
 rg::ManagedRaftChangeResult GraphManager::PromoteManagedRaftLearnerNode(

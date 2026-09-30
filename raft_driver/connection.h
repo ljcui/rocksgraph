@@ -39,7 +39,7 @@ class RaftConnection : public Connection,
                        public std::enable_shared_from_this<RaftConnection> {
  public:
   RaftConnection(boost::asio::io_service& io_service,
-                 std::function<void(std::string, raftpb::Message)> handler)
+                 std::function<void(meta::RaftMessage)> handler)
       : Connection(io_service), handler_(std::move(handler)) {}
   void Start() override;
 
@@ -53,7 +53,7 @@ class RaftConnection : public Connection,
 
   uint32_t msg_size_ = 0;
   std::vector<char> msg_body_;
-  std::function<void(std::string, raftpb::Message)> handler_;
+  std::function<void(meta::RaftMessage)> handler_;
   const uint8_t magic_code_[4] = {0x17, 0xB0, 0x60, 0x60};
   uint8_t buffer4_[4] = {0};
 };
@@ -138,12 +138,13 @@ inline void RaftConnection::read_msg_body_done(
     Close();
     return;
   }
-  if (!envelope.has_message()) {
-    LOG_WARN("receive raft message without raft payload");
+  if (!envelope.has_message() && !envelope.has_snapshot_chunk() &&
+      !envelope.has_snapshot_status()) {
+    LOG_WARN("receive raft message without a payload");
     Close();
     return;
   }
-  handler_(envelope.graph(), std::move(*envelope.mutable_message()));
+  handler_(std::move(envelope));
   read_msg_size();
 }
 

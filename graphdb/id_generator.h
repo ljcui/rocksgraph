@@ -47,6 +47,7 @@ class IdGenerator {
   void operator=(const IdGenerator&) = delete;
 
   void Bind(rocksdb::TransactionDB* db, GraphCF* graph_cf);
+  void Reset();
   void SetRaftDriver(raft::RaftDriver* raft_driver);
   void LoadToken(MetadataType type, const std::string& name, uint32_t id);
   void ApplyMetaRecord(MetadataType type, const rocksdb::Slice& key_suffix,

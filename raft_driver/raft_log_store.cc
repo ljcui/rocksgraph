@@ -14,6 +14,7 @@ std::string raft_log_key(uint64_t log_id) {
 
 const char raft_hardstate_key[] = "hardState";
 const char raft_confstate_key[] = "confState";
+const char raft_snapshot_key[] = "snapshot";
 
 bool RaftLogStorage::Init() {
   std::string value;
@@ -54,6 +55,14 @@ bool RaftLogStorage::Init() {
   if (!confstate.ParseFromString(value)) {
     LOG_FATAL("failed to parse ConfState from string");
   }
+  s = db_->Get(rocksdb::ReadOptions(), meta_cf_, raft_snapshot_key, &value);
+  if (s.ok()) {
+    if (!snapshot_.ParseFromString(value)) {
+      LOG_FATAL("failed to parse Snapshot from string");
+    }
+  } else if (!s.IsNotFound()) {
+    LOG_FATAL("failed to get snapshot from db: {}", s.ToString());
+  }
   first_entry_index_ = get_first_log_entry().index();
   last_entry_index_ = get_last_log_entry().index();
   conf_state_ = std::move(confstate);
@@ -61,8 +70,8 @@ bool RaftLogStorage::Init() {
   LOG_INFO(
       "read raft state from db, first_index:{}, last_index:{}, hardstate:[{}], "
       "confstate:[{}]",
-      first_entry_index_, last_entry_index_, hardstate.ShortDebugString(),
-      confstate.ShortDebugString());
+      first_entry_index_, last_entry_index_, hard_state_.ShortDebugString(),
+      conf_state_.ShortDebugString());
   return last_entry_index_ > 0;
 }
 
@@ -79,9 +88,12 @@ void RaftLogStorage::Close() {
 }
 
 void RaftLogStorage::Compact(uint64_t index) {
-  if (index >= last_entry_index_) {
+  if (index > last_entry_index_) {
     LOG_FATAL("compact raft log out of range, compact:{}, last:{}", index,
               last_entry_index_);
+  }
+  if (index <= first_entry_index_) {
+    return;
   }
   auto min = raft_log_key(0);
   auto max = raft_log_key(index);
@@ -137,6 +149,76 @@ eraft::Error RaftLogStorage::SetHardState(const raftpb::HardState &hs,
   std::string val;
   hs.SerializeToString(&val);
   batch.Put(meta_cf_, raft_hardstate_key, val);
+  hard_state_ = hs;
+  return nullptr;
+}
+
+eraft::Error RaftLogStorage::CreateSnapshot(uint64_t index, uint64_t term,
+                                            const raftpb::ConfState &conf_state,
+                                            std::string data) {
+  if (index <= snapshot_.metadata().index()) {
+    return eraft::ErrSnapOutOfDate;
+  }
+  if (index < first_entry_index_ || index > last_entry_index_) {
+    return eraft::Error("snapshot index is outside the retained raft log");
+  }
+
+  raftpb::Snapshot snapshot;
+  snapshot.mutable_metadata()->set_index(index);
+  snapshot.mutable_metadata()->set_term(term);
+  *snapshot.mutable_metadata()->mutable_conf_state() = conf_state;
+  snapshot.set_data(std::move(data));
+
+  std::string value;
+  if (!snapshot.SerializeToString(&value)) {
+    return eraft::Error("failed to serialize raft snapshot");
+  }
+  rocksdb::WriteBatch batch;
+  batch.Put(meta_cf_, raft_snapshot_key, value);
+  if (!conf_state.SerializeToString(&value)) {
+    return eraft::Error("failed to serialize snapshot ConfState");
+  }
+  batch.Put(meta_cf_, raft_confstate_key, value);
+  auto status = db_->Write(rocksdb::WriteOptions(), &batch);
+  if (!status.ok()) {
+    return eraft::Error("failed to persist raft snapshot: " +
+                        status.ToString());
+  }
+  snapshot_ = std::move(snapshot);
+  conf_state_ = conf_state;
+  return nullptr;
+}
+
+eraft::Error RaftLogStorage::ApplySnapshot(const raftpb::Snapshot &snapshot,
+                                           rocksdb::WriteBatch &batch) {
+  if (snapshot.metadata().index() <= snapshot_.metadata().index()) {
+    return eraft::ErrSnapOutOfDate;
+  }
+
+  std::string value;
+  if (!snapshot.SerializeToString(&value)) {
+    return eraft::Error("failed to serialize applied raft snapshot");
+  }
+  batch.Put(meta_cf_, raft_snapshot_key, value);
+  if (!snapshot.metadata().conf_state().SerializeToString(&value)) {
+    return eraft::Error("failed to serialize snapshot ConfState");
+  }
+  batch.Put(meta_cf_, raft_confstate_key, value);
+  batch.DeleteRange(log_cf_, raft_log_key(0),
+                    raft_log_key(std::numeric_limits<uint64_t>::max()));
+  raftpb::Entry dummy;
+  dummy.set_index(snapshot.metadata().index());
+  dummy.set_term(snapshot.metadata().term());
+  if (!dummy.SerializeToString(&value)) {
+    return eraft::Error("failed to serialize snapshot log marker");
+  }
+  batch.Put(log_cf_, raft_log_key(dummy.index()), value);
+
+  snapshot_ = snapshot;
+  conf_state_ = snapshot.metadata().conf_state();
+  initial_conf_state_.reset();
+  first_entry_index_ = dummy.index();
+  last_entry_index_ = dummy.index();
   return nullptr;
 }
 
@@ -254,7 +336,9 @@ std::pair<uint64_t, eraft::Error> RaftLogStorage::FirstIndex() {
 }
 
 std::pair<raftpb::Snapshot, eraft::Error> RaftLogStorage::Snapshot() {
-  // disable snapshot
-  return {raftpb::Snapshot{}, eraft::ErrSnapshotTemporarilyUnavailable};
+  if (eraft::IsEmptySnap(snapshot_)) {
+    return {raftpb::Snapshot{}, eraft::ErrSnapshotTemporarilyUnavailable};
+  }
+  return {snapshot_, nullptr};
 }
 }  // namespace raft
