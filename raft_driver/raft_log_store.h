@@ -3,7 +3,6 @@
 #include <rocksdb/db.h>
 
 #include <boost/noncopyable.hpp>
-#include <optional>
 #include <utility>
 
 #include "etcd_raft/rawnode.h"
@@ -11,8 +10,12 @@ namespace raft {
 struct RaftLogStorage : private boost::noncopyable, eraft::Storage {
  public:
   RaftLogStorage(rocksdb::DB* db, rocksdb::ColumnFamilyHandle* log_cf,
-                 rocksdb::ColumnFamilyHandle* meta_cf)
-      : db_(db), log_cf_(log_cf), meta_cf_(meta_cf) {}
+                 rocksdb::ColumnFamilyHandle* meta_cf,
+                 raftpb::ConfState initial_conf_state = {})
+      : db_(db),
+        log_cf_(log_cf),
+        meta_cf_(meta_cf),
+        initial_conf_state_(std::move(initial_conf_state)) {}
 
   std::tuple<raftpb::HardState, raftpb::ConfState, eraft::Error> InitialState()
       override;
@@ -25,9 +28,6 @@ struct RaftLogStorage : private boost::noncopyable, eraft::Storage {
 
   bool Init();
   void Close();
-  void SetInitialConfState(raftpb::ConfState conf_state) {
-    initial_conf_state_ = std::move(conf_state);
-  }
   void Compact(uint64_t index);
   eraft::Error SetHardState(const raftpb::HardState& hs,
                             rocksdb::WriteBatch& batch);
@@ -47,6 +47,6 @@ struct RaftLogStorage : private boost::noncopyable, eraft::Storage {
   uint64_t first_entry_index_ = 0;
   uint64_t last_entry_index_ = 0;
   raftpb::HardState hard_state_;
-  std::optional<raftpb::ConfState> initial_conf_state_;
+  raftpb::ConfState initial_conf_state_;
 };
 }  // namespace raft

@@ -94,7 +94,7 @@ class GraphManager final : public rg::GraphManagement {
   graphdb::GraphDB* CreateGraphWithId(const meta::GraphDBMetaInfo& meta,
                                       const meta::RaftNodeInfos* node_infos);
   void StartGraphRaft(graphdb::GraphDB* graph_db,
-                      const meta::RaftNodeInfos* node_infos);
+                      const meta::RaftNodeInfos* bootstrap_node_infos);
   rocksdb::TransactionDB* meta_db_ = nullptr;
   std::unordered_map<std::string, std::shared_ptr<graphdb::GraphDB>> graphs_;
   std::shared_ptr<rocksdb::Cache> block_cache_;

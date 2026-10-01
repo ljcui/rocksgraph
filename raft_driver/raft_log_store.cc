@@ -159,8 +159,7 @@ eraft::Error RaftLogStorage::Append(std::vector<raftpb::Entry> entries,
 
 std::tuple<raftpb::HardState, raftpb::ConfState, eraft::Error>
 RaftLogStorage::InitialState() {
-  return {hard_state_, initial_conf_state_.value_or(raftpb::ConfState{}),
-          nullptr};
+  return {hard_state_, initial_conf_state_, nullptr};
 }
 
 std::pair<std::vector<raftpb::Entry>, eraft::Error> RaftLogStorage::Entries(

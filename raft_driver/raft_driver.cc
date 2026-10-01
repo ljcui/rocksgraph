@@ -605,12 +605,10 @@ eraft::Error RaftDriver::Run() {
   if (!s.ok()) {
     return eraft::Error("failed to open raft db, error: " + s.ToString());
   }
-  storage_ = std::make_shared<RaftLogStorage>(db.release(), cf_handles[0],
-                                              cf_handles[1]);
+  storage_ = std::make_shared<RaftLogStorage>(
+      db.release(), cf_handles[0], cf_handles[1],
+      initial_conf_state_.value_or(raftpb::ConfState{}));
   auto applied = apply_id_.load();
-  if (initial_conf_state_.has_value()) {
-    storage_->SetInitialConfState(*initial_conf_state_);
-  }
   for (auto& [id, node] : node_infos_.nodes()) {
     auto client = manager_->AcquireClient(node.ip(), node.raft_poft());
     node_clients_.emplace(node.node_id(), std::move(client));

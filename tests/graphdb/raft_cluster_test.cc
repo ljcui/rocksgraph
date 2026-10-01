@@ -634,7 +634,8 @@ struct TestRaftLogStorage {
   std::unique_ptr<raft::RaftLogStorage> storage;
 };
 
-TestRaftLogStorage OpenRaftLogStorage(const std::string& path) {
+TestRaftLogStorage OpenRaftLogStorage(
+    const std::string& path, raftpb::ConfState initial_conf_state = {}) {
   rocksdb::Options options;
   options.create_if_missing = true;
   options.create_missing_column_families = true;
@@ -654,7 +655,7 @@ TestRaftLogStorage OpenRaftLogStorage(const std::string& path) {
     throw std::runtime_error("unexpected raft log storage column families");
   }
   return TestRaftLogStorage(std::make_unique<raft::RaftLogStorage>(
-      db.release(), cf_handles[0], cf_handles[1]));
+      db.release(), cf_handles[0], cf_handles[1], std::move(initial_conf_state)));
 }
 
 raftpb::Entry MakeLogEntry(uint64_t index, uint64_t term,
@@ -2264,11 +2265,10 @@ TEST(RaftLogStorage, persistsHardStateAndEntriesAcrossReopen) {
   fs::remove_all(raft_path);
 
   {
-    auto storage = OpenRaftLogStorage(raft_path);
     raftpb::ConfState conf_state;
     conf_state.add_voters(1);
     conf_state.add_voters(2);
-    storage->SetInitialConfState(conf_state);
+    auto storage = OpenRaftLogStorage(raft_path, conf_state);
     ASSERT_FALSE(storage->Init());
 
     auto initial_state = storage->InitialState();

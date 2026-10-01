@@ -318,8 +318,8 @@ GraphDB *GraphManager::CreateGraphWithId(
   return graphs_[meta.graph_name()].get();
 }
 
-void GraphManager::StartGraphRaft(GraphDB *graph_db,
-                                  const meta::RaftNodeInfos *node_infos) {
+void GraphManager::StartGraphRaft(
+    GraphDB* graph_db, const meta::RaftNodeInfos* bootstrap_node_infos) {
   auto local_node = BuildLocalNodeConfig(graph_db->db_meta().graph_name(),
                                          local_node_options_);
   auto store_config = BuildRaftLogStoreConfig(graph_db->path() + "/raft",
@@ -341,8 +341,8 @@ void GraphManager::StartGraphRaft(GraphDB *graph_db,
   };
 
   std::vector<eraft::Peer> init_peers;
-  if (node_infos != nullptr) {
-    init_peers = BuildInitPeers(*node_infos);
+  if (bootstrap_node_infos != nullptr) {
+    init_peers = BuildInitPeers(*bootstrap_node_infos);
   }
   auto raft_driver = std::make_unique<raft::RaftDriver>(
       std::move(apply_request), std::move(apply_conf_change), apply_id,
