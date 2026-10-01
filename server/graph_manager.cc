@@ -93,6 +93,7 @@ void ApplyRaftRequest(GraphDB *graph_db, uint64_t index,
 raft::LocalNodeConfig BuildLocalNodeConfig(
     const std::string &graph_name, const LocalNodeOptions &local_node_options) {
   raft::LocalNodeConfig local_node;
+  local_node.node_id = local_node_options.raft_node_id;
   local_node.graph = graph_name;
   local_node.ip = local_node_options.host;
   local_node.bolt_port = static_cast<int32_t>(local_node_options.bolt_port);
@@ -158,6 +159,9 @@ GraphManager::~GraphManager() {
 std::unique_ptr<GraphManager> GraphManager::Open(
     const std::string &path, const GraphManagerOptions &graph_manager_options,
     LocalNodeOptions local_node_options) {
+  RG_CHECK(local_node_options.raft_node_id != 0,
+           common::ErrorCode::InvalidParameter,
+           "raft_node_id should be greater than 0");
   LOG_INFO("Open graph manager: {}", path);
   rocksdb::Options options;
   options.create_if_missing = true;
@@ -280,6 +284,10 @@ GraphDB *GraphManager::CreateGraphWithId(
 
   if (node_infos != nullptr) {
     ValidateRaftNodeInfos(*node_infos, meta.graph_name());
+    RG_CHECK(node_infos->nodes().contains(local_node_options_.raft_node_id),
+             common::ErrorCode::InvalidParameter,
+             "configured raft node id {} is not in graph [{}] members",
+             local_node_options_.raft_node_id, meta.graph_name());
   }
 
   uint64_t next = static_cast<uint64_t>(meta.graph_id()) + 1;
@@ -332,20 +340,14 @@ void GraphManager::StartGraphRaft(GraphDB *graph_db,
     graph_db_ptr->ApplyRaftConfChange(index, state, infos);
   };
 
-  std::unique_ptr<raft::RaftDriver> raft_driver;
-  if (node_infos == nullptr) {
-    raft_driver = std::make_unique<raft::RaftDriver>(
-        std::move(apply_request), std::move(apply_conf_change), apply_id,
-        std::move(conf_state), std::move(persisted_node_infos),
-        std::move(local_node), store_config, raft_config);
-  } else {
-    auto init_peers = BuildInitPeers(*node_infos);
-    raft_driver = std::make_unique<raft::RaftDriver>(
-        std::move(apply_request), std::move(apply_conf_change), apply_id,
-        std::move(conf_state), std::move(persisted_node_infos),
-        std::move(local_node), std::move(init_peers), store_config,
-        raft_config);
+  std::vector<eraft::Peer> init_peers;
+  if (node_infos != nullptr) {
+    init_peers = BuildInitPeers(*node_infos);
   }
+  auto raft_driver = std::make_unique<raft::RaftDriver>(
+      std::move(apply_request), std::move(apply_conf_change), apply_id,
+      std::move(conf_state), std::move(persisted_node_infos),
+      std::move(local_node), std::move(init_peers), store_config, raft_config);
 
   auto err = raft_driver->Run();
   if (err != nullptr) {

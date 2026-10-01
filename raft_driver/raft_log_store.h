@@ -47,7 +47,6 @@ struct RaftLogStorage : private boost::noncopyable, eraft::Storage {
   uint64_t first_entry_index_ = 0;
   uint64_t last_entry_index_ = 0;
   raftpb::HardState hard_state_;
-  raftpb::ConfState conf_state_;
   std::optional<raftpb::ConfState> initial_conf_state_;
 };
 }  // namespace raft

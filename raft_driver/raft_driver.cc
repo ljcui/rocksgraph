@@ -28,70 +28,35 @@ std::atomic<size_t>& ConfiguredRaftShardCount() {
   return shard_count;
 }
 
-std::string LocalNodeIdentityString(const LocalNodeConfig& local_node) {
-  return fmt::format("graph={}, ip={}, bolt_port={}, raft_poft={}",
-                     local_node.graph, local_node.ip, local_node.bolt_port,
-                     local_node.raft_poft);
-}
-
-bool MatchLocalNode(const LocalNodeConfig& local_node,
-                    const meta::RaftNodeInfo& node_info) {
-  return node_info.graph() == local_node.graph &&
-         node_info.ip() == local_node.ip &&
-         node_info.bolt_port() == local_node.bolt_port &&
-         node_info.raft_poft() == local_node.raft_poft;
-}
-
-eraft::Error InferNodeIdFromNodeInfos(const LocalNodeConfig& local_node,
-                                      const meta::RaftNodeInfos& node_infos,
-                                      uint64_t* node_id) {
-  std::optional<uint64_t> matched;
-  for (const auto& [id, node_info] : node_infos.nodes()) {
-    if (!MatchLocalNode(local_node, node_info)) {
-      continue;
-    }
-    if (matched.has_value()) {
-      return eraft::Error(
-          fmt::format("multiple raft nodes match local identity [{}]",
-                      LocalNodeIdentityString(local_node)));
-    }
-    matched = id;
-  }
-  if (!matched.has_value()) {
-    return eraft::Error(
-        fmt::format("no raft node matches local identity [{}] in node infos",
-                    LocalNodeIdentityString(local_node)));
-  }
-  *node_id = matched.value();
-  return nullptr;
-}
-
-eraft::Error InferNodeIdFromInitPeers(const LocalNodeConfig& local_node,
-                                      const std::vector<eraft::Peer>& peers,
-                                      uint64_t* node_id) {
-  std::optional<uint64_t> matched;
+eraft::Error ValidateInitPeers(const LocalNodeConfig& local_node,
+                               const std::vector<eraft::Peer>& peers) {
+  std::unordered_set<uint64_t> peer_ids;
   for (const auto& peer : peers) {
     meta::RaftNodeInfo node_info;
     if (!node_info.ParseFromString(peer.context_)) {
       return eraft::Error(fmt::format(
           "failed to parse initial peer context for peer {}", peer.id_));
     }
-    if (!MatchLocalNode(local_node, node_info)) {
-      continue;
+    if (peer.id_ == 0 || peer.id_ != node_info.node_id()) {
+      return eraft::Error(fmt::format(
+          "initial peer {} has inconsistent node id {}", peer.id_,
+          node_info.node_id()));
     }
-    if (matched.has_value()) {
+    if (!peer_ids.insert(peer.id_).second) {
       return eraft::Error(
-          fmt::format("multiple initial peers match local identity [{}]",
-                      LocalNodeIdentityString(local_node)));
+          fmt::format("duplicate initial peer id {}", peer.id_));
     }
-    matched = peer.id_;
+    if (node_info.graph() != local_node.graph) {
+      return eraft::Error(fmt::format(
+          "initial peer {} belongs to graph [{}], expected [{}]", peer.id_,
+          node_info.graph(), local_node.graph));
+    }
   }
-  if (!matched.has_value()) {
-    return eraft::Error(
-        fmt::format("no initial peer matches local identity [{}]",
-                    LocalNodeIdentityString(local_node)));
+  if (!peer_ids.contains(local_node.node_id)) {
+    return eraft::Error(fmt::format(
+        "configured raft node id {} is not in initial peers",
+        local_node.node_id));
   }
-  *node_id = matched.value();
   return nullptr;
 }
 }  // namespace
@@ -545,6 +510,10 @@ bool RaftLogStoreConfig::Check() {
 }
 
 bool LocalNodeConfig::Check() {
+  if (node_id == 0) {
+    LOG_WARN("local node node_id should be greater than 0");
+    return false;
+  }
   if (graph.empty()) {
     LOG_WARN("local node graph is empty.");
     return false;
@@ -569,33 +538,6 @@ RaftDriver::RaftDriver(ApplyRequest apply, ApplyConfChange apply_conf_change,
                        std::optional<raftpb::ConfState> conf_state,
                        std::optional<meta::RaftNodeInfos> node_infos,
                        LocalNodeConfig local_node,
-                       const RaftLogStoreConfig& store_config,
-                       const RaftConfig& config)
-    : manager_(RaftManager::Instance()),
-      callback_alive_(std::make_shared<std::atomic<bool>>(false)),
-      apply_(std::move(apply)),
-      apply_conf_change_(std::move(apply_conf_change)),
-      apply_id_(apply_id),
-      initial_conf_state_(std::move(conf_state)),
-      local_node_(std::move(local_node)),
-      shard_id_(manager_->PickShard(local_node_.graph)),
-      node_id_(0),
-      tick_interval_(config.tick_interval),
-      tick_timer_(manager_->timer_service(shard_id_), tick_interval_),
-      compact_interval_(store_config.gc_interval * 60 * 1000),
-      compact_timer_(manager_->timer_service(shard_id_), compact_interval_),
-      store_config_(store_config),
-      raft_config_(config) {
-  if (node_infos.has_value()) {
-    node_infos_ = std::move(*node_infos);
-  }
-}
-
-RaftDriver::RaftDriver(ApplyRequest apply, ApplyConfChange apply_conf_change,
-                       uint64_t apply_id,
-                       std::optional<raftpb::ConfState> conf_state,
-                       std::optional<meta::RaftNodeInfos> node_infos,
-                       LocalNodeConfig local_node,
                        std::vector<eraft::Peer> init_peers,
                        const RaftLogStoreConfig& store_config,
                        const RaftConfig& config)
@@ -607,7 +549,7 @@ RaftDriver::RaftDriver(ApplyRequest apply, ApplyConfChange apply_conf_change,
       initial_conf_state_(std::move(conf_state)),
       local_node_(std::move(local_node)),
       shard_id_(manager_->PickShard(local_node_.graph)),
-      node_id_(0),
+      node_id_(local_node_.node_id),
       init_peers_(std::move(init_peers)),
       tick_interval_(config.tick_interval),
       tick_timer_(manager_->timer_service(shard_id_), tick_interval_),
@@ -674,25 +616,11 @@ eraft::Error RaftDriver::Run() {
     node_clients_.emplace(node.node_id(), std::move(client));
   }
   LOG_INFO("raft nodes info: {}", node_infos_.ShortDebugString());
-  bool exist = storage_->Init();
+  const bool has_logs = storage_->Init();
+  const bool should_bootstrap = !has_logs && !init_peers_.empty();
   eraft::Error err;
-  if (!node_infos_.nodes().empty()) {
-    err = InferNodeIdFromNodeInfos(local_node_, node_infos_, &node_id_);
-    if (err != nullptr) {
-      return err;
-    }
-  } else {
-    if (init_peers_.empty()) {
-      if (exist) {
-        return eraft::Error(
-            fmt::format("failed to infer local node id from empty node infos "
-                        "for [{}]",
-                        LocalNodeIdentityString(local_node_)));
-      }
-      return eraft::Error(
-          "initial peers are required for first raft bootstrap");
-    }
-    err = InferNodeIdFromInitPeers(local_node_, init_peers_, &node_id_);
+  if (should_bootstrap) {
+    err = ValidateInitPeers(local_node_, init_peers_);
     if (err != nullptr) {
       return err;
     }
@@ -716,17 +644,13 @@ eraft::Error RaftDriver::Run() {
   if (err != nullptr) {
     return err;
   }
-  if (!exist) {
+  if (should_bootstrap) {
     err = rn_->Bootstrap(init_peers_);
     if (err != nullptr) {
       return err;
     }
-    // Persist and apply bootstrap ConfChange entries before Run returns, so a
-    // crash after graph metadata is visible can still recover local node infos.
-    CheckReady();
-    manager_->WaitForApplyService(shard_id_);
-    manager_->WaitForRaftService(shard_id_);
   }
+  CheckReady();
   Tick();
   CheckAndCompactLog();
   return {};
@@ -1187,36 +1111,7 @@ void RaftDriver::CheckReady() {
   if (!eraft::IsEmptySnap(ready.snapshot_)) {
     LOG_FATAL("snapshot should be empty");
   }
-  if (ready.committedEntries_.empty()) {
-    rn_->Advance({});
-    if (rn_->HasReady()) {
-      CheckReady();
-    }
-    return;
-  }
-
-  // Prepare RawNode-owned state on the Raft thread and hand the state-machine
-  // operations to the shard's FIFO apply worker. The handoff is the durability
-  // boundary for Advance: GraphDB apply may still be running, while its durable
-  // applied index and proposal completion continue to advance strictly in log
-  // order on the apply worker.
   auto operations = PrepareApplyOperations(ready.committedEntries_);
-  std::shared_ptr<std::promise<void>> raft_advanced;
-  for (auto& operation : operations) {
-    if (operation.type != ApplyOperation::Type::ConfChange) {
-      continue;
-    }
-    if (!raft_advanced) {
-      raft_advanced = std::make_shared<std::promise<void>>();
-      auto advanced = raft_advanced->get_future().share();
-      for (auto& candidate : operations) {
-        if (candidate.type == ApplyOperation::Type::ConfChange) {
-          candidate.raft_advanced = advanced;
-        }
-      }
-    }
-    break;
-  }
   if (!operations.empty()) {
     manager_->apply_service(shard_id_).post(
         [this, operations = std::move(operations)]() mutable {
@@ -1224,12 +1119,6 @@ void RaftDriver::CheckReady() {
         });
   }
   rn_->Advance({});
-  if (raft_advanced) {
-    raft_advanced->set_value();
-  }
-  if (rn_->HasReady()) {
-    CheckReady();
-  }
 }
 
 std::vector<RaftDriver::ApplyOperation> RaftDriver::PrepareApplyOperations(
@@ -1385,10 +1274,6 @@ void RaftDriver::Apply(const std::vector<ApplyOperation>& operations) {
       apply_id_.store(operation.index);
     }
     if (operation.context) {
-      if (operation.type == ApplyOperation::Type::ConfChange &&
-          operation.raft_advanced.valid()) {
-        operation.raft_advanced.wait();
-      }
       operation.context->SetApplied(
           PromiseContext::ApplyResult{apply_err, operation.index});
       ReleaseProposalAccounting(operation.context);

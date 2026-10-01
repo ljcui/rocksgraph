@@ -250,6 +250,7 @@ struct RaftLogStoreConfig {
 };
 
 struct LocalNodeConfig {
+  uint64_t node_id = 1;
   std::string graph;
   std::string ip;
   int32_t bolt_port = 0;
@@ -263,11 +264,6 @@ class RaftDriver {
   using ApplyConfChange = std::function<void(uint64_t, const raftpb::ConfState&,
                                              const meta::RaftNodeInfos&)>;
 
-  RaftDriver(ApplyRequest apply, ApplyConfChange apply_conf_change,
-             uint64_t apply_id, std::optional<raftpb::ConfState> conf_state,
-             std::optional<meta::RaftNodeInfos> node_infos,
-             LocalNodeConfig local_node, const RaftLogStoreConfig& store_config,
-             const RaftConfig& config);
   RaftDriver(ApplyRequest apply, ApplyConfChange apply_conf_change,
              uint64_t apply_id, std::optional<raftpb::ConfState> conf_state,
              std::optional<meta::RaftNodeInfos> node_infos,
@@ -297,7 +293,6 @@ class RaftDriver {
     raftpb::ConfState conf_state;
     meta::RaftNodeInfos node_infos;
     std::shared_ptr<PromiseContext> context;
-    std::shared_future<void> raft_advanced;
   };
 
   std::shared_ptr<PromiseContext> Propose(uint64_t uuid, raftpb::Message msg,

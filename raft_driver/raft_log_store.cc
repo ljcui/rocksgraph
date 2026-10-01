@@ -13,12 +13,10 @@ std::string raft_log_key(uint64_t log_id) {
 }
 
 const char raft_hardstate_key[] = "hardState";
-const char raft_confstate_key[] = "confState";
 
 bool RaftLogStorage::Init() {
   std::string value;
   raftpb::HardState hardstate;
-  raftpb::ConfState confstate;
   auto s =
       db_->Get(rocksdb::ReadOptions(), meta_cf_, raft_hardstate_key, &value);
   if (s.IsNotFound()) {
@@ -30,9 +28,6 @@ bool RaftLogStorage::Init() {
     // dummy hardstate
     hardstate.SerializeToString(&value);
     batch.Put(meta_cf_, raft_hardstate_key, value);
-    // dummy confstate
-    confstate.SerializeToString(&value);
-    batch.Put(meta_cf_, raft_confstate_key, value);
     s = db_->Write(rocksdb::WriteOptions(), &batch);
     if (!s.ok()) {
       LOG_FATAL("failed to write db in RaftLogStorage init, err: {}",
@@ -47,22 +42,12 @@ bool RaftLogStorage::Init() {
   if (!hardstate.ParseFromString(value)) {
     LOG_FATAL("failed to parse HardState from string");
   }
-  s = db_->Get(rocksdb::ReadOptions(), meta_cf_, raft_confstate_key, &value);
-  if (!s.ok()) {
-    LOG_FATAL("failed to get confstate from db: {}", s.ToString());
-  }
-  if (!confstate.ParseFromString(value)) {
-    LOG_FATAL("failed to parse ConfState from string");
-  }
   first_entry_index_ = get_first_log_entry().index();
   last_entry_index_ = get_last_log_entry().index();
-  conf_state_ = std::move(confstate);
   hard_state_ = std::move(hardstate);
   LOG_INFO(
-      "read raft state from db, first_index:{}, last_index:{}, hardstate:[{}], "
-      "confstate:[{}]",
-      first_entry_index_, last_entry_index_, hardstate.ShortDebugString(),
-      confstate.ShortDebugString());
+      "read raft state from db, first_index:{}, last_index:{}, hardstate:[{}]",
+      first_entry_index_, last_entry_index_, hard_state_.ShortDebugString());
   return last_entry_index_ > 0;
 }
 
@@ -174,10 +159,8 @@ eraft::Error RaftLogStorage::Append(std::vector<raftpb::Entry> entries,
 
 std::tuple<raftpb::HardState, raftpb::ConfState, eraft::Error>
 RaftLogStorage::InitialState() {
-  if (initial_conf_state_.has_value()) {
-    return {hard_state_, *initial_conf_state_, nullptr};
-  }
-  return {hard_state_, conf_state_, nullptr};
+  return {hard_state_, initial_conf_state_.value_or(raftpb::ConfState{}),
+          nullptr};
 }
 
 std::pair<std::vector<raftpb::Entry>, eraft::Error> RaftLogStorage::Entries(

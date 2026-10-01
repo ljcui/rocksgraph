@@ -37,6 +37,7 @@ struct LocalNodeOptions {
   std::string host = "127.0.0.1";
   uint32_t bolt_port = 0;
   uint32_t raft_port = 0;
+  uint64_t raft_node_id = 1;
 };
 
 class GraphManager final : public rg::GraphManagement {
