@@ -38,24 +38,24 @@ eraft::Error ValidateInitPeers(const LocalNodeConfig& local_node,
           "failed to parse initial peer context for peer {}", peer.id_));
     }
     if (peer.id_ == 0 || peer.id_ != node_info.node_id()) {
-      return eraft::Error(fmt::format(
-          "initial peer {} has inconsistent node id {}", peer.id_,
-          node_info.node_id()));
+      return eraft::Error(
+          fmt::format("initial peer {} has inconsistent node id {}", peer.id_,
+                      node_info.node_id()));
     }
     if (!peer_ids.insert(peer.id_).second) {
       return eraft::Error(
           fmt::format("duplicate initial peer id {}", peer.id_));
     }
     if (node_info.graph() != local_node.graph) {
-      return eraft::Error(fmt::format(
-          "initial peer {} belongs to graph [{}], expected [{}]", peer.id_,
-          node_info.graph(), local_node.graph));
+      return eraft::Error(
+          fmt::format("initial peer {} belongs to graph [{}], expected [{}]",
+                      peer.id_, node_info.graph(), local_node.graph));
     }
   }
   if (!peer_ids.contains(local_node.node_id)) {
-    return eraft::Error(fmt::format(
-        "configured raft node id {} is not in initial peers",
-        local_node.node_id));
+    return eraft::Error(
+        fmt::format("configured raft node id {} is not in initial peers",
+                    local_node.node_id));
   }
   return nullptr;
 }
@@ -375,7 +375,9 @@ std::shared_ptr<RaftManager> RaftManager::Instance() {
 
 RaftManager::RaftManager(size_t raft_shard_count)
     : raft_shard_count_(NormalizeRaftShardCount(raft_shard_count)),
-      client_runner_("raft-cli-", 1) {
+      client_runner_("raft-cli-", 1),
+      snapshot_runner_("raft-snap-", 4),
+      snapshot_transfer_runner_("raft-xfer-", 4) {
   shards_.reserve(raft_shard_count_);
   for (size_t i = 0; i < raft_shard_count_; ++i) {
     shards_.emplace_back(std::make_unique<ServiceShard>(i));
@@ -409,6 +411,14 @@ boost::asio::io_service& RaftManager::apply_service(size_t shard_id) {
 
 RaftManager::ServiceShard& RaftManager::Shard(size_t shard_id) {
   return *shards_[shard_id % raft_shard_count_];
+}
+
+boost::asio::io_service& RaftManager::snapshot_service() {
+  return snapshot_runner_.service;
+}
+
+boost::asio::io_service& RaftManager::snapshot_transfer_service() {
+  return snapshot_transfer_runner_.service;
 }
 
 boost::asio::io_service& RaftManager::client_service() {
@@ -540,11 +550,13 @@ RaftDriver::RaftDriver(ApplyRequest apply, ApplyConfChange apply_conf_change,
                        LocalNodeConfig local_node,
                        std::vector<eraft::Peer> init_peers,
                        const RaftLogStoreConfig& store_config,
-                       const RaftConfig& config)
+                       const RaftConfig& config, SnapshotCallbacks snapshots,
+                       meta::RaftNodeInfos seed_nodes)
     : manager_(RaftManager::Instance()),
       callback_alive_(std::make_shared<std::atomic<bool>>(false)),
       apply_(std::move(apply)),
       apply_conf_change_(std::move(apply_conf_change)),
+      snapshots_(std::move(snapshots)),
       apply_id_(apply_id),
       initial_conf_state_(std::move(conf_state)),
       local_node_(std::move(local_node)),
@@ -557,6 +569,7 @@ RaftDriver::RaftDriver(ApplyRequest apply, ApplyConfChange apply_conf_change,
       compact_timer_(manager_->timer_service(shard_id_), compact_interval_),
       store_config_(store_config),
       raft_config_(config) {
+  seed_nodes_ = std::move(seed_nodes);
   if (node_infos.has_value()) {
     node_infos_ = std::move(*node_infos);
   }
@@ -609,12 +622,45 @@ eraft::Error RaftDriver::Run() {
       db.release(), cf_handles[0], cf_handles[1],
       initial_conf_state_.value_or(raftpb::ConfState{}));
   auto applied = apply_id_.load();
+  for (const auto& [id, node] : seed_nodes_.nodes()) {
+    node_clients_.emplace(id,
+                          manager_->AcquireClient(node.ip(), node.raft_poft()));
+  }
   for (auto& [id, node] : node_infos_.nodes()) {
     auto client = manager_->AcquireClient(node.ip(), node.raft_poft());
-    node_clients_.emplace(node.node_id(), std::move(client));
+    node_clients_[node.node_id()] = std::move(client);
   }
   LOG_INFO("raft nodes info: {}", node_infos_.ShortDebugString());
-  const bool has_logs = storage_->Init();
+  bool has_logs = storage_->Init();
+  const auto graph_path =
+      std::filesystem::path(store_config_.path).parent_path();
+  const auto install_path = graph_path / "snapshot_install.pb";
+  if (std::filesystem::exists(install_path)) {
+    meta::SnapshotInstall record;
+    if (!record.ParseFromString(ReadSnapshotRecord(install_path))) {
+      return eraft::Error("invalid snapshot installation record");
+    }
+    if (applied != record.snapshot().metadata().index()) {
+      return eraft::Error("snapshot data and applied index do not match");
+    }
+    rocksdb::WriteBatch batch;
+    storage_->InstallSnapshot(record.snapshot(), batch);
+    storage_->Append({record.entries().begin(), record.entries().end()}, batch);
+    if (!eraft::IsEmptyHardState(record.hard_state()))
+      storage_->SetHardState(record.hard_state(), batch);
+    storage_->WriteBatch(batch, true);
+    RemoveSnapshotRecord(install_path);
+    std::filesystem::remove_all(graph_path / "data.previous");
+    has_logs = true;
+  }
+  if (snapshots_.create || snapshots_.install) {
+    // The journal may have been removed just before a crash interrupted
+    // deletion of the old data directory. The current graph is already open.
+    std::filesystem::remove_all(graph_path / "data.previous");
+    std::filesystem::remove_all(graph_path / "snapshots" / "out");
+    std::filesystem::remove_all(graph_path / "snapshots" / "in");
+  }
+  storage_->SetSnapshotRequest([this]() { RequestSnapshot(); });
   const bool should_bootstrap = !has_logs && !init_peers_.empty();
   eraft::Error err;
   if (should_bootstrap) {
@@ -629,6 +675,7 @@ eraft::Error RaftDriver::Run() {
   eraft::Config config;
   config.id_ = node_id_;
   config.applied_ = applied;
+  config.AsyncStorageWrites_ = true;
   config.electionTick_ = raft_config_.election_tick;
   config.heartbeatTick_ = raft_config_.heartbeat_tick;
   config.storage_ = storage_;
@@ -648,7 +695,24 @@ eraft::Error RaftDriver::Run() {
       return err;
     }
   }
-  CheckReady();
+  std::promise<void> initialized;
+  auto initialized_future = initialized.get_future();
+  manager_->raft_service(shard_id_).post([this, &initialized]() {
+    CheckReady();
+    if (snapshots_.ready) {
+      // A crash may leave the join marker after data has already caught up.
+      // Complete that transition even if no new committed entry arrives.
+      join_target_index_.store(std::get<0>(storage_->InitialState()).commit());
+      QueueApply(
+          [this]() { snapshots_.ready(join_target_index_.load(), node_id_); },
+          [](eraft::Error error) {
+            if (error != nullptr)
+              LOG_FATAL("cannot restore Raft readiness: {}", error.String());
+          });
+    }
+    initialized.set_value();
+  });
+  initialized_future.wait();
   Tick();
   CheckAndCompactLog();
   return {};
@@ -658,7 +722,6 @@ void RaftDriver::Stop() {
   if (stopped_.exchange(true)) {
     return;
   }
-  callback_alive_->store(false);
   RejectPendingPromises(eraft::Error("raft driver stopped"));
   manager_->timer_service(shard_id_).post([this]() {
     boost::system::error_code ec;
@@ -667,8 +730,19 @@ void RaftDriver::Stop() {
   });
   manager_->WaitForTimerService(shard_id_);
   manager_->WaitForRaftService(shard_id_);
+  {
+    std::unique_lock lock(work_mutex_);
+    work_condition_.wait(lock, [this]() { return pending_work_ == 0; });
+  }
+  callback_alive_->store(false);
+  manager_->WaitForRaftService(shard_id_);
   manager_->WaitForApplyService(shard_id_);
   manager_->WaitForRaftService(shard_id_);
+  if (incoming_completion_)
+    incoming_completion_(eraft::Error("raft driver stopped"));
+  incoming_completion_ = {};
+  incoming_snapshot_.reset();
+  outgoing_snapshot_.reset();
   node_clients_.clear();
   if (storage_) {
     storage_->Close();
@@ -681,18 +755,26 @@ void RaftDriver::Step(raftpb::Message msg) {
     return;
   }
   auto alive = callback_alive_;
-  manager_->raft_service(shard_id_).post(
-      [this, alive, msg = std::move(msg)]() mutable {
-        if (!alive->load() || stopped_.load()) {
-          return;
-        }
-        auto err = rn_->Step(std::move(msg));
-        if (err != nullptr) {
-          LOG_WARN("failed to step message, err: {}", err.String());
-          return;
-        }
-        CheckReady();
-      });
+  manager_->raft_service(shard_id_).post([this, alive,
+                                          msg = std::move(msg)]() mutable {
+    if (!alive->load() || stopped_.load()) {
+      return;
+    }
+    if (eraft::IsLocalMsg(msg.type()) || msg.type() == raftpb::MsgSnap) {
+      LOG_WARN("drop local Raft message or snapshot without transferred files");
+      return;
+    }
+    if (join_target_index_.load() == 0 && msg.type() == raftpb::MsgApp &&
+        msg.commit() > 0) {
+      join_target_index_.store(msg.commit());
+    }
+    auto err = rn_->Step(std::move(msg));
+    if (err != nullptr) {
+      LOG_WARN("failed to step message, err: {}", err.String());
+      return;
+    }
+    CheckReady();
+  });
 }
 
 std::shared_ptr<PromiseContext> RaftDriver::Propose(uint64_t uuid,
@@ -998,12 +1080,17 @@ RaftStatus RaftDriver::GetRaftStatus() {
       return;
     }
     rs.s = rn_->GetStatus();
+    rs.snapshot_state = installing_snapshot_ ? "INSTALLING"
+                        : building_snapshot_ ? "BUILDING"
+                        : snapshot_sends_    ? "SENDING"
+                                             : "IDLE";
     rs.first_log = storage_->FirstIndex().first - 1;
     rs.last_log = storage_->LastIndex().first;
     const auto leader = rs.s.basicStatus_.softState_.lead_;
     std::shared_lock<std::shared_mutex> lock(nodes_mutex_);
-    rs.nodes.reserve(node_infos_.nodes_size());
-    for (const auto& [node_id, node_info] : node_infos_.nodes()) {
+    const auto& infos = node_infos_.nodes().empty() ? seed_nodes_ : node_infos_;
+    rs.nodes.reserve(infos.nodes_size());
+    for (const auto& [node_id, node_info] : infos.nodes()) {
       RaftStatus::NodeStatus node_status;
       node_status.node_info = node_info;
       node_status.node_info.set_is_leader(node_id == leader);
@@ -1036,7 +1123,10 @@ void RaftDriver::CheckAndCompactLog() {
     if (applied > first) {
       if (applied - first >= store_config_.keep_logs + 100000) {
         auto compacted = applied - store_config_.keep_logs;
-        storage_->Compact(compacted);
+        ScheduleCompaction(compacted, [](eraft::Error error) {
+          if (error != nullptr)
+            LOG_WARN("raft log compaction deferred: {}", error.String());
+        });
         LOG_INFO("compact raft log, compacted index:{}, applied index:{}",
                  compacted, applied);
       }
@@ -1058,65 +1148,69 @@ void RaftDriver::CheckAndCompactLog() {
 }
 
 void RaftDriver::CheckReady() {
-  if (!rn_->HasReady()) {
-    return;
+  const auto basic = rn_->GetBasicStatus();
+  transport_term_.store(basic.softState_.raftState_ == eraft::StateLeader
+                            ? basic.hardState_.term()
+                            : 0);
+  if (outgoing_snapshot_ && snapshot_sends_ == 0 &&
+      std::chrono::steady_clock::now() - snapshot_created_ >
+          std::chrono::seconds(30)) {
+    outgoing_snapshot_.reset();
+    storage_->PublishSnapshot({});
   }
-  auto ready = rn_->GetReady();
-  if (ready.softState_) {
-    LOG_INFO("soft state change, state:{}, lead:{}",
-             eraft::ToString(ready.softState_->raftState_),
-             ready.softState_->lead_);
-    if (ready.softState_->raftState_ != eraft::StateLeader ||
-        ready.softState_->lead_ != node_id_) {
-      RejectPendingPromises(eraft::Error(fmt::format(
-          "leadership changed, current leader {}", ready.softState_->lead_)));
-    }
-  }
-  rocksdb::WriteBatch batch;
-  if (!ready.entries_.empty()) {
-    storage_->Append(std::move(ready.entries_), batch);
-  }
-  if (!eraft::IsEmptyHardState(ready.hardState_)) {
-    storage_->SetHardState(ready.hardState_, batch);
-  }
-  if (!eraft::IsEmptySnap(ready.snapshot_)) {
-    LOG_FATAL("snapshot should be empty");
-  }
-  storage_->WriteBatch(batch);
-  {
-    std::shared_lock<std::shared_mutex> lock(nodes_mutex_);
-    for (const auto& msg : ready.messages_) {
-      auto iter = node_clients_.find(msg.to());
-      if (iter != node_clients_.end()) {
-        if (iter->second->connected()) {
-          iter->second->Send(MessageToNetString(local_node_.graph, msg));
-          if (mark_unreachable_.count(msg.to())) {
-            mark_unreachable_.erase(msg.to());
-          }
-        } else {
-          if (!mark_unreachable_.count(msg.to())) {
-            LOG_WARN("report raft node {} is unreachable, {}", msg.to(),
-                     msg.ShortDebugString());
-            rn_->ReportUnreachable(msg.to());
-            mark_unreachable_.insert(msg.to());
-          }
+  if (checking_ready_ || installing_snapshot_ || stopped_.load()) return;
+  checking_ready_ = true;
+  while (!installing_snapshot_ && rn_->HasReady()) {
+    auto ready = rn_->GetReady();
+    if (ready.softState_) {
+      LOG_INFO("soft state change, state:{}, lead:{}",
+               eraft::ToString(ready.softState_->raftState_),
+               ready.softState_->lead_);
+      if (ready.softState_->raftState_ != eraft::StateLeader ||
+          ready.softState_->lead_ != node_id_) {
+        RejectPendingPromises(eraft::Error(fmt::format(
+            "leadership changed, current leader {}", ready.softState_->lead_)));
+        if (snapshot_sends_ == 0) {
+          outgoing_snapshot_.reset();
+          storage_->PublishSnapshot({});
         }
+      }
+    }
+    for (auto& message : ready.messages_) {
+      if (message.type() == raftpb::MsgStorageAppend) {
+        if (!eraft::IsEmptySnap(message.snapshot())) {
+          StartSnapshotInstall(std::move(message));
+          continue;
+        }
+        rocksdb::WriteBatch batch;
+        storage_->Append({message.entries().begin(), message.entries().end()},
+                         batch);
+        raftpb::HardState state;
+        state.set_term(message.term());
+        state.set_vote(message.vote());
+        state.set_commit(message.commit());
+        if (!eraft::IsEmptyHardState(state))
+          storage_->SetHardState(state, batch);
+        storage_->WriteBatch(batch, !message.entries().empty() ||
+                                        message.term() != 0 ||
+                                        message.vote() != 0);
+        DeliverResponses(message.responses());
+      } else if (message.type() == raftpb::MsgStorageApply) {
+        auto operations = PrepareApplyOperations(
+            {message.entries().begin(), message.entries().end()});
+        QueueApply(
+            [this, operations = std::move(operations)]() { Apply(operations); },
+            [this, message = std::move(message)](eraft::Error error) {
+              if (error != nullptr)
+                LOG_FATAL("raft apply failed: {}", error.String());
+              DeliverResponses(message.responses());
+            });
       } else {
-        LOG_WARN("send msg but peer client id {} not exists", msg.to());
+        SendMessage(std::move(message));
       }
     }
   }
-  if (!eraft::IsEmptySnap(ready.snapshot_)) {
-    LOG_FATAL("snapshot should be empty");
-  }
-  auto operations = PrepareApplyOperations(ready.committedEntries_);
-  if (!operations.empty()) {
-    manager_->apply_service(shard_id_).post(
-        [this, operations = std::move(operations)]() mutable {
-          Apply(operations);
-        });
-  }
-  rn_->Advance({});
+  checking_ready_ = false;
 }
 
 std::vector<RaftDriver::ApplyOperation> RaftDriver::PrepareApplyOperations(
@@ -1154,6 +1248,9 @@ std::vector<RaftDriver::ApplyOperation> RaftDriver::PrepareApplyOperations(
           LOG_FATAL("failed to parse ConfChange data");
         }
         auto confstate = rn_->ApplyConfChange(raftpb::ConfChangeWrap(cc));
+        // A snapshot generated before this change may not contain a new peer.
+        storage_->PublishSnapshot({});
+        outgoing_snapshot_.reset();
         meta::RaftNodeInfo node_info;
         if (!node_info.ParseFromString(cc.context())) {
           LOG_FATAL("failed to parse raft node info from ConfChange");
@@ -1270,6 +1367,8 @@ void RaftDriver::Apply(const std::vector<ApplyOperation>& operations) {
     }
     if (apply_err == nullptr) {
       apply_id_.store(operation.index);
+      if (snapshots_.ready)
+        snapshots_.ready(join_target_index_.load(), node_id_);
     }
     if (operation.context) {
       operation.context->SetApplied(

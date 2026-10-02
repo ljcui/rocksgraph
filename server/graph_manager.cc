@@ -7,6 +7,7 @@
 
 #include "common/exception.h"
 #include "common/logger.h"
+#include "graphdb/transaction.h"
 #include "runtime/plan_cache.h"
 using namespace graphdb;
 using namespace boost::endian;
@@ -146,6 +147,7 @@ std::uint64_t ProposeRaftConfChange(raft::RaftDriver *driver,
 }  // namespace
 
 GraphManager::~GraphManager() {
+  for (const auto &[name, graph] : graphs_) graph->StopRaft();
   graphs_.clear();
   auto s = meta_db_->Close();
   if (!s.ok()) {
@@ -262,19 +264,41 @@ GraphDB *GraphManager::CreateGraphWithRaft(
   return CreateGraphInternal(name, &node_infos);
 }
 
+GraphDB *GraphManager::CreateGraphForJoin(const std::string &name,
+                                          const meta::RaftNodeInfos &members) {
+  std::lock_guard<std::mutex> guard(create_graph_mutex_);
+  ValidateGraphNameForCreate(name);
+  ValidateRaftNodeInfos(members, name);
+  auto local = members.nodes().find(local_node_options_.raft_node_id);
+  RG_CHECK(local != members.nodes().end(), common::ErrorCode::InvalidParameter,
+           "local node is not in the supplied members");
+  RG_CHECK(local->second.ip() == local_node_options_.host &&
+               local->second.bolt_port() == local_node_options_.bolt_port &&
+               local->second.raft_poft() == local_node_options_.raft_port,
+           common::ErrorCode::InvalidParameter,
+           "local member endpoint does not match server configuration");
+  return CreateGraphInternal(name, &members, true);
+}
+
+void GraphManager::JoinManagedRaftGraph(std::string_view name,
+                                        const meta::RaftNodeInfos &members) {
+  CreateGraphForJoin(std::string(name), members);
+}
+
 GraphDB *GraphManager::CreateGraphInternal(
-    const std::string &name, const meta::RaftNodeInfos *node_infos) {
+    const std::string &name, const meta::RaftNodeInfos *node_infos, bool join) {
   ValidateGraphNameForCreate(name);
   meta::GraphDBMetaInfo meta;
   uint64_t graph_id = next_graph_id_.load();
   meta.set_graph_id(graph_id);
   meta.set_graph_name(name);
   meta.set_enable_raft(node_infos != nullptr);
-  return CreateGraphWithId(meta, node_infos);
+  return CreateGraphWithId(meta, node_infos, join);
 }
 
-GraphDB *GraphManager::CreateGraphWithId(
-    const meta::GraphDBMetaInfo &meta, const meta::RaftNodeInfos *node_infos) {
+GraphDB *GraphManager::CreateGraphWithId(const meta::GraphDBMetaInfo &meta,
+                                         const meta::RaftNodeInfos *node_infos,
+                                         bool join) {
   std::unique_lock<std::shared_mutex> write_lock(graphs_mutex_);
   auto iter = graphs_.find(meta.graph_name());
   if (iter != graphs_.end()) {
@@ -292,6 +316,12 @@ GraphDB *GraphManager::CreateGraphWithId(
 
   uint64_t next = static_cast<uint64_t>(meta.graph_id()) + 1;
   std::string graph_path = path_ + "/graph" + std::to_string(meta.graph_id());
+  if (join) {
+    std::filesystem::create_directories(graph_path);
+    raft::WriteSnapshotRecord(
+        std::filesystem::path(graph_path) / "raft_join.pb",
+        node_infos->SerializeAsString());
+  }
   auto graph_db = GraphDB::Open(
       graph_path, {.block_cache = block_cache_,
                    .assistant_pool = assistant_pool_,
@@ -301,13 +331,15 @@ GraphDB *GraphManager::CreateGraphWithId(
                    .vt_apply_interval_ = options_.vt_apply_interval});
   graph_db->db_meta() = meta;
   if (node_infos) {
-    StartGraphRaft(graph_db.get(), node_infos);
+    StartGraphRaft(graph_db.get(), join ? nullptr : node_infos);
   }
   rocksdb::WriteBatch wb;
   wb.Put(BuildGraphMetaKey(meta.graph_id()), meta.SerializeAsString());
   wb.Put(BuildGraphManagerMetaKey(GraphManagerMetadataType::NextGraphID),
          std::string((const char *)&next, sizeof(next)));
-  auto s = meta_db_->Write({}, {}, &wb);
+  rocksdb::WriteOptions write_options;
+  write_options.sync = join;
+  auto s = meta_db_->Write(write_options, {}, &wb);
   if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
   uint64_t current_next = next_graph_id_.load();
   while (current_next < next &&
@@ -319,7 +351,7 @@ GraphDB *GraphManager::CreateGraphWithId(
 }
 
 void GraphManager::StartGraphRaft(
-    GraphDB* graph_db, const meta::RaftNodeInfos* bootstrap_node_infos) {
+    GraphDB *graph_db, const meta::RaftNodeInfos *bootstrap_node_infos) {
   auto local_node = BuildLocalNodeConfig(graph_db->db_meta().graph_name(),
                                          local_node_options_);
   auto store_config = BuildRaftLogStoreConfig(graph_db->path() + "/raft",
@@ -340,6 +372,25 @@ void GraphManager::StartGraphRaft(
     graph_db_ptr->ApplyRaftConfChange(index, state, infos);
   };
 
+  raft::RaftDriver::SnapshotCallbacks snapshots;
+  snapshots.create = [graph_db](const std::string &directory) {
+    return graph_db->CreateRaftSnapshot(directory);
+  };
+  snapshots.install =
+      [graph_db](const std::shared_ptr<raft::SnapshotFiles> &snapshot) {
+        graph_db->InstallRaftSnapshot(snapshot);
+      };
+  snapshots.sync = [graph_db]() { return graph_db->SyncRaftState(); };
+  snapshots.ready = [graph_db](uint64_t target, uint64_t id) {
+    graph_db->MarkRaftReady(target, id);
+  };
+  meta::RaftNodeInfos seeds;
+  auto join_path = std::filesystem::path(graph_db->path()) / "raft_join.pb";
+  if (std::filesystem::exists(join_path)) {
+    RG_CHECK(seeds.ParseFromString(raft::ReadSnapshotRecord(join_path)),
+             common::ErrorCode::StorageEngineError, "invalid Raft join record");
+    ValidateRaftNodeInfos(seeds, graph_db->db_meta().graph_name());
+  }
   std::vector<eraft::Peer> init_peers;
   if (bootstrap_node_infos != nullptr) {
     init_peers = BuildInitPeers(*bootstrap_node_infos);
@@ -347,7 +398,8 @@ void GraphManager::StartGraphRaft(
   auto raft_driver = std::make_unique<raft::RaftDriver>(
       std::move(apply_request), std::move(apply_conf_change), apply_id,
       std::move(conf_state), std::move(persisted_node_infos),
-      std::move(local_node), std::move(init_peers), store_config, raft_config);
+      std::move(local_node), std::move(init_peers), store_config, raft_config,
+      std::move(snapshots), std::move(seeds));
 
   auto err = raft_driver->Run();
   if (err != nullptr) {
@@ -365,6 +417,9 @@ GraphDB *GraphManager::ClearGraph(const std::string &name) {
   if (iter == graphs_.end()) {
     RG_THROW(common::ErrorCode::NoSuchGraph, "No such graph: {}", name);
   }
+  // Keep the data directory alive while a system procedure clears the graph.
+  // Snapshot installation waits for this lease just like a normal query.
+  auto lease = iter->second->BeginTransaction();
   LOG_INFO("Clear graph:{}, path:{}", name, iter->second->path());
   if (iter->second->db_meta().enable_raft()) {
     iter->second->ClearDataInternal();
@@ -624,6 +679,8 @@ rg::ManagedRaftStatus GraphManager::ManagedGraphRaftStatus(
            "graph [{}] does not enable raft", name);
   const auto status = driver->GetRaftStatus();
   rg::ManagedRaftStatus result;
+  result.snapshot_state = status.snapshot_state;
+  result.graph_ready = graph->RaftReady();
   result.local_node_id = status.s.basicStatus_.id_;
   result.leader_id = status.s.basicStatus_.softState_.lead_;
   result.term = status.s.basicStatus_.hardState_.term();

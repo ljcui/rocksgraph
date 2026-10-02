@@ -22,7 +22,25 @@ uint64_t NextPlanCacheIdentity() {
 
 }  // namespace
 
-GraphDB::GraphDB() : plan_cache_identity_(NextPlanCacheIdentity()) {}
+struct GraphDB::DataLease {
+  explicit DataLease(GraphDB* graph) : graph(graph) {
+    std::lock_guard guard(graph->data_mutex_);
+    RG_CHECK(graph->RaftReady(), common::ErrorCode::GraphNotReady,
+             "graph [{}] is joining or installing a snapshot",
+             graph->db_meta_.graph_name());
+    ++graph->active_transactions_;
+  }
+  ~DataLease() {
+    std::lock_guard guard(graph->data_mutex_);
+    --graph->active_transactions_;
+    graph->data_condition_.notify_all();
+  }
+  GraphDB* graph;
+};
+
+GraphDB::GraphDB()
+    : plan_cache_identity_(NextPlanCacheIdentity()),
+      meta_info_(std::make_unique<MetaInfo>()) {}
 
 std::unique_ptr<GraphDB> GraphDB::Open(const std::string& path,
                                        const GraphDBOptions& graph_options) {
@@ -30,7 +48,18 @@ std::unique_ptr<GraphDB> GraphDB::Open(const std::string& path,
     RG_THROW(common::ErrorCode::InvalidParameter,
              "GraphDB assistant_pool must be provided");
   }
-  std::string rocksdb_path = path + "/data";
+  auto graph_db = std::make_unique<GraphDB>();
+  graph_db->path_ = path;
+  graph_db->options_ = graph_options;
+  graph_db->assistant_pool_ = graph_options.assistant_pool;
+  graph_db->joining_.store(std::filesystem::exists(path + "/raft_join.pb"));
+  graph_db->RecoverSnapshotData();
+  graph_db->OpenData();
+  return graph_db;
+}
+
+void GraphDB::OpenData() {
+  std::string rocksdb_path = path_ + "/data";
   std::filesystem::create_directories(rocksdb_path);
   rocksdb::Options options;
   options.create_if_missing = true;
@@ -38,8 +67,8 @@ std::unique_ptr<GraphDB> GraphDB::Open(const std::string& path,
   options.enable_pipelined_write = true;
   rocksdb::BlockBasedTableOptions table_options;
   table_options.cache_index_and_filter_blocks = true;
-  if (graph_options.block_cache) {
-    table_options.block_cache = graph_options.block_cache;
+  if (options_.block_cache) {
+    table_options.block_cache = options_.block_cache;
   } else {
     table_options.block_cache = rocksdb::NewLRUCache(1 * 1024 * 1024 * 1024L);
   }
@@ -72,48 +101,53 @@ std::unique_ptr<GraphDB> GraphDB::Open(const std::string& path,
   auto s = rocksdb::TransactionDB::Open(options, txn_db_options, rocksdb_path,
                                         cfs, &cf_handles, &db);
   if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
-  auto graph_db = std::make_unique<GraphDB>();
-  graph_db->db_ = db;
-  graph_db->path_ = path;
-  graph_db->graph_cf_.graph_topology = cf_handles[0];
-  graph_db->graph_cf_.vertex_property = cf_handles[1];
-  graph_db->graph_cf_.vertex_vector_property = cf_handles[2];
-  graph_db->graph_cf_.edge_property = cf_handles[3];
-  graph_db->graph_cf_.vertex_label_vid = cf_handles[4];
-  graph_db->graph_cf_.edge_type_eid = cf_handles[5];
-  graph_db->graph_cf_.meta_info = cf_handles[6];
-  graph_db->graph_cf_.index = cf_handles[7];
-  graph_db->graph_cf_.wal = cf_handles[8];
-  graph_db->cf_handles_ = std::move(cf_handles);
-  graph_db->options_ = graph_options;
-  graph_db->assistant_pool_ = graph_options.assistant_pool;
-  graph_db->assistant_strand_ =
-      std::make_unique<boost::asio::io_service::strand>(
-          graph_db->assistant_pool_->Service());
-  graph_db->meta_info_.Init(graph_db->db_, graph_db->assistant_pool_->Service(),
-                            graph_db->assistant_strand_.get(),
-                            &graph_db->graph_cf_,
-                            graph_db->options_.ft_apply_interval_,
-                            graph_db->options_.ft_writer_threads_,
-                            graph_db->options_.ft_writer_memory_budget_,
-                            graph_db->options_.vt_apply_interval_);
-  graph_db->ResumeBackgroundIndexBuilds();
+  db_ = db;
+  graph_cf_.graph_topology = cf_handles[0];
+  graph_cf_.vertex_property = cf_handles[1];
+  graph_cf_.vertex_vector_property = cf_handles[2];
+  graph_cf_.edge_property = cf_handles[3];
+  graph_cf_.vertex_label_vid = cf_handles[4];
+  graph_cf_.edge_type_eid = cf_handles[5];
+  graph_cf_.meta_info = cf_handles[6];
+  graph_cf_.index = cf_handles[7];
+  graph_cf_.wal = cf_handles[8];
+  cf_handles_ = std::move(cf_handles);
+  assistant_strand_ = std::make_unique<boost::asio::io_service::strand>(
+      assistant_pool_->Service());
+  if (std::filesystem::exists(path_ + "/snapshot_install.pb")) {
+    PrepareSnapshotIndexes();
+  }
+  meta_info_->Init(
+      db_, assistant_pool_->Service(), assistant_strand_.get(), &graph_cf_,
+      options_.ft_apply_interval_, options_.ft_writer_threads_,
+      options_.ft_writer_memory_budget_, options_.vt_apply_interval_);
+  ResumeBackgroundIndexBuilds();
 
-  return graph_db;
+  plan_cache_identity_.store(NextPlanCacheIdentity());
+  meta_info_->id_generator().SetRaftDriver(raft_driver_.get());
 }
 
 GraphDB::~GraphDB() {
   LOG_INFO("Close graph: {}", db_meta_.graph_name());
   StopRaft();
-  for (const auto& index : meta_info_.GetVertexVectorIndexes()) {
+  CloseData();
+  if (drop_on_close_) {
+    std::filesystem::remove_all(path_);
+    LOG_INFO("filesystem remove_all {}", path_);
+  }
+}
+
+void GraphDB::CloseData() {
+  if (!db_) return;
+  for (const auto& index : meta_info_->GetVertexVectorIndexes()) {
     index->Stop();
   }
-  for (const auto& index : meta_info_.GetVertexFullTextIndexes()) {
+  for (const auto& index : meta_info_->GetVertexFullTextIndexes()) {
     index->Stop();
   }
   DrainAssistant();
-  meta_info_.ClearVertexVectorIndexes();
-  meta_info_.ClearVertexFullTextIndexes();
+  meta_info_->ClearVertexVectorIndexes();
+  meta_info_->ClearVertexFullTextIndexes();
   for (auto handle : cf_handles_) {
     auto s = db_->DestroyColumnFamilyHandle(handle);
     assert(s.ok());
@@ -124,17 +158,24 @@ GraphDB::~GraphDB() {
   }
   delete db_;
   db_ = nullptr;
-  if (drop_on_close_) {
-    std::filesystem::remove_all(path_);
-    LOG_INFO("filesystem remove_all {}", path_);
-  }
+  cf_handles_.clear();
+  meta_info_ = std::make_unique<MetaInfo>();
 }
 
 std::unique_ptr<Transaction> GraphDB::BeginTransaction() {
+  RG_CHECK(RaftReady(), common::ErrorCode::GraphNotReady,
+           "graph [{}] is joining or installing a snapshot",
+           db_meta_.graph_name());
+  // A transaction may be created and destroyed by different Bolt workers.
+  // Its lease is a thread-neutral count, rather than a thread-owned lock.
+  auto guard = std::make_shared<DataLease>(this);
   rocksdb::WriteOptions wo;
   rocksdb::TransactionOptions to;
-  rocksdb::Transaction* txn = db_->BeginTransaction(wo, to);
-  return std::make_unique<Transaction>(txn, this);
+  std::unique_ptr<rocksdb::Transaction> txn(db_->BeginTransaction(wo, to));
+  auto result =
+      std::make_unique<Transaction>(txn.get(), this, std::move(guard));
+  txn.release();
+  return result;
 }
 
 void GraphDB::ClearData() {
@@ -154,9 +195,9 @@ void GraphDB::ClearDataInternal() {
   std::vector<std::shared_ptr<EdgePropertyIndex>> edge_property_indexes;
   {
     std::lock_guard<std::mutex> ddl_lock(index_ddl_mutex_);
-    ft_indexes = meta_info_.GetVertexFullTextIndexes();
-    vector_indexes = meta_info_.GetVertexVectorIndexes();
-    edge_property_indexes = meta_info_.GetEdgePropertyIndexes();
+    ft_indexes = meta_info_->GetVertexFullTextIndexes();
+    vector_indexes = meta_info_->GetVertexVectorIndexes();
+    edge_property_indexes = meta_info_->GetEdgePropertyIndexes();
   }
 
   for (const auto& index : ft_indexes) {
@@ -176,9 +217,9 @@ void GraphDB::ClearDataInternal() {
                                                   std::defer_lock);
   std::lock(property_commit_lock, fulltext_commit_lock, vector_commit_lock);
 
-  auto property_indexes = meta_info_.GetVertexPropertyIndexes();
-  ft_indexes = meta_info_.GetVertexFullTextIndexes();
-  vector_indexes = meta_info_.GetVertexVectorIndexes();
+  auto property_indexes = meta_info_->GetVertexPropertyIndexes();
+  ft_indexes = meta_info_->GetVertexFullTextIndexes();
+  vector_indexes = meta_info_->GetVertexVectorIndexes();
 
   rocksdb::WriteBatch wb;
   DeleteAllEntriesInColumnFamily(db_, graph_cf_.graph_topology, &wb);

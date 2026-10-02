@@ -4,12 +4,15 @@
 
 #include <atomic>
 #include <boost/asio.hpp>
+#include <chrono>
+#include <condition_variable>
 #include <deque>
 #include <functional>
 #include <future>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <shared_mutex>
 #include <string>
 #include <thread>
@@ -20,9 +23,12 @@
 
 #include "proto/graph_replication.pb.h"
 #include "raft_driver/raft_log_store.h"
+#include "raft_driver/snapshot.h"
 
 namespace raft {
 using namespace boost::asio::ip;
+std::string MessageToNetString(const std::string& graph,
+                               const raftpb::Message& message);
 class NodeClient : public std::enable_shared_from_this<NodeClient> {
  public:
   NodeClient(boost::asio::io_service& io_service, const std::string& ip,
@@ -117,6 +123,8 @@ class RaftManager : public std::enable_shared_from_this<RaftManager> {
   boost::asio::io_service& timer_service(size_t shard_id);
   boost::asio::io_service& apply_service(size_t shard_id);
   boost::asio::io_service& client_service();
+  boost::asio::io_service& snapshot_service();
+  boost::asio::io_service& snapshot_transfer_service();
   std::shared_ptr<TransportClient> AcquireClient(const std::string& ip,
                                                  int port);
   void WaitForRaftService(size_t shard_id);
@@ -155,6 +163,8 @@ class RaftManager : public std::enable_shared_from_this<RaftManager> {
   size_t raft_shard_count_ = 1;
   std::vector<std::unique_ptr<ServiceShard>> shards_;
   ServiceRunner client_runner_;
+  ServiceRunner snapshot_runner_;
+  ServiceRunner snapshot_transfer_runner_;
   std::shared_ptr<RaftTransport> transport_;
 };
 
@@ -218,6 +228,7 @@ struct RaftStatus {
   eraft::Status s;
   uint64_t first_log = 0;
   uint64_t last_log = 0;
+  std::string snapshot_state;
 
   struct NodeStatus {
     meta::RaftNodeInfo node_info;
@@ -263,12 +274,21 @@ class RaftDriver {
   using ApplyRequest = std::function<void(uint64_t, const meta::RaftRequest&)>;
   using ApplyConfChange = std::function<void(uint64_t, const raftpb::ConfState&,
                                              const meta::RaftNodeInfos&)>;
+  struct SnapshotCallbacks {
+    std::function<std::shared_ptr<SnapshotFiles>(const std::string&)> create;
+    std::function<void(const std::shared_ptr<SnapshotFiles>&)> install;
+    std::function<uint64_t()> sync;
+    std::function<void(uint64_t, uint64_t)> ready;
+  };
 
   RaftDriver(ApplyRequest apply, ApplyConfChange apply_conf_change,
              uint64_t apply_id, std::optional<raftpb::ConfState> conf_state,
              std::optional<meta::RaftNodeInfos> node_infos,
              LocalNodeConfig local_node, std::vector<eraft::Peer> init_peers,
-             const RaftLogStoreConfig& store_config, const RaftConfig& config);
+             const RaftLogStoreConfig& store_config, const RaftConfig& config,
+             SnapshotCallbacks snapshots = {},
+             meta::RaftNodeInfos seed_nodes = {});
+  ~RaftDriver() { Stop(); }
   eraft::Error Run();
   void Stop();
   void Step(raftpb::Message msg);
@@ -282,6 +302,10 @@ class RaftDriver {
   eraft::Error TransferLeader(uint64_t node_id);
   meta::RaftNodeInfos GetNodeInfosWithLeader();
   RaftStatus GetRaftStatus();
+  eraft::Error CompactLog(uint64_t index);
+  void ReceiveSnapshot(std::shared_ptr<SnapshotFiles> snapshot,
+                       raftpb::Message message,
+                       std::function<void(eraft::Error)> completion);
 
  private:
   struct ApplyOperation {
@@ -307,6 +331,21 @@ class RaftDriver {
   void Tick();
   void CheckAndCompactLog();
   void CheckReady();
+  void SendMessage(raftpb::Message message);
+  void DeliverResponses(
+      const google::protobuf::RepeatedPtrField<raftpb::Message>& responses);
+  void RequestSnapshot();
+  void ScheduleCompaction(uint64_t index,
+                          std::function<void(eraft::Error)> completion);
+  void StartSnapshotInstall(raftpb::Message append);
+  void QueueApply(std::function<void()> work,
+                  std::function<void(eraft::Error)> completion,
+                  bool snapshot_worker = false);
+  void StartApplyJob();
+  void PostSnapshotWork(std::function<void()> work,
+                        std::function<void(eraft::Error)> completion,
+                        bool transfer = false);
+  void FinishWork();
   std::vector<ApplyOperation> PrepareApplyOperations(
       const std::vector<raftpb::Entry>& entries);
   void Apply(const std::vector<ApplyOperation>& operations);
@@ -315,6 +354,28 @@ class RaftDriver {
   std::shared_ptr<std::atomic<bool>> callback_alive_;
   ApplyRequest apply_;
   ApplyConfChange apply_conf_change_;
+  SnapshotCallbacks snapshots_;
+  struct ApplyJob {
+    std::function<void()> work;
+    std::function<void(eraft::Error)> completion;
+    bool snapshot_worker = false;
+  };
+  std::deque<ApplyJob> apply_jobs_;
+  bool apply_busy_ = false;
+  bool checking_ready_ = false;
+  bool installing_snapshot_ = false;
+  bool building_snapshot_ = false;
+  std::shared_ptr<SnapshotFiles> outgoing_snapshot_;
+  std::shared_ptr<SnapshotFiles> incoming_snapshot_;
+  std::function<void(eraft::Error)> incoming_completion_;
+  size_t snapshot_sends_ = 0;
+  std::multiset<uint64_t> snapshot_pins_;
+  std::chrono::steady_clock::time_point snapshot_created_;
+  std::atomic<uint64_t> transport_term_{0};
+  std::atomic<uint64_t> join_target_index_{0};
+  std::mutex work_mutex_;
+  std::condition_variable work_condition_;
+  size_t pending_work_ = 0;
   std::atomic<uint64_t> apply_id_;
   std::optional<raftpb::ConfState> initial_conf_state_;
   LocalNodeConfig local_node_;
@@ -329,6 +390,7 @@ class RaftDriver {
   std::shared_ptr<RaftLogStorage> storage_;
   std::shared_mutex nodes_mutex_;
   meta::RaftNodeInfos node_infos_;
+  meta::RaftNodeInfos seed_nodes_;
   std::unordered_map<uint64_t, std::shared_ptr<TransportClient>> node_clients_;
   Generator id_generator_;
   std::mutex promise_mutex_;

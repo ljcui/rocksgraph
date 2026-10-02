@@ -49,16 +49,16 @@ void GraphDB::PersistVertexVectorIndexMeta(
 }
 
 void GraphDB::ResumeBackgroundIndexBuilds() {
-  for (const auto& index : meta_info_.GetBuildingVertexPropertyIndexes()) {
+  for (const auto& index : meta_info_->GetBuildingVertexPropertyIndexes()) {
     ScheduleVertexPropertyIndexBuild(index, true);
   }
-  for (const auto& index : meta_info_.GetBuildingEdgePropertyIndexes()) {
+  for (const auto& index : meta_info_->GetBuildingEdgePropertyIndexes()) {
     ScheduleEdgePropertyIndexBuild(index, true);
   }
-  for (const auto& index : meta_info_.GetBuildingVertexFullTextIndexes()) {
+  for (const auto& index : meta_info_->GetBuildingVertexFullTextIndexes()) {
     ScheduleVertexFullTextIndexBuild(index, true);
   }
-  for (const auto& index : meta_info_.GetBuildingVertexVectorIndexes()) {
+  for (const auto& index : meta_info_->GetBuildingVertexVectorIndexes()) {
     ScheduleVertexVectorIndexBuild(index, true);
   }
 }
@@ -124,7 +124,7 @@ void GraphDB::ScheduleVertexPropertyIndexBuild(
         index->SetState(meta::IndexBuildState::READY);
         index->SetBuildError("");
         PersistVertexPropertyIndexMeta(index);
-        meta_info_.PublishVertexPropertyIndex(index->Name());
+        meta_info_->PublishVertexPropertyIndex(index->Name());
       }
     } catch (const std::exception& e) {
       if (snapshot) {
@@ -194,7 +194,7 @@ void GraphDB::ScheduleEdgePropertyIndexBuild(
         index->SetState(meta::IndexBuildState::READY);
         index->SetBuildError("");
         PersistEdgePropertyIndexMeta(index);
-        meta_info_.PublishEdgePropertyIndex(index->Name());
+        meta_info_->PublishEdgePropertyIndex(index->Name());
       }
     } catch (const std::exception& e) {
       if (snapshot) db_->ReleaseSnapshot(snapshot);
@@ -269,7 +269,7 @@ void GraphDB::ScheduleVertexFullTextIndexBuild(
         index->SetState(meta::IndexBuildState::READY);
         index->SetBuildError("");
         PersistVertexFullTextIndexMeta(index);
-        meta_info_.PublishVertexFullTextIndex(index->Name());
+        meta_info_->PublishVertexFullTextIndex(index->Name());
         index->Start();
       }
     } catch (const std::exception& e) {
@@ -349,7 +349,7 @@ void GraphDB::ScheduleVertexVectorIndexBuild(
         index->SetState(meta::IndexBuildState::READY);
         index->SetBuildError("");
         PersistVertexVectorIndexMeta(index);
-        meta_info_.PublishVertexVectorIndex(index->meta().name());
+        meta_info_->PublishVertexVectorIndex(index->meta().name());
         index->Start();
       }
     } catch (const std::exception& e) {

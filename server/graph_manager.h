@@ -56,6 +56,10 @@ class GraphManager final : public rg::GraphManagement {
   graphdb::GraphDB* CreateGraph(const std::string& name);
   graphdb::GraphDB* CreateGraphWithRaft(const std::string& name,
                                         const meta::RaftNodeInfos& node_infos);
+  graphdb::GraphDB* CreateGraphForJoin(const std::string& name,
+                                       const meta::RaftNodeInfos& members);
+  void JoinManagedRaftGraph(std::string_view name,
+                            const meta::RaftNodeInfos& members) override;
   graphdb::GraphDB* ClearGraph(const std::string& name);
   void DeleteGraph(const std::string& name);
   const std::unordered_map<std::string, std::shared_ptr<graphdb::GraphDB>>&
@@ -90,9 +94,11 @@ class GraphManager final : public rg::GraphManagement {
 
  private:
   graphdb::GraphDB* CreateGraphInternal(const std::string& name,
-                                        const meta::RaftNodeInfos* node_infos);
+                                        const meta::RaftNodeInfos* node_infos,
+                                        bool join = false);
   graphdb::GraphDB* CreateGraphWithId(const meta::GraphDBMetaInfo& meta,
-                                      const meta::RaftNodeInfos* node_infos);
+                                      const meta::RaftNodeInfos* node_infos,
+                                      bool join = false);
   void StartGraphRaft(graphdb::GraphDB* graph_db,
                       const meta::RaftNodeInfos* bootstrap_node_infos);
   rocksdb::TransactionDB* meta_db_ = nullptr;

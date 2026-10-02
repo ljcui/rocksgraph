@@ -40,6 +40,7 @@ PROTOBUF_CONSTEXPR RaftMessage::RaftMessage(
     ::_pbi::ConstantInitialized): _impl_{
     /*decltype(_impl_.graph_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
   , /*decltype(_impl_.message_)*/nullptr
+  , /*decltype(_impl_.snapshot_frame_)*/nullptr
   , /*decltype(_impl_._cached_size_)*/{}} {}
 struct RaftMessageDefaultTypeInternal {
   PROTOBUF_CONSTEXPR RaftMessageDefaultTypeInternal()
@@ -93,9 +94,76 @@ struct RaftNodeInfosDefaultTypeInternal {
   };
 };
 PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 RaftNodeInfosDefaultTypeInternal _RaftNodeInfos_default_instance_;
+PROTOBUF_CONSTEXPR SnapshotReference::SnapshotReference(
+    ::_pbi::ConstantInitialized): _impl_{
+    /*decltype(_impl_.id_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
+  , /*decltype(_impl_.node_infos_)*/nullptr
+  , /*decltype(_impl_.version_)*/0u
+  , /*decltype(_impl_._cached_size_)*/{}} {}
+struct SnapshotReferenceDefaultTypeInternal {
+  PROTOBUF_CONSTEXPR SnapshotReferenceDefaultTypeInternal()
+      : _instance(::_pbi::ConstantInitialized{}) {}
+  ~SnapshotReferenceDefaultTypeInternal() {}
+  union {
+    SnapshotReference _instance;
+  };
+};
+PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 SnapshotReferenceDefaultTypeInternal _SnapshotReference_default_instance_;
+PROTOBUF_CONSTEXPR SnapshotFile::SnapshotFile(
+    ::_pbi::ConstantInitialized): _impl_{
+    /*decltype(_impl_.name_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
+  , /*decltype(_impl_.size_)*/uint64_t{0u}
+  , /*decltype(_impl_.checksum_)*/0u
+  , /*decltype(_impl_._cached_size_)*/{}} {}
+struct SnapshotFileDefaultTypeInternal {
+  PROTOBUF_CONSTEXPR SnapshotFileDefaultTypeInternal()
+      : _instance(::_pbi::ConstantInitialized{}) {}
+  ~SnapshotFileDefaultTypeInternal() {}
+  union {
+    SnapshotFile _instance;
+  };
+};
+PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 SnapshotFileDefaultTypeInternal _SnapshotFile_default_instance_;
+PROTOBUF_CONSTEXPR SnapshotFrame::SnapshotFrame(
+    ::_pbi::ConstantInitialized): _impl_{
+    /*decltype(_impl_.transfer_id_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
+  , /*decltype(_impl_.data_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
+  , /*decltype(_impl_.error_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
+  , /*decltype(_impl_.message_)*/nullptr
+  , /*decltype(_impl_.file_)*/nullptr
+  , /*decltype(_impl_.file_count_)*/uint64_t{0u}
+  , /*decltype(_impl_.kind_)*/0
+  , /*decltype(_impl_.checksum_)*/0u
+  , /*decltype(_impl_.offset_)*/uint64_t{0u}
+  , /*decltype(_impl_._cached_size_)*/{}} {}
+struct SnapshotFrameDefaultTypeInternal {
+  PROTOBUF_CONSTEXPR SnapshotFrameDefaultTypeInternal()
+      : _instance(::_pbi::ConstantInitialized{}) {}
+  ~SnapshotFrameDefaultTypeInternal() {}
+  union {
+    SnapshotFrame _instance;
+  };
+};
+PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 SnapshotFrameDefaultTypeInternal _SnapshotFrame_default_instance_;
+PROTOBUF_CONSTEXPR SnapshotInstall::SnapshotInstall(
+    ::_pbi::ConstantInitialized): _impl_{
+    /*decltype(_impl_.entries_)*/{}
+  , /*decltype(_impl_.directory_)*/{&::_pbi::fixed_address_empty_string, ::_pbi::ConstantInitialized{}}
+  , /*decltype(_impl_.snapshot_)*/nullptr
+  , /*decltype(_impl_.hard_state_)*/nullptr
+  , /*decltype(_impl_._cached_size_)*/{}} {}
+struct SnapshotInstallDefaultTypeInternal {
+  PROTOBUF_CONSTEXPR SnapshotInstallDefaultTypeInternal()
+      : _instance(::_pbi::ConstantInitialized{}) {}
+  ~SnapshotInstallDefaultTypeInternal() {}
+  union {
+    SnapshotInstall _instance;
+  };
+};
+PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 SnapshotInstallDefaultTypeInternal _SnapshotInstall_default_instance_;
 }  // namespace meta
-static ::_pb::Metadata file_level_metadata_graph_5freplication_2eproto[5];
-static const ::_pb::EnumDescriptor* file_level_enum_descriptors_graph_5freplication_2eproto[1];
+static ::_pb::Metadata file_level_metadata_graph_5freplication_2eproto[9];
+static const ::_pb::EnumDescriptor* file_level_enum_descriptors_graph_5freplication_2eproto[2];
 static constexpr ::_pb::ServiceDescriptor const** file_level_service_descriptors_graph_5freplication_2eproto = nullptr;
 
 const uint32_t TableStruct_graph_5freplication_2eproto::offsets[] PROTOBUF_SECTION_VARIABLE(protodesc_cold) = {
@@ -116,6 +184,7 @@ const uint32_t TableStruct_graph_5freplication_2eproto::offsets[] PROTOBUF_SECTI
   ~0u,  // no _inlined_string_donated_
   PROTOBUF_FIELD_OFFSET(::meta::RaftMessage, _impl_.graph_),
   PROTOBUF_FIELD_OFFSET(::meta::RaftMessage, _impl_.message_),
+  PROTOBUF_FIELD_OFFSET(::meta::RaftMessage, _impl_.snapshot_frame_),
   ~0u,  // no _has_bits_
   PROTOBUF_FIELD_OFFSET(::meta::RaftNodeInfo, _internal_metadata_),
   ~0u,  // no _extensions_
@@ -146,13 +215,60 @@ const uint32_t TableStruct_graph_5freplication_2eproto::offsets[] PROTOBUF_SECTI
   ~0u,  // no _weak_field_map_
   ~0u,  // no _inlined_string_donated_
   PROTOBUF_FIELD_OFFSET(::meta::RaftNodeInfos, _impl_.nodes_),
+  ~0u,  // no _has_bits_
+  PROTOBUF_FIELD_OFFSET(::meta::SnapshotReference, _internal_metadata_),
+  ~0u,  // no _extensions_
+  ~0u,  // no _oneof_case_
+  ~0u,  // no _weak_field_map_
+  ~0u,  // no _inlined_string_donated_
+  PROTOBUF_FIELD_OFFSET(::meta::SnapshotReference, _impl_.version_),
+  PROTOBUF_FIELD_OFFSET(::meta::SnapshotReference, _impl_.id_),
+  PROTOBUF_FIELD_OFFSET(::meta::SnapshotReference, _impl_.node_infos_),
+  ~0u,  // no _has_bits_
+  PROTOBUF_FIELD_OFFSET(::meta::SnapshotFile, _internal_metadata_),
+  ~0u,  // no _extensions_
+  ~0u,  // no _oneof_case_
+  ~0u,  // no _weak_field_map_
+  ~0u,  // no _inlined_string_donated_
+  PROTOBUF_FIELD_OFFSET(::meta::SnapshotFile, _impl_.name_),
+  PROTOBUF_FIELD_OFFSET(::meta::SnapshotFile, _impl_.size_),
+  PROTOBUF_FIELD_OFFSET(::meta::SnapshotFile, _impl_.checksum_),
+  ~0u,  // no _has_bits_
+  PROTOBUF_FIELD_OFFSET(::meta::SnapshotFrame, _internal_metadata_),
+  ~0u,  // no _extensions_
+  ~0u,  // no _oneof_case_
+  ~0u,  // no _weak_field_map_
+  ~0u,  // no _inlined_string_donated_
+  PROTOBUF_FIELD_OFFSET(::meta::SnapshotFrame, _impl_.kind_),
+  PROTOBUF_FIELD_OFFSET(::meta::SnapshotFrame, _impl_.transfer_id_),
+  PROTOBUF_FIELD_OFFSET(::meta::SnapshotFrame, _impl_.message_),
+  PROTOBUF_FIELD_OFFSET(::meta::SnapshotFrame, _impl_.file_count_),
+  PROTOBUF_FIELD_OFFSET(::meta::SnapshotFrame, _impl_.file_),
+  PROTOBUF_FIELD_OFFSET(::meta::SnapshotFrame, _impl_.offset_),
+  PROTOBUF_FIELD_OFFSET(::meta::SnapshotFrame, _impl_.data_),
+  PROTOBUF_FIELD_OFFSET(::meta::SnapshotFrame, _impl_.checksum_),
+  PROTOBUF_FIELD_OFFSET(::meta::SnapshotFrame, _impl_.error_),
+  ~0u,  // no _has_bits_
+  PROTOBUF_FIELD_OFFSET(::meta::SnapshotInstall, _internal_metadata_),
+  ~0u,  // no _extensions_
+  ~0u,  // no _oneof_case_
+  ~0u,  // no _weak_field_map_
+  ~0u,  // no _inlined_string_donated_
+  PROTOBUF_FIELD_OFFSET(::meta::SnapshotInstall, _impl_.snapshot_),
+  PROTOBUF_FIELD_OFFSET(::meta::SnapshotInstall, _impl_.hard_state_),
+  PROTOBUF_FIELD_OFFSET(::meta::SnapshotInstall, _impl_.entries_),
+  PROTOBUF_FIELD_OFFSET(::meta::SnapshotInstall, _impl_.directory_),
 };
 static const ::_pbi::MigrationSchema schemas[] PROTOBUF_SECTION_VARIABLE(protodesc_cold) = {
   { 0, -1, -1, sizeof(::meta::RaftRequest)},
   { 9, -1, -1, sizeof(::meta::RaftMessage)},
-  { 17, -1, -1, sizeof(::meta::RaftNodeInfo)},
-  { 30, 38, -1, sizeof(::meta::RaftNodeInfos_NodesEntry_DoNotUse)},
-  { 40, -1, -1, sizeof(::meta::RaftNodeInfos)},
+  { 18, -1, -1, sizeof(::meta::RaftNodeInfo)},
+  { 31, 39, -1, sizeof(::meta::RaftNodeInfos_NodesEntry_DoNotUse)},
+  { 41, -1, -1, sizeof(::meta::RaftNodeInfos)},
+  { 48, -1, -1, sizeof(::meta::SnapshotReference)},
+  { 57, -1, -1, sizeof(::meta::SnapshotFile)},
+  { 66, -1, -1, sizeof(::meta::SnapshotFrame)},
+  { 81, -1, -1, sizeof(::meta::SnapshotInstall)},
 };
 
 static const ::_pb::Message* const file_default_instances[] = {
@@ -161,32 +277,53 @@ static const ::_pb::Message* const file_default_instances[] = {
   &::meta::_RaftNodeInfo_default_instance_._instance,
   &::meta::_RaftNodeInfos_NodesEntry_DoNotUse_default_instance_._instance,
   &::meta::_RaftNodeInfos_default_instance_._instance,
+  &::meta::_SnapshotReference_default_instance_._instance,
+  &::meta::_SnapshotFile_default_instance_._instance,
+  &::meta::_SnapshotFrame_default_instance_._instance,
+  &::meta::_SnapshotInstall_default_instance_._instance,
 };
 
 const char descriptor_table_protodef_graph_5freplication_2eproto[] PROTOBUF_SECTION_VARIABLE(protodesc_cold) =
   "\n\027graph_replication.proto\022\004meta\032\nraft.pr"
   "oto\"Q\n\013RaftRequest\022\n\n\002id\030\001 \001(\004\022%\n\007wb_kin"
   "d\030\002 \001(\0162\024.meta.WriteBatchKind\022\017\n\007wb_data"
-  "\030\003 \001(\014\">\n\013RaftMessage\022\r\n\005graph\030\001 \001(\t\022 \n\007"
-  "message\030\002 \001(\0132\017.raftpb.Message\"\207\001\n\014RaftN"
-  "odeInfo\022\017\n\007node_id\030\001 \001(\004\022\n\n\002ip\030\002 \001(\t\022\021\n\t"
-  "bolt_port\030\003 \001(\005\022\021\n\traft_poft\030\004 \001(\005\022\021\n\tis"
-  "_leader\030\005 \001(\010\022\022\n\nis_learner\030\006 \001(\010\022\r\n\005gra"
-  "ph\030\007 \001(\t\"\200\001\n\rRaftNodeInfos\022-\n\005nodes\030\001 \003("
-  "\0132\036.meta.RaftNodeInfos.NodesEntry\032@\n\nNod"
-  "esEntry\022\013\n\003key\030\001 \001(\004\022!\n\005value\030\002 \001(\0132\022.me"
-  "ta.RaftNodeInfo:\0028\001*U\n\016WriteBatchKind\022\013\n"
-  "\007UNKNOWN\020\000\022\017\n\013GRAPH_WRITE\020\001\022\020\n\014ID_GENERA"
-  "TOR\020\002\022\023\n\017GRAPH_INDEX_DDL\020\003b\006proto3"
+  "\030\003 \001(\014\"k\n\013RaftMessage\022\r\n\005graph\030\001 \001(\t\022 \n\007"
+  "message\030\002 \001(\0132\017.raftpb.Message\022+\n\016snapsh"
+  "ot_frame\030\003 \001(\0132\023.meta.SnapshotFrame\"\207\001\n\014"
+  "RaftNodeInfo\022\017\n\007node_id\030\001 \001(\004\022\n\n\002ip\030\002 \001("
+  "\t\022\021\n\tbolt_port\030\003 \001(\005\022\021\n\traft_poft\030\004 \001(\005\022"
+  "\021\n\tis_leader\030\005 \001(\010\022\022\n\nis_learner\030\006 \001(\010\022\r"
+  "\n\005graph\030\007 \001(\t\"\200\001\n\rRaftNodeInfos\022-\n\005nodes"
+  "\030\001 \003(\0132\036.meta.RaftNodeInfos.NodesEntry\032@"
+  "\n\nNodesEntry\022\013\n\003key\030\001 \001(\004\022!\n\005value\030\002 \001(\013"
+  "2\022.meta.RaftNodeInfo:\0028\001\"Y\n\021SnapshotRefe"
+  "rence\022\017\n\007version\030\001 \001(\r\022\n\n\002id\030\002 \001(\t\022\'\n\nno"
+  "de_infos\030\003 \001(\0132\023.meta.RaftNodeInfos\"<\n\014S"
+  "napshotFile\022\014\n\004name\030\001 \001(\t\022\014\n\004size\030\002 \001(\004\022"
+  "\020\n\010checksum\030\003 \001(\r\"\255\002\n\rSnapshotFrame\022&\n\004k"
+  "ind\030\001 \001(\0162\030.meta.SnapshotFrame.Kind\022\023\n\013t"
+  "ransfer_id\030\002 \001(\t\022 \n\007message\030\003 \001(\0132\017.raft"
+  "pb.Message\022\022\n\nfile_count\030\004 \001(\004\022 \n\004file\030\005"
+  " \001(\0132\022.meta.SnapshotFile\022\016\n\006offset\030\006 \001(\004"
+  "\022\014\n\004data\030\007 \001(\014\022\020\n\010checksum\030\010 \001(\r\022\r\n\005erro"
+  "r\030\t \001(\t\"H\n\004Kind\022\013\n\007UNKNOWN\020\000\022\t\n\005BEGIN\020\001\022"
+  "\010\n\004FILE\020\002\022\t\n\005CHUNK\020\003\022\n\n\006FINISH\020\004\022\007\n\003ACK\020"
+  "\005\"\217\001\n\017SnapshotInstall\022\"\n\010snapshot\030\001 \001(\0132"
+  "\020.raftpb.Snapshot\022%\n\nhard_state\030\002 \001(\0132\021."
+  "raftpb.HardState\022\036\n\007entries\030\003 \003(\0132\r.raft"
+  "pb.Entry\022\021\n\tdirectory\030\004 \001(\t*U\n\016WriteBatc"
+  "hKind\022\013\n\007UNKNOWN\020\000\022\017\n\013GRAPH_WRITE\020\001\022\020\n\014I"
+  "D_GENERATOR\020\002\022\023\n\017GRAPH_INDEX_DDL\020\003b\006prot"
+  "o3"
   ;
 static const ::_pbi::DescriptorTable* const descriptor_table_graph_5freplication_2eproto_deps[1] = {
   &::descriptor_table_raft_2eproto,
 };
 static ::_pbi::once_flag descriptor_table_graph_5freplication_2eproto_once;
 const ::_pbi::DescriptorTable descriptor_table_graph_5freplication_2eproto = {
-    false, false, 554, descriptor_table_protodef_graph_5freplication_2eproto,
+    false, false, 1202, descriptor_table_protodef_graph_5freplication_2eproto,
     "graph_replication.proto",
-    &descriptor_table_graph_5freplication_2eproto_once, descriptor_table_graph_5freplication_2eproto_deps, 1, 5,
+    &descriptor_table_graph_5freplication_2eproto_once, descriptor_table_graph_5freplication_2eproto_deps, 1, 9,
     schemas, file_default_instances, TableStruct_graph_5freplication_2eproto::offsets,
     file_level_metadata_graph_5freplication_2eproto, file_level_enum_descriptors_graph_5freplication_2eproto,
     file_level_service_descriptors_graph_5freplication_2eproto,
@@ -198,9 +335,38 @@ PROTOBUF_ATTRIBUTE_WEAK const ::_pbi::DescriptorTable* descriptor_table_graph_5f
 // Force running AddDescriptors() at dynamic initialization time.
 PROTOBUF_ATTRIBUTE_INIT_PRIORITY2 static ::_pbi::AddDescriptorsRunner dynamic_init_dummy_graph_5freplication_2eproto(&descriptor_table_graph_5freplication_2eproto);
 namespace meta {
-const ::PROTOBUF_NAMESPACE_ID::EnumDescriptor* WriteBatchKind_descriptor() {
+const ::PROTOBUF_NAMESPACE_ID::EnumDescriptor* SnapshotFrame_Kind_descriptor() {
   ::PROTOBUF_NAMESPACE_ID::internal::AssignDescriptors(&descriptor_table_graph_5freplication_2eproto);
   return file_level_enum_descriptors_graph_5freplication_2eproto[0];
+}
+bool SnapshotFrame_Kind_IsValid(int value) {
+  switch (value) {
+    case 0:
+    case 1:
+    case 2:
+    case 3:
+    case 4:
+    case 5:
+      return true;
+    default:
+      return false;
+  }
+}
+
+#if (__cplusplus < 201703) && (!defined(_MSC_VER) || (_MSC_VER >= 1900 && _MSC_VER < 1912))
+constexpr SnapshotFrame_Kind SnapshotFrame::UNKNOWN;
+constexpr SnapshotFrame_Kind SnapshotFrame::BEGIN;
+constexpr SnapshotFrame_Kind SnapshotFrame::FILE;
+constexpr SnapshotFrame_Kind SnapshotFrame::CHUNK;
+constexpr SnapshotFrame_Kind SnapshotFrame::FINISH;
+constexpr SnapshotFrame_Kind SnapshotFrame::ACK;
+constexpr SnapshotFrame_Kind SnapshotFrame::Kind_MIN;
+constexpr SnapshotFrame_Kind SnapshotFrame::Kind_MAX;
+constexpr int SnapshotFrame::Kind_ARRAYSIZE;
+#endif  // (__cplusplus < 201703) && (!defined(_MSC_VER) || (_MSC_VER >= 1900 && _MSC_VER < 1912))
+const ::PROTOBUF_NAMESPACE_ID::EnumDescriptor* WriteBatchKind_descriptor() {
+  ::PROTOBUF_NAMESPACE_ID::internal::AssignDescriptors(&descriptor_table_graph_5freplication_2eproto);
+  return file_level_enum_descriptors_graph_5freplication_2eproto[1];
 }
 bool WriteBatchKind_IsValid(int value) {
   switch (value) {
@@ -481,11 +647,16 @@ void RaftRequest::InternalSwap(RaftRequest* other) {
 class RaftMessage::_Internal {
  public:
   static const ::raftpb::Message& message(const RaftMessage* msg);
+  static const ::meta::SnapshotFrame& snapshot_frame(const RaftMessage* msg);
 };
 
 const ::raftpb::Message&
 RaftMessage::_Internal::message(const RaftMessage* msg) {
   return *msg->_impl_.message_;
+}
+const ::meta::SnapshotFrame&
+RaftMessage::_Internal::snapshot_frame(const RaftMessage* msg) {
+  return *msg->_impl_.snapshot_frame_;
 }
 void RaftMessage::clear_message() {
   if (GetArenaForAllocation() == nullptr && _impl_.message_ != nullptr) {
@@ -505,6 +676,7 @@ RaftMessage::RaftMessage(const RaftMessage& from)
   new (&_impl_) Impl_{
       decltype(_impl_.graph_){}
     , decltype(_impl_.message_){nullptr}
+    , decltype(_impl_.snapshot_frame_){nullptr}
     , /*decltype(_impl_._cached_size_)*/{}};
 
   _internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
@@ -519,6 +691,9 @@ RaftMessage::RaftMessage(const RaftMessage& from)
   if (from._internal_has_message()) {
     _this->_impl_.message_ = new ::raftpb::Message(*from._impl_.message_);
   }
+  if (from._internal_has_snapshot_frame()) {
+    _this->_impl_.snapshot_frame_ = new ::meta::SnapshotFrame(*from._impl_.snapshot_frame_);
+  }
   // @@protoc_insertion_point(copy_constructor:meta.RaftMessage)
 }
 
@@ -529,6 +704,7 @@ inline void RaftMessage::SharedCtor(
   new (&_impl_) Impl_{
       decltype(_impl_.graph_){}
     , decltype(_impl_.message_){nullptr}
+    , decltype(_impl_.snapshot_frame_){nullptr}
     , /*decltype(_impl_._cached_size_)*/{}
   };
   _impl_.graph_.InitDefault();
@@ -550,6 +726,7 @@ inline void RaftMessage::SharedDtor() {
   GOOGLE_DCHECK(GetArenaForAllocation() == nullptr);
   _impl_.graph_.Destroy();
   if (this != internal_default_instance()) delete _impl_.message_;
+  if (this != internal_default_instance()) delete _impl_.snapshot_frame_;
 }
 
 void RaftMessage::SetCachedSize(int size) const {
@@ -567,6 +744,10 @@ void RaftMessage::Clear() {
     delete _impl_.message_;
   }
   _impl_.message_ = nullptr;
+  if (GetArenaForAllocation() == nullptr && _impl_.snapshot_frame_ != nullptr) {
+    delete _impl_.snapshot_frame_;
+  }
+  _impl_.snapshot_frame_ = nullptr;
   _internal_metadata_.Clear<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>();
 }
 
@@ -590,6 +771,14 @@ const char* RaftMessage::_InternalParse(const char* ptr, ::_pbi::ParseContext* c
       case 2:
         if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 18)) {
           ptr = ctx->ParseMessage(_internal_mutable_message(), ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // .meta.SnapshotFrame snapshot_frame = 3;
+      case 3:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 26)) {
+          ptr = ctx->ParseMessage(_internal_mutable_snapshot_frame(), ptr);
           CHK_(ptr);
         } else
           goto handle_unusual;
@@ -640,6 +829,13 @@ uint8_t* RaftMessage::_InternalSerialize(
         _Internal::message(this).GetCachedSize(), target, stream);
   }
 
+  // .meta.SnapshotFrame snapshot_frame = 3;
+  if (this->_internal_has_snapshot_frame()) {
+    target = ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::
+      InternalWriteMessage(3, _Internal::snapshot_frame(this),
+        _Internal::snapshot_frame(this).GetCachedSize(), target, stream);
+  }
+
   if (PROTOBUF_PREDICT_FALSE(_internal_metadata_.have_unknown_fields())) {
     target = ::_pbi::WireFormat::InternalSerializeUnknownFieldsToArray(
         _internal_metadata_.unknown_fields<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(::PROTOBUF_NAMESPACE_ID::UnknownFieldSet::default_instance), target, stream);
@@ -670,6 +866,13 @@ size_t RaftMessage::ByteSizeLong() const {
         *_impl_.message_);
   }
 
+  // .meta.SnapshotFrame snapshot_frame = 3;
+  if (this->_internal_has_snapshot_frame()) {
+    total_size += 1 +
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::MessageSize(
+        *_impl_.snapshot_frame_);
+  }
+
   return MaybeComputeUnknownFieldsSize(total_size, &_impl_._cached_size_);
 }
 
@@ -695,6 +898,10 @@ void RaftMessage::MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PR
     _this->_internal_mutable_message()->::raftpb::Message::MergeFrom(
         from._internal_message());
   }
+  if (from._internal_has_snapshot_frame()) {
+    _this->_internal_mutable_snapshot_frame()->::meta::SnapshotFrame::MergeFrom(
+        from._internal_snapshot_frame());
+  }
   _this->_internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
 }
 
@@ -718,7 +925,12 @@ void RaftMessage::InternalSwap(RaftMessage* other) {
       &_impl_.graph_, lhs_arena,
       &other->_impl_.graph_, rhs_arena
   );
-  swap(_impl_.message_, other->_impl_.message_);
+  ::PROTOBUF_NAMESPACE_ID::internal::memswap<
+      PROTOBUF_FIELD_OFFSET(RaftMessage, _impl_.snapshot_frame_)
+      + sizeof(RaftMessage::_impl_.snapshot_frame_)
+      - PROTOBUF_FIELD_OFFSET(RaftMessage, _impl_.message_)>(
+          reinterpret_cast<char*>(&_impl_.message_),
+          reinterpret_cast<char*>(&other->_impl_.message_));
 }
 
 ::PROTOBUF_NAMESPACE_ID::Metadata RaftMessage::GetMetadata() const {
@@ -1332,6 +1544,1382 @@ void RaftNodeInfos::InternalSwap(RaftNodeInfos* other) {
       file_level_metadata_graph_5freplication_2eproto[4]);
 }
 
+// ===================================================================
+
+class SnapshotReference::_Internal {
+ public:
+  static const ::meta::RaftNodeInfos& node_infos(const SnapshotReference* msg);
+};
+
+const ::meta::RaftNodeInfos&
+SnapshotReference::_Internal::node_infos(const SnapshotReference* msg) {
+  return *msg->_impl_.node_infos_;
+}
+SnapshotReference::SnapshotReference(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+                         bool is_message_owned)
+  : ::PROTOBUF_NAMESPACE_ID::Message(arena, is_message_owned) {
+  SharedCtor(arena, is_message_owned);
+  // @@protoc_insertion_point(arena_constructor:meta.SnapshotReference)
+}
+SnapshotReference::SnapshotReference(const SnapshotReference& from)
+  : ::PROTOBUF_NAMESPACE_ID::Message() {
+  SnapshotReference* const _this = this; (void)_this;
+  new (&_impl_) Impl_{
+      decltype(_impl_.id_){}
+    , decltype(_impl_.node_infos_){nullptr}
+    , decltype(_impl_.version_){}
+    , /*decltype(_impl_._cached_size_)*/{}};
+
+  _internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
+  _impl_.id_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.id_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (!from._internal_id().empty()) {
+    _this->_impl_.id_.Set(from._internal_id(), 
+      _this->GetArenaForAllocation());
+  }
+  if (from._internal_has_node_infos()) {
+    _this->_impl_.node_infos_ = new ::meta::RaftNodeInfos(*from._impl_.node_infos_);
+  }
+  _this->_impl_.version_ = from._impl_.version_;
+  // @@protoc_insertion_point(copy_constructor:meta.SnapshotReference)
+}
+
+inline void SnapshotReference::SharedCtor(
+    ::_pb::Arena* arena, bool is_message_owned) {
+  (void)arena;
+  (void)is_message_owned;
+  new (&_impl_) Impl_{
+      decltype(_impl_.id_){}
+    , decltype(_impl_.node_infos_){nullptr}
+    , decltype(_impl_.version_){0u}
+    , /*decltype(_impl_._cached_size_)*/{}
+  };
+  _impl_.id_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.id_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+}
+
+SnapshotReference::~SnapshotReference() {
+  // @@protoc_insertion_point(destructor:meta.SnapshotReference)
+  if (auto *arena = _internal_metadata_.DeleteReturnArena<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>()) {
+  (void)arena;
+    return;
+  }
+  SharedDtor();
+}
+
+inline void SnapshotReference::SharedDtor() {
+  GOOGLE_DCHECK(GetArenaForAllocation() == nullptr);
+  _impl_.id_.Destroy();
+  if (this != internal_default_instance()) delete _impl_.node_infos_;
+}
+
+void SnapshotReference::SetCachedSize(int size) const {
+  _impl_._cached_size_.Set(size);
+}
+
+void SnapshotReference::Clear() {
+// @@protoc_insertion_point(message_clear_start:meta.SnapshotReference)
+  uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void) cached_has_bits;
+
+  _impl_.id_.ClearToEmpty();
+  if (GetArenaForAllocation() == nullptr && _impl_.node_infos_ != nullptr) {
+    delete _impl_.node_infos_;
+  }
+  _impl_.node_infos_ = nullptr;
+  _impl_.version_ = 0u;
+  _internal_metadata_.Clear<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>();
+}
+
+const char* SnapshotReference::_InternalParse(const char* ptr, ::_pbi::ParseContext* ctx) {
+#define CHK_(x) if (PROTOBUF_PREDICT_FALSE(!(x))) goto failure
+  while (!ctx->Done(&ptr)) {
+    uint32_t tag;
+    ptr = ::_pbi::ReadTag(ptr, &tag);
+    switch (tag >> 3) {
+      // uint32 version = 1;
+      case 1:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 8)) {
+          _impl_.version_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint32(&ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // string id = 2;
+      case 2:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 18)) {
+          auto str = _internal_mutable_id();
+          ptr = ::_pbi::InlineGreedyStringParser(str, ptr, ctx);
+          CHK_(ptr);
+          CHK_(::_pbi::VerifyUTF8(str, "meta.SnapshotReference.id"));
+        } else
+          goto handle_unusual;
+        continue;
+      // .meta.RaftNodeInfos node_infos = 3;
+      case 3:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 26)) {
+          ptr = ctx->ParseMessage(_internal_mutable_node_infos(), ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      default:
+        goto handle_unusual;
+    }  // switch
+  handle_unusual:
+    if ((tag == 0) || ((tag & 7) == 4)) {
+      CHK_(ptr);
+      ctx->SetLastTag(tag);
+      goto message_done;
+    }
+    ptr = UnknownFieldParse(
+        tag,
+        _internal_metadata_.mutable_unknown_fields<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(),
+        ptr, ctx);
+    CHK_(ptr != nullptr);
+  }  // while
+message_done:
+  return ptr;
+failure:
+  ptr = nullptr;
+  goto message_done;
+#undef CHK_
+}
+
+uint8_t* SnapshotReference::_InternalSerialize(
+    uint8_t* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const {
+  // @@protoc_insertion_point(serialize_to_array_start:meta.SnapshotReference)
+  uint32_t cached_has_bits = 0;
+  (void) cached_has_bits;
+
+  // uint32 version = 1;
+  if (this->_internal_version() != 0) {
+    target = stream->EnsureSpace(target);
+    target = ::_pbi::WireFormatLite::WriteUInt32ToArray(1, this->_internal_version(), target);
+  }
+
+  // string id = 2;
+  if (!this->_internal_id().empty()) {
+    ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::VerifyUtf8String(
+      this->_internal_id().data(), static_cast<int>(this->_internal_id().length()),
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::SERIALIZE,
+      "meta.SnapshotReference.id");
+    target = stream->WriteStringMaybeAliased(
+        2, this->_internal_id(), target);
+  }
+
+  // .meta.RaftNodeInfos node_infos = 3;
+  if (this->_internal_has_node_infos()) {
+    target = ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::
+      InternalWriteMessage(3, _Internal::node_infos(this),
+        _Internal::node_infos(this).GetCachedSize(), target, stream);
+  }
+
+  if (PROTOBUF_PREDICT_FALSE(_internal_metadata_.have_unknown_fields())) {
+    target = ::_pbi::WireFormat::InternalSerializeUnknownFieldsToArray(
+        _internal_metadata_.unknown_fields<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(::PROTOBUF_NAMESPACE_ID::UnknownFieldSet::default_instance), target, stream);
+  }
+  // @@protoc_insertion_point(serialize_to_array_end:meta.SnapshotReference)
+  return target;
+}
+
+size_t SnapshotReference::ByteSizeLong() const {
+// @@protoc_insertion_point(message_byte_size_start:meta.SnapshotReference)
+  size_t total_size = 0;
+
+  uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void) cached_has_bits;
+
+  // string id = 2;
+  if (!this->_internal_id().empty()) {
+    total_size += 1 +
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::StringSize(
+        this->_internal_id());
+  }
+
+  // .meta.RaftNodeInfos node_infos = 3;
+  if (this->_internal_has_node_infos()) {
+    total_size += 1 +
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::MessageSize(
+        *_impl_.node_infos_);
+  }
+
+  // uint32 version = 1;
+  if (this->_internal_version() != 0) {
+    total_size += ::_pbi::WireFormatLite::UInt32SizePlusOne(this->_internal_version());
+  }
+
+  return MaybeComputeUnknownFieldsSize(total_size, &_impl_._cached_size_);
+}
+
+const ::PROTOBUF_NAMESPACE_ID::Message::ClassData SnapshotReference::_class_data_ = {
+    ::PROTOBUF_NAMESPACE_ID::Message::CopyWithSourceCheck,
+    SnapshotReference::MergeImpl
+};
+const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*SnapshotReference::GetClassData() const { return &_class_data_; }
+
+
+void SnapshotReference::MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg) {
+  auto* const _this = static_cast<SnapshotReference*>(&to_msg);
+  auto& from = static_cast<const SnapshotReference&>(from_msg);
+  // @@protoc_insertion_point(class_specific_merge_from_start:meta.SnapshotReference)
+  GOOGLE_DCHECK_NE(&from, _this);
+  uint32_t cached_has_bits = 0;
+  (void) cached_has_bits;
+
+  if (!from._internal_id().empty()) {
+    _this->_internal_set_id(from._internal_id());
+  }
+  if (from._internal_has_node_infos()) {
+    _this->_internal_mutable_node_infos()->::meta::RaftNodeInfos::MergeFrom(
+        from._internal_node_infos());
+  }
+  if (from._internal_version() != 0) {
+    _this->_internal_set_version(from._internal_version());
+  }
+  _this->_internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
+}
+
+void SnapshotReference::CopyFrom(const SnapshotReference& from) {
+// @@protoc_insertion_point(class_specific_copy_from_start:meta.SnapshotReference)
+  if (&from == this) return;
+  Clear();
+  MergeFrom(from);
+}
+
+bool SnapshotReference::IsInitialized() const {
+  return true;
+}
+
+void SnapshotReference::InternalSwap(SnapshotReference* other) {
+  using std::swap;
+  auto* lhs_arena = GetArenaForAllocation();
+  auto* rhs_arena = other->GetArenaForAllocation();
+  _internal_metadata_.InternalSwap(&other->_internal_metadata_);
+  ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr::InternalSwap(
+      &_impl_.id_, lhs_arena,
+      &other->_impl_.id_, rhs_arena
+  );
+  ::PROTOBUF_NAMESPACE_ID::internal::memswap<
+      PROTOBUF_FIELD_OFFSET(SnapshotReference, _impl_.version_)
+      + sizeof(SnapshotReference::_impl_.version_)
+      - PROTOBUF_FIELD_OFFSET(SnapshotReference, _impl_.node_infos_)>(
+          reinterpret_cast<char*>(&_impl_.node_infos_),
+          reinterpret_cast<char*>(&other->_impl_.node_infos_));
+}
+
+::PROTOBUF_NAMESPACE_ID::Metadata SnapshotReference::GetMetadata() const {
+  return ::_pbi::AssignDescriptors(
+      &descriptor_table_graph_5freplication_2eproto_getter, &descriptor_table_graph_5freplication_2eproto_once,
+      file_level_metadata_graph_5freplication_2eproto[5]);
+}
+
+// ===================================================================
+
+class SnapshotFile::_Internal {
+ public:
+};
+
+SnapshotFile::SnapshotFile(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+                         bool is_message_owned)
+  : ::PROTOBUF_NAMESPACE_ID::Message(arena, is_message_owned) {
+  SharedCtor(arena, is_message_owned);
+  // @@protoc_insertion_point(arena_constructor:meta.SnapshotFile)
+}
+SnapshotFile::SnapshotFile(const SnapshotFile& from)
+  : ::PROTOBUF_NAMESPACE_ID::Message() {
+  SnapshotFile* const _this = this; (void)_this;
+  new (&_impl_) Impl_{
+      decltype(_impl_.name_){}
+    , decltype(_impl_.size_){}
+    , decltype(_impl_.checksum_){}
+    , /*decltype(_impl_._cached_size_)*/{}};
+
+  _internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
+  _impl_.name_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.name_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (!from._internal_name().empty()) {
+    _this->_impl_.name_.Set(from._internal_name(), 
+      _this->GetArenaForAllocation());
+  }
+  ::memcpy(&_impl_.size_, &from._impl_.size_,
+    static_cast<size_t>(reinterpret_cast<char*>(&_impl_.checksum_) -
+    reinterpret_cast<char*>(&_impl_.size_)) + sizeof(_impl_.checksum_));
+  // @@protoc_insertion_point(copy_constructor:meta.SnapshotFile)
+}
+
+inline void SnapshotFile::SharedCtor(
+    ::_pb::Arena* arena, bool is_message_owned) {
+  (void)arena;
+  (void)is_message_owned;
+  new (&_impl_) Impl_{
+      decltype(_impl_.name_){}
+    , decltype(_impl_.size_){uint64_t{0u}}
+    , decltype(_impl_.checksum_){0u}
+    , /*decltype(_impl_._cached_size_)*/{}
+  };
+  _impl_.name_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.name_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+}
+
+SnapshotFile::~SnapshotFile() {
+  // @@protoc_insertion_point(destructor:meta.SnapshotFile)
+  if (auto *arena = _internal_metadata_.DeleteReturnArena<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>()) {
+  (void)arena;
+    return;
+  }
+  SharedDtor();
+}
+
+inline void SnapshotFile::SharedDtor() {
+  GOOGLE_DCHECK(GetArenaForAllocation() == nullptr);
+  _impl_.name_.Destroy();
+}
+
+void SnapshotFile::SetCachedSize(int size) const {
+  _impl_._cached_size_.Set(size);
+}
+
+void SnapshotFile::Clear() {
+// @@protoc_insertion_point(message_clear_start:meta.SnapshotFile)
+  uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void) cached_has_bits;
+
+  _impl_.name_.ClearToEmpty();
+  ::memset(&_impl_.size_, 0, static_cast<size_t>(
+      reinterpret_cast<char*>(&_impl_.checksum_) -
+      reinterpret_cast<char*>(&_impl_.size_)) + sizeof(_impl_.checksum_));
+  _internal_metadata_.Clear<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>();
+}
+
+const char* SnapshotFile::_InternalParse(const char* ptr, ::_pbi::ParseContext* ctx) {
+#define CHK_(x) if (PROTOBUF_PREDICT_FALSE(!(x))) goto failure
+  while (!ctx->Done(&ptr)) {
+    uint32_t tag;
+    ptr = ::_pbi::ReadTag(ptr, &tag);
+    switch (tag >> 3) {
+      // string name = 1;
+      case 1:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 10)) {
+          auto str = _internal_mutable_name();
+          ptr = ::_pbi::InlineGreedyStringParser(str, ptr, ctx);
+          CHK_(ptr);
+          CHK_(::_pbi::VerifyUTF8(str, "meta.SnapshotFile.name"));
+        } else
+          goto handle_unusual;
+        continue;
+      // uint64 size = 2;
+      case 2:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 16)) {
+          _impl_.size_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint64(&ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // uint32 checksum = 3;
+      case 3:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 24)) {
+          _impl_.checksum_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint32(&ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      default:
+        goto handle_unusual;
+    }  // switch
+  handle_unusual:
+    if ((tag == 0) || ((tag & 7) == 4)) {
+      CHK_(ptr);
+      ctx->SetLastTag(tag);
+      goto message_done;
+    }
+    ptr = UnknownFieldParse(
+        tag,
+        _internal_metadata_.mutable_unknown_fields<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(),
+        ptr, ctx);
+    CHK_(ptr != nullptr);
+  }  // while
+message_done:
+  return ptr;
+failure:
+  ptr = nullptr;
+  goto message_done;
+#undef CHK_
+}
+
+uint8_t* SnapshotFile::_InternalSerialize(
+    uint8_t* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const {
+  // @@protoc_insertion_point(serialize_to_array_start:meta.SnapshotFile)
+  uint32_t cached_has_bits = 0;
+  (void) cached_has_bits;
+
+  // string name = 1;
+  if (!this->_internal_name().empty()) {
+    ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::VerifyUtf8String(
+      this->_internal_name().data(), static_cast<int>(this->_internal_name().length()),
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::SERIALIZE,
+      "meta.SnapshotFile.name");
+    target = stream->WriteStringMaybeAliased(
+        1, this->_internal_name(), target);
+  }
+
+  // uint64 size = 2;
+  if (this->_internal_size() != 0) {
+    target = stream->EnsureSpace(target);
+    target = ::_pbi::WireFormatLite::WriteUInt64ToArray(2, this->_internal_size(), target);
+  }
+
+  // uint32 checksum = 3;
+  if (this->_internal_checksum() != 0) {
+    target = stream->EnsureSpace(target);
+    target = ::_pbi::WireFormatLite::WriteUInt32ToArray(3, this->_internal_checksum(), target);
+  }
+
+  if (PROTOBUF_PREDICT_FALSE(_internal_metadata_.have_unknown_fields())) {
+    target = ::_pbi::WireFormat::InternalSerializeUnknownFieldsToArray(
+        _internal_metadata_.unknown_fields<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(::PROTOBUF_NAMESPACE_ID::UnknownFieldSet::default_instance), target, stream);
+  }
+  // @@protoc_insertion_point(serialize_to_array_end:meta.SnapshotFile)
+  return target;
+}
+
+size_t SnapshotFile::ByteSizeLong() const {
+// @@protoc_insertion_point(message_byte_size_start:meta.SnapshotFile)
+  size_t total_size = 0;
+
+  uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void) cached_has_bits;
+
+  // string name = 1;
+  if (!this->_internal_name().empty()) {
+    total_size += 1 +
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::StringSize(
+        this->_internal_name());
+  }
+
+  // uint64 size = 2;
+  if (this->_internal_size() != 0) {
+    total_size += ::_pbi::WireFormatLite::UInt64SizePlusOne(this->_internal_size());
+  }
+
+  // uint32 checksum = 3;
+  if (this->_internal_checksum() != 0) {
+    total_size += ::_pbi::WireFormatLite::UInt32SizePlusOne(this->_internal_checksum());
+  }
+
+  return MaybeComputeUnknownFieldsSize(total_size, &_impl_._cached_size_);
+}
+
+const ::PROTOBUF_NAMESPACE_ID::Message::ClassData SnapshotFile::_class_data_ = {
+    ::PROTOBUF_NAMESPACE_ID::Message::CopyWithSourceCheck,
+    SnapshotFile::MergeImpl
+};
+const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*SnapshotFile::GetClassData() const { return &_class_data_; }
+
+
+void SnapshotFile::MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg) {
+  auto* const _this = static_cast<SnapshotFile*>(&to_msg);
+  auto& from = static_cast<const SnapshotFile&>(from_msg);
+  // @@protoc_insertion_point(class_specific_merge_from_start:meta.SnapshotFile)
+  GOOGLE_DCHECK_NE(&from, _this);
+  uint32_t cached_has_bits = 0;
+  (void) cached_has_bits;
+
+  if (!from._internal_name().empty()) {
+    _this->_internal_set_name(from._internal_name());
+  }
+  if (from._internal_size() != 0) {
+    _this->_internal_set_size(from._internal_size());
+  }
+  if (from._internal_checksum() != 0) {
+    _this->_internal_set_checksum(from._internal_checksum());
+  }
+  _this->_internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
+}
+
+void SnapshotFile::CopyFrom(const SnapshotFile& from) {
+// @@protoc_insertion_point(class_specific_copy_from_start:meta.SnapshotFile)
+  if (&from == this) return;
+  Clear();
+  MergeFrom(from);
+}
+
+bool SnapshotFile::IsInitialized() const {
+  return true;
+}
+
+void SnapshotFile::InternalSwap(SnapshotFile* other) {
+  using std::swap;
+  auto* lhs_arena = GetArenaForAllocation();
+  auto* rhs_arena = other->GetArenaForAllocation();
+  _internal_metadata_.InternalSwap(&other->_internal_metadata_);
+  ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr::InternalSwap(
+      &_impl_.name_, lhs_arena,
+      &other->_impl_.name_, rhs_arena
+  );
+  ::PROTOBUF_NAMESPACE_ID::internal::memswap<
+      PROTOBUF_FIELD_OFFSET(SnapshotFile, _impl_.checksum_)
+      + sizeof(SnapshotFile::_impl_.checksum_)
+      - PROTOBUF_FIELD_OFFSET(SnapshotFile, _impl_.size_)>(
+          reinterpret_cast<char*>(&_impl_.size_),
+          reinterpret_cast<char*>(&other->_impl_.size_));
+}
+
+::PROTOBUF_NAMESPACE_ID::Metadata SnapshotFile::GetMetadata() const {
+  return ::_pbi::AssignDescriptors(
+      &descriptor_table_graph_5freplication_2eproto_getter, &descriptor_table_graph_5freplication_2eproto_once,
+      file_level_metadata_graph_5freplication_2eproto[6]);
+}
+
+// ===================================================================
+
+class SnapshotFrame::_Internal {
+ public:
+  static const ::raftpb::Message& message(const SnapshotFrame* msg);
+  static const ::meta::SnapshotFile& file(const SnapshotFrame* msg);
+};
+
+const ::raftpb::Message&
+SnapshotFrame::_Internal::message(const SnapshotFrame* msg) {
+  return *msg->_impl_.message_;
+}
+const ::meta::SnapshotFile&
+SnapshotFrame::_Internal::file(const SnapshotFrame* msg) {
+  return *msg->_impl_.file_;
+}
+void SnapshotFrame::clear_message() {
+  if (GetArenaForAllocation() == nullptr && _impl_.message_ != nullptr) {
+    delete _impl_.message_;
+  }
+  _impl_.message_ = nullptr;
+}
+SnapshotFrame::SnapshotFrame(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+                         bool is_message_owned)
+  : ::PROTOBUF_NAMESPACE_ID::Message(arena, is_message_owned) {
+  SharedCtor(arena, is_message_owned);
+  // @@protoc_insertion_point(arena_constructor:meta.SnapshotFrame)
+}
+SnapshotFrame::SnapshotFrame(const SnapshotFrame& from)
+  : ::PROTOBUF_NAMESPACE_ID::Message() {
+  SnapshotFrame* const _this = this; (void)_this;
+  new (&_impl_) Impl_{
+      decltype(_impl_.transfer_id_){}
+    , decltype(_impl_.data_){}
+    , decltype(_impl_.error_){}
+    , decltype(_impl_.message_){nullptr}
+    , decltype(_impl_.file_){nullptr}
+    , decltype(_impl_.file_count_){}
+    , decltype(_impl_.kind_){}
+    , decltype(_impl_.checksum_){}
+    , decltype(_impl_.offset_){}
+    , /*decltype(_impl_._cached_size_)*/{}};
+
+  _internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
+  _impl_.transfer_id_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.transfer_id_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (!from._internal_transfer_id().empty()) {
+    _this->_impl_.transfer_id_.Set(from._internal_transfer_id(), 
+      _this->GetArenaForAllocation());
+  }
+  _impl_.data_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.data_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (!from._internal_data().empty()) {
+    _this->_impl_.data_.Set(from._internal_data(), 
+      _this->GetArenaForAllocation());
+  }
+  _impl_.error_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.error_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (!from._internal_error().empty()) {
+    _this->_impl_.error_.Set(from._internal_error(), 
+      _this->GetArenaForAllocation());
+  }
+  if (from._internal_has_message()) {
+    _this->_impl_.message_ = new ::raftpb::Message(*from._impl_.message_);
+  }
+  if (from._internal_has_file()) {
+    _this->_impl_.file_ = new ::meta::SnapshotFile(*from._impl_.file_);
+  }
+  ::memcpy(&_impl_.file_count_, &from._impl_.file_count_,
+    static_cast<size_t>(reinterpret_cast<char*>(&_impl_.offset_) -
+    reinterpret_cast<char*>(&_impl_.file_count_)) + sizeof(_impl_.offset_));
+  // @@protoc_insertion_point(copy_constructor:meta.SnapshotFrame)
+}
+
+inline void SnapshotFrame::SharedCtor(
+    ::_pb::Arena* arena, bool is_message_owned) {
+  (void)arena;
+  (void)is_message_owned;
+  new (&_impl_) Impl_{
+      decltype(_impl_.transfer_id_){}
+    , decltype(_impl_.data_){}
+    , decltype(_impl_.error_){}
+    , decltype(_impl_.message_){nullptr}
+    , decltype(_impl_.file_){nullptr}
+    , decltype(_impl_.file_count_){uint64_t{0u}}
+    , decltype(_impl_.kind_){0}
+    , decltype(_impl_.checksum_){0u}
+    , decltype(_impl_.offset_){uint64_t{0u}}
+    , /*decltype(_impl_._cached_size_)*/{}
+  };
+  _impl_.transfer_id_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.transfer_id_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  _impl_.data_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.data_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  _impl_.error_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.error_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+}
+
+SnapshotFrame::~SnapshotFrame() {
+  // @@protoc_insertion_point(destructor:meta.SnapshotFrame)
+  if (auto *arena = _internal_metadata_.DeleteReturnArena<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>()) {
+  (void)arena;
+    return;
+  }
+  SharedDtor();
+}
+
+inline void SnapshotFrame::SharedDtor() {
+  GOOGLE_DCHECK(GetArenaForAllocation() == nullptr);
+  _impl_.transfer_id_.Destroy();
+  _impl_.data_.Destroy();
+  _impl_.error_.Destroy();
+  if (this != internal_default_instance()) delete _impl_.message_;
+  if (this != internal_default_instance()) delete _impl_.file_;
+}
+
+void SnapshotFrame::SetCachedSize(int size) const {
+  _impl_._cached_size_.Set(size);
+}
+
+void SnapshotFrame::Clear() {
+// @@protoc_insertion_point(message_clear_start:meta.SnapshotFrame)
+  uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void) cached_has_bits;
+
+  _impl_.transfer_id_.ClearToEmpty();
+  _impl_.data_.ClearToEmpty();
+  _impl_.error_.ClearToEmpty();
+  if (GetArenaForAllocation() == nullptr && _impl_.message_ != nullptr) {
+    delete _impl_.message_;
+  }
+  _impl_.message_ = nullptr;
+  if (GetArenaForAllocation() == nullptr && _impl_.file_ != nullptr) {
+    delete _impl_.file_;
+  }
+  _impl_.file_ = nullptr;
+  ::memset(&_impl_.file_count_, 0, static_cast<size_t>(
+      reinterpret_cast<char*>(&_impl_.offset_) -
+      reinterpret_cast<char*>(&_impl_.file_count_)) + sizeof(_impl_.offset_));
+  _internal_metadata_.Clear<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>();
+}
+
+const char* SnapshotFrame::_InternalParse(const char* ptr, ::_pbi::ParseContext* ctx) {
+#define CHK_(x) if (PROTOBUF_PREDICT_FALSE(!(x))) goto failure
+  while (!ctx->Done(&ptr)) {
+    uint32_t tag;
+    ptr = ::_pbi::ReadTag(ptr, &tag);
+    switch (tag >> 3) {
+      // .meta.SnapshotFrame.Kind kind = 1;
+      case 1:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 8)) {
+          uint64_t val = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint64(&ptr);
+          CHK_(ptr);
+          _internal_set_kind(static_cast<::meta::SnapshotFrame_Kind>(val));
+        } else
+          goto handle_unusual;
+        continue;
+      // string transfer_id = 2;
+      case 2:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 18)) {
+          auto str = _internal_mutable_transfer_id();
+          ptr = ::_pbi::InlineGreedyStringParser(str, ptr, ctx);
+          CHK_(ptr);
+          CHK_(::_pbi::VerifyUTF8(str, "meta.SnapshotFrame.transfer_id"));
+        } else
+          goto handle_unusual;
+        continue;
+      // .raftpb.Message message = 3;
+      case 3:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 26)) {
+          ptr = ctx->ParseMessage(_internal_mutable_message(), ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // uint64 file_count = 4;
+      case 4:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 32)) {
+          _impl_.file_count_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint64(&ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // .meta.SnapshotFile file = 5;
+      case 5:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 42)) {
+          ptr = ctx->ParseMessage(_internal_mutable_file(), ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // uint64 offset = 6;
+      case 6:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 48)) {
+          _impl_.offset_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint64(&ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // bytes data = 7;
+      case 7:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 58)) {
+          auto str = _internal_mutable_data();
+          ptr = ::_pbi::InlineGreedyStringParser(str, ptr, ctx);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // uint32 checksum = 8;
+      case 8:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 64)) {
+          _impl_.checksum_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint32(&ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // string error = 9;
+      case 9:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 74)) {
+          auto str = _internal_mutable_error();
+          ptr = ::_pbi::InlineGreedyStringParser(str, ptr, ctx);
+          CHK_(ptr);
+          CHK_(::_pbi::VerifyUTF8(str, "meta.SnapshotFrame.error"));
+        } else
+          goto handle_unusual;
+        continue;
+      default:
+        goto handle_unusual;
+    }  // switch
+  handle_unusual:
+    if ((tag == 0) || ((tag & 7) == 4)) {
+      CHK_(ptr);
+      ctx->SetLastTag(tag);
+      goto message_done;
+    }
+    ptr = UnknownFieldParse(
+        tag,
+        _internal_metadata_.mutable_unknown_fields<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(),
+        ptr, ctx);
+    CHK_(ptr != nullptr);
+  }  // while
+message_done:
+  return ptr;
+failure:
+  ptr = nullptr;
+  goto message_done;
+#undef CHK_
+}
+
+uint8_t* SnapshotFrame::_InternalSerialize(
+    uint8_t* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const {
+  // @@protoc_insertion_point(serialize_to_array_start:meta.SnapshotFrame)
+  uint32_t cached_has_bits = 0;
+  (void) cached_has_bits;
+
+  // .meta.SnapshotFrame.Kind kind = 1;
+  if (this->_internal_kind() != 0) {
+    target = stream->EnsureSpace(target);
+    target = ::_pbi::WireFormatLite::WriteEnumToArray(
+      1, this->_internal_kind(), target);
+  }
+
+  // string transfer_id = 2;
+  if (!this->_internal_transfer_id().empty()) {
+    ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::VerifyUtf8String(
+      this->_internal_transfer_id().data(), static_cast<int>(this->_internal_transfer_id().length()),
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::SERIALIZE,
+      "meta.SnapshotFrame.transfer_id");
+    target = stream->WriteStringMaybeAliased(
+        2, this->_internal_transfer_id(), target);
+  }
+
+  // .raftpb.Message message = 3;
+  if (this->_internal_has_message()) {
+    target = ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::
+      InternalWriteMessage(3, _Internal::message(this),
+        _Internal::message(this).GetCachedSize(), target, stream);
+  }
+
+  // uint64 file_count = 4;
+  if (this->_internal_file_count() != 0) {
+    target = stream->EnsureSpace(target);
+    target = ::_pbi::WireFormatLite::WriteUInt64ToArray(4, this->_internal_file_count(), target);
+  }
+
+  // .meta.SnapshotFile file = 5;
+  if (this->_internal_has_file()) {
+    target = ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::
+      InternalWriteMessage(5, _Internal::file(this),
+        _Internal::file(this).GetCachedSize(), target, stream);
+  }
+
+  // uint64 offset = 6;
+  if (this->_internal_offset() != 0) {
+    target = stream->EnsureSpace(target);
+    target = ::_pbi::WireFormatLite::WriteUInt64ToArray(6, this->_internal_offset(), target);
+  }
+
+  // bytes data = 7;
+  if (!this->_internal_data().empty()) {
+    target = stream->WriteBytesMaybeAliased(
+        7, this->_internal_data(), target);
+  }
+
+  // uint32 checksum = 8;
+  if (this->_internal_checksum() != 0) {
+    target = stream->EnsureSpace(target);
+    target = ::_pbi::WireFormatLite::WriteUInt32ToArray(8, this->_internal_checksum(), target);
+  }
+
+  // string error = 9;
+  if (!this->_internal_error().empty()) {
+    ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::VerifyUtf8String(
+      this->_internal_error().data(), static_cast<int>(this->_internal_error().length()),
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::SERIALIZE,
+      "meta.SnapshotFrame.error");
+    target = stream->WriteStringMaybeAliased(
+        9, this->_internal_error(), target);
+  }
+
+  if (PROTOBUF_PREDICT_FALSE(_internal_metadata_.have_unknown_fields())) {
+    target = ::_pbi::WireFormat::InternalSerializeUnknownFieldsToArray(
+        _internal_metadata_.unknown_fields<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(::PROTOBUF_NAMESPACE_ID::UnknownFieldSet::default_instance), target, stream);
+  }
+  // @@protoc_insertion_point(serialize_to_array_end:meta.SnapshotFrame)
+  return target;
+}
+
+size_t SnapshotFrame::ByteSizeLong() const {
+// @@protoc_insertion_point(message_byte_size_start:meta.SnapshotFrame)
+  size_t total_size = 0;
+
+  uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void) cached_has_bits;
+
+  // string transfer_id = 2;
+  if (!this->_internal_transfer_id().empty()) {
+    total_size += 1 +
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::StringSize(
+        this->_internal_transfer_id());
+  }
+
+  // bytes data = 7;
+  if (!this->_internal_data().empty()) {
+    total_size += 1 +
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::BytesSize(
+        this->_internal_data());
+  }
+
+  // string error = 9;
+  if (!this->_internal_error().empty()) {
+    total_size += 1 +
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::StringSize(
+        this->_internal_error());
+  }
+
+  // .raftpb.Message message = 3;
+  if (this->_internal_has_message()) {
+    total_size += 1 +
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::MessageSize(
+        *_impl_.message_);
+  }
+
+  // .meta.SnapshotFile file = 5;
+  if (this->_internal_has_file()) {
+    total_size += 1 +
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::MessageSize(
+        *_impl_.file_);
+  }
+
+  // uint64 file_count = 4;
+  if (this->_internal_file_count() != 0) {
+    total_size += ::_pbi::WireFormatLite::UInt64SizePlusOne(this->_internal_file_count());
+  }
+
+  // .meta.SnapshotFrame.Kind kind = 1;
+  if (this->_internal_kind() != 0) {
+    total_size += 1 +
+      ::_pbi::WireFormatLite::EnumSize(this->_internal_kind());
+  }
+
+  // uint32 checksum = 8;
+  if (this->_internal_checksum() != 0) {
+    total_size += ::_pbi::WireFormatLite::UInt32SizePlusOne(this->_internal_checksum());
+  }
+
+  // uint64 offset = 6;
+  if (this->_internal_offset() != 0) {
+    total_size += ::_pbi::WireFormatLite::UInt64SizePlusOne(this->_internal_offset());
+  }
+
+  return MaybeComputeUnknownFieldsSize(total_size, &_impl_._cached_size_);
+}
+
+const ::PROTOBUF_NAMESPACE_ID::Message::ClassData SnapshotFrame::_class_data_ = {
+    ::PROTOBUF_NAMESPACE_ID::Message::CopyWithSourceCheck,
+    SnapshotFrame::MergeImpl
+};
+const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*SnapshotFrame::GetClassData() const { return &_class_data_; }
+
+
+void SnapshotFrame::MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg) {
+  auto* const _this = static_cast<SnapshotFrame*>(&to_msg);
+  auto& from = static_cast<const SnapshotFrame&>(from_msg);
+  // @@protoc_insertion_point(class_specific_merge_from_start:meta.SnapshotFrame)
+  GOOGLE_DCHECK_NE(&from, _this);
+  uint32_t cached_has_bits = 0;
+  (void) cached_has_bits;
+
+  if (!from._internal_transfer_id().empty()) {
+    _this->_internal_set_transfer_id(from._internal_transfer_id());
+  }
+  if (!from._internal_data().empty()) {
+    _this->_internal_set_data(from._internal_data());
+  }
+  if (!from._internal_error().empty()) {
+    _this->_internal_set_error(from._internal_error());
+  }
+  if (from._internal_has_message()) {
+    _this->_internal_mutable_message()->::raftpb::Message::MergeFrom(
+        from._internal_message());
+  }
+  if (from._internal_has_file()) {
+    _this->_internal_mutable_file()->::meta::SnapshotFile::MergeFrom(
+        from._internal_file());
+  }
+  if (from._internal_file_count() != 0) {
+    _this->_internal_set_file_count(from._internal_file_count());
+  }
+  if (from._internal_kind() != 0) {
+    _this->_internal_set_kind(from._internal_kind());
+  }
+  if (from._internal_checksum() != 0) {
+    _this->_internal_set_checksum(from._internal_checksum());
+  }
+  if (from._internal_offset() != 0) {
+    _this->_internal_set_offset(from._internal_offset());
+  }
+  _this->_internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
+}
+
+void SnapshotFrame::CopyFrom(const SnapshotFrame& from) {
+// @@protoc_insertion_point(class_specific_copy_from_start:meta.SnapshotFrame)
+  if (&from == this) return;
+  Clear();
+  MergeFrom(from);
+}
+
+bool SnapshotFrame::IsInitialized() const {
+  return true;
+}
+
+void SnapshotFrame::InternalSwap(SnapshotFrame* other) {
+  using std::swap;
+  auto* lhs_arena = GetArenaForAllocation();
+  auto* rhs_arena = other->GetArenaForAllocation();
+  _internal_metadata_.InternalSwap(&other->_internal_metadata_);
+  ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr::InternalSwap(
+      &_impl_.transfer_id_, lhs_arena,
+      &other->_impl_.transfer_id_, rhs_arena
+  );
+  ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr::InternalSwap(
+      &_impl_.data_, lhs_arena,
+      &other->_impl_.data_, rhs_arena
+  );
+  ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr::InternalSwap(
+      &_impl_.error_, lhs_arena,
+      &other->_impl_.error_, rhs_arena
+  );
+  ::PROTOBUF_NAMESPACE_ID::internal::memswap<
+      PROTOBUF_FIELD_OFFSET(SnapshotFrame, _impl_.offset_)
+      + sizeof(SnapshotFrame::_impl_.offset_)
+      - PROTOBUF_FIELD_OFFSET(SnapshotFrame, _impl_.message_)>(
+          reinterpret_cast<char*>(&_impl_.message_),
+          reinterpret_cast<char*>(&other->_impl_.message_));
+}
+
+::PROTOBUF_NAMESPACE_ID::Metadata SnapshotFrame::GetMetadata() const {
+  return ::_pbi::AssignDescriptors(
+      &descriptor_table_graph_5freplication_2eproto_getter, &descriptor_table_graph_5freplication_2eproto_once,
+      file_level_metadata_graph_5freplication_2eproto[7]);
+}
+
+// ===================================================================
+
+class SnapshotInstall::_Internal {
+ public:
+  static const ::raftpb::Snapshot& snapshot(const SnapshotInstall* msg);
+  static const ::raftpb::HardState& hard_state(const SnapshotInstall* msg);
+};
+
+const ::raftpb::Snapshot&
+SnapshotInstall::_Internal::snapshot(const SnapshotInstall* msg) {
+  return *msg->_impl_.snapshot_;
+}
+const ::raftpb::HardState&
+SnapshotInstall::_Internal::hard_state(const SnapshotInstall* msg) {
+  return *msg->_impl_.hard_state_;
+}
+void SnapshotInstall::clear_snapshot() {
+  if (GetArenaForAllocation() == nullptr && _impl_.snapshot_ != nullptr) {
+    delete _impl_.snapshot_;
+  }
+  _impl_.snapshot_ = nullptr;
+}
+void SnapshotInstall::clear_hard_state() {
+  if (GetArenaForAllocation() == nullptr && _impl_.hard_state_ != nullptr) {
+    delete _impl_.hard_state_;
+  }
+  _impl_.hard_state_ = nullptr;
+}
+void SnapshotInstall::clear_entries() {
+  _impl_.entries_.Clear();
+}
+SnapshotInstall::SnapshotInstall(::PROTOBUF_NAMESPACE_ID::Arena* arena,
+                         bool is_message_owned)
+  : ::PROTOBUF_NAMESPACE_ID::Message(arena, is_message_owned) {
+  SharedCtor(arena, is_message_owned);
+  // @@protoc_insertion_point(arena_constructor:meta.SnapshotInstall)
+}
+SnapshotInstall::SnapshotInstall(const SnapshotInstall& from)
+  : ::PROTOBUF_NAMESPACE_ID::Message() {
+  SnapshotInstall* const _this = this; (void)_this;
+  new (&_impl_) Impl_{
+      decltype(_impl_.entries_){from._impl_.entries_}
+    , decltype(_impl_.directory_){}
+    , decltype(_impl_.snapshot_){nullptr}
+    , decltype(_impl_.hard_state_){nullptr}
+    , /*decltype(_impl_._cached_size_)*/{}};
+
+  _internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
+  _impl_.directory_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.directory_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  if (!from._internal_directory().empty()) {
+    _this->_impl_.directory_.Set(from._internal_directory(), 
+      _this->GetArenaForAllocation());
+  }
+  if (from._internal_has_snapshot()) {
+    _this->_impl_.snapshot_ = new ::raftpb::Snapshot(*from._impl_.snapshot_);
+  }
+  if (from._internal_has_hard_state()) {
+    _this->_impl_.hard_state_ = new ::raftpb::HardState(*from._impl_.hard_state_);
+  }
+  // @@protoc_insertion_point(copy_constructor:meta.SnapshotInstall)
+}
+
+inline void SnapshotInstall::SharedCtor(
+    ::_pb::Arena* arena, bool is_message_owned) {
+  (void)arena;
+  (void)is_message_owned;
+  new (&_impl_) Impl_{
+      decltype(_impl_.entries_){arena}
+    , decltype(_impl_.directory_){}
+    , decltype(_impl_.snapshot_){nullptr}
+    , decltype(_impl_.hard_state_){nullptr}
+    , /*decltype(_impl_._cached_size_)*/{}
+  };
+  _impl_.directory_.InitDefault();
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+    _impl_.directory_.Set("", GetArenaForAllocation());
+  #endif // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+}
+
+SnapshotInstall::~SnapshotInstall() {
+  // @@protoc_insertion_point(destructor:meta.SnapshotInstall)
+  if (auto *arena = _internal_metadata_.DeleteReturnArena<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>()) {
+  (void)arena;
+    return;
+  }
+  SharedDtor();
+}
+
+inline void SnapshotInstall::SharedDtor() {
+  GOOGLE_DCHECK(GetArenaForAllocation() == nullptr);
+  _impl_.entries_.~RepeatedPtrField();
+  _impl_.directory_.Destroy();
+  if (this != internal_default_instance()) delete _impl_.snapshot_;
+  if (this != internal_default_instance()) delete _impl_.hard_state_;
+}
+
+void SnapshotInstall::SetCachedSize(int size) const {
+  _impl_._cached_size_.Set(size);
+}
+
+void SnapshotInstall::Clear() {
+// @@protoc_insertion_point(message_clear_start:meta.SnapshotInstall)
+  uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void) cached_has_bits;
+
+  _impl_.entries_.Clear();
+  _impl_.directory_.ClearToEmpty();
+  if (GetArenaForAllocation() == nullptr && _impl_.snapshot_ != nullptr) {
+    delete _impl_.snapshot_;
+  }
+  _impl_.snapshot_ = nullptr;
+  if (GetArenaForAllocation() == nullptr && _impl_.hard_state_ != nullptr) {
+    delete _impl_.hard_state_;
+  }
+  _impl_.hard_state_ = nullptr;
+  _internal_metadata_.Clear<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>();
+}
+
+const char* SnapshotInstall::_InternalParse(const char* ptr, ::_pbi::ParseContext* ctx) {
+#define CHK_(x) if (PROTOBUF_PREDICT_FALSE(!(x))) goto failure
+  while (!ctx->Done(&ptr)) {
+    uint32_t tag;
+    ptr = ::_pbi::ReadTag(ptr, &tag);
+    switch (tag >> 3) {
+      // .raftpb.Snapshot snapshot = 1;
+      case 1:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 10)) {
+          ptr = ctx->ParseMessage(_internal_mutable_snapshot(), ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // .raftpb.HardState hard_state = 2;
+      case 2:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 18)) {
+          ptr = ctx->ParseMessage(_internal_mutable_hard_state(), ptr);
+          CHK_(ptr);
+        } else
+          goto handle_unusual;
+        continue;
+      // repeated .raftpb.Entry entries = 3;
+      case 3:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 26)) {
+          ptr -= 1;
+          do {
+            ptr += 1;
+            ptr = ctx->ParseMessage(_internal_add_entries(), ptr);
+            CHK_(ptr);
+            if (!ctx->DataAvailable(ptr)) break;
+          } while (::PROTOBUF_NAMESPACE_ID::internal::ExpectTag<26>(ptr));
+        } else
+          goto handle_unusual;
+        continue;
+      // string directory = 4;
+      case 4:
+        if (PROTOBUF_PREDICT_TRUE(static_cast<uint8_t>(tag) == 34)) {
+          auto str = _internal_mutable_directory();
+          ptr = ::_pbi::InlineGreedyStringParser(str, ptr, ctx);
+          CHK_(ptr);
+          CHK_(::_pbi::VerifyUTF8(str, "meta.SnapshotInstall.directory"));
+        } else
+          goto handle_unusual;
+        continue;
+      default:
+        goto handle_unusual;
+    }  // switch
+  handle_unusual:
+    if ((tag == 0) || ((tag & 7) == 4)) {
+      CHK_(ptr);
+      ctx->SetLastTag(tag);
+      goto message_done;
+    }
+    ptr = UnknownFieldParse(
+        tag,
+        _internal_metadata_.mutable_unknown_fields<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(),
+        ptr, ctx);
+    CHK_(ptr != nullptr);
+  }  // while
+message_done:
+  return ptr;
+failure:
+  ptr = nullptr;
+  goto message_done;
+#undef CHK_
+}
+
+uint8_t* SnapshotInstall::_InternalSerialize(
+    uint8_t* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const {
+  // @@protoc_insertion_point(serialize_to_array_start:meta.SnapshotInstall)
+  uint32_t cached_has_bits = 0;
+  (void) cached_has_bits;
+
+  // .raftpb.Snapshot snapshot = 1;
+  if (this->_internal_has_snapshot()) {
+    target = ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::
+      InternalWriteMessage(1, _Internal::snapshot(this),
+        _Internal::snapshot(this).GetCachedSize(), target, stream);
+  }
+
+  // .raftpb.HardState hard_state = 2;
+  if (this->_internal_has_hard_state()) {
+    target = ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::
+      InternalWriteMessage(2, _Internal::hard_state(this),
+        _Internal::hard_state(this).GetCachedSize(), target, stream);
+  }
+
+  // repeated .raftpb.Entry entries = 3;
+  for (unsigned i = 0,
+      n = static_cast<unsigned>(this->_internal_entries_size()); i < n; i++) {
+    const auto& repfield = this->_internal_entries(i);
+    target = ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::
+        InternalWriteMessage(3, repfield, repfield.GetCachedSize(), target, stream);
+  }
+
+  // string directory = 4;
+  if (!this->_internal_directory().empty()) {
+    ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::VerifyUtf8String(
+      this->_internal_directory().data(), static_cast<int>(this->_internal_directory().length()),
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::SERIALIZE,
+      "meta.SnapshotInstall.directory");
+    target = stream->WriteStringMaybeAliased(
+        4, this->_internal_directory(), target);
+  }
+
+  if (PROTOBUF_PREDICT_FALSE(_internal_metadata_.have_unknown_fields())) {
+    target = ::_pbi::WireFormat::InternalSerializeUnknownFieldsToArray(
+        _internal_metadata_.unknown_fields<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(::PROTOBUF_NAMESPACE_ID::UnknownFieldSet::default_instance), target, stream);
+  }
+  // @@protoc_insertion_point(serialize_to_array_end:meta.SnapshotInstall)
+  return target;
+}
+
+size_t SnapshotInstall::ByteSizeLong() const {
+// @@protoc_insertion_point(message_byte_size_start:meta.SnapshotInstall)
+  size_t total_size = 0;
+
+  uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void) cached_has_bits;
+
+  // repeated .raftpb.Entry entries = 3;
+  total_size += 1UL * this->_internal_entries_size();
+  for (const auto& msg : this->_impl_.entries_) {
+    total_size +=
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::MessageSize(msg);
+  }
+
+  // string directory = 4;
+  if (!this->_internal_directory().empty()) {
+    total_size += 1 +
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::StringSize(
+        this->_internal_directory());
+  }
+
+  // .raftpb.Snapshot snapshot = 1;
+  if (this->_internal_has_snapshot()) {
+    total_size += 1 +
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::MessageSize(
+        *_impl_.snapshot_);
+  }
+
+  // .raftpb.HardState hard_state = 2;
+  if (this->_internal_has_hard_state()) {
+    total_size += 1 +
+      ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::MessageSize(
+        *_impl_.hard_state_);
+  }
+
+  return MaybeComputeUnknownFieldsSize(total_size, &_impl_._cached_size_);
+}
+
+const ::PROTOBUF_NAMESPACE_ID::Message::ClassData SnapshotInstall::_class_data_ = {
+    ::PROTOBUF_NAMESPACE_ID::Message::CopyWithSourceCheck,
+    SnapshotInstall::MergeImpl
+};
+const ::PROTOBUF_NAMESPACE_ID::Message::ClassData*SnapshotInstall::GetClassData() const { return &_class_data_; }
+
+
+void SnapshotInstall::MergeImpl(::PROTOBUF_NAMESPACE_ID::Message& to_msg, const ::PROTOBUF_NAMESPACE_ID::Message& from_msg) {
+  auto* const _this = static_cast<SnapshotInstall*>(&to_msg);
+  auto& from = static_cast<const SnapshotInstall&>(from_msg);
+  // @@protoc_insertion_point(class_specific_merge_from_start:meta.SnapshotInstall)
+  GOOGLE_DCHECK_NE(&from, _this);
+  uint32_t cached_has_bits = 0;
+  (void) cached_has_bits;
+
+  _this->_impl_.entries_.MergeFrom(from._impl_.entries_);
+  if (!from._internal_directory().empty()) {
+    _this->_internal_set_directory(from._internal_directory());
+  }
+  if (from._internal_has_snapshot()) {
+    _this->_internal_mutable_snapshot()->::raftpb::Snapshot::MergeFrom(
+        from._internal_snapshot());
+  }
+  if (from._internal_has_hard_state()) {
+    _this->_internal_mutable_hard_state()->::raftpb::HardState::MergeFrom(
+        from._internal_hard_state());
+  }
+  _this->_internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
+}
+
+void SnapshotInstall::CopyFrom(const SnapshotInstall& from) {
+// @@protoc_insertion_point(class_specific_copy_from_start:meta.SnapshotInstall)
+  if (&from == this) return;
+  Clear();
+  MergeFrom(from);
+}
+
+bool SnapshotInstall::IsInitialized() const {
+  return true;
+}
+
+void SnapshotInstall::InternalSwap(SnapshotInstall* other) {
+  using std::swap;
+  auto* lhs_arena = GetArenaForAllocation();
+  auto* rhs_arena = other->GetArenaForAllocation();
+  _internal_metadata_.InternalSwap(&other->_internal_metadata_);
+  _impl_.entries_.InternalSwap(&other->_impl_.entries_);
+  ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr::InternalSwap(
+      &_impl_.directory_, lhs_arena,
+      &other->_impl_.directory_, rhs_arena
+  );
+  ::PROTOBUF_NAMESPACE_ID::internal::memswap<
+      PROTOBUF_FIELD_OFFSET(SnapshotInstall, _impl_.hard_state_)
+      + sizeof(SnapshotInstall::_impl_.hard_state_)
+      - PROTOBUF_FIELD_OFFSET(SnapshotInstall, _impl_.snapshot_)>(
+          reinterpret_cast<char*>(&_impl_.snapshot_),
+          reinterpret_cast<char*>(&other->_impl_.snapshot_));
+}
+
+::PROTOBUF_NAMESPACE_ID::Metadata SnapshotInstall::GetMetadata() const {
+  return ::_pbi::AssignDescriptors(
+      &descriptor_table_graph_5freplication_2eproto_getter, &descriptor_table_graph_5freplication_2eproto_once,
+      file_level_metadata_graph_5freplication_2eproto[8]);
+}
+
 // @@protoc_insertion_point(namespace_scope)
 }  // namespace meta
 PROTOBUF_NAMESPACE_OPEN
@@ -1354,6 +2942,22 @@ Arena::CreateMaybeMessage< ::meta::RaftNodeInfos_NodesEntry_DoNotUse >(Arena* ar
 template<> PROTOBUF_NOINLINE ::meta::RaftNodeInfos*
 Arena::CreateMaybeMessage< ::meta::RaftNodeInfos >(Arena* arena) {
   return Arena::CreateMessageInternal< ::meta::RaftNodeInfos >(arena);
+}
+template<> PROTOBUF_NOINLINE ::meta::SnapshotReference*
+Arena::CreateMaybeMessage< ::meta::SnapshotReference >(Arena* arena) {
+  return Arena::CreateMessageInternal< ::meta::SnapshotReference >(arena);
+}
+template<> PROTOBUF_NOINLINE ::meta::SnapshotFile*
+Arena::CreateMaybeMessage< ::meta::SnapshotFile >(Arena* arena) {
+  return Arena::CreateMessageInternal< ::meta::SnapshotFile >(arena);
+}
+template<> PROTOBUF_NOINLINE ::meta::SnapshotFrame*
+Arena::CreateMaybeMessage< ::meta::SnapshotFrame >(Arena* arena) {
+  return Arena::CreateMessageInternal< ::meta::SnapshotFrame >(arena);
+}
+template<> PROTOBUF_NOINLINE ::meta::SnapshotInstall*
+Arena::CreateMaybeMessage< ::meta::SnapshotInstall >(Arena* arena) {
+  return Arena::CreateMessageInternal< ::meta::SnapshotInstall >(arena);
 }
 PROTOBUF_NAMESPACE_CLOSE
 

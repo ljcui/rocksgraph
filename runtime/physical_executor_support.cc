@@ -757,6 +757,13 @@ std::vector<ProcedureRecord> ExecuteProcedure(const ProcedureCallOp &data,
             graph_name, ParseRaftMembers(arguments[1], graph_name, *procedure));
         return {ProcedureRecord{}};
       }
+      case ast::BuiltinProcedureKind::kCreateGraphForJoin: {
+        const auto &name =
+            RequireProcedureString(arguments[0], *procedure, "graph_name");
+        management.JoinManagedRaftGraph(
+            name, ParseRaftMembers(arguments[1], name, *procedure));
+        return {ProcedureRecord{}};
+      }
       case ast::BuiltinProcedureKind::kDeleteGraph:
         management.DeleteManagedGraph(
             RequireProcedureString(arguments[0], *procedure, "graph_name"));
@@ -885,7 +892,9 @@ std::vector<ProcedureRecord> ExecuteProcedure(const ProcedureCallOp &data,
                 integer(status.applied_index, "applied_index")},
                {"first_log", integer(status.first_log, "first_log")},
                {"last_log", integer(status.last_log, "last_log")},
-               {"raft_state", Value(status.raft_state)}});
+               {"raft_state", Value(status.raft_state)},
+               {"snapshot_state", Value(status.snapshot_state)},
+               {"graph_ready", Value(status.graph_ready)}});
         }
         return records;
       }
@@ -1045,6 +1054,7 @@ std::vector<ProcedureRecord> ExecuteProcedure(const ProcedureCallOp &data,
     }
     case ast::BuiltinProcedureKind::kCreateGraph:
     case ast::BuiltinProcedureKind::kCreateGraphWithRaft:
+    case ast::BuiltinProcedureKind::kCreateGraphForJoin:
     case ast::BuiltinProcedureKind::kDeleteGraph:
     case ast::BuiltinProcedureKind::kClearGraph:
     case ast::BuiltinProcedureKind::kListGraph:
@@ -1140,9 +1150,10 @@ std::vector<ProcedureRecord> ExecuteProcedure(const ProcedureCallOp &data,
               integer(status.s.basicStatus_.applied_, "applied_index")},
              {"first_log", integer(status.first_log, "first_log")},
              {"last_log", integer(status.last_log, "last_log")},
-             {"raft_state",
-              Value(eraft::ToString(
-                  status.s.basicStatus_.softState_.raftState_))}});
+             {"raft_state", Value(eraft::ToString(
+                                status.s.basicStatus_.softState_.raftState_))},
+             {"snapshot_state", Value(status.snapshot_state)},
+             {"graph_ready", Value(graph->RaftReady())}});
       }
       return records;
     }

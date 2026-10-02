@@ -73,6 +73,7 @@ add_library(
   graph_db_property_index.cc
   graph_db_raft.cc
   graph_db_search_index.cc
+  graph_db_snapshot.cc
   graph_entity.cc
   hnsw_index.cc
   id_generator.cc

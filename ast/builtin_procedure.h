@@ -24,6 +24,7 @@ enum class BuiltinProcedureKind {
   kKnnSearchNodes,
   kCreateGraph,
   kCreateGraphWithRaft,
+  kCreateGraphForJoin,
   kDeleteGraph,
   kClearGraph,
   kListGraph,

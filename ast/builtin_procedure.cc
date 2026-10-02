@@ -116,6 +116,14 @@ const std::vector<BuiltinProcedure> &BuiltinProcedures() {
        .argument_count = 2,
        .read_only = false,
        .works_on_system = true},
+      {.kind = BuiltinProcedureKind::kCreateGraphForJoin,
+       .name = "dbms.graph.createGraphForJoin",
+       .signature = "dbms.graph.createGraphForJoin(graph_name, members) :: ()",
+       .description = "Create a local replica and join an existing Raft "
+                      "cluster without bootstrap.",
+       .argument_count = 2,
+       .read_only = false,
+       .works_on_system = true},
       {.kind = BuiltinProcedureKind::kDeleteGraph,
        .name = "dbms.graph.deleteGraph",
        .signature = "dbms.graph.deleteGraph(graph_name) :: ()",
@@ -201,7 +209,7 @@ const std::vector<BuiltinProcedure> &BuiltinProcedures() {
            "(node_id, ip, bolt_port, raft_port, is_leader, is_learner, "
            "reachable, match_index, next_index, local_node_id, leader_id, "
            "term, commit_index, applied_index, first_log, last_log, "
-           "raft_state)",
+           "raft_state, snapshot_state, graph_ready)",
        .description = "Show Raft status and replica progress.",
        .yields = {{"node_id", SemanticVariableType::kScalar},
                   {"ip", SemanticVariableType::kScalar},
@@ -219,7 +227,9 @@ const std::vector<BuiltinProcedure> &BuiltinProcedures() {
                   {"applied_index", SemanticVariableType::kScalar},
                   {"first_log", SemanticVariableType::kScalar},
                   {"last_log", SemanticVariableType::kScalar},
-                  {"raft_state", SemanticVariableType::kScalar}},
+                  {"raft_state", SemanticVariableType::kScalar},
+                  {"snapshot_state", SemanticVariableType::kScalar},
+                  {"graph_ready", SemanticVariableType::kScalar}},
        .argument_count = 1,
        .works_on_system = true},
       {.kind = BuiltinProcedureKind::kTransferRaftLeader,

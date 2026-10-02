@@ -68,6 +68,8 @@ const char *ErrorCodeToString(ErrorCode code) noexcept {
       return "QueryCancelled";
     case ErrorCode::MemoryLimitExceeded:
       return "MemoryLimitExceeded";
+    case ErrorCode::GraphNotReady:
+      return "GraphNotReady";
     default:
       return "Unknown Error Code";
   }
@@ -139,6 +141,8 @@ const char *ErrorCodeDesc(ErrorCode code) noexcept {
       return "Query execution was cancelled.";
     case ErrorCode::MemoryLimitExceeded:
       return "Query memory limit exceeded.";
+    case ErrorCode::GraphNotReady:
+      return "Graph is joining or recovering.";
     default:
       return "Unknown Error Code";
   }

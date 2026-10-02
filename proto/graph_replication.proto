@@ -19,6 +19,7 @@ message RaftRequest {
 message RaftMessage {
     string graph = 1;
     raftpb.Message message = 2;
+    SnapshotFrame snapshot_frame = 3;
 }
 
 message RaftNodeInfo {
@@ -33,4 +34,48 @@ message RaftNodeInfo {
 
 message RaftNodeInfos {
     map<uint64, RaftNodeInfo> nodes = 1;
+}
+
+// Snapshot.data contains this small reference, never the database files.
+message SnapshotReference {
+    uint32 version = 1;
+    string id = 2;
+    RaftNodeInfos node_infos = 3;
+}
+
+message SnapshotFile {
+    string name = 1;
+    uint64 size = 2;
+    uint32 checksum = 3;
+}
+
+// Sent on a dedicated, acknowledged connection. One file header or bounded
+// data chunk per frame keeps both the file list and file contents streaming.
+message SnapshotFrame {
+    enum Kind {
+        UNKNOWN = 0;
+        BEGIN = 1;
+        FILE = 2;
+        CHUNK = 3;
+        FINISH = 4;
+        ACK = 5;
+    }
+    Kind kind = 1;
+    string transfer_id = 2;
+    raftpb.Message message = 3;
+    uint64 file_count = 4;
+    SnapshotFile file = 5;
+    uint64 offset = 6;
+    bytes data = 7;
+    uint32 checksum = 8;
+    string error = 9;
+}
+
+// Written before switching GraphDB data. Startup finishes the same installation
+// before opening Raft, so a crash cannot expose mismatched data and log state.
+message SnapshotInstall {
+    raftpb.Snapshot snapshot = 1;
+    raftpb.HardState hard_state = 2;
+    repeated raftpb.Entry entries = 3;
+    string directory = 4;
 }

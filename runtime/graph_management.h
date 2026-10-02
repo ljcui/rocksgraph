@@ -35,6 +35,8 @@ struct ManagedRaftStatus {
   std::uint64_t first_log = 0;
   std::uint64_t last_log = 0;
   std::string raft_state;
+  std::string snapshot_state;
+  bool graph_ready = false;
   std::vector<ManagedRaftNodeStatus> nodes;
 };
 
@@ -54,6 +56,8 @@ class GraphManagement {
   virtual void CreateManagedGraph(std::string_view name) = 0;
   virtual void CreateManagedRaftGraph(
       std::string_view name, const meta::RaftNodeInfos& node_infos) = 0;
+  virtual void JoinManagedRaftGraph(std::string_view name,
+                                    const meta::RaftNodeInfos& members) = 0;
   virtual void ClearManagedGraph(std::string_view name) = 0;
   virtual void DeleteManagedGraph(std::string_view name) = 0;
   [[nodiscard]] virtual std::vector<ManagedGraphInfo> ListManagedGraphs()

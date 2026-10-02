@@ -8,6 +8,7 @@
 #include <rocksdb/utilities/transaction_db.h>
 
 #include <boost/asio.hpp>
+#include <condition_variable>
 #include <mutex>
 #include <optional>
 #include <shared_mutex>
@@ -81,8 +82,8 @@ class GraphDB {
   }
   rocksdb::TransactionDB* raw_db() { return db_; }
   GraphCF& graph_cf() { return graph_cf_; }
-  IdGenerator& id_generator() { return meta_info_.id_generator(); }
-  MetaInfo& meta_info() { return meta_info_; }
+  IdGenerator& id_generator() { return meta_info_->id_generator(); }
+  MetaInfo& meta_info() { return *meta_info_; }
   meta::GraphDBMetaInfo& db_meta() { return db_meta_; }
   const std::string& path() { return path_; }
   raft::RaftDriver* raft_driver() const;
@@ -96,6 +97,13 @@ class GraphDB {
                            const meta::RaftNodeInfos& node_infos);
   rocksdb::Status SetRaftApplyIndex(uint64_t apply_index,
                                     rocksdb::WriteBatch* wb) const;
+  std::shared_ptr<raft::SnapshotFiles> CreateRaftSnapshot(
+      const std::string& directory);
+  void InstallRaftSnapshot(
+      const std::shared_ptr<raft::SnapshotFiles>& snapshot);
+  uint64_t SyncRaftState();
+  void MarkRaftReady(uint64_t target_index, uint64_t local_id);
+  bool RaftReady() const { return !joining_.load() && !recovering_.load(); }
   bool& drop_on_close() { return drop_on_close_; }
   std::mutex& property_index_commit_mutex() {
     return property_index_commit_mutex_;
@@ -106,6 +114,13 @@ class GraphDB {
   std::mutex& vector_index_commit_mutex() { return vector_index_commit_mutex_; }
 
  private:
+  uint64_t GetRaftApplyIndexUnlocked() const;
+  std::optional<raftpb::ConfState> GetRaftConfStateUnlocked() const;
+  std::optional<meta::RaftNodeInfos> GetRaftNodeInfosUnlocked() const;
+  void RecoverSnapshotData();
+  void OpenData();
+  void CloseData();
+  void PrepareSnapshotIndexes();
   void ClearDataInternal();
   void DrainAssistant();
   void ResumeBackgroundIndexBuilds();
@@ -151,13 +166,19 @@ class GraphDB {
       const std::shared_ptr<VertexVectorIndex>& index, bool reset_existing);
 
   std::string path_;
-  uint64_t plan_cache_identity_ = 0;
+  std::atomic<uint64_t> plan_cache_identity_{0};
+  struct DataLease;
+  mutable std::mutex data_mutex_;
+  std::condition_variable data_condition_;
+  size_t active_transactions_ = 0;
+  std::atomic<bool> recovering_{false};
+  std::atomic<bool> joining_{false};
   rocksdb::TransactionDB* db_ = nullptr;
   std::vector<rocksdb::ColumnFamilyHandle*> cf_handles_;
   std::shared_ptr<AssistantPool> assistant_pool_;
   std::unique_ptr<boost::asio::io_service::strand> assistant_strand_;
   GraphCF graph_cf_;
-  MetaInfo meta_info_;
+  std::unique_ptr<MetaInfo> meta_info_;
   meta::GraphDBMetaInfo db_meta_;
   GraphDBOptions options_;
   mutable std::shared_mutex raft_mutex_;

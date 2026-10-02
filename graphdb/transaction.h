@@ -33,8 +33,9 @@ class Transaction {
   Transaction(const Transaction&) = delete;
   void operator=(const Transaction&) = delete;
 
-  Transaction(rocksdb::Transaction* txn, GraphDB* graph_db)
-      : txn_(txn), db_(graph_db) {}
+  Transaction(rocksdb::Transaction* txn, GraphDB* graph_db,
+              std::shared_ptr<void> guard = {})
+      : data_guard_(std::move(guard)), txn_(txn), db_(graph_db) {}
   ~Transaction() { delete txn_; }
   Vertex CreateVertex(const std::unordered_set<std::string>& labels,
                       const std::unordered_map<std::string, rg::Value>& values);
@@ -125,6 +126,7 @@ class Transaction {
     meta::VectorIndexUpdate update;
   };
 
+  std::shared_ptr<void> data_guard_;
   rocksdb::Transaction* txn_;
   GraphDB* db_;
   std::vector<PendingPropertyWAL> pending_property_wals_;

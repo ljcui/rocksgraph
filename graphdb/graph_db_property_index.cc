@@ -18,7 +18,7 @@ void GraphDB::AddVertexPropertyIndex(
   if (index_name.empty() || label.empty() || properties.empty()) {
     RG_THROW(common::ErrorCode::InvalidParameter);
   }
-  if (meta_info_.GetVertexPropertyIndex(index_name)) {
+  if (meta_info_->GetVertexPropertyIndex(index_name)) {
     RG_THROW(common::ErrorCode::VertexIndexAlreadyExists,
              "Vertex index name {} already exists", index_name);
   }
@@ -38,9 +38,9 @@ void GraphDB::AddVertexPropertyIndex(
     pids.push_back(pid);
   }
   CheckNoVectorFieldForNormalIndex(
-      meta_info_, {lid}, std::unordered_set<uint32_t>(pids.begin(), pids.end()),
-      index_name);
-  if (meta_info_.GetVertexPropertyIndex(lid, pids)) {
+      *meta_info_, {lid},
+      std::unordered_set<uint32_t>(pids.begin(), pids.end()), index_name);
+  if (meta_info_->GetVertexPropertyIndex(lid, pids)) {
     RG_THROW(common::ErrorCode::VertexIndexAlreadyExists,
              "Vertex index [label:{}, property_count:{}] already exists", lid,
              pids.size());
@@ -79,7 +79,7 @@ void GraphDB::ApplyCreateVertexPropertyIndex(
       meta_val.properties().empty()) {
     RG_THROW(common::ErrorCode::InvalidParameter);
   }
-  if (meta_info_.GetVertexPropertyIndex(meta_val.name())) {
+  if (meta_info_->GetVertexPropertyIndex(meta_val.name())) {
     if (apply_index > 0) {
       rocksdb::WriteBatch wb;
       auto s = SetRaftApplyIndex(apply_index, &wb);
@@ -107,9 +107,9 @@ void GraphDB::ApplyCreateVertexPropertyIndex(
     pids.push_back(pid);
   }
   CheckNoVectorFieldForNormalIndex(
-      meta_info_, {lid}, std::unordered_set<uint32_t>(pids.begin(), pids.end()),
-      meta_val.name());
-  if (meta_info_.GetVertexPropertyIndex(lid, pids)) {
+      *meta_info_, {lid},
+      std::unordered_set<uint32_t>(pids.begin(), pids.end()), meta_val.name());
+  if (meta_info_->GetVertexPropertyIndex(lid, pids)) {
     RG_THROW(common::ErrorCode::VertexIndexAlreadyExists,
              "Vertex index [label:{}, property_count:{}] already exists",
              meta_val.label_id(), pids.size());
@@ -134,7 +134,7 @@ void GraphDB::ApplyCreateVertexPropertyIndex(
   }
   s = db_->Write({}, {}, &wb);
   if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
-  auto ret = meta_info_.AddVertexPropertyIndex(vpi);
+  auto ret = meta_info_->AddVertexPropertyIndex(vpi);
   assert(ret);
   LOG_INFO(
       "Begin online build vertex index: [lid:{}, property_count:{}, "
@@ -148,7 +148,7 @@ void GraphDB::DeleteVertexPropertyIndex(const std::string& index_name) {
   meta::VertexPropertyIndex meta;
   {
     std::lock_guard<std::mutex> ddl_lock(index_ddl_mutex_);
-    auto index = meta_info_.GetVertexPropertyIndex(index_name);
+    auto index = meta_info_->GetVertexPropertyIndex(index_name);
     if (!index) {
       RG_THROW(common::ErrorCode::VertexUniqueIndexNotFound,
                "No such vertex index [{}]", index_name);
@@ -171,7 +171,7 @@ void GraphDB::ApplyDeleteVertexPropertyIndex(
   std::lock_guard<std::mutex> ddl_lock(index_ddl_mutex_);
   std::lock_guard<std::mutex> commit_lock(property_index_commit_mutex_);
   const auto& index_name = meta_val.name();
-  auto index = meta_info_.GetVertexPropertyIndex(index_name);
+  auto index = meta_info_->GetVertexPropertyIndex(index_name);
   if (!index) {
     if (apply_index > 0) {
       rocksdb::WriteBatch wb;
@@ -188,7 +188,7 @@ void GraphDB::ApplyDeleteVertexPropertyIndex(
   }
   index->MarkDeleted();
   uint32_t index_id = index->index_id();
-  meta_info_.DeleteVertexPropertyIndex(index_name);
+  meta_info_->DeleteVertexPropertyIndex(index_name);
 
   rocksdb::WriteBatch wb;
   wb.Delete(graph_cf_.meta_info,
@@ -221,7 +221,7 @@ void GraphDB::AddEdgePropertyIndex(const std::string& index_name, bool unique,
   if (index_name.empty() || edge_type.empty() || properties.empty()) {
     RG_THROW(common::ErrorCode::InvalidParameter);
   }
-  if (meta_info_.GetEdgePropertyIndex(index_name)) {
+  if (meta_info_->GetEdgePropertyIndex(index_name)) {
     RG_THROW(common::ErrorCode::EdgePropertyIndexAlreadyExists,
              "Edge property index name {} already exists", index_name);
   }
@@ -238,7 +238,7 @@ void GraphDB::AddEdgePropertyIndex(const std::string& index_name, bool unique,
     }
     pids.push_back(pid);
   }
-  if (meta_info_.GetEdgePropertyIndex(tid, pids)) {
+  if (meta_info_->GetEdgePropertyIndex(tid, pids)) {
     RG_THROW(common::ErrorCode::EdgePropertyIndexAlreadyExists,
              "Edge property index [type:{}, property_count:{}] already exists",
              tid, pids.size());
@@ -275,7 +275,7 @@ void GraphDB::ApplyCreateEdgePropertyIndex(uint64_t apply_index,
       meta_val.properties().empty()) {
     RG_THROW(common::ErrorCode::InvalidParameter);
   }
-  if (meta_info_.GetEdgePropertyIndex(meta_val.name())) {
+  if (meta_info_->GetEdgePropertyIndex(meta_val.name())) {
     if (apply_index > 0) {
       rocksdb::WriteBatch wb;
       auto s = SetRaftApplyIndex(apply_index, &wb);
@@ -300,7 +300,7 @@ void GraphDB::ApplyCreateEdgePropertyIndex(uint64_t apply_index,
   std::vector<uint32_t> pids;
   pids.reserve(meta_val.property_ids_size());
   for (auto pid : meta_val.property_ids()) pids.push_back(pid);
-  if (meta_info_.GetEdgePropertyIndex(tid, pids)) {
+  if (meta_info_->GetEdgePropertyIndex(tid, pids)) {
     RG_THROW(common::ErrorCode::EdgePropertyIndexAlreadyExists,
              "Edge property index [type:{}, property_count:{}] already exists",
              meta_val.edge_type_id(), pids.size());
@@ -324,7 +324,7 @@ void GraphDB::ApplyCreateEdgePropertyIndex(uint64_t apply_index,
   }
   s = db_->Write({}, {}, &wb);
   if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
-  auto added = meta_info_.AddEdgePropertyIndex(epi);
+  auto added = meta_info_->AddEdgePropertyIndex(epi);
   assert(added);
   LOG_INFO(
       "Begin online build edge property index: [tid:{}, property_count:{}, "
@@ -339,7 +339,7 @@ void GraphDB::DeleteEdgePropertyIndex(const std::string& index_name) {
   meta::EdgePropertyIndex meta_val;
   {
     std::lock_guard<std::mutex> ddl_lock(index_ddl_mutex_);
-    auto index = meta_info_.GetEdgePropertyIndex(index_name);
+    auto index = meta_info_->GetEdgePropertyIndex(index_name);
     if (!index) {
       RG_THROW(common::ErrorCode::EdgePropertyIndexNotFound,
                "No such edge property index [{}]", index_name);
@@ -360,7 +360,7 @@ void GraphDB::ApplyDeleteEdgePropertyIndex(
   std::lock_guard<std::mutex> ddl_lock(index_ddl_mutex_);
   std::lock_guard<std::mutex> commit_lock(property_index_commit_mutex_);
   const auto& index_name = meta_val.name();
-  auto index = meta_info_.GetEdgePropertyIndex(index_name);
+  auto index = meta_info_->GetEdgePropertyIndex(index_name);
   if (!index) {
     if (apply_index > 0) {
       rocksdb::WriteBatch wb;
@@ -377,7 +377,7 @@ void GraphDB::ApplyDeleteEdgePropertyIndex(
   }
   index->MarkDeleted();
   uint32_t index_id = index->index_id();
-  meta_info_.DeleteEdgePropertyIndex(index_name);
+  meta_info_->DeleteEdgePropertyIndex(index_name);
 
   rocksdb::WriteBatch wb;
   wb.Delete(graph_cf_.meta_info,

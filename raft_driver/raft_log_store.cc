@@ -64,21 +64,35 @@ void RaftLogStorage::Close() {
 }
 
 void RaftLogStorage::Compact(uint64_t index) {
-  if (index >= last_entry_index_) {
+  if (index <= first_entry_index_) return;
+  if (index > last_entry_index_) {
     LOG_FATAL("compact raft log out of range, compact:{}, last:{}", index,
               last_entry_index_);
   }
   auto min = raft_log_key(0);
   auto max = raft_log_key(index);
-  auto s = db_->DeleteRange({}, log_cf_, min, max);
+  raftpb::Entry boundary;
+  boundary.set_index(index);
+  auto [term, error] = Term(index);
+  if (error != nullptr)
+    LOG_FATAL("cannot read compaction boundary term: {}", error.String());
+  boundary.set_term(term);
+  rocksdb::WriteBatch batch;
+  batch.DeleteRange(log_cf_, min, max);
+  batch.Put(log_cf_, max, boundary.SerializeAsString());
+  rocksdb::WriteOptions options;
+  options.sync = true;
+  auto s = db_->Write(options, &batch);
   if (!s.ok()) {
-    LOG_ERROR("failed to delete range, error:{}", s.ToString());
+    LOG_FATAL("failed to compact raft log, error:{}", s.ToString());
   }
   first_entry_index_ = index;
 }
 
-void RaftLogStorage::WriteBatch(rocksdb::WriteBatch &batch) {
-  auto s = db_->Write(rocksdb::WriteOptions(), &batch);
+void RaftLogStorage::WriteBatch(rocksdb::WriteBatch &batch, bool sync) {
+  rocksdb::WriteOptions options;
+  options.sync = sync;
+  auto s = db_->Write(options, &batch);
   if (!s.ok()) {
     LOG_FATAL("failed to write db: {}", s.ToString());
   }
@@ -122,6 +136,7 @@ eraft::Error RaftLogStorage::SetHardState(const raftpb::HardState &hs,
   std::string val;
   hs.SerializeToString(&val);
   batch.Put(meta_cf_, raft_hardstate_key, val);
+  hard_state_ = hs;
   return nullptr;
 }
 
@@ -236,7 +251,21 @@ std::pair<uint64_t, eraft::Error> RaftLogStorage::FirstIndex() {
 }
 
 std::pair<raftpb::Snapshot, eraft::Error> RaftLogStorage::Snapshot() {
-  // disable snapshot
+  if (!eraft::IsEmptySnap(snapshot_)) return {snapshot_, nullptr};
+  if (snapshot_request_) snapshot_request_();
   return {raftpb::Snapshot{}, eraft::ErrSnapshotTemporarilyUnavailable};
+}
+
+void RaftLogStorage::InstallSnapshot(const raftpb::Snapshot &snapshot,
+                                     rocksdb::WriteBatch &batch) {
+  const auto index = snapshot.metadata().index();
+  batch.DeleteRange(log_cf_, raft_log_key(0),
+                    raft_log_key(std::numeric_limits<uint64_t>::max()));
+  raftpb::Entry boundary;
+  boundary.set_index(index);
+  boundary.set_term(snapshot.metadata().term());
+  batch.Put(log_cf_, raft_log_key(index), boundary.SerializeAsString());
+  first_entry_index_ = last_entry_index_ = index;
+  initial_conf_state_ = snapshot.metadata().conf_state();
 }
 }  // namespace raft

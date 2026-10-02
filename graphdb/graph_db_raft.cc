@@ -71,7 +71,7 @@ raft::RaftDriver* GraphDB::raft_driver() const {
 void GraphDB::SetRaftDriver(std::unique_ptr<raft::RaftDriver> raft_driver) {
   std::unique_lock<std::shared_mutex> lock(raft_mutex_);
   raft_driver_ = std::move(raft_driver);
-  meta_info_.id_generator().SetRaftDriver(raft_driver_.get());
+  meta_info_->id_generator().SetRaftDriver(raft_driver_.get());
 }
 
 void GraphDB::StopRaft() {
@@ -80,10 +80,15 @@ void GraphDB::StopRaft() {
     raft_driver_->Stop();
     raft_driver_.reset();
   }
-  meta_info_.id_generator().SetRaftDriver(nullptr);
+  meta_info_->id_generator().SetRaftDriver(nullptr);
 }
 
 uint64_t GraphDB::GetRaftApplyIndex() const {
+  std::lock_guard guard(data_mutex_);
+  return GetRaftApplyIndexUnlocked();
+}
+
+uint64_t GraphDB::GetRaftApplyIndexUnlocked() const {
   std::string val;
   auto s = db_->Get({}, graph_cf_.meta_info, kRaftApplyIndexKey, &val);
   if (s.IsNotFound()) {
@@ -102,6 +107,11 @@ uint64_t GraphDB::GetRaftApplyIndex() const {
 }
 
 std::optional<raftpb::ConfState> GraphDB::GetRaftConfState() const {
+  std::lock_guard guard(data_mutex_);
+  return GetRaftConfStateUnlocked();
+}
+
+std::optional<raftpb::ConfState> GraphDB::GetRaftConfStateUnlocked() const {
   std::string val;
   auto s = db_->Get({}, graph_cf_.meta_info, kRaftConfStateKey, &val);
   if (s.IsNotFound()) {
@@ -121,6 +131,11 @@ std::optional<raftpb::ConfState> GraphDB::GetRaftConfState() const {
 }
 
 std::optional<meta::RaftNodeInfos> GraphDB::GetRaftNodeInfos() const {
+  std::lock_guard guard(data_mutex_);
+  return GetRaftNodeInfosUnlocked();
+}
+
+std::optional<meta::RaftNodeInfos> GraphDB::GetRaftNodeInfosUnlocked() const {
   std::string val;
   auto s = db_->Get({}, graph_cf_.meta_info, kRaftNodeInfosKey, &val);
   if (s.IsNotFound()) {

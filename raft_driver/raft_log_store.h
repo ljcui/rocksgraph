@@ -3,6 +3,7 @@
 #include <rocksdb/db.h>
 
 #include <boost/noncopyable.hpp>
+#include <functional>
 #include <utility>
 
 #include "etcd_raft/rawnode.h"
@@ -29,11 +30,19 @@ struct RaftLogStorage : private boost::noncopyable, eraft::Storage {
   bool Init();
   void Close();
   void Compact(uint64_t index);
+  void InstallSnapshot(const raftpb::Snapshot& snapshot,
+                       rocksdb::WriteBatch& batch);
+  void PublishSnapshot(raftpb::Snapshot snapshot) {
+    snapshot_ = std::move(snapshot);
+  }
+  void SetSnapshotRequest(std::function<void()> request) {
+    snapshot_request_ = std::move(request);
+  }
   eraft::Error SetHardState(const raftpb::HardState& hs,
                             rocksdb::WriteBatch& batch);
   eraft::Error Append(std::vector<raftpb::Entry> entries,
                       rocksdb::WriteBatch& batch);
-  void WriteBatch(rocksdb::WriteBatch& batch);
+  void WriteBatch(rocksdb::WriteBatch& batch, bool sync = false);
 
  private:
   uint64_t firstIndex() const { return first_entry_index_ + 1; }
@@ -48,5 +57,7 @@ struct RaftLogStorage : private boost::noncopyable, eraft::Storage {
   uint64_t last_entry_index_ = 0;
   raftpb::HardState hard_state_;
   raftpb::ConfState initial_conf_state_;
+  raftpb::Snapshot snapshot_;
+  std::function<void()> snapshot_request_;
 };
 }  // namespace raft

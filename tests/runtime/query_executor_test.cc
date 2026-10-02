@@ -955,6 +955,7 @@ TEST(QueryExecutorTest, ExecutesDbmsProcedures) {
                                  {"dbms.graph.addRaftNode", "WRITE"},
                                  {"dbms.graph.clearGraph", "WRITE"},
                                  {"dbms.graph.createGraph", "WRITE"},
+                                 {"dbms.graph.createGraphForJoin", "WRITE"},
                                  {"dbms.graph.createGraphWithRaft", "WRITE"},
                                  {"dbms.graph.deleteGraph", "WRITE"},
                                  {"dbms.graph.demoteRaftNode", "WRITE"},
@@ -971,11 +972,12 @@ TEST(QueryExecutorTest, ExecutesDbmsProcedures) {
       (std::vector<std::string>{
           "dbms.graph.addRaftLearnerNode", "dbms.graph.addRaftNode",
           "dbms.graph.clearGraph", "dbms.graph.createGraph",
-          "dbms.graph.createGraphWithRaft", "dbms.graph.deleteGraph",
-          "dbms.graph.demoteRaftNode", "dbms.graph.getRaftNodeInfos",
-          "dbms.graph.getRaftStatus", "dbms.graph.listGraph",
-          "dbms.graph.promoteRaftLearnerNode", "dbms.graph.removeRaftNode",
-          "dbms.graph.transferRaftLeader", "dbms.graph.updateRaftNode"}));
+          "dbms.graph.createGraphForJoin", "dbms.graph.createGraphWithRaft",
+          "dbms.graph.deleteGraph", "dbms.graph.demoteRaftNode",
+          "dbms.graph.getRaftNodeInfos", "dbms.graph.getRaftStatus",
+          "dbms.graph.listGraph", "dbms.graph.promoteRaftLearnerNode",
+          "dbms.graph.removeRaftNode", "dbms.graph.transferRaftLeader",
+          "dbms.graph.updateRaftNode"}));
 }
 
 TEST(QueryExecutorTest, ExecutesIndexProceduresThroughCypher) {

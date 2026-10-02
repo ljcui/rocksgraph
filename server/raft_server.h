@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "etcd_raft/raftpb/raft.pb.h"
+#include "raft_driver/connection.h"
 
 namespace server {
 
@@ -30,7 +31,8 @@ class RaftServer final {
   std::atomic<bool> started_{false};
   GraphManager* graph_manager_ = nullptr;
   boost::asio::io_service listener_{BOOST_ASIO_CONCURRENCY_HINT_UNSAFE};
-  std::function<void(std::string, raftpb::Message)> protobuf_handler_{};
+  raft::RaftHandlers protobuf_handler_{};
+  std::unique_ptr<boost::asio::thread_pool> snapshot_workers_;
 };
 
 }  // namespace server

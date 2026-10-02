@@ -171,6 +171,27 @@ class TestServerCluster final {
     servers_[index] = std::move(server);
   }
 
+  size_t ReserveServer() {
+    std::unordered_set<int32_t> used;
+    for (const auto& config : server_configs_) {
+      used.insert(config.bolt_port);
+      used.insert(config.raft_port);
+    }
+    TestServerConfig config;
+    config.node_id = first_node_id_ + server_configs_.size();
+    do {
+      config.bolt_port = AllocateFreePort();
+    } while (!used.insert(config.bolt_port).second);
+    do {
+      config.raft_port = AllocateFreePort();
+    } while (!used.insert(config.raft_port).second);
+    config.data_path =
+        base_path_ + "/node" + std::to_string(server_configs_.size() + 1);
+    server_configs_.push_back(std::move(config));
+    servers_.resize(server_configs_.size());
+    return server_configs_.size() - 1;
+  }
+
   void CreateRaftGraphOnAllServers(const std::string& graph_name,
                                    const meta::RaftNodeInfos& node_infos) {
     for (const auto& server : servers_) {
@@ -274,15 +295,20 @@ class TestServerCluster final {
                 if (server == nullptr) {
                   return true;
                 }
-                auto graph = server->graph_manager()->OpenGraph(graph_name);
-                auto txn = graph->BeginTransaction();
-                size_t vertex_count = 0;
-                for (auto iter = txn->NewVertexIterator(); iter->Valid();
-                     iter->Next()) {
-                  ++vertex_count;
+                try {
+                  auto graph = server->graph_manager()->OpenGraph(graph_name);
+                  auto txn = graph->BeginTransaction();
+                  size_t vertex_count = 0;
+                  for (auto iter = txn->NewVertexIterator(); iter->Valid();
+                       iter->Next())
+                    ++vertex_count;
+                  txn->Commit();
+                  return vertex_count == expected_count;
+                } catch (const common::Exception& error) {
+                  if (error.code() == common::ErrorCode::GraphNotReady)
+                    return false;
+                  throw;
                 }
-                txn->Commit();
-                return vertex_count == expected_count;
               });
         },
         timeout);
@@ -655,7 +681,8 @@ TestRaftLogStorage OpenRaftLogStorage(
     throw std::runtime_error("unexpected raft log storage column families");
   }
   return TestRaftLogStorage(std::make_unique<raft::RaftLogStorage>(
-      db.release(), cf_handles[0], cf_handles[1], std::move(initial_conf_state)));
+      db.release(), cf_handles[0], cf_handles[1],
+      std::move(initial_conf_state)));
 }
 
 raftpb::Entry MakeLogEntry(uint64_t index, uint64_t term,
@@ -986,6 +1013,418 @@ uint64_t QueryLeaderNodeId(GraphDB* graph) {
     throw std::runtime_error("expected exactly one positive Raft leader id");
   }
   return static_cast<uint64_t>(result.rows.front().front().AsInteger());
+}
+
+TEST(RaftCluster, joinWithoutLeaderPersistsSeedsAndNeverBootstraps) {
+  const std::string path = "testdb_raft_join_waiting";
+  fs::remove_all(path);
+  server::LocalNodeOptions local;
+  local.raft_node_id = 4;
+  local.bolt_port = AllocateFreePort();
+  local.raft_port = AllocateFreePort();
+  meta::RaftNodeInfos members;
+  for (uint64_t id : {1U, 4U}) {
+    meta::RaftNodeInfo member;
+    member.set_node_id(id);
+    member.set_ip(local.host);
+    member.set_graph(kGraphName);
+    member.set_bolt_port(id == 4 ? local.bolt_port : AllocateFreePort());
+    member.set_raft_poft(id == 4 ? local.raft_port : AllocateFreePort());
+    (*members.mutable_nodes())[id] = member;
+  }
+  {
+    auto manager = server::GraphManager::Open(path, {}, local);
+    ExecuteSystemCypherAndCommit(
+        manager.get(), "CALL dbms.graph.createGraphForJoin($name, $members)",
+        {{"name", Value(kGraphName)}, {"members", RaftMembersValue(members)}});
+    auto graph = manager->OpenGraph(kGraphName);
+    EXPECT_FALSE(graph->RaftReady());
+    EXPECT_THROW_CODE(graph->BeginTransaction(), GraphNotReady);
+    EXPECT_THROW_CODE(manager->ClearGraph(kGraphName), GraphNotReady);
+    EXPECT_EQ(graph->raft_driver()->GetRaftStatus().last_log, 0U);
+    EXPECT_TRUE(
+        graph->raft_driver()->GetRaftStatus().s.config_.voters_.IDs().empty());
+    EXPECT_FALSE(graph->GetRaftConfState());
+    EXPECT_TRUE(graph->raft_driver()->GetNodeInfosWithLeader().nodes().empty());
+    auto status =
+        ExecuteSystemCypherAndCommit(manager.get(),
+                                     "CALL dbms.graph.getRaftStatus($name) "
+                                     "YIELD graph_ready RETURN graph_ready",
+                                     {{"name", Value(kGraphName)}});
+    ASSERT_EQ(status.rows.size(), 2U);
+    EXPECT_EQ(status.rows.front().front(), Value(false));
+  }
+  {
+    auto manager = server::GraphManager::Open(path, {}, local);
+    auto graph = manager->OpenGraph(kGraphName);
+    EXPECT_FALSE(graph->RaftReady());
+    EXPECT_EQ(graph->raft_driver()->GetRaftStatus().last_log, 0U);
+    EXPECT_EQ(graph->raft_driver()->GetRaftStatus().nodes.size(), 2U);
+    EXPECT_TRUE(
+        graph->raft_driver()->GetRaftStatus().s.config_.voters_.IDs().empty());
+  }
+  fs::remove_all(path);
+}
+
+TEST(RaftCluster,
+     newLearnerJoinsThroughLogsWithoutSnapshotAndCanLeadAfterPromotion) {
+  TestServerCluster cluster("testdb_raft_join_logs");
+  cluster.Start();
+  auto* leader = cluster.WaitForLeader();
+  ASSERT_NE(leader, nullptr);
+  {
+    auto graph = leader->graph_manager()->OpenGraph(kGraphName);
+    auto txn = graph->BeginTransaction();
+    txn->CreateVertex({"Joined"}, {{"name", Value("before join")}});
+    txn->Commit();
+  }
+  const auto fourth = cluster.ReserveServer();
+  auto member =
+      cluster.NodeInfosForGraph(kGraphName).nodes().at(cluster.node_id(fourth));
+  leader->graph_manager()->AddManagedRaftNode(kGraphName, member, true);
+  cluster.StartServer(fourth);
+  auto members = leader->graph_manager()->ManagedGraphRaftNodeInfos(kGraphName);
+  ExecuteSystemCypherAndCommit(
+      cluster.server(fourth)->graph_manager(),
+      "CALL dbms.graph.createGraphForJoin($name, $members)",
+      {{"name", Value(kGraphName)}, {"members", RaftMembersValue(members)}});
+  ASSERT_TRUE(
+      cluster.WaitForGraphVertexCount(kGraphName, 1, std::chrono::seconds(15)));
+  auto graph = cluster.server(fourth)->graph_manager()->OpenGraph(kGraphName);
+  ASSERT_TRUE(graph->RaftReady());
+  EXPECT_EQ(graph->raft_driver()->GetRaftStatus().first_log, 0U);
+  EXPECT_FALSE(fs::exists(graph->path() + "/raft_join.pb"));
+  ASSERT_TRUE(WaitUntil(
+      [&]() {
+        auto status =
+            leader->graph_manager()->ManagedGraphRaftStatus(kGraphName);
+        auto node = std::ranges::find(status.nodes, cluster.node_id(fourth),
+                                      &rg::ManagedRaftNodeStatus::node_id);
+        return node != status.nodes.end() &&
+               node->match_index >= status.commit_index;
+      },
+      std::chrono::seconds(10)));
+  leader->graph_manager()->PromoteManagedRaftLearnerNode(
+      kGraphName, cluster.node_id(fourth));
+  leader->graph_manager()->TransferManagedRaftLeader(kGraphName,
+                                                     cluster.node_id(fourth));
+  ASSERT_EQ(cluster.WaitForLeader(), cluster.server(fourth));
+  auto txn = graph->BeginTransaction();
+  txn->CreateVertex({"Joined"}, {{"name", Value("new leader")}});
+  txn->Commit();
+  txn.reset();
+  EXPECT_TRUE(cluster.WaitForGraphVertexCount(kGraphName, 2));
+  // Simulate a crash after the data was durable but before deleting the join
+  // marker. An idle cluster must not require another write to become ready.
+  graph->SyncRaftState();
+  const auto joined_path = fs::path(graph->path());
+  graph.reset();
+  cluster.StopServer(fourth);
+  raft::WriteSnapshotRecord(joined_path / "raft_join.pb",
+                            members.SerializeAsString());
+  fs::create_directories(joined_path / "data.previous");
+  cluster.StartServer(fourth);
+  ASSERT_TRUE(WaitUntil(
+      [&]() {
+        return cluster.server(fourth)
+            ->graph_manager()
+            ->OpenGraph(kGraphName)
+            ->RaftReady();
+      },
+      std::chrono::seconds(10)));
+  EXPECT_FALSE(fs::exists(joined_path / "raft_join.pb"));
+  EXPECT_FALSE(fs::exists(joined_path / "data.previous"));
+}
+
+TEST(RaftCluster, compactedLogsUseChunkedSnapshotForNewVoterAndOfflineReplica) {
+  TestServerCluster cluster("testdb_raft_join_snapshot");
+  cluster.Start();
+  auto* leader = cluster.WaitForLeader();
+  ASSERT_NE(leader, nullptr);
+  auto source = leader->graph_manager()->OpenGraph(kGraphName);
+  source->AddVertexVectorField("SnapshotNode", "embedding", 2);
+  // Incompressible data makes the checkpoint larger than a transfer chunk.
+  std::string payload(3 * raft::kSnapshotChunkSize, '\0');
+  uint32_t random = 1234567;
+  for (char& byte : payload) {
+    random ^= random << 13;
+    random ^= random >> 17;
+    random ^= random << 5;
+    byte = random;
+  }
+  {
+    auto txn = source->BeginTransaction();
+    for (int i = 0; i < 3; ++i) {
+      txn->CreateVertex(
+          {"SnapshotNode"},
+          {{"ordinal", Value(i)},
+           {"name", Value("snapshot searchable")},
+           {"blob", Value(payload)},
+           {"embedding",
+            Value(Value::List{Value(double(i)), Value(double(i + 1))})}});
+    }
+    txn->Commit();
+  }
+  source->AddVertexPropertyIndex("snapshot_property", true, "SnapshotNode",
+                                 {"ordinal"});
+  source->AddVertexFullTextIndex("snapshot_fulltext", {"SnapshotNode"},
+                                 {"name"});
+  source->AddVertexVectorIndex("snapshot_vector", "SnapshotNode", "embedding",
+                               2, "l2", 16, 100);
+  ASSERT_TRUE(WaitForAllPropertyIndexesReady(cluster, "snapshot_property"));
+  const auto boundary = source->GetRaftApplyIndex();
+  ASSERT_TRUE(cluster.WaitForApplyIndex(boundary));
+  ASSERT_EQ(source->raft_driver()->CompactLog(boundary), nullptr);
+  // Routine log compaction materializes no checkpoint.
+  EXPECT_FALSE(fs::exists(source->path() + "/snapshots/out"));
+
+  const auto fourth = cluster.ReserveServer();
+  auto member =
+      cluster.NodeInfosForGraph(kGraphName).nodes().at(cluster.node_id(fourth));
+  leader->graph_manager()->AddManagedRaftNode(kGraphName, member, false);
+  cluster.StartServer(fourth);
+  auto members = leader->graph_manager()->ManagedGraphRaftNodeInfos(kGraphName);
+  cluster.server(fourth)->graph_manager()->CreateGraphForJoin(kGraphName,
+                                                              members);
+  auto replica = cluster.server(fourth)->graph_manager()->OpenGraph(kGraphName);
+  auto writes = std::async(std::launch::async, [source, replica]() {
+    size_t count = 0;
+    while (!replica->RaftReady() && count < 200) {
+      auto txn = source->BeginTransaction();
+      txn->CreateVertex({"ConcurrentSnapshotWrite"},
+                        {{"number", Value(static_cast<int64_t>(count))}});
+      txn->Commit();
+      ++count;
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    return count;
+  });
+  const auto concurrent_count = writes.get();
+  ASSERT_GT(concurrent_count, 0U);
+  ASSERT_TRUE(cluster.WaitForGraphVertexCount(kGraphName, 3 + concurrent_count,
+                                              std::chrono::seconds(30)));
+  ASSERT_TRUE(replica->RaftReady());
+  EXPECT_GE(replica->raft_driver()->GetRaftStatus().first_log, boundary);
+  EXPECT_FALSE(fs::exists(replica->path() + "/snapshot_install.pb"));
+  EXPECT_FALSE(fs::exists(replica->path() + "/data.previous"));
+  ASSERT_TRUE(WaitUntil(
+      [&]() {
+        auto fulltext = replica->meta_info().GetReadyVertexFullTextIndex(
+            "snapshot_fulltext");
+        auto vector =
+            replica->meta_info().GetReadyVertexVectorIndex("snapshot_vector");
+        return fulltext && vector;
+      },
+      std::chrono::seconds(20)));
+  {
+    auto txn = replica->BeginTransaction();
+    auto properties =
+        txn->QueryVertexByPropertyIndex("snapshot_property", Value(1));
+    ASSERT_TRUE(properties->Valid());
+    properties.reset();
+    auto fulltext =
+        txn->QueryVertexByFTIndex("snapshot_fulltext", "searchable", 10);
+    size_t matches = 0;
+    for (; fulltext->Valid(); fulltext->Next()) ++matches;
+    EXPECT_EQ(matches, 3U);
+    fulltext.reset();
+    auto vector = txn->QueryVertexByKnnSearch("snapshot_vector", {1, 2}, 3, 20);
+    ASSERT_TRUE(vector->Valid());
+  }
+  replica.reset();
+  cluster.StopServer(fourth);
+  {
+    auto txn = source->BeginTransaction();
+    txn->CreateVertex({"AfterSnapshot"}, {{"name", Value("incremental")}});
+    txn->Commit();
+  }
+  ASSERT_EQ(source->raft_driver()->CompactLog(source->GetRaftApplyIndex()),
+            nullptr);
+  cluster.StartServer(fourth);
+  ASSERT_TRUE(cluster.WaitForGraphVertexCount(kGraphName, 4 + concurrent_count,
+                                              std::chrono::seconds(30)));
+  ASSERT_TRUE(WaitUntil(
+      [&]() {
+        return !fs::exists(source->path() + "/snapshots/out") ||
+               fs::is_empty(source->path() + "/snapshots/out");
+      },
+      std::chrono::seconds(10)));
+}
+
+TEST(RaftCluster, snapshotInstallRecoveryFinishesEachDirectorySwitchPhase) {
+  for (int phase = 0; phase < 3; ++phase) {
+    TestServerCluster cluster("testdb_raft_snapshot_recovery");
+    cluster.Start();
+    auto leader_index = cluster.WaitForLeaderIndex();
+    ASSERT_TRUE(leader_index);
+    auto follower = FirstFollowerIndex(cluster, *leader_index);
+    auto source =
+        cluster.server(*leader_index)->graph_manager()->OpenGraph(kGraphName);
+    auto target =
+        cluster.server(follower)->graph_manager()->OpenGraph(kGraphName);
+    auto local_state =
+        target->raft_driver()->GetRaftStatus().s.basicStatus_.hardState_;
+    auto target_path = fs::path(target->path());
+    target.reset();
+    cluster.StopServer(follower);
+    {
+      auto txn = source->BeginTransaction();
+      txn->CreateVertex({"Recovery"}, {{"phase", Value(phase)}});
+      txn->Commit();
+    }
+    auto snapshot = source->CreateRaftSnapshot(
+        source->path() + "/snapshots/out/recovery-" + std::to_string(phase));
+    auto source_state =
+        source->raft_driver()->GetRaftStatus().s.basicStatus_.hardState_;
+    snapshot->snapshot.mutable_metadata()->set_term(source_state.term());
+    const auto staged = target_path / "snapshots/in/recovery";
+    fs::create_directories(staged.parent_path());
+    fs::copy(snapshot->directory, staged, fs::copy_options::recursive);
+    meta::SnapshotInstall record;
+    *record.mutable_snapshot() = snapshot->snapshot;
+    if (local_state.term() != source_state.term()) local_state.set_vote(0);
+    local_state.set_term(source_state.term());
+    local_state.set_commit(snapshot->snapshot.metadata().index());
+    *record.mutable_hard_state() = local_state;
+    record.set_directory("snapshots/in/recovery");
+    raft::WriteSnapshotRecord(target_path / "snapshot_install.pb",
+                              record.SerializeAsString());
+    if (phase >= 1)
+      fs::rename(target_path / "data", target_path / "data.previous");
+    if (phase >= 2) fs::rename(staged, target_path / "data");
+    cluster.StartServer(follower);
+    ASSERT_TRUE(cluster.WaitForGraphVertexCount(kGraphName, 1,
+                                                std::chrono::seconds(15)))
+        << phase;
+    auto restored =
+        cluster.server(follower)->graph_manager()->OpenGraph(kGraphName);
+    EXPECT_GE(restored->raft_driver()->GetRaftStatus().first_log,
+              snapshot->snapshot.metadata().index());
+    EXPECT_FALSE(fs::exists(target_path / "snapshot_install.pb"));
+    EXPECT_FALSE(fs::exists(target_path / "data.previous"));
+  }
+}
+
+TEST(RaftSnapshot, invalidChunksAndInterruptedTransfersNeverBecomeInstallable) {
+  const fs::path path = "testdb_raft_snapshot_frames";
+  fs::remove_all(path);
+  meta::SnapshotFrame begin;
+  begin.set_kind(meta::SnapshotFrame::BEGIN);
+  begin.set_transfer_id("test-transfer");
+  begin.set_file_count(1);
+  auto* message = begin.mutable_message();
+  message->set_type(raftpb::MsgSnap);
+  message->set_from(1);
+  message->set_to(1);
+  message->set_term(1);
+  auto* metadata = message->mutable_snapshot()->mutable_metadata();
+  metadata->set_index(10);
+  metadata->set_term(1);
+  metadata->mutable_conf_state()->add_voters(1);
+  meta::SnapshotReference reference;
+  reference.set_version(raft::kSnapshotVersion);
+  reference.set_id("test-snapshot");
+  auto* node = &(*reference.mutable_node_infos()->mutable_nodes())[1];
+  node->set_node_id(1);
+  node->set_ip("127.0.0.1");
+  node->set_raft_poft(12345);
+  message->mutable_snapshot()->set_data(reference.SerializeAsString());
+  {
+    raft::SnapshotReceiver receiver;
+    auto invalid_begin = begin;
+    invalid_begin.mutable_message()
+        ->mutable_snapshot()
+        ->mutable_metadata()
+        ->mutable_conf_state()
+        ->add_voters(1);
+    EXPECT_THROW_CODE(receiver.Consume(invalid_begin, path), InputError);
+    receiver.Consume(begin, path);
+    meta::SnapshotFrame file;
+    file.set_kind(meta::SnapshotFrame::FILE);
+    file.set_transfer_id(begin.transfer_id());
+    file.mutable_file()->set_name("../outside");
+    EXPECT_THROW_CODE(receiver.Consume(file, path), InvalidParameter);
+    file.mutable_file()->set_name("CURRENT");
+    file.mutable_file()->set_size(3);
+    file.mutable_file()->set_checksum(raft::SnapshotChecksum("abc", 3));
+    receiver.Consume(file, path);
+    meta::SnapshotFrame chunk;
+    chunk.set_kind(meta::SnapshotFrame::CHUNK);
+    chunk.set_transfer_id(begin.transfer_id());
+    chunk.set_data("bad");
+    chunk.set_checksum(0);
+    EXPECT_THROW_CODE(receiver.Consume(chunk, path), InputError);
+    chunk.set_data(std::string(raft::kSnapshotChunkSize + 1, 'x'));
+    EXPECT_THROW_CODE(receiver.Consume(chunk, path), InputError);
+    chunk.set_data("bad");
+    chunk.set_checksum(raft::SnapshotChecksum("bad", 3));
+    receiver.Consume(chunk, path);
+    meta::SnapshotFrame finish;
+    finish.set_kind(meta::SnapshotFrame::FINISH);
+    finish.set_transfer_id(begin.transfer_id());
+    EXPECT_THROW_CODE(receiver.Consume(finish, path), InputError);
+    EXPECT_FALSE(fs::exists(path / "snapshot_install.pb"));
+  }
+  EXPECT_FALSE(fs::exists(path / "snapshots/in/test-transfer"));
+  fs::remove_all(path);
+}
+
+TEST(RaftSnapshot, installationWaitsForTransactionsReleasedByAnotherWorker) {
+  const fs::path path = "testdb_raft_snapshot_transaction_lease";
+  fs::remove_all(path);
+  auto graph = GraphDB::Open(
+      path.string(), {.assistant_pool = std::make_shared<AssistantPool>(2)});
+  {
+    auto txn = graph->BeginTransaction();
+    txn->CreateVertex({"Preserved"}, {{"name", Value("leased")}});
+    txn->Commit();
+  }
+  raftpb::ConfState state;
+  state.add_voters(1);
+  meta::RaftNodeInfos members;
+  (*members.mutable_nodes())[1] =
+      MakeNodeInfo(MakeLocalNodeConfig(kGraphName), 1);
+  graph->ApplyRaftConfChange(10, state, members);
+  auto snapshot =
+      graph->CreateRaftSnapshot((path / "snapshots/in/lease").string());
+  snapshot->snapshot.mutable_metadata()->set_term(1);
+  meta::SnapshotInstall record;
+  *record.mutable_snapshot() = snapshot->snapshot;
+  record.set_directory("snapshots/in/lease");
+  raft::WriteSnapshotRecord(path / "snapshot_install.pb",
+                            record.SerializeAsString());
+  snapshot->keep = true;
+  const auto identity = graph->PlanCacheIdentity();
+  auto txn = graph->BeginTransaction();
+  auto cursor = txn->NewVertexIterator();
+  auto install = std::async(std::launch::async,
+                            [&]() { graph->InstallRaftSnapshot(snapshot); });
+  EXPECT_TRUE(WaitUntil([&]() { return !graph->RaftReady(); },
+                        std::chrono::seconds(5)));
+  EXPECT_EQ(install.wait_for(std::chrono::milliseconds(100)),
+            std::future_status::timeout);
+  EXPECT_THROW_CODE(graph->BeginTransaction(), GraphNotReady);
+  EXPECT_TRUE(cursor->Valid());
+  auto release =
+      std::async(std::launch::async,
+                 [txn = std::move(txn), cursor = std::move(cursor)]() mutable {
+                   cursor.reset();
+                   txn.reset();
+                 });
+  release.get();
+  ASSERT_EQ(install.wait_for(std::chrono::seconds(5)),
+            std::future_status::ready);
+  install.get();
+  raft::RemoveSnapshotRecord(path / "snapshot_install.pb");
+  graph->MarkRaftReady(10, 1);
+  EXPECT_NE(graph->PlanCacheIdentity(), identity);
+  EXPECT_EQ(graph->GetRaftApplyIndex(), 10U);
+  {
+    auto restored = graph->BeginTransaction();
+    EXPECT_TRUE(restored->NewVertexIterator()->Valid());
+  }
+  graph.reset();
+  fs::remove_all(path);
 }
 
 TEST(RaftCluster, configuredNodeIdSharedAcrossGraphsAndRestarts) {
@@ -2455,11 +2894,13 @@ TEST(RaftDriver, startupCompactsLogWhenAppliedIndexExceedsRetention) {
   TestRaftStateMachine state_machine;
   state_machine.SetAppliedIndex(kAppliedIndex);
   state_machine.ApplyConfChange(kAppliedIndex, conf_state, node_infos);
-  raft::RaftDriver driver([](uint64_t, const meta::RaftRequest&) {},
-                          state_machine.ConfChangeCallback(),
-                          state_machine.AppliedIndex(),
-                          state_machine.ConfState(), state_machine.NodeInfos(),
-                          local_node, {}, store_config, raft_config);
+  raft::RaftDriver::SnapshotCallbacks durability;
+  durability.sync = [&state_machine]() { return state_machine.AppliedIndex(); };
+  raft::RaftDriver driver(
+      [](uint64_t, const meta::RaftRequest&) {},
+      state_machine.ConfChangeCallback(), state_machine.AppliedIndex(),
+      state_machine.ConfState(), state_machine.NodeInfos(), local_node, {},
+      store_config, raft_config, durability);
 
   auto err = driver.Run();
   if (err != nullptr) {
@@ -2738,15 +3179,16 @@ TEST(RaftDriver, startupRecoversMembershipWithoutWaitingForApply) {
           }
           state_machine.ApplyConfChange(index, conf_state, node_infos);
         },
-        state_machine.AppliedIndex(),
-        state_machine.ConfState(), state_machine.NodeInfos(), local_node,
+        state_machine.AppliedIndex(), state_machine.ConfState(),
+        state_machine.NodeInfos(), local_node,
         startup_state.has_logs ? std::vector<eraft::Peer>{} : peers,
         MakeRaftLogStoreConfig(raft_path), MakeRaftConfig());
 
     auto run_future =
         std::async(std::launch::async, [&driver] { return driver.Run(); });
-    const bool started = apply_started_future.wait_for(std::chrono::seconds(5)) ==
-                         std::future_status::ready;
+    const bool started =
+        apply_started_future.wait_for(std::chrono::seconds(5)) ==
+        std::future_status::ready;
     const bool run_returned = run_future.wait_for(std::chrono::seconds(5)) ==
                               std::future_status::ready;
     auto applied_before_release = state_machine.AppliedIndex();
@@ -2841,8 +3283,8 @@ TEST(RaftDriver, restartRecoversNodeInfosAndContinuesApplying) {
           state_machine.SetAppliedIndex(index);
         },
         state_machine.ConfChangeCallback(), state_machine.AppliedIndex(),
-        state_machine.ConfState(), state_machine.NodeInfos(), local_node,
-        {}, store_config, raft_config);
+        state_machine.ConfState(), state_machine.NodeInfos(), local_node, {},
+        store_config, raft_config);
 
     auto err = driver.Run();
     if (err != nullptr) {
@@ -2924,10 +3366,10 @@ TEST(RaftDriver, freshStartWithoutInitialPeersUsesProvidedConfState) {
   (*node_infos.mutable_nodes())[local_node.node_id] =
       MakeNodeInfo(local_node, local_node.node_id);
   TestRaftStateMachine state_machine;
-  raft::RaftDriver driver(
-      [](uint64_t, const meta::RaftRequest&) {},
-      state_machine.ConfChangeCallback(), 0, conf_state, node_infos, local_node,
-      {}, MakeRaftLogStoreConfig(raft_path), MakeRaftConfig());
+  raft::RaftDriver driver([](uint64_t, const meta::RaftRequest&) {},
+                          state_machine.ConfChangeCallback(), 0, conf_state,
+                          node_infos, local_node, {},
+                          MakeRaftLogStoreConfig(raft_path), MakeRaftConfig());
 
   auto err = driver.Run();
   EXPECT_EQ(err, nullptr);
@@ -3050,16 +3492,14 @@ TEST(RaftDriver, freshBootstrapRejectsMissingLocalInitialPeer) {
   auto raft_config = MakeRaftConfig();
 
   TestRaftStateMachine state_machine;
-  raft::RaftDriver driver([](uint64_t, const meta::RaftRequest&) {},
-                          state_machine.ConfChangeCallback(), 0, std::nullopt,
-                          std::nullopt, local_node,
-                          MakeInitPeers(other_node, 2), store_config,
-                          raft_config);
+  raft::RaftDriver driver(
+      [](uint64_t, const meta::RaftRequest&) {},
+      state_machine.ConfChangeCallback(), 0, std::nullopt, std::nullopt,
+      local_node, MakeInitPeers(other_node, 2), store_config, raft_config);
 
   auto err = driver.Run();
   EXPECT_NE(err, nullptr);
-  EXPECT_NE(err.String().find("not in initial peers"),
-            std::string::npos);
+  EXPECT_NE(err.String().find("not in initial peers"), std::string::npos);
 
   driver.Stop();
   fs::remove_all(raft_path);
@@ -3133,13 +3573,14 @@ TEST(RaftDriver, restartUsesConfiguredIdWithoutLocalMembership) {
         state_machine.SetAppliedIndex(index);
       },
       state_machine.ConfChangeCallback(), state_machine.AppliedIndex(),
-      state_machine.ConfState(), state_machine.NodeInfos(), mismatched_node,
-      {}, store_config, raft_config);
+      state_machine.ConfState(), state_machine.NodeInfos(), mismatched_node, {},
+      store_config, raft_config);
 
   auto err = driver.Run();
   EXPECT_EQ(err, nullptr);
   if (err == nullptr) {
-    EXPECT_EQ(driver.GetRaftStatus().s.basicStatus_.id_, mismatched_node.node_id);
+    EXPECT_EQ(driver.GetRaftStatus().s.basicStatus_.id_,
+              mismatched_node.node_id);
   }
 
   driver.Stop();
@@ -3381,8 +3822,8 @@ TEST(RaftDriver, restartUsesConfiguredIdWithDuplicateAddresses) {
         state_machine.SetAppliedIndex(index);
       },
       state_machine.ConfChangeCallback(), state_machine.AppliedIndex(),
-      state_machine.ConfState(), state_machine.NodeInfos(), local_node,
-      {}, store_config, raft_config);
+      state_machine.ConfState(), state_machine.NodeInfos(), local_node, {},
+      store_config, raft_config);
 
   auto err = driver.Run();
   EXPECT_EQ(err, nullptr);
