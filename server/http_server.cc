@@ -29,7 +29,6 @@ namespace http = boost::beast::http;
 namespace json = boost::json;
 namespace fs = std::filesystem;
 using Json = json::value;
-constexpr size_t kMaxTasks = 128;
 constexpr size_t kMaxSnapshots = 32;
 
 Json ParseJson(const std::string& text, common::ErrorCode code) {
@@ -76,6 +75,15 @@ std::string StringParameter(const Json& body, const char* name) {
            common::ErrorCode::InvalidParameter, "missing string parameter [{}]",
            name);
   return json::value_to<std::string>(body.at(name));
+}
+
+uint64_t UnsignedParameter(const Json& body, const char* name) {
+  RG_CHECK(body.is_object() && body.as_object().contains(name) &&
+               IsUnsignedInteger(body.at(name)) &&
+               json::value_to<uint64_t>(body.at(name)) > 0,
+           common::ErrorCode::InvalidParameter,
+           "missing positive integer parameter [{}]", name);
+  return json::value_to<uint64_t>(body.at(name));
 }
 
 struct Snapshot {
@@ -157,6 +165,40 @@ class HttpServer::Impl {
 
   bool Started() const { return started_.load(); }
   uint16_t Port() const { return http_.Port(); }
+
+  void HandleSnapshotTrigger(const std::string& graph,
+                             const raftpb::Message& message) {
+    RG_CHECK(started_.load(), common::ErrorCode::QueryCancelled,
+             "HTTP server is stopping");
+    RG_CHECK(message.type() == raftpb::MsgSnap,
+             common::ErrorCode::InvalidParameter, "expected snapshot trigger");
+    auto context =
+        ParseJson(message.context(), common::ErrorCode::InvalidParameter);
+    auto address =
+        common::http::ParseAddress(StringParameter(context, "address"));
+    {
+      // Do not retain the graph while the asynchronous import replaces it.
+      auto database = manager_->OpenGraph(graph);
+      auto* driver = database->raft_driver();
+      RG_CHECK(driver != nullptr, common::ErrorCode::InvalidParameter,
+               "snapshot update requires a raft graph [{}]", graph);
+      auto status = driver->GetRaftStatus();
+      RG_CHECK(message.to() == status.s.basicStatus_.id_ &&
+                   message.from() > 0 && message.term() > 0,
+               common::ErrorCode::InvalidParameter,
+               "invalid snapshot sender, recipient or term");
+      if (message.term() < status.s.basicStatus_.hardState_.term()) return;
+      // An offline follower can have missed the membership change that added
+      // the current leader. Its old membership must not block recovery.
+    }
+    {
+      std::lock_guard lock(mutex_);
+      if (!updating_graphs_.insert(graph).second) return;
+    }
+    asio::post(updates_, [this, graph, address, node_id = message.to()] {
+      DownloadAndInstallSnapshot(graph, address, node_id);
+    });
+  }
 
  private:
   Reply Handle(const common::http::Request& request) {
@@ -250,55 +292,22 @@ class HttpServer::Impl {
               .snapshot = std::move(snapshot)};
         }
       }
-      if (target == "/snapshot-updates" &&
+      if (target == "/snapshot-reports" &&
           request.method() == http::verb::post) {
         auto body =
             ParseJson(request.body(), common::ErrorCode::InvalidParameter);
         auto graph = StringParameter(body, "graph");
-        auto address =
-            common::http::ParseAddress(StringParameter(body, "address"));
-        RG_CHECK(manager_->OpenGraph(graph)->db_meta().enable_raft(),
+        auto node_id = UnsignedParameter(body, "node_id");
+        RG_CHECK(body.as_object().contains("success") &&
+                     body.at("success").is_bool(),
                  common::ErrorCode::InvalidParameter,
-                 "snapshot update requires a raft graph [{}]", graph);
-        auto id = NewId();
-        {
-          std::lock_guard lock(mutex_);
-          RG_CHECK(!updating_graphs_.contains(graph),
-                   common::ErrorCode::GraphBusy,
-                   "graph [{}] already has a snapshot update", graph);
-          if (tasks_.size() >= kMaxTasks) {
-            auto finished = std::find_if(
-                tasks_.begin(), tasks_.end(), [](const auto& task) {
-                  return task.second.at("state") == "succeeded" ||
-                         task.second.at("state") == "failed";
-                });
-            if (finished != tasks_.end()) tasks_.erase(finished);
-          }
-          RG_CHECK(tasks_.size() < kMaxTasks, common::ErrorCode::GraphBusy,
-                   "too many snapshot update tasks");
-          tasks_[id] = {{"task_id", id},
-                        {"graph", graph},
-                        {"address", address.authority},
-                        {"state", "queued"},
-                        {"installed", false}};
-          updating_graphs_.insert(graph);
-        }
-        asio::post(updates_,
-                   [this, id, graph, address] { Update(id, graph, address); });
-        return {.status = http::status::accepted,
-                .body = {{"task_id", id},
-                         {"state", "queued"},
-                         {"status_url", "/snapshot-updates/" + id}}};
-      }
-      if (target.starts_with("/snapshot-updates/") &&
-          request.method() == http::verb::get) {
-        std::lock_guard lock(mutex_);
-        auto iter = tasks_.find(target.substr(18));
-        if (iter == tasks_.end())
-          return {.status = http::status::not_found,
-                  .body = {{"error", common::ErrorCodeToString(
-                                         common::ErrorCode::TaskNotFound)}}};
-        return {.body = iter->second};
+                 "missing boolean parameter [success]");
+        auto database = manager_->OpenGraph(graph);
+        auto* driver = database->raft_driver();
+        RG_CHECK(driver != nullptr, common::ErrorCode::InvalidParameter,
+                 "snapshot report requires a raft graph [{}]", graph);
+        driver->ReportSnapshot(node_id, body.at("success").as_bool());
+        return {};
       }
       return {.status = http::status::not_found,
               .body = {{"error", "InvalidParameter"},
@@ -313,13 +322,10 @@ class HttpServer::Impl {
     }
   }
 
-  void State(const std::string& id, const std::string& state) {
-    std::lock_guard lock(mutex_);
-    tasks_.at(id)["state"] = state;
-  }
-
-  void Update(const std::string& id, const std::string& graph,
-              const common::http::Address& address) {
+  void DownloadAndInstallSnapshot(const std::string& graph,
+                                  const common::http::Address& address,
+                                  uint64_t node_id) {
+    const auto id = NewId();
     fs::path directory = root_ / ("download-" + id);
     std::string snapshot_id;
     std::string error, error_code;
@@ -328,7 +334,6 @@ class HttpServer::Impl {
     try {
       RG_CHECK(started_.load(), common::ErrorCode::QueryCancelled,
                "server is stopping");
-      State(id, "creating_snapshot");
       auto manifest =
           Exchange(client, http::verb::post, "/snapshots", {{"graph", graph}});
       auto remote_id = StringParameter(manifest, "snapshot_id");
@@ -338,10 +343,6 @@ class HttpServer::Impl {
                common::ErrorCode::InvalidParameter,
                "invalid remote snapshot ID");
       snapshot_id = std::move(remote_id);
-      {
-        std::lock_guard lock(mutex_);
-        tasks_.at(id)["snapshot_id"] = snapshot_id;
-      }
       RG_CHECK(manifest.at("version") == 1 &&
                    StringParameter(manifest, "graph") == graph &&
                    IsUnsignedInteger(manifest.at("index")) &&
@@ -357,7 +358,6 @@ class HttpServer::Impl {
           .graph = graph,
           .index = json::value_to<uint64_t>(manifest.at("index")),
           .term = json::value_to<uint64_t>(manifest.at("term"))};
-      State(id, "downloading");
       fs::create_directories(directory / "data");
       std::unordered_set<std::string> paths;
       size_t index = 0;
@@ -389,13 +389,9 @@ class HttpServer::Impl {
                  common::ErrorCode::IOError, "snapshot checksum mismatch [{}]",
                  path);
         ++index;
-        std::lock_guard lock(mutex_);
-        tasks_.at(id)["downloaded_files"] = index;
-        tasks_.at(id)["total_files"] = manifest.at("files").as_array().size();
       }
       RG_CHECK(started_.load(), common::ErrorCode::QueryCancelled,
                "server is stopping");
-      State(id, "installing");
       manager_->ReplaceGraphFromSnapshot(graph, directory.string(), snapshot);
       installed = true;
     } catch (const common::Exception& e) {
@@ -408,7 +404,6 @@ class HttpServer::Impl {
     bool cleaned = snapshot_id.empty();
     std::string cleanup_error;
     if (!snapshot_id.empty()) {
-      State(id, "cleaning_remote_snapshot");
       try {
         Exchange(client, http::verb::delete_, "/snapshots/" + snapshot_id);
         cleaned = true;
@@ -418,19 +413,34 @@ class HttpServer::Impl {
     }
     std::error_code ec;
     fs::remove_all(directory, ec);
+    // The leader may retry as soon as it processes the report. Release this
+    // graph's update slot first so the new trigger can enqueue another import.
     {
       std::lock_guard lock(mutex_);
-      auto& task = tasks_.at(id);
-      task["state"] = error.empty() && cleaned ? "succeeded" : "failed";
-      task["installed"] = installed;
-      task["remote_snapshot_deleted"] = cleaned;
-      if (!error.empty()) {
-        task["error"] = error_code;
-        task["message"] = error;
-      }
-      if (!cleanup_error.empty()) task["cleanup_error"] = cleanup_error;
       updating_graphs_.erase(graph);
     }
+    // Installation determines Raft success; cleanup errors must not invalidate
+    // a checkpoint already installed on the follower.
+    bool reported = false;
+    common::http::Client reporter(address,
+                                  {.timeout = std::chrono::seconds(5)});
+    for (int attempt = 0; attempt < 3 && !reported; ++attempt) {
+      try {
+        Exchange(
+            reporter, http::verb::post, "/snapshot-reports",
+            {{"graph", graph}, {"node_id", node_id}, {"success", installed}});
+        reported = true;
+      } catch (const std::exception& e) {
+        LOG_WARN("failed to report snapshot for graph [{}]: {}", graph,
+                 e.what());
+      }
+    }
+    if (!error.empty())
+      LOG_WARN("snapshot update for graph [{}] failed ({}): {}", graph,
+               error_code, error);
+    if (!cleaned)
+      LOG_WARN("snapshot cleanup for graph [{}] failed: {}", graph,
+               cleanup_error);
   }
 
   GraphManager* manager_;
@@ -440,7 +450,6 @@ class HttpServer::Impl {
   std::atomic<bool> started_{false};
   std::mutex mutex_;
   std::unordered_map<std::string, std::shared_ptr<Snapshot>> snapshots_;
-  std::unordered_map<std::string, json::object> tasks_;
   std::unordered_set<std::string> updating_graphs_;
 };
 
@@ -450,6 +459,8 @@ bool HttpServer::Start(GraphManager* manager, const std::string& data_path,
                        const std::string& host, uint32_t port) {
   if (Started()) return true;
   try {
+    RG_CHECK(port > 0 && port <= 65535, common::ErrorCode::InvalidParameter,
+             "HTTP port must be between 1 and 65535");
     impl_ = std::make_unique<Impl>(
         manager, fs::path(data_path) / ".http-snapshots", host, port);
     impl_->Run();
@@ -463,4 +474,11 @@ bool HttpServer::Start(GraphManager* manager, const std::string& data_path,
 void HttpServer::Stop() { impl_.reset(); }
 bool HttpServer::Started() const { return impl_ && impl_->Started(); }
 uint16_t HttpServer::Port() const { return impl_ ? impl_->Port() : 0; }
+void HttpServer::HandleSnapshotTrigger(const std::string& graph,
+                                       const raftpb::Message& message) {
+  RG_CHECK(Started(), common::ErrorCode::QueryCancelled,
+           "HTTP server is not running");
+  impl_->HandleSnapshotTrigger(graph, message);
+}
+
 }  // namespace server

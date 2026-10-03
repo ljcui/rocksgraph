@@ -11,6 +11,7 @@
 namespace server {
 
 class GraphManager;
+class HttpServer;
 
 class RaftServer final {
  public:
@@ -20,7 +21,8 @@ class RaftServer final {
   RaftServer(RaftServer&&) = delete;
   RaftServer& operator=(RaftServer&&) = delete;
 
-  bool Start(GraphManager* graph_manager, uint32_t port);
+  bool Start(GraphManager* graph_manager, uint32_t port,
+             HttpServer& http_server);
   void Stop();
   bool Started() const { return started_.load(); }
 
@@ -29,6 +31,7 @@ class RaftServer final {
   std::vector<std::thread> threads_;
   std::atomic<bool> started_{false};
   GraphManager* graph_manager_ = nullptr;
+  HttpServer* http_server_ = nullptr;
   boost::asio::io_service listener_{BOOST_ASIO_CONCURRENCY_HINT_UNSAFE};
   std::function<void(std::string, raftpb::Message)> protobuf_handler_{};
 };

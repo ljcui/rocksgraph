@@ -1,6 +1,7 @@
 #include "server/graph_server.h"
 
 #include "bolt/worker_pool.h"
+#include "common/exception.h"
 #include "common/logger.h"
 #include "server/bolt_handler.h"
 
@@ -17,6 +18,10 @@ bool GraphServer::Start() {
   }
 
   try {
+    RG_CHECK(options_.http_port > 0 && options_.http_port <= 65535,
+             common::ErrorCode::InvalidParameter,
+             "HTTP port must be between 1 and 65535");
+    options_.local_node_options.http_port = options_.http_port;
     graph_manager_ =
         GraphManager::Open(options_.data_path, options_.graph_manager_options,
                            options_.local_node_options);
@@ -26,8 +31,18 @@ bool GraphServer::Start() {
     return false;
   }
 
+  // HTTP must outlive the Raft listener, which schedules snapshot imports.
+  if (!http_server_.Start(graph_manager_.get(), options_.data_path,
+                          options_.local_node_options.host,
+                          options_.http_port)) {
+    graph_manager_.reset();
+    return false;
+  }
+
   if (!raft_server_.Start(graph_manager_.get(),
-                          options_.local_node_options.raft_port)) {
+                          options_.local_node_options.raft_port,
+                          http_server_)) {
+    http_server_.Stop();
     graph_manager_.reset();
     return false;
   }
@@ -40,16 +55,7 @@ bool GraphServer::Start() {
                           NewBoltHandler(graph_manager_.get(), worker_pool),
                           worker_pool, options_.bolt_max_message_size)) {
     raft_server_.Stop();
-    graph_manager_.reset();
-    return false;
-  }
-
-  if (options_.http_port != 0 &&
-      !http_server_.Start(graph_manager_.get(), options_.data_path,
-                          options_.local_node_options.host,
-                          options_.http_port)) {
-    bolt_server_.Stop();
-    raft_server_.Stop();
+    http_server_.Stop();
     graph_manager_.reset();
     return false;
   }
@@ -60,13 +66,13 @@ bool GraphServer::Start() {
 
 bool GraphServer::Started() const {
   return started_.load() && bolt_server_.Started() && raft_server_.Started() &&
-         (options_.http_port == 0 || http_server_.Started());
+         http_server_.Started();
 }
 
 void GraphServer::Stop() {
-  http_server_.Stop();
   bolt_server_.Stop();
   raft_server_.Stop();
+  http_server_.Stop();
   graph_manager_.reset();
   started_.store(false);
 }

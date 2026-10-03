@@ -18,6 +18,7 @@
 #include <atomic>
 #include <boost/asio.hpp>
 #include <boost/beast.hpp>
+#include <boost/endian/conversion.hpp>
 #include <boost/json.hpp>
 #include <chrono>
 #include <filesystem>
@@ -112,30 +113,43 @@ boost::json::value SnapshotHttpRequest(
   return boost::json::parse(response.body());
 }
 
-boost::json::value UpdateHttpSnapshot(uint16_t source, uint16_t target,
-                                      const std::string& graph = kGraphName) {
-  namespace http = boost::beast::http;
-  auto task = SnapshotHttpRequest(
-      target, http::verb::post, "/snapshot-updates",
-      {{"address", "127.0.0.1:" + std::to_string(source)}, {"graph", graph}});
-  boost::json::value status;
-  EXPECT_TRUE(WaitUntil(
-      [&] {
-        status = SnapshotHttpRequest(
-            target, http::verb::get,
-            boost::json::value_to<std::string>(task.at("status_url")));
-        return status.at("state") == "succeeded" ||
-               status.at("state") == "failed";
-      },
-      std::chrono::seconds(15)))
-      << boost::json::serialize(status);
-  return status;
+void SendSnapshotSignal(server::GraphServer& source,
+                        server::GraphServer& target) {
+  auto graph = source.graph_manager()->OpenGraph(kGraphName);
+  auto status = graph->raft_driver()->GetRaftStatus();
+  raftpb::Message message;
+  message.set_type(raftpb::MsgSnap);
+  message.set_from(status.s.basicStatus_.id_);
+  message.set_to(target.options().local_node_options.raft_node_id);
+  message.set_term(status.s.basicStatus_.hardState_.term());
+  // Deliberately unrelated metadata: only the HTTP checkpoint may be installed.
+  message.mutable_snapshot()->mutable_metadata()->set_index(1000000000);
+  message.mutable_snapshot()->mutable_metadata()->set_term(999);
+  message.mutable_snapshot()->set_data("not a checkpoint");
+  message.set_context(boost::json::serialize(boost::json::object{
+      {"address", "http://127.0.0.1:" + std::to_string(source.http_port())}}));
+  meta::RaftMessage envelope;
+  envelope.set_graph(kGraphName);
+  *envelope.mutable_message() = std::move(message);
+  auto body = envelope.SerializeAsString();
+  uint32_t size =
+      boost::endian::native_to_big(static_cast<uint32_t>(body.size()));
+  const unsigned char magic[] = {0x17, 0xB0, 0x60, 0x60};
+  boost::asio::io_context context;
+  boost::asio::ip::tcp::socket socket(context);
+  socket.connect(
+      {boost::asio::ip::make_address("127.0.0.1"),
+       static_cast<uint16_t>(target.options().local_node_options.raft_port)});
+  boost::asio::write(socket, boost::asio::buffer(magic));
+  boost::asio::write(socket, boost::asio::buffer(&size, sizeof(size)));
+  boost::asio::write(socket, boost::asio::buffer(body));
 }
 
 struct TestServerConfig {
   uint64_t node_id = 0;
   int32_t bolt_port = 0;
   int32_t raft_port = 0;
+  int32_t http_port = 7689;
   std::string data_path;
 };
 
@@ -438,6 +452,7 @@ class TestServerCluster final {
     options.bolt_io_thread_num = 1;
     options.local_node_options.raft_port = config.raft_port;
     options.local_node_options.raft_node_id = config.node_id;
+    options.http_port = config.http_port;
     return std::make_unique<server::GraphServer>(std::move(options));
   }
 
@@ -454,6 +469,9 @@ class TestServerCluster final {
       do {
         config.raft_port = AllocateFreePort();
       } while (!used_ports.insert(config.raft_port).second);
+      do {
+        config.http_port = AllocateFreePort();
+      } while (!used_ports.insert(config.http_port).second);
       config.data_path = base_path_ + "/node" + std::to_string(i + 1);
       configs.emplace_back(std::move(config));
     }
@@ -697,7 +715,8 @@ TestRaftLogStorage OpenRaftLogStorage(
     throw std::runtime_error("unexpected raft log storage column families");
   }
   return TestRaftLogStorage(std::make_unique<raft::RaftLogStorage>(
-      db.release(), cf_handles[0], cf_handles[1], std::move(initial_conf_state)));
+      db.release(), cf_handles[0], cf_handles[1],
+      std::move(initial_conf_state)));
 }
 
 raftpb::Entry MakeLogEntry(uint64_t index, uint64_t term,
@@ -1105,7 +1124,27 @@ TEST(RaftCluster, threeServersElectLeaderAndReplicateTransaction) {
   }
 }
 
-TEST(RaftCluster, manualHttpSnapshotRestoresFollowerAndContinuesReplication) {
+TEST(GraphServer, rejectsZeroHttpPortBeforeOpeningGraphs) {
+  server::GraphServerOptions options;
+  options.data_path =
+      (fs::temp_directory_path() /
+       ("rocksgraph-zero-http-" +
+        std::to_string(
+            std::chrono::steady_clock::now().time_since_epoch().count())))
+          .string();
+  options.local_node_options.bolt_port = AllocateFreePort();
+  options.local_node_options.raft_port = AllocateFreePort();
+  options.http_port = 0;
+  server::GraphServer server(std::move(options));
+  EXPECT_FALSE(server.Start());
+  EXPECT_FALSE(server.Started());
+  EXPECT_EQ(server.graph_manager(), nullptr);
+  EXPECT_FALSE(fs::exists(server.options().data_path));
+  server.Stop();
+  fs::remove_all(server.options().data_path);
+}
+
+TEST(RaftCluster, snapshotMessageOnlyTriggersHttpTransfer) {
   TestServerCluster cluster("testdb_raft_cluster");
   ASSERT_NO_THROW(cluster.Start());
   auto leader_index = cluster.WaitForLeaderIndex(std::chrono::seconds(15));
@@ -1122,21 +1161,22 @@ TEST(RaftCluster, manualHttpSnapshotRestoresFollowerAndContinuesReplication) {
   }
   follower->graph_manager()->ClearGraph(kGraphName);
   EXPECT_EQ(cluster.VertexCount(follower_index), 0);
-
-  server::HttpServer source_http, target_http;
-  ASSERT_TRUE(source_http.Start(leader->graph_manager(),
-                                leader->options().data_path, "127.0.0.1", 0));
-  ASSERT_TRUE(target_http.Start(follower->graph_manager(),
-                                follower->options().data_path, "127.0.0.1", 0));
-  auto status = UpdateHttpSnapshot(source_http.Port(), target_http.Port());
-  ASSERT_EQ(status.at("state"), "succeeded") << boost::json::serialize(status);
-  EXPECT_TRUE(status.at("remote_snapshot_deleted").as_bool());
+  const auto identity =
+      follower->graph_manager()->OpenGraph(kGraphName)->PlanCacheIdentity();
+  SendSnapshotSignal(*leader, *follower);
+  ASSERT_TRUE(WaitUntil(
+      [&] {
+        return follower->graph_manager()
+                   ->OpenGraph(kGraphName)
+                   ->PlanCacheIdentity() != identity;
+      },
+      std::chrono::seconds(15)));
   ASSERT_TRUE(cluster.WaitForGraphVertexCount(kGraphName, 1));
   {
     auto graph = follower->graph_manager()->OpenGraph(kGraphName);
-    auto raft_status = graph->raft_driver()->GetRaftStatus();
-    EXPECT_EQ(raft_status.s.basicStatus_.id_, cluster.node_id(follower_index));
-    EXPECT_GT(raft_status.first_log, 0);
+    auto status = graph->raft_driver()->GetRaftStatus();
+    EXPECT_EQ(status.s.basicStatus_.id_, cluster.node_id(follower_index));
+    EXPECT_LT(status.first_log, 1000000000);
   }
   leader = cluster.WaitForLeader(std::chrono::seconds(15));
   ASSERT_NE(leader, nullptr);
@@ -1148,51 +1188,104 @@ TEST(RaftCluster, manualHttpSnapshotRestoresFollowerAndContinuesReplication) {
   }
   ASSERT_TRUE(cluster.WaitForGraphVertexCount(kGraphName, 2))
       << cluster.StatusSummary();
-  target_http.Stop();
-  source_http.Stop();
   cluster.StopServer(follower_index);
   cluster.StartServer(follower_index);
   EXPECT_TRUE(cluster.WaitForGraphVertexCount(kGraphName, 2))
       << cluster.StatusSummary();
 }
 
-TEST(RaftCluster, manualHttpSnapshotCanReplaceLeader) {
+TEST(RaftCluster, compactedLogsAutomaticallyRestoreFollowerOverHttp) {
   TestServerCluster cluster("testdb_raft_cluster");
   ASSERT_NO_THROW(cluster.Start());
   auto leader_index = cluster.WaitForLeaderIndex(std::chrono::seconds(15));
   ASSERT_TRUE(leader_index);
-  auto* leader = cluster.server(*leader_index);
-  auto* source = cluster.server((*leader_index + 1) % cluster.size());
+  const auto follower_index = (*leader_index + 1) % cluster.size();
+  const auto other_index = (*leader_index + 2) % cluster.size();
+  uint64_t follower_applied;
   {
-    auto graph = leader->graph_manager()->OpenGraph(kGraphName);
-    auto transaction = graph->BeginTransaction();
-    transaction->CreateVertex({"Item"}, {{"id", Value(1)}});
-    transaction->Commit();
+    auto graph =
+        cluster.server(*leader_index)->graph_manager()->OpenGraph(kGraphName);
+    auto txn = graph->BeginTransaction();
+    txn->CreateVertex({"Item"}, {{"id", Value(0)}});
+    txn->Commit();
     ASSERT_TRUE(cluster.WaitForApplyIndex(graph->GetRaftApplyIndex()));
-    ASSERT_EQ(graph->raft_driver()
-                  ->GetRaftStatus()
-                  .s.basicStatus_.softState_.raftState_,
-              eraft::StateLeader);
+    follower_applied = graph->GetRaftApplyIndex();
   }
-  leader->graph_manager()->ClearGraph(kGraphName);
-  server::HttpServer source_http, target_http;
-  ASSERT_TRUE(source_http.Start(source->graph_manager(),
-                                source->options().data_path, "127.0.0.1", 0));
-  ASSERT_TRUE(target_http.Start(leader->graph_manager(),
-                                leader->options().data_path, "127.0.0.1", 0));
-  auto status = UpdateHttpSnapshot(source_http.Port(), target_http.Port());
-  ASSERT_EQ(status.at("state"), "succeeded") << boost::json::serialize(status);
-  EXPECT_TRUE(status.at("remote_snapshot_deleted").as_bool());
-  ASSERT_TRUE(cluster.WaitForGraphVertexCount(kGraphName, 1));
-  leader = cluster.WaitForLeader(std::chrono::seconds(15));
+  cluster.StopServer(follower_index);
+  uint64_t boundary;
+  {
+    auto graph =
+        cluster.server(*leader_index)->graph_manager()->OpenGraph(kGraphName);
+    for (int id = 1; id <= 5; ++id) {
+      auto txn = graph->BeginTransaction();
+      txn->CreateVertex({"Item"}, {{"id", Value(id)}});
+      txn->Commit();
+    }
+    ASSERT_TRUE(cluster.WaitForApplyIndex(graph->GetRaftApplyIndex()));
+    boundary = graph->GetRaftApplyIndex() - 1;
+  }
+  ASSERT_GT(boundary, follower_applied);
+  for (auto index : {*leader_index, other_index}) {
+    auto path =
+        cluster.server(index)->graph_manager()->OpenGraph(kGraphName)->path() +
+        "/raft";
+    cluster.StopServer(index);
+    auto storage = OpenRaftLogStorage(path);
+    ASSERT_TRUE(storage->Init());
+    storage->Compact(boundary);
+  }
+  cluster.StartServer(*leader_index);
+  cluster.StartServer(other_index);
+  auto* leader = cluster.WaitForLeader(std::chrono::seconds(15));
   ASSERT_NE(leader, nullptr) << cluster.StatusSummary();
+  cluster.StartServer(follower_index);
+  auto held =
+      cluster.server(follower_index)->graph_manager()->OpenGraph(kGraphName);
+  auto progress_state = [&] {
+    auto graph = leader->graph_manager()->OpenGraph(kGraphName);
+    return graph->raft_driver()
+        ->GetRaftStatus()
+        .s.progress_.at(cluster.node_id(follower_index))
+        .state_;
+  };
+  ASSERT_TRUE(WaitUntil(
+      [&] { return progress_state() == tracker::StateType::StateSnapshot; },
+      std::chrono::seconds(10)));
+  // Holding the graph makes installation fail. The HTTP failure report must
+  // take the leader out of StateSnapshot so it can retry after users leave.
+  ASSERT_TRUE(WaitUntil(
+      [&] { return progress_state() == tracker::StateType::StateProbe; },
+      std::chrono::seconds(10)));
+  EXPECT_EQ(cluster.VertexCount(follower_index), 1);
+  held.reset();
+  ASSERT_TRUE(
+      cluster.WaitForGraphVertexCount(kGraphName, 6, std::chrono::seconds(15)))
+      << cluster.StatusSummary();
+  {
+    auto graph =
+        cluster.server(follower_index)->graph_manager()->OpenGraph(kGraphName);
+    EXPECT_GT(graph->raft_driver()->GetRaftStatus().first_log,
+              follower_applied);
+  }
   {
     auto graph = leader->graph_manager()->OpenGraph(kGraphName);
-    auto transaction = graph->BeginTransaction();
-    transaction->CreateVertex({"Item"}, {{"id", Value(2)}});
-    transaction->Commit();
+    auto txn = graph->BeginTransaction();
+    txn->CreateVertex({"Item"}, {{"id", Value(6)}});
+    txn->Commit();
+    ASSERT_TRUE(cluster.WaitForApplyIndex(graph->GetRaftApplyIndex()));
+    auto status = graph->raft_driver()->GetRaftStatus();
+    EXPECT_EQ(status.s.progress_.at(cluster.node_id(follower_index)).state_,
+              tracker::StateType::StateReplicate);
+    // Raft ignores a report once this follower has resumed replication.
+    graph->raft_driver()->ReportSnapshot(cluster.node_id(follower_index),
+                                         false);
+    EXPECT_EQ(graph->raft_driver()
+                  ->GetRaftStatus()
+                  .s.progress_.at(cluster.node_id(follower_index))
+                  .state_,
+              tracker::StateType::StateReplicate);
   }
-  EXPECT_TRUE(cluster.WaitForGraphVertexCount(kGraphName, 2))
+  EXPECT_TRUE(cluster.WaitForGraphVertexCount(kGraphName, 7))
       << cluster.StatusSummary();
 }
 
@@ -1671,10 +1764,11 @@ TEST(RaftCluster, followerRejectsGraphWriteProposal) {
 
   ASSERT_NE(result.err, nullptr);
   EXPECT_NE(result.err.String().find("not leader"), std::string::npos);
-  // Election no-ops may advance the apply index while this proposal is rejected.
+  // Election no-ops may advance the apply index while this proposal is
+  // rejected.
   std::string value;
-  auto status = follower_graph->raw_db()->Get(
-      rocksdb::ReadOptions(), "follower_rejected_key", &value);
+  auto status = follower_graph->raw_db()->Get(rocksdb::ReadOptions(),
+                                              "follower_rejected_key", &value);
   EXPECT_TRUE(status.IsNotFound()) << status.ToString();
 }
 
@@ -2497,8 +2591,8 @@ TEST(RaftLogStorage, snapshotBoundaryStartsWithEmptyHardState) {
     config.electionTick_ = 10;
     config.heartbeatTick_ = 1;
     config.maxInflightMsgs_ = 16;
-    config.storage_ = std::shared_ptr<eraft::Storage>(
-        storage.storage.get(), [](eraft::Storage*) {});
+    config.storage_ = std::shared_ptr<eraft::Storage>(storage.storage.get(),
+                                                      [](eraft::Storage*) {});
     auto [node, node_error] = eraft::NewRawNode(config);
     ASSERT_EQ(node_error, nullptr);
     auto status = node->GetBasicStatus();
@@ -2572,6 +2666,11 @@ TEST(RaftLogStorage, compactMovesFirstIndexAndRejectsCompactedEntries) {
   storage->WriteBatch(wb);
 
   storage->Compact(3);
+  auto [snapshot, snapshot_error] = storage->Snapshot();
+  ASSERT_EQ(snapshot_error, nullptr);
+  EXPECT_EQ(snapshot.metadata().index(), 3);
+  EXPECT_EQ(snapshot.metadata().term(), 2);
+  EXPECT_TRUE(snapshot.data().empty());
 
   auto first_index = storage->FirstIndex();
   EXPECT_EQ(first_index.second, nullptr);
@@ -2917,15 +3016,16 @@ TEST(RaftDriver, startupRecoversMembershipWithoutWaitingForApply) {
           }
           state_machine.ApplyConfChange(index, conf_state, node_infos);
         },
-        state_machine.AppliedIndex(),
-        state_machine.ConfState(), state_machine.NodeInfos(), local_node,
+        state_machine.AppliedIndex(), state_machine.ConfState(),
+        state_machine.NodeInfos(), local_node,
         startup_state.has_logs ? std::vector<eraft::Peer>{} : peers,
         MakeRaftLogStoreConfig(raft_path), MakeRaftConfig());
 
     auto run_future =
         std::async(std::launch::async, [&driver] { return driver.Run(); });
-    const bool started = apply_started_future.wait_for(std::chrono::seconds(5)) ==
-                         std::future_status::ready;
+    const bool started =
+        apply_started_future.wait_for(std::chrono::seconds(5)) ==
+        std::future_status::ready;
     const bool run_returned = run_future.wait_for(std::chrono::seconds(5)) ==
                               std::future_status::ready;
     auto applied_before_release = state_machine.AppliedIndex();
@@ -3020,8 +3120,8 @@ TEST(RaftDriver, restartRecoversNodeInfosAndContinuesApplying) {
           state_machine.SetAppliedIndex(index);
         },
         state_machine.ConfChangeCallback(), state_machine.AppliedIndex(),
-        state_machine.ConfState(), state_machine.NodeInfos(), local_node,
-        {}, store_config, raft_config);
+        state_machine.ConfState(), state_machine.NodeInfos(), local_node, {},
+        store_config, raft_config);
 
     auto err = driver.Run();
     if (err != nullptr) {
@@ -3103,10 +3203,10 @@ TEST(RaftDriver, freshStartWithoutInitialPeersUsesProvidedConfState) {
   (*node_infos.mutable_nodes())[local_node.node_id] =
       MakeNodeInfo(local_node, local_node.node_id);
   TestRaftStateMachine state_machine;
-  raft::RaftDriver driver(
-      [](uint64_t, const meta::RaftRequest&) {},
-      state_machine.ConfChangeCallback(), 0, conf_state, node_infos, local_node,
-      {}, MakeRaftLogStoreConfig(raft_path), MakeRaftConfig());
+  raft::RaftDriver driver([](uint64_t, const meta::RaftRequest&) {},
+                          state_machine.ConfChangeCallback(), 0, conf_state,
+                          node_infos, local_node, {},
+                          MakeRaftLogStoreConfig(raft_path), MakeRaftConfig());
 
   auto err = driver.Run();
   EXPECT_EQ(err, nullptr);
@@ -3188,6 +3288,12 @@ TEST(RaftDriver, configValidationRejectsInvalidValues) {
   invalid_local_node = local_node;
   invalid_local_node.raft_poft = 0;
   EXPECT_FALSE(invalid_local_node.Check());
+  invalid_local_node = local_node;
+  invalid_local_node.http_port = 0;
+  EXPECT_FALSE(invalid_local_node.Check());
+  invalid_local_node = local_node;
+  invalid_local_node.http_port = 65536;
+  EXPECT_FALSE(invalid_local_node.Check());
 }
 
 TEST(RaftDriver, freshBootstrapRejectsInvalidInitialPeerContext) {
@@ -3229,16 +3335,14 @@ TEST(RaftDriver, freshBootstrapRejectsMissingLocalInitialPeer) {
   auto raft_config = MakeRaftConfig();
 
   TestRaftStateMachine state_machine;
-  raft::RaftDriver driver([](uint64_t, const meta::RaftRequest&) {},
-                          state_machine.ConfChangeCallback(), 0, std::nullopt,
-                          std::nullopt, local_node,
-                          MakeInitPeers(other_node, 2), store_config,
-                          raft_config);
+  raft::RaftDriver driver(
+      [](uint64_t, const meta::RaftRequest&) {},
+      state_machine.ConfChangeCallback(), 0, std::nullopt, std::nullopt,
+      local_node, MakeInitPeers(other_node, 2), store_config, raft_config);
 
   auto err = driver.Run();
   EXPECT_NE(err, nullptr);
-  EXPECT_NE(err.String().find("not in initial peers"),
-            std::string::npos);
+  EXPECT_NE(err.String().find("not in initial peers"), std::string::npos);
 
   driver.Stop();
   fs::remove_all(raft_path);
@@ -3312,13 +3416,14 @@ TEST(RaftDriver, restartUsesConfiguredIdWithoutLocalMembership) {
         state_machine.SetAppliedIndex(index);
       },
       state_machine.ConfChangeCallback(), state_machine.AppliedIndex(),
-      state_machine.ConfState(), state_machine.NodeInfos(), mismatched_node,
-      {}, store_config, raft_config);
+      state_machine.ConfState(), state_machine.NodeInfos(), mismatched_node, {},
+      store_config, raft_config);
 
   auto err = driver.Run();
   EXPECT_EQ(err, nullptr);
   if (err == nullptr) {
-    EXPECT_EQ(driver.GetRaftStatus().s.basicStatus_.id_, mismatched_node.node_id);
+    EXPECT_EQ(driver.GetRaftStatus().s.basicStatus_.id_,
+              mismatched_node.node_id);
   }
 
   driver.Stop();
@@ -3560,8 +3665,8 @@ TEST(RaftDriver, restartUsesConfiguredIdWithDuplicateAddresses) {
         state_machine.SetAppliedIndex(index);
       },
       state_machine.ConfChangeCallback(), state_machine.AppliedIndex(),
-      state_machine.ConfState(), state_machine.NodeInfos(), local_node,
-      {}, store_config, raft_config);
+      state_machine.ConfState(), state_machine.NodeInfos(), local_node, {},
+      store_config, raft_config);
 
   auto err = driver.Run();
   EXPECT_EQ(err, nullptr);

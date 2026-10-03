@@ -28,11 +28,12 @@ if [[ -z "${ROCKSGRAPH_TCK_URI:-}" ]]; then
   fi
   bolt_port=${ROCKSGRAPH_TCK_BOLT_PORT:-7687}
   raft_port=${ROCKSGRAPH_TCK_RAFT_PORT:-$((bolt_port + 1))}
+  http_port=${ROCKSGRAPH_TCK_HTTP_PORT:-$((bolt_port + 2))}
   server_tmp=$(mktemp -d /tmp/rocksgraph_tck_server.XXXXXX)
   "$server_bin" --data_path="$server_tmp/data" \
     --log_path="$server_tmp/log" --query_log_path="$server_tmp/log" \
     --log_level=error --host=127.0.0.1 --bolt_port="$bolt_port" \
-    --raft_port="$raft_port" --http_port=0 >"$server_tmp/server.log" 2>&1 &
+    --raft_port="$raft_port" --http_port="$http_port" >"$server_tmp/server.log" 2>&1 &
   server_pid=$!
   export ROCKSGRAPH_TCK_URI="bolt://127.0.0.1:$bolt_port"
   ready=

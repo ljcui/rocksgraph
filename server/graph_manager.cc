@@ -98,6 +98,7 @@ raft::LocalNodeConfig BuildLocalNodeConfig(
   local_node.ip = local_node_options.host;
   local_node.bolt_port = static_cast<int32_t>(local_node_options.bolt_port);
   local_node.raft_poft = static_cast<int32_t>(local_node_options.raft_port);
+  local_node.http_port = local_node_options.http_port;
   return local_node;
 }
 
@@ -319,7 +320,7 @@ GraphDB *GraphManager::CreateGraphWithId(
 }
 
 void GraphManager::StartGraphRaft(
-    GraphDB* graph_db, const meta::RaftNodeInfos* bootstrap_node_infos) {
+    GraphDB *graph_db, const meta::RaftNodeInfos *bootstrap_node_infos) {
   auto local_node = BuildLocalNodeConfig(graph_db->db_meta().graph_name(),
                                          local_node_options_);
   auto store_config = BuildRaftLogStoreConfig(graph_db->path() + "/raft",

@@ -5,6 +5,7 @@
 
 #include <boost/asio.hpp>
 #include <boost/endian/conversion.hpp>
+#include <boost/json.hpp>
 #include <boost/lexical_cast.hpp>
 #include <filesystem>
 #include <future>
@@ -38,24 +39,24 @@ eraft::Error ValidateInitPeers(const LocalNodeConfig& local_node,
           "failed to parse initial peer context for peer {}", peer.id_));
     }
     if (peer.id_ == 0 || peer.id_ != node_info.node_id()) {
-      return eraft::Error(fmt::format(
-          "initial peer {} has inconsistent node id {}", peer.id_,
-          node_info.node_id()));
+      return eraft::Error(
+          fmt::format("initial peer {} has inconsistent node id {}", peer.id_,
+                      node_info.node_id()));
     }
     if (!peer_ids.insert(peer.id_).second) {
       return eraft::Error(
           fmt::format("duplicate initial peer id {}", peer.id_));
     }
     if (node_info.graph() != local_node.graph) {
-      return eraft::Error(fmt::format(
-          "initial peer {} belongs to graph [{}], expected [{}]", peer.id_,
-          node_info.graph(), local_node.graph));
+      return eraft::Error(
+          fmt::format("initial peer {} belongs to graph [{}], expected [{}]",
+                      peer.id_, node_info.graph(), local_node.graph));
     }
   }
   if (!peer_ids.contains(local_node.node_id)) {
-    return eraft::Error(fmt::format(
-        "configured raft node id {} is not in initial peers",
-        local_node.node_id));
+    return eraft::Error(
+        fmt::format("configured raft node id {} is not in initial peers",
+                    local_node.node_id));
   }
   return nullptr;
 }
@@ -528,6 +529,10 @@ bool LocalNodeConfig::Check() {
   }
   if (raft_poft < 1) {
     LOG_WARN("local node raft_poft should be greater than 0");
+    return false;
+  }
+  if (http_port == 0 || http_port > 65535) {
+    LOG_WARN("local node http_port must be between 1 and 65535");
     return false;
   }
   return true;
@@ -1025,6 +1030,19 @@ RaftStatus RaftDriver::GetRaftStatus() {
   return future.get();
 }
 
+void RaftDriver::ReportSnapshot(uint64_t node_id, bool success) {
+  if (stopped_.load()) return;
+  auto alive = callback_alive_;
+  manager_->raft_service(shard_id_).post([this, alive, node_id, success]() {
+    if (!alive->load() || stopped_.load()) {
+      return;
+    }
+    rn_->ReportSnapshot(
+        node_id, success ? eraft::SnapshotFinish : eraft::SnapshotFailure);
+    CheckReady();
+  });
+}
+
 std::pair<uint64_t, uint64_t> RaftDriver::CaptureSnapshot(
     std::function<uint64_t()> checkpoint) {
   std::promise<std::pair<uint64_t, uint64_t>> promise;
@@ -1118,15 +1136,25 @@ void RaftDriver::CheckReady() {
   storage_->WriteBatch(batch);
   {
     std::shared_lock<std::shared_mutex> lock(nodes_mutex_);
-    for (const auto& msg : ready.messages_) {
+    for (auto& msg : ready.messages_) {
       auto iter = node_clients_.find(msg.to());
       if (iter != node_clients_.end()) {
         if (iter->second->connected()) {
+          if (msg.type() == raftpb::MsgSnap) {
+            auto host = local_node_.ip;
+            if (host.find(':') != std::string::npos) host = "[" + host + "]";
+            msg.set_context(boost::json::serialize(boost::json::object{
+                {"address", "http://" + host + ":" +
+                                std::to_string(local_node_.http_port)}}));
+          }
           iter->second->Send(MessageToNetString(local_node_.graph, msg));
           if (mark_unreachable_.count(msg.to())) {
             mark_unreachable_.erase(msg.to());
           }
         } else {
+          if (msg.type() == raftpb::MsgSnap) {
+            rn_->ReportSnapshot(msg.to(), eraft::SnapshotFailure);
+          }
           if (!mark_unreachable_.count(msg.to())) {
             LOG_WARN("report raft node {} is unreachable, {}", msg.to(),
                      msg.ShortDebugString());
@@ -1135,6 +1163,9 @@ void RaftDriver::CheckReady() {
           }
         }
       } else {
+        if (msg.type() == raftpb::MsgSnap) {
+          rn_->ReportSnapshot(msg.to(), eraft::SnapshotFailure);
+        }
         LOG_WARN("send msg but peer client id {} not exists", msg.to());
       }
     }

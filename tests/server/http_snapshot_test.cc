@@ -8,9 +8,11 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <mutex>
 #include <thread>
 
 #include "common/exception.h"
+#include "common/http/server.h"
 #include "graphdb/transaction.h"
 #include "raft_driver/raft_driver.h"
 #include "runtime/query_executor.h"
@@ -56,10 +58,12 @@ class HttpSnapshotTest : public testing::Test {
              boost::uuids::to_string(boost::uuids::random_generator{}()));
     source_node_ = {.bolt_port = AllocateFreePort(),
                     .raft_port = AllocateFreePort(),
-                    .raft_node_id = 1};
+                    .raft_node_id = 1,
+                    .http_port = AllocateFreePort()};
     target_node_ = {.bolt_port = AllocateFreePort(),
                     .raft_port = AllocateFreePort(),
-                    .raft_node_id = 1};
+                    .raft_node_id = 1,
+                    .http_port = AllocateFreePort()};
     // Isolated copies of a single-node group exercise HTTP and restore here;
     // raft_cluster_test covers transfers between actual leaders and followers.
     Open();
@@ -105,9 +109,9 @@ class HttpSnapshotTest : public testing::Test {
     ASSERT_TRUE(WaitForLeader(*source_));
     ASSERT_TRUE(WaitForLeader(*target_));
     ASSERT_TRUE(source_http_.Start(source_.get(), (root_ / "source").string(),
-                                   "127.0.0.1", 0));
+                                   "127.0.0.1", source_node_.http_port));
     ASSERT_TRUE(target_http_.Start(target_.get(), (root_ / "target").string(),
-                                   "127.0.0.1", 0));
+                                   "127.0.0.1", target_node_.http_port));
   }
   void TearDown() override {
     source_http_.Stop();
@@ -130,33 +134,95 @@ class HttpSnapshotTest : public testing::Test {
     transaction->Commit();
     return result.rows.at(0).at(0).AsInteger();
   }
-  Json StartUpdate(uint16_t remote) {
-    auto response =
-        Request(target_http_.Port(), http::verb::post, "/snapshot-updates",
-                {{"address", "http://127.0.0.1:" + std::to_string(remote)},
-                 {"graph", "default"}});
-    EXPECT_EQ(response.result(), http::status::accepted) << response.body();
-    return json::parse(response.body());
-  }
-  Json WaitTask(const Json& task) {
-    const auto url = json::value_to<std::string>(task.at("status_url"));
-    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
-    Json status;
-    do {
-      status = json::parse(
-          Request(target_http_.Port(), http::verb::get, url).body());
-      if (status.at("state") == "succeeded" || status.at("state") == "failed")
-        return status;
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    } while (std::chrono::steady_clock::now() < deadline);
-    ADD_FAILURE() << "snapshot update timed out: " << json::serialize(status);
-    return status;
+  void TriggerSnapshot(uint16_t remote, uint64_t sender = 1) {
+    auto graph = target_->OpenGraph("default");
+    auto status = graph->raft_driver()->GetRaftStatus();
+    raftpb::Message message;
+    message.set_type(raftpb::MsgSnap);
+    message.set_from(sender);
+    message.set_to(target_node_.raft_node_id);
+    message.set_term(status.s.basicStatus_.hardState_.term());
+    message.set_context(json::serialize(json::object{
+        {"address", "http://127.0.0.1:" + std::to_string(remote)}}));
+    target_http_.HandleSnapshotTrigger("default", message);
   }
   fs::path root_;
   server::LocalNodeOptions source_node_, target_node_;
   std::unique_ptr<server::GraphManager> source_, target_;
   server::HttpServer source_http_, target_http_;
 };
+
+class SnapshotRemote {
+ public:
+  explicit SnapshotRemote(uint16_t backend = 0, bool bad_path = false)
+      : backend_(backend),
+        bad_path_(bad_path),
+        http_({.host = "127.0.0.1", .port = 0}, [this](const auto& request) {
+          if (request.target() == "/snapshot-reports") {
+            std::lock_guard lock(mutex_);
+            report_ = json::parse(request.body());
+            return common::http::Reply{.body = "{}"};
+          }
+          if (request.method() == http::verb::delete_) deleted.store(true);
+          if (backend_ != 0) {
+            auto response = Request(
+                backend_, request.method(), std::string(request.target()),
+                request.body().empty() ? Json(json::object{})
+                                       : json::parse(request.body()));
+            return common::http::Reply{.status = response.result(),
+                                       .body = response.body()};
+          }
+          if (request.method() == http::verb::post) {
+            return common::http::Reply{
+                .body = json::serialize(Json{
+                    {"snapshot_id", "00000000-0000-0000-0000-000000000001"},
+                    {"version", 1},
+                    {"graph", "default"},
+                    {"index", 1},
+                    {"term", 1},
+                    {"files",
+                     json::array({{{"path", bad_path_ ? "data/../../escape"
+                                                      : "data/CURRENT"},
+                                   {"size", 6},
+                                   {"crc32", 0}}})}})};
+          }
+          return common::http::Reply{
+              .body =
+                  request.method() == http::verb::delete_ ? "{}" : "broken"};
+        }) {
+    http_.Start();
+  }
+  uint16_t Port() const { return http_.Port(); }
+  Json WaitReport() {
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+    do {
+      {
+        std::lock_guard lock(mutex_);
+        if (!report_.is_null()) return report_;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    } while (std::chrono::steady_clock::now() < deadline);
+    ADD_FAILURE() << "snapshot completion was not reported";
+    return json::object{{"success", false}};
+  }
+  std::atomic<bool> deleted{false};
+
+ private:
+  uint16_t backend_;
+  bool bad_path_;
+  std::mutex mutex_;
+  Json report_;
+  common::http::Server http_;
+};
+
+TEST_F(HttpSnapshotTest, RejectsZeroHttpPort) {
+  server::HttpServer http;
+  EXPECT_FALSE(
+      http.Start(source_.get(), (root_ / "invalid").string(), "127.0.0.1", 0));
+  EXPECT_FALSE(http.Started());
+  EXPECT_EQ(http.Port(), 0);
+  EXPECT_FALSE(fs::exists(root_ / "invalid"));
+}
 
 TEST_F(HttpSnapshotTest, SnapshotRemainsStableAndCanBeDeleted) {
   Query(*source_, "CREATE (:Item {id: 1}), (:Item {id: 2})");
@@ -224,18 +290,18 @@ TEST_F(HttpSnapshotTest,
   Query(*target_, "CREATE (:Old), (:Old), (:Old)");
   target_->CreateGraph("other");
   auto old_identity = target_->OpenGraph("default")->PlanCacheIdentity();
-  auto status = WaitTask(StartUpdate(source_http_.Port()));
-  ASSERT_EQ(status.at("state"), "succeeded") << json::serialize(status);
-  EXPECT_TRUE(status.at("installed").as_bool());
-  EXPECT_TRUE(status.at("remote_snapshot_deleted").as_bool());
+  SnapshotRemote remote(source_http_.Port());
+  // The sender may be a leader added while this follower was offline.
+  TriggerSnapshot(remote.Port(), 2);
+  auto report = remote.WaitReport();
+  ASSERT_TRUE(report.at("success").as_bool()) << json::serialize(report);
+  EXPECT_EQ(report.at("graph"), "default");
+  EXPECT_EQ(report.at("node_id"), target_node_.raft_node_id);
+  EXPECT_TRUE(remote.deleted.load());
   EXPECT_EQ(Count(*target_), 2);
   EXPECT_NE(target_->OpenGraph("default")->PlanCacheIdentity(), old_identity);
   EXPECT_NO_THROW(target_->OpenGraph("other"));
-  EXPECT_EQ(Request(source_http_.Port(), http::verb::get,
-                    "/snapshots/" +
-                        json::value_to<std::string>(status.at("snapshot_id")))
-                .result(),
-            http::status::not_found);
+  EXPECT_TRUE(fs::is_empty(root_ / "source" / ".http-snapshots"));
   {
     auto graph = target_->OpenGraph("default");
     auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
@@ -265,45 +331,42 @@ TEST_F(HttpSnapshotTest,
   EXPECT_EQ(Count(*target_), 3);
 }
 
-TEST_F(HttpSnapshotTest,
-       ActiveGraphIsPreservedAndRemoteSnapshotIsCleanedOnFailure) {
+TEST_F(HttpSnapshotTest, ActiveGraphIsPreservedAndFailureIsReported) {
   Query(*source_, "CREATE (:Item), (:Item)");
   Query(*target_, "CREATE (:Old)");
   auto held = target_->OpenGraph("default");
-  auto task = StartUpdate(source_http_.Port());
-  auto duplicate =
-      Request(target_http_.Port(), http::verb::post, "/snapshot-updates",
-              {{"address", "127.0.0.1:" + std::to_string(source_http_.Port())},
-               {"graph", "default"}});
-  EXPECT_EQ(duplicate.result(), http::status::conflict);
-  auto status = WaitTask(task);
-  ASSERT_EQ(status.at("state"), "failed") << json::serialize(status);
-  EXPECT_EQ(status.at("error"), "GraphBusy");
-  EXPECT_FALSE(status.at("installed").as_bool());
-  EXPECT_TRUE(status.at("remote_snapshot_deleted").as_bool());
+  SnapshotRemote remote(source_http_.Port());
+  TriggerSnapshot(remote.Port());
+  TriggerSnapshot(remote.Port());
+  EXPECT_FALSE(remote.WaitReport().at("success").as_bool());
+  EXPECT_TRUE(remote.deleted.load());
   EXPECT_EQ(Count(*target_), 1);
-  held.reset();
-  EXPECT_EQ(WaitTask(StartUpdate(source_http_.Port())).at("state"),
-            "succeeded");
+  EXPECT_TRUE(fs::is_empty(root_ / "source" / ".http-snapshots"));
+  EXPECT_TRUE(fs::is_empty(root_ / "target" / ".http-snapshots"));
 }
 
-TEST_F(HttpSnapshotTest, RejectsInvalidParametersAndReportsMissingResources) {
+TEST_F(HttpSnapshotTest, RejectsInvalidParametersAndRemovesManualUpdates) {
   EXPECT_EQ(Request(target_http_.Port(), http::verb::post, "/snapshot-updates",
-                    {{"graph", "default"}})
-                .result(),
-            http::status::bad_request);
-  EXPECT_EQ(Request(target_http_.Port(), http::verb::post, "/snapshot-updates",
-                    {{"graph", "default"}, {"address", "https://localhost:10"}})
-                .result(),
-            http::status::bad_request);
-  EXPECT_EQ(Request(target_http_.Port(), http::verb::post, "/snapshots",
-                    {{"graph", "missing"}})
+                    {{"graph", "default"}, {"address", "127.0.0.1:1234"}})
                 .result(),
             http::status::not_found);
   EXPECT_EQ(
       Request(target_http_.Port(), http::verb::get, "/snapshot-updates/missing")
           .result(),
       http::status::not_found);
+  EXPECT_EQ(Request(source_http_.Port(), http::verb::post, "/snapshots",
+                    {{"graph", "missing"}})
+                .result(),
+            http::status::not_found);
+  EXPECT_EQ(Request(source_http_.Port(), http::verb::post, "/snapshot-reports",
+                    {{"graph", "default"}, {"node_id", -1}, {"success", true}})
+                .result(),
+            http::status::bad_request);
+  auto response =
+      Request(source_http_.Port(), http::verb::post, "/snapshot-reports",
+              {{"graph", "default"}, {"node_id", 1}, {"success", true}});
+  ASSERT_EQ(response.result(), http::status::ok);
+  EXPECT_TRUE(json::parse(response.body()).as_object().empty());
 }
 
 TEST_F(HttpSnapshotTest, RejectsNonRaftGraphs) {
@@ -313,12 +376,6 @@ TEST_F(HttpSnapshotTest, RejectsNonRaftGraphs) {
                           {{"graph", "plain"}});
   EXPECT_EQ(snapshot.result(), http::status::bad_request);
   EXPECT_EQ(json::parse(snapshot.body()).at("error"), "InvalidParameter");
-  auto update = Request(
-      target_http_.Port(), http::verb::post, "/snapshot-updates",
-      {{"graph", "plain"},
-       {"address", "127.0.0.1:" + std::to_string(source_http_.Port())}});
-  EXPECT_EQ(update.result(), http::status::bad_request);
-  EXPECT_EQ(json::parse(update.body()).at("error"), "InvalidParameter");
   try {
     target_->ReplaceGraphFromSnapshot(
         "plain", (root_ / "unused").string(),
@@ -347,97 +404,33 @@ TEST_F(HttpSnapshotTest, OlderSnapshotReplacesLocalData) {
   EXPECT_EQ(Count(*target_), 2);
 }
 
-class BrokenRemote {
- public:
-  explicit BrokenRemote(bool bad_path)
-      : acceptor_(context_, {tcp::v4(), 0}), bad_path_(bad_path) {
-    Accept();
-    thread_ = std::thread([this] { context_.run(); });
-  }
-  ~BrokenRemote() {
-    context_.stop();
-    thread_.join();
-  }
-  uint16_t Port() const { return acceptor_.local_endpoint().port(); }
-  std::atomic<bool> deleted{false};
-
- private:
-  void Accept() {
-    acceptor_.async_accept([this](auto ec, auto socket) {
-      if (!ec) {
-        auto stream = std::make_shared<tcp::socket>(std::move(socket));
-        auto buffer = std::make_shared<boost::beast::flat_buffer>();
-        auto request = std::make_shared<http::request<http::string_body>>();
-        http::async_read(
-            *stream, *buffer, *request,
-            [this, stream, buffer, request](auto ec, auto) {
-              if (ec) return;
-              auto response =
-                  std::make_shared<http::response<http::string_body>>(
-                      http::status::ok, 11);
-              if (request->method() == http::verb::post) {
-                response->body() = json::serialize(Json{
-                    {"snapshot_id", "00000000-0000-0000-0000-000000000001"},
-                    {"version", 1},
-                    {"graph", "default"},
-                    {"index", 1},
-                    {"term", 1},
-                    {"files",
-                     json::array({{{"path", bad_path_ ? "data/../../escape"
-                                                      : "data/CURRENT"},
-                                   {"size", 6},
-                                   {"crc32", 0}}})}});
-              } else if (request->method() == http::verb::delete_) {
-                deleted.store(true);
-                response->body() = "{}";
-              } else
-                response->body() = "broken";
-              response->prepare_payload();
-              http::async_write(*stream, *response,
-                                [stream, response](auto, auto) {});
-            });
-      }
-      Accept();
-    });
-  }
-  asio::io_context context_;
-  tcp::acceptor acceptor_;
-  bool bad_path_;
-  std::thread thread_;
-};
-
 TEST_F(HttpSnapshotTest,
        CorruptDownloadPreservesGraphAndDeletesRemoteSnapshot) {
   Query(*target_, "CREATE (:Old)");
-  BrokenRemote remote(false);
-  auto status = WaitTask(StartUpdate(remote.Port()));
-  ASSERT_EQ(status.at("state"), "failed") << json::serialize(status);
-  EXPECT_EQ(status.at("error"), "IOError");
+  SnapshotRemote remote;
+  TriggerSnapshot(remote.Port());
+  EXPECT_FALSE(remote.WaitReport().at("success").as_bool());
   EXPECT_TRUE(remote.deleted.load());
-  EXPECT_FALSE(status.at("installed").as_bool());
   EXPECT_EQ(Count(*target_), 1);
   EXPECT_TRUE(fs::is_empty(root_ / "target" / ".http-snapshots"));
 }
 
 TEST_F(HttpSnapshotTest, RejectsRemotePathTraversalAndDeletesRemoteSnapshot) {
-  BrokenRemote remote(true);
-  auto status = WaitTask(StartUpdate(remote.Port()));
-  ASSERT_EQ(status.at("state"), "failed") << json::serialize(status);
-  EXPECT_EQ(status.at("error"), "InvalidParameter");
+  SnapshotRemote remote(0, true);
+  TriggerSnapshot(remote.Port());
+  EXPECT_FALSE(remote.WaitReport().at("success").as_bool());
   EXPECT_TRUE(remote.deleted.load());
   EXPECT_FALSE(fs::exists(root_ / "target" / "escape"));
 }
 
-TEST_F(HttpSnapshotTest, RemoteConnectionFailureIsReportedAsynchronously) {
+TEST_F(HttpSnapshotTest, RemoteConnectionFailurePreservesGraph) {
   Query(*target_, "CREATE (:Old)");
   asio::io_context context;
   tcp::acceptor unused(context, {tcp::v4(), 0});
   auto port = unused.local_endpoint().port();
   unused.close();
-  auto status = WaitTask(StartUpdate(port));
-  ASSERT_EQ(status.at("state"), "failed") << json::serialize(status);
-  EXPECT_EQ(status.at("error"), "IOError");
-  EXPECT_FALSE(status.at("installed").as_bool());
+  TriggerSnapshot(port);
+  target_http_.Stop();
   EXPECT_EQ(Count(*target_), 1);
 }
 }  // namespace

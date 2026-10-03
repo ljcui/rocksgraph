@@ -5,14 +5,17 @@
 #include <future>
 #include <stdexcept>
 
+#include "common/exception.h"
 #include "common/logger.h"
 #include "raft_driver/connection.h"
 #include "raft_driver/io_service.h"
 #include "server/graph_manager.h"
+#include "server/http_server.h"
 
 namespace server {
 
-bool RaftServer::Start(GraphManager* graph_manager, uint32_t port) {
+bool RaftServer::Start(GraphManager* graph_manager, uint32_t port,
+                       HttpServer& http_server) {
   if (started_.load()) {
     return true;
   }
@@ -22,6 +25,7 @@ bool RaftServer::Start(GraphManager* graph_manager, uint32_t port) {
     return false;
   }
   graph_manager_ = graph_manager;
+  http_server_ = &http_server;
   listener_.reset();
 
   std::promise<bool> promise;
@@ -29,6 +33,8 @@ bool RaftServer::Start(GraphManager* graph_manager, uint32_t port) {
   threads_.emplace_back([this, port, &promise]() {
     bool promise_done = false;
     try {
+      RG_CHECK(http_server_->Started(), common::ErrorCode::InternalError,
+               "Raft listener requires a running HTTP server");
       protobuf_handler_ = [this](std::string graph_name, raftpb::Message msg) {
         if (graph_manager_ == nullptr) {
           LOG_WARN(
@@ -37,6 +43,12 @@ bool RaftServer::Start(GraphManager* graph_manager, uint32_t port) {
           return;
         }
         try {
+          // MsgSnap is only a signal for an HTTP checkpoint transfer. Passing
+          // its placeholder metadata to Raft would restore an invalid state.
+          if (msg.type() == raftpb::MsgSnap) {
+            http_server_->HandleSnapshotTrigger(graph_name, msg);
+            return;
+          }
           auto graph = graph_manager_->OpenGraph(graph_name);
           auto* raft_driver = graph->raft_driver();
           if (raft_driver == nullptr) {
@@ -90,6 +102,7 @@ void RaftServer::Stop() {
 
   started_.store(false);
   graph_manager_ = nullptr;
+  http_server_ = nullptr;
   protobuf_handler_ = {};
   listener_.reset();
   if (had_threads) {

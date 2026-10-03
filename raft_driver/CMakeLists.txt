@@ -1,4 +1,4 @@
-find_package(Boost REQUIRED)
+find_package(Boost REQUIRED COMPONENTS json)
 find_package(RocksDB REQUIRED)
 find_package(Threads REQUIRED)
 
@@ -9,5 +9,6 @@ target_compile_features(rocksgraph_raft_driver PUBLIC cxx_std_20)
 target_include_directories(rocksgraph_raft_driver PUBLIC ${PROJECT_SOURCE_DIR})
 target_link_libraries(
   rocksgraph_raft_driver
-  PUBLIC Boost::headers ${ROCKSDB_TARGET} Threads::Threads RocksGraph::common
-         RocksGraph::etcd_raft RocksGraph::graph_replication_proto)
+  PUBLIC Boost::headers Boost::json ${ROCKSDB_TARGET} Threads::Threads
+         RocksGraph::common RocksGraph::etcd_raft
+         RocksGraph::graph_replication_proto)

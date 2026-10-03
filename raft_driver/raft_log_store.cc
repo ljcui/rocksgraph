@@ -268,7 +268,16 @@ std::pair<uint64_t, eraft::Error> RaftLogStorage::FirstIndex() {
 }
 
 std::pair<raftpb::Snapshot, eraft::Error> RaftLogStorage::Snapshot() {
-  // disable snapshot
-  return {raftpb::Snapshot{}, eraft::ErrSnapshotTemporarilyUnavailable};
+  if (first_entry_index_ == 0) {
+    return {raftpb::Snapshot{}, eraft::ErrSnapshotTemporarilyUnavailable};
+  }
+  // Only a trigger for the HTTP transfer. The receiver must not Step this
+  // snapshot; the actual checkpoint and its boundary are obtained over HTTP.
+  auto [term, err] = Term(first_entry_index_);
+  if (err != nullptr) return {raftpb::Snapshot{}, err};
+  raftpb::Snapshot snapshot;
+  snapshot.mutable_metadata()->set_index(first_entry_index_);
+  snapshot.mutable_metadata()->set_term(term);
+  return {std::move(snapshot), nullptr};
 }
 }  // namespace raft

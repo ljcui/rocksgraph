@@ -38,6 +38,7 @@ struct LocalNodeOptions {
   uint32_t bolt_port = 0;
   uint32_t raft_port = 0;
   uint64_t raft_node_id = 1;
+  uint32_t http_port = 7689;
 };
 
 struct GraphSnapshot {

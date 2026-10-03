@@ -255,6 +255,7 @@ struct LocalNodeConfig {
   std::string ip;
   int32_t bolt_port = 0;
   int32_t raft_poft = 0;
+  uint32_t http_port = 7689;
   bool Check();
 };
 
@@ -282,6 +283,8 @@ class RaftDriver {
   eraft::Error TransferLeader(uint64_t node_id);
   meta::RaftNodeInfos GetNodeInfosWithLeader();
   RaftStatus GetRaftStatus();
+  // Report the follower's HTTP snapshot result on the Raft thread.
+  void ReportSnapshot(uint64_t node_id, bool success);
   // Run the checkpoint on the apply thread, then read its boundary term on
   // the Raft thread. The caller must keep this driver alive until completion.
   std::pair<uint64_t, uint64_t> CaptureSnapshot(
