@@ -5,7 +5,7 @@
 #include "runtime/expression_evaluator.h"
 #include "runtime/physical_executor_internal.h"
 
-namespace rg::execution {
+namespace runtime::execution {
 
 class LeftOuterHashJoinOperator final : public PullOperator {
  public:
@@ -607,7 +607,7 @@ class ValueHashJoinOperator final : public PullOperator {
     result.values.reserve(data_->keys.size());
     for (const auto &key : data_->keys) {
       const PhysicalExpression &expression = child == 0 ? key.left : key.right;
-      Value value = Evaluate(expression, row, *state_);
+      rg::Value value = Evaluate(expression, row, *state_);
       if (value.IsNull()) {
         return std::nullopt;
       }
@@ -1291,7 +1291,7 @@ bool LetSemiApplyOperator::Next(ExecutionRow *row) {
   ExecutionRow rhs(node_->children[1]->output_layout);
   const bool exists = correlated_.NextRight(&rhs);
   ExecutionRow output = CopyChildOutput(*node_, 0, correlated_.Left());
-  StoreEvaluatedValue(&output, data_->value_offset, Value(exists), *state_);
+  StoreEvaluatedValue(&output, data_->value_offset, rg::Value(exists), *state_);
   correlated_.FinishLeft();
   *row = std::move(output);
   return true;
@@ -1329,12 +1329,12 @@ bool RollUpApplyOperator::Next(ExecutionRow *row) {
     return false;
   }
   correlated_.OpenRight();
-  Value::List values;
+  rg::Value::List values;
   std::size_t reserved_bytes = 0;
   try {
     ExecutionRow rhs(node_->children[1]->output_layout);
     while (correlated_.NextRight(&rhs)) {
-      Value value = ReadRowValue(rhs, data_->value_offset);
+      rg::Value value = ReadRowValue(rhs, data_->value_offset);
       const std::size_t bytes = EstimatedValueHeapUsage(value);
       state_->memory_tracker.Reserve(bytes);
       reserved_bytes += bytes;
@@ -1342,7 +1342,7 @@ bool RollUpApplyOperator::Next(ExecutionRow *row) {
     }
     ExecutionRow output = CopyChildOutput(*node_, 0, correlated_.Left());
     StoreEvaluatedValue(&output, data_->collection_offset,
-                        Value(std::move(values)), *state_);
+                        rg::Value(std::move(values)), *state_);
     state_->memory_tracker.Release(reserved_bytes);
     correlated_.FinishLeft();
     *row = std::move(output);
@@ -1412,4 +1412,4 @@ void MergeOperator::Close() noexcept {
   reserved_bytes_ = 0;
 }
 
-}  // namespace rg::execution
+}  // namespace runtime::execution

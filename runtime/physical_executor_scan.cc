@@ -14,7 +14,7 @@
 #include "runtime/graphdb_access.h"
 #include "runtime/physical_executor_internal.h"
 
-namespace rg::execution {
+namespace runtime::execution {
 
 graphdb::EdgeDirection GraphDBDirection(PhysicalExpandDirection direction) {
   if (direction == PhysicalExpandDirection::kOutgoing) {
@@ -27,18 +27,18 @@ graphdb::EdgeDirection GraphDBDirection(PhysicalExpandDirection direction) {
 }
 
 struct IndexRangeBound {
-  Value value;
+  rg::Value value;
   bool inclusive = false;
 };
 
 struct IndexRange {
-  std::optional<Value> prefix;
+  std::optional<rg::Value> prefix;
   std::vector<IndexRangeBound> lower_bounds;
   std::vector<IndexRangeBound> upper_bounds;
 };
 
 std::optional<std::int64_t> NextPhysicalExpandNode(
-    const Relationship &relationship, std::int64_t current_node_id,
+    const rg::Relationship &relationship, std::int64_t current_node_id,
     PhysicalExpandDirection direction) {
   if (direction == PhysicalExpandDirection::kOutgoing) {
     return relationship.start_node_id == current_node_id
@@ -59,7 +59,7 @@ std::optional<std::int64_t> NextPhysicalExpandNode(
   return std::nullopt;
 }
 
-std::optional<std::int64_t> SeekId(const Value &value) {
+std::optional<std::int64_t> SeekId(const rg::Value &value) {
   if (value.IsInteger()) {
     return value.AsInteger();
   }
@@ -332,7 +332,7 @@ class NodeIndexSeekOperator final : public NodeScanOperator {
  private:
   [[nodiscard]] std::unique_ptr<graphdb::VertexIterator> OpenGraphDBCursor()
       override {
-    Value expected = Evaluate(data_->value, Argument(), State());
+    rg::Value expected = Evaluate(data_->value, Argument(), State());
     return State().transaction->QueryVertexByPropertyIndex(
         data_->labels, data_->property_key, expected);
   }
@@ -356,8 +356,8 @@ class NodeIndexRangeSeekOperator final : public NodeScanOperator {
     const IndexRange range =
         EvaluateIndexRange(data_->predicates, data_->variable,
                            data_->property_key, Argument(), State());
-    std::optional<Value> lower;
-    std::optional<Value> upper;
+    std::optional<rg::Value> lower;
+    std::optional<rg::Value> upper;
     bool left_closed = true;
     bool right_closed = true;
     if (!range.prefix.has_value() && range.lower_bounds.size() == 1) {
@@ -419,7 +419,7 @@ class IdSeekValues final {
       return;
     }
     initialized_ = true;
-    Value value = Evaluate(*expression_, *argument_, *state_);
+    rg::Value value = Evaluate(*expression_, *argument_, *state_);
     const std::size_t bytes = EstimatedValueHeapUsage(value);
     state_->memory_tracker.Reserve(bytes);
     reserved_bytes_ += bytes;
@@ -436,7 +436,7 @@ class IdSeekValues final {
   bool many_ = false;
   const ExecutionRow *argument_ = nullptr;
   RuntimeState *state_ = nullptr;
-  Value::List values_;
+  rg::Value::List values_;
   std::unordered_set<std::int64_t> seen_;
   std::size_t next_ = 0;
   std::size_t reserved_bytes_ = 0;
@@ -536,11 +536,11 @@ bool EmitGraphDBRelationship(const PhysicalPlanNode &node,
                              bool reverse,
                              std::optional<graphdb::Edge> *pending_reverse,
                              ExecutionRow *row, RuntimeState &state) {
-  Relationship relationship{.id = edge.GetId(),
-                            .start_node_id = edge.GetStartId(),
-                            .end_node_id = edge.GetEndId(),
-                            .type_id = edge.GetTypeId(),
-                            .type = edge.GetType()};
+  rg::Relationship relationship{.id = edge.GetId(),
+                                .start_node_id = edge.GetStartId(),
+                                .end_node_id = edge.GetEndId(),
+                                .type_id = edge.GetTypeId(),
+                                .type = edge.GetType()};
   if (!RelationshipHasType(relationship, pattern.types)) {
     return false;
   }
@@ -700,7 +700,7 @@ class RelationshipIndexSeekOperator final : public RelationshipScanOperator {
  private:
   [[nodiscard]] std::unique_ptr<graphdb::EdgeIterator> OpenGraphDBCursor()
       override {
-    Value expected = Evaluate(data_->value, Argument(), State());
+    rg::Value expected = Evaluate(data_->value, Argument(), State());
     return State().transaction->QueryEdgeByPropertyIndex(
         data_->pattern.types, data_->property_key, expected);
   }
@@ -727,8 +727,8 @@ class RelationshipIndexRangeSeekOperator final
     const IndexRange range =
         EvaluateIndexRange(data_->predicates, data_->pattern.relationship,
                            data_->property_key, Argument(), State());
-    std::optional<Value> lower;
-    std::optional<Value> upper;
+    std::optional<rg::Value> lower;
+    std::optional<rg::Value> upper;
     bool left_closed = true;
     bool right_closed = true;
     if (!range.prefix.has_value() && range.lower_bounds.size() == 1) {
@@ -838,10 +838,10 @@ class FixedExpandOperatorBase : public PullOperator {
         while (graphdb_cursor_->Valid()) {
           graphdb::Edge edge = graphdb_cursor_->GetEdge();
           graphdb_cursor_->Next();
-          Relationship relationship{.id = edge.GetId(),
-                                    .start_node_id = edge.GetStartId(),
-                                    .end_node_id = edge.GetEndId(),
-                                    .type_id = edge.GetTypeId()};
+          rg::Relationship relationship{.id = edge.GetId(),
+                                        .start_node_id = edge.GetStartId(),
+                                        .end_node_id = edge.GetEndId(),
+                                        .type_id = edge.GetTypeId()};
           const std::optional<std::int64_t> to = NextPhysicalExpandNode(
               relationship, from_id_, pattern_->direction);
           if (!to.has_value() ||
@@ -999,20 +999,20 @@ class VarExpandOperator final : public PullOperator {
         frame.emitted = true;
         if (path_.size() >= min_ &&
             (!bound_to_.has_value() || frame.node == *bound_to_)) {
-          Value::List relationships;
+          rg::Value::List relationships;
           relationships.reserve(path_references_.size());
           for (std::size_t i = 0; i < path_references_.size(); ++i) {
             const std::size_t index = data_->reverse_relationships
                                           ? path_references_.size() - i - 1
                                           : i;
             const RelationshipReference relationship = path_references_[index];
-            relationships.emplace_back(Value(
+            relationships.emplace_back(rg::Value(
                 MaterializeGraphDBEdge(*state_->transaction, relationship)));
           }
           auto output = CopyMappedRow(*input_, node_->output_layout,
                                       node_->child_mappings.front());
           if (TryBindAt(&output, data_->relationship_output_offset,
-                        Value(std::move(relationships))) &&
+                        rg::Value(std::move(relationships))) &&
               TryBindNode(&output, data_->to_node_output_offset, frame.node,
                           *state_)) {
             *row = std::move(output);
@@ -1041,10 +1041,10 @@ class VarExpandOperator final : public PullOperator {
         if (used_.contains(relationship.id)) {
           continue;
         }
-        const Relationship value{.id = relationship.id,
-                                 .start_node_id = edge.GetStartId(),
-                                 .end_node_id = edge.GetEndId(),
-                                 .type_id = relationship.type_id};
+        const rg::Relationship value{.id = relationship.id,
+                                     .start_node_id = edge.GetStartId(),
+                                     .end_node_id = edge.GetEndId(),
+                                     .type_id = relationship.type_id};
         const std::optional<std::int64_t> next =
             NextPhysicalExpandNode(value, frame.node, data_->pattern.direction);
         if (!next.has_value()) {
@@ -1160,7 +1160,7 @@ class ShortestVarExpandOperator final : public PullOperator {
                                   node_->child_mappings.front());
       if (output.null_path) {
         const bool bound = TryBindAt(&result, data_->relationship_output_offset,
-                                     Value::Null());
+                                     rg::Value::Null());
         ReleaseTracked(output.reserved_bytes);
         if (bound) {
           *row = std::move(result);
@@ -1168,17 +1168,17 @@ class ShortestVarExpandOperator final : public PullOperator {
         }
         continue;
       }
-      Value::List relationships;
+      rg::Value::List relationships;
       relationships.reserve(output.relationships.size());
       for (std::size_t i = 0; i < output.relationships.size(); ++i) {
         const std::size_t index = data_->reverse_relationships
                                       ? output.relationships.size() - i - 1
                                       : i;
-        relationships.emplace_back(Value(MaterializeGraphDBEdge(
+        relationships.emplace_back(rg::Value(MaterializeGraphDBEdge(
             *state_->transaction, output.relationships[index])));
       }
       const bool bound = TryBindAt(&result, data_->relationship_output_offset,
-                                   Value(std::move(relationships))) &&
+                                   rg::Value(std::move(relationships))) &&
                          TryBindNode(&result, data_->to_node_output_offset,
                                      output.node, *state_);
       ReleaseTracked(output.reserved_bytes);
@@ -1329,10 +1329,10 @@ class ShortestVarExpandOperator final : public PullOperator {
                          }) != current.relationships.end()) {
           continue;
         }
-        const Relationship value{.id = relationship.id,
-                                 .start_node_id = edge.GetStartId(),
-                                 .end_node_id = edge.GetEndId(),
-                                 .type_id = relationship.type_id};
+        const rg::Relationship value{.id = relationship.id,
+                                     .start_node_id = edge.GetStartId(),
+                                     .end_node_id = edge.GetEndId(),
+                                     .type_id = relationship.type_id};
         const auto next = NextPhysicalExpandNode(value, current.node,
                                                  data_->pattern.direction);
         if (!next.has_value()) {
@@ -1513,11 +1513,12 @@ class PruningVarExpandOperator final : public PullOperator {
         while (graphdb_cursor_->Valid()) {
           auto edge = graphdb_cursor_->GetEdge();
           graphdb_cursor_->Next();
-          const Relationship relationship{.id = edge.GetId(),
-                                          .start_node_id = edge.GetStartId(),
-                                          .end_node_id = edge.GetEndId(),
-                                          .type_id = edge.GetTypeId(),
-                                          .type = edge.GetType()};
+          const rg::Relationship relationship{
+              .id = edge.GetId(),
+              .start_node_id = edge.GetStartId(),
+              .end_node_id = edge.GetEndId(),
+              .type_id = edge.GetTypeId(),
+              .type = edge.GetType()};
           if (!RelationshipHasType(relationship, data_->pattern.types)) {
             continue;
           }
@@ -1606,10 +1607,10 @@ class OptionalExpandOperator final : public PullOperator {
         graphdb_cursor_->Next();
         const RelationshipReference reference{.id = edge.GetId(),
                                               .type_id = edge.GetTypeId()};
-        const Relationship relationship{.id = reference.id,
-                                        .start_node_id = edge.GetStartId(),
-                                        .end_node_id = edge.GetEndId(),
-                                        .type_id = reference.type_id};
+        const rg::Relationship relationship{.id = reference.id,
+                                            .start_node_id = edge.GetStartId(),
+                                            .end_node_id = edge.GetEndId(),
+                                            .type_id = reference.type_id};
         const std::optional<std::int64_t> to = NextPhysicalExpandNode(
             relationship, from_id_, data_->pattern.direction);
         if (!to.has_value()) {
@@ -1730,16 +1731,17 @@ class ProjectEndpointsOperator final : public PullOperator {
   void PrepareEndpoints() {
     endpoints_.clear();
     next_endpoint_ = 0;
-    const Value value = ReadRowValue(*input_, data_->relationship_input_offset);
+    const rg::Value value =
+        ReadRowValue(*input_, data_->relationship_input_offset);
     if (value.IsNull()) {
       return;
     }
 
-    std::vector<const Relationship *> relationships;
+    std::vector<const rg::Relationship *> relationships;
     if (data_->length.variable) {
       RG_CHECK(value.IsList(), common::ErrorCode::InvalidParameter,
                "expected a relationship list");
-      for (const Value &item : value.AsList()) {
+      for (const rg::Value &item : value.AsList()) {
         if (!item.IsRelationship()) {
           return;
         }
@@ -1758,7 +1760,7 @@ class ProjectEndpointsOperator final : public PullOperator {
     }
 
     std::unordered_set<std::int64_t> used;
-    for (const Relationship *relationship : relationships) {
+    for (const rg::Relationship *relationship : relationships) {
       state_->CheckCancelled();
       try {
         (void)GraphDBEdgeById(
@@ -1790,7 +1792,7 @@ class ProjectEndpointsOperator final : public PullOperator {
       return;
     }
 
-    const Relationship &first = *relationships.front();
+    const rg::Relationship &first = *relationships.front();
     std::vector<std::int64_t> starts;
     if (data_->pattern.direction != PhysicalExpandDirection::kIncoming) {
       starts.push_back(first.start_node_id);
@@ -1801,7 +1803,7 @@ class ProjectEndpointsOperator final : public PullOperator {
     }
     for (const std::int64_t start : starts) {
       std::optional<std::int64_t> current = start;
-      for (const Relationship *relationship : relationships) {
+      for (const rg::Relationship *relationship : relationships) {
         current = NextPhysicalExpandNode(*relationship, *current,
                                          data_->pattern.direction);
         if (!current.has_value()) {
@@ -1904,4 +1906,4 @@ std::unique_ptr<PullOperator> BuildExpandOperator(
   }
 }
 
-}  // namespace rg::execution
+}  // namespace runtime::execution

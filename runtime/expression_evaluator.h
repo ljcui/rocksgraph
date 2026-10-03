@@ -16,7 +16,7 @@ class Variable;
 
 }  // namespace ast
 
-namespace rg {
+namespace runtime {
 
 class ExpressionBindings {
  public:
@@ -25,29 +25,29 @@ class ExpressionBindings {
   ExpressionBindings &operator=(const ExpressionBindings &) = delete;
   virtual ~ExpressionBindings() = default;
 
-  [[nodiscard]] virtual Value Lookup(std::string_view name) const;
-  [[nodiscard]] virtual Value LookupVariable(
+  [[nodiscard]] virtual rg::Value Lookup(std::string_view name) const;
+  [[nodiscard]] virtual rg::Value LookupVariable(
       const ast::Variable &variable) const;
   [[nodiscard]] virtual bool ReadProperty(std::string_view variable,
                                           std::string_view property_key,
-                                          Value *value) const;
+                                          rg::Value *value) const;
   [[nodiscard]] virtual bool ReadVariableProperty(const ast::Variable &variable,
                                                   std::string_view property_key,
-                                                  Value *value) const;
+                                                  rg::Value *value) const;
   [[nodiscard]] virtual bool ReadParameter(const ast::Parameter &parameter,
-                                           Value *value) const;
+                                           rg::Value *value) const;
 };
 
-[[nodiscard]] Value EvaluateExpression(
+[[nodiscard]] rg::Value EvaluateExpression(
     const ast::Expression &expression, const ExpressionBindings &bindings,
     const std::vector<ast::PrecomputedExpression> &precomputed = {},
     ExecutionContext context = {});
 
-[[nodiscard]] Value EvaluateExpression(const ast::Expression &expression,
-                                       ExecutionContext context = {});
+[[nodiscard]] rg::Value EvaluateExpression(const ast::Expression &expression,
+                                           ExecutionContext context = {});
 
-[[nodiscard]] bool PredicateIsTrue(const Value &value);
-[[nodiscard]] bool IsNumeric(const Value &value);
-[[nodiscard]] double AsDoubleValue(const Value &value);
+[[nodiscard]] bool PredicateIsTrue(const rg::Value &value);
+[[nodiscard]] bool IsNumeric(const rg::Value &value);
+[[nodiscard]] double AsDoubleValue(const rg::Value &value);
 
-}  // namespace rg
+}  // namespace runtime

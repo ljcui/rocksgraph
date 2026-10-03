@@ -18,7 +18,7 @@ using boost::asio::async_write;
 using boost::asio::ip::tcp;
 using namespace std::chrono;
 
-namespace raft {
+namespace raft_driver {
 namespace {
 size_t NormalizeRaftShardCount(size_t shard_count) {
   return shard_count == 0 ? 1 : shard_count;
@@ -1347,4 +1347,4 @@ void RaftDriver::Apply(const std::vector<ApplyOperation>& operations) {
   }
 }
 
-}  // namespace raft
+}  // namespace raft_driver

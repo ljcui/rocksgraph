@@ -7,7 +7,7 @@
 #include "common/logger.h"
 
 using boost::asio::ip::tcp;
-namespace raft {
+namespace raft_driver {
 
 inline void socket_set_options(tcp::socket &socket) {
   socket.set_option(boost::asio::ip::tcp::no_delay(true));
@@ -94,4 +94,4 @@ class IOService : private boost::asio::noncopyable {
   boost::asio::deadline_timer timer_;
 };
 
-}  // namespace raft
+}  // namespace raft_driver

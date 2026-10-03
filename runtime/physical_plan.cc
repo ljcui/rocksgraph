@@ -14,7 +14,7 @@
 #include "common/exception.h"
 #include "ir/logical_plan.h"
 
-namespace rg {
+namespace runtime {
 
 PhysicalExpression::PhysicalExpression(
     std::unique_ptr<ast::Expression> expression,
@@ -1576,4 +1576,4 @@ PhysicalPlan CreatePhysicalPlan(const ir::LogicalPlan &plan) {
   return PhysicalPlanBuilder().Build(plan);
 }
 
-}  // namespace rg
+}  // namespace runtime

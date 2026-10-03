@@ -23,7 +23,7 @@
 #include "runtime/physical_plan.h"
 #include "runtime/plan_cache.h"
 
-namespace rg {
+namespace runtime {
 namespace {
 
 bool IsExplain(const ast::Statement &statement);
@@ -189,7 +189,7 @@ class ExplainResultCursor final : public QueryResultCursor {
     return columns_;
   }
 
-  [[nodiscard]] bool Next(std::vector<Value> *row) override {
+  [[nodiscard]] bool Next(std::vector<rg::Value> *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "query result row is null");
     if (closed_ || emitted_) {
@@ -254,7 +254,7 @@ class QueryResultCursorImpl final : public QueryResultCursor {
     return physical_plan_->ResultColumns();
   }
 
-  [[nodiscard]] bool Next(std::vector<Value> *row) override {
+  [[nodiscard]] bool Next(std::vector<rg::Value> *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "result row is null");
     if (closed_) {
@@ -327,7 +327,7 @@ class QueryResultCursorImpl final : public QueryResultCursor {
 QueryResult ConsumeCursor(std::unique_ptr<QueryResultCursor> cursor) {
   QueryResult result;
   result.columns = cursor->Columns();
-  std::vector<Value> row;
+  std::vector<rg::Value> row;
   while (cursor->Next(&row)) {
     if (!result.columns.empty()) {
       result.rows.push_back(std::move(row));
@@ -464,4 +464,4 @@ std::unique_ptr<QueryResultCursor> ExecuteSystemQueryCursor(
                                        std::move(options.execution));
 }
 
-}  // namespace rg
+}  // namespace runtime

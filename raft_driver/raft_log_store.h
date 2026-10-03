@@ -8,7 +8,7 @@
 #include <utility>
 
 #include "etcd_raft/rawnode.h"
-namespace raft {
+namespace raft_driver {
 void CreateRaftLogStorageFromSnapshot(const std::string& path, uint64_t index,
                                       uint64_t term);
 
@@ -54,4 +54,4 @@ struct RaftLogStorage : private boost::noncopyable, eraft::Storage {
   raftpb::HardState hard_state_;
   raftpb::ConfState initial_conf_state_;
 };
-}  // namespace raft
+}  // namespace raft_driver

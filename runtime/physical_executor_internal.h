@@ -16,7 +16,7 @@
 #include "runtime/composite_value_key.h"
 #include "runtime/physical_executor.h"
 
-namespace rg::execution {
+namespace runtime::execution {
 
 class PullOperator {
  public:
@@ -83,12 +83,12 @@ const T &OperatorData(const PhysicalPlanNode &node) {
   return *data;
 }
 
-[[nodiscard]] Value Evaluate(
+[[nodiscard]] rg::Value Evaluate(
     const ast::Expression &expression, const ExecutionRow &row,
     const std::vector<ast::PrecomputedExpression> &precomputed,
     RuntimeState &state);
-[[nodiscard]] Value Evaluate(const PhysicalExpression &expression,
-                             const ExecutionRow &row, RuntimeState &state);
+[[nodiscard]] rg::Value Evaluate(const PhysicalExpression &expression,
+                                 const ExecutionRow &row, RuntimeState &state);
 
 [[nodiscard]] ExecutionRow EmptyArgument(RowLayoutPtr layout);
 void CopyMappings(const ExecutionRow &source, ExecutionRow *target,
@@ -96,11 +96,12 @@ void CopyMappings(const ExecutionRow &source, ExecutionRow *target,
 [[nodiscard]] ExecutionRow CopyMappedRow(
     const ExecutionRow &source, RowLayoutPtr target,
     const std::vector<RowMapping> &mappings);
-[[nodiscard]] Value ReadRowValue(const ExecutionRow &row, std::size_t offset);
+[[nodiscard]] rg::Value ReadRowValue(const ExecutionRow &row,
+                                     std::size_t offset);
 [[nodiscard]] ExecutionRow CopyChildOutput(const PhysicalPlanNode &node,
                                            std::size_t child,
                                            const ExecutionRow &input);
-void StoreEvaluatedValue(ExecutionRow *row, std::size_t offset, Value value,
+void StoreEvaluatedValue(ExecutionRow *row, std::size_t offset, rg::Value value,
                          RuntimeState &state);
 
 [[nodiscard]] bool TryBindNode(ExecutionRow *row, std::size_t offset,
@@ -124,15 +125,15 @@ void SetScannedNode(ExecutionRow *row, std::size_t offset,
                                  ExecutionRow *target,
                                  const std::vector<RowMapping> &mappings);
 [[nodiscard]] std::int64_t NodeId(const ExecutionRow &row, std::size_t offset);
-[[nodiscard]] bool NodeHasAllLabels(const Node &node,
+[[nodiscard]] bool NodeHasAllLabels(const rg::Node &node,
                                     const std::vector<std::string> &labels);
-[[nodiscard]] bool RelationshipHasType(const Relationship &relationship,
+[[nodiscard]] bool RelationshipHasType(const rg::Relationship &relationship,
                                        const std::vector<std::string> &types);
 
-[[nodiscard]] Value BuildPathValue(const PathBuildOp &data,
-                                   const ExecutionRow &row,
-                                   RuntimeState *state);
-using ProcedureRecord = Value::Map;
+[[nodiscard]] rg::Value BuildPathValue(const PathBuildOp &data,
+                                       const ExecutionRow &row,
+                                       RuntimeState *state);
+using ProcedureRecord = rg::Value::Map;
 [[nodiscard]] std::vector<ProcedureRecord> ExecuteProcedure(
     const ProcedureCallOp &data, const ExecutionRow &row, RuntimeState *state);
 
@@ -181,4 +182,4 @@ void ExecuteMergeActions(const MergeOp &data, bool on_match, ExecutionRow *row,
     const PhysicalPlanNode &node, RuntimeState &state, OperatorFactory &factory,
     std::unique_ptr<PullOperator> lhs);
 
-}  // namespace rg::execution
+}  // namespace runtime::execution

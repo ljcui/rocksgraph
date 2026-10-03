@@ -21,11 +21,11 @@ namespace graphdb {
 class Transaction;
 }
 
-namespace rg {
+namespace runtime {
 
 class GraphManagement;
 
-using QueryParameters = Value::Map;
+using QueryParameters = rg::Value::Map;
 
 class BoundQueryParameters final {
  public:
@@ -37,7 +37,7 @@ class BoundQueryParameters final {
     }
   }
 
-  [[nodiscard]] const Value *Find(std::string_view name) const {
+  [[nodiscard]] const rg::Value *Find(std::string_view name) const {
     const auto found = offsets_.find(name);
     return found == offsets_.end() ? nullptr : &values_[found->second];
   }
@@ -46,7 +46,7 @@ class BoundQueryParameters final {
     return found == offsets_.end() ? std::nullopt
                                    : std::optional<std::size_t>(found->second);
   }
-  [[nodiscard]] const Value &At(std::size_t offset) const {
+  [[nodiscard]] const rg::Value &At(std::size_t offset) const {
     RG_CHECK(offset < values_.size(), common::ErrorCode::InternalError,
              "parameter offset is out of range");
     return values_[offset];
@@ -56,7 +56,7 @@ class BoundQueryParameters final {
   std::unordered_map<std::string, std::size_t, common::StringViewHash,
                      std::equal_to<>>
       offsets_;
-  std::vector<Value> values_;
+  std::vector<rg::Value> values_;
 };
 
 class QueryCancellationToken final {
@@ -143,7 +143,7 @@ struct ExecutionContext {
              "query execution was cancelled");
   }
 
-  [[nodiscard]] const Value *FindParameter(std::string_view name) const {
+  [[nodiscard]] const rg::Value *FindParameter(std::string_view name) const {
     if (bound_parameters != nullptr) {
       return bound_parameters->Find(name);
     }
@@ -155,4 +155,4 @@ struct ExecutionContext {
   }
 };
 
-}  // namespace rg
+}  // namespace runtime

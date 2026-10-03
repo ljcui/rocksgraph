@@ -14,7 +14,7 @@
 #include "graphdb/graph_entity.h"
 #include "value/value.h"
 
-namespace rg {
+namespace runtime {
 
 class RowLayout final {
  public:
@@ -58,30 +58,30 @@ class ExecutionRow final {
   [[nodiscard]] std::int64_t EntityIdAt(std::size_t offset) const;
   [[nodiscard]] const graphdb::Vertex &VertexAt(std::size_t offset) const;
   [[nodiscard]] const graphdb::Edge &EdgeAt(std::size_t offset) const;
-  [[nodiscard]] const Value &ValueAt(std::size_t offset) const;
+  [[nodiscard]] const rg::Value &ValueAt(std::size_t offset) const;
   [[nodiscard]] bool CellEquals(std::size_t offset, const ExecutionRow &other,
                                 std::size_t other_offset) const;
   [[nodiscard]] bool ReadProperty(std::size_t offset,
                                   std::string_view property_key,
-                                  Value *value) const;
+                                  rg::Value *value) const;
 
   void Set(std::size_t offset, graphdb::Vertex vertex);
   void Set(std::size_t offset, graphdb::Edge edge);
-  void Set(std::size_t offset, Value value);
+  void Set(std::size_t offset, rg::Value value);
   void SetNull(std::size_t offset);
   void CopyCellFrom(const ExecutionRow &source, std::size_t source_offset,
                     std::size_t target_offset);
   void MaterializeGraphEntities();
 
-  [[nodiscard]] Value Get(std::size_t offset) const;
+  [[nodiscard]] rg::Value Get(std::size_t offset) const;
   [[nodiscard]] std::size_t EstimatedHeapUsage() const;
   [[nodiscard]] ExecutionRow CopyTo(
       RowLayoutPtr target, const std::vector<RowMapping> &mappings) const;
 
  private:
   struct UninitializedCell {};
-  using RowCell =
-      std::variant<UninitializedCell, graphdb::Vertex, graphdb::Edge, Value>;
+  using RowCell = std::variant<UninitializedCell, graphdb::Vertex,
+                               graphdb::Edge, rg::Value>;
 
   void SetRowCell(std::size_t offset, RowCell value);
 
@@ -92,9 +92,9 @@ class ExecutionRow final {
 void CopyCells(const ExecutionRow &source, ExecutionRow *target,
                const std::vector<RowMapping> &mappings);
 [[nodiscard]] bool TryBindAt(ExecutionRow *row, std::size_t offset,
-                             Value value);
+                             rg::Value value);
 [[nodiscard]] bool TryBindEdge(ExecutionRow *row, std::size_t offset,
                                graphdb::Edge edge);
-[[nodiscard]] std::size_t EstimatedValueHeapUsage(const Value &value);
+[[nodiscard]] std::size_t EstimatedValueHeapUsage(const rg::Value &value);
 
-}  // namespace rg
+}  // namespace runtime

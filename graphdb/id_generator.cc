@@ -38,7 +38,7 @@ void IdGenerator::Bind(rocksdb::TransactionDB *db, GraphCF *graph_cf) {
   graph_cf_ = graph_cf;
 }
 
-void IdGenerator::SetRaftDriver(raft::RaftDriver *raft_driver) {
+void IdGenerator::SetRaftDriver(raft_driver::RaftDriver *raft_driver) {
   raft_driver_ = raft_driver;
 }
 

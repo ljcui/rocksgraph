@@ -9,7 +9,7 @@
 #include "common/exception.h"
 #include "runtime/physical_executor_internal.h"
 
-namespace rg {
+namespace runtime {
 namespace {
 
 class PhysicalResultCursorImpl final : public PhysicalResultCursor {
@@ -32,7 +32,7 @@ class PhysicalResultCursorImpl final : public PhysicalResultCursor {
 
   ~PhysicalResultCursorImpl() override { Close(); }
 
-  [[nodiscard]] bool Next(std::vector<Value> *row) override {
+  [[nodiscard]] bool Next(std::vector<rg::Value> *row) override {
     RG_CHECK(row != nullptr, common::ErrorCode::InvalidParameter,
              "result row is null");
     if (closed_) {
@@ -50,7 +50,7 @@ class PhysicalResultCursorImpl final : public PhysicalResultCursor {
       for (const std::size_t offset : result_offsets_) {
         row->push_back(row_.IsInitialized(offset)
                            ? execution::ReadRowValue(row_, offset)
-                           : Value::Null());
+                           : rg::Value::Null());
       }
       return true;
     } catch (...) {
@@ -98,4 +98,4 @@ std::unique_ptr<PhysicalResultCursor> StartPhysicalPlan(
       plan, transaction, parameters, result_columns, std::move(options));
 }
 
-}  // namespace rg
+}  // namespace runtime

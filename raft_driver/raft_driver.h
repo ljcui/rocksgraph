@@ -21,7 +21,7 @@
 #include "proto/graph_replication.pb.h"
 #include "raft_driver/raft_log_store.h"
 
-namespace raft {
+namespace raft_driver {
 using namespace boost::asio::ip;
 class NodeClient : public std::enable_shared_from_this<NodeClient> {
  public:
@@ -349,4 +349,4 @@ class RaftDriver {
   RaftConfig raft_config_;
   std::atomic<bool> stopped_ = false;
 };
-}  // namespace raft
+}  // namespace raft_driver

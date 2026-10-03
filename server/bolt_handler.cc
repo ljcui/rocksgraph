@@ -739,21 +739,21 @@ static void ProcessRun(GraphManager* graph_manager,
     active_query->graph_name = graph;
     active_query->cypher = *cypher;
     active_query->start_time = steady_clock::now();
-    rg::QueryOptions query_options;
+    runtime::QueryOptions query_options;
     query_options.plan_cache = &graph_manager->GetPlanCache();
     for (const auto& [name, value] : *params) {
       query_options.parameters.emplace(name, ConvertParameter(value));
     }
     LOG_DEBUG("Execute {}", active_query->cypher.substr(0, 256));
     if (system_database) {
-      active_query->result = rg::ExecuteSystemQueryCursor(
+      active_query->result = runtime::ExecuteSystemQueryCursor(
           *graph_manager, active_query->cypher, std::move(query_options));
     } else {
       active_query->graph_db = graph_manager->OpenGraph(graph);
       active_query->transaction = active_query->graph_db->BeginTransaction();
-      active_query->result = rg::ExecuteQueryCursor(*active_query->transaction,
-                                                    active_query->cypher,
-                                                    std::move(query_options));
+      active_query->result = runtime::ExecuteQueryCursor(
+          *active_query->transaction, active_query->cypher,
+          std::move(query_options));
     }
 
     bolt::PackStream ps;

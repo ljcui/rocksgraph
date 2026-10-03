@@ -5,10 +5,10 @@
 
 #include "value/value.h"
 
-namespace rg::execution {
+namespace runtime::execution {
 
 struct CompositeValueKey {
-  std::vector<Value> values;
+  std::vector<rg::Value> values;
 
   bool operator==(const CompositeValueKey &other) const noexcept;
 };
@@ -23,4 +23,4 @@ struct CompositeValueKeyEqual {
                                 const CompositeValueKey &right) const noexcept;
 };
 
-}  // namespace rg::execution
+}  // namespace runtime::execution

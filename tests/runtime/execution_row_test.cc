@@ -11,17 +11,17 @@
 #include "tests/runtime/graphdb_test_utils.h"
 
 TEST(ExecutionRowTest, StoresGraphDBEntitiesAndValues) {
-  rg::test::GraphDBTestDatabase database;
+  runtime::test::GraphDBTestDatabase database;
   auto transaction = database.BeginTransaction();
   const auto node_vertex =
       transaction->CreateVertex({"Person"}, {{"name", rg::Value("Ada")}});
   const auto other_vertex = transaction->CreateVertex({}, {});
   const auto relationship_edge =
       transaction->CreateEdge(node_vertex, other_vertex, "KNOWS", {});
-  auto layout = std::make_shared<const rg::RowLayout>(
+  auto layout = std::make_shared<const runtime::RowLayout>(
       std::vector<std::string>{"n", "r", "value"});
 
-  rg::ExecutionRow row(layout);
+  runtime::ExecutionRow row(layout);
   EXPECT_EQ(layout->At("n"), 0);
   EXPECT_EQ(layout->At("r"), 1);
   EXPECT_EQ(layout->At("value"), 2);
@@ -39,12 +39,12 @@ TEST(ExecutionRowTest, StoresGraphDBEntitiesAndValues) {
 }
 
 TEST(ExecutionRowTest, DistinguishesUninitializedCellsFromNull) {
-  rg::test::GraphDBTestDatabase database;
+  runtime::test::GraphDBTestDatabase database;
   auto transaction = database.BeginTransaction();
   auto layout =
-      std::make_shared<const rg::RowLayout>(std::vector<std::string>{"n"});
+      std::make_shared<const runtime::RowLayout>(std::vector<std::string>{"n"});
 
-  rg::ExecutionRow row(layout);
+  runtime::ExecutionRow row(layout);
   EXPECT_FALSE(row.IsInitialized(layout->At("n")));
 
   row.SetNull(layout->At("n"));
@@ -54,9 +54,9 @@ TEST(ExecutionRowTest, DistinguishesUninitializedCellsFromNull) {
 }
 
 TEST(ExecutionRowTest, RejectsOutOfRangeWrites) {
-  auto layout =
-      std::make_shared<const rg::RowLayout>(std::vector<std::string>{"value"});
-  rg::ExecutionRow row(layout);
+  auto layout = std::make_shared<const runtime::RowLayout>(
+      std::vector<std::string>{"value"});
+  runtime::ExecutionRow row(layout);
 
   RG_EXPECT_ERROR(row.Set(layout->CellCount(), rg::Value(42)),
                   common::ErrorCode::InternalError);
@@ -65,9 +65,9 @@ TEST(ExecutionRowTest, RejectsOutOfRangeWrites) {
 }
 
 TEST(ExecutionRowTest, ResetsRowsWithoutChangingCompatibleStorage) {
-  auto layout =
-      std::make_shared<const rg::RowLayout>(std::vector<std::string>{"value"});
-  rg::ExecutionRow row(layout);
+  auto layout = std::make_shared<const runtime::RowLayout>(
+      std::vector<std::string>{"value"});
+  runtime::ExecutionRow row(layout);
   row.Set(layout->At("value"), rg::Value(42));
   row.Reset();
   EXPECT_FALSE(row.IsInitialized(layout->At("value")));
@@ -78,29 +78,29 @@ TEST(ExecutionRowTest, ResetsRowsWithoutChangingCompatibleStorage) {
 }
 
 TEST(ExecutionRowTest, CopiesBetweenLayoutsWithoutChangingStoredValues) {
-  rg::test::GraphDBTestDatabase database;
+  runtime::test::GraphDBTestDatabase database;
   auto transaction = database.BeginTransaction();
   const auto vertex = transaction->CreateVertex({}, {});
   auto entity_offsets =
-      std::make_shared<const rg::RowLayout>(std::vector<std::string>{"x"});
+      std::make_shared<const runtime::RowLayout>(std::vector<std::string>{"x"});
   auto target_offsets =
-      std::make_shared<const rg::RowLayout>(std::vector<std::string>{"x"});
+      std::make_shared<const runtime::RowLayout>(std::vector<std::string>{"x"});
 
-  rg::ExecutionRow source(entity_offsets);
+  runtime::ExecutionRow source(entity_offsets);
   source.Set(entity_offsets->At("x"), vertex);
-  const std::vector<rg::RowMapping> mappings{
+  const std::vector<runtime::RowMapping> mappings{
       {.source_offset = entity_offsets->At("x"),
        .target_offset = target_offsets->At("x")}};
-  rg::ExecutionRow copied = source.CopyTo(target_offsets, mappings);
+  runtime::ExecutionRow copied = source.CopyTo(target_offsets, mappings);
 
   EXPECT_EQ(copied.VertexAt(target_offsets->At("x")).GetId(), vertex.GetId());
   EXPECT_TRUE(copied.Get(target_offsets->At("x")).IsNode());
   EXPECT_EQ(copied.Get(target_offsets->At("x")).AsNode().id, vertex.GetId());
 
-  const std::vector<rg::RowMapping> reverse_mappings{
+  const std::vector<runtime::RowMapping> reverse_mappings{
       {.source_offset = target_offsets->At("x"),
        .target_offset = entity_offsets->At("x")}};
-  rg::ExecutionRow copied_back =
+  runtime::ExecutionRow copied_back =
       copied.CopyTo(entity_offsets, reverse_mappings);
   EXPECT_EQ(copied_back.VertexAt(entity_offsets->At("x")).GetId(),
             vertex.GetId());
@@ -112,7 +112,7 @@ TEST(ExecutionRowTest, CopiesBetweenLayoutsWithoutChangingStoredValues) {
 }
 
 TEST(ExecutionRowTest, GraphDBExposesClosableVertexIterators) {
-  rg::test::GraphDBTestDatabase database;
+  runtime::test::GraphDBTestDatabase database;
   const auto first = database.CreateVertex();
   const auto second = database.CreateVertex();
 

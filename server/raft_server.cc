@@ -63,7 +63,8 @@ bool RaftServer::Start(GraphManager* graph_manager, uint32_t port,
         }
       };
 
-      raft::IOService<raft::RaftConnection, decltype(protobuf_handler_)>
+      raft_driver::IOService<raft_driver::RaftConnection,
+                             decltype(protobuf_handler_)>
           raft_service(listener_, port, 1, protobuf_handler_);
       boost::asio::io_service::work holder(listener_);
 

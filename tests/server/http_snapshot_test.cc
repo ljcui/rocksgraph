@@ -124,13 +124,14 @@ class HttpSnapshotTest : public testing::Test {
     ASSERT_TRUE(WaitForLeader(manager));
     auto graph = manager.OpenGraph("default");
     auto transaction = graph->BeginTransaction();
-    (void)rg::ExecuteQuery(*transaction, cypher);
+    (void)runtime::ExecuteQuery(*transaction, cypher);
     transaction->Commit();
   }
   int64_t Count(server::GraphManager& manager) {
     auto graph = manager.OpenGraph("default");
     auto transaction = graph->BeginTransaction();
-    auto result = rg::ExecuteQuery(*transaction, "MATCH (n) RETURN count(n)");
+    auto result =
+        runtime::ExecuteQuery(*transaction, "MATCH (n) RETURN count(n)");
     transaction->Commit();
     return result.rows.at(0).at(0).AsInteger();
   }
@@ -315,8 +316,8 @@ TEST_F(HttpSnapshotTest,
     EXPECT_TRUE(
         fulltext->meta().path().starts_with((root_ / "target").string()));
     auto transaction = graph->BeginTransaction();
-    auto edges =
-        rg::ExecuteQuery(*transaction, "MATCH ()-[r:LINK]->() RETURN r.weight");
+    auto edges = runtime::ExecuteQuery(*transaction,
+                                       "MATCH ()-[r:LINK]->() RETURN r.weight");
     transaction->Commit();
     ASSERT_EQ(edges.rows.size(), 1);
     EXPECT_EQ(edges.rows[0][0].AsInteger(), 9);

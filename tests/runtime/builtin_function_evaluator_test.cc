@@ -14,9 +14,9 @@
 namespace {
 
 using ast::BuiltinFunctionKind;
-using rg::EvaluateBuiltinFunction;
-using rg::ExecutionClock;
 using rg::Value;
+using runtime::EvaluateBuiltinFunction;
+using runtime::ExecutionClock;
 
 TEST(BuiltinFunctionEvaluatorTest, EvaluatesScalarFunctionFamilies) {
   EXPECT_EQ(EvaluateBuiltinFunction(BuiltinFunctionKind::kCoalesce,

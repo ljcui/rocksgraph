@@ -16,9 +16,9 @@
 #include "tests/runtime/graphdb_test_utils.h"
 
 TEST(PhysicalExecutorTest, HashesCompositeKeysInColumnOrder) {
-  std::unordered_set<rg::execution::CompositeValueKey,
-                     rg::execution::CompositeValueKeyHash,
-                     rg::execution::CompositeValueKeyEqual>
+  std::unordered_set<runtime::execution::CompositeValueKey,
+                     runtime::execution::CompositeValueKeyHash,
+                     runtime::execution::CompositeValueKeyEqual>
       keys;
   keys.insert({.values = {rg::Value(1), rg::Value("x")}});
   keys.insert({.values = {rg::Value(1.0), rg::Value("x")}});
@@ -28,17 +28,17 @@ TEST(PhysicalExecutorTest, HashesCompositeKeysInColumnOrder) {
 }
 
 TEST(PhysicalExecutorTest, ExhaustsWritesBelowLimit) {
-  rg::test::GraphDBTestDatabase graph;
+  runtime::test::GraphDBTestDatabase graph;
   graph.CreateVertex({"N"});
   graph.CreateVertex({"N"});
   graph.CreateVertex({"N"});
 
-  const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+  const runtime::QueryResult result = runtime::test::ExecuteQueryAndCommit(
       graph, "MATCH (n:N) SET n.marked = true RETURN n LIMIT 1");
 
   ASSERT_EQ(result.rows.size(), 1U);
   ASSERT_EQ(graph.VertexCount(), 3U);
-  const rg::QueryResult marked = graph.ExecuteQueryAndCommit(
+  const runtime::QueryResult marked = graph.ExecuteQueryAndCommit(
       "MATCH (n:N) RETURN n.marked AS marked ORDER BY id(n)");
   ASSERT_EQ(marked.rows.size(), 3U);
   for (const auto &row : marked.rows) {
@@ -48,20 +48,20 @@ TEST(PhysicalExecutorTest, ExhaustsWritesBelowLimit) {
 }
 
 TEST(PhysicalExecutorTest, RejectsPropertyAccessOnDeletedNodes) {
-  rg::test::GraphDBTestDatabase graph;
+  runtime::test::GraphDBTestDatabase graph;
   graph.CreateVertex({"N"}, {{"name", rg::Value("deleted node")}});
 
-  EXPECT_ANY_THROW((void)rg::test::ExecuteQueryAndCommit(
+  EXPECT_ANY_THROW((void)runtime::test::ExecuteQueryAndCommit(
       graph, "MATCH (n:N) DELETE n RETURN n.name AS name"));
 
   EXPECT_EQ(graph.VertexCount(), 1U);
 }
 
 TEST(PhysicalExecutorTest, KeepsDeletedRelationshipTypeAvailable) {
-  rg::test::GraphDBTestDatabase graph;
-  rg::test::ExecuteQueryAndCommit(graph, "CREATE ()-[:T]->()");
+  runtime::test::GraphDBTestDatabase graph;
+  runtime::test::ExecuteQueryAndCommit(graph, "CREATE ()-[:T]->()");
 
-  const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+  const runtime::QueryResult result = runtime::test::ExecuteQueryAndCommit(
       graph, "MATCH ()-[r:T]->() DELETE r RETURN type(r)");
 
   ASSERT_EQ(result.rows.size(), 1U);
@@ -69,18 +69,19 @@ TEST(PhysicalExecutorTest, KeepsDeletedRelationshipTypeAvailable) {
 }
 
 TEST(PhysicalExecutorTest, DeletesAllEntitiesInAPath) {
-  rg::test::GraphDBTestDatabase graph;
-  rg::test::ExecuteQueryAndCommit(graph, "CREATE (:N)-[:R]->(:N)-[:R]->(:N)");
+  runtime::test::GraphDBTestDatabase graph;
+  runtime::test::ExecuteQueryAndCommit(graph,
+                                       "CREATE (:N)-[:R]->(:N)-[:R]->(:N)");
 
-  rg::test::ExecuteQueryAndCommit(
+  runtime::test::ExecuteQueryAndCommit(
       graph, "MATCH p = (:N)-[:R]->(:N)-[:R]->(:N) DETACH DELETE p");
 
   EXPECT_EQ(graph.VertexCount(), 0U);
 }
 
 TEST(PhysicalExecutorTest, CopiesPropertiesFromGraphEntities) {
-  rg::test::GraphDBTestDatabase graph;
-  const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+  runtime::test::GraphDBTestDatabase graph;
+  const runtime::QueryResult result = runtime::test::ExecuteQueryAndCommit(
       graph,
       "CREATE (source {name: 'Ada', score: 7}), (target) "
       "SET target = source RETURN target.name, target.score");
@@ -92,12 +93,12 @@ TEST(PhysicalExecutorTest, CopiesPropertiesFromGraphEntities) {
 
 TEST(PhysicalExecutorTest,
      KeepsVariableLengthRelationshipsInWrittenPatternOrder) {
-  rg::test::GraphDBTestDatabase graph;
-  rg::test::ExecuteQueryAndCommit(graph,
-                                  "CREATE (:Start)-[:R {position: 1}]->()"
-                                  "-[:R {position: 2}]->(:End)");
+  runtime::test::GraphDBTestDatabase graph;
+  runtime::test::ExecuteQueryAndCommit(graph,
+                                       "CREATE (:Start)-[:R {position: 1}]->()"
+                                       "-[:R {position: 2}]->(:End)");
 
-  const rg::QueryResult result = graph.ExecuteQueryAndCommit(
+  const runtime::QueryResult result = graph.ExecuteQueryAndCommit(
       "MATCH (a)-[relationships:R*2..2]->(b:End) "
       "RETURN relationships");
 
@@ -113,12 +114,13 @@ TEST(PhysicalExecutorTest,
 
 TEST(PhysicalExecutorTest,
      EvaluatesPatternComprehensionCorrelatedToListVariable) {
-  rg::test::GraphDBTestDatabase graph;
-  rg::test::ExecuteQueryAndCommit(graph,
-                                  "CREATE (n:X)-[:T]->(middle)-[:T]->(:Y), "
-                                  "(middle)-[:T]->(:Y)");
+  runtime::test::GraphDBTestDatabase graph;
+  runtime::test::ExecuteQueryAndCommit(
+      graph,
+      "CREATE (n:X)-[:T]->(middle)-[:T]->(:Y), "
+      "(middle)-[:T]->(:Y)");
 
-  const rg::QueryResult result = graph.ExecuteQueryAndCommit(
+  const runtime::QueryResult result = graph.ExecuteQueryAndCommit(
       "MATCH p = (n:X)-->() "
       "RETURN [x IN nodes(p) | size([(x)-->(:Y) | 1])] AS counts");
 
@@ -129,13 +131,14 @@ TEST(PhysicalExecutorTest,
 }
 
 TEST(PhysicalExecutorTest, StreamsRowsAndCanCloseEarly) {
-  rg::test::GraphDBTestDatabase graph;
+  runtime::test::GraphDBTestDatabase graph;
   graph.CreateVertex({"N"}, {{"value", rg::Value(1)}});
   graph.CreateVertex({"N"}, {{"value", rg::Value(2)}});
 
   auto transaction = graph.BeginTransaction();
-  std::unique_ptr<rg::QueryResultCursor> cursor = rg::ExecuteQueryCursor(
-      *transaction, "MATCH (n:N) RETURN n.value AS value ORDER BY value");
+  std::unique_ptr<runtime::QueryResultCursor> cursor =
+      runtime::ExecuteQueryCursor(
+          *transaction, "MATCH (n:N) RETURN n.value AS value ORDER BY value");
   EXPECT_EQ(cursor->Columns(), std::vector<std::string>{"value"});
   std::vector<rg::Value> row;
   ASSERT_TRUE(cursor->Next(&row));
@@ -146,14 +149,15 @@ TEST(PhysicalExecutorTest, StreamsRowsAndCanCloseEarly) {
 }
 
 TEST(PhysicalExecutorTest, ObservesExternalCancellation) {
-  rg::test::GraphDBTestDatabase graph;
+  runtime::test::GraphDBTestDatabase graph;
   graph.CreateVertex({"N"});
-  rg::QueryOptions options;
+  runtime::QueryOptions options;
   options.execution.cancellation =
-      std::make_shared<rg::QueryCancellationToken>();
+      std::make_shared<runtime::QueryCancellationToken>();
   auto transaction = graph.BeginTransaction();
-  std::unique_ptr<rg::QueryResultCursor> cursor =
-      rg::ExecuteQueryCursor(*transaction, "MATCH (n:N) RETURN n", options);
+  std::unique_ptr<runtime::QueryResultCursor> cursor =
+      runtime::ExecuteQueryCursor(*transaction, "MATCH (n:N) RETURN n",
+                                  options);
   options.execution.cancellation->Cancel();
 
   std::vector<rg::Value> row;
@@ -163,13 +167,16 @@ TEST(PhysicalExecutorTest, ObservesExternalCancellation) {
 }
 
 TEST(PhysicalExecutorTest, KeepsWritesWhenCursorClosesEarly) {
-  rg::test::GraphDBTestDatabase graph;
+  runtime::test::GraphDBTestDatabase graph;
   auto transaction = graph.BeginTransaction();
-  std::unique_ptr<rg::QueryResultCursor> cursor = rg::ExecuteQueryCursor(
-      *transaction, "UNWIND [1, 2, 3] AS x CREATE (:N {value: x}) RETURN x");
+  std::unique_ptr<runtime::QueryResultCursor> cursor =
+      runtime::ExecuteQueryCursor(
+          *transaction,
+          "UNWIND [1, 2, 3] AS x CREATE (:N {value: x}) RETURN x");
   std::vector<rg::Value> row;
   ASSERT_TRUE(cursor->Next(&row));
-  const std::size_t pending_vertices = rg::test::CountVertices(*transaction);
+  const std::size_t pending_vertices =
+      runtime::test::CountVertices(*transaction);
   ASSERT_EQ(pending_vertices, 1U);
 
   cursor->Close();
@@ -179,13 +186,14 @@ TEST(PhysicalExecutorTest, KeepsWritesWhenCursorClosesEarly) {
 }
 
 TEST(PhysicalExecutorTest, EnforcesBlockingOperatorMemoryLimit) {
-  rg::test::GraphDBTestDatabase graph;
-  rg::QueryOptions options;
+  runtime::test::GraphDBTestDatabase graph;
+  runtime::QueryOptions options;
   options.execution.memory_limit_bytes = 1;
   auto transaction = graph.BeginTransaction();
-  std::unique_ptr<rg::QueryResultCursor> cursor = rg::ExecuteQueryCursor(
-      *transaction, "UNWIND range(1, 100) AS x RETURN x ORDER BY x DESC",
-      options);
+  std::unique_ptr<runtime::QueryResultCursor> cursor =
+      runtime::ExecuteQueryCursor(
+          *transaction, "UNWIND range(1, 100) AS x RETURN x ORDER BY x DESC",
+          options);
 
   std::vector<rg::Value> row;
   RG_EXPECT_ERROR((void)cursor->Next(&row),
@@ -193,16 +201,16 @@ TEST(PhysicalExecutorTest, EnforcesBlockingOperatorMemoryLimit) {
 }
 
 TEST(PhysicalExecutorTest, ReportsPeakMemoryForBlockingOperators) {
-  rg::test::GraphDBTestDatabase graph;
-  const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+  runtime::test::GraphDBTestDatabase graph;
+  const runtime::QueryResult result = runtime::test::ExecuteQueryAndCommit(
       graph, "UNWIND [3, 1, 2] AS x RETURN x ORDER BY x");
 
   EXPECT_GT(result.peak_memory_bytes, 0U);
 }
 
 TEST(PhysicalExecutorTest, ExecutesStableMultiKeyTopN) {
-  rg::test::GraphDBTestDatabase graph;
-  const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+  runtime::test::GraphDBTestDatabase graph;
+  const runtime::QueryResult result = runtime::test::ExecuteQueryAndCommit(
       graph,
       "UNWIND [{score: 1, bucket: 'a', name: 'first'}, "
       "{score: 2, bucket: 'z', name: 'highest'}, "
@@ -220,24 +228,25 @@ TEST(PhysicalExecutorTest, ExecutesStableMultiKeyTopN) {
 }
 
 TEST(PhysicalExecutorTest, SupportsParameterizedAndZeroTopNLimits) {
-  rg::test::GraphDBTestDatabase graph;
-  rg::QueryOptions options;
+  runtime::test::GraphDBTestDatabase graph;
+  runtime::QueryOptions options;
   options.parameters = {{"l", rg::Value(2)}};
 
-  const rg::QueryResult parameterized = rg::test::ExecuteQueryAndCommit(
-      graph, "UNWIND [3, 1, 2] AS x RETURN x ORDER BY x LIMIT $l", options);
+  const runtime::QueryResult parameterized =
+      runtime::test::ExecuteQueryAndCommit(
+          graph, "UNWIND [3, 1, 2] AS x RETURN x ORDER BY x LIMIT $l", options);
   ASSERT_EQ(parameterized.rows.size(), 2U);
   EXPECT_EQ(parameterized.rows[0][0], rg::Value(1));
   EXPECT_EQ(parameterized.rows[1][0], rg::Value(2));
 
-  const rg::QueryResult empty = rg::test::ExecuteQueryAndCommit(
+  const runtime::QueryResult empty = runtime::test::ExecuteQueryAndCommit(
       graph, "UNWIND [3, 1, 2] AS x RETURN x ORDER BY x LIMIT 0");
   EXPECT_TRUE(empty.rows.empty());
 }
 
 TEST(PhysicalExecutorTest, ExecutesStableTopOne) {
-  rg::test::GraphDBTestDatabase graph;
-  const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+  runtime::test::GraphDBTestDatabase graph;
+  const runtime::QueryResult result = runtime::test::ExecuteQueryAndCommit(
       graph,
       "UNWIND [{score:1,name:'first'}, {score:2,name:'other'}, "
       "{score:1,name:'second'}] AS item "
@@ -248,8 +257,8 @@ TEST(PhysicalExecutorTest, ExecutesStableTopOne) {
 }
 
 TEST(PhysicalExecutorTest, ExecutesPartialTopNByOrderingPrefix) {
-  rg::test::GraphDBTestDatabase graph;
-  const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+  runtime::test::GraphDBTestDatabase graph;
+  const runtime::QueryResult result = runtime::test::ExecuteQueryAndCommit(
       graph,
       "UNWIND [{a:2,b:0},{a:1,b:3},{a:1,b:1},{a:2,b:2},{a:1,b:2}] AS x "
       "WITH x ORDER BY x.a "
@@ -267,14 +276,14 @@ TEST(PhysicalExecutorTest, ExecutesPartialTopNByOrderingPrefix) {
 }
 
 TEST(PhysicalExecutorTest, KeepsOnlyTopNRowsInMemory) {
-  rg::test::GraphDBTestDatabase graph;
+  runtime::test::GraphDBTestDatabase graph;
   for (std::int64_t value = 1; value <= 256; ++value) {
     graph.CreateVertex({"N"}, {{"value", rg::Value(value)}});
   }
-  rg::QueryOptions options;
+  runtime::QueryOptions options;
   options.execution.memory_limit_bytes = 4096;
 
-  const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+  const runtime::QueryResult result = runtime::test::ExecuteQueryAndCommit(
       graph, "MATCH (n:N) RETURN n.value AS value ORDER BY value DESC LIMIT 3",
       options);
 
@@ -287,26 +296,27 @@ TEST(PhysicalExecutorTest, KeepsOnlyTopNRowsInMemory) {
 }
 
 TEST(PhysicalExecutorTest, ExecutesOrderedGroupingAndPartialSort) {
-  rg::test::GraphDBTestDatabase graph;
+  runtime::test::GraphDBTestDatabase graph;
 
-  const rg::QueryResult distinct =
-      rg::test::ExecuteQueryAndCommit(graph,
-                                      "UNWIND [3, 1, 2, 1] AS x "
-                                      "WITH x ORDER BY x RETURN DISTINCT x");
+  const runtime::QueryResult distinct = runtime::test::ExecuteQueryAndCommit(
+      graph,
+      "UNWIND [3, 1, 2, 1] AS x "
+      "WITH x ORDER BY x RETURN DISTINCT x");
   ASSERT_EQ(distinct.rows.size(), 3U);
   EXPECT_EQ(distinct.rows[0][0], rg::Value(1));
   EXPECT_EQ(distinct.rows[1][0], rg::Value(2));
   EXPECT_EQ(distinct.rows[2][0], rg::Value(3));
 
-  const rg::QueryResult typed_distinct =
-      rg::test::ExecuteQueryAndCommit(graph,
-                                      "UNWIND [1, 1.0, 2] AS x "
-                                      "WITH x ORDER BY x RETURN DISTINCT x");
+  const runtime::QueryResult typed_distinct =
+      runtime::test::ExecuteQueryAndCommit(
+          graph,
+          "UNWIND [1, 1.0, 2] AS x "
+          "WITH x ORDER BY x RETURN DISTINCT x");
   ASSERT_EQ(typed_distinct.rows.size(), 2U);
   EXPECT_TRUE(rg::ValuesEqual(typed_distinct.rows[0][0], rg::Value(1)));
   EXPECT_TRUE(rg::ValuesEqual(typed_distinct.rows[1][0], rg::Value(2)));
 
-  const rg::QueryResult aggregation = rg::test::ExecuteQueryAndCommit(
+  const runtime::QueryResult aggregation = runtime::test::ExecuteQueryAndCommit(
       graph,
       "UNWIND [3, 1, 2, 1] AS x "
       "WITH x ORDER BY x RETURN x, count(*) AS count");
@@ -318,7 +328,7 @@ TEST(PhysicalExecutorTest, ExecutesOrderedGroupingAndPartialSort) {
   EXPECT_EQ(aggregation.rows[2][0], rg::Value(3));
   EXPECT_EQ(aggregation.rows[2][1], rg::Value(1));
 
-  const rg::QueryResult partial = rg::test::ExecuteQueryAndCommit(
+  const runtime::QueryResult partial = runtime::test::ExecuteQueryAndCommit(
       graph,
       "UNWIND [{a:1,b:2},{a:1,b:1},{a:2,b:1},{a:1,b:3}] AS x "
       "WITH x ORDER BY x.a "
@@ -335,14 +345,14 @@ TEST(PhysicalExecutorTest, ExecutesOrderedGroupingAndPartialSort) {
 }
 
 TEST(PhysicalExecutorTest, KeepsBasicAggregationMemoryBounded) {
-  rg::test::GraphDBTestDatabase graph;
+  runtime::test::GraphDBTestDatabase graph;
   for (std::int64_t value = 1; value <= 256; ++value) {
     graph.CreateVertex({"N"}, {{"value", rg::Value(value)}});
   }
-  rg::QueryOptions options;
+  runtime::QueryOptions options;
   options.execution.memory_limit_bytes = 4096;
 
-  const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+  const runtime::QueryResult result = runtime::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (n:N) "
       "RETURN count(*) AS rows, count(n.value) AS values, "
@@ -362,16 +372,16 @@ TEST(PhysicalExecutorTest, KeepsBasicAggregationMemoryBounded) {
 }
 
 TEST(PhysicalExecutorTest, TracksOnlyRetainedAggregationValues) {
-  rg::test::GraphDBTestDatabase graph;
+  runtime::test::GraphDBTestDatabase graph;
   const std::string large(1024, 'x');
   for (std::int64_t value = 1; value <= 64; ++value) {
     graph.CreateVertex(
         {"N"}, {{"value", rg::Value(value)}, {"large", rg::Value(large)}});
   }
-  rg::QueryOptions options;
+  runtime::QueryOptions options;
   options.execution.memory_limit_bytes = 16384;
 
-  const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+  const runtime::QueryResult result = runtime::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (n:N) WITH n.value AS value, n.large AS unused "
       "RETURN collect(value) AS values",
@@ -385,20 +395,22 @@ TEST(PhysicalExecutorTest, TracksOnlyRetainedAggregationValues) {
   EXPECT_EQ(values.back(), rg::Value(64));
 
   auto transaction = graph.BeginTransaction();
-  std::unique_ptr<rg::QueryResultCursor> cursor = rg::ExecuteQueryCursor(
-      *transaction, "MATCH (n:N) RETURN collect(n.large) AS values", options);
+  std::unique_ptr<runtime::QueryResultCursor> cursor =
+      runtime::ExecuteQueryCursor(
+          *transaction, "MATCH (n:N) RETURN collect(n.large) AS values",
+          options);
   std::vector<rg::Value> row;
   RG_EXPECT_ERROR((void)cursor->Next(&row),
                   common::ErrorCode::MemoryLimitExceeded);
 }
 
 TEST(PhysicalExecutorTest, UsesTypedDistinctAggregationState) {
-  rg::test::GraphDBTestDatabase graph;
+  runtime::test::GraphDBTestDatabase graph;
   const double nan = std::numeric_limits<double>::quiet_NaN();
   const rg::Value list(rg::Value::List{rg::Value(1), rg::Value::Null()});
   const rg::Value map(rg::Value::Map{{"number", rg::Value(1)},
                                      {"optional", rg::Value::Null()}});
-  rg::QueryOptions options;
+  runtime::QueryOptions options;
   options.parameters = {{
       "keys",
       rg::Value(rg::Value::List{
@@ -409,7 +421,7 @@ TEST(PhysicalExecutorTest, UsesTypedDistinctAggregationState) {
           rg::Value(nan), rg::Value(-nan), rg::Value::Null()}),
   }};
 
-  const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+  const runtime::QueryResult result = runtime::test::ExecuteQueryAndCommit(
       graph,
       "UNWIND $keys AS key RETURN count(DISTINCT key) AS count, "
       "collect(DISTINCT key) AS values",
@@ -426,59 +438,61 @@ TEST(PhysicalExecutorTest, UsesTypedDistinctAggregationState) {
 }
 
 TEST(PhysicalExecutorTest, MaintainsPercentileParameterState) {
-  rg::test::GraphDBTestDatabase valid;
+  runtime::test::GraphDBTestDatabase valid;
   valid.CreateVertex({"N"}, {{"value", rg::Value(10)}, {"p", rg::Value(0.5)}});
   valid.CreateVertex({"N"},
                      {{"value", rg::Value(10.0)}, {"p", rg::Value(0.5)}});
   valid.CreateVertex({"N"}, {{"value", rg::Value(20)}, {"p", rg::Value(0.5)}});
   valid.CreateVertex({"N"}, {{"value", rg::Value(30)}, {"p", rg::Value(0.5)}});
-  const rg::QueryResult valid_result = rg::test::ExecuteQueryAndCommit(
-      valid,
-      "MATCH (n:N) "
-      "RETURN percentileDisc(DISTINCT n.value, n.p) AS percentile");
+  const runtime::QueryResult valid_result =
+      runtime::test::ExecuteQueryAndCommit(
+          valid,
+          "MATCH (n:N) "
+          "RETURN percentileDisc(DISTINCT n.value, n.p) AS percentile");
   ASSERT_EQ(valid_result.rows.size(), 1U);
   EXPECT_EQ(valid_result.rows[0][0], rg::Value(20));
 
-  rg::test::GraphDBTestDatabase varying;
+  runtime::test::GraphDBTestDatabase varying;
   varying.CreateVertex({"N"},
                        {{"value", rg::Value(1)}, {"p", rg::Value(0.25)}});
   varying.CreateVertex({"N"},
                        {{"value", rg::Value(2)}, {"p", rg::Value(0.75)}});
   RG_EXPECT_ERROR(
-      (void)rg::test::ExecuteQueryAndCommit(
+      (void)runtime::test::ExecuteQueryAndCommit(
           varying,
           "MATCH (n:N) RETURN percentileDisc(n.value, n.p) AS percentile"),
       common::ErrorCode::InvalidParameter);
 
-  rg::test::GraphDBTestDatabase null_parameter;
+  runtime::test::GraphDBTestDatabase null_parameter;
   null_parameter.CreateVertex(
       {"N"}, {{"value", rg::Value(1)}, {"p", rg::Value::Null()}});
   null_parameter.CreateVertex({"N"},
                               {{"value", rg::Value(2)}, {"p", rg::Value(0.5)}});
-  const rg::QueryResult null_result = rg::test::ExecuteQueryAndCommit(
+  const runtime::QueryResult null_result = runtime::test::ExecuteQueryAndCommit(
       null_parameter,
       "MATCH (n:N) RETURN percentileCont(n.value, n.p) AS percentile");
   ASSERT_EQ(null_result.rows.size(), 1U);
   EXPECT_TRUE(null_result.rows[0][0].IsNull());
 
-  rg::test::GraphDBTestDatabase all_null;
+  runtime::test::GraphDBTestDatabase all_null;
   all_null.CreateVertex({"N"}, {{"p", rg::Value(2.0)}});
-  const rg::QueryResult all_null_result = rg::test::ExecuteQueryAndCommit(
-      all_null,
-      "MATCH (n:N) RETURN percentileCont(n.value, n.p) AS percentile");
+  const runtime::QueryResult all_null_result =
+      runtime::test::ExecuteQueryAndCommit(
+          all_null,
+          "MATCH (n:N) RETURN percentileCont(n.value, n.p) AS percentile");
   ASSERT_EQ(all_null_result.rows.size(), 1U);
   EXPECT_TRUE(all_null_result.rows[0][0].IsNull());
 }
 
 TEST(PhysicalExecutorTest, OrdersNaNInNumericAggregates) {
-  rg::test::GraphDBTestDatabase graph;
+  runtime::test::GraphDBTestDatabase graph;
   const double nan = std::numeric_limits<double>::quiet_NaN();
-  rg::QueryOptions options;
+  runtime::QueryOptions options;
   options.parameters = {
       {"values",
        rg::Value(rg::Value::List{rg::Value(nan), rg::Value(2), rg::Value(1)})}};
 
-  const rg::QueryResult aggregates = rg::test::ExecuteQueryAndCommit(
+  const runtime::QueryResult aggregates = runtime::test::ExecuteQueryAndCommit(
       graph,
       "UNWIND $values AS x RETURN min(x), max(x), "
       "percentileDisc(x, 0.5), percentileDisc(x, 1.0)",
@@ -492,7 +506,7 @@ TEST(PhysicalExecutorTest, OrdersNaNInNumericAggregates) {
   ASSERT_TRUE(aggregates.rows[0][3].IsDouble());
   EXPECT_TRUE(std::isnan(aggregates.rows[0][3].AsDouble()));
 
-  const rg::QueryResult sorted = rg::test::ExecuteQueryAndCommit(
+  const runtime::QueryResult sorted = runtime::test::ExecuteQueryAndCommit(
       graph, "UNWIND $values AS x RETURN x ORDER BY x", options);
   ASSERT_EQ(sorted.rows.size(), 3U);
   EXPECT_EQ(sorted.rows[0][0], rg::Value(1));
@@ -502,7 +516,7 @@ TEST(PhysicalExecutorTest, OrdersNaNInNumericAggregates) {
 }
 
 TEST(PhysicalExecutorTest, OrdersDurationsAndPointsInQueries) {
-  rg::test::GraphDBTestDatabase graph;
+  runtime::test::GraphDBTestDatabase graph;
   const std::vector<std::pair<rg::Value, rg::Value>> ordered_pairs{
       {rg::Value(rg::Duration{0, 0, 2, 0}),
        rg::Value(rg::Duration{0, 0, 10, 0})},
@@ -510,27 +524,29 @@ TEST(PhysicalExecutorTest, OrdersDurationsAndPointsInQueries) {
        rg::Value(rg::Point{7203, {10.0, 0.0}})}};
 
   for (const auto &[smaller, larger] : ordered_pairs) {
-    rg::QueryOptions options;
+    runtime::QueryOptions options;
     options.parameters = {
         {"values", rg::Value(rg::Value::List{larger, smaller})},
         {"smaller", smaller},
         {"larger", larger}};
 
-    const rg::QueryResult comparison = rg::test::ExecuteQueryAndCommit(
-        graph, "RETURN $smaller < $larger, $larger > $smaller", options);
+    const runtime::QueryResult comparison =
+        runtime::test::ExecuteQueryAndCommit(
+            graph, "RETURN $smaller < $larger, $larger > $smaller", options);
     ASSERT_EQ(comparison.rows.size(), 1U);
     ASSERT_EQ(comparison.rows[0].size(), 2U);
     EXPECT_EQ(comparison.rows[0][0], rg::Value(true));
     EXPECT_EQ(comparison.rows[0][1], rg::Value(true));
 
-    const rg::QueryResult aggregates = rg::test::ExecuteQueryAndCommit(
-        graph, "UNWIND $values AS x RETURN min(x), max(x)", options);
+    const runtime::QueryResult aggregates =
+        runtime::test::ExecuteQueryAndCommit(
+            graph, "UNWIND $values AS x RETURN min(x), max(x)", options);
     ASSERT_EQ(aggregates.rows.size(), 1U);
     ASSERT_EQ(aggregates.rows[0].size(), 2U);
     EXPECT_EQ(aggregates.rows[0][0], smaller);
     EXPECT_EQ(aggregates.rows[0][1], larger);
 
-    const rg::QueryResult sorted = rg::test::ExecuteQueryAndCommit(
+    const runtime::QueryResult sorted = runtime::test::ExecuteQueryAndCommit(
         graph, "UNWIND $values AS x RETURN x ORDER BY x", options);
     ASSERT_EQ(sorted.rows.size(), 2U);
     EXPECT_EQ(sorted.rows[0][0], smaller);
@@ -539,15 +555,15 @@ TEST(PhysicalExecutorTest, OrdersDurationsAndPointsInQueries) {
 }
 
 TEST(PhysicalExecutorTest, UsesTypedKeysAcrossSetOperators) {
-  rg::test::GraphDBTestDatabase graph;
+  runtime::test::GraphDBTestDatabase graph;
 
-  const rg::QueryResult distinct = rg::test::ExecuteQueryAndCommit(
+  const runtime::QueryResult distinct = runtime::test::ExecuteQueryAndCommit(
       graph, "UNWIND [1, 1.0, 2] AS x RETURN DISTINCT x");
   ASSERT_EQ(distinct.rows.size(), 2U);
   EXPECT_TRUE(rg::ValuesEqual(distinct.rows[0][0], rg::Value(1)));
   EXPECT_TRUE(rg::ValuesEqual(distinct.rows[1][0], rg::Value(2)));
 
-  const rg::QueryResult grouped = rg::test::ExecuteQueryAndCommit(
+  const runtime::QueryResult grouped = runtime::test::ExecuteQueryAndCommit(
       graph, "UNWIND [1, 1.0, 2] AS x RETURN x, count(*) AS count");
   ASSERT_EQ(grouped.rows.size(), 2U);
   EXPECT_TRUE(rg::ValuesEqual(grouped.rows[0][0], rg::Value(1)));
@@ -555,18 +571,20 @@ TEST(PhysicalExecutorTest, UsesTypedKeysAcrossSetOperators) {
   EXPECT_TRUE(rg::ValuesEqual(grouped.rows[1][0], rg::Value(2)));
   EXPECT_EQ(grouped.rows[1][1], rg::Value(1));
 
-  const rg::QueryResult aggregate_distinct = rg::test::ExecuteQueryAndCommit(
-      graph, "UNWIND [1, 1.0, 2] AS x RETURN count(DISTINCT x) AS count");
+  const runtime::QueryResult aggregate_distinct =
+      runtime::test::ExecuteQueryAndCommit(
+          graph, "UNWIND [1, 1.0, 2] AS x RETURN count(DISTINCT x) AS count");
   ASSERT_EQ(aggregate_distinct.rows.size(), 1U);
   EXPECT_EQ(aggregate_distinct.rows[0][0], rg::Value(2));
 
-  const rg::QueryResult union_distinct = rg::test::ExecuteQueryAndCommit(
-      graph, "RETURN [1] AS value UNION RETURN [1.0] AS value");
+  const runtime::QueryResult union_distinct =
+      runtime::test::ExecuteQueryAndCommit(
+          graph, "RETURN [1] AS value UNION RETURN [1.0] AS value");
   EXPECT_EQ(union_distinct.rows.size(), 1U);
 }
 
 TEST(PhysicalExecutorTest, ValueHashJoinUsesTypedCompositeKeys) {
-  rg::test::GraphDBTestDatabase graph;
+  runtime::test::GraphDBTestDatabase graph;
   graph.CreateVertex({"Small"}, {{"first", rg::Value(1)},
                                  {"second", rg::Value("x")},
                                  {"name", rg::Value("match")}});
@@ -582,8 +600,8 @@ TEST(PhysicalExecutorTest, ValueHashJoinUsesTypedCompositeKeys) {
                                  {"name", rg::Value("wrong key")}});
   graph.CreateVertex({"Large"}, {{"second", rg::Value("x")}});
 
-  rg::QueryOptions options;
-  const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+  runtime::QueryOptions options;
+  const runtime::QueryResult result = runtime::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (a:Small), (b:Large) "
       "WHERE b.first = a.first AND a.second = b.second "
@@ -598,7 +616,7 @@ TEST(PhysicalExecutorTest, ValueHashJoinUsesTypedCompositeKeys) {
 }
 
 TEST(PhysicalExecutorTest, ValueHashJoinRechecksCandidatePredicates) {
-  rg::test::GraphDBTestDatabase graph;
+  runtime::test::GraphDBTestDatabase graph;
   const double nan = std::numeric_limits<double>::quiet_NaN();
   const rg::Value nested_null(rg::Value::List{rg::Value(1), rg::Value::Null()});
   graph.CreateVertex({"Small"},
@@ -613,8 +631,8 @@ TEST(PhysicalExecutorTest, ValueHashJoinRechecksCandidatePredicates) {
   graph.CreateVertex({"Large"}, {{"key", rg::Value(8)}});
   graph.CreateVertex({"Large"}, {{"key", rg::Value(9)}});
 
-  rg::QueryOptions options;
-  const rg::QueryResult result = rg::test::ExecuteQueryAndCommit(
+  runtime::QueryOptions options;
+  const runtime::QueryResult result = runtime::test::ExecuteQueryAndCommit(
       graph,
       "MATCH (a:Small), (b:Large) WHERE a.key = b.key "
       "RETURN a.name AS name",
@@ -625,17 +643,19 @@ TEST(PhysicalExecutorTest, ValueHashJoinRechecksCandidatePredicates) {
 }
 
 TEST(PhysicalExecutorTest, EnforcesValueHashJoinMemoryLimit) {
-  rg::test::GraphDBTestDatabase graph;
+  runtime::test::GraphDBTestDatabase graph;
   graph.CreateVertex({"Small"}, {{"key", rg::Value(1)}});
   graph.CreateVertex({"Large"}, {{"key", rg::Value(1)}});
   graph.CreateVertex({"Large"}, {{"key", rg::Value(2)}});
 
-  rg::QueryOptions options;
+  runtime::QueryOptions options;
   options.execution.memory_limit_bytes = 1;
   auto transaction = graph.BeginTransaction();
-  std::unique_ptr<rg::QueryResultCursor> cursor = rg::ExecuteQueryCursor(
-      *transaction,
-      "MATCH (a:Small), (b:Large) WHERE a.key = b.key RETURN a, b", options);
+  std::unique_ptr<runtime::QueryResultCursor> cursor =
+      runtime::ExecuteQueryCursor(
+          *transaction,
+          "MATCH (a:Small), (b:Large) WHERE a.key = b.key RETURN a, b",
+          options);
 
   std::vector<rg::Value> row;
   RG_EXPECT_ERROR((void)cursor->Next(&row),

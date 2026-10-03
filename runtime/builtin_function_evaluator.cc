@@ -19,7 +19,7 @@
 #include "runtime/graphdb_access.h"
 #include "value/temporal.h"
 
-namespace rg {
+namespace runtime {
 namespace {
 
 std::string LowerAscii(std::string value) {
@@ -106,10 +106,10 @@ double RandomUnitDouble() {
 
 }  // namespace
 
-Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
-                              const std::vector<Value> &arguments,
-                              ExecutionClock clock,
-                              graphdb::Transaction *transaction) {
+rg::Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
+                                  const std::vector<rg::Value> &arguments,
+                                  ExecutionClock clock,
+                                  graphdb::Transaction *transaction) {
   const ast::BuiltinFunction *builtin = ast::FindBuiltinFunction(kind);
   RG_CHECK(builtin != nullptr, common::ErrorCode::InternalError,
            "unknown built-in function kind");
@@ -125,220 +125,229 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
         const std::int64_t value = arguments[0].AsInteger();
         RG_CHECK(value != std::numeric_limits<std::int64_t>::min(),
                  common::ErrorCode::InvalidParameter, "abs() integer overflow");
-        return Value(value < 0 ? -value : value);
+        return rg::Value(value < 0 ? -value : value);
       }
       if (arguments[0].IsDouble()) {
-        return Value(std::fabs(arguments[0].AsDouble()));
+        return rg::Value(std::fabs(arguments[0].AsDouble()));
       }
-      return Value::Null();
+      return rg::Value::Null();
     case ast::BuiltinFunctionKind::kCeil:
       if (arguments[0].IsInteger()) {
-        return Value(static_cast<double>(arguments[0].AsInteger()));
-      }
-      return arguments[0].IsDouble() ? Value(std::ceil(arguments[0].AsDouble()))
-                                     : Value::Null();
-    case ast::BuiltinFunctionKind::kFloor:
-      if (arguments[0].IsInteger()) {
-        return Value(static_cast<double>(arguments[0].AsInteger()));
+        return rg::Value(static_cast<double>(arguments[0].AsInteger()));
       }
       return arguments[0].IsDouble()
-                 ? Value(std::floor(arguments[0].AsDouble()))
-                 : Value::Null();
+                 ? rg::Value(std::ceil(arguments[0].AsDouble()))
+                 : rg::Value::Null();
+    case ast::BuiltinFunctionKind::kFloor:
+      if (arguments[0].IsInteger()) {
+        return rg::Value(static_cast<double>(arguments[0].AsInteger()));
+      }
+      return arguments[0].IsDouble()
+                 ? rg::Value(std::floor(arguments[0].AsDouble()))
+                 : rg::Value::Null();
     case ast::BuiltinFunctionKind::kId:
       if (arguments[0].IsNode()) {
-        return Value(arguments[0].AsNode().id);
+        return rg::Value(arguments[0].AsNode().id);
       }
       if (arguments[0].IsRelationship()) {
-        return Value(arguments[0].AsRelationship().id);
+        return rg::Value(arguments[0].AsRelationship().id);
       }
-      return Value::Null();
+      return rg::Value::Null();
     case ast::BuiltinFunctionKind::kLabels: {
       if (arguments[0].IsNull()) {
-        return Value::Null();
+        return rg::Value::Null();
       }
       RG_CHECK(arguments[0].IsNode(), common::ErrorCode::InvalidParameter,
                "labels() argument must be a node");
-      Value::List labels;
+      rg::Value::List labels;
       for (const auto &label : arguments[0].AsNode().labels) {
         labels.emplace_back(label);
       }
-      return Value(std::move(labels));
+      return rg::Value(std::move(labels));
     }
     case ast::BuiltinFunctionKind::kLast:
       if (!arguments[0].IsList() || arguments[0].AsList().empty()) {
-        return Value::Null();
+        return rg::Value::Null();
       }
       return arguments[0].AsList().back();
     case ast::BuiltinFunctionKind::kType:
       if (arguments[0].IsNull()) {
-        return Value::Null();
+        return rg::Value::Null();
       }
       RG_CHECK(arguments[0].IsRelationship(),
                common::ErrorCode::InvalidParameter,
                "type() argument must be a relationship");
-      return Value(arguments[0].AsRelationship().type);
+      return rg::Value(arguments[0].AsRelationship().type);
     case ast::BuiltinFunctionKind::kSize:
       if (arguments[0].IsList()) {
-        return Value(static_cast<std::int64_t>(arguments[0].AsList().size()));
+        return rg::Value(
+            static_cast<std::int64_t>(arguments[0].AsList().size()));
       }
       if (arguments[0].IsString()) {
-        return Value(static_cast<std::int64_t>(arguments[0].AsString().size()));
+        return rg::Value(
+            static_cast<std::int64_t>(arguments[0].AsString().size()));
       }
-      return Value::Null();
+      return rg::Value::Null();
     case ast::BuiltinFunctionKind::kLength:
       return arguments[0].IsPath()
-                 ? Value(static_cast<std::int64_t>(
+                 ? rg::Value(static_cast<std::int64_t>(
                        arguments[0].AsPath().relationships.size()))
-                 : Value::Null();
+                 : rg::Value::Null();
     case ast::BuiltinFunctionKind::kLocalDateTime:
       return arguments.empty()
-                 ? temporal::ConstructLocalDateTime(clock.statement_time)
-                 : temporal::ConstructLocalDateTime(arguments[0],
-                                                    clock.statement_time);
+                 ? rg::temporal::ConstructLocalDateTime(clock.statement_time)
+                 : rg::temporal::ConstructLocalDateTime(arguments[0],
+                                                        clock.statement_time);
     case ast::BuiltinFunctionKind::kLocalDateTimeRealtime:
       return arguments.empty()
-                 ? temporal::CurrentLocalDateTime(clock.Realtime())
-                 : temporal::CurrentLocalDateTime(arguments[0],
-                                                  clock.Realtime());
+                 ? rg::temporal::CurrentLocalDateTime(clock.Realtime())
+                 : rg::temporal::CurrentLocalDateTime(arguments[0],
+                                                      clock.Realtime());
     case ast::BuiltinFunctionKind::kLocalDateTimeStatement:
       return arguments.empty()
-                 ? temporal::CurrentLocalDateTime(clock.statement_time)
-                 : temporal::CurrentLocalDateTime(arguments[0],
-                                                  clock.statement_time);
+                 ? rg::temporal::CurrentLocalDateTime(clock.statement_time)
+                 : rg::temporal::CurrentLocalDateTime(arguments[0],
+                                                      clock.statement_time);
     case ast::BuiltinFunctionKind::kLocalDateTimeTransaction:
       return arguments.empty()
-                 ? temporal::CurrentLocalDateTime(clock.transaction_time)
-                 : temporal::CurrentLocalDateTime(arguments[0],
-                                                  clock.transaction_time);
+                 ? rg::temporal::CurrentLocalDateTime(clock.transaction_time)
+                 : rg::temporal::CurrentLocalDateTime(arguments[0],
+                                                      clock.transaction_time);
     case ast::BuiltinFunctionKind::kLocalDateTimeTruncate:
       return arguments.size() == 3
-                 ? temporal::TruncateLocalDateTime(arguments[0], arguments[1],
-                                                   arguments[2])
-                 : temporal::TruncateLocalDateTime(arguments[0], arguments[1]);
+                 ? rg::temporal::TruncateLocalDateTime(
+                       arguments[0], arguments[1], arguments[2])
+                 : rg::temporal::TruncateLocalDateTime(arguments[0],
+                                                       arguments[1]);
     case ast::BuiltinFunctionKind::kLocalTime:
       return arguments.empty()
-                 ? temporal::ConstructLocalTime(clock.statement_time)
-                 : temporal::ConstructLocalTime(arguments[0],
-                                                clock.statement_time);
+                 ? rg::temporal::ConstructLocalTime(clock.statement_time)
+                 : rg::temporal::ConstructLocalTime(arguments[0],
+                                                    clock.statement_time);
     case ast::BuiltinFunctionKind::kLocalTimeRealtime:
       return arguments.empty()
-                 ? temporal::CurrentLocalTime(clock.Realtime())
-                 : temporal::CurrentLocalTime(arguments[0], clock.Realtime());
+                 ? rg::temporal::CurrentLocalTime(clock.Realtime())
+                 : rg::temporal::CurrentLocalTime(arguments[0],
+                                                  clock.Realtime());
     case ast::BuiltinFunctionKind::kLocalTimeStatement:
       return arguments.empty()
-                 ? temporal::CurrentLocalTime(clock.statement_time)
-                 : temporal::CurrentLocalTime(arguments[0],
-                                              clock.statement_time);
+                 ? rg::temporal::CurrentLocalTime(clock.statement_time)
+                 : rg::temporal::CurrentLocalTime(arguments[0],
+                                                  clock.statement_time);
     case ast::BuiltinFunctionKind::kLocalTimeTransaction:
       return arguments.empty()
-                 ? temporal::CurrentLocalTime(clock.transaction_time)
-                 : temporal::CurrentLocalTime(arguments[0],
-                                              clock.transaction_time);
+                 ? rg::temporal::CurrentLocalTime(clock.transaction_time)
+                 : rg::temporal::CurrentLocalTime(arguments[0],
+                                                  clock.transaction_time);
     case ast::BuiltinFunctionKind::kLocalTimeTruncate:
       return arguments.size() == 3
-                 ? temporal::TruncateLocalTime(arguments[0], arguments[1],
-                                               arguments[2])
-                 : temporal::TruncateLocalTime(arguments[0], arguments[1]);
+                 ? rg::temporal::TruncateLocalTime(arguments[0], arguments[1],
+                                                   arguments[2])
+                 : rg::temporal::TruncateLocalTime(arguments[0], arguments[1]);
     case ast::BuiltinFunctionKind::kCoalesce:
-      for (const Value &argument : arguments) {
+      for (const rg::Value &argument : arguments) {
         if (!argument.IsNull()) {
           return argument;
         }
       }
-      return Value::Null();
+      return rg::Value::Null();
     case ast::BuiltinFunctionKind::kDate:
       return arguments.empty()
-                 ? temporal::ConstructDate(clock.statement_time)
-                 : temporal::ConstructDate(arguments[0], clock.statement_time);
+                 ? rg::temporal::ConstructDate(clock.statement_time)
+                 : rg::temporal::ConstructDate(arguments[0],
+                                               clock.statement_time);
     case ast::BuiltinFunctionKind::kDateRealtime:
       return arguments.empty()
-                 ? temporal::CurrentDate(clock.Realtime())
-                 : temporal::CurrentDate(arguments[0], clock.Realtime());
+                 ? rg::temporal::CurrentDate(clock.Realtime())
+                 : rg::temporal::CurrentDate(arguments[0], clock.Realtime());
     case ast::BuiltinFunctionKind::kDateStatement:
-      return arguments.empty()
-                 ? temporal::CurrentDate(clock.statement_time)
-                 : temporal::CurrentDate(arguments[0], clock.statement_time);
+      return arguments.empty() ? rg::temporal::CurrentDate(clock.statement_time)
+                               : rg::temporal::CurrentDate(
+                                     arguments[0], clock.statement_time);
     case ast::BuiltinFunctionKind::kDateTransaction:
       return arguments.empty()
-                 ? temporal::CurrentDate(clock.transaction_time)
-                 : temporal::CurrentDate(arguments[0], clock.transaction_time);
+                 ? rg::temporal::CurrentDate(clock.transaction_time)
+                 : rg::temporal::CurrentDate(arguments[0],
+                                             clock.transaction_time);
     case ast::BuiltinFunctionKind::kDateTruncate:
       return arguments.size() == 3
-                 ? temporal::TruncateDate(arguments[0], arguments[1],
-                                          arguments[2])
-                 : temporal::TruncateDate(arguments[0], arguments[1]);
+                 ? rg::temporal::TruncateDate(arguments[0], arguments[1],
+                                              arguments[2])
+                 : rg::temporal::TruncateDate(arguments[0], arguments[1]);
     case ast::BuiltinFunctionKind::kDateTime:
       return arguments.empty()
-                 ? temporal::ConstructDateTime(clock.statement_time)
-                 : temporal::ConstructDateTime(arguments[0],
-                                               clock.statement_time);
+                 ? rg::temporal::ConstructDateTime(clock.statement_time)
+                 : rg::temporal::ConstructDateTime(arguments[0],
+                                                   clock.statement_time);
     case ast::BuiltinFunctionKind::kDateTimeFromEpoch:
-      return temporal::ConstructDateTimeFromEpoch(arguments[0], arguments[1]);
+      return rg::temporal::ConstructDateTimeFromEpoch(arguments[0],
+                                                      arguments[1]);
     case ast::BuiltinFunctionKind::kDateTimeFromEpochMillis:
-      return temporal::ConstructDateTimeFromEpochMillis(arguments[0]);
+      return rg::temporal::ConstructDateTimeFromEpochMillis(arguments[0]);
     case ast::BuiltinFunctionKind::kDateTimeRealtime:
-      return arguments.empty()
-                 ? temporal::CurrentDateTime(clock.Realtime())
-                 : temporal::CurrentDateTime(arguments[0], clock.Realtime());
+      return arguments.empty() ? rg::temporal::CurrentDateTime(clock.Realtime())
+                               : rg::temporal::CurrentDateTime(
+                                     arguments[0], clock.Realtime());
     case ast::BuiltinFunctionKind::kDateTimeStatement:
-      return arguments.empty() ? temporal::CurrentDateTime(clock.statement_time)
-                               : temporal::CurrentDateTime(
-                                     arguments[0], clock.statement_time);
+      return arguments.empty()
+                 ? rg::temporal::CurrentDateTime(clock.statement_time)
+                 : rg::temporal::CurrentDateTime(arguments[0],
+                                                 clock.statement_time);
     case ast::BuiltinFunctionKind::kDateTimeTransaction:
       return arguments.empty()
-                 ? temporal::CurrentDateTime(clock.transaction_time)
-                 : temporal::CurrentDateTime(arguments[0],
-                                             clock.transaction_time);
+                 ? rg::temporal::CurrentDateTime(clock.transaction_time)
+                 : rg::temporal::CurrentDateTime(arguments[0],
+                                                 clock.transaction_time);
     case ast::BuiltinFunctionKind::kDateTimeTruncate:
       return arguments.size() == 3
-                 ? temporal::TruncateDateTime(arguments[0], arguments[1],
-                                              arguments[2])
-                 : temporal::TruncateDateTime(arguments[0], arguments[1]);
+                 ? rg::temporal::TruncateDateTime(arguments[0], arguments[1],
+                                                  arguments[2])
+                 : rg::temporal::TruncateDateTime(arguments[0], arguments[1]);
     case ast::BuiltinFunctionKind::kDuration:
-      return temporal::ConstructDuration(arguments[0]);
+      return rg::temporal::ConstructDuration(arguments[0]);
     case ast::BuiltinFunctionKind::kDurationBetween:
-      return temporal::DurationBetween(arguments[0], arguments[1]);
+      return rg::temporal::DurationBetween(arguments[0], arguments[1]);
     case ast::BuiltinFunctionKind::kDurationInDays:
-      return temporal::DurationInDays(arguments[0], arguments[1]);
+      return rg::temporal::DurationInDays(arguments[0], arguments[1]);
     case ast::BuiltinFunctionKind::kDurationInMonths:
-      return temporal::DurationInMonths(arguments[0], arguments[1]);
+      return rg::temporal::DurationInMonths(arguments[0], arguments[1]);
     case ast::BuiltinFunctionKind::kDurationInSeconds:
-      return temporal::DurationInSeconds(arguments[0], arguments[1]);
+      return rg::temporal::DurationInSeconds(arguments[0], arguments[1]);
     case ast::BuiltinFunctionKind::kEndNode:
     case ast::BuiltinFunctionKind::kStartNode: {
       if (!arguments[0].IsRelationship()) {
-        return Value::Null();
+        return rg::Value::Null();
       }
-      const Relationship &relationship = arguments[0].AsRelationship();
+      const rg::Relationship &relationship = arguments[0].AsRelationship();
       const std::int64_t node_id =
           builtin->kind == ast::BuiltinFunctionKind::kStartNode
               ? relationship.start_node_id
               : relationship.end_node_id;
       if (transaction != nullptr) {
-        return Value(MaterializeGraphDBVertex(*transaction, node_id));
+        return rg::Value(MaterializeGraphDBVertex(*transaction, node_id));
       }
-      auto node = std::make_shared<Node>();
+      auto node = std::make_shared<rg::Node>();
       node->id = node_id;
-      return Value(std::move(node));
+      return rg::Value(std::move(node));
     }
     case ast::BuiltinFunctionKind::kHead:
       if (!arguments[0].IsList() || arguments[0].AsList().empty()) {
-        return Value::Null();
+        return rg::Value::Null();
       }
       return arguments[0].AsList().front();
     case ast::BuiltinFunctionKind::kIsEmpty:
       if (arguments[0].IsString()) {
-        return Value(arguments[0].AsString().empty());
+        return rg::Value(arguments[0].AsString().empty());
       }
       if (arguments[0].IsList()) {
-        return Value(arguments[0].AsList().empty());
+        return rg::Value(arguments[0].AsList().empty());
       }
       if (arguments[0].IsMap()) {
-        return Value(arguments[0].AsMap().empty());
+        return rg::Value(arguments[0].AsMap().empty());
       }
-      return Value::Null();
+      return rg::Value::Null();
     case ast::BuiltinFunctionKind::kKeys: {
-      const Value::Map *properties = nullptr;
+      const rg::Value::Map *properties = nullptr;
       if (arguments[0].IsMap()) {
         properties = &arguments[0].AsMap();
       } else if (arguments[0].IsNode()) {
@@ -347,34 +356,34 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
         properties = &arguments[0].AsRelationship().properties;
       }
       if (properties == nullptr) {
-        return Value::Null();
+        return rg::Value::Null();
       }
-      Value::List keys;
+      rg::Value::List keys;
       keys.reserve(properties->size());
       for (const auto &[key, value] : *properties) {
         (void)value;
         keys.emplace_back(key);
       }
-      return Value(std::move(keys));
+      return rg::Value(std::move(keys));
     }
     case ast::BuiltinFunctionKind::kProperties:
       if (arguments[0].IsMap()) {
-        return Value(arguments[0].AsMap());
+        return rg::Value(arguments[0].AsMap());
       }
       if (arguments[0].IsNode()) {
-        return Value(arguments[0].AsNode().properties);
+        return rg::Value(arguments[0].AsNode().properties);
       }
       if (arguments[0].IsRelationship()) {
-        return Value(arguments[0].AsRelationship().properties);
+        return rg::Value(arguments[0].AsRelationship().properties);
       }
-      return Value::Null();
+      return rg::Value::Null();
     case ast::BuiltinFunctionKind::kRand:
-      return Value(RandomUnitDouble());
+      return rg::Value(RandomUnitDouble());
     case ast::BuiltinFunctionKind::kRange: {
       if (std::any_of(
               arguments.begin(), arguments.end(),
-              [](const Value &argument) { return argument.IsNull(); })) {
-        return Value::Null();
+              [](const rg::Value &argument) { return argument.IsNull(); })) {
+        return rg::Value::Null();
       }
       RG_CHECK(arguments[0].IsInteger() && arguments[1].IsInteger() &&
                    (arguments.size() != 3 || arguments[2].IsInteger()),
@@ -386,7 +395,7 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
           arguments.size() == 3 ? arguments[2].AsInteger() : 1;
       RG_CHECK(step != 0, common::ErrorCode::InvalidParameter,
                "range() step is zero");
-      Value::List values;
+      rg::Value::List values;
       for (std::int64_t value = start;
            step > 0 ? value <= end : value >= end;) {
         values.emplace_back(value);
@@ -399,20 +408,20 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
         }
         value = next;
       }
-      return Value(std::move(values));
+      return rg::Value(std::move(values));
     }
     case ast::BuiltinFunctionKind::kSplit: {
       if (!arguments[0].IsString() || !arguments[1].IsString()) {
-        return Value::Null();
+        return rg::Value::Null();
       }
       const std::string &input = arguments[0].AsString();
       const std::string &delimiter = arguments[1].AsString();
-      Value::List parts;
+      rg::Value::List parts;
       if (delimiter.empty()) {
         for (char ch : input) {
           parts.emplace_back(std::string(1, ch));
         }
-        return Value(std::move(parts));
+        return rg::Value(std::move(parts));
       }
       std::size_t start = 0;
       while (true) {
@@ -424,18 +433,20 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
         parts.emplace_back(input.substr(start, found - start));
         start = found + delimiter.size();
       }
-      return Value(std::move(parts));
+      return rg::Value(std::move(parts));
     }
     case ast::BuiltinFunctionKind::kSqrt:
       if (arguments[0].IsInteger()) {
-        return Value(std::sqrt(static_cast<double>(arguments[0].AsInteger())));
+        return rg::Value(
+            std::sqrt(static_cast<double>(arguments[0].AsInteger())));
       }
-      return arguments[0].IsDouble() ? Value(std::sqrt(arguments[0].AsDouble()))
-                                     : Value::Null();
+      return arguments[0].IsDouble()
+                 ? rg::Value(std::sqrt(arguments[0].AsDouble()))
+                 : rg::Value::Null();
     case ast::BuiltinFunctionKind::kSubstring: {
       if (!arguments[0].IsString() || !arguments[1].IsInteger() ||
           (arguments.size() == 3 && !arguments[2].IsInteger())) {
-        return Value::Null();
+        return rg::Value::Null();
       }
       const std::int64_t start = arguments[1].AsInteger();
       const std::int64_t length =
@@ -450,7 +461,7 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
       const std::vector<std::size_t> offsets = Utf8Offsets(input);
       const std::size_t code_points = offsets.size() - 1;
       if (static_cast<std::uint64_t>(start) >= code_points) {
-        return Value("");
+        return rg::Value("");
       }
       const std::size_t first = static_cast<std::size_t>(start);
       std::size_t last = code_points;
@@ -460,45 +471,47 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
         last = static_cast<std::size_t>(
             std::min<std::uint64_t>(requested_last, code_points));
       }
-      return Value(
+      return rg::Value(
           input.substr(offsets[first], offsets[last] - offsets[first]));
     }
     case ast::BuiltinFunctionKind::kTail:
       if (!arguments[0].IsList()) {
-        return Value::Null();
+        return rg::Value::Null();
       }
       if (arguments[0].AsList().empty()) {
-        return Value(Value::List{});
+        return rg::Value(rg::Value::List{});
       }
-      return Value(Value::List(arguments[0].AsList().begin() + 1,
-                               arguments[0].AsList().end()));
+      return rg::Value(rg::Value::List(arguments[0].AsList().begin() + 1,
+                                       arguments[0].AsList().end()));
     case ast::BuiltinFunctionKind::kTime:
       return arguments.empty()
-                 ? temporal::ConstructTime(clock.statement_time)
-                 : temporal::ConstructTime(arguments[0], clock.statement_time);
+                 ? rg::temporal::ConstructTime(clock.statement_time)
+                 : rg::temporal::ConstructTime(arguments[0],
+                                               clock.statement_time);
     case ast::BuiltinFunctionKind::kTimeRealtime:
       return arguments.empty()
-                 ? temporal::CurrentTime(clock.Realtime())
-                 : temporal::CurrentTime(arguments[0], clock.Realtime());
+                 ? rg::temporal::CurrentTime(clock.Realtime())
+                 : rg::temporal::CurrentTime(arguments[0], clock.Realtime());
     case ast::BuiltinFunctionKind::kTimeStatement:
-      return arguments.empty()
-                 ? temporal::CurrentTime(clock.statement_time)
-                 : temporal::CurrentTime(arguments[0], clock.statement_time);
+      return arguments.empty() ? rg::temporal::CurrentTime(clock.statement_time)
+                               : rg::temporal::CurrentTime(
+                                     arguments[0], clock.statement_time);
     case ast::BuiltinFunctionKind::kTimeTransaction:
       return arguments.empty()
-                 ? temporal::CurrentTime(clock.transaction_time)
-                 : temporal::CurrentTime(arguments[0], clock.transaction_time);
+                 ? rg::temporal::CurrentTime(clock.transaction_time)
+                 : rg::temporal::CurrentTime(arguments[0],
+                                             clock.transaction_time);
     case ast::BuiltinFunctionKind::kTimeTruncate:
       return arguments.size() == 3
-                 ? temporal::TruncateTime(arguments[0], arguments[1],
-                                          arguments[2])
-                 : temporal::TruncateTime(arguments[0], arguments[1]);
+                 ? rg::temporal::TruncateTime(arguments[0], arguments[1],
+                                              arguments[2])
+                 : rg::temporal::TruncateTime(arguments[0], arguments[1]);
     case ast::BuiltinFunctionKind::kNodes:
     case ast::BuiltinFunctionKind::kRelationships: {
       if (!arguments[0].IsPath()) {
-        return Value::Null();
+        return rg::Value::Null();
       }
-      Value::List values;
+      rg::Value::List values;
       if (builtin->kind == ast::BuiltinFunctionKind::kNodes) {
         for (const auto &node : arguments[0].AsPath().nodes) {
           values.emplace_back(node);
@@ -508,13 +521,13 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
           values.emplace_back(relationship);
         }
       }
-      return Value(std::move(values));
+      return rg::Value(std::move(values));
     }
     case ast::BuiltinFunctionKind::kReverse:
       if (arguments[0].IsList()) {
-        Value::List values = arguments[0].AsList();
+        rg::Value::List values = arguments[0].AsList();
         std::reverse(values.begin(), values.end());
-        return Value(std::move(values));
+        return rg::Value(std::move(values));
       }
       if (arguments[0].IsString()) {
         const std::string &input = arguments[0].AsString();
@@ -525,22 +538,22 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
           reversed.append(input, offsets[index - 1],
                           offsets[index] - offsets[index - 1]);
         }
-        return Value(std::move(reversed));
+        return rg::Value(std::move(reversed));
       }
-      return Value::Null();
+      return rg::Value::Null();
     case ast::BuiltinFunctionKind::kSign:
       if (arguments[0].IsInteger()) {
         const std::int64_t value = arguments[0].AsInteger();
-        return Value(value > 0 ? 1 : value < 0 ? -1 : 0);
+        return rg::Value(value > 0 ? 1 : value < 0 ? -1 : 0);
       }
       if (arguments[0].IsDouble()) {
         const double value = arguments[0].AsDouble();
-        return Value(value > 0.0 ? 1 : value < 0.0 ? -1 : 0);
+        return rg::Value(value > 0.0 ? 1 : value < 0.0 ? -1 : 0);
       }
-      return Value::Null();
+      return rg::Value::Null();
     case ast::BuiltinFunctionKind::kToString:
       if (arguments[0].IsNull()) {
-        return Value::Null();
+        return rg::Value::Null();
       }
       RG_CHECK(!arguments[0].IsList() && !arguments[0].IsMap() &&
                    !arguments[0].IsNode() && !arguments[0].IsRelationship() &&
@@ -548,7 +561,7 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
                common::ErrorCode::InvalidParameter,
                "toString() argument has an invalid type");
       return arguments[0].IsString() ? arguments[0]
-                                     : Value(arguments[0].ToString());
+                                     : rg::Value(arguments[0].ToString());
     case ast::BuiltinFunctionKind::kToInteger:
       if (arguments[0].IsNull() || arguments[0].IsInteger()) {
         return arguments[0];
@@ -560,17 +573,17 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
                 static_cast<double>(std::numeric_limits<std::int64_t>::min()) ||
             value >=
                 static_cast<double>(std::numeric_limits<std::int64_t>::max())) {
-          return Value::Null();
+          return rg::Value::Null();
         }
-        return Value(static_cast<std::int64_t>(value));
+        return rg::Value(static_cast<std::int64_t>(value));
       }
       if (arguments[0].IsBool()) {
-        return Value(arguments[0].AsBool() ? 1 : 0);
+        return rg::Value(arguments[0].AsBool() ? 1 : 0);
       }
       if (arguments[0].IsString()) {
         const std::string &text = arguments[0].AsString();
         if (const auto value = ParseInteger(text); value.has_value()) {
-          return Value(*value);
+          return rg::Value(*value);
         }
         if (const auto value = ParseDouble(text);
             value.has_value() && std::isfinite(*value) &&
@@ -578,9 +591,9 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
                 static_cast<double>(std::numeric_limits<std::int64_t>::min()) &&
             *value <
                 static_cast<double>(std::numeric_limits<std::int64_t>::max())) {
-          return Value(static_cast<std::int64_t>(*value));
+          return rg::Value(static_cast<std::int64_t>(*value));
         }
-        return Value::Null();
+        return rg::Value::Null();
       }
       RG_THROW(common::ErrorCode::InvalidParameter,
                "toInteger() argument has an invalid type");
@@ -589,11 +602,11 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
         return arguments[0];
       }
       if (arguments[0].IsInteger()) {
-        return Value(static_cast<double>(arguments[0].AsInteger()));
+        return rg::Value(static_cast<double>(arguments[0].AsInteger()));
       }
       if (arguments[0].IsString()) {
         const auto value = ParseDouble(arguments[0].AsString());
-        return value.has_value() ? Value(*value) : Value::Null();
+        return value.has_value() ? rg::Value(*value) : rg::Value::Null();
       }
       RG_THROW(common::ErrorCode::InvalidParameter,
                "toFloat() argument has an invalid type");
@@ -605,12 +618,12 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
         const std::string value =
             LowerAscii(TrimAscii(arguments[0].AsString()));
         if (value == "true") {
-          return Value(true);
+          return rg::Value(true);
         }
         if (value == "false") {
-          return Value(false);
+          return rg::Value(false);
         }
-        return Value::Null();
+        return rg::Value::Null();
       }
       RG_THROW(common::ErrorCode::InvalidParameter,
                "toBoolean() argument has an invalid type");
@@ -618,7 +631,7 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
     case ast::BuiltinFunctionKind::kToUpper:
     case ast::BuiltinFunctionKind::kTrim:
       if (!arguments[0].IsString()) {
-        return Value::Null();
+        return rg::Value::Null();
       }
       {
         std::string value = arguments[0].AsString();
@@ -632,7 +645,7 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
         } else {
           value = TrimAscii(std::move(value));
         }
-        return Value(std::move(value));
+        return rg::Value(std::move(value));
       }
     case ast::BuiltinFunctionKind::kAverage:
     case ast::BuiltinFunctionKind::kCollect:
@@ -650,11 +663,11 @@ Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
            "built-in function has no scalar implementation: " + builtin->name);
 }
 
-Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
-                              const std::vector<Value> &arguments,
-                              ExecutionContext context) {
+rg::Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
+                                  const std::vector<rg::Value> &arguments,
+                                  ExecutionContext context) {
   return EvaluateBuiltinFunction(kind, arguments, context.clock,
                                  context.transaction);
 }
 
-}  // namespace rg
+}  // namespace runtime

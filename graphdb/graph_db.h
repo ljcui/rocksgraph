@@ -85,8 +85,8 @@ class GraphDB {
   MetaInfo& meta_info() { return meta_info_; }
   meta::GraphDBMetaInfo& db_meta() { return db_meta_; }
   const std::string& path() { return path_; }
-  raft::RaftDriver* raft_driver() const;
-  void SetRaftDriver(std::unique_ptr<raft::RaftDriver> raft_driver);
+  raft_driver::RaftDriver* raft_driver() const;
+  void SetRaftDriver(std::unique_ptr<raft_driver::RaftDriver> raft_driver);
   void StopRaft();
   uint64_t GetRaftApplyIndex() const;
   std::optional<raftpb::ConfState> GetRaftConfState() const;
@@ -161,7 +161,7 @@ class GraphDB {
   meta::GraphDBMetaInfo db_meta_;
   GraphDBOptions options_;
   mutable std::shared_mutex raft_mutex_;
-  std::unique_ptr<raft::RaftDriver> raft_driver_;
+  std::unique_ptr<raft_driver::RaftDriver> raft_driver_;
   bool drop_on_close_ = false;
   std::mutex clear_data_mutex_;
   std::mutex index_ddl_propose_mutex_;

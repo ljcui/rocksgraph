@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-namespace rg {
+namespace runtime {
 
 class PhysicalPlan;
 
@@ -81,4 +81,4 @@ class PlanCache final {
   std::unique_ptr<Impl> impl_;
 };
 
-}  // namespace rg
+}  // namespace runtime

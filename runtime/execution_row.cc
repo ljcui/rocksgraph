@@ -5,27 +5,27 @@
 #include "common/exception.h"
 #include "runtime/graphdb_access.h"
 
-namespace rg {
-std::size_t EstimatedValueHeapUsage(const Value &value) {
+namespace runtime {
+std::size_t EstimatedValueHeapUsage(const rg::Value &value) {
   if (value.IsString()) {
-    return sizeof(Value) + value.AsString().capacity();
+    return sizeof(rg::Value) + value.AsString().capacity();
   }
   if (value.IsList()) {
     std::size_t bytes =
-        sizeof(Value) + value.AsList().capacity() * sizeof(Value);
+        sizeof(rg::Value) + value.AsList().capacity() * sizeof(rg::Value);
     for (const auto &item : value.AsList()) {
       bytes += EstimatedValueHeapUsage(item);
     }
     return bytes;
   }
   if (value.IsMap()) {
-    std::size_t bytes = sizeof(Value);
+    std::size_t bytes = sizeof(rg::Value);
     for (const auto &[key, item] : value.AsMap()) {
       bytes += key.capacity() + EstimatedValueHeapUsage(item);
     }
     return bytes;
   }
-  return sizeof(Value);
+  return sizeof(rg::Value);
 }
 
 RowLayout::RowLayout(std::vector<std::string> columns) {
@@ -99,7 +99,7 @@ std::int64_t ExecutionRow::EntityIdAt(std::size_t offset) const {
   if (const auto *edge = std::get_if<graphdb::Edge>(&stored)) {
     return edge->GetId();
   }
-  const auto *value = std::get_if<Value>(&stored);
+  const auto *value = std::get_if<rg::Value>(&stored);
   RG_CHECK(value != nullptr, common::ErrorCode::InternalError,
            "initialized offset contains no value");
   if (value->IsNull()) {
@@ -133,10 +133,10 @@ const graphdb::Edge &ExecutionRow::EdgeAt(std::size_t offset) const {
   return *edge;
 }
 
-const Value &ExecutionRow::ValueAt(std::size_t offset) const {
+const rg::Value &ExecutionRow::ValueAt(std::size_t offset) const {
   RG_CHECK(IsInitialized(offset), common::ErrorCode::InvalidParameter,
            "value offset is not initialized");
-  const auto *value = std::get_if<Value>(&values_[offset]);
+  const auto *value = std::get_if<rg::Value>(&values_[offset]);
   RG_CHECK(value != nullptr, common::ErrorCode::InternalError,
            "offset does not contain a Value");
   return *value;
@@ -156,7 +156,7 @@ bool ExecutionRow::CellEquals(std::size_t offset, const ExecutionRow &other,
     if (const auto *vertex = std::get_if<graphdb::Vertex>(&stored)) {
       return vertex->GetId();
     }
-    const auto *value = std::get_if<Value>(&stored);
+    const auto *value = std::get_if<rg::Value>(&stored);
     if (value != nullptr && value->IsNode()) {
       return value->AsNode().id;
     }
@@ -174,7 +174,7 @@ bool ExecutionRow::CellEquals(std::size_t offset, const ExecutionRow &other,
     if (const auto *edge = std::get_if<graphdb::Edge>(&stored)) {
       return edge->GetId();
     }
-    const auto *value = std::get_if<Value>(&stored);
+    const auto *value = std::get_if<rg::Value>(&stored);
     if (value != nullptr && value->IsRelationship()) {
       return value->AsRelationship().id;
     }
@@ -187,17 +187,17 @@ bool ExecutionRow::CellEquals(std::size_t offset, const ExecutionRow &other,
     return left_id.has_value() && right_id.has_value() && *left_id == *right_id;
   }
 
-  const auto *left_value = std::get_if<Value>(&left);
-  const auto *right_value = std::get_if<Value>(&right);
+  const auto *left_value = std::get_if<rg::Value>(&left);
+  const auto *right_value = std::get_if<rg::Value>(&right);
   RG_CHECK(left_value != nullptr && right_value != nullptr,
            common::ErrorCode::InternalError,
            "initialized cells contain no comparable values");
-  return ValuesEqual(*left_value, *right_value);
+  return rg::ValuesEqual(*left_value, *right_value);
 }
 
 bool ExecutionRow::ReadProperty(std::size_t offset,
                                 std::string_view property_key,
-                                Value *value) const {
+                                rg::Value *value) const {
   RG_CHECK(value != nullptr, common::ErrorCode::InternalError,
            "property output is null");
   RG_CHECK(IsInitialized(offset), common::ErrorCode::InvalidParameter,
@@ -224,7 +224,7 @@ void ExecutionRow::Set(std::size_t offset, graphdb::Edge edge) {
   SetRowCell(offset, std::move(edge));
 }
 
-void ExecutionRow::Set(std::size_t offset, Value value) {
+void ExecutionRow::Set(std::size_t offset, rg::Value value) {
   SetRowCell(offset, std::move(value));
 }
 
@@ -234,7 +234,9 @@ void ExecutionRow::SetRowCell(std::size_t offset, RowCell value) {
   values_[offset] = std::move(value);
 }
 
-void ExecutionRow::SetNull(std::size_t offset) { Set(offset, Value::Null()); }
+void ExecutionRow::SetNull(std::size_t offset) {
+  Set(offset, rg::Value::Null());
+}
 
 void ExecutionRow::CopyCellFrom(const ExecutionRow &source,
                                 std::size_t source_offset,
@@ -248,34 +250,34 @@ void ExecutionRow::CopyCellFrom(const ExecutionRow &source,
 void ExecutionRow::MaterializeGraphEntities() {
   for (RowCell &stored : values_) {
     if (const auto *vertex = std::get_if<graphdb::Vertex>(&stored)) {
-      stored = Value(MaterializeGraphDBVertex(*vertex));
+      stored = rg::Value(MaterializeGraphDBVertex(*vertex));
     } else if (const auto *edge = std::get_if<graphdb::Edge>(&stored)) {
-      stored = Value(MaterializeGraphDBEdge(*edge));
+      stored = rg::Value(MaterializeGraphDBEdge(*edge));
     }
   }
 }
 
-Value ExecutionRow::Get(std::size_t offset) const {
+rg::Value ExecutionRow::Get(std::size_t offset) const {
   RG_CHECK(IsInitialized(offset), common::ErrorCode::InvalidParameter,
            "offset is not initialized");
   const RowCell &stored = values_[offset];
-  if (const auto *value = std::get_if<Value>(&stored)) {
+  if (const auto *value = std::get_if<rg::Value>(&stored)) {
     return *value;
   }
   if (const auto *vertex = std::get_if<graphdb::Vertex>(&stored)) {
-    return Value(MaterializeGraphDBVertex(*vertex));
+    return rg::Value(MaterializeGraphDBVertex(*vertex));
   }
   const auto *edge = std::get_if<graphdb::Edge>(&stored);
   RG_CHECK(edge != nullptr, common::ErrorCode::InternalError,
            "initialized offset contains no value");
-  return Value(MaterializeGraphDBEdge(*edge));
+  return rg::Value(MaterializeGraphDBEdge(*edge));
 }
 
 std::size_t ExecutionRow::EstimatedHeapUsage() const {
   std::size_t bytes =
       sizeof(ExecutionRow) + values_.capacity() * sizeof(RowCell);
   for (const auto &cell : values_) {
-    if (const auto *value = std::get_if<Value>(&cell)) {
+    if (const auto *value = std::get_if<rg::Value>(&cell)) {
       bytes += EstimatedValueHeapUsage(*value);
     }
   }
@@ -301,14 +303,14 @@ void CopyCells(const ExecutionRow &source, ExecutionRow *target,
   }
 }
 
-bool TryBindAt(ExecutionRow *row, std::size_t offset, Value value) {
+bool TryBindAt(ExecutionRow *row, std::size_t offset, rg::Value value) {
   RG_CHECK(row != nullptr, common::ErrorCode::InternalError,
            "query row is null");
   if (!row->IsInitialized(offset)) {
     row->Set(offset, std::move(value));
     return true;
   }
-  return ValuesEqual(row->Get(offset), value);
+  return rg::ValuesEqual(row->Get(offset), value);
 }
 
 bool TryBindEdge(ExecutionRow *row, std::size_t offset, graphdb::Edge edge) {
@@ -318,10 +320,10 @@ bool TryBindEdge(ExecutionRow *row, std::size_t offset, graphdb::Edge edge) {
     row->Set(offset, std::move(edge));
     return true;
   }
-  const Value existing = row->Get(offset);
+  const rg::Value existing = row->Get(offset);
   return existing.IsRelationship() &&
          existing.AsRelationship().id == edge.GetId() &&
          existing.AsRelationship().type_id == edge.GetTypeId();
 }
 
-}  // namespace rg
+}  // namespace runtime

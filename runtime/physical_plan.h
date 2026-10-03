@@ -16,7 +16,7 @@ namespace ir {
 class LogicalPlan;
 }
 
-namespace rg {
+namespace runtime {
 
 using OperatorId = std::size_t;
 
@@ -609,4 +609,4 @@ class PhysicalPlan final {
 
 [[nodiscard]] PhysicalPlan CreatePhysicalPlan(const ir::LogicalPlan &plan);
 
-}  // namespace rg
+}  // namespace runtime

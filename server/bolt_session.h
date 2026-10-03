@@ -16,7 +16,7 @@ namespace graphdb {
 class GraphDB;
 class Transaction;
 }  // namespace graphdb
-namespace rg {
+namespace runtime {
 class QueryResultCursor;
 }
 
@@ -46,7 +46,7 @@ struct ActiveBoltQuery {
   std::chrono::steady_clock::time_point start_time;
   std::shared_ptr<graphdb::GraphDB> graph_db;
   std::unique_ptr<graphdb::Transaction> transaction;
-  std::unique_ptr<rg::QueryResultCursor> result;
+  std::unique_ptr<runtime::QueryResultCursor> result;
   std::optional<std::vector<rg::Value>> buffered_row;
   bool transaction_closed = false;
 };

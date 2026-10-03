@@ -22,14 +22,14 @@ class PlannerStatistics;
 
 }  // namespace planner
 
-namespace rg {
+namespace runtime {
 
 class PlanCache;
 class GraphManagement;
 
 struct QueryResult {
   std::vector<std::string> columns;
-  std::vector<std::vector<Value>> rows;
+  std::vector<std::vector<rg::Value>> rows;
   std::size_t peak_memory_bytes = 0;
 };
 
@@ -42,7 +42,7 @@ class QueryResultCursor {
 
   [[nodiscard]] virtual const std::vector<std::string> &Columns()
       const noexcept = 0;
-  [[nodiscard]] virtual bool Next(std::vector<Value> *row) = 0;
+  [[nodiscard]] virtual bool Next(std::vector<rg::Value> *row) = 0;
   // Stops execution and releases cursor resources. These methods never
   // commit or roll back the caller-owned transaction.
   virtual void Cancel() noexcept = 0;
@@ -101,4 +101,4 @@ class QueryExecutor final {
     GraphManagement &graph_management, std::string_view cypher,
     QueryOptions options = {});
 
-}  // namespace rg
+}  // namespace runtime

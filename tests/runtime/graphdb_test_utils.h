@@ -22,10 +22,10 @@
 #include "runtime/graphdb_access.h"
 #include "runtime/query_executor.h"
 
-namespace rg::test {
+namespace runtime::test {
 
-inline std::unordered_map<std::string, Value> ToGraphDBProperties(
-    const Value::Map& properties) {
+inline std::unordered_map<std::string, rg::Value> ToGraphDBProperties(
+    const rg::Value::Map& properties) {
   return {properties.begin(), properties.end()};
 }
 
@@ -94,8 +94,8 @@ class GraphDBTestDatabase final {
     return graph_->BeginTransaction();
   }
 
-  Value::NodePtr CreateNode(std::vector<std::string> labels = {},
-                            Value::Map properties = {}) {
+  rg::Value::NodePtr CreateNode(std::vector<std::string> labels = {},
+                                rg::Value::Map properties = {}) {
     auto transaction = BeginTransaction();
     try {
       auto node = CreateGraphDBVertex(*transaction, std::move(labels),
@@ -108,15 +108,14 @@ class GraphDBTestDatabase final {
     }
   }
 
-  Value::NodePtr CreateNode(std::initializer_list<std::string> labels,
-                            Value::Map properties = {}) {
+  rg::Value::NodePtr CreateNode(std::initializer_list<std::string> labels,
+                                rg::Value::Map properties = {}) {
     return CreateNode(std::vector<std::string>(labels), std::move(properties));
   }
 
-  Value::RelationshipPtr CreateRelationship(const Value::NodePtr& start,
-                                            const Value::NodePtr& end,
-                                            std::string type,
-                                            Value::Map properties = {}) {
+  rg::Value::RelationshipPtr CreateRelationship(
+      const rg::Value::NodePtr& start, const rg::Value::NodePtr& end,
+      std::string type, rg::Value::Map properties = {}) {
     auto transaction = BeginTransaction();
     try {
       auto relationship =
@@ -161,10 +160,10 @@ class GraphDBTestDatabase final {
     return index_name;
   }
 
-  [[nodiscard]] std::vector<Value::NodePtr> Nodes() {
+  [[nodiscard]] std::vector<rg::Value::NodePtr> Nodes() {
     auto transaction = BeginTransaction();
     try {
-      std::vector<Value::NodePtr> nodes;
+      std::vector<rg::Value::NodePtr> nodes;
       auto iterator = transaction->NewVertexIterator();
       while (iterator->Valid()) {
         nodes.push_back(MaterializeGraphDBVertex(
@@ -179,10 +178,10 @@ class GraphDBTestDatabase final {
     }
   }
 
-  [[nodiscard]] std::vector<Value::RelationshipPtr> Relationships() {
+  [[nodiscard]] std::vector<rg::Value::RelationshipPtr> Relationships() {
     auto transaction = BeginTransaction();
     try {
-      std::vector<Value::RelationshipPtr> relationships;
+      std::vector<rg::Value::RelationshipPtr> relationships;
       auto iterator = transaction->NewEdgeIterator();
       while (iterator->Valid()) {
         const auto& edge = iterator->GetEdge();
@@ -200,12 +199,12 @@ class GraphDBTestDatabase final {
 
   [[nodiscard]] QueryResult ExecuteQueryAndCommit(std::string_view cypher,
                                                   QueryOptions options = {}) {
-    return rg::test::ExecuteGraphDBQueryAndCommit(*graph_, cypher,
-                                                  std::move(options));
+    return runtime::test::ExecuteGraphDBQueryAndCommit(*graph_, cypher,
+                                                       std::move(options));
   }
 
   std::int64_t CreateVertex(std::vector<std::string> labels = {},
-                            Value::Map properties = {}) {
+                            rg::Value::Map properties = {}) {
     std::unordered_set<std::string> label_set(labels.begin(), labels.end());
     auto transaction = BeginTransaction();
     try {
@@ -221,13 +220,13 @@ class GraphDBTestDatabase final {
   }
 
   std::int64_t CreateVertex(std::initializer_list<std::string> labels,
-                            Value::Map properties = {}) {
+                            rg::Value::Map properties = {}) {
     return CreateVertex(std::vector<std::string>(labels),
                         std::move(properties));
   }
 
   std::int64_t CreateEdge(std::int64_t start_node_id, std::int64_t end_node_id,
-                          std::string type, Value::Map properties = {}) {
+                          std::string type, rg::Value::Map properties = {}) {
     auto transaction = BeginTransaction();
     try {
       const auto start = transaction->GetVertexById(start_node_id);
@@ -306,4 +305,4 @@ inline QueryResult ExecutePlanAndCommit(GraphDBTestDatabase& database,
   }
 }
 
-}  // namespace rg::test
+}  // namespace runtime::test

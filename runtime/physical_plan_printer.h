@@ -5,9 +5,9 @@
 
 #include "runtime/physical_plan.h"
 
-namespace rg {
+namespace runtime {
 
 void PrintPhysicalPlan(const PhysicalPlan &plan, std::ostream &out);
 [[nodiscard]] std::string PhysicalPlanToString(const PhysicalPlan &plan);
 
-}  // namespace rg
+}  // namespace runtime

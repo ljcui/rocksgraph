@@ -90,9 +90,9 @@ void ApplyRaftRequest(GraphDB *graph_db, uint64_t index,
   graph_db->ApplyRaftRequest(index, request);
 }
 
-raft::LocalNodeConfig BuildLocalNodeConfig(
+raft_driver::LocalNodeConfig BuildLocalNodeConfig(
     const std::string &graph_name, const LocalNodeOptions &local_node_options) {
-  raft::LocalNodeConfig local_node;
+  raft_driver::LocalNodeConfig local_node;
   local_node.node_id = local_node_options.raft_node_id;
   local_node.graph = graph_name;
   local_node.ip = local_node_options.host;
@@ -102,10 +102,10 @@ raft::LocalNodeConfig BuildLocalNodeConfig(
   return local_node;
 }
 
-raft::RaftLogStoreConfig BuildRaftLogStoreConfig(
+raft_driver::RaftLogStoreConfig BuildRaftLogStoreConfig(
     const std::string &path,
     std::shared_ptr<rocksdb::Cache> shared_block_cache) {
-  raft::RaftLogStoreConfig store_config;
+  raft_driver::RaftLogStoreConfig store_config;
   store_config.path = path;
   store_config.shared_block_cache = std::move(shared_block_cache);
   store_config.total_threads = 2;
@@ -114,8 +114,8 @@ raft::RaftLogStoreConfig BuildRaftLogStoreConfig(
   return store_config;
 }
 
-raft::RaftConfig BuildRaftConfig() {
-  raft::RaftConfig raft_config;
+raft_driver::RaftConfig BuildRaftConfig() {
+  raft_driver::RaftConfig raft_config;
   raft_config.tick_interval = 100;
   raft_config.election_tick = 10;
   raft_config.heartbeat_tick = 1;
@@ -134,7 +134,7 @@ std::vector<eraft::Peer> BuildInitPeers(const meta::RaftNodeInfos &node_infos) {
   return init_peers;
 }
 
-std::uint64_t ProposeRaftConfChange(raft::RaftDriver *driver,
+std::uint64_t ProposeRaftConfChange(raft_driver::RaftDriver *driver,
                                     raftpb::ConfChange conf_change) {
   const auto result = driver->ProposeConfChangeAndWait(std::move(conf_change));
   if (result.err != nullptr) {
@@ -177,7 +177,8 @@ std::unique_ptr<GraphManager> GraphManager::Open(
   if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
   auto graph_manager = std::make_unique<GraphManager>();
   graph_manager->path_ = path;
-  raft::RaftManager::Configure(graph_manager_options.raft_scheduler_shards);
+  raft_driver::RaftManager::Configure(
+      graph_manager_options.raft_scheduler_shards);
   graph_manager->block_cache_ =
       rocksdb::NewLRUCache(graph_manager_options.block_cache_size);
   graph_manager->options_ = graph_manager_options;
@@ -187,7 +188,7 @@ std::unique_ptr<GraphManager> GraphManager::Open(
       rocksdb::NewLRUCache(graph_manager_options.raft_log_block_cache_size);
   graph_manager->assistant_pool_ = std::make_shared<graphdb::AssistantPool>(
       graph_manager_options.assistant_thread_num);
-  graph_manager->plan_cache_ = std::make_unique<rg::PlanCache>(
+  graph_manager->plan_cache_ = std::make_unique<runtime::PlanCache>(
       graph_manager_options.plan_cache_capacity);
 
   rocksdb::ReadOptions ro;
@@ -248,7 +249,9 @@ std::shared_ptr<GraphDB> GraphManager::OpenGraph(const std::string &name) {
   }
 }
 
-rg::PlanCache &GraphManager::GetPlanCache() noexcept { return *plan_cache_; }
+runtime::PlanCache &GraphManager::GetPlanCache() noexcept {
+  return *plan_cache_;
+}
 
 GraphDB *GraphManager::CreateGraph(const std::string &name) {
   std::lock_guard<std::mutex> guard(create_graph_mutex_);
@@ -345,7 +348,7 @@ void GraphManager::StartGraphRaft(
   if (bootstrap_node_infos != nullptr) {
     init_peers = BuildInitPeers(*bootstrap_node_infos);
   }
-  auto raft_driver = std::make_unique<raft::RaftDriver>(
+  auto raft_driver = std::make_unique<raft_driver::RaftDriver>(
       std::move(apply_request), std::move(apply_conf_change), apply_id,
       std::move(conf_state), std::move(persisted_node_infos),
       std::move(local_node), std::move(init_peers), store_config, raft_config);
@@ -414,14 +417,14 @@ void GraphManager::DeleteManagedGraph(std::string_view name) {
   DeleteGraph(std::string(name));
 }
 
-std::vector<rg::ManagedGraphInfo> GraphManager::ListManagedGraphs() const {
+std::vector<runtime::ManagedGraphInfo> GraphManager::ListManagedGraphs() const {
   std::shared_lock<std::shared_mutex> read_lock(graphs_mutex_);
-  std::vector<rg::ManagedGraphInfo> graphs;
+  std::vector<runtime::ManagedGraphInfo> graphs;
   graphs.reserve(graphs_.size());
   for (const auto &[name, graph] : graphs_) {
     graphs.push_back({.id = graph->db_meta().graph_id(), .name = name});
   }
-  std::ranges::sort(graphs, {}, &rg::ManagedGraphInfo::id);
+  std::ranges::sort(graphs, {}, &runtime::ManagedGraphInfo::id);
   return graphs;
 }
 
@@ -434,7 +437,7 @@ meta::RaftNodeInfos GraphManager::ManagedGraphRaftNodeInfos(
   return driver->GetNodeInfosWithLeader();
 }
 
-rg::ManagedRaftChangeResult GraphManager::AddManagedRaftNode(
+runtime::ManagedRaftChangeResult GraphManager::AddManagedRaftNode(
     std::string_view name, const meta::RaftNodeInfo &node_info, bool learner) {
   auto graph = OpenGraph(std::string(name));
   auto *driver = graph->raft_driver();
@@ -463,7 +466,7 @@ rg::ManagedRaftChangeResult GraphManager::AddManagedRaftNode(
           .is_learner = learner};
 }
 
-rg::ManagedRaftChangeResult GraphManager::PromoteManagedRaftLearnerNode(
+runtime::ManagedRaftChangeResult GraphManager::PromoteManagedRaftLearnerNode(
     std::string_view name, std::uint64_t node_id) {
   auto graph = OpenGraph(std::string(name));
   auto *driver = graph->raft_driver();
@@ -503,7 +506,7 @@ rg::ManagedRaftChangeResult GraphManager::PromoteManagedRaftLearnerNode(
           .is_learner = false};
 }
 
-rg::ManagedRaftChangeResult GraphManager::RemoveManagedRaftNode(
+runtime::ManagedRaftChangeResult GraphManager::RemoveManagedRaftNode(
     std::string_view name, std::uint64_t node_id) {
   auto graph = OpenGraph(std::string(name));
   auto *driver = graph->raft_driver();
@@ -547,7 +550,7 @@ void GraphManager::TransferManagedRaftLeader(std::string_view name,
   }
 }
 
-rg::ManagedRaftChangeResult GraphManager::DemoteManagedRaftNode(
+runtime::ManagedRaftChangeResult GraphManager::DemoteManagedRaftNode(
     std::string_view name, std::uint64_t node_id) {
   auto graph = OpenGraph(std::string(name));
   auto *driver = graph->raft_driver();
@@ -580,7 +583,7 @@ rg::ManagedRaftChangeResult GraphManager::DemoteManagedRaftNode(
           .is_learner = true};
 }
 
-rg::ManagedRaftChangeResult GraphManager::UpdateManagedRaftNode(
+runtime::ManagedRaftChangeResult GraphManager::UpdateManagedRaftNode(
     std::string_view name, const meta::RaftNodeInfo &node_info) {
   auto graph = OpenGraph(std::string(name));
   auto *driver = graph->raft_driver();
@@ -617,14 +620,14 @@ rg::ManagedRaftChangeResult GraphManager::UpdateManagedRaftNode(
           .is_learner = updated.is_learner()};
 }
 
-rg::ManagedRaftStatus GraphManager::ManagedGraphRaftStatus(
+runtime::ManagedRaftStatus GraphManager::ManagedGraphRaftStatus(
     std::string_view name) {
   auto graph = OpenGraph(std::string(name));
   auto *driver = graph->raft_driver();
   RG_CHECK(driver != nullptr, common::ErrorCode::InvalidParameter,
            "graph [{}] does not enable raft", name);
   const auto status = driver->GetRaftStatus();
-  rg::ManagedRaftStatus result;
+  runtime::ManagedRaftStatus result;
   result.local_node_id = status.s.basicStatus_.id_;
   result.leader_id = status.s.basicStatus_.softState_.lead_;
   result.term = status.s.basicStatus_.hardState_.term();
@@ -648,7 +651,7 @@ rg::ManagedRaftStatus GraphManager::ManagedGraphRaftStatus(
   }
   std::ranges::sort(
       result.nodes, {},
-      [](const rg::ManagedRaftNodeStatus &node) { return node.node_id; });
+      [](const runtime::ManagedRaftNodeStatus &node) { return node.node_id; });
   return result;
 }
 

@@ -9,7 +9,7 @@
 #include "common/exception.h"
 #include "common/logger.h"
 
-namespace raft {
+namespace raft_driver {
 std::string raft_log_key(uint64_t log_id) {
   std::string ret;
   boost::endian::native_to_big_inplace(log_id);
@@ -280,4 +280,4 @@ std::pair<raftpb::Snapshot, eraft::Error> RaftLogStorage::Snapshot() {
   snapshot.mutable_metadata()->set_term(term);
   return {std::move(snapshot), nullptr};
 }
-}  // namespace raft
+}  // namespace raft_driver

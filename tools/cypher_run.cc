@@ -26,7 +26,7 @@ std::string JoinArgs(const std::vector<std::string> &parts) {
   return out;
 }
 
-void PrintResult(const rg::QueryResult &result) {
+void PrintResult(const runtime::QueryResult &result) {
   for (std::size_t i = 0; i < result.columns.size(); ++i) {
     if (i > 0) {
       std::cout << '\t';
@@ -92,7 +92,7 @@ int main(int argc, char **argv) {
     options.assistant_pool = std::make_shared<graphdb::AssistantPool>(1);
     graph = graphdb::GraphDB::Open(FLAGS_db_path, options);
     transaction = graph->BeginTransaction();
-    PrintResult(rg::ExecuteQuery(*transaction, JoinArgs(parts)));
+    PrintResult(runtime::ExecuteQuery(*transaction, JoinArgs(parts)));
     transaction->Commit();
   } catch (const common::Exception &e) {
     RollbackIfActive(transaction.get());

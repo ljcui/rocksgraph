@@ -20,19 +20,19 @@
 
 namespace {
 
-std::shared_ptr<const rg::CachedPlan> Compile(std::string_view cypher) {
+std::shared_ptr<const runtime::CachedPlan> Compile(std::string_view cypher) {
   planner::PlannedQuery query = planner::PlanCypher(cypher);
-  auto physical = std::make_shared<rg::PhysicalPlan>(
-      rg::CreatePhysicalPlan(query.LogicalPlan()));
-  return std::make_shared<rg::CachedPlan>(std::move(physical),
-                                          std::vector<std::string>{});
+  auto physical = std::make_shared<runtime::PhysicalPlan>(
+      runtime::CreatePhysicalPlan(query.LogicalPlan()));
+  return std::make_shared<runtime::CachedPlan>(std::move(physical),
+                                               std::vector<std::string>{});
 }
 
 TEST(PlanCacheTest, ReusesPlansAndEvictsLeastRecentlyUsedEntry) {
-  rg::PlanCache cache(2);
-  const rg::PlanCacheKey first{.cypher = "RETURN 1 AS value"};
-  const rg::PlanCacheKey second{.cypher = "RETURN 2 AS value"};
-  const rg::PlanCacheKey third{.cypher = "RETURN 3 AS value"};
+  runtime::PlanCache cache(2);
+  const runtime::PlanCacheKey first{.cypher = "RETURN 1 AS value"};
+  const runtime::PlanCacheKey second{.cypher = "RETURN 2 AS value"};
+  const runtime::PlanCacheKey third{.cypher = "RETURN 3 AS value"};
 
   auto first_plan =
       cache.LookupOrCompile(first, [&] { return Compile(first.cypher); });
@@ -45,7 +45,7 @@ TEST(PlanCacheTest, ReusesPlansAndEvictsLeastRecentlyUsedEntry) {
       cache.LookupOrCompile(second, [&] { return Compile(second.cypher); });
 
   EXPECT_NE(recompiled_second, second_plan);
-  const rg::PlanCacheStats stats = cache.GetStats();
+  const runtime::PlanCacheStats stats = cache.GetStats();
   EXPECT_EQ(stats.entries, 2U);
   EXPECT_EQ(stats.hits, 1U);
   EXPECT_EQ(stats.misses, 4U);
@@ -54,8 +54,8 @@ TEST(PlanCacheTest, ReusesPlansAndEvictsLeastRecentlyUsedEntry) {
 }
 
 TEST(PlanCacheTest, SeparatesPlannerContextsAndClearForcesRecompilation) {
-  rg::PlanCache cache(8);
-  rg::PlanCacheKey key{
+  runtime::PlanCache cache(8);
+  runtime::PlanCacheKey key{
       .cypher = "RETURN 1 AS value",
       .graph_identity = 1,
       .planner_catalog_identity = reinterpret_cast<const void *>(2),
@@ -63,7 +63,7 @@ TEST(PlanCacheTest, SeparatesPlannerContextsAndClearForcesRecompilation) {
 
   auto original =
       cache.LookupOrCompile(key, [&] { return Compile(key.cypher); });
-  rg::PlanCacheKey changed = key;
+  runtime::PlanCacheKey changed = key;
   ++changed.planning_context_version;
   auto versioned =
       cache.LookupOrCompile(changed, [&] { return Compile(changed.cypher); });
@@ -77,8 +77,8 @@ TEST(PlanCacheTest, SeparatesPlannerContextsAndClearForcesRecompilation) {
 }
 
 TEST(PlanCacheTest, DeduplicatesConcurrentCompilation) {
-  rg::PlanCache cache(4);
-  const rg::PlanCacheKey key{.cypher = "RETURN 1 AS value"};
+  runtime::PlanCache cache(4);
+  const runtime::PlanCacheKey key{.cypher = "RETURN 1 AS value"};
   std::atomic<std::size_t> compiler_calls = 0;
   std::promise<void> compiler_started;
   auto compiler_started_future = compiler_started.get_future();
@@ -99,7 +99,7 @@ TEST(PlanCacheTest, DeduplicatesConcurrentCompilation) {
             std::future_status::ready);
 
   constexpr std::size_t kWaiters = 8;
-  std::vector<std::future<std::shared_ptr<const rg::CachedPlan>>> waiters;
+  std::vector<std::future<std::shared_ptr<const runtime::CachedPlan>>> waiters;
   waiters.reserve(kWaiters);
   for (std::size_t i = 0; i < kWaiters; ++i) {
     waiters.push_back(std::async(std::launch::async, [&] {
@@ -126,10 +126,10 @@ TEST(PlanCacheTest, DeduplicatesConcurrentCompilation) {
 }
 
 TEST(PlanCacheTest, DoesNotCacheCompilationFailures) {
-  rg::PlanCache cache(4);
-  const rg::PlanCacheKey key{.cypher = "invalid"};
+  runtime::PlanCache cache(4);
+  const runtime::PlanCacheKey key{.cypher = "invalid"};
   std::size_t compiler_calls = 0;
-  auto compiler = [&]() -> std::shared_ptr<const rg::CachedPlan> {
+  auto compiler = [&]() -> std::shared_ptr<const runtime::CachedPlan> {
     ++compiler_calls;
     RG_THROW(common::ErrorCode::SemanticError, "test compilation failure");
   };
@@ -143,19 +143,19 @@ TEST(PlanCacheTest, DoesNotCacheCompilationFailures) {
 }
 
 TEST(PlanCacheTest, ExecuteQueryReusesPlanAcrossParameterValues) {
-  rg::test::GraphDBTestDatabase graph;
-  rg::PlanCache cache(8);
+  runtime::test::GraphDBTestDatabase graph;
+  runtime::PlanCache cache(8);
 
-  rg::QueryOptions first_options;
+  runtime::QueryOptions first_options;
   first_options.plan_cache = &cache;
   first_options.parameters.emplace("value", rg::Value(1));
-  rg::QueryResult first = rg::test::ExecuteGraphDBQueryAndCommit(
+  runtime::QueryResult first = runtime::test::ExecuteGraphDBQueryAndCommit(
       graph.Graph(), "RETURN $value AS value", first_options);
 
-  rg::QueryOptions second_options;
+  runtime::QueryOptions second_options;
   second_options.plan_cache = &cache;
   second_options.parameters.emplace("value", rg::Value(2));
-  rg::QueryResult second = rg::test::ExecuteGraphDBQueryAndCommit(
+  runtime::QueryResult second = runtime::test::ExecuteGraphDBQueryAndCommit(
       graph.Graph(), "RETURN $value AS value", second_options);
 
   ASSERT_EQ(first.rows.size(), 1U);
@@ -165,30 +165,33 @@ TEST(PlanCacheTest, ExecuteQueryReusesPlanAcrossParameterValues) {
   EXPECT_EQ(cache.GetStats().hits, 1U);
   EXPECT_EQ(cache.GetStats().compilations, 1U);
 
-  rg::QueryOptions missing_options;
+  runtime::QueryOptions missing_options;
   missing_options.plan_cache = &cache;
-  RG_EXPECT_ERROR((void)rg::test::ExecuteGraphDBQueryAndCommit(
+  RG_EXPECT_ERROR((void)runtime::test::ExecuteGraphDBQueryAndCommit(
                       graph.Graph(), "RETURN $value AS value", missing_options),
                   common::ErrorCode::InvalidParameter);
   EXPECT_EQ(cache.GetStats().hits, 2U);
 }
 
 TEST(PlanCacheTest, GraphCatalogVersionInvalidatesPlansAfterIndexChanges) {
-  rg::test::GraphDBTestDatabase graph;
+  runtime::test::GraphDBTestDatabase graph;
   graph.CreateNode({"Person"}, {{"name", rg::Value("Ada")}});
-  rg::PlanCache cache(8);
-  rg::QueryOptions options;
+  runtime::PlanCache cache(8);
+  runtime::QueryOptions options;
   options.plan_cache = &cache;
   constexpr std::string_view kQuery =
       "MATCH (n:Person) WHERE n.name = 'Ada' RETURN n.name AS name";
 
-  (void)rg::test::ExecuteGraphDBQueryAndCommit(graph.Graph(), kQuery, options);
+  (void)runtime::test::ExecuteGraphDBQueryAndCommit(graph.Graph(), kQuery,
+                                                    options);
   const std::string index_name = graph.AddNodeIndex({"Person"}, "name");
-  (void)rg::test::ExecuteGraphDBQueryAndCommit(graph.Graph(), kQuery, options);
+  (void)runtime::test::ExecuteGraphDBQueryAndCommit(graph.Graph(), kQuery,
+                                                    options);
   graph.Graph().DeleteVertexPropertyIndex(index_name);
-  (void)rg::test::ExecuteGraphDBQueryAndCommit(graph.Graph(), kQuery, options);
+  (void)runtime::test::ExecuteGraphDBQueryAndCommit(graph.Graph(), kQuery,
+                                                    options);
 
-  const rg::PlanCacheStats stats = cache.GetStats();
+  const runtime::PlanCacheStats stats = cache.GetStats();
   EXPECT_EQ(stats.hits, 0U);
   EXPECT_EQ(stats.misses, 3U);
   EXPECT_EQ(stats.compilations, 3U);

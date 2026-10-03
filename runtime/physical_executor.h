@@ -14,7 +14,7 @@ namespace graphdb {
 class Transaction;
 }
 
-namespace rg {
+namespace runtime {
 
 class PhysicalResultCursor {
  public:
@@ -23,7 +23,7 @@ class PhysicalResultCursor {
   PhysicalResultCursor &operator=(const PhysicalResultCursor &) = delete;
   virtual ~PhysicalResultCursor() = default;
 
-  [[nodiscard]] virtual bool Next(std::vector<Value> *row) = 0;
+  [[nodiscard]] virtual bool Next(std::vector<rg::Value> *row) = 0;
   virtual void Cancel() noexcept = 0;
   virtual void Close() noexcept = 0;
   [[nodiscard]] virtual std::size_t PeakMemoryBytes() const noexcept = 0;
@@ -44,4 +44,4 @@ class PhysicalResultCursor {
                            std::move(options));
 }
 
-}  // namespace rg
+}  // namespace runtime

@@ -16,7 +16,7 @@ namespace graphdb {
 class Transaction;
 }  // namespace graphdb
 
-namespace rg {
+namespace runtime {
 
 struct RelationshipReference {
   std::int64_t id = -1;
@@ -29,31 +29,33 @@ struct RelationshipReference {
     graphdb::Transaction &transaction, std::int64_t id);
 [[nodiscard]] graphdb::Edge GraphDBEdgeById(graphdb::Transaction &transaction,
                                             RelationshipReference relationship);
-[[nodiscard]] Value::NodePtr MaterializeGraphDBVertex(
+[[nodiscard]] rg::Value::NodePtr MaterializeGraphDBVertex(
     graphdb::Transaction &transaction, std::int64_t id);
-[[nodiscard]] Value::NodePtr MaterializeGraphDBVertex(graphdb::Vertex vertex);
-[[nodiscard]] Value::RelationshipPtr MaterializeGraphDBEdge(
+[[nodiscard]] rg::Value::NodePtr MaterializeGraphDBVertex(
+    graphdb::Vertex vertex);
+[[nodiscard]] rg::Value::RelationshipPtr MaterializeGraphDBEdge(
     graphdb::Transaction &transaction, RelationshipReference relationship);
-[[nodiscard]] Value::RelationshipPtr MaterializeGraphDBEdge(graphdb::Edge edge);
+[[nodiscard]] rg::Value::RelationshipPtr MaterializeGraphDBEdge(
+    graphdb::Edge edge);
 
-[[nodiscard]] Value::NodePtr CreateGraphDBVertex(
+[[nodiscard]] rg::Value::NodePtr CreateGraphDBVertex(
     graphdb::Transaction &transaction, std::vector<std::string> labels,
-    Value::Map properties);
-[[nodiscard]] Value::RelationshipPtr CreateGraphDBEdge(
+    rg::Value::Map properties);
+[[nodiscard]] rg::Value::RelationshipPtr CreateGraphDBEdge(
     graphdb::Transaction &transaction, std::int64_t start_node_id,
-    std::int64_t end_node_id, std::string type, Value::Map properties);
+    std::int64_t end_node_id, std::string type, rg::Value::Map properties);
 void SetGraphDBVertexProperty(graphdb::Transaction &transaction,
                               std::int64_t node_id, std::string property_key,
-                              Value value);
+                              rg::Value value);
 void SetGraphDBEdgeProperty(graphdb::Transaction &transaction,
                             RelationshipReference relationship,
-                            std::string property_key, Value value);
+                            std::string property_key, rg::Value value);
 void SetGraphDBVertexProperties(graphdb::Transaction &transaction,
-                                std::int64_t node_id, Value::Map properties,
+                                std::int64_t node_id, rg::Value::Map properties,
                                 bool include_existing);
 void SetGraphDBEdgeProperties(graphdb::Transaction &transaction,
                               RelationshipReference relationship,
-                              Value::Map properties, bool include_existing);
+                              rg::Value::Map properties, bool include_existing);
 void AddGraphDBVertexLabels(graphdb::Transaction &transaction,
                             std::int64_t node_id,
                             std::vector<std::string> labels);
@@ -71,4 +73,4 @@ void DeleteGraphDBVertex(graphdb::Transaction &transaction,
 void DeleteGraphDBEdge(graphdb::Transaction &transaction,
                        RelationshipReference relationship);
 
-}  // namespace rg
+}  // namespace runtime

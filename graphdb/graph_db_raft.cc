@@ -63,12 +63,13 @@ class IdGeneratorMetaBatchHandler : public rocksdb::WriteBatch::Handler {
 
 }  // namespace
 
-raft::RaftDriver* GraphDB::raft_driver() const {
+raft_driver::RaftDriver* GraphDB::raft_driver() const {
   std::shared_lock<std::shared_mutex> lock(raft_mutex_);
   return raft_driver_.get();
 }
 
-void GraphDB::SetRaftDriver(std::unique_ptr<raft::RaftDriver> raft_driver) {
+void GraphDB::SetRaftDriver(
+    std::unique_ptr<raft_driver::RaftDriver> raft_driver) {
   std::unique_lock<std::shared_mutex> lock(raft_mutex_);
   raft_driver_ = std::move(raft_driver);
   meta_info_.id_generator().SetRaftDriver(raft_driver_.get());

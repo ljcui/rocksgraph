@@ -11,7 +11,7 @@
 #include "graphdb/graph_db.h"
 #include "runtime/graph_management.h"
 
-namespace rg {
+namespace runtime {
 class PlanCache;
 }
 
@@ -47,7 +47,7 @@ struct GraphSnapshot {
   uint64_t term = 0;
 };
 
-class GraphManager final : public rg::GraphManagement {
+class GraphManager final : public runtime::GraphManagement {
  public:
   GraphManager() = default;
   ~GraphManager();
@@ -59,7 +59,7 @@ class GraphManager final : public rg::GraphManagement {
       const std::string& path, const GraphManagerOptions& graph_manager_options,
       LocalNodeOptions local_node_options = {});
   std::shared_ptr<graphdb::GraphDB> OpenGraph(const std::string& name);
-  [[nodiscard]] rg::PlanCache& GetPlanCache() noexcept;
+  [[nodiscard]] runtime::PlanCache& GetPlanCache() noexcept;
   graphdb::GraphDB* CreateGraph(const std::string& name);
   graphdb::GraphDB* CreateGraphWithRaft(const std::string& name,
                                         const meta::RaftNodeInfos& node_infos);
@@ -83,24 +83,24 @@ class GraphManager final : public rg::GraphManagement {
                               const meta::RaftNodeInfos& node_infos) override;
   void ClearManagedGraph(std::string_view name) override;
   void DeleteManagedGraph(std::string_view name) override;
-  [[nodiscard]] std::vector<rg::ManagedGraphInfo> ListManagedGraphs()
+  [[nodiscard]] std::vector<runtime::ManagedGraphInfo> ListManagedGraphs()
       const override;
   [[nodiscard]] meta::RaftNodeInfos ManagedGraphRaftNodeInfos(
       std::string_view name) override;
-  rg::ManagedRaftChangeResult AddManagedRaftNode(
+  runtime::ManagedRaftChangeResult AddManagedRaftNode(
       std::string_view name, const meta::RaftNodeInfo& node_info,
       bool learner) override;
-  rg::ManagedRaftChangeResult PromoteManagedRaftLearnerNode(
+  runtime::ManagedRaftChangeResult PromoteManagedRaftLearnerNode(
       std::string_view name, std::uint64_t node_id) override;
-  rg::ManagedRaftChangeResult RemoveManagedRaftNode(
+  runtime::ManagedRaftChangeResult RemoveManagedRaftNode(
       std::string_view name, std::uint64_t node_id) override;
   void TransferManagedRaftLeader(std::string_view name,
                                  std::uint64_t node_id) override;
-  rg::ManagedRaftChangeResult DemoteManagedRaftNode(
+  runtime::ManagedRaftChangeResult DemoteManagedRaftNode(
       std::string_view name, std::uint64_t node_id) override;
-  rg::ManagedRaftChangeResult UpdateManagedRaftNode(
+  runtime::ManagedRaftChangeResult UpdateManagedRaftNode(
       std::string_view name, const meta::RaftNodeInfo& node_info) override;
-  [[nodiscard]] rg::ManagedRaftStatus ManagedGraphRaftStatus(
+  [[nodiscard]] runtime::ManagedRaftStatus ManagedGraphRaftStatus(
       std::string_view name) override;
 
  private:
@@ -115,7 +115,7 @@ class GraphManager final : public rg::GraphManagement {
   std::shared_ptr<rocksdb::Cache> block_cache_;
   std::shared_ptr<rocksdb::Cache> raft_log_block_cache_;
   std::shared_ptr<graphdb::AssistantPool> assistant_pool_;
-  std::unique_ptr<rg::PlanCache> plan_cache_;
+  std::unique_ptr<runtime::PlanCache> plan_cache_;
   mutable std::shared_mutex graphs_mutex_;
   std::mutex create_graph_mutex_;
   std::atomic<uint64_t> next_graph_id_ = 1;

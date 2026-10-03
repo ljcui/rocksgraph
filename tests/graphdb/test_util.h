@@ -112,23 +112,23 @@ inline void ApplyRaftRequest(graphdb::GraphDB* graph_db, uint64_t index,
   graph_db->ApplyRaftRequest(index, request);
 }
 
-inline std::unique_ptr<raft::RaftDriver> NewSingleNodeRaftDriver(
+inline std::unique_ptr<raft_driver::RaftDriver> NewSingleNodeRaftDriver(
     graphdb::GraphDB* graph_db, const std::string& graph_name,
     const std::string& raft_path, int32_t bolt_port, int32_t raft_port) {
-  raft::LocalNodeConfig local_node;
+  raft_driver::LocalNodeConfig local_node;
   local_node.graph = graph_name;
   local_node.ip = "127.0.0.1";
   local_node.bolt_port = bolt_port;
   local_node.raft_poft = raft_port;
 
-  raft::RaftLogStoreConfig store_config;
+  raft_driver::RaftLogStoreConfig store_config;
   store_config.path = raft_path;
   store_config.shared_block_cache = rocksdb::NewLRUCache(64 * 1024 * 1024L);
   store_config.total_threads = 2;
   store_config.keep_logs = 100000;
   store_config.gc_interval = 1;
 
-  raft::RaftConfig raft_config;
+  raft_driver::RaftConfig raft_config;
   raft_config.tick_interval = 100;
   raft_config.election_tick = 10;
   raft_config.heartbeat_tick = 1;
@@ -146,7 +146,7 @@ inline std::unique_ptr<raft::RaftDriver> NewSingleNodeRaftDriver(
   peer.context_ = node_info.SerializeAsString();
   init_peers.emplace_back(std::move(peer));
 
-  return std::make_unique<raft::RaftDriver>(
+  return std::make_unique<raft_driver::RaftDriver>(
       [graph_db](uint64_t index, const meta::RaftRequest& request) {
         ApplyRaftRequest(graph_db, index, request);
       },
@@ -160,7 +160,7 @@ inline std::unique_ptr<raft::RaftDriver> NewSingleNodeRaftDriver(
 }
 
 inline bool WaitUntilRaftLeader(
-    raft::RaftDriver* raft_driver,
+    raft_driver::RaftDriver* raft_driver,
     std::chrono::milliseconds timeout = std::chrono::seconds(5)) {
   auto deadline = std::chrono::steady_clock::now() + timeout;
   while (std::chrono::steady_clock::now() < deadline) {

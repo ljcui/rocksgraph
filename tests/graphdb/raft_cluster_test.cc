@@ -544,8 +544,9 @@ class TestServerCluster final {
   std::vector<std::unique_ptr<server::GraphServer>> servers_;
 };
 
-raft::LocalNodeConfig MakeLocalNodeConfig(const std::string& graph_name) {
-  raft::LocalNodeConfig local_node;
+raft_driver::LocalNodeConfig MakeLocalNodeConfig(
+    const std::string& graph_name) {
+  raft_driver::LocalNodeConfig local_node;
   local_node.graph = graph_name;
   local_node.ip = "127.0.0.1";
   local_node.bolt_port = AllocateFreePort();
@@ -553,8 +554,9 @@ raft::LocalNodeConfig MakeLocalNodeConfig(const std::string& graph_name) {
   return local_node;
 }
 
-raft::RaftLogStoreConfig MakeRaftLogStoreConfig(const std::string& path) {
-  raft::RaftLogStoreConfig store_config;
+raft_driver::RaftLogStoreConfig MakeRaftLogStoreConfig(
+    const std::string& path) {
+  raft_driver::RaftLogStoreConfig store_config;
   store_config.path = path;
   store_config.shared_block_cache = rocksdb::NewLRUCache(64 * 1024 * 1024L);
   store_config.total_threads = 2;
@@ -563,15 +565,15 @@ raft::RaftLogStoreConfig MakeRaftLogStoreConfig(const std::string& path) {
   return store_config;
 }
 
-raft::RaftConfig MakeRaftConfig() {
-  raft::RaftConfig raft_config;
+raft_driver::RaftConfig MakeRaftConfig() {
+  raft_driver::RaftConfig raft_config;
   raft_config.tick_interval = 100;
   raft_config.election_tick = 10;
   raft_config.heartbeat_tick = 1;
   return raft_config;
 }
 
-meta::RaftNodeInfo MakeNodeInfo(const raft::LocalNodeConfig& local_node,
+meta::RaftNodeInfo MakeNodeInfo(const raft_driver::LocalNodeConfig& local_node,
                                 uint64_t node_id) {
   meta::RaftNodeInfo node_info;
   node_info.set_node_id(node_id);
@@ -582,8 +584,8 @@ meta::RaftNodeInfo MakeNodeInfo(const raft::LocalNodeConfig& local_node,
   return node_info;
 }
 
-std::vector<eraft::Peer> MakeInitPeers(const raft::LocalNodeConfig& local_node,
-                                       uint64_t node_id = 1) {
+std::vector<eraft::Peer> MakeInitPeers(
+    const raft_driver::LocalNodeConfig& local_node, uint64_t node_id = 1) {
   std::vector<eraft::Peer> init_peers;
   eraft::Peer peer;
   peer.id_ = node_id;
@@ -607,7 +609,7 @@ class TestRaftStateMachine {
     applied_index_ = index;
   }
 
-  raft::RaftDriver::ApplyConfChange ConfChangeCallback() {
+  raft_driver::RaftDriver::ApplyConfChange ConfChangeCallback() {
     return [this](uint64_t index, const raftpb::ConfState& conf_state,
                   const meta::RaftNodeInfos& node_infos) {
       ApplyConfChange(index, conf_state, node_infos);
@@ -637,7 +639,7 @@ class TestRaftStateMachine {
 };
 
 bool WaitForRaftDriverLeader(
-    raft::RaftDriver* driver, uint64_t expected_leader_id = 1,
+    raft_driver::RaftDriver* driver, uint64_t expected_leader_id = 1,
     std::chrono::milliseconds timeout = std::chrono::seconds(5)) {
   return WaitUntil(
       [driver, expected_leader_id]() {
@@ -663,8 +665,8 @@ meta::RaftRequest MakeGraphWriteRequest(const std::string& key,
   return request;
 }
 
-raft::PromiseContext::ApplyResult WaitForAppliedResult(
-    const std::shared_ptr<raft::PromiseContext>& context,
+raft_driver::PromiseContext::ApplyResult WaitForAppliedResult(
+    const std::shared_ptr<raft_driver::PromiseContext>& context,
     std::chrono::milliseconds timeout = std::chrono::seconds(5)) {
   auto future = context->applied.get_future();
   if (future.wait_for(timeout) != std::future_status::ready) {
@@ -674,7 +676,8 @@ raft::PromiseContext::ApplyResult WaitForAppliedResult(
 }
 
 struct TestRaftLogStorage {
-  explicit TestRaftLogStorage(std::unique_ptr<raft::RaftLogStorage> storage)
+  explicit TestRaftLogStorage(
+      std::unique_ptr<raft_driver::RaftLogStorage> storage)
       : storage(std::move(storage)) {}
 
   TestRaftLogStorage(TestRaftLogStorage&&) = default;
@@ -682,7 +685,7 @@ struct TestRaftLogStorage {
 
   ~TestRaftLogStorage() { Close(); }
 
-  raft::RaftLogStorage* operator->() const { return storage.get(); }
+  raft_driver::RaftLogStorage* operator->() const { return storage.get(); }
 
   void Close() {
     if (storage != nullptr) {
@@ -691,7 +694,7 @@ struct TestRaftLogStorage {
     }
   }
 
-  std::unique_ptr<raft::RaftLogStorage> storage;
+  std::unique_ptr<raft_driver::RaftLogStorage> storage;
 };
 
 TestRaftLogStorage OpenRaftLogStorage(
@@ -714,7 +717,7 @@ TestRaftLogStorage OpenRaftLogStorage(
   if (cf_handles.size() != 2) {
     throw std::runtime_error("unexpected raft log storage column families");
   }
-  return TestRaftLogStorage(std::make_unique<raft::RaftLogStorage>(
+  return TestRaftLogStorage(std::make_unique<raft_driver::RaftLogStorage>(
       db.release(), cf_handles[0], cf_handles[1],
       std::move(initial_conf_state)));
 }
@@ -959,7 +962,7 @@ size_t CountPropertyIndexResults(GraphDB* graph, const std::string& index_name,
 uint64_t ExecuteCypherAndCommit(GraphDB* graph, const std::string& cypher) {
   auto txn = graph->BeginTransaction();
   try {
-    (void)rg::ExecuteQuery(*txn, cypher);
+    (void)runtime::ExecuteQuery(*txn, cypher);
     txn->Commit();
   } catch (...) {
     if (txn->GetState() == Transaction::State::kActive) {
@@ -970,12 +973,13 @@ uint64_t ExecuteCypherAndCommit(GraphDB* graph, const std::string& cypher) {
   return graph->GetRaftApplyIndex();
 }
 
-rg::QueryResult ExecuteSystemCypherAndCommit(
+runtime::QueryResult ExecuteSystemCypherAndCommit(
     server::GraphManager* graph_manager, const std::string& cypher,
-    rg::QueryParameters parameters = {}) {
-  rg::QueryOptions options;
+    runtime::QueryParameters parameters = {}) {
+  runtime::QueryOptions options;
   options.parameters = std::move(parameters);
-  return rg::ExecuteSystemQuery(*graph_manager, cypher, std::move(options));
+  return runtime::ExecuteSystemQuery(*graph_manager, cypher,
+                                     std::move(options));
 }
 
 rg::Value RaftMembersValue(const meta::RaftNodeInfos& node_infos) {
@@ -1008,7 +1012,7 @@ std::vector<std::string> CollectCypherStringColumn(GraphDB* graph,
   auto txn = graph->BeginTransaction();
   std::vector<std::string> names;
   try {
-    const rg::QueryResult result = rg::ExecuteQuery(*txn, cypher);
+    const runtime::QueryResult result = runtime::ExecuteQuery(*txn, cypher);
     for (const auto& row : result.rows) {
       if (row.size() != 1 || !row.front().IsString()) {
         throw std::runtime_error("expected a single string Cypher column");
@@ -1028,10 +1032,10 @@ std::vector<std::string> CollectCypherStringColumn(GraphDB* graph,
 
 uint64_t QueryLeaderNodeId(GraphDB* graph) {
   auto txn = graph->BeginTransaction();
-  rg::QueryResult result;
+  runtime::QueryResult result;
   try {
     const std::string graph_name = graph->db_meta().graph_name();
-    result = rg::ExecuteQuery(
+    result = runtime::ExecuteQuery(
         *txn, "CALL dbms.graph.getRaftNodeInfos('" + graph_name +
                   "') YIELD node_id, is_leader WHERE is_leader RETURN node_id");
     txn->Commit();
@@ -2052,7 +2056,7 @@ TEST(RaftCluster, manageRaftMembershipThroughSystemProcedures) {
       [management, target_node_id]() {
         auto raft_status = management->ManagedGraphRaftStatus(kGraphName);
         auto iter = std::ranges::find(raft_status.nodes, target_node_id,
-                                      &rg::ManagedRaftNodeStatus::node_id);
+                                      &runtime::ManagedRaftNodeStatus::node_id);
         return iter != raft_status.nodes.end() &&
                iter->match_index >= raft_status.commit_index;
       },
@@ -2566,8 +2570,8 @@ TEST(RaftLogStorage, snapshotBoundaryStartsWithEmptyHardState) {
   fs::remove_all(raft_path);
   constexpr uint64_t kSnapshotIndex = 8;
   constexpr uint64_t kSnapshotTerm = 5;
-  raft::CreateRaftLogStorageFromSnapshot(raft_path, kSnapshotIndex,
-                                         kSnapshotTerm);
+  raft_driver::CreateRaftLogStorageFromSnapshot(raft_path, kSnapshotIndex,
+                                                kSnapshotTerm);
   for (int reopen = 0; reopen < 2; ++reopen) {
     SCOPED_TRACE(reopen);
     raftpb::ConfState conf;
@@ -2733,11 +2737,11 @@ TEST(RaftDriver, startupCompactsLogWhenAppliedIndexExceedsRetention) {
   TestRaftStateMachine state_machine;
   state_machine.SetAppliedIndex(kAppliedIndex);
   state_machine.ApplyConfChange(kAppliedIndex, conf_state, node_infos);
-  raft::RaftDriver driver([](uint64_t, const meta::RaftRequest&) {},
-                          state_machine.ConfChangeCallback(),
-                          state_machine.AppliedIndex(),
-                          state_machine.ConfState(), state_machine.NodeInfos(),
-                          local_node, {}, store_config, raft_config);
+  raft_driver::RaftDriver driver(
+      [](uint64_t, const meta::RaftRequest&) {},
+      state_machine.ConfChangeCallback(), state_machine.AppliedIndex(),
+      state_machine.ConfState(), state_machine.NodeInfos(), local_node, {},
+      store_config, raft_config);
 
   auto err = driver.Run();
   if (err != nullptr) {
@@ -2764,20 +2768,20 @@ TEST(RaftDriver, proposeWriteBatchTimesOutWhenApplyStalls) {
   const std::string raft_path = "testdb_raft_proposal_timeout";
   fs::remove_all(raft_path);
 
-  raft::LocalNodeConfig local_node;
+  raft_driver::LocalNodeConfig local_node;
   local_node.graph = "proposal_timeout_graph";
   local_node.ip = "127.0.0.1";
   local_node.bolt_port = AllocateFreePort();
   local_node.raft_poft = AllocateFreePort();
 
-  raft::RaftLogStoreConfig store_config;
+  raft_driver::RaftLogStoreConfig store_config;
   store_config.path = raft_path;
   store_config.shared_block_cache = rocksdb::NewLRUCache(64 * 1024 * 1024L);
   store_config.total_threads = 2;
   store_config.keep_logs = 100000;
   store_config.gc_interval = 1;
 
-  raft::RaftConfig raft_config;
+  raft_driver::RaftConfig raft_config;
   raft_config.tick_interval = 100;
   raft_config.election_tick = 10;
   raft_config.heartbeat_tick = 1;
@@ -2798,7 +2802,7 @@ TEST(RaftDriver, proposeWriteBatchTimesOutWhenApplyStalls) {
 
   std::atomic<uint64_t> applied_index{0};
   TestRaftStateMachine state_machine;
-  raft::RaftDriver driver(
+  raft_driver::RaftDriver driver(
       [&applied_index](uint64_t index, const meta::RaftRequest&) {
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
         applied_index.store(index);
@@ -2860,7 +2864,7 @@ TEST(RaftDriver, raftThreadRemainsResponsiveWhileApplyStalls) {
   std::atomic<bool> first_graph_write{true};
   std::atomic<uint64_t> applied_index{0};
   TestRaftStateMachine state_machine;
-  raft::RaftDriver driver(
+  raft_driver::RaftDriver driver(
       [&apply_started, &release_apply_future, &first_graph_write,
        &applied_index](uint64_t index, const meta::RaftRequest& request) {
         if (request.wb_kind() == meta::WriteBatchKind::GRAPH_WRITE &&
@@ -2893,11 +2897,12 @@ TEST(RaftDriver, raftThreadRemainsResponsiveWhileApplyStalls) {
 
   const bool started = apply_started_future.wait_for(std::chrono::seconds(5)) ==
                        std::future_status::ready;
-  std::future<raft::RaftStatus> status_future;
+  std::future<raft_driver::RaftStatus> status_future;
   bool status_ready = false;
-  std::shared_ptr<raft::PromiseContext> second_context;
-  std::future<raft::PromiseContext::CommitResult> second_committed_future;
-  std::future<raft::PromiseContext::ApplyResult> second_applied_future;
+  std::shared_ptr<raft_driver::PromiseContext> second_context;
+  std::future<raft_driver::PromiseContext::CommitResult>
+      second_committed_future;
+  std::future<raft_driver::PromiseContext::ApplyResult> second_applied_future;
   bool second_committed_before_release = false;
   if (started) {
     status_future = std::async(std::launch::async,
@@ -3002,7 +3007,7 @@ TEST(RaftDriver, startupRecoversMembershipWithoutWaitingForApply) {
     std::promise<void> release_apply;
     auto release_apply_future = release_apply.get_future().share();
     std::atomic<bool> first_conf_change{true};
-    raft::RaftDriver driver(
+    raft_driver::RaftDriver driver(
         [&state_machine](uint64_t index, const meta::RaftRequest&) {
           state_machine.SetAppliedIndex(index);
         },
@@ -3071,7 +3076,7 @@ TEST(RaftDriver, restartRecoversNodeInfosAndContinuesApplying) {
   uint64_t first_applied_index = 0;
   {
     std::atomic<uint64_t> applied_index{0};
-    raft::RaftDriver driver(
+    raft_driver::RaftDriver driver(
         [&applied_index, &state_machine](uint64_t index,
                                          const meta::RaftRequest&) {
           applied_index.store(index);
@@ -3113,7 +3118,7 @@ TEST(RaftDriver, restartRecoversNodeInfosAndContinuesApplying) {
 
   {
     std::atomic<uint64_t> applied_index{first_applied_index};
-    raft::RaftDriver driver(
+    raft_driver::RaftDriver driver(
         [&applied_index, &state_machine](uint64_t index,
                                          const meta::RaftRequest&) {
           applied_index.store(index);
@@ -3170,10 +3175,10 @@ TEST(RaftDriver, freshStartWithoutInitialPeersSkipsBootstrap) {
   auto raft_config = MakeRaftConfig();
 
   TestRaftStateMachine state_machine;
-  raft::RaftDriver driver([](uint64_t, const meta::RaftRequest&) {},
-                          state_machine.ConfChangeCallback(), 0, std::nullopt,
-                          std::nullopt, local_node, {}, store_config,
-                          raft_config);
+  raft_driver::RaftDriver driver([](uint64_t, const meta::RaftRequest&) {},
+                                 state_machine.ConfChangeCallback(), 0,
+                                 std::nullopt, std::nullopt, local_node, {},
+                                 store_config, raft_config);
 
   auto err = driver.Run();
   EXPECT_EQ(err, nullptr);
@@ -3203,10 +3208,10 @@ TEST(RaftDriver, freshStartWithoutInitialPeersUsesProvidedConfState) {
   (*node_infos.mutable_nodes())[local_node.node_id] =
       MakeNodeInfo(local_node, local_node.node_id);
   TestRaftStateMachine state_machine;
-  raft::RaftDriver driver([](uint64_t, const meta::RaftRequest&) {},
-                          state_machine.ConfChangeCallback(), 0, conf_state,
-                          node_infos, local_node, {},
-                          MakeRaftLogStoreConfig(raft_path), MakeRaftConfig());
+  raft_driver::RaftDriver driver(
+      [](uint64_t, const meta::RaftRequest&) {},
+      state_machine.ConfChangeCallback(), 0, conf_state, node_infos, local_node,
+      {}, MakeRaftLogStoreConfig(raft_path), MakeRaftConfig());
 
   auto err = driver.Run();
   EXPECT_EQ(err, nullptr);
@@ -3311,10 +3316,10 @@ TEST(RaftDriver, freshBootstrapRejectsInvalidInitialPeerContext) {
   init_peers.emplace_back(std::move(peer));
 
   TestRaftStateMachine state_machine;
-  raft::RaftDriver driver([](uint64_t, const meta::RaftRequest&) {},
-                          state_machine.ConfChangeCallback(), 0, std::nullopt,
-                          std::nullopt, local_node, std::move(init_peers),
-                          store_config, raft_config);
+  raft_driver::RaftDriver driver(
+      [](uint64_t, const meta::RaftRequest&) {},
+      state_machine.ConfChangeCallback(), 0, std::nullopt, std::nullopt,
+      local_node, std::move(init_peers), store_config, raft_config);
 
   auto err = driver.Run();
   EXPECT_NE(err, nullptr);
@@ -3335,7 +3340,7 @@ TEST(RaftDriver, freshBootstrapRejectsMissingLocalInitialPeer) {
   auto raft_config = MakeRaftConfig();
 
   TestRaftStateMachine state_machine;
-  raft::RaftDriver driver(
+  raft_driver::RaftDriver driver(
       [](uint64_t, const meta::RaftRequest&) {},
       state_machine.ConfChangeCallback(), 0, std::nullopt, std::nullopt,
       local_node, MakeInitPeers(other_node, 2), store_config, raft_config);
@@ -3363,10 +3368,10 @@ TEST(RaftDriver, freshBootstrapRejectsDuplicateLocalInitialPeers) {
   init_peers.emplace_back(std::move(duplicate_peer));
 
   TestRaftStateMachine state_machine;
-  raft::RaftDriver driver([](uint64_t, const meta::RaftRequest&) {},
-                          state_machine.ConfChangeCallback(), 0, std::nullopt,
-                          std::nullopt, local_node, std::move(init_peers),
-                          store_config, raft_config);
+  raft_driver::RaftDriver driver(
+      [](uint64_t, const meta::RaftRequest&) {},
+      state_machine.ConfChangeCallback(), 0, std::nullopt, std::nullopt,
+      local_node, std::move(init_peers), store_config, raft_config);
 
   auto err = driver.Run();
   EXPECT_NE(err, nullptr);
@@ -3387,7 +3392,7 @@ TEST(RaftDriver, restartUsesConfiguredIdWithoutLocalMembership) {
   TestRaftStateMachine state_machine;
 
   {
-    raft::RaftDriver driver(
+    raft_driver::RaftDriver driver(
         [&state_machine](uint64_t index, const meta::RaftRequest&) {
           state_machine.SetAppliedIndex(index);
         },
@@ -3411,7 +3416,7 @@ TEST(RaftDriver, restartUsesConfiguredIdWithoutLocalMembership) {
 
   auto mismatched_node = local_node;
   mismatched_node.node_id = 2;
-  raft::RaftDriver driver(
+  raft_driver::RaftDriver driver(
       [&state_machine](uint64_t index, const meta::RaftRequest&) {
         state_machine.SetAppliedIndex(index);
       },
@@ -3440,7 +3445,7 @@ TEST(RaftDriver, concurrentLeaderProposalsAllApply) {
 
   std::atomic<uint64_t> applied_count{0};
   TestRaftStateMachine state_machine;
-  raft::RaftDriver driver(
+  raft_driver::RaftDriver driver(
       [&applied_count, &state_machine](uint64_t index,
                                        const meta::RaftRequest& request) {
         state_machine.SetAppliedIndex(index);
@@ -3464,7 +3469,7 @@ TEST(RaftDriver, concurrentLeaderProposalsAllApply) {
   }
 
   constexpr int kProposalCount = 8;
-  std::vector<std::future<raft::PromiseContext::ApplyResult>> futures;
+  std::vector<std::future<raft_driver::PromiseContext::ApplyResult>> futures;
   futures.reserve(kProposalCount);
   for (int i = 0; i < kProposalCount; ++i) {
     futures.emplace_back(std::async(std::launch::async, [&driver, i]() {
@@ -3498,10 +3503,10 @@ TEST(RaftDriver, concurrentLeaderProposalsAllApply) {
 TEST(RaftDriver, rejectUnknownWriteBatchKind) {
   auto local_node = MakeLocalNodeConfig("unknown_wb_kind_graph");
   TestRaftStateMachine state_machine;
-  raft::RaftDriver driver([](uint64_t, const meta::RaftRequest&) {},
-                          state_machine.ConfChangeCallback(), 0, std::nullopt,
-                          std::nullopt, std::move(local_node), {}, {},
-                          MakeRaftConfig());
+  raft_driver::RaftDriver driver(
+      [](uint64_t, const meta::RaftRequest&) {},
+      state_machine.ConfChangeCallback(), 0, std::nullopt, std::nullopt,
+      std::move(local_node), {}, {}, MakeRaftConfig());
 
   meta::RaftRequest request;
   EXPECT_THROW(driver.ProposeRaftRequest(std::move(request)), std::exception);
@@ -3516,10 +3521,10 @@ TEST(RaftDriver, rejectWriteBatchAfterStop) {
   auto raft_config = MakeRaftConfig();
 
   TestRaftStateMachine state_machine;
-  raft::RaftDriver driver([](uint64_t, const meta::RaftRequest&) {},
-                          state_machine.ConfChangeCallback(), 0, std::nullopt,
-                          std::nullopt, local_node, MakeInitPeers(local_node),
-                          store_config, raft_config);
+  raft_driver::RaftDriver driver(
+      [](uint64_t, const meta::RaftRequest&) {},
+      state_machine.ConfChangeCallback(), 0, std::nullopt, std::nullopt,
+      local_node, MakeInitPeers(local_node), store_config, raft_config);
 
   auto err = driver.Run();
   if (err != nullptr) {
@@ -3554,10 +3559,10 @@ TEST(RaftDriver, learnerConfChangeUpdatesNodeInfos) {
   auto raft_config = MakeRaftConfig();
 
   TestRaftStateMachine state_machine;
-  raft::RaftDriver driver([](uint64_t, const meta::RaftRequest&) {},
-                          state_machine.ConfChangeCallback(), 0, std::nullopt,
-                          std::nullopt, local_node, MakeInitPeers(local_node),
-                          store_config, raft_config);
+  raft_driver::RaftDriver driver(
+      [](uint64_t, const meta::RaftRequest&) {},
+      state_machine.ConfChangeCallback(), 0, std::nullopt, std::nullopt,
+      local_node, MakeInitPeers(local_node), store_config, raft_config);
 
   auto err = driver.Run();
   if (err != nullptr) {
@@ -3625,7 +3630,7 @@ TEST(RaftDriver, restartUsesConfiguredIdWithDuplicateAddresses) {
   TestRaftStateMachine state_machine;
 
   {
-    raft::RaftDriver driver(
+    raft_driver::RaftDriver driver(
         [&state_machine](uint64_t index, const meta::RaftRequest&) {
           state_machine.SetAppliedIndex(index);
         },
@@ -3660,7 +3665,7 @@ TEST(RaftDriver, restartUsesConfiguredIdWithDuplicateAddresses) {
     driver.Stop();
   }
 
-  raft::RaftDriver driver(
+  raft_driver::RaftDriver driver(
       [&state_machine](uint64_t index, const meta::RaftRequest&) {
         state_machine.SetAppliedIndex(index);
       },
@@ -3679,20 +3684,20 @@ TEST(RaftDriver, restartUsesConfiguredIdWithDuplicateAddresses) {
 }
 
 TEST(RaftDriver, rejectOversizedWriteBatch) {
-  raft::LocalNodeConfig local_node;
+  raft_driver::LocalNodeConfig local_node;
   local_node.graph = "oversized_proposal_graph";
   local_node.ip = "127.0.0.1";
   local_node.bolt_port = 1;
   local_node.raft_poft = 1;
 
-  raft::RaftConfig raft_config;
+  raft_driver::RaftConfig raft_config;
   raft_config.max_proposal_bytes = 32;
 
   TestRaftStateMachine state_machine;
-  raft::RaftDriver driver([](uint64_t, const meta::RaftRequest&) {},
-                          state_machine.ConfChangeCallback(), 0, std::nullopt,
-                          std::nullopt, std::move(local_node), {}, {},
-                          raft_config);
+  raft_driver::RaftDriver driver([](uint64_t, const meta::RaftRequest&) {},
+                                 state_machine.ConfChangeCallback(), 0,
+                                 std::nullopt, std::nullopt,
+                                 std::move(local_node), {}, {}, raft_config);
 
   rocksdb::WriteBatch wb;
   ASSERT_TRUE(wb.Put("k", std::string(1024, 'v')).ok());
@@ -3705,20 +3710,20 @@ TEST(RaftDriver, rejectWriteBatchWhenPendingQueueIsFull) {
   const std::string raft_path = "testdb_raft_proposal_backpressure";
   fs::remove_all(raft_path);
 
-  raft::LocalNodeConfig local_node;
+  raft_driver::LocalNodeConfig local_node;
   local_node.graph = "proposal_backpressure_graph";
   local_node.ip = "127.0.0.1";
   local_node.bolt_port = AllocateFreePort();
   local_node.raft_poft = AllocateFreePort();
 
-  raft::RaftLogStoreConfig store_config;
+  raft_driver::RaftLogStoreConfig store_config;
   store_config.path = raft_path;
   store_config.shared_block_cache = rocksdb::NewLRUCache(64 * 1024 * 1024L);
   store_config.total_threads = 2;
   store_config.keep_logs = 100000;
   store_config.gc_interval = 1;
 
-  raft::RaftConfig raft_config;
+  raft_driver::RaftConfig raft_config;
   raft_config.tick_interval = 100;
   raft_config.election_tick = 10;
   raft_config.heartbeat_tick = 1;
@@ -3738,7 +3743,7 @@ TEST(RaftDriver, rejectWriteBatchWhenPendingQueueIsFull) {
   init_peers.emplace_back(std::move(peer));
 
   TestRaftStateMachine state_machine;
-  raft::RaftDriver driver(
+  raft_driver::RaftDriver driver(
       [](uint64_t, const meta::RaftRequest&) {
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
       },
@@ -3789,20 +3794,20 @@ TEST(RaftDriver, rejectWriteBatchWhenPendingBytesAreFull) {
   const std::string raft_path = "testdb_raft_proposal_bytes_backpressure";
   fs::remove_all(raft_path);
 
-  raft::LocalNodeConfig local_node;
+  raft_driver::LocalNodeConfig local_node;
   local_node.graph = "proposal_bytes_backpressure_graph";
   local_node.ip = "127.0.0.1";
   local_node.bolt_port = AllocateFreePort();
   local_node.raft_poft = AllocateFreePort();
 
-  raft::RaftLogStoreConfig store_config;
+  raft_driver::RaftLogStoreConfig store_config;
   store_config.path = raft_path;
   store_config.shared_block_cache = rocksdb::NewLRUCache(64 * 1024 * 1024L);
   store_config.total_threads = 2;
   store_config.keep_logs = 100000;
   store_config.gc_interval = 1;
 
-  raft::RaftConfig raft_config;
+  raft_driver::RaftConfig raft_config;
   raft_config.tick_interval = 100;
   raft_config.election_tick = 10;
   raft_config.heartbeat_tick = 1;
@@ -3823,7 +3828,7 @@ TEST(RaftDriver, rejectWriteBatchWhenPendingBytesAreFull) {
   init_peers.emplace_back(std::move(peer));
 
   TestRaftStateMachine state_machine;
-  raft::RaftDriver driver(
+  raft_driver::RaftDriver driver(
       [](uint64_t, const meta::RaftRequest&) {
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
       },

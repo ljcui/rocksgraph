@@ -9,7 +9,7 @@
 #include "etcd_raft/raftpb/raft.pb.h"
 #include "proto/graph_replication.pb.h"
 
-namespace raft {
+namespace raft_driver {
 
 class Connection : private boost::asio::noncopyable {
  public:
@@ -148,4 +148,4 @@ inline void RaftConnection::read_msg_body_done(
   read_msg_size();
 }
 
-}  // namespace raft
+}  // namespace raft_driver

@@ -10,17 +10,17 @@ namespace graphdb {
 class Transaction;
 }
 
-namespace rg {
+namespace runtime {
 
-[[nodiscard]] Value EvaluateBuiltinFunction(
-    ast::BuiltinFunctionKind kind, const std::vector<Value> &arguments,
+[[nodiscard]] rg::Value EvaluateBuiltinFunction(
+    ast::BuiltinFunctionKind kind, const std::vector<rg::Value> &arguments,
     ExecutionClock clock = ExecutionClock::Start(),
     graphdb::Transaction *transaction = nullptr);
 
 // Native query execution passes its complete context so GraphDB transaction
 // access remains available to built-in functions.
-[[nodiscard]] Value EvaluateBuiltinFunction(ast::BuiltinFunctionKind kind,
-                                            const std::vector<Value> &arguments,
-                                            ExecutionContext context);
+[[nodiscard]] rg::Value EvaluateBuiltinFunction(
+    ast::BuiltinFunctionKind kind, const std::vector<rg::Value> &arguments,
+    ExecutionContext context);
 
-}  // namespace rg
+}  // namespace runtime

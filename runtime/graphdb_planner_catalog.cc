@@ -2,7 +2,7 @@
 
 #include "graphdb/graph_db.h"
 
-namespace rg {
+namespace runtime {
 
 std::optional<planner::NodeIndexDescriptor>
 GraphDBPlannerCatalog::FindNodeIndex(const std::vector<std::string>& labels,
@@ -45,4 +45,4 @@ GraphDBPlannerCatalog::FindRelationshipIndex(
       .property_key = std::string(property_key), .unique = index->is_unique()};
 }
 
-}  // namespace rg
+}  // namespace runtime

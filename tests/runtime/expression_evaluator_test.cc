@@ -13,8 +13,8 @@
 namespace {
 
 rg::Value EvaluateWithoutBindings(const ast::Expression &expression) {
-  rg::ExpressionBindings bindings;
-  return rg::EvaluateExpression(expression, bindings);
+  runtime::ExpressionBindings bindings;
+  return runtime::EvaluateExpression(expression, bindings);
 }
 
 std::unique_ptr<ast::StringLiteral> String(std::string value) {

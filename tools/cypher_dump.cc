@@ -83,9 +83,9 @@ int main(int argc, char **argv) {
               planned_query.LogicalPlan(), std::cout,
               ir::LogicalPlanPrinterOptions{.include_metadata = true});
         } else {
-          rg::PhysicalPlan physical_plan =
-              rg::CreatePhysicalPlan(planned_query.LogicalPlan());
-          rg::PrintPhysicalPlan(physical_plan, std::cout);
+          runtime::PhysicalPlan physical_plan =
+              runtime::CreatePhysicalPlan(planned_query.LogicalPlan());
+          runtime::PrintPhysicalPlan(physical_plan, std::cout);
         }
       } catch (const Exception &e) {
         spdlog::error("Planning error: {}", e.message());

@@ -11,7 +11,7 @@
 #include "common/exception.h"
 #include "runtime/physical_plan.h"
 
-namespace rg {
+namespace runtime {
 namespace {
 
 void HashCombine(std::size_t *seed, std::size_t value) {
@@ -219,4 +219,4 @@ PlanCacheStats PlanCache::GetStats() const {
                         .evictions = impl_->evictions_};
 }
 
-}  // namespace rg
+}  // namespace runtime

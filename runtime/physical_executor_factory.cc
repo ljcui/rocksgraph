@@ -2,7 +2,7 @@
 
 #include "runtime/physical_executor_internal.h"
 
-namespace rg::execution {
+namespace runtime::execution {
 
 std::unique_ptr<PullOperator> OperatorFactory::Build(
     const PhysicalPlanNode &node, std::optional<ExecutionRow> argument) {
@@ -101,4 +101,4 @@ std::unique_ptr<PullOperator> OperatorFactory::Build(
                std::string(ToString(node.kind)));
 }
 
-}  // namespace rg::execution
+}  // namespace runtime::execution

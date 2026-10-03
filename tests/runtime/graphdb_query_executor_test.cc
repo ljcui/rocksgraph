@@ -96,11 +96,11 @@ class GraphDBQueryExecutorTest : public testing::Test {
 
 TEST_F(GraphDBQueryExecutorTest, ExecutesLabelScanExpandAndPropertyReads) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult result =
-      rg::ExecuteQuery(*transaction,
-                       "MATCH (a:Person)-[r:KNOWS]->(b) "
-                       "RETURN id(a) AS aid, id(r) AS rid, type(r) AS kind, "
-                       "a.name AS source, r.since AS since, b.name AS target");
+  runtime::QueryResult result = runtime::ExecuteQuery(
+      *transaction,
+      "MATCH (a:Person)-[r:KNOWS]->(b) "
+      "RETURN id(a) AS aid, id(r) AS rid, type(r) AS kind, "
+      "a.name AS source, r.since AS since, b.name AS target");
 
   ASSERT_EQ(result.rows.size(), 1U);
   EXPECT_EQ(result.rows[0],
@@ -114,14 +114,14 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeRelationshipTypeScan) {
   test_support::FakePlannerStatistics statistics;
   statistics.relationship_count_by_type = {{"RARE_REL", 1.0}};
   auto transaction = graph_->BeginTransaction();
-  rg::QueryOptions options;
+  runtime::QueryOptions options;
   options.planner_statistics = &statistics;
-  rg::QueryResult result =
-      rg::ExecuteQuery(*transaction,
-                       "MATCH (a)-[r:RARE_REL]->(b) "
-                       "RETURN id(a) AS aid, id(r) AS rid, type(r) AS kind, "
-                       "r.weight AS weight, id(b) AS bid",
-                       options);
+  runtime::QueryResult result = runtime::ExecuteQuery(
+      *transaction,
+      "MATCH (a)-[r:RARE_REL]->(b) "
+      "RETURN id(a) AS aid, id(r) AS rid, type(r) AS kind, "
+      "r.weight AS weight, id(b) AS bid",
+      options);
 
   ASSERT_EQ(result.rows.size(), 1U);
   EXPECT_EQ(result.rows[0],
@@ -133,10 +133,10 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeRelationshipTypeScan) {
 
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeVertexIndexSeek) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult result =
-      rg::ExecuteQuery(*transaction,
-                       "MATCH (n:Person) WHERE n.name = 'Ada' "
-                       "RETURN id(n) AS id, n.name AS name");
+  runtime::QueryResult result =
+      runtime::ExecuteQuery(*transaction,
+                            "MATCH (n:Person) WHERE n.name = 'Ada' "
+                            "RETURN id(n) AS id, n.name AS name");
 
   ASSERT_EQ(result.rows.size(), 1U);
   EXPECT_EQ(result.rows[0],
@@ -145,7 +145,7 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeVertexIndexSeek) {
 }
 
 TEST_F(GraphDBQueryExecutorTest, CatalogExposesReadyGraphDBIndexes) {
-  rg::GraphDBPlannerCatalog catalog(*graph_);
+  runtime::GraphDBPlannerCatalog catalog(*graph_);
 
   const auto vertex_index = catalog.FindNodeIndex({"Person"}, "name");
   ASSERT_TRUE(vertex_index.has_value());
@@ -163,10 +163,10 @@ TEST_F(GraphDBQueryExecutorTest, CatalogExposesReadyGraphDBIndexes) {
 
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeVertexIndexRangeSeek) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult result =
-      rg::ExecuteQuery(*transaction,
-                       "MATCH (n:Person) WHERE n.age >= 20 AND n.age < 31 "
-                       "RETURN id(n) AS id, n.age AS age");
+  runtime::QueryResult result =
+      runtime::ExecuteQuery(*transaction,
+                            "MATCH (n:Person) WHERE n.age >= 20 AND n.age < 31 "
+                            "RETURN id(n) AS id, n.age AS age");
 
   ASSERT_EQ(result.rows.size(), 2U);
   EXPECT_EQ(result.rows[0][1], rg::Value(20));
@@ -176,10 +176,10 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeVertexIndexRangeSeek) {
 
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeRelationshipIndexSeek) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult result =
-      rg::ExecuteQuery(*transaction,
-                       "MATCH (a)-[r:KNOWS]->(b) WHERE r.since = 2020 "
-                       "RETURN id(a) AS aid, id(r) AS rid, id(b) AS bid");
+  runtime::QueryResult result =
+      runtime::ExecuteQuery(*transaction,
+                            "MATCH (a)-[r:KNOWS]->(b) WHERE r.since = 2020 "
+                            "RETURN id(a) AS aid, id(r) AS rid, id(b) AS bid");
 
   ASSERT_EQ(result.rows.size(), 1U);
   EXPECT_EQ(result.rows[0],
@@ -190,7 +190,7 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeRelationshipIndexSeek) {
 
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeRelationshipIndexRangeSeek) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult result = rg::ExecuteQuery(
+  runtime::QueryResult result = runtime::ExecuteQuery(
       *transaction,
       "MATCH (a)-[r:KNOWS]->(b) WHERE r.since >= 2020 AND r.since < 2021 "
       "RETURN id(a) AS aid, id(r) AS rid, id(b) AS bid");
@@ -204,7 +204,7 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeRelationshipIndexRangeSeek) {
 
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeNodeIdSeek) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult result = rg::ExecuteQuery(
+  runtime::QueryResult result = runtime::ExecuteQuery(
       *transaction, "MATCH (n) WHERE id(n) = " + std::to_string(ada_) +
                         " RETURN id(n) AS id, n.name AS name");
 
@@ -216,7 +216,7 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeNodeIdSeek) {
 
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeNodeIdInSeek) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult result = rg::ExecuteQuery(
+  runtime::QueryResult result = runtime::ExecuteQuery(
       *transaction, "MATCH (n) WHERE id(n) IN [" + std::to_string(ada_) +
                         ", 999999] "
                         "RETURN id(n) AS id");
@@ -228,7 +228,7 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeNodeIdInSeek) {
 
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeRelationshipIdSeek) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult result = rg::ExecuteQuery(
+  runtime::QueryResult result = runtime::ExecuteQuery(
       *transaction,
       "MATCH (a)-[r:KNOWS]->(b) WHERE id(r) = " + std::to_string(knows_) +
           " RETURN id(a) AS aid, id(r) AS rid, id(b) AS bid, r.since AS since");
@@ -242,7 +242,7 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeRelationshipIdSeek) {
 
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeRelationshipIdInSeek) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult result = rg::ExecuteQuery(
+  runtime::QueryResult result = runtime::ExecuteQuery(
       *transaction, "MATCH (a)-[r:KNOWS]->(b) WHERE id(r) IN [" +
                         std::to_string(knows_) +
                         ", 999999] RETURN id(r) AS id");
@@ -290,7 +290,7 @@ TEST_F(GraphDBQueryExecutorTest,
 
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeUntypedRelationshipIdSeek) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult result = rg::ExecuteQuery(
+  runtime::QueryResult result = runtime::ExecuteQuery(
       *transaction,
       "MATCH (a)-[r]->(b) WHERE id(r) = " + std::to_string(rare_) +
           " RETURN id(a) AS aid, id(r) AS rid, id(b) AS bid, r.weight AS "
@@ -305,7 +305,7 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeUntypedRelationshipIdSeek) {
 
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeIncomingRelationshipIdSeek) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult result = rg::ExecuteQuery(
+  runtime::QueryResult result = runtime::ExecuteQuery(
       *transaction,
       "MATCH (a)<-[r:KNOWS]-(b) WHERE id(r) = " + std::to_string(knows_) +
           " RETURN id(a) AS aid, id(r) AS rid, id(b) AS bid");
@@ -319,7 +319,7 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeIncomingRelationshipIdSeek) {
 
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeUndirectedRelationshipIdSeek) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult result = rg::ExecuteQuery(
+  runtime::QueryResult result = runtime::ExecuteQuery(
       *transaction,
       "MATCH (a)-[r:KNOWS]-(b) WHERE id(r) = " + std::to_string(knows_) +
           " RETURN id(a) AS aid, id(r) AS rid, id(b) AS bid");
@@ -336,7 +336,7 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeUndirectedRelationshipIdSeek) {
 
 TEST_F(GraphDBQueryExecutorTest, MissingNativeEntityIdsProduceNoRows) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult result = rg::ExecuteQuery(
+  runtime::QueryResult result = runtime::ExecuteQuery(
       *transaction, "MATCH (n) WHERE id(n) = 999999 RETURN id(n) AS id");
 
   EXPECT_TRUE(result.rows.empty());
@@ -345,10 +345,10 @@ TEST_F(GraphDBQueryExecutorTest, MissingNativeEntityIdsProduceNoRows) {
 
 TEST_F(GraphDBQueryExecutorTest, MissingNativeRelationshipIdProducesNoRows) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult result =
-      rg::ExecuteQuery(*transaction,
-                       "MATCH (a)-[r:KNOWS]->(b) WHERE id(r) = 999999 "
-                       "RETURN id(r) AS id");
+  runtime::QueryResult result =
+      runtime::ExecuteQuery(*transaction,
+                            "MATCH (a)-[r:KNOWS]->(b) WHERE id(r) = 999999 "
+                            "RETURN id(r) AS id");
 
   EXPECT_TRUE(result.rows.empty());
   transaction->Commit();
@@ -356,7 +356,7 @@ TEST_F(GraphDBQueryExecutorTest, MissingNativeRelationshipIdProducesNoRows) {
 
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeVariableLengthExpand) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult result = rg::ExecuteQuery(
+  runtime::QueryResult result = runtime::ExecuteQuery(
       *transaction,
       "MATCH (a:Person {name: 'Ada'})-[r*0..2]->(b) "
       "RETURN b.name AS name, size(r) AS hops ORDER BY hops, name");
@@ -373,7 +373,7 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeVariableLengthExpand) {
 
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeVariableLengthTypeFilter) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult result = rg::ExecuteQuery(
+  runtime::QueryResult result = runtime::ExecuteQuery(
       *transaction,
       "MATCH (a:Person {name: 'Ada'})-[r:KNOWS*1..2]->(b) "
       "RETURN b.name AS name, size(r) AS hops, type(r[0]) AS type");
@@ -387,7 +387,7 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeVariableLengthTypeFilter) {
 
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeVariableLengthBoundEndpoint) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult result = rg::ExecuteQuery(
+  runtime::QueryResult result = runtime::ExecuteQuery(
       *transaction,
       "MATCH (a:Person {name: 'Ada'}), (b:Person {name: 'Other'}) "
       "WITH a, b MATCH (a)-[r*1..2]->(b) RETURN size(r) AS hops");
@@ -399,7 +399,7 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeVariableLengthBoundEndpoint) {
 
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeNamedPathBuiltins) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult result = rg::ExecuteQuery(
+  runtime::QueryResult result = runtime::ExecuteQuery(
       *transaction,
       "MATCH p = (a:Person {name: 'Ada'})-[r:KNOWS]->(b:Person) "
       "RETURN length(p) AS length, size(nodes(p)) AS nodes, "
@@ -417,14 +417,14 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeNamedPathBuiltins) {
 
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeVariableLengthNamedPath) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult result =
-      rg::ExecuteQuery(*transaction,
-                       "MATCH p = (a:Person {name: 'Ada'})-[r*1..2]->"
-                       "(b:Person {name: 'Other'}) "
-                       "RETURN length(p) AS length, size(nodes(p)) AS nodes, "
-                       "size(relationships(p)) AS relationships, "
-                       "type(relationships(p)[0]) AS first_type, "
-                       "type(relationships(p)[1]) AS second_type");
+  runtime::QueryResult result = runtime::ExecuteQuery(
+      *transaction,
+      "MATCH p = (a:Person {name: 'Ada'})-[r*1..2]->"
+      "(b:Person {name: 'Other'}) "
+      "RETURN length(p) AS length, size(nodes(p)) AS nodes, "
+      "size(relationships(p)) AS relationships, "
+      "type(relationships(p)[0]) AS first_type, "
+      "type(relationships(p)[1]) AS second_type");
 
   ASSERT_EQ(result.rows.size(), 1U);
   EXPECT_EQ(result.rows[0], (std::vector<rg::Value>{
@@ -450,7 +450,7 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeShortestPathVariants) {
   setup->Commit();
 
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult all = rg::ExecuteQuery(
+  runtime::QueryResult all = runtime::ExecuteQuery(
       *transaction,
       "MATCH (a:Person {name: 'Ada'}), (b:Person {name: 'Other'}), "
       "p = allShortestPaths((a)-[:ROUTE*]->(b)) "
@@ -462,42 +462,42 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeShortestPathVariants) {
   EXPECT_EQ(all.rows[1],
             (std::vector<rg::Value>{rg::Value(2), rg::Value("Hopper")}));
 
-  rg::QueryResult one = rg::ExecuteQuery(
+  runtime::QueryResult one = runtime::ExecuteQuery(
       *transaction,
       "MATCH (a:Person {name: 'Ada'}), (b:Person {name: 'Other'}), "
       "p = shortestPath((a)-[:ROUTE*]->(b)) RETURN length(p) AS hops");
   ASSERT_EQ(one.rows.size(), 1U);
   EXPECT_EQ(one.rows[0][0], rg::Value(2));
 
-  rg::QueryResult undirected = rg::ExecuteQuery(
+  runtime::QueryResult undirected = runtime::ExecuteQuery(
       *transaction,
       "MATCH (a:Person {name: 'Other'}), (b:Person {name: 'Ada'}), "
       "p = shortestPath((a)-[:ROUTE*]-(b)) RETURN length(p) AS hops");
   ASSERT_EQ(undirected.rows.size(), 1U);
   EXPECT_EQ(undirected.rows[0][0], rg::Value(2));
 
-  rg::QueryResult fixed = rg::ExecuteQuery(
+  runtime::QueryResult fixed = runtime::ExecuteQuery(
       *transaction,
       "MATCH p = shortestPath((a:Person {name: 'Ada'})-[:ROUTE]->"
       "(b:Person {name: 'Grace'})) RETURN length(p) AS hops");
   ASSERT_EQ(fixed.rows.size(), 1U);
   EXPECT_EQ(fixed.rows[0][0], rg::Value(1));
 
-  rg::QueryResult zero = rg::ExecuteQuery(
+  runtime::QueryResult zero = runtime::ExecuteQuery(
       *transaction,
       "MATCH p = shortestPath((a:Person {name: 'Ada'})-[:ROUTE*0..]->(a)) "
       "RETURN length(p) AS hops");
   ASSERT_EQ(zero.rows.size(), 1U);
   EXPECT_EQ(zero.rows[0][0], rg::Value(0));
 
-  rg::QueryResult lower_bound = rg::ExecuteQuery(
+  runtime::QueryResult lower_bound = runtime::ExecuteQuery(
       *transaction,
       "MATCH (a:Person {name: 'Ada'}), (b:Person {name: 'Grace'}), "
       "p = shortestPath((a)-[:ROUTE*3..3]->(b)) RETURN length(p) AS hops");
   ASSERT_EQ(lower_bound.rows.size(), 1U);
   EXPECT_EQ(lower_bound.rows[0][0], rg::Value(3));
 
-  rg::QueryResult missing = rg::ExecuteQuery(
+  runtime::QueryResult missing = runtime::ExecuteQuery(
       *transaction,
       "MATCH (a:Person {name: 'Ada'}), (b:Person {name: 'Isolated'}), "
       "p = shortestPath((a)-[:ROUTE*]->(b)) "
@@ -512,7 +512,7 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeShortestPathVariants) {
 TEST_F(GraphDBQueryExecutorTest,
        ExecutesReversePlannedNativeVariableLengthNamedPath) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult result = rg::ExecuteQuery(
+  runtime::QueryResult result = runtime::ExecuteQuery(
       *transaction,
       "MATCH p = (a)-[r*1..2]->(b:Person {name: 'Other'}) "
       "RETURN a.name AS source, length(p) AS length ORDER BY length");
@@ -527,7 +527,7 @@ TEST_F(GraphDBQueryExecutorTest,
 
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeIncomingNamedPath) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult result = rg::ExecuteQuery(
+  runtime::QueryResult result = runtime::ExecuteQuery(
       *transaction,
       "MATCH p = (a:Person {name: 'Grace'})<-[r:KNOWS]-(b:Person) "
       "RETURN nodes(p)[0].name AS first, nodes(p)[1].name AS last, "
@@ -542,11 +542,11 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeIncomingNamedPath) {
 
 TEST_F(GraphDBQueryExecutorTest, ProjectsNativeRelationshipEndpoints) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult result =
-      rg::ExecuteQuery(*transaction,
-                       "MATCH ()-[r:KNOWS]->() WITH r "
-                       "MATCH (a)-[r:KNOWS]->(b) "
-                       "RETURN a.name AS source, b.name AS target");
+  runtime::QueryResult result =
+      runtime::ExecuteQuery(*transaction,
+                            "MATCH ()-[r:KNOWS]->() WITH r "
+                            "MATCH (a)-[r:KNOWS]->(b) "
+                            "RETURN a.name AS source, b.name AS target");
 
   ASSERT_EQ(result.rows.size(), 1U);
   EXPECT_EQ(result.rows[0],
@@ -556,12 +556,12 @@ TEST_F(GraphDBQueryExecutorTest, ProjectsNativeRelationshipEndpoints) {
 
 TEST_F(GraphDBQueryExecutorTest, ProjectsNativeVariableLengthEndpoints) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult result =
-      rg::ExecuteQuery(*transaction,
-                       "MATCH (x:Person {name: 'Ada'})-[rs*1..2]->"
-                       "(y:Person {name: 'Other'}) WITH rs "
-                       "MATCH (a)-[rs*1..2]->(b) "
-                       "RETURN a.name AS source, b.name AS target");
+  runtime::QueryResult result =
+      runtime::ExecuteQuery(*transaction,
+                            "MATCH (x:Person {name: 'Ada'})-[rs*1..2]->"
+                            "(y:Person {name: 'Other'}) WITH rs "
+                            "MATCH (a)-[rs*1..2]->(b) "
+                            "RETURN a.name AS source, b.name AS target");
 
   ASSERT_EQ(result.rows.size(), 1U);
   EXPECT_EQ(result.rows[0],
@@ -572,7 +572,7 @@ TEST_F(GraphDBQueryExecutorTest, ProjectsNativeVariableLengthEndpoints) {
 TEST_F(GraphDBQueryExecutorTest,
        ProjectsNativeUndirectedRelationshipEndpoints) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult result = rg::ExecuteQuery(
+  runtime::QueryResult result = runtime::ExecuteQuery(
       *transaction,
       "MATCH ()-[r:KNOWS]->() WITH r "
       "MATCH (a)-[r:KNOWS]-(b) "
@@ -588,7 +588,7 @@ TEST_F(GraphDBQueryExecutorTest,
 
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeNamedCreatePath) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult result = rg::ExecuteQuery(
+  runtime::QueryResult result = runtime::ExecuteQuery(
       *transaction,
       "CREATE p = (a:Author {name: 'Lin'})-[r:WROTE]->"
       "(b:Book {title: 'Storage'}) "
@@ -604,10 +604,10 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeNamedCreatePath) {
 
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeEntityPassthroughAndNodeCheck) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult result =
-      rg::ExecuteQuery(*transaction,
-                       "MATCH (n:Person) WITH n, 1 AS keep MATCH (n) "
-                       "RETURN n ORDER BY n.name");
+  runtime::QueryResult result =
+      runtime::ExecuteQuery(*transaction,
+                            "MATCH (n:Person) WITH n, 1 AS keep MATCH (n) "
+                            "RETURN n ORDER BY n.name");
 
   ASSERT_EQ(result.rows.size(), 3U);
   ASSERT_TRUE(result.rows[0][0].IsNode());
@@ -621,11 +621,11 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeEntityPassthroughAndNodeCheck) {
 
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeUnionDistinctWithNodes) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult result =
-      rg::ExecuteQuery(*transaction,
-                       "MATCH (n:Person {name: 'Ada'}) RETURN n AS value "
-                       "UNION "
-                       "MATCH (m:Person {name: 'Ada'}) RETURN m AS value");
+  runtime::QueryResult result =
+      runtime::ExecuteQuery(*transaction,
+                            "MATCH (n:Person {name: 'Ada'}) RETURN n AS value "
+                            "UNION "
+                            "MATCH (m:Person {name: 'Ada'}) RETURN m AS value");
 
   ASSERT_EQ(result.rows.size(), 1U);
   ASSERT_TRUE(result.rows[0][0].IsNode());
@@ -635,11 +635,11 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeUnionDistinctWithNodes) {
 
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeNodeHashJoin) {
   auto transaction = graph_->BeginTransaction();
-  (void)rg::ExecuteQuery(*transaction,
-                         "MATCH (b:Person {name: 'Other'}) "
-                         "CREATE (:Person {name: 'Lin'})-[:LINK]->(b)");
+  (void)runtime::ExecuteQuery(*transaction,
+                              "MATCH (b:Person {name: 'Other'}) "
+                              "CREATE (:Person {name: 'Lin'})-[:LINK]->(b)");
 
-  rg::QueryResult result = rg::ExecuteQuery(
+  runtime::QueryResult result = runtime::ExecuteQuery(
       *transaction,
       "MATCH (a:Person)-[r1]->(b)<-[r2]-(c:Person) "
       "RETURN a.name AS left, c.name AS right ORDER BY left, right");
@@ -654,7 +654,7 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeNodeHashJoin) {
 
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativePatternComprehensionWithNodes) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult result = rg::ExecuteQuery(
+  runtime::QueryResult result = runtime::ExecuteQuery(
       *transaction,
       "MATCH (n:Person) "
       "RETURN n.name AS name, [(n)-[]->(m) | m] AS targets ORDER BY name");
@@ -677,18 +677,19 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativePatternComprehensionWithNodes) {
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeMetadataProcedures) {
   auto transaction = graph_->BeginTransaction();
 
-  rg::QueryResult labels = rg::ExecuteQuery(*transaction, "CALL db.labels()");
+  runtime::QueryResult labels =
+      runtime::ExecuteQuery(*transaction, "CALL db.labels()");
   ASSERT_EQ(labels.rows.size(), 1U);
   EXPECT_EQ(labels.rows[0][0], rg::Value("Person"));
 
-  rg::QueryResult relationship_types =
-      rg::ExecuteQuery(*transaction, "CALL db.relationshipTypes()");
+  runtime::QueryResult relationship_types =
+      runtime::ExecuteQuery(*transaction, "CALL db.relationshipTypes()");
   EXPECT_EQ(relationship_types.rows,
             (std::vector<std::vector<rg::Value>>{{rg::Value("KNOWS")},
                                                  {rg::Value("RARE_REL")}}));
 
-  rg::QueryResult property_keys =
-      rg::ExecuteQuery(*transaction, "CALL db.propertyKeys()");
+  runtime::QueryResult property_keys =
+      runtime::ExecuteQuery(*transaction, "CALL db.propertyKeys()");
   EXPECT_EQ(property_keys.rows,
             (std::vector<std::vector<rg::Value>>{{rg::Value("age")},
                                                  {rg::Value("name")},
@@ -699,10 +700,10 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeMetadataProcedures) {
 
 TEST_F(GraphDBQueryExecutorTest, FiltersNativeMetadataProcedureYields) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult result =
-      rg::ExecuteQuery(*transaction,
-                       "CALL db.propertyKeys() YIELD propertyKey AS key "
-                       "WHERE key STARTS WITH 's' RETURN key");
+  runtime::QueryResult result =
+      runtime::ExecuteQuery(*transaction,
+                            "CALL db.propertyKeys() YIELD propertyKey AS key "
+                            "WHERE key STARTS WITH 's' RETURN key");
 
   ASSERT_EQ(result.rows.size(), 1U);
   EXPECT_EQ(result.rows[0][0], rg::Value("since"));
@@ -711,27 +712,27 @@ TEST_F(GraphDBQueryExecutorTest, FiltersNativeMetadataProcedureYields) {
 
 TEST_F(GraphDBQueryExecutorTest, NativeMetadataProceduresSeeUncommittedWrites) {
   auto transaction = graph_->BeginTransaction();
-  (void)rg::ExecuteQuery(
+  (void)runtime::ExecuteQuery(
       *transaction,
       "CREATE (:Fresh {freshNode: 1})-[:FRESH_REL {freshEdge: 2}]->(:Person)");
 
-  rg::QueryResult labels = rg::ExecuteQuery(
+  runtime::QueryResult labels = runtime::ExecuteQuery(
       *transaction,
       "CALL db.labels() YIELD label WHERE label = 'Fresh' RETURN label");
   ASSERT_EQ(labels.rows.size(), 1U);
   EXPECT_EQ(labels.rows[0][0], rg::Value("Fresh"));
 
-  rg::QueryResult relationship_types = rg::ExecuteQuery(
+  runtime::QueryResult relationship_types = runtime::ExecuteQuery(
       *transaction,
       "CALL db.relationshipTypes() YIELD relationshipType AS type "
       "WHERE type = 'FRESH_REL' RETURN type");
   ASSERT_EQ(relationship_types.rows.size(), 1U);
   EXPECT_EQ(relationship_types.rows[0][0], rg::Value("FRESH_REL"));
 
-  rg::QueryResult property_keys =
-      rg::ExecuteQuery(*transaction,
-                       "CALL db.propertyKeys() YIELD propertyKey AS key "
-                       "WHERE key STARTS WITH 'fresh' RETURN key ORDER BY key");
+  runtime::QueryResult property_keys = runtime::ExecuteQuery(
+      *transaction,
+      "CALL db.propertyKeys() YIELD propertyKey AS key "
+      "WHERE key STARTS WITH 'fresh' RETURN key ORDER BY key");
   EXPECT_EQ(property_keys.rows,
             (std::vector<std::vector<rg::Value>>{{rg::Value("freshEdge")},
                                                  {rg::Value("freshNode")}}));
@@ -740,7 +741,7 @@ TEST_F(GraphDBQueryExecutorTest, NativeMetadataProceduresSeeUncommittedWrites) {
 
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeOptionalExpandMatch) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult result = rg::ExecuteQuery(
+  runtime::QueryResult result = runtime::ExecuteQuery(
       *transaction,
       "MATCH (a:Person {name: 'Ada'}) "
       "OPTIONAL MATCH (a)-[r:KNOWS]->(b) "
@@ -755,11 +756,11 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeOptionalExpandMatch) {
 
 TEST_F(GraphDBQueryExecutorTest, NullExtendsNativeOptionalExpand) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult result =
-      rg::ExecuteQuery(*transaction,
-                       "MATCH (a:Person {name: 'Other'}) "
-                       "OPTIONAL MATCH (a)-[r:KNOWS]->(b) "
-                       "RETURN b.name AS name, type(r) AS type");
+  runtime::QueryResult result =
+      runtime::ExecuteQuery(*transaction,
+                            "MATCH (a:Person {name: 'Other'}) "
+                            "OPTIONAL MATCH (a)-[r:KNOWS]->(b) "
+                            "RETURN b.name AS name, type(r) AS type");
 
   ASSERT_EQ(result.rows.size(), 1U);
   EXPECT_EQ(result.rows[0],
@@ -770,11 +771,11 @@ TEST_F(GraphDBQueryExecutorTest, NullExtendsNativeOptionalExpand) {
 TEST_F(GraphDBQueryExecutorTest,
        NullExtendsNativeOptionalExpandAfterPredicateRejectsMatch) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult result =
-      rg::ExecuteQuery(*transaction,
-                       "MATCH (a:Person {name: 'Ada'}) "
-                       "OPTIONAL MATCH (a)-[r:KNOWS]->(b) WHERE r.since = 1999 "
-                       "RETURN b.name AS name, type(r) AS type");
+  runtime::QueryResult result = runtime::ExecuteQuery(
+      *transaction,
+      "MATCH (a:Person {name: 'Ada'}) "
+      "OPTIONAL MATCH (a)-[r:KNOWS]->(b) WHERE r.since = 1999 "
+      "RETURN b.name AS name, type(r) AS type");
 
   ASSERT_EQ(result.rows.size(), 1U);
   EXPECT_EQ(result.rows[0],
@@ -784,11 +785,11 @@ TEST_F(GraphDBQueryExecutorTest,
 
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeOptionalIncomingExpand) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult result =
-      rg::ExecuteQuery(*transaction,
-                       "MATCH (a:Person {name: 'Grace'}) "
-                       "OPTIONAL MATCH (a)<-[r:KNOWS]-(b) "
-                       "RETURN b.name AS name, id(r) AS rid");
+  runtime::QueryResult result =
+      runtime::ExecuteQuery(*transaction,
+                            "MATCH (a:Person {name: 'Grace'}) "
+                            "OPTIONAL MATCH (a)<-[r:KNOWS]-(b) "
+                            "RETURN b.name AS name, id(r) AS rid");
 
   ASSERT_EQ(result.rows.size(), 1U);
   EXPECT_EQ(result.rows[0],
@@ -798,11 +799,11 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeOptionalIncomingExpand) {
 
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeOptionalUndirectedExpand) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult result =
-      rg::ExecuteQuery(*transaction,
-                       "MATCH (a:Person {name: 'Other'}) "
-                       "OPTIONAL MATCH (a)-[r:RARE_REL]-(b) "
-                       "RETURN b.name AS name, id(r) AS rid");
+  runtime::QueryResult result =
+      runtime::ExecuteQuery(*transaction,
+                            "MATCH (a:Person {name: 'Other'}) "
+                            "OPTIONAL MATCH (a)-[r:RARE_REL]-(b) "
+                            "RETURN b.name AS name, id(r) AS rid");
 
   ASSERT_EQ(result.rows.size(), 1U);
   EXPECT_EQ(result.rows[0],
@@ -812,7 +813,7 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeOptionalUndirectedExpand) {
 
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeCreateAndSetWrites) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult created = rg::ExecuteQuery(
+  runtime::QueryResult created = runtime::ExecuteQuery(
       *transaction,
       "CREATE (a:Writer {name: 'Lin'})-[r:WROTE {year: 2025}]->"
       "(b:Book {title: 'Storage'}) "
@@ -830,7 +831,7 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeCreateAndSetWrites) {
   transaction->Commit();
 
   auto verification = graph_->BeginTransaction();
-  rg::QueryResult persisted = rg::ExecuteQuery(
+  runtime::QueryResult persisted = runtime::ExecuteQuery(
       *verification,
       "MATCH (a:Writer)-[r:WROTE]->(b:Book) WHERE id(a) = " +
           std::to_string(author_id) +
@@ -848,7 +849,7 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeCreateAndSetWrites) {
 
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeMapLabelAndRemoveWrites) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult updated = rg::ExecuteQuery(
+  runtime::QueryResult updated = runtime::ExecuteQuery(
       *transaction,
       "MATCH (a:Person)-[r:KNOWS]->() WHERE id(a) = " + std::to_string(ada_) +
           " SET a = {name: 'Ada Updated', missing: null}, "
@@ -866,15 +867,15 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeMapLabelAndRemoveWrites) {
   transaction->Commit();
 
   auto verification = graph_->BeginTransaction();
-  rg::QueryResult persisted =
-      rg::ExecuteQuery(*verification,
-                       "MATCH (a:Engineer)-[r:KNOWS]->() "
-                       "WHERE a.name = 'Ada Updated' AND r.since = 2026 "
-                       "RETURN id(a) AS aid, id(r) AS rid");
+  runtime::QueryResult persisted =
+      runtime::ExecuteQuery(*verification,
+                            "MATCH (a:Engineer)-[r:KNOWS]->() "
+                            "WHERE a.name = 'Ada Updated' AND r.since = 2026 "
+                            "RETURN id(a) AS aid, id(r) AS rid");
   ASSERT_EQ(persisted.rows.size(), 1U);
   EXPECT_EQ(persisted.rows[0],
             (std::vector<rg::Value>{rg::Value(ada_), rg::Value(knows_)}));
-  rg::QueryResult removed_label = rg::ExecuteQuery(
+  runtime::QueryResult removed_label = runtime::ExecuteQuery(
       *verification, "MATCH (a:Person) WHERE id(a) = " + std::to_string(ada_) +
                          " RETURN count(a) AS count");
   ASSERT_EQ(removed_label.rows.size(), 1U);
@@ -884,14 +885,14 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeMapLabelAndRemoveWrites) {
 
 TEST_F(GraphDBQueryExecutorTest, RollsBackNativeWrites) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult created = rg::ExecuteQuery(
+  runtime::QueryResult created = runtime::ExecuteQuery(
       *transaction,
       "CREATE (n:RolledBack {name: 'temporary'}) RETURN id(n) AS id");
   ASSERT_EQ(created.rows.size(), 1U);
   transaction->Rollback();
 
   auto verification = graph_->BeginTransaction();
-  rg::QueryResult persisted = rg::ExecuteQuery(
+  runtime::QueryResult persisted = runtime::ExecuteQuery(
       *verification, "MATCH (n:RolledBack) RETURN count(n) AS count");
   ASSERT_EQ(persisted.rows.size(), 1U);
   EXPECT_EQ(persisted.rows[0][0], rg::Value(0));
@@ -901,7 +902,7 @@ TEST_F(GraphDBQueryExecutorTest, RollsBackNativeWrites) {
 TEST_F(GraphDBQueryExecutorTest, LeavesRollbackAfterExecutionFailureToCaller) {
   auto transaction = graph_->BeginTransaction();
   RG_EXPECT_ERROR(
-      (void)rg::ExecuteQuery(
+      (void)runtime::ExecuteQuery(
           *transaction,
           "CREATE (n:RolledBack {name: 'temporary'}) SET n.value = 1 / 0 "
           "RETURN n"),
@@ -911,7 +912,7 @@ TEST_F(GraphDBQueryExecutorTest, LeavesRollbackAfterExecutionFailureToCaller) {
   EXPECT_EQ(transaction->GetState(), graphdb::Transaction::State::kRolledBack);
 
   auto verification = graph_->BeginTransaction();
-  rg::QueryResult persisted = rg::ExecuteQuery(
+  runtime::QueryResult persisted = runtime::ExecuteQuery(
       *verification, "MATCH (n:RolledBack) RETURN count(n) AS count");
   ASSERT_EQ(persisted.rows.size(), 1U);
   EXPECT_EQ(persisted.rows[0][0], rg::Value(0));
@@ -920,7 +921,7 @@ TEST_F(GraphDBQueryExecutorTest, LeavesRollbackAfterExecutionFailureToCaller) {
 
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeMergeActions) {
   auto create = graph_->BeginTransaction();
-  rg::QueryResult created = rg::ExecuteQuery(
+  runtime::QueryResult created = runtime::ExecuteQuery(
       *create,
       "MERGE (n:Person {name: 'Merged'}) "
       "ON CREATE SET n.created = true RETURN n.created AS created");
@@ -929,11 +930,11 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeMergeActions) {
   create->Commit();
 
   auto match = graph_->BeginTransaction();
-  rg::QueryResult matched =
-      rg::ExecuteQuery(*match,
-                       "MERGE (n:Person {name: 'Merged'}) "
-                       "ON MATCH SET n.seen = true "
-                       "RETURN n.created AS created, n.seen AS seen");
+  runtime::QueryResult matched =
+      runtime::ExecuteQuery(*match,
+                            "MERGE (n:Person {name: 'Merged'}) "
+                            "ON MATCH SET n.seen = true "
+                            "RETURN n.created AS created, n.seen AS seen");
   ASSERT_EQ(matched.rows.size(), 1U);
   EXPECT_EQ(matched.rows[0],
             (std::vector<rg::Value>{rg::Value(true), rg::Value(true)}));
@@ -942,7 +943,7 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeMergeActions) {
 
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeRelationshipAndNodeDelete) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult deleted = rg::ExecuteQuery(
+  runtime::QueryResult deleted = runtime::ExecuteQuery(
       *transaction,
       "MATCH (a:Person)-[r:KNOWS]->(b) WHERE id(a) = " + std::to_string(ada_) +
           " DELETE r, a RETURN id(b) AS bid");
@@ -951,12 +952,12 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeRelationshipAndNodeDelete) {
   transaction->Commit();
 
   auto verification = graph_->BeginTransaction();
-  rg::QueryResult persisted = rg::ExecuteQuery(
+  runtime::QueryResult persisted = runtime::ExecuteQuery(
       *verification, "MATCH (n) WHERE id(n) = " + std::to_string(ada_) +
                          " RETURN count(n) AS nodes");
   ASSERT_EQ(persisted.rows.size(), 1U);
   EXPECT_EQ(persisted.rows[0][0], rg::Value(0));
-  rg::QueryResult relationships = rg::ExecuteQuery(
+  runtime::QueryResult relationships = runtime::ExecuteQuery(
       *verification, "MATCH ()-[r:KNOWS]->() RETURN count(r) AS relationships");
   ASSERT_EQ(relationships.rows.size(), 1U);
   EXPECT_EQ(relationships.rows[0][0], rg::Value(0));
@@ -965,14 +966,14 @@ TEST_F(GraphDBQueryExecutorTest, ExecutesNativeRelationshipAndNodeDelete) {
 
 TEST_F(GraphDBQueryExecutorTest, ExecutesNativeDetachDelete) {
   auto transaction = graph_->BeginTransaction();
-  rg::QueryResult deleted = rg::ExecuteQuery(
+  runtime::QueryResult deleted = runtime::ExecuteQuery(
       *transaction,
       "MATCH (n) WHERE id(n) = " + std::to_string(grace_) + " DETACH DELETE n");
   EXPECT_TRUE(deleted.rows.empty());
   transaction->Commit();
 
   auto verification = graph_->BeginTransaction();
-  rg::QueryResult persisted = rg::ExecuteQuery(
+  runtime::QueryResult persisted = runtime::ExecuteQuery(
       *verification, "MATCH ()-[r]->() RETURN count(r) AS relationships");
   ASSERT_EQ(persisted.rows.size(), 1U);
   EXPECT_EQ(persisted.rows[0][0], rg::Value(0));

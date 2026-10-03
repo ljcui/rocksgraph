@@ -194,8 +194,8 @@ void GraphManager::ReplaceGraphFromSnapshot(const std::string& name,
   fs::create_directory(new_path);
   try {
     fs::rename(directory + "/data", new_path + "/data");
-    raft::CreateRaftLogStorageFromSnapshot(new_path + "/raft", snapshot.index,
-                                           snapshot.term);
+    raft_driver::CreateRaftLogStorageFromSnapshot(
+        new_path + "/raft", snapshot.index, snapshot.term);
     iter->second.reset();
     std::shared_ptr<graphdb::GraphDB> replacement = open(new_path, new_meta);
     rocksdb::WriteBatch batch;

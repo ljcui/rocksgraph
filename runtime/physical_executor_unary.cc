@@ -11,14 +11,14 @@
 #include "runtime/graphdb_access.h"
 #include "runtime/physical_executor_internal.h"
 
-namespace rg::execution {
+namespace runtime::execution {
 
-std::vector<Value> EvaluateGroupingValues(
+std::vector<rg::Value> EvaluateGroupingValues(
     const std::vector<PhysicalGroupingItem> &items, const ExecutionRow &row,
     RuntimeState *state) {
   RG_CHECK(state != nullptr, common::ErrorCode::InternalError,
            "runtime state is null");
-  std::vector<Value> values;
+  std::vector<rg::Value> values;
   values.reserve(items.size());
   for (const auto &item : items) {
     values.push_back(Evaluate(item.expression, row, *state));
@@ -56,9 +56,9 @@ struct AggregateAccumulator {
   std::int64_t integer_sum = 0;
   double floating_sum = 0.0;
   bool integral_sum = true;
-  std::optional<Value> best;
-  std::vector<Value> values;
-  std::unordered_set<Value, ValueHash, ValueEqual> distinct_values;
+  std::optional<rg::Value> best;
+  std::vector<rg::Value> values;
+  std::unordered_set<rg::Value, rg::ValueHash, rg::ValueEqual> distinct_values;
   std::optional<double> percentile;
   std::optional<std::string> percentile_error;
   bool percentile_null = false;
@@ -142,9 +142,9 @@ std::vector<AggregateAccumulator> CreateAggregateAccumulators(
   return accumulators;
 }
 
-std::size_t EstimatedStoredValueHeapUsage(const Value &value) {
+std::size_t EstimatedStoredValueHeapUsage(const rg::Value &value) {
   const std::size_t bytes = EstimatedValueHeapUsage(value);
-  return bytes > sizeof(Value) ? bytes - sizeof(Value) : 0U;
+  return bytes > sizeof(rg::Value) ? bytes - sizeof(rg::Value) : 0U;
 }
 
 void ReleaseAccumulatorMemory(std::size_t *accumulator_bytes,
@@ -160,7 +160,7 @@ void ReleaseAccumulatorMemory(std::size_t *accumulator_bytes,
   *accumulator_bytes = 0;
 }
 
-void ReplaceAccumulatorValue(AggregateAccumulator *accumulator, Value value,
+void ReplaceAccumulatorValue(AggregateAccumulator *accumulator, rg::Value value,
                              RuntimeState *state, std::size_t *reserved_bytes) {
   RG_CHECK(
       accumulator != nullptr && state != nullptr && reserved_bytes != nullptr,
@@ -181,9 +181,9 @@ void ReplaceAccumulatorValue(AggregateAccumulator *accumulator, Value value,
   }
 }
 
-const Value *DistinctAggregateValue(AggregateAccumulator *accumulator,
-                                    Value *value, RuntimeState *state,
-                                    std::size_t *reserved_bytes) {
+const rg::Value *DistinctAggregateValue(AggregateAccumulator *accumulator,
+                                        rg::Value *value, RuntimeState *state,
+                                        std::size_t *reserved_bytes) {
   RG_CHECK(accumulator != nullptr && value != nullptr && state != nullptr &&
                reserved_bytes != nullptr,
            common::ErrorCode::InternalError,
@@ -204,7 +204,7 @@ const Value *DistinctAggregateValue(AggregateAccumulator *accumulator,
 }
 
 void AppendAccumulatorValue(AggregateAccumulator *accumulator,
-                            const Value &value, RuntimeState *state,
+                            const rg::Value &value, RuntimeState *state,
                             std::size_t *reserved_bytes) {
   RG_CHECK(
       accumulator != nullptr && state != nullptr && reserved_bytes != nullptr,
@@ -213,7 +213,7 @@ void AppendAccumulatorValue(AggregateAccumulator *accumulator,
   accumulator->values.push_back(value);
   const std::size_t new_capacity = accumulator->values.capacity();
   const std::size_t bytes =
-      (new_capacity - old_capacity) * sizeof(Value) +
+      (new_capacity - old_capacity) * sizeof(rg::Value) +
       EstimatedStoredValueHeapUsage(accumulator->values.back());
   state->memory_tracker.Reserve(bytes);
   accumulator->values_reserved_bytes += bytes;
@@ -236,7 +236,7 @@ void UpdatePercentileParameter(AggregateAccumulator *accumulator,
     return;
   }
 
-  Value current;
+  rg::Value current;
   try {
     current = Evaluate(*accumulator->percentile_argument, row,
                        accumulator->item->expression.PrecomputedExpressions(),
@@ -287,7 +287,7 @@ void UpdateAggregateAccumulator(AggregateAccumulator *accumulator,
 
   RG_CHECK(accumulator->argument != nullptr, common::ErrorCode::InternalError,
            "aggregate accumulator argument is null");
-  Value value =
+  rg::Value value =
       Evaluate(*accumulator->argument, row,
                accumulator->item->expression.PrecomputedExpressions(), *state);
   if (IsPercentile(*accumulator)) {
@@ -296,7 +296,7 @@ void UpdateAggregateAccumulator(AggregateAccumulator *accumulator,
   if (value.IsNull()) {
     return;
   }
-  const Value *aggregate_value =
+  const rg::Value *aggregate_value =
       DistinctAggregateValue(accumulator, &value, state, reserved_bytes);
   if (aggregate_value == nullptr) {
     return;
@@ -346,8 +346,8 @@ void UpdateAggregateAccumulator(AggregateAccumulator *accumulator,
       const bool minimum =
           accumulator->kind == AggregateAccumulatorKind::kMinimum;
       if (!accumulator->best.has_value() ||
-          (minimum && ValueLess(*aggregate_value, *accumulator->best)) ||
-          (!minimum && ValueLess(*accumulator->best, *aggregate_value))) {
+          (minimum && rg::ValueLess(*aggregate_value, *accumulator->best)) ||
+          (!minimum && rg::ValueLess(*accumulator->best, *aggregate_value))) {
         ReplaceAccumulatorValue(accumulator, *aggregate_value, state,
                                 reserved_bytes);
       }
@@ -370,7 +370,7 @@ void UpdateAggregateAccumulator(AggregateAccumulator *accumulator,
 
 void ReleaseDistinctValues(AggregateAccumulator *accumulator,
                            RuntimeState *state, std::size_t *reserved_bytes) {
-  std::unordered_set<Value, ValueHash, ValueEqual> empty;
+  std::unordered_set<rg::Value, rg::ValueHash, rg::ValueEqual> empty;
   accumulator->distinct_values.swap(empty);
   ReleaseAccumulatorMemory(&accumulator->distinct_reserved_bytes, state,
                            reserved_bytes);
@@ -384,33 +384,35 @@ void ReleaseAccumulatorValues(AggregateAccumulator *accumulator,
                            reserved_bytes);
 }
 
-Value TakeAccumulatorBest(AggregateAccumulator *accumulator,
-                          RuntimeState *state, std::size_t *reserved_bytes) {
+rg::Value TakeAccumulatorBest(AggregateAccumulator *accumulator,
+                              RuntimeState *state,
+                              std::size_t *reserved_bytes) {
   if (!accumulator->best.has_value()) {
-    return Value::Null();
+    return rg::Value::Null();
   }
   const std::size_t bytes = EstimatedStoredValueHeapUsage(*accumulator->best);
-  Value result = std::move(*accumulator->best);
+  rg::Value result = std::move(*accumulator->best);
   accumulator->best.reset();
   state->memory_tracker.Release(bytes);
   *reserved_bytes -= bytes;
   return result;
 }
 
-Value TakeCollectedValues(AggregateAccumulator *accumulator,
-                          RuntimeState *state, std::size_t *reserved_bytes) {
-  Value::List values = std::move(accumulator->values);
+rg::Value TakeCollectedValues(AggregateAccumulator *accumulator,
+                              RuntimeState *state,
+                              std::size_t *reserved_bytes) {
+  rg::Value::List values = std::move(accumulator->values);
   accumulator->values = {};
   ReleaseAccumulatorMemory(&accumulator->values_reserved_bytes, state,
                            reserved_bytes);
-  return Value(std::move(values));
+  return rg::Value(std::move(values));
 }
 
-Value FinalizePercentile(AggregateAccumulator *accumulator, RuntimeState *state,
-                         std::size_t *reserved_bytes) {
+rg::Value FinalizePercentile(AggregateAccumulator *accumulator,
+                             RuntimeState *state, std::size_t *reserved_bytes) {
   if (accumulator->values.empty()) {
     ReleaseAccumulatorValues(accumulator, state, reserved_bytes);
-    return Value::Null();
+    return rg::Value::Null();
   }
   if (accumulator->percentile_error.has_value()) {
     RG_THROW(common::ErrorCode::InvalidParameter,
@@ -418,14 +420,15 @@ Value FinalizePercentile(AggregateAccumulator *accumulator, RuntimeState *state,
   }
   if (accumulator->percentile_null) {
     ReleaseAccumulatorValues(accumulator, state, reserved_bytes);
-    return Value::Null();
+    return rg::Value::Null();
   }
   RG_CHECK(accumulator->percentile.has_value(),
            common::ErrorCode::InternalError,
            "percentile accumulator parameter is missing");
 
-  std::sort(accumulator->values.begin(), accumulator->values.end(), ValueLess);
-  Value result;
+  std::sort(accumulator->values.begin(), accumulator->values.end(),
+            rg::ValueLess);
+  rg::Value result;
   if (accumulator->kind == AggregateAccumulatorKind::kPercentileDiscrete) {
     const double rank =
         std::ceil(*accumulator->percentile *
@@ -439,39 +442,39 @@ Value FinalizePercentile(AggregateAccumulator *accumulator, RuntimeState *state,
                             static_cast<double>(accumulator->values.size() - 1);
     const auto lower = static_cast<std::size_t>(std::floor(position));
     const auto upper = static_cast<std::size_t>(std::ceil(position));
-    result = Value(std::lerp(AsDoubleValue(accumulator->values[lower]),
-                             AsDoubleValue(accumulator->values[upper]),
-                             position - lower));
+    result = rg::Value(std::lerp(AsDoubleValue(accumulator->values[lower]),
+                                 AsDoubleValue(accumulator->values[upper]),
+                                 position - lower));
   }
   ReleaseAccumulatorValues(accumulator, state, reserved_bytes);
   return result;
 }
 
-Value FinalizeAggregateAccumulator(AggregateAccumulator *accumulator,
-                                   RuntimeState *state,
-                                   std::size_t *reserved_bytes) {
+rg::Value FinalizeAggregateAccumulator(AggregateAccumulator *accumulator,
+                                       RuntimeState *state,
+                                       std::size_t *reserved_bytes) {
   RG_CHECK(accumulator != nullptr && accumulator->item != nullptr &&
                state != nullptr && reserved_bytes != nullptr,
            common::ErrorCode::InternalError,
            "aggregate accumulator is incomplete");
-  Value result;
+  rg::Value result;
   switch (accumulator->kind) {
     case AggregateAccumulatorKind::kCountStar:
     case AggregateAccumulatorKind::kCount:
-      result = Value(CheckedCount(accumulator->count));
+      result = rg::Value(CheckedCount(accumulator->count));
       break;
     case AggregateAccumulatorKind::kCollect:
       result = TakeCollectedValues(accumulator, state, reserved_bytes);
       break;
     case AggregateAccumulatorKind::kSum:
-      result = accumulator->integral_sum ? Value(accumulator->integer_sum)
-                                         : Value(accumulator->floating_sum);
+      result = accumulator->integral_sum ? rg::Value(accumulator->integer_sum)
+                                         : rg::Value(accumulator->floating_sum);
       break;
     case AggregateAccumulatorKind::kAverage:
       result = accumulator->count == 0
-                   ? Value::Null()
-                   : Value(accumulator->floating_sum /
-                           static_cast<double>(accumulator->count));
+                   ? rg::Value::Null()
+                   : rg::Value(accumulator->floating_sum /
+                               static_cast<double>(accumulator->count));
       break;
     case AggregateAccumulatorKind::kMinimum:
     case AggregateAccumulatorKind::kMaximum:
@@ -486,24 +489,24 @@ Value FinalizeAggregateAccumulator(AggregateAccumulator *accumulator,
   return result;
 }
 
-int CompareValues(const Value &left, const Value &right) {
-  if (ValuesEqual(left, right)) {
+int CompareValues(const rg::Value &left, const rg::Value &right) {
+  if (rg::ValuesEqual(left, right)) {
     return 0;
   }
-  const bool left_less = ValueLess(left, right);
-  const bool right_less = ValueLess(right, left);
+  const bool left_less = rg::ValueLess(left, right);
+  const bool right_less = rg::ValueLess(right, left);
   if (left_less != right_less) {
     return left_less ? -1 : 1;
   }
   return 0;
 }
 
-std::vector<Value> EvaluateSortKeys(const std::vector<PhysicalSortItem> &items,
-                                    const ExecutionRow &row,
-                                    RuntimeState *state) {
+std::vector<rg::Value> EvaluateSortKeys(
+    const std::vector<PhysicalSortItem> &items, const ExecutionRow &row,
+    RuntimeState *state) {
   RG_CHECK(state != nullptr, common::ErrorCode::InternalError,
            "runtime state is null");
-  std::vector<Value> keys;
+  std::vector<rg::Value> keys;
   keys.reserve(items.size());
   for (const auto &item : items) {
     keys.push_back(Evaluate(item.expression, row, *state));
@@ -511,8 +514,8 @@ std::vector<Value> EvaluateSortKeys(const std::vector<PhysicalSortItem> &items,
   return keys;
 }
 
-bool SortKeysHaveSamePrefix(const std::vector<Value> &left,
-                            const std::vector<Value> &right,
+bool SortKeysHaveSamePrefix(const std::vector<rg::Value> &left,
+                            const std::vector<rg::Value> &right,
                             std::size_t prefix) {
   RG_CHECK(prefix > 0 && prefix <= left.size() && prefix <= right.size(),
            common::ErrorCode::InternalError, "sort prefix is invalid");
@@ -525,9 +528,9 @@ bool SortKeysHaveSamePrefix(const std::vector<Value> &left,
 }
 
 bool SortKeysComeBefore(const std::vector<PhysicalSortItem> &items,
-                        const std::vector<Value> &left,
+                        const std::vector<rg::Value> &left,
                         std::uint64_t left_sequence,
-                        const std::vector<Value> &right,
+                        const std::vector<rg::Value> &right,
                         std::uint64_t right_sequence) {
   RG_CHECK(left.size() == items.size() && right.size() == items.size(),
            common::ErrorCode::InternalError, "sort keys are incomplete");
@@ -544,10 +547,10 @@ bool SortKeysComeBefore(const std::vector<PhysicalSortItem> &items,
 }
 
 std::size_t EstimatedSortEntryHeapUsage(const ExecutionRow &row,
-                                        const std::vector<Value> &keys) {
+                                        const std::vector<rg::Value> &keys) {
   std::size_t bytes =
-      row.EstimatedHeapUsage() + keys.capacity() * sizeof(Value);
-  for (const Value &key : keys) {
+      row.EstimatedHeapUsage() + keys.capacity() * sizeof(rg::Value);
+  for (const rg::Value &key : keys) {
     bytes += EstimatedStoredValueHeapUsage(key);
   }
   return bytes;
@@ -596,9 +599,10 @@ std::int64_t EvaluatePaginationCount(const PhysicalExpression &expression,
                                      std::string_view name) {
   RG_CHECK(state != nullptr, common::ErrorCode::InternalError,
            "runtime state is null");
-  Value value = row != nullptr ? Evaluate(expression, *row, *state)
-                               : EvaluateExpression(*expression.Expression(),
-                                                    state->context);
+  rg::Value value =
+      row != nullptr
+          ? Evaluate(expression, *row, *state)
+          : EvaluateExpression(*expression.Expression(), state->context);
   RG_CHECK(value.IsInteger() && value.AsInteger() >= 0,
            common::ErrorCode::InvalidParameter,
            std::string(name) + " requires a non-negative integer");
@@ -698,7 +702,7 @@ class ProjectionOperator final : public PullOperator {
                  "passthrough projection source offset is missing");
         CopyCellDirect(input, &output, *item.source_offset, item.output_offset);
       } else {
-        Value value = Evaluate(item.expression, input, *state_);
+        rg::Value value = Evaluate(item.expression, input, *state_);
         StoreEvaluatedValue(&output, item.output_offset, std::move(value),
                             *state_);
       }
@@ -1149,7 +1153,7 @@ class UnwindOperator final : public PullOperator {
         Close();
         return false;
       }
-      Value value = Evaluate(data_->expression, input, *state_);
+      rg::Value value = Evaluate(data_->expression, input, *state_);
       if (value.IsNull()) {
         continue;
       }
@@ -1191,7 +1195,7 @@ class UnwindOperator final : public PullOperator {
   RuntimeState *state_ = nullptr;
   std::unique_ptr<PullOperator> source_;
   std::optional<ExecutionRow> input_;
-  std::vector<Value> values_;
+  std::vector<rg::Value> values_;
   std::size_t value_index_ = 0;
   std::size_t reserved_bytes_ = 0;
   bool closed_ = false;
@@ -1226,7 +1230,7 @@ class AssertIsNodeOperator final : public PullOperator {
       return false;
     }
     for (const auto &assertion : data_->nodes) {
-      const Value value = ReadRowValue(*input, assertion.input_offset);
+      const rg::Value value = ReadRowValue(*input, assertion.input_offset);
       RG_CHECK(value.IsNull() || value.IsNode(),
                common::ErrorCode::InvalidParameter,
                "expected node value: " + assertion.variable);
@@ -1321,7 +1325,7 @@ class OrderedDistinctOperator final : public PullOperator {
     ExecutionRow input(node_->children[0]->output_layout);
     while (source_->Next(&input)) {
       state_->CheckCancelled();
-      std::vector<Value> values =
+      std::vector<rg::Value> values =
           EvaluateGroupingValues(data_->grouping_items, input, state_);
       CompositeValueKey key{.values = values};
       if (last_key_.has_value() && CompositeValueKeyEqual{}(*last_key_, key)) {
@@ -1431,7 +1435,7 @@ class HashDistinctOperator final : public PullOperator {
     ExecutionRow input(node_->children[0]->output_layout);
     while (source_->Next(&input)) {
       state_->CheckCancelled();
-      std::vector<Value> values =
+      std::vector<rg::Value> values =
           EvaluateGroupingValues(data_->grouping_items, input, state_);
       auto [key, inserted] = seen.insert(CompositeValueKey{.values = values});
       if (!inserted) {
@@ -1527,7 +1531,7 @@ class HashAggregationOperator final : public PullOperator {
     ExecutionRow input(node_->children[0]->output_layout);
     while (source_->Next(&input)) {
       state_->CheckCancelled();
-      std::vector<Value> values =
+      std::vector<rg::Value> values =
           EvaluateGroupingValues(data_->grouping_items, input, state_);
       auto [group, inserted] = group_indexes.emplace(
           CompositeValueKey{.values = values}, groups.size());
@@ -1757,7 +1761,7 @@ class FullSortOperator final : public PullOperator {
  private:
   struct Entry {
     ExecutionRow row;
-    std::vector<Value> keys;
+    std::vector<rg::Value> keys;
     std::uint64_t sequence = 0;
     std::size_t reserved_bytes = 0;
   };
@@ -1848,7 +1852,7 @@ class PartialSortOperator final : public PullOperator {
  private:
   struct Entry {
     ExecutionRow row;
-    std::vector<Value> keys;
+    std::vector<rg::Value> keys;
     std::uint64_t sequence = 0;
     std::size_t reserved_bytes = 0;
   };
@@ -1976,7 +1980,7 @@ class PartialTopNOperator final : public PullOperator {
  private:
   struct Entry {
     ExecutionRow row;
-    std::vector<Value> keys;
+    std::vector<rg::Value> keys;
     std::uint64_t sequence = 0;
     std::size_t reserved_bytes = 0;
   };
@@ -2247,7 +2251,7 @@ class DeleteOperator final : public PullOperator {
       ExecutionRow output = CopyUnaryOutput(*node_, input);
       BufferRow(std::move(output));
       for (const PhysicalExpression &expression : data_->expressions) {
-        const Value entity = Evaluate(expression, input, *state_);
+        const rg::Value entity = Evaluate(expression, input, *state_);
         if (entity.IsNull()) {
           continue;
         }
@@ -2257,14 +2261,14 @@ class DeleteOperator final : public PullOperator {
         if (entity.IsNode()) {
           node_ids.insert(entity.AsNode().id);
         } else if (entity.IsRelationship()) {
-          const Relationship &relationship = entity.AsRelationship();
+          const rg::Relationship &relationship = entity.AsRelationship();
           relationship_ids.insert(relationship.id);
           graphdb_relationships.insert_or_assign(
               relationship.id,
               RelationshipReference{.id = relationship.id,
                                     .type_id = relationship.type_id});
         } else {
-          const Path &path = entity.AsPath();
+          const rg::Path &path = entity.AsPath();
           for (const auto &node : path.nodes) {
             RG_CHECK(node != nullptr, common::ErrorCode::InternalError,
                      "DELETE path contains a null node");
@@ -2361,7 +2365,7 @@ class TopNOperator final : public PullOperator {
  private:
   struct Entry {
     ExecutionRow row;
-    std::vector<Value> keys;
+    std::vector<rg::Value> keys;
     std::uint64_t sequence = 0;
     std::size_t reserved_bytes = 0;
   };
@@ -2570,4 +2574,4 @@ std::unique_ptr<PullOperator> BuildUnaryOperator(
   }
 }
 
-}  // namespace rg::execution
+}  // namespace runtime::execution

@@ -9,7 +9,7 @@
 #include "ast/expression_to_string.h"
 #include "common/exception.h"
 
-namespace rg {
+namespace runtime {
 namespace {
 
 std::string FormatNumber(double value) {
@@ -153,4 +153,4 @@ std::string PhysicalPlanToString(const PhysicalPlan &plan) {
   return out.str();
 }
 
-}  // namespace rg
+}  // namespace runtime

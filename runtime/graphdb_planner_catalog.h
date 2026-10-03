@@ -11,7 +11,7 @@ namespace graphdb {
 class GraphDB;
 }
 
-namespace rg {
+namespace runtime {
 
 class GraphDBPlannerCatalog final : public planner::PlannerCatalog {
  public:
@@ -29,4 +29,4 @@ class GraphDBPlannerCatalog final : public planner::PlannerCatalog {
   graphdb::GraphDB* graph_ = nullptr;
 };
 
-}  // namespace rg
+}  // namespace runtime

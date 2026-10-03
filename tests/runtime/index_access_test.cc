@@ -61,7 +61,7 @@ std::vector<std::int64_t> VertexIdsByLabels(
   return ids;
 }
 
-std::vector<std::int64_t> ResultIds(const rg::QueryResult& result) {
+std::vector<std::int64_t> ResultIds(const runtime::QueryResult& result) {
   std::vector<std::int64_t> ids;
   for (const auto& row : result.rows) {
     ids.push_back(row.front().AsInteger());
@@ -90,15 +90,15 @@ void WaitForIndexBuild(Getter getter) {
 }  // namespace
 
 TEST(IndexAccessTest, TransactionExposesOneReadWriteView) {
-  rg::test::GraphDBTestDatabase graph;
+  runtime::test::GraphDBTestDatabase graph;
   auto transaction = graph.BeginTransaction();
 
   auto node =
       transaction->CreateVertex({"Person"}, {{"name", rg::Value("Ada")}});
   EXPECT_EQ(node.GetProperty("name"), rg::Value("Ada"));
-  EXPECT_EQ(
-      rg::GraphDBVertexById(*transaction, node.GetId()).GetProperty("name"),
-      rg::Value("Ada"));
+  EXPECT_EQ(runtime::GraphDBVertexById(*transaction, node.GetId())
+                .GetProperty("name"),
+            rg::Value("Ada"));
 
   transaction->Rollback();
   auto verify = graph.BeginTransaction();
@@ -107,7 +107,7 @@ TEST(IndexAccessTest, TransactionExposesOneReadWriteView) {
 }
 
 TEST(IndexAccessTest, TransactionRollsBackOnDestruction) {
-  rg::test::GraphDBTestDatabase graph;
+  runtime::test::GraphDBTestDatabase graph;
   {
     auto transaction = graph.BeginTransaction();
     transaction->CreateVertex({"Temporary"}, {});
@@ -122,7 +122,7 @@ TEST(IndexAccessTest, TransactionRollsBackOnDestruction) {
 }
 
 TEST(IndexAccessTest, MaintainsLabelsAndTypesAcrossMutationsAndRollback) {
-  rg::test::GraphDBTestDatabase graph;
+  runtime::test::GraphDBTestDatabase graph;
   const auto a = graph.CreateNode({"A", "A", "B"});
   const auto b = graph.CreateNode({"B"});
   const auto r = graph.CreateRelationship(a, b, "R");
@@ -137,15 +137,16 @@ TEST(IndexAccessTest, MaintainsLabelsAndTypesAcrossMutationsAndRollback) {
   EXPECT_EQ(EdgeIds(transaction->NewEdgeIterator({"R", "R", "Missing"})),
             (std::vector<std::int64_t>{r->id}));
 
-  auto vertex_a = rg::GraphDBVertexById(*transaction, a->id);
-  auto vertex_b = rg::GraphDBVertexById(*transaction, b->id);
+  auto vertex_a = runtime::GraphDBVertexById(*transaction, a->id);
+  auto vertex_b = runtime::GraphDBVertexById(*transaction, b->id);
   vertex_a.DeleteLabels({"A"});
   vertex_b.AddLabels({"A", "A"});
   vertex_b.AddLabels({"A"});
   EXPECT_EQ(VertexIdsByLabels(*transaction, {"A", "B"}),
             (std::vector<std::int64_t>{b->id}));
 
-  auto relationship = rg::GraphDBEdgeById(*transaction, {r->id, r->type_id});
+  auto relationship =
+      runtime::GraphDBEdgeById(*transaction, {r->id, r->type_id});
   relationship.Delete();
   vertex_a.Delete();
   auto vertex_c = transaction->CreateVertex({"A"}, {});
@@ -169,7 +170,7 @@ TEST(IndexAccessTest, MaintainsLabelsAndTypesAcrossMutationsAndRollback) {
 }
 
 TEST(IndexAccessTest, MaintainsRangeIndexesAcrossWritesAndRollback) {
-  rg::test::GraphDBTestDatabase graph;
+  runtime::test::GraphDBTestDatabase graph;
   const auto a = graph.CreateNode({"N"}, {{"value", rg::Value(10)}});
   const auto b = graph.CreateNode({"N"}, {{"value", rg::Value(20)}});
   const auto r =
@@ -189,9 +190,9 @@ TEST(IndexAccessTest, MaintainsRangeIndexesAcrossWritesAndRollback) {
   EXPECT_EQ(nodes(), (std::vector<std::int64_t>{a->id}));
   EXPECT_EQ(relationships(), (std::vector<std::int64_t>{r->id}));
 
-  auto vertex_a = rg::GraphDBVertexById(*transaction, a->id);
-  auto vertex_b = rg::GraphDBVertexById(*transaction, b->id);
-  auto edge_r = rg::GraphDBEdgeById(*transaction, {r->id, r->type_id});
+  auto vertex_a = runtime::GraphDBVertexById(*transaction, a->id);
+  auto vertex_b = runtime::GraphDBVertexById(*transaction, b->id);
+  auto edge_r = runtime::GraphDBEdgeById(*transaction, {r->id, r->type_id});
   vertex_a.RemoveAllProperty();
   vertex_a.SetProperties({{"value", rg::Value(30)}});
   vertex_b.SetProperties({{"value", rg::Value(12)}});
@@ -240,7 +241,7 @@ TEST(IndexAccessTest, RangeResultsMatchFiltersAcrossValueTypes) {
        Value(rg::Date{2025, 1, 1})}};
 
   for (const auto& values : value_groups) {
-    rg::test::GraphDBTestDatabase graph;
+    runtime::test::GraphDBTestDatabase graph;
     const auto endpoint = graph.CreateNode({});
     for (const auto& value : values) {
       const auto node = graph.CreateNode({"N"}, {{"value", value}});
@@ -250,7 +251,7 @@ TEST(IndexAccessTest, RangeResultsMatchFiltersAcrossValueTypes) {
     graph.AddRelationshipIndex({"R"}, "value");
 
     planner::EmptyPlannerCatalog empty_catalog;
-    rg::GraphDBPlannerCatalog graphdb_catalog(graph.Graph());
+    runtime::GraphDBPlannerCatalog graphdb_catalog(graph.Graph());
     for (const auto& bound : values) {
       for (const auto* op : {"<", "<=", ">", ">="}) {
         for (const auto* pattern : {"(e:N)", "()-[e:R]->()"}) {
@@ -258,16 +259,16 @@ TEST(IndexAccessTest, RangeResultsMatchFiltersAcrossValueTypes) {
                              " WHERE e.value " + op + " $bound RETURN id(e)";
           SCOPED_TRACE(query);
           SCOPED_TRACE(bound.ToString());
-          rg::QueryOptions scan_options;
+          runtime::QueryOptions scan_options;
           scan_options.parameters = {{"bound", bound}};
           scan_options.planner_catalog = &empty_catalog;
-          rg::QueryOptions seek_options;
+          runtime::QueryOptions seek_options;
           seek_options.parameters = {{"bound", bound}};
           seek_options.planner_catalog = &graphdb_catalog;
-          EXPECT_EQ(ResultIds(rg::test::ExecuteQueryAndCommit(graph, query,
-                                                              seek_options)),
-                    ResultIds(rg::test::ExecuteQueryAndCommit(graph, query,
-                                                              scan_options)));
+          EXPECT_EQ(ResultIds(runtime::test::ExecuteQueryAndCommit(
+                        graph, query, seek_options)),
+                    ResultIds(runtime::test::ExecuteQueryAndCommit(
+                        graph, query, scan_options)));
         }
       }
     }
@@ -275,7 +276,7 @@ TEST(IndexAccessTest, RangeResultsMatchFiltersAcrossValueTypes) {
 }
 
 TEST(IndexAccessTest, IntersectsBoundsAndHandlesEmptyRanges) {
-  rg::test::GraphDBTestDatabase graph;
+  runtime::test::GraphDBTestDatabase graph;
   for (int i = 0; i < 30; ++i) {
     graph.CreateNode({"N"}, {{"value", rg::Value(i)}});
   }
@@ -298,15 +299,16 @@ TEST(IndexAccessTest, IntersectsBoundsAndHandlesEmptyRanges) {
 }
 
 TEST(IndexAccessTest, DeletesNodeAndRelationships) {
-  rg::test::GraphDBTestDatabase graph;
+  runtime::test::GraphDBTestDatabase graph;
   const auto a = graph.CreateNode({"N"});
   const auto b = graph.CreateNode({"N"});
   const auto relationship = graph.CreateRelationship(a, b, "R");
 
   auto transaction = graph.BeginTransaction();
-  auto vertex_a = rg::GraphDBVertexById(*transaction, a->id);
+  auto vertex_a = runtime::GraphDBVertexById(*transaction, a->id);
   EXPECT_EQ(vertex_a.Delete(), 1);
-  EXPECT_THROW(rg::GraphDBVertexById(*transaction, a->id), common::Exception);
+  EXPECT_THROW(runtime::GraphDBVertexById(*transaction, a->id),
+               common::Exception);
   EXPECT_TRUE(EdgeIds(transaction->NewEdgeIterator()).empty());
   transaction->Commit();
 
@@ -319,7 +321,7 @@ TEST(IndexAccessTest, DeletesNodeAndRelationships) {
 }
 
 TEST(IndexAccessTest, EnforcesUniqueIndexesOnCreateAndUpdate) {
-  rg::test::GraphDBTestDatabase graph;
+  runtime::test::GraphDBTestDatabase graph;
   const auto first = graph.CreateNode({"N"}, {{"key", rg::Value(1)}});
   const std::string index_name = graph.AddNodeIndex({"N"}, "key", true);
 
@@ -334,13 +336,13 @@ TEST(IndexAccessTest, EnforcesUniqueIndexesOnCreateAndUpdate) {
 
   {
     auto transaction = graph.BeginTransaction();
-    auto second_vertex = rg::GraphDBVertexById(*transaction, second->id);
+    auto second_vertex = runtime::GraphDBVertexById(*transaction, second->id);
     EXPECT_THROW(second_vertex.SetProperties({{"key", rg::Value(1)}}),
                  common::Exception);
     transaction->Rollback();
   }
   auto verify = graph.BeginTransaction();
-  EXPECT_EQ(rg::GraphDBVertexById(*verify, second->id).GetProperty("key"),
+  EXPECT_EQ(runtime::GraphDBVertexById(*verify, second->id).GetProperty("key"),
             rg::Value(2));
   EXPECT_EQ(
       VertexIds(verify->QueryVertexByPropertyIndex(index_name, rg::Value(1))),
@@ -349,17 +351,17 @@ TEST(IndexAccessTest, EnforcesUniqueIndexesOnCreateAndUpdate) {
 
   const auto other = graph.CreateNode({"Other"}, {{"key", rg::Value(1)}});
   auto label_transaction = graph.BeginTransaction();
-  auto other_vertex = rg::GraphDBVertexById(*label_transaction, other->id);
+  auto other_vertex = runtime::GraphDBVertexById(*label_transaction, other->id);
   EXPECT_THROW(other_vertex.AddLabels({"N"}), common::Exception);
   label_transaction->Rollback();
   auto label_verify = graph.BeginTransaction();
-  EXPECT_EQ(rg::GraphDBVertexById(*label_verify, other->id).GetLabels(),
+  EXPECT_EQ(runtime::GraphDBVertexById(*label_verify, other->id).GetLabels(),
             (std::unordered_set<std::string>{"Other"}));
   label_verify->Rollback();
 }
 
 TEST(IndexAccessTest, EnforcesUniqueRelationshipIndexes) {
-  rg::test::GraphDBTestDatabase graph;
+  runtime::test::GraphDBTestDatabase graph;
   const auto a = graph.CreateNode({});
   const auto b = graph.CreateNode({});
   const auto first =
@@ -368,8 +370,8 @@ TEST(IndexAccessTest, EnforcesUniqueRelationshipIndexes) {
 
   {
     auto transaction = graph.BeginTransaction();
-    auto start = rg::GraphDBVertexById(*transaction, a->id);
-    auto end = rg::GraphDBVertexById(*transaction, b->id);
+    auto start = runtime::GraphDBVertexById(*transaction, a->id);
+    auto end = runtime::GraphDBVertexById(*transaction, b->id);
     EXPECT_THROW(
         transaction->CreateEdge(start, end, "R", {{"key", rg::Value(1)}}),
         common::Exception);
@@ -380,7 +382,7 @@ TEST(IndexAccessTest, EnforcesUniqueRelationshipIndexes) {
   {
     auto transaction = graph.BeginTransaction();
     auto second_edge =
-        rg::GraphDBEdgeById(*transaction, {second->id, second->type_id});
+        runtime::GraphDBEdgeById(*transaction, {second->id, second->type_id});
     EXPECT_THROW(second_edge.SetProperties({{"key", rg::Value(1)}}),
                  common::Exception);
     transaction->Rollback();
@@ -392,7 +394,7 @@ TEST(IndexAccessTest, EnforcesUniqueRelationshipIndexes) {
 }
 
 TEST(IndexAccessTest, RejectsUniqueIndexesOverExistingDuplicates) {
-  rg::test::GraphDBTestDatabase graph;
+  runtime::test::GraphDBTestDatabase graph;
   const auto first = graph.CreateNode({"N"}, {{"key", rg::Value(1)}});
   const auto second = graph.CreateNode({"N"}, {{"key", rg::Value(1)}});
   graph.CreateRelationship(first, second, "R", {{"key", rg::Value(1)}});
@@ -420,7 +422,7 @@ TEST(IndexAccessTest, RejectsUniqueIndexesOverExistingDuplicates) {
 }
 
 TEST(IndexAccessTest, UniqueIndexCreationIsAtomicWhenReplacingAnIndex) {
-  rg::test::GraphDBTestDatabase graph;
+  runtime::test::GraphDBTestDatabase graph;
   const auto first = graph.CreateNode({"N"}, {{"key", rg::Value(1)}});
   const auto second = graph.CreateNode({"N"}, {{"key", rg::Value(1)}});
   const std::string index_name = graph.AddNodeIndex({"N"}, "key");
@@ -440,7 +442,7 @@ TEST(IndexAccessTest, UniqueIndexCreationIsAtomicWhenReplacingAnIndex) {
 }
 
 TEST(IndexAccessTest, IndexSchemasRemainDistinct) {
-  rg::test::GraphDBTestDatabase graph;
+  runtime::test::GraphDBTestDatabase graph;
   const auto labeled = graph.CreateNode({"L"}, {{"p", rg::Value(1)}});
   const auto other = graph.CreateNode({"M"}, {{"p\nL", rg::Value(2)}});
   const std::string first_index = graph.AddNodeIndex({"L"}, "p");

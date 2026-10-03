@@ -18,7 +18,7 @@
 #include <unordered_set>
 
 #include "graph_cf.h"
-namespace raft {
+namespace raft_driver {
 class RaftDriver;
 }
 
@@ -47,7 +47,7 @@ class IdGenerator {
   void operator=(const IdGenerator&) = delete;
 
   void Bind(rocksdb::TransactionDB* db, GraphCF* graph_cf);
-  void SetRaftDriver(raft::RaftDriver* raft_driver);
+  void SetRaftDriver(raft_driver::RaftDriver* raft_driver);
   void LoadToken(MetadataType type, const std::string& name, uint32_t id);
   void ApplyMetaRecord(MetadataType type, const rocksdb::Slice& key_suffix,
                        const rocksdb::Slice& value);
@@ -100,7 +100,7 @@ class IdGenerator {
   std::unordered_map<uint32_t, std::string> properties_id_to_name_;
   rocksdb::TransactionDB* db_ = nullptr;
   GraphCF* graph_cf_ = nullptr;
-  raft::RaftDriver* raft_driver_ = nullptr;
+  raft_driver::RaftDriver* raft_driver_ = nullptr;
   std::mutex vid_refill_mutex_;
   std::mutex eid_refill_mutex_;
   std::mutex vertex_label_create_mutex_;

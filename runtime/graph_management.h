@@ -7,7 +7,7 @@
 
 #include "proto/graph_replication.pb.h"
 
-namespace rg {
+namespace runtime {
 
 struct ManagedGraphInfo {
   std::uint64_t id = 0;
@@ -77,4 +77,4 @@ class GraphManagement {
       std::string_view name) = 0;
 };
 
-}  // namespace rg
+}  // namespace runtime
