@@ -19,9 +19,10 @@ class Connection : private boost::asio::noncopyable {
       : io_service_(io_service), socket_(io_service_), has_closed_(false) {}
   boost::asio::ip::tcp::socket& socket() { return socket_; }
   virtual void Close() {
+    if (has_closed_.exchange(true)) return;
     LOG_DEBUG("close conn[id:{}]", conn_id_);
-    socket_.close();
-    has_closed_ = true;
+    boost::system::error_code ec;
+    socket_.close(ec);
   }
   virtual bool has_closed() { return has_closed_; }
   int64_t& conn_id() { return conn_id_; }

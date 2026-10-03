@@ -282,6 +282,10 @@ class RaftDriver {
   eraft::Error TransferLeader(uint64_t node_id);
   meta::RaftNodeInfos GetNodeInfosWithLeader();
   RaftStatus GetRaftStatus();
+  // Run the checkpoint on the apply thread, then read its boundary term on
+  // the Raft thread. The caller must keep this driver alive until completion.
+  std::pair<uint64_t, uint64_t> CaptureSnapshot(
+      std::function<uint64_t()> checkpoint);
 
  private:
   struct ApplyOperation {

@@ -20,6 +20,8 @@ DEFINE_uint32(log_flush_interval, 3,
 DEFINE_string(host, "0.0.0.0", "Host ip");
 DEFINE_uint32(bolt_port, 7687, "Bolt port");
 DEFINE_uint32(raft_port, 7688, "Raft port");
+DEFINE_uint32(http_port, 7689,
+              "HTTP snapshot management port. 0 disables HTTP.");
 DEFINE_uint64(raft_node_id, 1,
               "Local node ID shared by all Raft groups. Must be nonzero and "
               "unique within each cluster.");

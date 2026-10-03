@@ -34,11 +34,21 @@ bool GraphServer::Start() {
 
   auto worker_pool = std::make_shared<bolt::BoltWorkerPool>(
       options_.bolt_worker_thread_num, "bolt-worker-", "bolt");
-  if (!bolt_server_.Start(
-          options_.local_node_options.bolt_port, options_.bolt_io_thread_num,
-          options_.max_bolt_connections,
-          NewBoltHandler(graph_manager_.get(), worker_pool), worker_pool,
-          options_.bolt_max_message_size)) {
+  if (!bolt_server_.Start(options_.local_node_options.bolt_port,
+                          options_.bolt_io_thread_num,
+                          options_.max_bolt_connections,
+                          NewBoltHandler(graph_manager_.get(), worker_pool),
+                          worker_pool, options_.bolt_max_message_size)) {
+    raft_server_.Stop();
+    graph_manager_.reset();
+    return false;
+  }
+
+  if (options_.http_port != 0 &&
+      !http_server_.Start(graph_manager_.get(), options_.data_path,
+                          options_.local_node_options.host,
+                          options_.http_port)) {
+    bolt_server_.Stop();
     raft_server_.Stop();
     graph_manager_.reset();
     return false;
@@ -49,10 +59,12 @@ bool GraphServer::Start() {
 }
 
 bool GraphServer::Started() const {
-  return started_.load() && bolt_server_.Started() && raft_server_.Started();
+  return started_.load() && bolt_server_.Started() && raft_server_.Started() &&
+         (options_.http_port == 0 || http_server_.Started());
 }
 
 void GraphServer::Stop() {
+  http_server_.Stop();
   bolt_server_.Stop();
   raft_server_.Stop();
   graph_manager_.reset();

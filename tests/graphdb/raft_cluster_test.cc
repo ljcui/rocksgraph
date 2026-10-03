@@ -17,6 +17,8 @@
 #include <algorithm>
 #include <atomic>
 #include <boost/asio.hpp>
+#include <boost/beast.hpp>
+#include <boost/json.hpp>
 #include <chrono>
 #include <filesystem>
 #include <functional>
@@ -88,6 +90,46 @@ int32_t AllocateFreePort() {
   boost::asio::ip::tcp::acceptor acceptor(
       service, boost::asio::ip::tcp::endpoint(boost::asio::ip::tcp::v4(), 0));
   return static_cast<int32_t>(acceptor.local_endpoint().port());
+}
+
+boost::json::value SnapshotHttpRequest(
+    uint16_t port, boost::beast::http::verb method, const std::string& path,
+    const boost::json::value& body = boost::json::object{}) {
+  namespace http = boost::beast::http;
+  boost::asio::io_context context;
+  boost::asio::ip::tcp::socket socket(context);
+  socket.connect({boost::asio::ip::make_address("127.0.0.1"), port});
+  http::request<http::string_body> request{method, path, 11};
+  request.set(http::field::host, "127.0.0.1");
+  request.body() = boost::json::serialize(body);
+  request.prepare_payload();
+  http::write(socket, request);
+  boost::beast::flat_buffer buffer;
+  http::response<http::string_body> response;
+  http::read(socket, buffer, response);
+  EXPECT_GE(response.result_int(), 200) << response.body();
+  EXPECT_LT(response.result_int(), 300) << response.body();
+  return boost::json::parse(response.body());
+}
+
+boost::json::value UpdateHttpSnapshot(uint16_t source, uint16_t target,
+                                      const std::string& graph = kGraphName) {
+  namespace http = boost::beast::http;
+  auto task = SnapshotHttpRequest(
+      target, http::verb::post, "/snapshot-updates",
+      {{"address", "127.0.0.1:" + std::to_string(source)}, {"graph", graph}});
+  boost::json::value status;
+  EXPECT_TRUE(WaitUntil(
+      [&] {
+        status = SnapshotHttpRequest(
+            target, http::verb::get,
+            boost::json::value_to<std::string>(task.at("status_url")));
+        return status.at("state") == "succeeded" ||
+               status.at("state") == "failed";
+      },
+      std::chrono::seconds(15)))
+      << boost::json::serialize(status);
+  return status;
 }
 
 struct TestServerConfig {
@@ -1063,6 +1105,97 @@ TEST(RaftCluster, threeServersElectLeaderAndReplicateTransaction) {
   }
 }
 
+TEST(RaftCluster, manualHttpSnapshotRestoresFollowerAndContinuesReplication) {
+  TestServerCluster cluster("testdb_raft_cluster");
+  ASSERT_NO_THROW(cluster.Start());
+  auto leader_index = cluster.WaitForLeaderIndex(std::chrono::seconds(15));
+  ASSERT_TRUE(leader_index);
+  auto follower_index = (*leader_index + 1) % cluster.size();
+  auto* leader = cluster.server(*leader_index);
+  auto* follower = cluster.server(follower_index);
+  {
+    auto graph = leader->graph_manager()->OpenGraph(kGraphName);
+    auto txn = graph->BeginTransaction();
+    txn->CreateVertex({"Item"}, {{"id", Value(1)}});
+    txn->Commit();
+    ASSERT_TRUE(cluster.WaitForApplyIndex(graph->GetRaftApplyIndex()));
+  }
+  follower->graph_manager()->ClearGraph(kGraphName);
+  EXPECT_EQ(cluster.VertexCount(follower_index), 0);
+
+  server::HttpServer source_http, target_http;
+  ASSERT_TRUE(source_http.Start(leader->graph_manager(),
+                                leader->options().data_path, "127.0.0.1", 0));
+  ASSERT_TRUE(target_http.Start(follower->graph_manager(),
+                                follower->options().data_path, "127.0.0.1", 0));
+  auto status = UpdateHttpSnapshot(source_http.Port(), target_http.Port());
+  ASSERT_EQ(status.at("state"), "succeeded") << boost::json::serialize(status);
+  EXPECT_TRUE(status.at("remote_snapshot_deleted").as_bool());
+  ASSERT_TRUE(cluster.WaitForGraphVertexCount(kGraphName, 1));
+  {
+    auto graph = follower->graph_manager()->OpenGraph(kGraphName);
+    auto raft_status = graph->raft_driver()->GetRaftStatus();
+    EXPECT_EQ(raft_status.s.basicStatus_.id_, cluster.node_id(follower_index));
+    EXPECT_GT(raft_status.first_log, 0);
+  }
+  leader = cluster.WaitForLeader(std::chrono::seconds(15));
+  ASSERT_NE(leader, nullptr);
+  {
+    auto graph = leader->graph_manager()->OpenGraph(kGraphName);
+    auto txn = graph->BeginTransaction();
+    txn->CreateVertex({"Item"}, {{"id", Value(2)}});
+    txn->Commit();
+  }
+  ASSERT_TRUE(cluster.WaitForGraphVertexCount(kGraphName, 2))
+      << cluster.StatusSummary();
+  target_http.Stop();
+  source_http.Stop();
+  cluster.StopServer(follower_index);
+  cluster.StartServer(follower_index);
+  EXPECT_TRUE(cluster.WaitForGraphVertexCount(kGraphName, 2))
+      << cluster.StatusSummary();
+}
+
+TEST(RaftCluster, manualHttpSnapshotCanReplaceLeader) {
+  TestServerCluster cluster("testdb_raft_cluster");
+  ASSERT_NO_THROW(cluster.Start());
+  auto leader_index = cluster.WaitForLeaderIndex(std::chrono::seconds(15));
+  ASSERT_TRUE(leader_index);
+  auto* leader = cluster.server(*leader_index);
+  auto* source = cluster.server((*leader_index + 1) % cluster.size());
+  {
+    auto graph = leader->graph_manager()->OpenGraph(kGraphName);
+    auto transaction = graph->BeginTransaction();
+    transaction->CreateVertex({"Item"}, {{"id", Value(1)}});
+    transaction->Commit();
+    ASSERT_TRUE(cluster.WaitForApplyIndex(graph->GetRaftApplyIndex()));
+    ASSERT_EQ(graph->raft_driver()
+                  ->GetRaftStatus()
+                  .s.basicStatus_.softState_.raftState_,
+              eraft::StateLeader);
+  }
+  leader->graph_manager()->ClearGraph(kGraphName);
+  server::HttpServer source_http, target_http;
+  ASSERT_TRUE(source_http.Start(source->graph_manager(),
+                                source->options().data_path, "127.0.0.1", 0));
+  ASSERT_TRUE(target_http.Start(leader->graph_manager(),
+                                leader->options().data_path, "127.0.0.1", 0));
+  auto status = UpdateHttpSnapshot(source_http.Port(), target_http.Port());
+  ASSERT_EQ(status.at("state"), "succeeded") << boost::json::serialize(status);
+  EXPECT_TRUE(status.at("remote_snapshot_deleted").as_bool());
+  ASSERT_TRUE(cluster.WaitForGraphVertexCount(kGraphName, 1));
+  leader = cluster.WaitForLeader(std::chrono::seconds(15));
+  ASSERT_NE(leader, nullptr) << cluster.StatusSummary();
+  {
+    auto graph = leader->graph_manager()->OpenGraph(kGraphName);
+    auto transaction = graph->BeginTransaction();
+    transaction->CreateVertex({"Item"}, {{"id", Value(2)}});
+    transaction->Commit();
+  }
+  EXPECT_TRUE(cluster.WaitForGraphVertexCount(kGraphName, 2))
+      << cluster.StatusSummary();
+}
+
 TEST(RaftCluster, replicatesVertexPropertyIndexDdlAndIndexedWrites) {
   TestServerCluster cluster("testdb_raft_cluster");
   ASSERT_NO_THROW(cluster.Start());
@@ -1530,7 +1663,6 @@ TEST(RaftCluster, followerRejectsGraphWriteProposal) {
   ASSERT_NE(follower, nullptr);
 
   auto follower_graph = follower->graph_manager()->OpenGraph(kGraphName);
-  const auto before_apply_index = follower_graph->GetRaftApplyIndex();
 
   rocksdb::WriteBatch wb;
   ASSERT_TRUE(wb.Put("follower_rejected_key", "value").ok());
@@ -1539,7 +1671,11 @@ TEST(RaftCluster, followerRejectsGraphWriteProposal) {
 
   ASSERT_NE(result.err, nullptr);
   EXPECT_NE(result.err.String().find("not leader"), std::string::npos);
-  EXPECT_EQ(follower_graph->GetRaftApplyIndex(), before_apply_index);
+  // Election no-ops may advance the apply index while this proposal is rejected.
+  std::string value;
+  auto status = follower_graph->raw_db()->Get(
+      rocksdb::ReadOptions(), "follower_rejected_key", &value);
+  EXPECT_TRUE(status.IsNotFound()) << status.ToString();
 }
 
 TEST(RaftCluster, followerTransactionCommitRollsBackLocalWrites) {
@@ -2328,6 +2464,49 @@ TEST(RaftLogStorage, persistsHardStateAndEntriesAcrossReopen) {
     EXPECT_EQ(snapshot.second, eraft::ErrSnapshotTemporarilyUnavailable);
   }
 
+  fs::remove_all(raft_path);
+}
+
+TEST(RaftLogStorage, snapshotBoundaryStartsWithEmptyHardState) {
+  const std::string raft_path = "testdb_raft_snapshot_empty_hardstate";
+  fs::remove_all(raft_path);
+  constexpr uint64_t kSnapshotIndex = 8;
+  constexpr uint64_t kSnapshotTerm = 5;
+  raft::CreateRaftLogStorageFromSnapshot(raft_path, kSnapshotIndex,
+                                         kSnapshotTerm);
+  for (int reopen = 0; reopen < 2; ++reopen) {
+    SCOPED_TRACE(reopen);
+    raftpb::ConfState conf;
+    conf.add_voters(1);
+    conf.add_voters(2);
+    auto storage = OpenRaftLogStorage(raft_path, conf);
+    ASSERT_TRUE(storage->Init());
+    auto [hard_state, conf_state, err] = storage->InitialState();
+    ASSERT_EQ(err, nullptr);
+    EXPECT_TRUE(eraft::IsEmptyHardState(hard_state));
+    EXPECT_EQ(conf_state.SerializeAsString(), conf.SerializeAsString());
+    EXPECT_EQ(storage->FirstIndex().first, kSnapshotIndex + 1);
+    EXPECT_EQ(storage->LastIndex().first, kSnapshotIndex);
+    auto term = storage->Term(kSnapshotIndex);
+    ASSERT_EQ(term.second, nullptr);
+    EXPECT_EQ(term.first, kSnapshotTerm);
+
+    eraft::Config config;
+    config.id_ = 1;
+    config.applied_ = kSnapshotIndex;
+    config.electionTick_ = 10;
+    config.heartbeatTick_ = 1;
+    config.maxInflightMsgs_ = 16;
+    config.storage_ = std::shared_ptr<eraft::Storage>(
+        storage.storage.get(), [](eraft::Storage*) {});
+    auto [node, node_error] = eraft::NewRawNode(config);
+    ASSERT_EQ(node_error, nullptr);
+    auto status = node->GetBasicStatus();
+    EXPECT_EQ(status.hardState_.term(), 0);
+    EXPECT_EQ(status.hardState_.vote(), 0);
+    EXPECT_EQ(status.hardState_.commit(), kSnapshotIndex);
+    EXPECT_EQ(status.applied_, kSnapshotIndex);
+  }
   fs::remove_all(raft_path);
 }
 

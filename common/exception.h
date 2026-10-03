@@ -43,6 +43,9 @@ enum class ErrorCode {
   InternalError,
   QueryCancelled,
   MemoryLimitExceeded,
+  GraphBusy,
+  SnapshotNotFound,
+  TaskNotFound,
 };
 
 [[nodiscard]] const char *ErrorCodeToString(ErrorCode code) noexcept;

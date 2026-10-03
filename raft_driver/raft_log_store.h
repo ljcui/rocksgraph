@@ -3,10 +3,15 @@
 #include <rocksdb/db.h>
 
 #include <boost/noncopyable.hpp>
+#include <cstdint>
+#include <string>
 #include <utility>
 
 #include "etcd_raft/rawnode.h"
 namespace raft {
+void CreateRaftLogStorageFromSnapshot(const std::string& path, uint64_t index,
+                                      uint64_t term);
+
 struct RaftLogStorage : private boost::noncopyable, eraft::Storage {
  public:
   RaftLogStorage(rocksdb::DB* db, rocksdb::ColumnFamilyHandle* log_cf,

@@ -55,6 +55,7 @@ PY
   --host=127.0.0.1 \
   --bolt_port="$bolt_port" \
   --raft_port="$raft_port" \
+  --http_port=0 \
   --log_path="$test_dir/log" \
   --log_level=error >"$test_dir/server.out" 2>&1 &
 server_pid=$!

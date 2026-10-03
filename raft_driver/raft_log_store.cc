@@ -1,7 +1,12 @@
 #include "raft_driver/raft_log_store.h"
 
-#include <boost/endian/conversion.hpp>
+#include <rocksdb/write_batch.h>
 
+#include <boost/endian/conversion.hpp>
+#include <memory>
+#include <vector>
+
+#include "common/exception.h"
 #include "common/logger.h"
 
 namespace raft {
@@ -13,6 +18,33 @@ std::string raft_log_key(uint64_t log_id) {
 }
 
 const char raft_hardstate_key[] = "hardState";
+
+void CreateRaftLogStorageFromSnapshot(const std::string &path, uint64_t index,
+                                      uint64_t term) {
+  rocksdb::Options options;
+  options.create_if_missing = true;
+  options.create_missing_column_families = true;
+  std::vector<rocksdb::ColumnFamilyDescriptor> columns{
+      {rocksdb::kDefaultColumnFamilyName, options}, {"meta", options}};
+  std::vector<rocksdb::ColumnFamilyHandle *> handles;
+  std::unique_ptr<rocksdb::DB> db;
+  auto status = rocksdb::DB::Open(options, path, columns, &handles, &db);
+  RG_CHECK(status.ok(), common::ErrorCode::StorageEngineError,
+           status.ToString());
+  raftpb::Entry boundary;
+  boundary.set_index(index);
+  boundary.set_term(term);
+  rocksdb::WriteBatch batch;
+  batch.Put(handles[0], raft_log_key(index), boundary.SerializeAsString());
+  batch.Put(handles[1], raft_hardstate_key,
+            raftpb::HardState{}.SerializeAsString());
+  rocksdb::WriteOptions write_options;
+  write_options.sync = true;
+  status = db->Write(write_options, &batch);
+  for (auto *handle : handles) db->DestroyColumnFamilyHandle(handle);
+  RG_CHECK(status.ok(), common::ErrorCode::StorageEngineError,
+           status.ToString());
+}
 
 bool RaftLogStorage::Init() {
   std::string value;

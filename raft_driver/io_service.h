@@ -22,13 +22,15 @@ class IOService : private boost::asio::noncopyable {
     boost::system::error_code ec;
     timer_.cancel(ec);
     acceptor_.close(ec);
+    // Drain running callbacks before closing their sockets from this thread.
+    // Otherwise a read-error callback can close the same socket concurrently.
+    io_service_pool_.Stop();
     if (conn_) {
       conn_->Close();
     }
     for (auto &pair : connections_) {
       pair.second->Close();
     }
-    io_service_pool_.Stop();
   }
 
   IOService(boost::asio::io_service &service, int port, int thread_num,

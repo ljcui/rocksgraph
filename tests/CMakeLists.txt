@@ -8,6 +8,8 @@ endfunction()
 rocksgraph_add_test(exception_test common/exception_test.cc RocksGraph::common)
 rocksgraph_add_test(table_printer_test common/table_printer_test.cc
                     RocksGraph::common)
+rocksgraph_add_test(http_test common/http_test.cc RocksGraph::common)
+set_tests_properties(http_test PROPERTIES TIMEOUT 120)
 rocksgraph_add_test(exception_boundary_test bolt/exception_boundary_test.cc
                     RocksGraph::bolt)
 rocksgraph_add_test(bolt_server_test bolt/bolt_server_test.cc RocksGraph::bolt)
@@ -102,6 +104,10 @@ add_test(NAME graphdb_test COMMAND graphdb_test)
 
 rocksgraph_add_test(raft_cluster_test graphdb/raft_cluster_test.cc
                     RocksGraph::server)
+rocksgraph_add_test(http_snapshot_test server/http_snapshot_test.cc
+                    RocksGraph::server)
+set_tests_properties(http_snapshot_test raft_cluster_test PROPERTIES TIMEOUT 120
+                                                                   RUN_SERIAL TRUE)
 
 add_custom_target(
   check-tck

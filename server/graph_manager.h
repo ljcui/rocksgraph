@@ -40,6 +40,12 @@ struct LocalNodeOptions {
   uint64_t raft_node_id = 1;
 };
 
+struct GraphSnapshot {
+  std::string graph;
+  uint64_t index = 0;
+  uint64_t term = 0;
+};
+
 class GraphManager final : public rg::GraphManagement {
  public:
   GraphManager() = default;
@@ -58,6 +64,14 @@ class GraphManager final : public rg::GraphManagement {
                                         const meta::RaftNodeInfos& node_infos);
   graphdb::GraphDB* ClearGraph(const std::string& name);
   void DeleteGraph(const std::string& name);
+  GraphSnapshot CreateSnapshot(const std::string& name,
+                               const std::string& directory);
+  // The caller supplies a checkpoint from this node's leader. Install its data
+  // and Raft boundary while retaining the local node's identity.
+  // Installation moves the checkpoint's data directory into the replacement.
+  void ReplaceGraphFromSnapshot(const std::string& name,
+                                const std::string& directory,
+                                const GraphSnapshot& snapshot);
   const std::unordered_map<std::string, std::shared_ptr<graphdb::GraphDB>>&
   Graphs() {
     return graphs_;

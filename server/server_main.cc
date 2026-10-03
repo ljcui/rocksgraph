@@ -144,6 +144,7 @@ int RunServer() {
        .bolt_worker_thread_num = FLAGS_bolt_worker_thread_num,
        .max_bolt_connections = FLAGS_max_bolt_connections,
        .bolt_max_message_size = FLAGS_bolt_max_message_size,
+       .http_port = FLAGS_http_port,
        .graph_manager_options = {
            .block_cache_size = FLAGS_graph_block_cache,
            .raft_log_block_cache_size = FLAGS_raft_log_block_cache,

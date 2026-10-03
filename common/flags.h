@@ -18,6 +18,7 @@ DECLARE_uint32(log_flush_interval);
 DECLARE_string(host);
 DECLARE_uint32(bolt_port);
 DECLARE_uint32(raft_port);
+DECLARE_uint32(http_port);
 DECLARE_uint64(raft_node_id);
 DECLARE_uint32(bolt_io_thread_num);
 DECLARE_uint32(bolt_worker_thread_num);

@@ -1025,6 +1025,39 @@ RaftStatus RaftDriver::GetRaftStatus() {
   return future.get();
 }
 
+std::pair<uint64_t, uint64_t> RaftDriver::CaptureSnapshot(
+    std::function<uint64_t()> checkpoint) {
+  std::promise<std::pair<uint64_t, uint64_t>> promise;
+  auto future = promise.get_future();
+  auto alive = callback_alive_;
+  manager_->apply_service(shard_id_).post([this, alive,
+                                           checkpoint = std::move(checkpoint),
+                                           &promise]() {
+    try {
+      RG_CHECK(alive->load() && !stopped_.load(),
+               common::ErrorCode::StorageEngineError,
+               "raft driver stopped during snapshot");
+      const auto index = checkpoint();
+      manager_->raft_service(shard_id_).post([this, alive, index, &promise]() {
+        try {
+          RG_CHECK(alive->load() && !stopped_.load(),
+                   common::ErrorCode::StorageEngineError,
+                   "raft driver stopped during snapshot");
+          const auto [term, err] = storage_->Term(index);
+          RG_CHECK(err == nullptr, common::ErrorCode::StorageEngineError,
+                   "snapshot boundary term is unavailable");
+          promise.set_value({index, term});
+        } catch (...) {
+          promise.set_exception(std::current_exception());
+        }
+      });
+    } catch (...) {
+      promise.set_exception(std::current_exception());
+    }
+  });
+  return future.get();
+}
+
 void RaftDriver::CheckAndCompactLog() {
   auto alive = callback_alive_;
   manager_->raft_service(shard_id_).post([this, alive]() mutable {

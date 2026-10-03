@@ -68,6 +68,12 @@ const char *ErrorCodeToString(ErrorCode code) noexcept {
       return "QueryCancelled";
     case ErrorCode::MemoryLimitExceeded:
       return "MemoryLimitExceeded";
+    case ErrorCode::GraphBusy:
+      return "GraphBusy";
+    case ErrorCode::SnapshotNotFound:
+      return "SnapshotNotFound";
+    case ErrorCode::TaskNotFound:
+      return "TaskNotFound";
     default:
       return "Unknown Error Code";
   }
@@ -139,6 +145,12 @@ const char *ErrorCodeDesc(ErrorCode code) noexcept {
       return "Query execution was cancelled.";
     case ErrorCode::MemoryLimitExceeded:
       return "Query memory limit exceeded.";
+    case ErrorCode::GraphBusy:
+      return "Graph is in use.";
+    case ErrorCode::SnapshotNotFound:
+      return "Snapshot was not found.";
+    case ErrorCode::TaskNotFound:
+      return "Task was not found.";
     default:
       return "Unknown Error Code";
   }

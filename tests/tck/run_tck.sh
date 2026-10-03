@@ -32,7 +32,7 @@ if [[ -z "${ROCKSGRAPH_TCK_URI:-}" ]]; then
   "$server_bin" --data_path="$server_tmp/data" \
     --log_path="$server_tmp/log" --query_log_path="$server_tmp/log" \
     --log_level=error --host=127.0.0.1 --bolt_port="$bolt_port" \
-    --raft_port="$raft_port" >"$server_tmp/server.log" 2>&1 &
+    --raft_port="$raft_port" --http_port=0 >"$server_tmp/server.log" 2>&1 &
   server_pid=$!
   export ROCKSGRAPH_TCK_URI="bolt://127.0.0.1:$bolt_port"
   ready=
