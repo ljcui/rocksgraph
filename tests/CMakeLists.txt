@@ -1,15 +1,28 @@
+include(GoogleTest)
+
+add_library(rocksgraph_test_main STATIC test_main.cc)
+target_link_libraries(rocksgraph_test_main PUBLIC GTest::gtest
+                                                  RocksGraph::common)
+
+function(rocksgraph_discover_tests target)
+  gtest_discover_tests(
+    ${target}
+    TEST_PREFIX "${target}." DISCOVERY_TIMEOUT 30
+    PROPERTIES
+    TIMEOUT 120 LABELS "${target}")
+endfunction()
+
 function(rocksgraph_add_test target source library)
   add_executable(${target} ${source})
-  target_link_libraries(${target} PRIVATE GTest::gtest_main ${library})
+  target_link_libraries(${target} PRIVATE rocksgraph_test_main ${library})
   set_target_properties(${target} PROPERTIES BUILD_RPATH "/usr/local/lib")
-  add_test(NAME ${target} COMMAND ${target})
+  rocksgraph_discover_tests(${target})
 endfunction()
 
 rocksgraph_add_test(exception_test common/exception_test.cc RocksGraph::common)
 rocksgraph_add_test(table_printer_test common/table_printer_test.cc
                     RocksGraph::common)
 rocksgraph_add_test(http_test common/http_test.cc RocksGraph::common)
-set_tests_properties(http_test PROPERTIES TIMEOUT 120)
 rocksgraph_add_test(exception_boundary_test bolt/exception_boundary_test.cc
                     RocksGraph::bolt)
 rocksgraph_add_test(bolt_server_test bolt/bolt_server_test.cc RocksGraph::bolt)
@@ -81,12 +94,14 @@ add_test(
 add_test(NAME rg_cli_test
          COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tools/rg_cli_test.sh
                  $<TARGET_FILE:rg-server> $<TARGET_FILE:rg-cli>)
-set_tests_properties(rg_cli_test PROPERTIES TIMEOUT 60)
+set_tests_properties(rg_cli_test PROPERTIES TIMEOUT 60 LABELS "rg_cli_test")
+set_tests_properties(
+  cypher_run_persistence_test PROPERTIES TIMEOUT 120 LABELS
+                                         "cypher_run_persistence_test")
 
 find_package(OpenMP REQUIRED)
 add_executable(
   graphdb_test
-  graphdb/graphdb_test_main.cc
   graphdb/benchmark_test.cc
   graphdb/concurrency_test.cc
   graphdb/ftindex_test.cc
@@ -97,17 +112,16 @@ add_executable(
   graphdb/transaction_test.cc
   graphdb/value_test.cc
   graphdb/vector_index_test.cc)
-target_link_libraries(graphdb_test PRIVATE GTest::gtest RocksGraph::graphdb
-                                           ${ROCKSGRAPH_OPENMP_CXX})
+target_link_libraries(
+  graphdb_test PRIVATE rocksgraph_test_main RocksGraph::graphdb
+                       ${ROCKSGRAPH_OPENMP_CXX})
 set_target_properties(graphdb_test PROPERTIES BUILD_RPATH "/usr/local/lib")
-add_test(NAME graphdb_test COMMAND graphdb_test)
+rocksgraph_discover_tests(graphdb_test)
 
 rocksgraph_add_test(raft_cluster_test graphdb/raft_cluster_test.cc
                     RocksGraph::server)
 rocksgraph_add_test(http_snapshot_test server/http_snapshot_test.cc
                     RocksGraph::server)
-set_tests_properties(http_snapshot_test raft_cluster_test PROPERTIES TIMEOUT 120
-                                                                   RUN_SERIAL TRUE)
 
 add_custom_target(
   check-tck

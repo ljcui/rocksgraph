@@ -272,7 +272,7 @@ class GraphDBTestDatabase final {
     static std::size_t sequence = 0;
     const auto timestamp =
         std::chrono::steady_clock::now().time_since_epoch().count();
-    return std::filesystem::temp_directory_path() /
+    return std::filesystem::current_path() /
            ("rocksgraph_runtime_" + std::to_string(timestamp) + "_" +
             std::to_string(sequence++));
   }

@@ -3,11 +3,9 @@
 #include <rocksdb/cache.h>
 #include <rocksdb/write_batch.h>
 
-#include <array>
 #include <chrono>
 #include <filesystem>
 #include <memory>
-#include <string_view>
 #include <thread>
 
 #include "common/exception.h"
@@ -88,18 +86,6 @@ inline bool WaitUntilPropertyIndexFailed(
 }
 
 namespace testutil {
-
-inline constexpr std::array<std::string_view, 8> kTestDataDirectories = {
-    "testdb",       "cypher_testdb", "temporal_db", "test_graph_manager",
-    "test_ftindex", "testkv",        "varlendb",    "testdb_raft_cluster"};
-
-inline void CleanupTestDataDirectories() {
-  std::error_code ec;
-  for (const auto dir : kTestDataDirectories) {
-    ec.clear();
-    std::filesystem::remove_all(std::filesystem::path(dir), ec);
-  }
-}
 
 inline graphdb::GraphDBOptions NewGraphDBOptions() {
   graphdb::GraphDBOptions options;

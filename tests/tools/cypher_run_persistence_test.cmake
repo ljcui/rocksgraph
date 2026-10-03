@@ -5,7 +5,12 @@ if(NOT DEFINED TEST_DB OR TEST_DB STREQUAL "")
   message(FATAL_ERROR "TEST_DB is required")
 endif()
 
-file(REMOVE_RECURSE "${TEST_DB}")
+# Concurrent CTest invocations must not open or remove each other's database.
+string(
+  RANDOM
+  LENGTH 32
+  ALPHABET 0123456789abcdef test_id)
+set(TEST_DB "${TEST_DB}_${test_id}")
 
 execute_process(
   COMMAND "${CYPHER_RUN}" "RETURN 1"
@@ -44,8 +49,7 @@ endif()
 if(NOT read_result EQUAL 0)
   message(
     FATAL_ERROR
-      "cypher_run MATCH failed (${read_result})\n${read_output}\n${read_error}"
-  )
+      "cypher_run MATCH failed (${read_result})\n${read_output}\n${read_error}")
 endif()
 if(NOT read_output MATCHES "name[\r\n]+\"Ada\"")
   message(FATAL_ERROR "unexpected cypher_run output:\n${read_output}")
