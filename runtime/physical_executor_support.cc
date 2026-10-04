@@ -68,7 +68,11 @@ RuntimeState::RuntimeState(graphdb::Transaction *graphdb_transaction,
               .bound_parameters = &bound_parameters,
               .cancellation = cancellation.get(),
               .memory_tracker = &memory_tracker,
-              .clock = ExecutionClock::Start()} {}
+              .clock = ExecutionClock::Start()} {
+  if (options.transaction_time.has_value()) {
+    context.clock.transaction_time = *options.transaction_time;
+  }
+}
 
 void RuntimeState::CheckCancelled() const { context.CheckCancelled(); }
 

@@ -125,7 +125,12 @@ void BoltConnection::Start() {
                        std::placeholders::_1));
 }
 
-void BoltConnection::Close() { Connection::Close(); }
+void BoltConnection::Close() {
+  Connection::Close();
+  if (!close_notified_.exchange(true) && close_handler_) {
+    close_handler_();
+  }
+}
 
 void BoltConnection::PostClose() {
   io_service().post([self = shared_from_this()] { self->Close(); });

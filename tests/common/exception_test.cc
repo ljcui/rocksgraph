@@ -46,6 +46,12 @@ TEST(ExceptionTest, ThrowUsesDefaultDescription) {
 }
 
 TEST(ExceptionTest, ErrorCodesHaveDescriptions) {
+  EXPECT_STREQ(
+      common::ErrorCodeToString(common::ErrorCode::WriteInReadOnlyTransaction),
+      "WriteInReadOnlyTransaction");
+  EXPECT_STREQ(
+      common::ErrorCodeDesc(common::ErrorCode::WriteInReadOnlyTransaction),
+      "Write query is not allowed in a read-only transaction.");
   EXPECT_STREQ(common::ErrorCodeToString(common::ErrorCode::NotLeader),
                "NotLeader");
   EXPECT_STREQ(common::ErrorCodeDesc(common::ErrorCode::RaftUnavailable),

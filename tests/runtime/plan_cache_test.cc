@@ -198,4 +198,46 @@ TEST(PlanCacheTest, GraphCatalogVersionInvalidatesPlansAfterIndexChanges) {
   EXPECT_EQ(stats.entries, 3U);
 }
 
+TEST(PlanCacheTest, ValidatesAccessModeOnEveryExecution) {
+  runtime::test::GraphDBTestDatabase graph;
+  runtime::PlanCache cache(8);
+  runtime::QueryOptions options;
+  options.plan_cache = &cache;
+  constexpr std::string_view kQuery = "CREATE (:Guarded)";
+  (void)runtime::test::ExecuteGraphDBQueryAndCommit(graph.Graph(), kQuery,
+                                                    options);
+  options.execution.read_only = true;
+  RG_EXPECT_ERROR((void)runtime::test::ExecuteGraphDBQueryAndCommit(
+                      graph.Graph(), kQuery, options),
+                  common::ErrorCode::WriteInReadOnlyTransaction);
+  EXPECT_EQ(graph.VertexCount(), 1U);
+  EXPECT_EQ(cache.GetStats().hits, 1U);
+}
+
+TEST(PlanCacheTest,
+     RejectsNonTransactionalProceduresBeforeExecutingCachedPlan) {
+  runtime::test::GraphDBTestDatabase graph;
+  runtime::PlanCache cache(8);
+  runtime::QueryOptions options;
+  options.plan_cache = &cache;
+  constexpr std::string_view kQuery =
+      "CREATE (:Guarded) WITH 1 AS marker "
+      "CALL db.index.createNodeIndex('tx_index', 'Guarded', ['name'], {}) "
+      "RETURN marker";
+  auto transaction = graph.BeginTransaction();
+  // Populate the cache without executing the auto-commit statement.
+  auto cursor = runtime::ExecuteQueryCursor(*transaction, kQuery, options);
+  cursor.reset();
+  transaction->Rollback();
+
+  options.execution.explicit_transaction = true;
+  RG_EXPECT_ERROR((void)runtime::test::ExecuteGraphDBQueryAndCommit(
+                      graph.Graph(), kQuery, options),
+                  common::ErrorCode::Unimplemented);
+  EXPECT_EQ(graph.VertexCount(), 0U);
+  EXPECT_EQ(graph.Graph().meta_info().GetVertexPropertyIndex("tx_index"),
+            nullptr);
+  EXPECT_EQ(cache.GetStats().hits, 1U);
+}
+
 }  // namespace

@@ -48,6 +48,7 @@ enum class ErrorCode {
   TaskNotFound,
   NotLeader,
   RaftUnavailable,
+  WriteInReadOnlyTransaction,
 };
 
 [[nodiscard]] const char *ErrorCodeToString(ErrorCode code) noexcept;

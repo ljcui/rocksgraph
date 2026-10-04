@@ -101,6 +101,11 @@ struct QueryExecutionOptions {
   std::size_t memory_limit_bytes = std::numeric_limits<std::size_t>::max();
   GraphManagement *graph_management = nullptr;
   bool system_database = false;
+  bool read_only = false;
+  // Current mutating procedures perform schema/administrative changes outside
+  // the data transaction and must only run in auto-commit mode.
+  bool explicit_transaction = false;
+  std::optional<std::chrono::system_clock::time_point> transaction_time;
 };
 
 struct ExecutionClock {

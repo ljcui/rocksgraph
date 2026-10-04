@@ -20,6 +20,8 @@ TEST(BoltServerTest, PostCloseRunsOnConnectionIOService) {
       io_service,
       [](bolt::BoltConnection&, bolt::BoltMsg, std::vector<std::any>) {});
   conn->socket().open(boost::asio::ip::tcp::v4());
+  std::atomic<int> close_notifications{0};
+  conn->SetCloseHandler([&close_notifications] { ++close_notifications; });
 
   std::thread worker([conn] {
     conn->PostClose();
@@ -29,9 +31,11 @@ TEST(BoltServerTest, PostCloseRunsOnConnectionIOService) {
 
   EXPECT_TRUE(conn->socket().is_open());
   EXPECT_FALSE(conn->has_closed());
+  EXPECT_EQ(close_notifications.load(), 0);
   EXPECT_EQ(io_service.poll(), 2);
   EXPECT_FALSE(conn->socket().is_open());
   EXPECT_TRUE(conn->has_closed());
+  EXPECT_EQ(close_notifications.load(), 1);
 }
 
 TEST(BoltServerTest, ClosesInsteadOfDispatchingMalformedMessage) {

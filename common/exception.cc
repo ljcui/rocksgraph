@@ -78,6 +78,8 @@ const char *ErrorCodeToString(ErrorCode code) noexcept {
       return "NotLeader";
     case ErrorCode::RaftUnavailable:
       return "RaftUnavailable";
+    case ErrorCode::WriteInReadOnlyTransaction:
+      return "WriteInReadOnlyTransaction";
     default:
       return "Unknown Error Code";
   }
@@ -159,6 +161,8 @@ const char *ErrorCodeDesc(ErrorCode code) noexcept {
       return "This node is not the Raft leader.";
     case ErrorCode::RaftUnavailable:
       return "Raft is temporarily unavailable.";
+    case ErrorCode::WriteInReadOnlyTransaction:
+      return "Write query is not allowed in a read-only transaction.";
     default:
       return "Unknown Error Code";
   }

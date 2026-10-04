@@ -3,6 +3,8 @@
 #include <atomic>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -10,6 +12,7 @@
 
 #include "bolt/messages.h"
 #include "bolt/pack_stream.h"
+#include "runtime/execution_context.h"
 #include "value/value.h"
 
 namespace graphdb {
@@ -51,8 +54,28 @@ struct ActiveBoltQuery {
   bool transaction_closed = false;
 };
 
+struct ActiveBoltTransaction {
+  ~ActiveBoltTransaction();
+  void Commit();
+  void Rollback() noexcept;
+
+  std::string graph_name;
+  bool read_only = false;
+  std::optional<std::uint64_t> raft_term;
+  std::chrono::system_clock::time_point transaction_time =
+      std::chrono::system_clock::now();
+  std::shared_ptr<graphdb::GraphDB> graph_db;
+  std::unique_ptr<graphdb::Transaction> transaction;
+  // These cursors borrow transaction; release every cursor before closing it.
+  std::map<int64_t, std::unique_ptr<ActiveBoltQuery>> queries;
+  int64_t next_query_id = 0;
+};
+
 struct BoltSession {
-  void RequestInterrupt() { remaining_interrupts.fetch_add(1); }
+  void RequestInterrupt() {
+    remaining_interrupts.fetch_add(1);
+    cancellation.load()->Cancel();
+  }
 
   bool HasInterrupt() const { return remaining_interrupts.load() != 0; }
 
@@ -67,6 +90,9 @@ struct BoltSession {
   }
 
   std::unique_ptr<ActiveBoltQuery> active_query;
+  std::unique_ptr<ActiveBoltTransaction> active_transaction;
+  std::atomic<std::shared_ptr<runtime::QueryCancellationToken>> cancellation{
+      std::make_shared<runtime::QueryCancellationToken>()};
   PackStream ps;
   std::string user;
   SessionState state;

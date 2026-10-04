@@ -51,7 +51,8 @@ void ActiveBoltQuery::Commit() {
 
 void ActiveBoltQuery::Rollback() noexcept {
   result.reset();
-  if (transaction && !transaction_closed) {
+  if (transaction && !transaction_closed &&
+      transaction->GetState() == graphdb::Transaction::State::kActive) {
     try {
       transaction->Rollback();
     } catch (const std::exception& e) {
@@ -60,6 +61,32 @@ void ActiveBoltQuery::Rollback() noexcept {
       LOG_WARN("bolt active query rollback failed with unknown exception");
     }
     transaction_closed = true;
+  }
+  transaction.reset();
+}
+
+ActiveBoltTransaction::~ActiveBoltTransaction() { Rollback(); }
+
+void ActiveBoltTransaction::Commit() {
+  RG_CHECK(queries.empty(), common::ErrorCode::InternalError,
+           "cannot commit a Bolt transaction with open cursors");
+  if (transaction) {
+    transaction->Commit();
+    transaction.reset();
+  }
+}
+
+void ActiveBoltTransaction::Rollback() noexcept {
+  queries.clear();
+  if (transaction &&
+      transaction->GetState() == graphdb::Transaction::State::kActive) {
+    try {
+      transaction->Rollback();
+    } catch (const std::exception& e) {
+      LOG_WARN("bolt transaction rollback failed: {}", e.what());
+    } catch (...) {
+      LOG_WARN("bolt transaction rollback failed with unknown exception");
+    }
   }
   transaction.reset();
 }
@@ -473,10 +500,14 @@ static void FlushSessionBuffer(const std::shared_ptr<BoltConnection>& conn,
   session->ps.Reset();
 }
 
-static void AbortActiveQuery(BoltSession* session) {
+static void AbortSession(BoltSession* session) {
   if (session->active_query) {
     session->active_query->Rollback();
     session->active_query.reset();
+  }
+  if (session->active_transaction) {
+    session->active_transaction->Rollback();
+    session->active_transaction.reset();
   }
   session->ps.Reset();
 }
@@ -549,6 +580,9 @@ static void PostFailure(const std::shared_ptr<BoltConnection>& conn,
     case common::ErrorCode::NoSuchGraph:
       bolt_code = "Neo.ClientError.Database.DatabaseNotFound";
       break;
+    case common::ErrorCode::WriteInReadOnlyTransaction:
+      bolt_code = "Neo.ClientError.Statement.AccessMode";
+      break;
     default:
       break;
   }
@@ -557,14 +591,15 @@ static void PostFailure(const std::shared_ptr<BoltConnection>& conn,
   conn->PostResponse(std::move(ps.MutableBuffer()));
 }
 
-static bool InterruptedOrClosed(const std::shared_ptr<BoltConnection>& conn,
-                                BoltSession* session) {
+static bool IgnoreInterruptedOrClosedRequest(
+    const std::shared_ptr<BoltConnection>& conn, BoltSession* session) {
   if (conn->has_closed()) {
     LOG_INFO("The bolt connection is closed, cancel the op execution.");
     return true;
   }
   if (IsSessionInterrupted(session)) {
     LOG_INFO("The bolt session is interrupted, cancel the op execution.");
+    PostIgnored(conn);
     return true;
   }
   return false;
@@ -573,7 +608,10 @@ static bool InterruptedOrClosed(const std::shared_ptr<BoltConnection>& conn,
 static void FailSession(const std::shared_ptr<BoltConnection>& conn,
                         BoltSession* session, common::ErrorCode code,
                         const std::string& msg) {
-  AbortActiveQuery(session);
+  AbortSession(session);
+  if (IgnoreInterruptedOrClosedRequest(conn, session)) {
+    return;
+  }
   PostFailure(conn, code, msg);
   session->state = SessionState::FAILED;
 }
@@ -582,7 +620,7 @@ static void CloseProtocolError(const std::shared_ptr<BoltConnection>& conn,
                                BoltSession* session, BoltMsg type) {
   LOG_ERROR("Unexpected msg:{} in {} state, close the connection",
             ToString(type), SessionStateName(session->state));
-  AbortActiveQuery(session);
+  AbortSession(session);
   session->state = SessionState::DEFUNCT;
   conn->PostClose();
 }
@@ -722,8 +760,162 @@ static void ProcessRoute(GraphManager* graph_manager,
   }
 }
 
-static int64_t ExtractPullOrDiscardN(BoltMsg type,
-                                     const std::vector<std::any>& fields) {
+using BoltMetadata = std::unordered_map<std::string, std::any>;
+
+struct TransactionMetadata {
+  std::string graph;
+  bool read_only = false;
+};
+
+static TransactionMetadata ParseTransactionMetadata(
+    const BoltMetadata& extra,
+    std::string_view default_graph = kDefaultDatabaseName,
+    bool default_read_only = false) {
+  TransactionMetadata metadata{std::string(default_graph), default_read_only};
+  if (const auto iter = extra.find("db"); iter != extra.end()) {
+    const auto* db = std::any_cast<std::string>(&iter->second);
+    RG_CHECK(db != nullptr, common::ErrorCode::InputError,
+             "db metadata should be a string");
+    if (!db->empty()) {
+      metadata.graph = *db;
+    }
+  }
+  if (const auto iter = extra.find("mode"); iter != extra.end()) {
+    const auto* mode = std::any_cast<std::string>(&iter->second);
+    RG_CHECK(mode != nullptr && (*mode == "r" || *mode == "w"),
+             common::ErrorCode::InputError,
+             "mode metadata should be 'r' or 'w'");
+    metadata.read_only = *mode == "r";
+  }
+  if (const auto iter = extra.find("bookmarks"); iter != extra.end()) {
+    const auto* bookmarks = std::any_cast<std::vector<std::any>>(&iter->second);
+    RG_CHECK(bookmarks != nullptr, common::ErrorCode::InputError,
+             "bookmarks metadata should be a list");
+    for (const auto& bookmark : *bookmarks) {
+      RG_CHECK(std::any_cast<std::string>(&bookmark) != nullptr,
+               common::ErrorCode::InputError,
+               "bookmarks should contain strings");
+    }
+    RG_CHECK(bookmarks->empty(), common::ErrorCode::Unimplemented,
+             "Bolt bookmarks are not supported");
+  }
+  if (const auto iter = extra.find("imp_user"); iter != extra.end()) {
+    RG_CHECK(!iter->second.has_value(), common::ErrorCode::Unimplemented,
+             "Bolt user impersonation is not supported");
+  }
+  if (const auto iter = extra.find("tx_timeout"); iter != extra.end()) {
+    const auto* timeout = std::any_cast<int64_t>(&iter->second);
+    RG_CHECK(timeout != nullptr && *timeout >= 0, common::ErrorCode::InputError,
+             "tx_timeout metadata should be a non-negative integer");
+    RG_CHECK(*timeout == 0, common::ErrorCode::Unimplemented,
+             "Bolt transaction timeouts are not supported");
+  }
+  if (const auto iter = extra.find("tx_metadata"); iter != extra.end()) {
+    RG_CHECK(std::any_cast<BoltMetadata>(&iter->second) != nullptr,
+             common::ErrorCode::InputError,
+             "tx_metadata metadata should be a map");
+  }
+  return metadata;
+}
+
+static std::optional<uint64_t> CheckGraphLeader(
+    graphdb::GraphDB& graph_db, const std::string& graph, bool read_only,
+    std::optional<uint64_t> transaction_term = std::nullopt) {
+  auto* driver = graph_db.raft_driver();
+  if (driver == nullptr) {
+    return std::nullopt;
+  }
+  const auto status = driver->GetRaftStatus();
+  const auto& basic = status.s.basicStatus_;
+  // NotALeader invalidates writers in the driver pool. DatabaseUnavailable
+  // also invalidates stale readers, so both modes refresh their routing table.
+  const auto code = read_only ? common::ErrorCode::RaftUnavailable
+                              : common::ErrorCode::NotLeader;
+  RG_CHECK(basic.softState_.raftState_ == eraft::StateLeader &&
+               basic.softState_.lead_ == basic.id_,
+           code, "this node is not the leader for graph [{}]", graph);
+  RG_CHECK(!transaction_term.has_value() ||
+               *transaction_term == basic.hardState_.term(),
+           code, "leadership changed during transaction for graph [{}]", graph);
+  return basic.hardState_.term();
+}
+
+static void CheckTransactionLeader(const ActiveBoltTransaction& transaction) {
+  if (transaction.graph_db) {
+    (void)CheckGraphLeader(*transaction.graph_db, transaction.graph_name,
+                           transaction.read_only, transaction.raft_term);
+  }
+}
+
+static void ProcessBegin(GraphManager* graph_manager,
+                         const std::shared_ptr<BoltConnection>& conn,
+                         BoltSession* session,
+                         const std::vector<std::any>& fields) {
+  try {
+    RG_CHECK(fields.size() == 1, common::ErrorCode::InputError,
+             "BEGIN requires one metadata map");
+    const auto* extra = std::any_cast<BoltMetadata>(&fields[0]);
+    RG_CHECK(extra != nullptr, common::ErrorCode::InputError,
+             "BEGIN metadata should be a map");
+    const auto metadata = ParseTransactionMetadata(*extra);
+    auto transaction = std::make_unique<ActiveBoltTransaction>();
+    transaction->graph_name = metadata.graph;
+    transaction->read_only = metadata.read_only;
+    if (metadata.graph != kSystemDatabaseName) {
+      transaction->graph_db = graph_manager->OpenGraph(metadata.graph);
+      transaction->raft_term = CheckGraphLeader(
+          *transaction->graph_db, metadata.graph, metadata.read_only);
+      transaction->transaction = transaction->graph_db->BeginTransaction();
+    }
+    if (IgnoreInterruptedOrClosedRequest(conn, session)) {
+      return;
+    }
+    session->active_transaction = std::move(transaction);
+    session->state = SessionState::TX_READY;
+    PostSuccess(conn);
+  } catch (const common::Exception& e) {
+    FailSession(conn, session, e.code(), e.message());
+  } catch (const std::exception& e) {
+    FailSession(conn, session, common::ErrorCode::UnknownError, e.what());
+  }
+}
+
+static void ProcessCommitOrRollback(const std::shared_ptr<BoltConnection>& conn,
+                                    BoltSession* session, BoltMsg type,
+                                    const std::vector<std::any>& fields) {
+  try {
+    RG_CHECK(fields.empty(), common::ErrorCode::InputError,
+             "{} takes no fields", ToString(type));
+    RG_CHECK(session->active_transaction != nullptr,
+             common::ErrorCode::InternalError,
+             "Bolt transaction state requires an active transaction");
+    if (IgnoreInterruptedOrClosedRequest(conn, session)) {
+      AbortSession(session);
+      return;
+    }
+    if (type == BoltMsg::Commit) {
+      CheckTransactionLeader(*session->active_transaction);
+      session->active_transaction->Commit();
+    } else {
+      session->active_transaction->Rollback();
+    }
+    session->active_transaction.reset();
+    session->state = SessionState::READY;
+    PostSuccess(conn);
+  } catch (const common::Exception& e) {
+    FailSession(conn, session, e.code(), e.message());
+  } catch (const std::exception& e) {
+    FailSession(conn, session, common::ErrorCode::UnknownError, e.what());
+  }
+}
+
+struct PullOrDiscardMetadata {
+  int64_t n;
+  int64_t qid = -1;
+};
+
+static PullOrDiscardMetadata ExtractPullOrDiscardMetadata(
+    BoltMsg type, const std::vector<std::any>& fields) {
   if (fields.size() != 1) {
     RG_THROW(common::ErrorCode::InputError,
              "{} msg fields size error, size: {}", bolt::ToString(type),
@@ -745,30 +937,53 @@ static int64_t ExtractPullOrDiscardN(BoltMsg type,
     RG_THROW(common::ErrorCode::InputError, "{} n should be an integer",
              bolt::ToString(type));
   }
-  if (*n == 0) {
-    RG_THROW(common::ErrorCode::InputError, "{} n should not be 0",
+  RG_CHECK(*n == -1 || *n > 0, common::ErrorCode::InputError,
+           "{} n should be -1 or a positive integer", bolt::ToString(type));
+  PullOrDiscardMetadata result{.n = *n};
+  if (const auto qid_iter = metadata->find("qid");
+      qid_iter != metadata->end()) {
+    const auto* qid = std::any_cast<int64_t>(&qid_iter->second);
+    RG_CHECK(qid != nullptr && *qid >= -1, common::ErrorCode::InputError,
+             "{} qid should be -1 or a non-negative integer",
              bolt::ToString(type));
+    result.qid = *qid;
   }
-  return *n;
+  return result;
 }
 
 static void ProcessPullOrDiscard(const std::shared_ptr<BoltConnection>& conn,
                                  BoltSession* session, BoltMsg type,
                                  const std::vector<std::any>& fields) {
   try {
-    if (!session->active_query || !session->active_query->result) {
-      RG_THROW(common::ErrorCode::InputError,
-               "{} requires an active result stream", bolt::ToString(type));
+    const auto metadata = ExtractPullOrDiscardMetadata(type, fields);
+    auto* transaction = session->active_transaction.get();
+    auto* active_query = session->active_query.get();
+    int64_t qid = metadata.qid;
+    if (transaction != nullptr) {
+      CheckTransactionLeader(*transaction);
+      if (qid == -1) {
+        qid = transaction->next_query_id - 1;
+      }
+      const auto iter = transaction->queries.find(qid);
+      RG_CHECK(
+          iter != transaction->queries.end(), common::ErrorCode::InputError,
+          "{} refers to an unknown result stream [{}]", ToString(type), qid);
+      active_query = iter->second.get();
+    } else {
+      RG_CHECK(qid == -1, common::ErrorCode::InputError,
+               "auto-commit results do not have a qid");
     }
+    RG_CHECK(active_query != nullptr && active_query->result != nullptr,
+             common::ErrorCode::InputError,
+             "{} requires an active result stream", ToString(type));
 
-    const int64_t n = ExtractPullOrDiscardN(type, fields);
+    const int64_t n = metadata.n;
     const bool unlimited = n < 0;
     int64_t remaining = n;
-    auto* active_query = session->active_query.get();
 
     while (unlimited || remaining > 0) {
-      if (InterruptedOrClosed(conn, session)) {
-        AbortActiveQuery(session);
+      if (IgnoreInterruptedOrClosedRequest(conn, session)) {
+        AbortSession(session);
         return;
       }
 
@@ -802,9 +1017,14 @@ static void ProcessPullOrDiscard(const std::shared_ptr<BoltConnection>& conn,
       }
     }
 
+    if (IgnoreInterruptedOrClosedRequest(conn, session)) {
+      AbortSession(session);
+      return;
+    }
     if (active_query->buffered_row.has_value()) {
       session->ps.AppendSuccessHasMore(true);
-      session->state = SessionState::STREAMING;
+      session->state = transaction != nullptr ? SessionState::TX_STREAMING
+                                              : SessionState::STREAMING;
       FlushSessionBuffer(conn, session);
       return;
     }
@@ -813,9 +1033,20 @@ static void ProcessPullOrDiscard(const std::shared_ptr<BoltConnection>& conn,
                                                active_query->start_time);
     auto graph_name = active_query->graph_name;
     auto cypher = active_query->cypher;
-    active_query->Commit();
-    session->active_query.reset();
-    session->state = SessionState::READY;
+    if (IgnoreInterruptedOrClosedRequest(conn, session)) {
+      AbortSession(session);
+      return;
+    }
+    if (transaction != nullptr) {
+      transaction->queries.erase(qid);
+      session->state = transaction->queries.empty()
+                           ? SessionState::TX_READY
+                           : SessionState::TX_STREAMING;
+    } else {
+      active_query->Commit();
+      session->active_query.reset();
+      session->state = SessionState::READY;
+    }
     session->ps.AppendSuccess();
     FlushSessionBuffer(conn, session);
     LOG_DEBUG("Cypher execution completed");
@@ -850,18 +1081,19 @@ static void ProcessRun(GraphManager* graph_manager,
                fields[2].type().name());
     }
 
-    std::string graph;
-    auto db_iter = extra->find("db");
-    if (db_iter != extra->end()) {
-      auto* db = std::any_cast<std::string>(&db_iter->second);
-      if (db == nullptr) {
-        RG_THROW(common::ErrorCode::InputError,
-                 "Run msg db metadata should be a string");
-      }
-      graph = *db;
-    }
-    if (graph.empty()) {
-      graph = kDefaultDatabaseName;
+    auto* transaction = session->active_transaction.get();
+    const auto metadata = ParseTransactionMetadata(
+        *extra,
+        transaction != nullptr ? transaction->graph_name : kDefaultDatabaseName,
+        transaction != nullptr && transaction->read_only);
+    const auto& graph = metadata.graph;
+    if (transaction != nullptr) {
+      RG_CHECK(
+          graph == transaction->graph_name &&
+              metadata.read_only == transaction->read_only,
+          common::ErrorCode::InputError,
+          "RUN cannot change the database or access mode of a transaction");
+      CheckTransactionLeader(*transaction);
     }
     const bool system_database = graph == kSystemDatabaseName;
 
@@ -871,6 +1103,12 @@ static void ProcessRun(GraphManager* graph_manager,
     active_query->start_time = steady_clock::now();
     runtime::QueryOptions query_options;
     query_options.plan_cache = &graph_manager->GetPlanCache();
+    query_options.execution.cancellation = session->cancellation.load();
+    query_options.execution.read_only = metadata.read_only;
+    query_options.execution.explicit_transaction = transaction != nullptr;
+    if (transaction != nullptr) {
+      query_options.execution.transaction_time = transaction->transaction_time;
+    }
     for (const auto& [name, value] : *params) {
       query_options.parameters.emplace(name, ConvertParameter(value));
     }
@@ -878,27 +1116,15 @@ static void ProcessRun(GraphManager* graph_manager,
     if (system_database) {
       active_query->result = runtime::ExecuteSystemQueryCursor(
           *graph_manager, active_query->cypher, std::move(query_options));
+    } else if (transaction != nullptr) {
+      active_query->result = runtime::ExecuteQueryCursor(
+          *transaction->transaction, active_query->cypher,
+          std::move(query_options));
     } else {
       active_query->graph_db = graph_manager->OpenGraph(graph);
       if (session->routing_enabled) {
-        if (auto* driver = active_query->graph_db->raft_driver()) {
-          const auto status = driver->GetRaftStatus();
-          const auto mode_iter = extra->find("mode");
-          const auto* mode =
-              mode_iter == extra->end()
-                  ? nullptr
-                  : std::any_cast<std::string>(&mode_iter->second);
-          // NotALeader invalidates only writers in the Python driver's pool.
-          // A stale reader must invalidate its connection as well.
-          const auto code = mode != nullptr && *mode == "r"
-                                ? common::ErrorCode::RaftUnavailable
-                                : common::ErrorCode::NotLeader;
-          RG_CHECK(status.s.basicStatus_.softState_.raftState_ ==
-                           eraft::StateLeader &&
-                       status.s.basicStatus_.softState_.lead_ ==
-                           status.s.basicStatus_.id_,
-                   code, "this node is not the leader for graph [{}]", graph);
-        }
+        (void)CheckGraphLeader(*active_query->graph_db, graph,
+                               metadata.read_only);
       }
       active_query->transaction = active_query->graph_db->BeginTransaction();
       active_query->result = runtime::ExecuteQueryCursor(
@@ -906,11 +1132,27 @@ static void ProcessRun(GraphManager* graph_manager,
           std::move(query_options));
     }
 
+    if (IgnoreInterruptedOrClosedRequest(conn, session)) {
+      active_query.reset();
+      AbortSession(session);
+      return;
+    }
     bolt::PackStream ps;
-    ps.AppendSuccessFields(active_query->result->Columns());
+    if (transaction != nullptr) {
+      RG_CHECK(transaction->next_query_id < std::numeric_limits<int64_t>::max(),
+               common::ErrorCode::OutOfRange,
+               "too many queries in a Bolt transaction");
+      const int64_t qid = transaction->next_query_id++;
+      ps.AppendSuccess(
+          {{"fields", active_query->result->Columns()}, {"qid", qid}});
+      transaction->queries.emplace(qid, std::move(active_query));
+      session->state = SessionState::TX_STREAMING;
+    } else {
+      ps.AppendSuccessFields(active_query->result->Columns());
+      session->active_query = std::move(active_query);
+      session->state = SessionState::STREAMING;
+    }
     conn->PostResponse(std::move(ps.MutableBuffer()));
-    session->active_query = std::move(active_query);
-    session->state = bolt::SessionState::STREAMING;
   } catch (const common::Exception& e) {
     LOG_ERROR("{}", e.message());
     FailSession(conn, session, e.code(), e.message());
@@ -924,8 +1166,8 @@ static void ProcessReadyState(GraphManager* graph_manager,
                               const std::shared_ptr<BoltConnection>& conn,
                               BoltSession* session, BoltMsg type,
                               std::vector<std::any>& fields) {
-  if (IsExplicitTransactionRequest(type)) {
-    FailUnsupportedRequest(conn, session, type, "explicit transactions");
+  if (type == BoltMsg::Begin) {
+    ProcessBegin(graph_manager, conn, session, fields);
   } else if (type == bolt::BoltMsg::Route) {
     if (conn->bolt_minor_version() < 3) {
       FailUnsupportedRequest(conn, session, type, "routing before Bolt 4.3");
@@ -949,6 +1191,23 @@ static void ProcessStreamingState(const std::shared_ptr<BoltConnection>& conn,
   }
 }
 
+static void ProcessTransactionState(GraphManager* graph_manager,
+                                    const std::shared_ptr<BoltConnection>& conn,
+                                    BoltSession* session, BoltMsg type,
+                                    std::vector<std::any>& fields) {
+  if (type == BoltMsg::Run) {
+    ProcessRun(graph_manager, conn, session, fields);
+  } else if (session->state == SessionState::TX_STREAMING &&
+             (type == BoltMsg::PullN || type == BoltMsg::DiscardN)) {
+    ProcessPullOrDiscard(conn, session, type, fields);
+  } else if (session->state == SessionState::TX_READY &&
+             (type == BoltMsg::Commit || type == BoltMsg::Rollback)) {
+    ProcessCommitOrRollback(conn, session, type, fields);
+  } else {
+    CloseProtocolError(conn, session, type);
+  }
+}
+
 static void ProcessBoltMessage(GraphManager* graph_manager,
                                const std::shared_ptr<BoltConnection>& conn,
                                BoltSession* session, BoltMsgDetail msg) {
@@ -956,9 +1215,11 @@ static void ProcessBoltMessage(GraphManager* graph_manager,
   auto type = msg.type;
 
   if (IsSessionInterrupted(session)) {
-    AbortActiveQuery(session);
+    AbortSession(session);
     if (IsResetMessage(type)) {
       if (ConsumeSessionInterrupt(session)) {
+        session->cancellation.store(
+            std::make_shared<runtime::QueryCancellationToken>());
         session->state = SessionState::READY;
         PostSuccess(conn);
       } else {
@@ -982,6 +1243,8 @@ static void ProcessBoltMessage(GraphManager* graph_manager,
       break;
     case SessionState::TX_READY:
     case SessionState::TX_STREAMING:
+      ProcessTransactionState(graph_manager, conn, session, type, fields);
+      break;
     case SessionState::DEFUNCT:
       CloseProtocolError(conn, session, type);
       break;
@@ -1009,7 +1272,7 @@ static bool EnqueueSessionMessage(
                                  std::move(msg));
             }
             if (conn->has_closed()) {
-              AbortActiveQuery(context->session.get());
+              AbortSession(context->session.get());
             }
           })) {
     LOG_WARN("failed to schedule bolt session: worker pool is stopped");
@@ -1111,6 +1374,19 @@ BoltHandler NewBoltHandler(GraphManager* graph_manager,
       session->user = *principal;
       session->routing_enabled = val->contains("routing");
       conn.SetContext(context);
+      conn.SetCloseHandler(
+          [weak_context = std::weak_ptr<BoltSessionContext>(context),
+           weak_pool = std::weak_ptr<bolt::BoltWorkerPool>(worker_pool)] {
+            if (auto context = weak_context.lock()) {
+              context->session->RequestInterrupt();
+              if (auto pool = weak_pool.lock()) {
+                // The connection pool retains closed connections until its
+                // next sweep. Roll back idle transactions on their strand now.
+                pool->Post(context->strand,
+                           [context] { AbortSession(context->session.get()); });
+              }
+            }
+          });
       bolt::PackStream ps;
       ps.AppendSuccess(meta);
       conn.Respond(std::move(ps.MutableBuffer()));

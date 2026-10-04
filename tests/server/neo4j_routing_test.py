@@ -1,4 +1,4 @@
-"""Exercise Bolt routing with the official driver and a real Raft cluster."""
+"""Exercise Bolt routing and transactions with the official driver and Raft."""
 
 import argparse
 import logging
@@ -127,6 +127,29 @@ class RawBolt:
             raise AssertionError(fields)
         return fields[0]["rt"]
 
+    def success(self, tag, *fields):
+        self.send(tag, *fields)
+        response_tag, response = self.receive()
+        if response_tag != 0x70:
+            raise AssertionError((response_tag, response))
+        return response[0]
+
+    def run(self, query, parameters=None, extra=None):
+        return self.success(0x10, query, parameters or {}, extra or {})
+
+    def stream(self, n=-1, qid=-1, discard=False):
+        extra = {"n": n, "qid": qid}
+        self.send(0x2F if discard else 0x3F, extra)
+        rows = []
+        while True:
+            tag, fields = self.receive()
+            if tag == 0x71:
+                rows.append(fields[0])
+            elif tag == 0x70:
+                return rows, fields[0]
+            else:
+                raise AssertionError((tag, fields))
+
 
 class Neo4jRoutingTest(unittest.TestCase):
     @classmethod
@@ -217,10 +240,12 @@ class Neo4jRoutingTest(unittest.TestCase):
 
     @staticmethod
     def driver(port, scheme="neo4j", host="127.0.0.1", **kwargs):
+        options = {"connection_timeout": 1, "connection_acquisition_timeout": 4,
+                   "max_transaction_retry_time": 0}
+        options.update(kwargs)
         return GraphDatabase.driver(
             f"{scheme}://{host}:{port}", auth=("neo4j", "password"),
-            connection_timeout=1, connection_acquisition_timeout=4,
-            max_transaction_retry_time=0, **kwargs,
+            **options,
         )
 
     @staticmethod
@@ -400,13 +425,256 @@ class Neo4jRoutingTest(unittest.TestCase):
                 pass
             self.assertEqual(self.run_query(reader, "RETURN 3 AS n", read=True), [{"n": 3}])
 
-    def test_09_explicit_transactions_still_report_unsupported(self):
+    def test_09_managed_transaction_apis(self):
         with self.driver(self.members[0]["bolt_port"]) as driver:
-            with self.assertRaises(Neo4jError) as error:
-                driver.execute_query("RETURN 1 AS n", database_="routing_a")
-            self.assertEqual(error.exception.code, "Unimplemented")
+            for graph in ("routing_a", "routing_b", "default"):
+                records, _, keys = driver.execute_query(
+                    "RETURN 1 AS n", database_=graph)
+                self.assertEqual(keys, ["n"])
+                self.assertEqual([record.data() for record in records], [{"n": 1}])
+                with driver.session(database=graph) as session:
+                    self.assertEqual(session.execute_write(
+                        lambda tx: tx.run("CREATE (n:ManagedTx {name: $name}) "
+                                          "RETURN n.name AS name", name=graph).single()["name"]),
+                                     graph)
+                    self.assertEqual(session.execute_read(
+                        lambda tx: tx.run("MATCH (n:ManagedTx {name: $name}) "
+                                          "RETURN n.name AS name", name=graph).single()["name"]),
+                                     graph)
+            records, _, _ = driver.execute_query("CALL dbms.graph.listGraph()", database_="system")
+            self.assertIn("routing_a", [record["name"] for record in records])
 
-    def test_10_existing_driver_recovers_after_leader_stops(self):
+    def test_10_multi_statement_commit_and_rollback(self):
+        with self.driver(self.members[0]["bolt_port"]) as driver:
+            for graph in ("routing_a", "default"):
+                with self.subTest(graph=graph), driver.session(database=graph) as session:
+                    with session.begin_transaction() as tx:
+                        tx.run("CREATE (:AtomicTx {name: 'committed', step: 1})").consume()
+                        self.assertEqual(self.run_query(
+                            driver, "MATCH (n:AtomicTx) RETURN count(n) AS n", database=graph),
+                                         [{"n": 0}])
+                        tx.run("CREATE (:AtomicTx {name: 'committed', step: 2})").consume()
+                        self.assertEqual(tx.run("MATCH (n:AtomicTx) RETURN count(n) AS n").single()["n"], 2)
+                        first_time = tx.run("RETURN datetime.transaction() AS t").single()["t"]
+                        self.assertEqual(tx.run("RETURN datetime.transaction() AS t").single()["t"],
+                                         first_time)
+                        tx.commit()
+                    self.assertEqual(self.run_query(
+                        driver, "MATCH (n:AtomicTx) RETURN count(n) AS n", database=graph), [{"n": 2}])
+                    with session.begin_transaction() as tx:
+                        tx.run("CREATE (:AtomicTx {name: 'rolled_back', step: 1})").consume()
+                        tx.run("CREATE (:AtomicTx {name: 'rolled_back', step: 2})").consume()
+                        tx.rollback()
+                    self.assertEqual(self.run_query(
+                        driver, "MATCH (n:AtomicTx) RETURN count(n) AS n", database=graph), [{"n": 2}])
+
+    def test_11_driver_handles_multiple_result_streams(self):
+        with self.driver(self.members[0]["bolt_port"]) as driver:
+            with driver.session(database="routing_a", fetch_size=1) as session:
+                with session.begin_transaction() as tx:
+                    first = tx.run("UNWIND range(1, 5) AS n RETURN n")
+                    self.assertEqual(next(first)["n"], 1)
+                    second = tx.run("UNWIND range(10, 14) AS n RETURN n")
+                    self.assertEqual(next(second)["n"], 10)
+                    self.assertEqual(first.value(), [2, 3, 4, 5])
+                    self.assertEqual(second.value(), [11, 12, 13, 14])
+                    # COMMIT discards all remaining records and still executes writes.
+                    tx.run("UNWIND range(1, 4) AS n CREATE (:DiscardedTx {step: n}) RETURN n")
+                    tx.commit()
+            self.assertEqual(self.run_query(
+                driver, "MATCH (n:DiscardedTx) RETURN count(n) AS n"), [{"n": 4}])
+
+    def test_12_wire_qid_partial_pull_and_discard(self):
+        with RawBolt(self.members[0]["bolt_port"]) as bolt:
+            bolt.success(0x11, {})
+            first = bolt.run("UNWIND range(1, 4) AS n RETURN n")["qid"]
+            second = bolt.run("UNWIND range(10, 12) AS n RETURN n")["qid"]
+            self.assertNotEqual(first, second)
+            rows, metadata = bolt.stream(n=1, qid=first)
+            self.assertEqual(rows, [[1]])
+            self.assertTrue(metadata["has_more"])
+            _, metadata = bolt.stream(n=1, qid=first, discard=True)
+            self.assertTrue(metadata["has_more"])
+            self.assertEqual(bolt.stream(qid=second)[0], [[10], [11], [12]])
+            self.assertEqual(bolt.stream(qid=first)[0], [[3], [4]])
+            bolt.success(0x12)
+            # The latest qid is scoped to the new transaction.
+            bolt.success(0x11, {})
+            self.assertEqual(bolt.run("RETURN 7 AS n")["qid"], 0)
+            self.assertEqual(bolt.stream()[0], [[7]])
+            bolt.success(0x13)
+
+    def test_13_failure_reset_and_disconnect_roll_back(self):
+        for action in ("rollback", "reset", "disconnect", "failed_run", "failed_pull", "bad_qid"):
+            with self.subTest(action=action):
+                with RawBolt(self.members[0]["bolt_port"]) as bolt:
+                    bolt.success(0x11, {})
+                    bolt.run("CREATE (:AbortedTx {name: $name})", {"name": action})
+                    bolt.stream(discard=True)
+                    if action == "rollback":
+                        bolt.success(0x13)
+                    elif action in ("reset", "disconnect"):
+                        bolt.run("UNWIND range(1, 5) AS n CREATE (:AbortedTx {name: $name}) "
+                                 "RETURN n", {"name": action})
+                        bolt.stream(n=1)
+                        if action == "reset":
+                            bolt.success(0x0F)
+                    else:
+                        if action == "failed_run":
+                            bolt.send(0x10, "RETURN $missing", {}, {})
+                        else:
+                            bolt.run("RETURN 1 AS n" if action == "bad_qid"
+                                     else "RETURN 1 / 0 AS n")
+                            bolt.send(0x3F, {"n": -1, "qid": 100 if action == "bad_qid" else -1})
+                        self.assertEqual(bolt.receive()[0], 0x7F)
+                        bolt.send(0x12)
+                        self.assertEqual(bolt.receive()[0], 0x7E)
+                        bolt.success(0x0F)
+                    if action != "disconnect":
+                        bolt.run("RETURN 1 AS n")
+                        self.assertEqual(bolt.stream()[0], [[1]])
+                deadline = time.monotonic() + 4
+                while self.run_query(self.drivers[0], "MATCH (n:AbortedTx {name: $name}) "
+                                    "RETURN count(n) AS n", database="default", name=action) != [{"n": 0}]:
+                    if time.monotonic() >= deadline:
+                        self.fail(f"Writes survived {action}")
+                    time.sleep(0.05)
+
+    def test_14_read_only_and_administration_guards(self):
+        with self.driver(self.members[0]["bolt_port"]) as driver:
+            with driver.session(database="routing_a") as session:
+                with self.assertRaises(Neo4jError) as error:
+                    session.execute_read(lambda tx: tx.run("CREATE (:ReadOnlyTx)").consume())
+                self.assertEqual(error.exception.code, "Neo.ClientError.Statement.AccessMode")
+                with session.begin_transaction() as tx:
+                    tx.run("CREATE (:AdminGuardTx)").consume()
+                    with self.assertRaises(Neo4jError) as error:
+                        tx.run("CALL db.index.createNodeIndex('tx_index', 'AdminGuardTx', ['name'], {})")
+                    self.assertEqual(error.exception.code, "Unimplemented")
+                    tx.rollback()
+                self.assertEqual(self.run_query(driver, "MATCH (n:AdminGuardTx) RETURN count(n) AS n"),
+                                 [{"n": 0}])
+            with self.assertRaises(Neo4jError) as error:
+                driver.execute_query("CALL dbms.graph.createGraph('tx_admin')", database_="system")
+            self.assertEqual(error.exception.code, "Unimplemented")
+            graphs = self.run_query(driver, "CALL dbms.graph.listGraph()", database="system")
+            self.assertNotIn("tx_admin", [graph["name"] for graph in graphs])
+
+    def test_15_invalid_transaction_metadata_and_database_switch(self):
+        cases = [
+            ((), "InputError"), ((None,), "InputError"),
+            (({"db": 1},), "InputError"), (({"mode": "invalid"},), "InputError"),
+            (({"bookmarks": None},), "InputError"), (({"bookmarks": [1]},), "InputError"),
+            (({"bookmarks": ["bookmark"]},), "Unimplemented"),
+            (({"tx_timeout": -1},), "InputError"), (({"tx_timeout": 5},), "Unimplemented"),
+            (({"tx_metadata": None},), "InputError"),
+            (({"imp_user": "other"},), "Unimplemented"),
+            (({"db": "missing_graph"},), "Neo.ClientError.Database.DatabaseNotFound"),
+        ]
+        with RawBolt(self.members[0]["bolt_port"]) as bolt:
+            for fields, code in cases:
+                with self.subTest(fields=fields):
+                    bolt.send(0x11, *fields)
+                    tag, response = bolt.receive()
+                    self.assertEqual(tag, 0x7F)
+                    self.assertEqual(response[0]["code"], code)
+                    bolt.success(0x0F)
+            for extra in ({"db": "routing_b"}, {"mode": "r"}):
+                bolt.success(0x11, {})
+                bolt.run("CREATE (:SwitchGuardTx)")
+                bolt.stream(discard=True)
+                bolt.send(0x10, "RETURN 1 AS n", {}, extra)
+                self.assertEqual(bolt.receive()[0], 0x7F)
+                bolt.success(0x0F)
+            self.assertEqual(self.run_query(self.drivers[0],
+                "MATCH (n:SwitchGuardTx) RETURN count(n) AS n", database="default"), [{"n": 0}])
+
+    def test_16_managed_transactions_retry_after_leader_transfer(self):
+        for mode in ("write", "read", "new_term"):
+            with self.subTest(mode=mode):
+                attempts = []
+                old_leader = self.leader("routing_a")
+                with self.driver(self.members[0]["bolt_port"], max_transaction_retry_time=15) as driver:
+                    with driver.session(database="routing_a") as session:
+                        def work(tx):
+                            attempts.append(len(attempts) + 1)
+                            if mode != "read":
+                                tx.run("CREATE (:RetryTx {step: 1, mode: $mode})", mode=mode).consume()
+                                tx.run("CREATE (:RetryTx {step: 2, mode: $mode})", mode=mode).consume()
+                            else:
+                                tx.run("RETURN 1 AS n").consume()
+                            if len(attempts) == 1:
+                                self.transfer("routing_a", old_leader % 3 + 1)
+                                if mode == "new_term":
+                                    self.transfer("routing_a", old_leader)
+                            # Fail at COMMIT after all statements have been consumed.
+                            return len(attempts)
+
+                        result = (session.execute_read if mode == "read" else session.execute_write)(work)
+                        self.assertEqual(result, 2)
+                        self.assertEqual(len(attempts), 2)
+                    if mode != "read":
+                        self.assertEqual(self.run_query(driver,
+                            "MATCH (n:RetryTx {mode: $mode}) RETURN n.step AS step ORDER BY step", mode=mode),
+                                         [{"step": 1}, {"step": 2}])
+
+    def test_17_reset_interrupts_running_query(self):
+        for explicit in (False, True):
+            with self.subTest(explicit=explicit), RawBolt(self.members[0]["bolt_port"]) as bolt:
+                if explicit:
+                    bolt.success(0x11, {})
+                bolt.run("UNWIND range(1, 1000) AS n UNWIND range(1, 1000) AS m "
+                         "CREATE (:InterruptedTx) RETURN n")
+                bolt.send(0x3F, {"n": -1})
+                # The write barrier drains writes before producing any record.
+                # Interrupt while that work is still inside cursor.Next().
+                time.sleep(0.05)
+                bolt.send(0x0F)
+                while True:
+                    tag, _ = bolt.receive()
+                    if tag != 0x71:
+                        self.assertEqual(tag, 0x7E)
+                        break
+                self.assertEqual(bolt.receive()[0], 0x70)
+                bolt.run("RETURN 1 AS n")
+                self.assertEqual(bolt.stream()[0], [[1]])
+                self.assertEqual(self.run_query(self.drivers[0],
+                    "MATCH (n:InterruptedTx) RETURN count(n) AS n", database="default"), [{"n": 0}])
+
+    def test_18_disconnect_rolls_back_idle_and_running_transactions(self):
+        for mode in ("idle", "running"):
+            with self.subTest(mode=mode):
+                self.run_query(self.drivers[0],
+                    "CREATE (:DisconnectedTx {name: $name, value: 0})", database="default", name=mode)
+                with RawBolt(self.members[0]["bolt_port"]) as bolt:
+                    bolt.success(0x11, {})
+                    bolt.run("MATCH (n:DisconnectedTx {name: $name}) SET n.value = 1", {"name": mode})
+                    bolt.stream(discard=True)
+                    if mode == "running":
+                        bolt.run("UNWIND range(1, 1000) AS n UNWIND range(1, 1000) AS m "
+                                 "CREATE (:DisconnectedTx {name: 'aborted'}) RETURN n")
+                        bolt.send(0x3F, {"n": -1})
+                        time.sleep(0.05)
+                deadline = time.monotonic() + 4
+                while True:
+                    try:
+                        # Reuse an existing pooled connection so accepting a new
+                        # connection cannot trigger cleanup of the closed one.
+                        rows = self.run_query(self.drivers[0],
+                            "MATCH (n:DisconnectedTx {name: $name}) "
+                            "SET n.value = n.value + 2 RETURN n.value AS value",
+                            database="default", name=mode)
+                        self.assertEqual(rows, [{"value": 2}])
+                        break
+                    except Neo4jError:
+                        if time.monotonic() >= deadline:
+                            raise
+                        time.sleep(0.05)
+                self.assertEqual(self.run_query(self.drivers[0],
+                    "MATCH (n:DisconnectedTx {name: 'aborted'}) RETURN count(n) AS n", database="default"),
+                                 [{"n": 0}])
+
+    def test_99_existing_driver_recovers_after_leader_stops(self):
         old_leader = self.leader("routing_a")
         with self.driver(self.members[old_leader - 1]["bolt_port"]) as driver:
             self.assertEqual(self.run_query(driver, "RETURN 1 AS n"), [{"n": 1}])

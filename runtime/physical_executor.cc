@@ -12,6 +12,18 @@
 namespace runtime {
 namespace {
 
+void ValidateTransactionProcedures(const PhysicalPlanNode &node) {
+  if (node.kind == PhysicalOperatorKind::kProcedureCall) {
+    const auto &procedure = std::get<ProcedureCallOp>(node.data);
+    RG_CHECK(procedure.read_only, common::ErrorCode::Unimplemented,
+             "procedure [{}] requires auto-commit mode",
+             procedure.procedure_name);
+  }
+  for (const auto &child : node.children) {
+    ValidateTransactionProcedures(*child);
+  }
+}
+
 class PhysicalResultCursorImpl final : public PhysicalResultCursor {
  public:
   PhysicalResultCursorImpl(const PhysicalPlan &plan,
@@ -94,6 +106,12 @@ std::unique_ptr<PhysicalResultCursor> StartPhysicalPlan(
     const QueryParameters &parameters,
     const std::vector<std::string> &result_columns,
     QueryExecutionOptions options) {
+  RG_CHECK(!options.read_only || !plan.Effects().writes,
+           common::ErrorCode::WriteInReadOnlyTransaction,
+           "write query is not allowed in a read-only transaction");
+  if (options.explicit_transaction) {
+    ValidateTransactionProcedures(plan.Root());
+  }
   return std::make_unique<PhysicalResultCursorImpl>(
       plan, transaction, parameters, result_columns, std::move(options));
 }

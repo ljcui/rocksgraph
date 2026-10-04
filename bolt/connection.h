@@ -78,6 +78,10 @@ class BoltConnection : public Connection,
   void PostClose();
   void PostResponse(std::string res);
   void Respond(std::string str);
+  // Install on the owning IO service; the callback must not throw.
+  void SetCloseHandler(std::function<void()> handler) {
+    close_handler_ = std::move(handler);
+  }
   void SetContext(std::shared_ptr<void> ctx) { context_ = std::move(ctx); }
   void* GetContext() { return context_.get(); }
   std::shared_ptr<void> GetContextShared() { return context_; }
@@ -105,6 +109,8 @@ class BoltConnection : public Connection,
   std::function<void(BoltConnection& conn, BoltMsg msg,
                      std::vector<std::any> fields)>
       handle_;
+  std::function<void()> close_handler_;
+  std::atomic<bool> close_notified_ = false;
   const uint8_t bolt_magic_[4] = {0x60, 0x60, 0xB0, 0x17};
   const uint8_t ws_magic_[4] = {'G', 'E', 'T', ' '};  // websocket
   uint8_t buffer4_[4] = {0};
