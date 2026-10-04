@@ -123,6 +123,26 @@ rocksgraph_add_test(raft_cluster_test graphdb/raft_cluster_test.cc
 rocksgraph_add_test(http_snapshot_test server/http_snapshot_test.cc
                     RocksGraph::server)
 
+find_package(Python3 QUIET COMPONENTS Interpreter)
+if(Python3_Interpreter_FOUND)
+  execute_process(
+    COMMAND ${Python3_EXECUTABLE} -c "import neo4j"
+    RESULT_VARIABLE ROCKSGRAPH_NEO4J_IMPORT_RESULT
+    OUTPUT_QUIET ERROR_QUIET)
+  if(ROCKSGRAPH_NEO4J_IMPORT_RESULT EQUAL 0)
+    add_test(
+      NAME neo4j_routing_test
+      COMMAND
+        ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/server/neo4j_routing_test.py --server
+        $<TARGET_FILE:rg-server>)
+    set_tests_properties(neo4j_routing_test PROPERTIES TIMEOUT 120 LABELS
+                                                       "neo4j_routing_test")
+  else()
+    message(STATUS "Neo4j Python driver not found; neo4j_routing_test disabled")
+  endif()
+endif()
+
 add_custom_target(
   check-tck
   COMMAND

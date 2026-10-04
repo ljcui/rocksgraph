@@ -214,7 +214,7 @@ void IdGenerator::ProposeAndApply(rocksdb::WriteBatch *wb) {
   auto apply_result =
       raft_driver_->ProposeWriteBatch(meta::WriteBatchKind::ID_GENERATOR, *wb);
   if (apply_result.err != nullptr) {
-    RG_THROW(common::ErrorCode::StorageEngineError, apply_result.err.String());
+    RG_THROW(apply_result.error_code, apply_result.err.String());
   }
 }
 

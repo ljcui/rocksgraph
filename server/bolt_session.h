@@ -73,6 +73,7 @@ struct BoltSession {
   std::atomic<size_t> remaining_interrupts = 0;
   bool utc_patch = false;
   bool python_driver = false;
+  bool routing_enabled = false;
 };
 
 }  // namespace bolt

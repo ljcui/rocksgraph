@@ -138,8 +138,8 @@ std::uint64_t ProposeRaftConfChange(raft_driver::RaftDriver *driver,
                                     raftpb::ConfChange conf_change) {
   const auto result = driver->ProposeConfChangeAndWait(std::move(conf_change));
   if (result.err != nullptr) {
-    RG_THROW(common::ErrorCode::StorageEngineError,
-             "raft configuration change failed: {}", result.err.String());
+    RG_THROW(result.error_code, "raft configuration change failed: {}",
+             result.err.String());
   }
   return result.index;
 }

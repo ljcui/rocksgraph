@@ -74,6 +74,10 @@ const char *ErrorCodeToString(ErrorCode code) noexcept {
       return "SnapshotNotFound";
     case ErrorCode::TaskNotFound:
       return "TaskNotFound";
+    case ErrorCode::NotLeader:
+      return "NotLeader";
+    case ErrorCode::RaftUnavailable:
+      return "RaftUnavailable";
     default:
       return "Unknown Error Code";
   }
@@ -151,6 +155,10 @@ const char *ErrorCodeDesc(ErrorCode code) noexcept {
       return "Snapshot was not found.";
     case ErrorCode::TaskNotFound:
       return "Task was not found.";
+    case ErrorCode::NotLeader:
+      return "This node is not the Raft leader.";
+    case ErrorCode::RaftUnavailable:
+      return "Raft is temporarily unavailable.";
     default:
       return "Unknown Error Code";
   }

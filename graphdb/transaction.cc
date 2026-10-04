@@ -558,8 +558,7 @@ void Transaction::Commit() {
                 rollback_status.ToString());
           }
           state_ = State::kRolledBack;
-          RG_THROW(common::ErrorCode::StorageEngineError,
-                   apply_result.err.String());
+          RG_THROW(apply_result.error_code, apply_result.err.String());
         }
         write_batch_with_index->Clear();
         auto s = txn_->Commit();

@@ -309,7 +309,7 @@ void GraphDB::ProposeGraphIndexDdl(
   auto apply_result =
       driver->ProposeRaftRequestAndWait(std::move(raft_request));
   if (apply_result.err != nullptr) {
-    RG_THROW(common::ErrorCode::StorageEngineError, apply_result.err.String());
+    RG_THROW(apply_result.error_code, apply_result.err.String());
   }
 }
 

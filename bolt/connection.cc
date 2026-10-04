@@ -113,6 +113,13 @@ void BoltConnection::ReadMagicDone(const boost::system::error_code& ec) {
 }
 
 void BoltConnection::Start() {
+  boost::system::error_code ec;
+  local_endpoint_ = socket().local_endpoint(ec);
+  if (ec) {
+    LOG_WARN("failed to get Bolt local endpoint: {}", ec.message());
+    Close();
+    return;
+  }
   async_read(socket(), buffer(buffer4_),
              std::bind(&BoltConnection::ReadMagicDone, shared_from_this(),
                        std::placeholders::_1));
@@ -237,6 +244,7 @@ void BoltConnection::ReadVersionNegotiationDone(
     return;
   }
   SetSelectedBoltVersion(selected_minor, buffer4_);
+  bolt_minor_version_ = selected_minor;
   // write accepted version
   if (protocol_ == Protocol::Socket) {
     async_write(socket(), buffer(buffer4_),  // NOLINT

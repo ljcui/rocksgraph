@@ -664,7 +664,8 @@ void RaftDriver::Stop() {
     return;
   }
   callback_alive_->store(false);
-  RejectPendingPromises(eraft::Error("raft driver stopped"));
+  RejectPendingPromises(eraft::Error("raft driver stopped"),
+                        common::ErrorCode::RaftUnavailable);
   manager_->timer_service(shard_id_).post([this]() {
     boost::system::error_code ec;
     tick_timer_.cancel(ec);
@@ -709,7 +710,8 @@ std::shared_ptr<PromiseContext> RaftDriver::Propose(uint64_t uuid,
   {
     std::lock_guard<std::mutex> guard(promise_mutex_);
     if (stopped_.load()) {
-      context->SetError(eraft::Error("raft driver stopped"));
+      context->SetError(eraft::Error("raft driver stopped"), 0,
+                        common::ErrorCode::RaftUnavailable);
       return context;
     }
     if (proposal_bytes > raft_config_.max_proposal_bytes) {
@@ -743,6 +745,7 @@ std::shared_ptr<PromiseContext> RaftDriver::Propose(uint64_t uuid,
   manager_->raft_service(shard_id_).post(
       [this, alive, uuid, context, msg = std::move(msg)]() mutable {
         eraft::Error err = nullptr;
+        auto error_code = common::ErrorCode::StorageEngineError;
         bool should_reject = false;
         {
           std::lock_guard<std::mutex> guard(promise_mutex_);
@@ -752,11 +755,13 @@ std::shared_ptr<PromiseContext> RaftDriver::Propose(uint64_t uuid,
           }
           if (!alive->load() || stopped_.load()) {
             err = eraft::Error("raft driver stopped");
+            error_code = common::ErrorCode::RaftUnavailable;
             ReleaseProposalAccountingLocked(iter->second);
             pending_promise_.erase(iter);
             should_reject = true;
           } else if (rn_->raft_->id_ != rn_->raft_->lead_) {
             err = eraft::Error("not leader");
+            error_code = common::ErrorCode::NotLeader;
             ReleaseProposalAccountingLocked(iter->second);
             pending_promise_.erase(iter);
             should_reject = true;
@@ -775,7 +780,7 @@ std::shared_ptr<PromiseContext> RaftDriver::Propose(uint64_t uuid,
               err.String() != "raft driver stopped") {
             LOG_WARN("failed to step raft message, err: {}", err.String());
           }
-          context->SetError(std::move(err));
+          context->SetError(std::move(err), 0, error_code);
           return;
         }
         CheckReady();
@@ -817,7 +822,8 @@ void RaftDriver::ReleaseProposalAccountingLocked(
   }
 }
 
-void RaftDriver::RejectPendingPromises(const eraft::Error& err) {
+void RaftDriver::RejectPendingPromises(const eraft::Error& err,
+                                       common::ErrorCode code) {
   std::vector<std::shared_ptr<PromiseContext>> contexts;
   {
     std::lock_guard<std::mutex> guard(promise_mutex_);
@@ -829,7 +835,7 @@ void RaftDriver::RejectPendingPromises(const eraft::Error& err) {
     pending_promise_.clear();
   }
   for (auto& context : contexts) {
-    context->SetError(err);
+    context->SetError(err, 0, code);
   }
 }
 
@@ -1119,8 +1125,10 @@ void RaftDriver::CheckReady() {
              ready.softState_->lead_);
     if (ready.softState_->raftState_ != eraft::StateLeader ||
         ready.softState_->lead_ != node_id_) {
-      RejectPendingPromises(eraft::Error(fmt::format(
-          "leadership changed, current leader {}", ready.softState_->lead_)));
+      RejectPendingPromises(
+          eraft::Error(fmt::format("leadership changed, current leader {}",
+                                   ready.softState_->lead_)),
+          common::ErrorCode::NotLeader);
     }
   }
   rocksdb::WriteBatch batch;

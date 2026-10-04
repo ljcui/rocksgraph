@@ -1444,7 +1444,7 @@ TEST(RaftCluster, followerRejectsVertexPropertyIndexDdl) {
 
   EXPECT_THROW_CODE(follower_graph->AddVertexPropertyIndex(
                         "follower_local_index", false, "person", {"age"}),
-                    StorageEngineError);
+                    NotLeader);
   EXPECT_EQ(follower_graph->GetRaftApplyIndex(), before_apply_index);
   EXPECT_EQ(follower_graph->meta_info().GetVertexPropertyIndex(
                 "follower_local_index"),
@@ -1767,6 +1767,7 @@ TEST(RaftCluster, followerRejectsGraphWriteProposal) {
       meta::WriteBatchKind::GRAPH_WRITE, wb);
 
   ASSERT_NE(result.err, nullptr);
+  EXPECT_EQ(result.error_code, common::ErrorCode::NotLeader);
   EXPECT_NE(result.err.String().find("not leader"), std::string::npos);
   // Election no-ops may advance the apply index while this proposal is
   // rejected.
@@ -1793,7 +1794,7 @@ TEST(RaftCluster, followerTransactionCommitRollsBackLocalWrites) {
     auto status = txn->dbtxn()->Put(follower_graph->graph_cf().graph_topology,
                                     key, "value_that_must_not_commit");
     ASSERT_TRUE(status.ok()) << status.ToString();
-    EXPECT_THROW(txn->Commit(), std::exception);
+    EXPECT_THROW_CODE(txn->Commit(), NotLeader);
   }
 
   std::string value;

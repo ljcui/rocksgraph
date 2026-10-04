@@ -82,6 +82,8 @@ class BoltConnection : public Connection,
   void* GetContext() { return context_.get(); }
   std::shared_ptr<void> GetContextShared() { return context_; }
   void set_max_message_size(size_t size) { max_message_size_ = size; }
+  int bolt_minor_version() const { return bolt_minor_version_; }
+  const tcp::endpoint& local_endpoint() const { return local_endpoint_; }
 
  private:
   enum class Protocol { None = 0, Socket, WebSocket };
@@ -116,6 +118,8 @@ class BoltConnection : public Connection,
   // only shared_ptr can store void pointer
   std::shared_ptr<void> context_;
   Protocol protocol_ = Protocol::None;
+  int bolt_minor_version_ = -1;
+  tcp::endpoint local_endpoint_;
   char* ws_buffer_ = nullptr;
   size_t ws_buffer_size_ = 0;
   size_t ws_total_read_ = 0;

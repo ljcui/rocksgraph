@@ -18,6 +18,7 @@
 #include <utility>
 #include <vector>
 
+#include "common/exception.h"
 #include "proto/graph_replication.pb.h"
 #include "raft_driver/raft_log_store.h"
 
@@ -184,6 +185,7 @@ struct PromiseContext {
   struct Result {
     eraft::Error err;
     uint64_t index = 0;
+    common::ErrorCode error_code = common::ErrorCode::StorageEngineError;
   };
   using CommitResult = Result;
   using ApplyResult = Result;
@@ -208,9 +210,11 @@ struct PromiseContext {
     }
   }
 
-  void SetError(eraft::Error err, uint64_t index = 0) {
-    SetCommited(CommitResult{err, index});
-    SetApplied(ApplyResult{std::move(err), index});
+  void SetError(
+      eraft::Error err, uint64_t index = 0,
+      common::ErrorCode code = common::ErrorCode::StorageEngineError) {
+    SetCommited(CommitResult{err, index, code});
+    SetApplied(ApplyResult{std::move(err), index, code});
   }
 };
 
@@ -310,7 +314,9 @@ class RaftDriver {
       const std::shared_ptr<PromiseContext>& context);
   void ReleaseProposalAccountingLocked(
       const std::shared_ptr<PromiseContext>& context);
-  void RejectPendingPromises(const eraft::Error& err);
+  void RejectPendingPromises(
+      const eraft::Error& err,
+      common::ErrorCode code = common::ErrorCode::StorageEngineError);
   void Tick();
   void CheckAndCompactLog();
   void CheckReady();

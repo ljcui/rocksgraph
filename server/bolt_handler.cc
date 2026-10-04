@@ -23,6 +23,7 @@
 #include "common/logger.h"
 #include "graphdb/graph_db.h"
 #include "graphdb/transaction.h"
+#include "raft_driver/raft_driver.h"
 #include "runtime/query_executor.h"
 #include "server/bolt_session.h"
 #include "server/graph_manager.h"
@@ -537,9 +538,22 @@ static void PostIgnored(const std::shared_ptr<BoltConnection>& conn) {
 
 static void PostFailure(const std::shared_ptr<BoltConnection>& conn,
                         common::ErrorCode code, const std::string& msg) {
+  const char* bolt_code = common::ErrorCodeToString(code);
+  switch (code) {
+    case common::ErrorCode::NotLeader:
+      bolt_code = "Neo.ClientError.Cluster.NotALeader";
+      break;
+    case common::ErrorCode::RaftUnavailable:
+      bolt_code = "Neo.TransientError.General.DatabaseUnavailable";
+      break;
+    case common::ErrorCode::NoSuchGraph:
+      bolt_code = "Neo.ClientError.Database.DatabaseNotFound";
+      break;
+    default:
+      break;
+  }
   bolt::PackStream ps;
-  ps.AppendFailure(
-      {{"code", common::ErrorCodeToString(code)}, {"message", msg}});
+  ps.AppendFailure({{"code", bolt_code}, {"message", msg}});
   conn->PostResponse(std::move(ps.MutableBuffer()));
 }
 
@@ -590,6 +604,122 @@ static void FailUnsupportedRequest(const std::shared_ptr<BoltConnection>& conn,
       feature);
   LOG_ERROR("Receive {}, but {}", ToString(type), err);
   FailSession(conn, session, common::ErrorCode::Unimplemented, err);
+}
+
+static std::string RoutingAddress(const std::string& host, int64_t port) {
+  boost::system::error_code ec;
+  const auto address = boost::asio::ip::make_address(host, ec);
+  RG_CHECK(!ec && !address.is_unspecified() && port > 0 && port <= 65535,
+           common::ErrorCode::InvalidParameter,
+           "invalid Bolt routing endpoint [{}]:{}", host, port);
+  return address.is_v6() ? fmt::format("[{}]:{}", host, port)
+                         : fmt::format("{}:{}", host, port);
+}
+
+static std::string RouteDatabase(const std::vector<std::any>& fields,
+                                 int minor_version) {
+  using Metadata = std::unordered_map<std::string, std::any>;
+  RG_CHECK(fields.size() == 3, common::ErrorCode::InputError,
+           "ROUTE requires routing context, bookmarks and database metadata");
+  const auto* routing = std::any_cast<Metadata>(&fields[0]);
+  const auto* bookmarks = std::any_cast<std::vector<std::any>>(&fields[1]);
+  RG_CHECK(routing != nullptr && bookmarks != nullptr,
+           common::ErrorCode::InputError,
+           "ROUTE routing context must be a map and bookmarks must be a list");
+  for (const auto& [key, value] : *routing) {
+    RG_CHECK(std::any_cast<std::string>(&value) != nullptr,
+             common::ErrorCode::InputError,
+             "ROUTE routing context [{}] must be a string", key);
+  }
+  for (const auto& bookmark : *bookmarks) {
+    RG_CHECK(std::any_cast<std::string>(&bookmark) != nullptr,
+             common::ErrorCode::InputError,
+             "ROUTE bookmarks must contain strings");
+  }
+  RG_CHECK(bookmarks->empty(), common::ErrorCode::Unimplemented,
+           "Bolt bookmarks are not supported");
+
+  const std::any* database = &fields[2];
+  if (minor_version >= 4) {
+    const auto* extra = std::any_cast<Metadata>(&fields[2]);
+    RG_CHECK(extra != nullptr, common::ErrorCode::InputError,
+             "ROUTE database metadata must be a map");
+    if (const auto user = extra->find("imp_user"); user != extra->end()) {
+      RG_CHECK(!user->second.has_value(), common::ErrorCode::Unimplemented,
+               "Bolt user impersonation is not supported");
+    }
+    const auto iter = extra->find("db");
+    if (iter == extra->end()) {
+      return std::string(kDefaultDatabaseName);
+    }
+    database = &iter->second;
+  }
+  if (!database->has_value()) {
+    return std::string(kDefaultDatabaseName);
+  }
+  const auto* name = std::any_cast<std::string>(database);
+  RG_CHECK(name != nullptr, common::ErrorCode::InputError,
+           "ROUTE database name must be a string or null");
+  return name->empty() ? std::string(kDefaultDatabaseName) : *name;
+}
+
+static void ProcessRoute(GraphManager* graph_manager,
+                         const std::shared_ptr<BoltConnection>& conn,
+                         BoltSession* session,
+                         const std::vector<std::any>& fields) {
+  try {
+    const auto graph_name = RouteDatabase(fields, conn->bolt_minor_version());
+    bolt::RoutingTable table;
+    table.databaseName = graph_name;
+    table.timeToLive = 10;
+    // The system database and graphs without Raft belong to this server.
+    auto graph = graph_name == kSystemDatabaseName
+                     ? nullptr
+                     : graph_manager->OpenGraph(graph_name);
+    if (graph && graph->raft_driver() != nullptr) {
+      const auto nodes = graph->raft_driver()->GetNodeInfosWithLeader();
+      std::map<uint64_t, std::string> routers;
+      for (const auto& [id, node] : nodes.nodes()) {
+        auto address = RoutingAddress(node.ip(), node.bolt_port());
+        routers.emplace(id, address);
+        if (node.is_leader() && !node.is_learner()) {
+          table.readers.push_back(address);
+          table.writers.push_back(std::move(address));
+        }
+      }
+      for (const auto& [id, address] : routers) {
+        table.routers.push_back(address);
+      }
+    } else {
+      const auto& endpoint = conn->local_endpoint();
+      const auto address =
+          RoutingAddress(endpoint.address().to_string(), endpoint.port());
+      table.routers = {address};
+      table.readers = {address};
+      table.writers = {address};
+    }
+
+    using Metadata = std::unordered_map<std::string, std::any>;
+    std::vector<std::any> servers;
+    servers.emplace_back(
+        Metadata{{"role", std::string("ROUTE")}, {"addresses", table.routers}});
+    servers.emplace_back(
+        Metadata{{"role", std::string("READ")}, {"addresses", table.readers}});
+    servers.emplace_back(
+        Metadata{{"role", std::string("WRITE")}, {"addresses", table.writers}});
+    Metadata rt{{"ttl", int64_t(table.timeToLive)},
+                {"servers", std::move(servers)}};
+    if (conn->bolt_minor_version() >= 4) {
+      rt.emplace("db", table.databaseName);
+    }
+    bolt::PackStream ps;
+    ps.AppendSuccess({{"rt", std::move(rt)}});
+    conn->PostResponse(std::move(ps.MutableBuffer()));
+  } catch (const common::Exception& e) {
+    FailSession(conn, session, e.code(), e.message());
+  } catch (const std::exception& e) {
+    FailSession(conn, session, common::ErrorCode::UnknownError, e.what());
+  }
 }
 
 static int64_t ExtractPullOrDiscardN(BoltMsg type,
@@ -750,6 +880,26 @@ static void ProcessRun(GraphManager* graph_manager,
           *graph_manager, active_query->cypher, std::move(query_options));
     } else {
       active_query->graph_db = graph_manager->OpenGraph(graph);
+      if (session->routing_enabled) {
+        if (auto* driver = active_query->graph_db->raft_driver()) {
+          const auto status = driver->GetRaftStatus();
+          const auto mode_iter = extra->find("mode");
+          const auto* mode =
+              mode_iter == extra->end()
+                  ? nullptr
+                  : std::any_cast<std::string>(&mode_iter->second);
+          // NotALeader invalidates only writers in the Python driver's pool.
+          // A stale reader must invalidate its connection as well.
+          const auto code = mode != nullptr && *mode == "r"
+                                ? common::ErrorCode::RaftUnavailable
+                                : common::ErrorCode::NotLeader;
+          RG_CHECK(status.s.basicStatus_.softState_.raftState_ ==
+                           eraft::StateLeader &&
+                       status.s.basicStatus_.softState_.lead_ ==
+                           status.s.basicStatus_.id_,
+                   code, "this node is not the leader for graph [{}]", graph);
+        }
+      }
       active_query->transaction = active_query->graph_db->BeginTransaction();
       active_query->result = runtime::ExecuteQueryCursor(
           *active_query->transaction, active_query->cypher,
@@ -777,7 +927,11 @@ static void ProcessReadyState(GraphManager* graph_manager,
   if (IsExplicitTransactionRequest(type)) {
     FailUnsupportedRequest(conn, session, type, "explicit transactions");
   } else if (type == bolt::BoltMsg::Route) {
-    FailUnsupportedRequest(conn, session, type, "routing");
+    if (conn->bolt_minor_version() < 3) {
+      FailUnsupportedRequest(conn, session, type, "routing before Bolt 4.3");
+    } else {
+      ProcessRoute(graph_manager, conn, session, fields);
+    }
   } else if (type == bolt::BoltMsg::Run) {
     ProcessRun(graph_manager, conn, session, fields);
   } else {
@@ -955,6 +1109,7 @@ BoltHandler NewBoltHandler(GraphManager* graph_manager,
       }
       session->state = SessionState::READY;
       session->user = *principal;
+      session->routing_enabled = val->contains("routing");
       conn.SetContext(context);
       bolt::PackStream ps;
       ps.AppendSuccess(meta);

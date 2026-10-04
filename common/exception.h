@@ -46,6 +46,8 @@ enum class ErrorCode {
   GraphBusy,
   SnapshotNotFound,
   TaskNotFound,
+  NotLeader,
+  RaftUnavailable,
 };
 
 [[nodiscard]] const char *ErrorCodeToString(ErrorCode code) noexcept;
