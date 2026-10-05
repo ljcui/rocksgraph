@@ -421,16 +421,6 @@ std::string SetPatternDetails(const SetMutatingPattern &pattern) {
   RG_THROW(common::ErrorCode::InternalError, "unknown SET pattern kind");
 }
 
-std::string RemovePatternDetails(const RemoveMutatingPattern &pattern) {
-  switch (pattern.kind) {
-    case RemoveMutatingPatternKind::kRemoveProperty:
-      return ExpressionDetail(pattern.entity) + "." + pattern.property_key;
-    case RemoveMutatingPatternKind::kRemoveLabels:
-      return ExpressionDetail(pattern.entity) + ":" + Join(pattern.labels, ":");
-  }
-  RG_THROW(common::ErrorCode::InternalError, "unknown REMOVE pattern kind");
-}
-
 std::string MergeActionDetails(const MergeActionPattern &action) {
   std::vector<std::string> set_details;
   set_details.reserve(action.set_patterns.size());

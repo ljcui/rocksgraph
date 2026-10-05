@@ -56,10 +56,6 @@ struct VertexPropertyIndex
   std::string NextWALKey();
   std::string IndexKey(const std::vector<rg::Value>& values) const;
   std::string EntryKey(const std::vector<rg::Value>& values, int64_t vid) const;
-  std::optional<std::vector<rg::Value>> LoadIndexedPropertyValues(
-      Transaction* txn, int64_t vid,
-      const std::unordered_map<uint32_t, std::string>* overrides = nullptr,
-      const std::unordered_set<uint32_t>* removed = nullptr) const;
   bool ContainsProperty(uint32_t pid) const { return pid_set_.count(pid) > 0; }
   bool TouchesAnyProperty(const std::unordered_set<uint32_t>& pids) const;
   bool AllPropertiesPresent(const std::unordered_set<uint32_t>& pids) const;
@@ -188,9 +184,6 @@ class VertexFullTextIndex
                       const std::unordered_set<uint32_t>& lids,
                       const std::unordered_set<uint32_t>& pids,
                       size_t commit_interval);
-  void AddVertex(int64_t id, std::vector<std::string> fields,
-                 std::vector<std::string> values);
-  void DeleteVertex(int64_t id);
   void ApplyWAL();
   void Start();
   void Stop();

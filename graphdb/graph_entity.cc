@@ -689,38 +689,6 @@ rg::Value Vertex::GetProperty(uint32_t pid) {
   return {};
 }
 
-bool Vertex::TryGetVectorPropertyRaw(uint32_t pid, rocksdb::PinnableSlice *out,
-                                     size_t *dimensions) {
-  if (out == nullptr || dimensions == nullptr) {
-    RG_THROW(common::ErrorCode::InvalidParameter,
-             "output vector should not be null");
-  }
-  out->Reset();
-  *dimensions = 0;
-  auto lids = GetLabelIds();
-  rocksdb::ReadOptions ro;
-  for (const auto &field :
-       txn_->db()->meta_info().GetVertexVectorFields(lids, pid)) {
-    uint32_t lid = field->label_id();
-    std::string key = VertexVectorPropertyKey(lid, pid, id_);
-    auto s = txn_->dbtxn()->Get(
-        ro, txn_->db()->graph_cf().vertex_vector_property, key, out);
-    if (s.IsNotFound()) {
-      continue;
-    }
-    if (!s.ok()) RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
-    size_t expected_size = field->dimensions() * sizeof(float);
-    if (out->size() != expected_size) {
-      RG_THROW(common::ErrorCode::StorageEngineError,
-               "vector field value has invalid size, expect {}, actual {}",
-               expected_size, out->size());
-    }
-    *dimensions = field->dimensions();
-    return true;
-  }
-  return false;
-}
-
 std::unordered_map<std::string, rg::Value> Vertex::GetAllProperty() {
   std::string prefix = EncodeBigEndianId(id_);
   rocksdb::ReadOptions ro;
@@ -750,15 +718,6 @@ std::unordered_map<std::string, rg::Value> Vertex::GetAllProperty() {
     }
   }
   return ret;
-}
-
-int Vertex::GetDegree(graphdb::EdgeDirection direction) {
-  int count = 0;
-  for (auto eiter = NewEdgeIterator(direction, {}, {}); eiter->Valid();
-       eiter->Next()) {
-    count++;
-  }
-  return count;
 }
 
 void Vertex::SetProperties(

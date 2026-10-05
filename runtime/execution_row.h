@@ -55,7 +55,6 @@ class ExecutionRow final {
 
   [[nodiscard]] const RowLayoutPtr &Layout() const noexcept { return layout_; }
   [[nodiscard]] bool IsInitialized(std::size_t offset) const;
-  [[nodiscard]] std::int64_t EntityIdAt(std::size_t offset) const;
   [[nodiscard]] const graphdb::Vertex &VertexAt(std::size_t offset) const;
   [[nodiscard]] const graphdb::Edge &EdgeAt(std::size_t offset) const;
   [[nodiscard]] const rg::Value &ValueAt(std::size_t offset) const;

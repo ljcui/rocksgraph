@@ -35,21 +35,16 @@ class ASTEqual {
     return true;
   }
 
-  static bool EqualStatement(const Statement &left, const Statement &right);
-  static bool EqualQuery(const Query &left, const Query &right);
   static bool EqualRegularQuery(const RegularQuery &left,
                                 const RegularQuery &right);
   static bool EqualStandaloneCall(const StandaloneCall &left,
                                   const StandaloneCall &right);
-  static bool EqualSingleQuery(const SingleQuery &left,
-                               const SingleQuery &right);
   static bool EqualSinglePartQuery(const SinglePartQuery &left,
                                    const SinglePartQuery &right);
   static bool EqualMultiPartQuery(const MultiPartQuery &left,
                                   const MultiPartQuery &right);
   static bool EqualUnionPart(const UnionPart &left, const UnionPart &right);
 
-  static bool EqualExpression(const Expression &left, const Expression &right);
   static bool EqualBinaryExpression(const BinaryExpression &left,
                                     const BinaryExpression &right);
   static bool EqualOrExpression(const OrExpression &left,
@@ -96,7 +91,6 @@ class ASTEqual {
       const NullPredicateExpression &left,
       const NullPredicateExpression &right);
 
-  static bool EqualLiteral(const Literal &left, const Literal &right);
   static bool EqualBooleanLiteral(const BooleanLiteral &left,
                                   const BooleanLiteral &right);
   static bool EqualIntegerLiteral(const IntegerLiteral &left,
@@ -164,15 +158,10 @@ class ASTEqual {
   static bool EqualRelationshipDetail(const RelationshipDetail &left,
                                       const RelationshipDetail &right);
 
-  static bool EqualClause(const Clause &left, const Clause &right);
-  static bool EqualReadingClause(const ReadingClause &left,
-                                 const ReadingClause &right);
   static bool EqualMatch(const Match &left, const Match &right);
   static bool EqualUnwind(const Unwind &left, const Unwind &right);
   static bool EqualInQueryCall(const InQueryCall &left,
                                const InQueryCall &right);
-  static bool EqualUpdatingClause(const UpdatingClause &left,
-                                  const UpdatingClause &right);
   static bool EqualCreate(const Create &left, const Create &right);
   static bool EqualMerge(const Merge &left, const Merge &right);
   static bool EqualDelete(const Delete &left, const Delete &right);
@@ -180,8 +169,6 @@ class ASTEqual {
   static bool EqualSetItem(const SetItem &left, const SetItem &right);
   static bool EqualRemove(const Remove &left, const Remove &right);
   static bool EqualRemoveItem(const RemoveItem &left, const RemoveItem &right);
-  static bool EqualProjectionClause(const ProjectionClause &left,
-                                    const ProjectionClause &right);
   static bool EqualProjectionBody(const ProjectionBody &left,
                                   const ProjectionBody &right);
   static bool EqualProjectionItem(const ProjectionItem &left,

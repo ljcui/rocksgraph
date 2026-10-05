@@ -322,17 +322,6 @@ std::int64_t NodeId(const ExecutionRow &row, std::size_t offset) {
   return value.AsNode().id;
 }
 
-bool NodeHasAllLabels(const rg::Node &node,
-                      const std::vector<std::string> &labels) {
-  for (const auto &label : labels) {
-    if (std::find(node.labels.begin(), node.labels.end(), label) ==
-        node.labels.end()) {
-      return false;
-    }
-  }
-  return true;
-}
-
 bool RelationshipHasType(const rg::Relationship &relationship,
                          const std::vector<std::string> &types) {
   return types.empty() || std::find(types.begin(), types.end(),

@@ -125,8 +125,6 @@ void SetScannedNode(ExecutionRow *row, std::size_t offset,
                                  ExecutionRow *target,
                                  const std::vector<RowMapping> &mappings);
 [[nodiscard]] std::int64_t NodeId(const ExecutionRow &row, std::size_t offset);
-[[nodiscard]] bool NodeHasAllLabels(const rg::Node &node,
-                                    const std::vector<std::string> &labels);
 [[nodiscard]] bool RelationshipHasType(const rg::Relationship &relationship,
                                        const std::vector<std::string> &types);
 

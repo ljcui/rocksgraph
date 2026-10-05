@@ -3,16 +3,12 @@
 //
 
 #pragma once
-#include <cstddef>
 #include <unordered_map>
 #include <unordered_set>
 
 #include "edge_direction.h"
 #include "value/value.h"
 
-namespace rocksdb {
-class PinnableSlice;
-}
 namespace graphdb {
 class Transaction;
 
@@ -63,11 +59,7 @@ class Vertex : public Property {
 
   rg::Value GetProperty(const std::string&) override;
   rg::Value GetProperty(uint32_t) override;
-  bool TryGetVectorPropertyRaw(uint32_t pid, rocksdb::PinnableSlice* out,
-                               size_t* dimensions);
   std::unordered_map<std::string, rg::Value> GetAllProperty() override;
-  // Counts incident edges. A self-loop counts once for EdgeDirection::BOTH.
-  int GetDegree(EdgeDirection direction);
   void SetProperties(
       const std::unordered_map<std::string, rg::Value>& properties) override;
   void RemoveProperty(const std::string&) override;

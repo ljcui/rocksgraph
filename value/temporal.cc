@@ -625,10 +625,6 @@ DateTime ParseDateTime(std::string_view text) {
   return {local, parsed.offset_seconds, std::move(parsed.timezone)};
 }
 
-std::string TimezoneFromMap(const Value::Map &map, std::string fallback = {}) {
-  return MapString(map, "timezone").value_or(std::move(fallback));
-}
-
 int OffsetForTimezone(const std::string &timezone,
                       const LocalDateTime &local_date_time) {
   if (timezone.empty()) {

@@ -578,41 +578,6 @@ std::string VertexPropertyIndex::EntryKey(const std::vector<rg::Value>& values,
   return index_key;
 }
 
-std::optional<std::vector<rg::Value>>
-VertexPropertyIndex::LoadIndexedPropertyValues(
-    Transaction* txn, int64_t vid,
-    const std::unordered_map<uint32_t, std::string>* overrides,
-    const std::unordered_set<uint32_t>* removed) const {
-  std::vector<rg::Value> values;
-  values.reserve(pids_.size());
-  rocksdb::ReadOptions ro;
-  for (auto pid : pids_) {
-    if (removed && removed->count(pid)) {
-      return std::nullopt;
-    }
-    if (overrides) {
-      auto iter = overrides->find(pid);
-      if (iter != overrides->end()) {
-        values.push_back(DeserializeStoredPropertyValue(iter->second));
-        continue;
-      }
-    }
-    std::string property_key = EncodeBigEndianId(vid);
-    AppendBigEndianId(property_key, pid);
-    std::string property_val;
-    auto s = txn->dbtxn()->Get(ro, txn->db()->graph_cf().vertex_property,
-                               property_key, &property_val);
-    if (s.IsNotFound()) {
-      return std::nullopt;
-    }
-    if (!s.ok()) {
-      RG_THROW(common::ErrorCode::StorageEngineError, s.ToString());
-    }
-    values.push_back(DeserializeStoredPropertyValue(property_val));
-  }
-  return values;
-}
-
 bool VertexPropertyIndex::TouchesAnyProperty(
     const std::unordered_set<uint32_t>& pids) const {
   for (auto pid : pids) {
@@ -1263,19 +1228,6 @@ void VertexFullTextIndex::Load(const rocksdb::Snapshot* snapshot,
   meta_.set_applied_wal_id(snapshot_wal_id);
 }
 
-void VertexFullTextIndex::AddVertex(int64_t id, std::vector<std::string> fields,
-                                    std::vector<std::string> values) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  if (deleted_.load() || ft_index_ == nullptr) {
-    RG_THROW(common::ErrorCode::FullTextIndexNotFound,
-             "Fulltext index [{}] was deleted", meta_.name());
-  }
-  FTUpdateBatch batch;
-  batch.AddDocument(id, &fields, &values);
-  ApplyUpdatesBatch(batch.ids, batch.ops, batch.field_counts, batch.fields,
-                    batch.value_counts, batch.values);
-}
-
 bool VertexFullTextIndex::MatchLabelIds(
     const std::unordered_set<uint32_t>& lids) const {
   return std::any_of(lids.begin(), lids.end(), [this](uint32_t lid) {
@@ -1288,18 +1240,6 @@ bool VertexFullTextIndex::MatchPropertyIds(
   return std::any_of(pids.begin(), pids.end(), [this](uint32_t lid) {
     return pids_.find(lid) != pids_.end();
   });
-}
-
-void VertexFullTextIndex::DeleteVertex(int64_t id) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  if (deleted_.load() || ft_index_ == nullptr) {
-    RG_THROW(common::ErrorCode::FullTextIndexNotFound,
-             "Fulltext index [{}] was deleted", meta_.name());
-  }
-  FTUpdateBatch batch;
-  batch.AddDelete(id);
-  ApplyUpdatesBatch(batch.ids, batch.ops, batch.field_counts, batch.fields,
-                    batch.value_counts, batch.values);
 }
 
 void VertexFullTextIndex::ApplyUpdatesBatch(

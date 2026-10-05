@@ -89,32 +89,6 @@ bool ExecutionRow::IsInitialized(std::size_t offset) const {
   return !std::holds_alternative<UninitializedCell>(values_[offset]);
 }
 
-std::int64_t ExecutionRow::EntityIdAt(std::size_t offset) const {
-  RG_CHECK(IsInitialized(offset), common::ErrorCode::InvalidParameter,
-           "entity offset is not initialized");
-  const RowCell &stored = values_[offset];
-  if (const auto *vertex = std::get_if<graphdb::Vertex>(&stored)) {
-    return vertex->GetId();
-  }
-  if (const auto *edge = std::get_if<graphdb::Edge>(&stored)) {
-    return edge->GetId();
-  }
-  const auto *value = std::get_if<rg::Value>(&stored);
-  RG_CHECK(value != nullptr, common::ErrorCode::InternalError,
-           "initialized offset contains no value");
-  if (value->IsNull()) {
-    return -1;
-  }
-  if (value->IsNode()) {
-    return value->AsNode().id;
-  }
-  if (value->IsRelationship()) {
-    return value->AsRelationship().id;
-  }
-  RG_THROW(common::ErrorCode::InvalidParameter,
-           "offset does not contain a graph entity");
-}
-
 const graphdb::Vertex &ExecutionRow::VertexAt(std::size_t offset) const {
   RG_CHECK(IsInitialized(offset), common::ErrorCode::InvalidParameter,
            "node offset is not initialized");
