@@ -180,7 +180,7 @@ Wait for a leader to be elected. Connect to a node's `system` database to inspec
 
 ```cypher
 CALL dbms.graph.getRaftNodeInfos('cluster_demo')
-YIELD node_id, ip, bolt_port, raft_port, is_leader;
+YIELD node_id, ip, bolt_port, raft_port, is_leader, is_learner;
 ```
 
 Once a node reports `is_leader = true`, connect with `neo4j://` and specify the Raft graph name to enable routing:
@@ -202,6 +202,64 @@ with GraphDatabase.driver("neo4j://127.0.0.1:17687", auth=("neo4j", "password"))
 ```
 
 The routing table lists all members as routers and the current leader as both reader and writer. Managed transactions (`execute_read` / `execute_write`) allow the driver to retry when leadership changes. The CLI uses a direct Bolt connection; connect it to the current leader to write to a Raft graph.
+
+### Membership Changes
+
+Run membership changes through a direct Bolt connection to the **current leader's `system` database**, using auto-commit queries. With the Python driver, use `session.run(...).consume()` outside explicit or managed transactions. Each change is replicated through Raft, so submit it once on the leader. Keep a majority of voters available and perform changes one at a time, checking the resulting membership before the next operation.
+
+| Procedure | Description |
+|---|---|
+| `dbms.graph.addRaftLearnerNode(graph_name, member)` | Add a non-voting replica; it replicates data but cannot become leader |
+| `dbms.graph.promoteRaftLearnerNode(graph_name, node_id)` | Promote a learner to a voter after it has caught up |
+| `dbms.graph.addRaftNode(graph_name, member)` | Add a voter directly; this immediately changes the voting quorum |
+| `dbms.graph.demoteRaftNode(graph_name, node_id)` | Demote a voter to a learner while retaining replication |
+| `dbms.graph.removeRaftNode(graph_name, node_id)` | Remove a voter or learner from the graph's membership |
+| `dbms.graph.updateRaftNode(graph_name, member)` | Update an existing member's address and ports, preserving its voter/learner role |
+| `dbms.graph.transferRaftLeader(graph_name, node_id)` | Request leadership transfer to another voter |
+| `dbms.graph.getRaftStatus(graph_name)` | Inspect the leader, term, connectivity, and replication progress |
+
+The `member` map requires `node_id`, `ip`, `bolt_port`, and `raft_port`. An optional `graph` field must equal `graph_name`. New members must have a unique positive node ID and an unused Raft endpoint (`ip` + `raft_port`). Membership procedures do not start servers or create their local graphs; the target server and its Raft graph must be provisioned separately. Removing a member leaves its local graph data in place.
+
+Prefer adding a learner and promoting it after catch-up, so synchronization does not increase the voting quorum. For example, to re-add an existing replica of `cluster_demo`, first remove node 3 while it is a follower. Keep its server and local graph data available:
+
+```cypher
+CALL dbms.graph.removeRaftNode('cluster_demo', 3)
+YIELD node_id, role, raft_index;
+
+CALL dbms.graph.addRaftLearnerNode('cluster_demo', {
+  node_id: 3, ip: '127.0.0.1', bolt_port: 37687, raft_port: 37688,
+  graph: 'cluster_demo'
+})
+YIELD node_id, role, raft_index;
+```
+
+On the leader, inspect replication progress:
+
+```cypher
+CALL dbms.graph.getRaftStatus('cluster_demo')
+YIELD node_id, is_leader, is_learner, reachable, match_index,
+      leader_id, term, commit_index, applied_index
+RETURN node_id, is_leader, is_learner, reachable, match_index,
+       leader_id, term, commit_index, applied_index
+ORDER BY node_id;
+```
+
+Wait until node 3's `match_index` reaches the leader's `commit_index`, then promote it:
+
+```cypher
+CALL dbms.graph.promoteRaftLearnerNode('cluster_demo', 3)
+YIELD node_id, role, raft_index;
+```
+
+Promotion rejects a learner that has not caught up; wait and retry if replication is still in progress. Adding, promoting, demoting, removing, and updating return `node_id`, `role` (`voter` or `learner`), and the applied configuration entry's `raft_index`. For removal, `role` is the member's previous role. A successful call confirms application on the leader; followers may still be catching up. In `getRaftStatus`, `commit_index` and `applied_index` describe the queried node, while per-member `match_index` and `next_index` are available on the leader.
+
+The current leader cannot be removed, demoted, or have its endpoint updated. Transfer leadership to another voter first, for example to node 2 if it is a follower:
+
+```cypher
+CALL dbms.graph.transferRaftLeader('cluster_demo', 2);
+```
+
+The transfer call requests the change; poll `getRaftNodeInfos` until node 2 reports `is_leader = true`, then reconnect to its `system` database for further changes. The last voter cannot be removed or demoted. When updating an endpoint, coordinate the target server's `--host`, `--bolt_port`, and `--raft_port` settings with the new member map; `updateRaftNode` updates cluster metadata, not the running server's flags.
 
 ## Configuration
 
