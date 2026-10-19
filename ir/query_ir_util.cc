@@ -7,7 +7,6 @@
 #include <utility>
 #include <vector>
 
-#include "ast/ast_const_walker.h"
 #include "ast/expression_dependency.h"
 #include "ast/expression_to_string.h"
 #include "ast/semantic_table.h"
@@ -597,66 +596,6 @@ void AddAssertIsNodeVariables(QueryGraph *query_graph) {
   }
 }
 
-void AddNestedPredicateInfo(Predicate *predicate,
-                            const ast::SemanticTable &semantic_table,
-                            const QueryGraph *query_graph) {
-  RG_CHECK(predicate != nullptr, common::ErrorCode::InternalError,
-           "predicate is null");
-  RG_CHECK(predicate->expression != nullptr,
-           common::ErrorCode::InvalidParameter, "predicate expression is null");
-
-  class Collector final : public ast::ASTConstWalker {
-   public:
-    Collector(Predicate *predicate, const ast::SemanticTable &semantic_table,
-              const QueryGraph *query_graph)
-        : predicate_(predicate),
-          semantic_table_(semantic_table),
-          query_graph_(query_graph) {}
-
-   protected:
-    void Visit(const ast::LabelPredicateExpression &node) override {
-      const ast::Variable *variable = AsVariableExpression(node.expr.get());
-      if (variable != nullptr) {
-        auto variable_type =
-            semantic_table_.VariableTypeAt(node, variable->name);
-        if (!variable_type.has_value()) {
-          variable_type = semantic_table_.VariableType(variable->name);
-        }
-        const bool type_unknown =
-            !variable_type.has_value() ||
-            *variable_type == ast::SemanticVariableType::kUnknown;
-        if (variable_type == ast::SemanticVariableType::kRelationship ||
-            (type_unknown && QueryGraphContainsRelationshipVariable(
-                                 query_graph_, variable->name))) {
-          predicate_->nested_relationship_types.push_back(
-              {.variable = variable->name, .relationship_types = node.labels});
-        } else {
-          predicate_->nested_node_labels.push_back(
-              {.variable = variable->name, .labels = node.labels});
-        }
-      }
-      ast::ASTConstWalker::Visit(node);
-    }
-
-    void Visit(const ast::PropertyExpression &node) override {
-      const ast::Variable *variable = AsVariableExpression(node.object.get());
-      if (variable != nullptr && !node.property_key.empty()) {
-        predicate_->nested_properties.push_back(
-            {.variable = variable->name, .property_key = node.property_key});
-      }
-      ast::ASTConstWalker::Visit(node);
-    }
-
-   private:
-    Predicate *predicate_ = nullptr;
-    const ast::SemanticTable &semantic_table_;
-    const QueryGraph *query_graph_ = nullptr;
-  };
-
-  Collector collector(predicate, semantic_table, query_graph);
-  predicate->expression->Accept(collector);
-}
-
 void ClassifyPredicate(Predicate *predicate,
                        const ast::SemanticTable &semantic_table,
                        const QueryGraph *query_graph) {
@@ -789,7 +728,6 @@ void AddSelectionPredicates(const ast::Expression *where,
     selection_predicate.dependencies =
         semantic_table.ExpressionDependencies(*predicate);
     ClassifyPredicate(&selection_predicate, semantic_table, query_graph);
-    AddNestedPredicateInfo(&selection_predicate, semantic_table, query_graph);
     const std::string predicate_key = PredicateKey(selection_predicate);
     if (!selection_keys->insert(predicate_key).second ||
         !selections->AddPredicate(std::move(selection_predicate))) {

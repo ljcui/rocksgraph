@@ -77,21 +77,6 @@ struct NestedIRExpression {
   std::string collection_variable;
 };
 
-struct PredicateLabelInfo {
-  std::string variable;
-  std::vector<std::string> labels;
-};
-
-struct PredicateRelationshipTypeInfo {
-  std::string variable;
-  std::vector<std::string> relationship_types;
-};
-
-struct PredicatePropertyInfo {
-  std::string variable;
-  std::string property_key;
-};
-
 struct Predicate {
   const ast::Expression *expression = nullptr;
   std::unordered_set<std::string> dependencies;
@@ -102,9 +87,6 @@ struct Predicate {
   std::vector<std::string> labels;
   std::vector<std::string> relationship_types;
   std::string comparison_op;
-  std::vector<PredicateLabelInfo> nested_node_labels;
-  std::vector<PredicateRelationshipTypeInfo> nested_relationship_types;
-  std::vector<PredicatePropertyInfo> nested_properties;
   std::vector<NestedIRExpression> nested_expressions;
   QueryIR *subquery = nullptr;
 };

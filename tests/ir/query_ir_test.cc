@@ -1039,27 +1039,6 @@ TEST(QueryIRTest, SelectionsExposePushdownAndInequalityGroups) {
   EXPECT_EQ(groups[0].upper_bounds[0]->comparison_op, "<=");
 }
 
-TEST(QueryIRTest, SelectionsExtractNestedPredicateInfo) {
-  auto statement =
-      ParseOrFail("MATCH (n) WHERE n.age > 30 OR n:Person RETURN n");
-  ASSERT_TRUE(statement);
-
-  std::unique_ptr<ir::QueryIR> query_ir = ir::CreateQueryIR(*statement);
-  const ir::Selections &selections =
-      query_ir->RequireSingle().query_graph.selections;
-
-  ASSERT_EQ(selections.size(), 1U);
-  const ir::Predicate &predicate = selections.predicates[0];
-  EXPECT_EQ(predicate.kind, ir::PredicateKind::kGenericExpression);
-  ASSERT_EQ(predicate.nested_properties.size(), 1U);
-  EXPECT_EQ(predicate.nested_properties[0].variable, "n");
-  EXPECT_EQ(predicate.nested_properties[0].property_key, "age");
-  ASSERT_EQ(predicate.nested_node_labels.size(), 1U);
-  EXPECT_EQ(predicate.nested_node_labels[0].variable, "n");
-  EXPECT_EQ(predicate.nested_node_labels[0].labels,
-            std::vector<std::string>({"Person"}));
-}
-
 TEST(QueryIRTest, QueryGraphApisExposeCoveredIdsAndAvailability) {
   auto statement = ParseOrFail(
       "MATCH p = (a)-[r]->(b) OPTIONAL MATCH (b)-[s]->(c) RETURN a, c");
