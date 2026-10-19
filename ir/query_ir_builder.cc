@@ -420,35 +420,16 @@ class QueryIRBuilder {
 
   NestedIRExpression BuildExistsIRExpression(
       const ast::ExistentialSubquery &exists) {
+    RG_CHECK(exists.query != nullptr, common::ErrorCode::InternalError,
+             "EXISTS subquery must contain a regular query");
     NestedIRExpression nested;
     nested.kind = NestedIRExpressionKind::kExists;
     nested.expression = &exists;
     nested.dependencies = SemanticTableRef().ExpressionDependencies(exists);
     nested.value_variable = NextNestedVariable("exists");
-    if (exists.query != nullptr) {
-      nested.query =
-          BuildRegularQuery(*exists.query, ProjectionPosition::kIntermediate);
-    } else {
-      nested.query = BuildPatternExistsQuery(exists);
-    }
+    nested.query =
+        BuildRegularQuery(*exists.query, ProjectionPosition::kIntermediate);
     return nested;
-  }
-
-  std::unique_ptr<QueryIR> BuildPatternExistsQuery(
-      const ast::ExistentialSubquery &exists) {
-    RG_CHECK(exists.pattern != nullptr, common::ErrorCode::InvalidParameter,
-             Missing("EXISTS pattern"));
-    SingleQueryIR query;
-    AddPatternToQueryGraph(&query.query_graph, *exists.pattern);
-    if (exists.where_expr != nullptr) {
-      std::unordered_set<std::string> selection_keys;
-      AddSelectionPredicates(exists.where_expr.get(), SemanticTableRef(),
-                             &query.query_graph, &query.query_graph.selections,
-                             &selection_keys);
-    }
-    AttachQueryGraphSubqueries(&query.query_graph);
-    query.horizon = QueryHorizon::ForPassthrough();
-    return MakeSingleQueryIR(std::move(query));
   }
 
   NestedIRExpression BuildListIRExpression(
