@@ -533,22 +533,6 @@ QueryGraphBuilder::QueryGraphBuilder(
   graph_.argument_ids = std::move(argument_ids);
 }
 
-void QueryGraphBuilder::BuildReadingClause(const ast::ReadingClause &clause) {
-  switch (clause.node_type) {
-    case ast::ASTNodeType::kMatch:
-      BuildMatch(ast::CastAst<ast::Match>(clause));
-      return;
-    case ast::ASTNodeType::kUnwind:
-      RG_THROW(common::ErrorCode::InvalidParameter, Unsupported("UNWIND"));
-    case ast::ASTNodeType::kInQueryCall:
-      RG_THROW(common::ErrorCode::InvalidParameter,
-               Unsupported("procedure call"));
-    default:
-      break;
-  }
-  RG_THROW(common::ErrorCode::InvalidParameter, Unsupported("reading clause"));
-}
-
 void QueryGraphBuilder::BuildUpdatingClause(const ast::UpdatingClause &clause) {
   graph_.mutating_patterns.push_back(BuildMutatingPattern(clause));
 }

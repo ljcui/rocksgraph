@@ -23,7 +23,7 @@ class QueryGraphBuilder {
   explicit QueryGraphBuilder(const ast::SemanticTable &semantic_table,
                              std::unordered_set<std::string> argument_ids = {});
 
-  void BuildReadingClause(const ast::ReadingClause &clause);
+  void BuildMatch(const ast::Match &match);
   void BuildUpdatingClause(const ast::UpdatingClause &clause);
 
   [[nodiscard]] bool HasLocalWork() const;
@@ -35,7 +35,6 @@ class QueryGraphBuilder {
   QueryGraph Release();
 
  private:
-  void BuildMatch(const ast::Match &match);
   void BuildOptionalMatch(const ast::Match &match);
   void BuildRequiredMatch(const ast::Match &match);
 

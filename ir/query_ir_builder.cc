@@ -241,19 +241,24 @@ class QueryIRBuilder {
       for (const auto &clause : reading) {
         RG_CHECK(clause != nullptr, common::ErrorCode::InvalidParameter,
                  Missing("reading clause"));
-        if (clause->Is(ast::ASTNodeType::kUnwind)) {
-          FinishAndStartNext(
-              QueryHorizon::ForUnwind(query_builder_.BuildUnwindHorizon(
-                  *ast::CastAst<ast::Unwind>(clause.get()))));
-          continue;
+        switch (clause->node_type) {
+          case ast::ASTNodeType::kMatch:
+            builder_.BuildMatch(*ast::CastAst<ast::Match>(clause.get()));
+            break;
+          case ast::ASTNodeType::kUnwind:
+            FinishAndStartNext(
+                QueryHorizon::ForUnwind(query_builder_.BuildUnwindHorizon(
+                    *ast::CastAst<ast::Unwind>(clause.get()))));
+            break;
+          case ast::ASTNodeType::kInQueryCall:
+            FinishAndStartNext(QueryHorizon::ForProcedureCall(
+                query_builder_.BuildProcedureCallHorizon(
+                    *ast::CastAst<ast::InQueryCall>(clause.get()))));
+            break;
+          default:
+            RG_THROW(common::ErrorCode::InvalidParameter,
+                     Unsupported("reading clause"));
         }
-        if (clause->Is(ast::ASTNodeType::kInQueryCall)) {
-          FinishAndStartNext(QueryHorizon::ForProcedureCall(
-              query_builder_.BuildProcedureCallHorizon(
-                  *ast::CastAst<ast::InQueryCall>(clause.get()))));
-          continue;
-        }
-        builder_.BuildReadingClause(*clause);
       }
     }
 
