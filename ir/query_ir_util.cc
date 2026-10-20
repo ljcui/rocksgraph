@@ -28,34 +28,19 @@ std::string Missing(std::string_view subject) {
   return "missing " + std::string(subject);
 }
 
-const ast::Expression *UnwrapParenthesized(const ast::Expression *expression) {
-  const ast::Expression *unwrapped = expression;
-  while (unwrapped != nullptr &&
-         unwrapped->Is(ast::ASTNodeType::kParenthesizedExpression)) {
-    const auto *parenthesized =
-        ast::CastAst<ast::ParenthesizedExpression>(unwrapped);
-    RG_CHECK(parenthesized->expr != nullptr,
-             common::ErrorCode::InvalidParameter,
-             "parenthesized expression is null");
-    unwrapped = parenthesized->expr.get();
-  }
-  return unwrapped;
-}
-
 void SplitConjunctivePredicates(const ast::Expression *expression,
                                 std::vector<const ast::Expression *> *output) {
   RG_CHECK(output != nullptr, common::ErrorCode::InternalError,
            "predicate output is null");
-  const ast::Expression *unwrapped = UnwrapParenthesized(expression);
-  RG_CHECK(unwrapped != nullptr, common::ErrorCode::InvalidParameter,
+  RG_CHECK(expression != nullptr, common::ErrorCode::InvalidParameter,
            "null WHERE predicate is not supported");
-  if (unwrapped->Is(ast::ASTNodeType::kAndExpression)) {
-    const auto *and_expression = ast::CastAst<ast::AndExpression>(unwrapped);
+  if (expression->Is(ast::ASTNodeType::kAndExpression)) {
+    const auto *and_expression = ast::CastAst<ast::AndExpression>(expression);
     SplitConjunctivePredicates(and_expression->left.get(), output);
     SplitConjunctivePredicates(and_expression->right.get(), output);
     return;
   }
-  output->push_back(unwrapped);
+  output->push_back(expression);
 }
 
 SingleQueryIR *LastQueryPart(SingleQueryIR *query) {
@@ -75,41 +60,37 @@ const SingleQueryIR *LastQueryPart(const SingleQueryIR *query) {
 }
 
 const ast::Variable *AsVariableExpression(const ast::Expression *expression) {
-  const ast::Expression *unwrapped = UnwrapParenthesized(expression);
-  if (unwrapped == nullptr || !unwrapped->Is(ast::ASTNodeType::kVariable)) {
+  if (expression == nullptr || !expression->Is(ast::ASTNodeType::kVariable)) {
     return nullptr;
   }
-  return ast::CastAst<ast::Variable>(unwrapped);
+  return ast::CastAst<ast::Variable>(expression);
 }
 
 const ast::PropertyExpression *AsPropertyExpression(
     const ast::Expression *expression) {
-  const ast::Expression *unwrapped = UnwrapParenthesized(expression);
-  if (unwrapped == nullptr ||
-      !unwrapped->Is(ast::ASTNodeType::kPropertyExpression)) {
+  if (expression == nullptr ||
+      !expression->Is(ast::ASTNodeType::kPropertyExpression)) {
     return nullptr;
   }
-  return ast::CastAst<ast::PropertyExpression>(unwrapped);
+  return ast::CastAst<ast::PropertyExpression>(expression);
 }
 
 const ast::ExistentialSubquery *AsExistentialSubquery(
     const ast::Expression *expression) {
-  const ast::Expression *unwrapped = UnwrapParenthesized(expression);
-  if (unwrapped == nullptr ||
-      !unwrapped->Is(ast::ASTNodeType::kExistentialSubquery)) {
+  if (expression == nullptr ||
+      !expression->Is(ast::ASTNodeType::kExistentialSubquery)) {
     return nullptr;
   }
-  return ast::CastAst<ast::ExistentialSubquery>(unwrapped);
+  return ast::CastAst<ast::ExistentialSubquery>(expression);
 }
 
 const ast::PatternPredicateExpression *AsPatternPredicateExpression(
     const ast::Expression *expression) {
-  const ast::Expression *unwrapped = UnwrapParenthesized(expression);
-  if (unwrapped == nullptr ||
-      !unwrapped->Is(ast::ASTNodeType::kPatternPredicateExpression)) {
+  if (expression == nullptr ||
+      !expression->Is(ast::ASTNodeType::kPatternPredicateExpression)) {
     return nullptr;
   }
-  return ast::CastAst<ast::PatternPredicateExpression>(unwrapped);
+  return ast::CastAst<ast::PatternPredicateExpression>(expression);
 }
 
 PatternPropertyMap BuildPropertyMap(const ast::Properties *properties) {
@@ -601,10 +582,7 @@ void ClassifyPredicate(Predicate *predicate,
                        const QueryGraph *query_graph) {
   RG_CHECK(predicate != nullptr, common::ErrorCode::InternalError,
            "predicate is null");
-  RG_CHECK(predicate->expression != nullptr,
-           common::ErrorCode::InvalidParameter, "predicate expression is null");
-  const ast::Expression *expression =
-      UnwrapParenthesized(predicate->expression);
+  const ast::Expression *expression = predicate->expression;
   RG_CHECK(expression != nullptr, common::ErrorCode::InvalidParameter,
            "predicate expression is null");
 
@@ -695,8 +673,7 @@ void ClassifyPredicate(Predicate *predicate,
 
   if (expression->Is(ast::ASTNodeType::kNotExpression)) {
     const auto *not_expression = ast::CastAst<ast::NotExpression>(expression);
-    const ast::Expression *operand =
-        UnwrapParenthesized(not_expression->operand.get());
+    const ast::Expression *operand = not_expression->operand.get();
     if (AsExistentialSubquery(operand) != nullptr ||
         AsPatternPredicateExpression(operand) != nullptr) {
       predicate->kind = PredicateKind::kNotExistsSubquery;

@@ -382,12 +382,11 @@ std::unordered_set<std::string> UnionSymbols(
 
 const ast::ComparisonExpression *AsComparisonExpression(
     const ast::Expression *expression) {
-  const ast::Expression *unwrapped = UnwrapParenthesized(expression);
-  if (unwrapped == nullptr ||
-      !unwrapped->Is(ast::ASTNodeType::kComparisonExpression)) {
+  if (expression == nullptr ||
+      !expression->Is(ast::ASTNodeType::kComparisonExpression)) {
     return nullptr;
   }
-  return ast::CastAst<ast::ComparisonExpression>(unwrapped);
+  return ast::CastAst<ast::ComparisonExpression>(expression);
 }
 
 bool IsCrossComponentPredicate(const Predicate &predicate,
@@ -445,21 +444,20 @@ std::vector<const ast::Expression *> JoinPredicateExpressions(
 
 std::optional<double> NonNegativeIntegerLiteral(
     const ast::Expression *expression) {
-  const ast::Expression *unwrapped = UnwrapParenthesized(expression);
-  if (unwrapped == nullptr ||
-      !unwrapped->Is(ast::ASTNodeType::kIntegerLiteral)) {
+  if (expression == nullptr ||
+      !expression->Is(ast::ASTNodeType::kIntegerLiteral)) {
     return std::nullopt;
   }
-  const auto *literal = ast::CastAst<ast::IntegerLiteral>(unwrapped);
+  const auto *literal = ast::CastAst<ast::IntegerLiteral>(expression);
   return std::max<double>(0.0, static_cast<double>(literal->value));
 }
 
 std::optional<double> LiteralListSize(const ast::Expression *expression) {
-  const ast::Expression *unwrapped = UnwrapParenthesized(expression);
-  if (unwrapped == nullptr || !unwrapped->Is(ast::ASTNodeType::kListLiteral)) {
+  if (expression == nullptr ||
+      !expression->Is(ast::ASTNodeType::kListLiteral)) {
     return std::nullopt;
   }
-  const auto *literal = ast::CastAst<ast::ListLiteral>(unwrapped);
+  const auto *literal = ast::CastAst<ast::ListLiteral>(expression);
   return static_cast<double>(literal->elements.size());
 }
 

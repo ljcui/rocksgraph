@@ -91,7 +91,7 @@ IndexRange EvaluateIndexRange(const std::vector<PhysicalExpression> &predicates,
   };
   IndexRange range;
   for (const auto &predicate : predicates) {
-    const auto *expression = ir::UnwrapParenthesized(predicate.Expression());
+    const auto *expression = predicate.Expression();
     RG_CHECK(expression != nullptr, common::ErrorCode::InternalError,
              "index range predicate is null");
     if (expression->Is(ast::ASTNodeType::kStringPredicateExpression)) {

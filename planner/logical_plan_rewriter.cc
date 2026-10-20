@@ -46,26 +46,24 @@ bool ApplyRuleBottomUp(LogicalPlanPtr *plan,
 }
 
 bool IsVariable(const ast::Expression *expression, std::string_view name) {
-  expression = UnwrapParenthesized(expression);
   return expression != nullptr && expression->Is(ast::ASTNodeType::kVariable) &&
          ast::CastAst<ast::Variable>(expression)->name == name;
 }
 
 bool IsRelationshipUniqueness(const ast::Expression *expression,
                               std::string_view relationship) {
-  expression = UnwrapParenthesized(expression);
   if (expression == nullptr ||
       !expression->Is(ast::ASTNodeType::kAllQuantifier)) {
     return false;
   }
   const auto &all = *ast::CastAst<ast::AllQuantifier>(expression);
-  const auto *predicate = UnwrapParenthesized(all.predicate.get());
+  const auto *predicate = all.predicate.get();
   if (!IsVariable(all.list_expr.get(), relationship) || predicate == nullptr ||
       !predicate->Is(ast::ASTNodeType::kSingleQuantifier)) {
     return false;
   }
   const auto &single = *ast::CastAst<ast::SingleQuantifier>(predicate);
-  predicate = UnwrapParenthesized(single.predicate.get());
+  predicate = single.predicate.get();
   if (all.variable == relationship || single.variable == relationship ||
       !IsVariable(single.list_expr.get(), relationship) ||
       predicate == nullptr ||

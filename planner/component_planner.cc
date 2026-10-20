@@ -84,7 +84,6 @@ bool HasStaticIndexBound(const Predicate &predicate) {
 }
 
 bool IsEntityId(const ast::Expression *expression, std::string_view variable) {
-  expression = UnwrapParenthesized(expression);
   if (expression == nullptr ||
       !expression->Is(ast::ASTNodeType::kFunctionInvocation)) {
     return false;
@@ -95,7 +94,7 @@ bool IsEntityId(const ast::Expression *expression, std::string_view variable) {
       call.arguments.size() != 1) {
     return false;
   }
-  const auto *argument = UnwrapParenthesized(call.arguments.front().get());
+  const auto *argument = call.arguments.front().get();
   return argument != nullptr && argument->Is(ast::ASTNodeType::kVariable) &&
          ast::CastAst<ast::Variable>(argument)->name == variable;
 }
@@ -113,7 +112,7 @@ std::vector<IdPredicate> IdPredicates(const QueryGraph &query_graph,
     if (!predicate.nested_expressions.empty()) {
       continue;
     }
-    const auto *expression = UnwrapParenthesized(predicate.expression);
+    const auto *expression = predicate.expression;
     const ast::Expression *ids = nullptr;
     bool many = false;
     if (expression != nullptr &&
@@ -1136,7 +1135,7 @@ std::size_t QueryGraphPlanningContext::ApplyAvailableFilters(
         *plan = std::make_unique<AntiSemiApplyPlan>(
             std::move(*plan), BuildNestedPlan(*predicate.subquery));
       } else {
-        const auto *expression = UnwrapParenthesized(predicate.expression);
+        const auto *expression = predicate.expression;
         const ast::Expression *guard = nullptr;
         bool anti = false;
         if (expression->Is(ast::ASTNodeType::kOrExpression) &&
@@ -1147,17 +1146,17 @@ std::size_t QueryGraphPlanningContext::ApplyAvailableFilters(
               *ast::CastAst<ast::OrExpression>(expression);
           const auto &nested = predicate.nested_expressions.front();
           for (const bool swap : {false, true}) {
-            const auto *candidate = UnwrapParenthesized(
-                swap ? disjunction.left.get() : disjunction.right.get());
+            const auto *candidate =
+                swap ? disjunction.left.get() : disjunction.right.get();
             const bool negated =
                 candidate->Is(ast::ASTNodeType::kNotExpression);
             if (negated) {
-              candidate = UnwrapParenthesized(
-                  ast::CastAst<ast::NotExpression>(candidate)->operand.get());
+              candidate =
+                  ast::CastAst<ast::NotExpression>(candidate)->operand.get();
             }
             const auto *other =
                 swap ? disjunction.right.get() : disjunction.left.get();
-            if (candidate == UnwrapParenthesized(nested.expression) &&
+            if (candidate == nested.expression &&
                 ExpressionIsDeterministic(*other)) {
               guard = other;
               anti = negated;

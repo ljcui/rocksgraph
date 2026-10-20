@@ -20,7 +20,6 @@ std::string UnsupportedInStage(std::string_view stage,
                                std::string_view feature);
 std::string Missing(std::string_view subject);
 
-const ast::Expression *UnwrapParenthesized(const ast::Expression *expression);
 SingleQueryIR *LastQueryPart(SingleQueryIR *query);
 const SingleQueryIR *LastQueryPart(const SingleQueryIR *query);
 const ast::Variable *AsVariableExpression(const ast::Expression *expression);

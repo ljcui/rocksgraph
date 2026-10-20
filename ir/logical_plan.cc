@@ -531,15 +531,6 @@ std::string ShortestPathDetails(std::string details, ShortestPathKind kind) {
   RG_THROW(common::ErrorCode::InternalError, "unknown shortest path kind");
 }
 
-const ast::Expression *UnwrapParenthesized(const ast::Expression *expression) {
-  while (expression != nullptr &&
-         expression->Is(ast::ASTNodeType::kParenthesizedExpression)) {
-    expression =
-        ast::CastAst<ast::ParenthesizedExpression>(*expression).expr.get();
-  }
-  return expression;
-}
-
 bool DependenciesWithin(const std::unordered_set<std::string> &dependencies,
                         const std::unordered_set<std::string> &symbols) {
   for (const auto &dependency : dependencies) {
@@ -556,13 +547,12 @@ std::vector<ValueHashJoinKey> BuildValueHashJoinKeys(
   std::vector<ValueHashJoinKey> keys;
   keys.reserve(predicates.size());
   for (const ast::Expression *predicate : predicates) {
-    const ast::Expression *unwrapped = UnwrapParenthesized(predicate);
-    RG_CHECK(unwrapped != nullptr &&
-                 unwrapped->Is(ast::ASTNodeType::kComparisonExpression),
+    RG_CHECK(predicate != nullptr &&
+                 predicate->Is(ast::ASTNodeType::kComparisonExpression),
              common::ErrorCode::InvalidParameter,
              "value hash join predicate is not a comparison");
     const auto &comparison =
-        ast::CastAst<ast::ComparisonExpression>(*unwrapped);
+        ast::CastAst<ast::ComparisonExpression>(*predicate);
     RG_CHECK(comparison.op == "=" && comparison.left != nullptr &&
                  comparison.right != nullptr,
              common::ErrorCode::InvalidParameter,
