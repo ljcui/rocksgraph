@@ -158,13 +158,14 @@ class QueryIRArgumentFinalizer {
       const std::unordered_set<std::string> &available_symbols) const {
     RG_CHECK(selections != nullptr, common::ErrorCode::InternalError,
              "selections is null");
-    for (auto &predicate : selections->predicates) {
+    for (auto &predicate_ptr : selections->predicates) {
+      auto &predicate = *predicate_ptr;
       for (auto &nested : predicate.nested_expressions) {
         FinalizeNestedIRExpression(
             &nested, IntersectSymbols(nested.dependencies, available_symbols));
       }
-      if (predicate.subquery == nullptr &&
-          predicate.kind == PredicateKind::kExistsSubquery) {
+      if (predicate.Subquery() == nullptr &&
+          predicate.GetIf<ExistsPredicate>() != nullptr) {
         RG_THROW(common::ErrorCode::InvalidParameter,
                  Missing("EXISTS nested IR expression"));
       }
@@ -251,7 +252,8 @@ class QueryIRArgumentFinalizer {
       AddSymbol(&dependencies, relationship.left_node);
       AddSymbol(&dependencies, relationship.right_node);
     }
-    for (const auto &predicate : query_graph.selections.predicates) {
+    for (const auto &predicate_ptr : query_graph.selections.predicates) {
+      const auto &predicate = *predicate_ptr;
       AddSymbols(&dependencies, predicate.dependencies);
     }
     for (const auto &optional_match : query_graph.optional_matches) {
@@ -303,7 +305,8 @@ class QueryIRArgumentFinalizer {
       const Selections &selections) {
     RG_CHECK(dependencies != nullptr, common::ErrorCode::InternalError,
              "dependency set is null");
-    for (const auto &predicate : selections.predicates) {
+    for (const auto &predicate_ptr : selections.predicates) {
+      const auto &predicate = *predicate_ptr;
       AddSymbols(dependencies, predicate.dependencies);
     }
   }

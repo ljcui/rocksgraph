@@ -77,10 +77,11 @@ bool PredicateDependsOnlyOn(const Predicate &predicate,
 }
 
 bool HasStaticIndexBound(const Predicate &predicate) {
-  return predicate.property_value != nullptr &&
-         ast::CollectExpressionDependencies(*predicate.property_value)
-             .empty() &&
-         ExpressionIsDeterministic(*predicate.property_value);
+  const auto *property = predicate.GetIf<PropertyPredicate>();
+  const auto *value = property == nullptr ? nullptr : property->Value();
+  return value != nullptr &&
+         ast::CollectExpressionDependencies(*value).empty() &&
+         ExpressionIsDeterministic(*value);
 }
 
 bool IsEntityId(const ast::Expression *expression, std::string_view variable) {
@@ -108,7 +109,8 @@ struct IdPredicate {
 std::vector<IdPredicate> IdPredicates(const QueryGraph &query_graph,
                                       std::string_view variable) {
   std::vector<IdPredicate> result;
-  for (const auto &predicate : query_graph.selections.predicates) {
+  for (const auto &predicate_ptr : query_graph.selections.predicates) {
+    const auto &predicate = *predicate_ptr;
     if (!predicate.nested_expressions.empty()) {
       continue;
     }
@@ -182,11 +184,18 @@ std::vector<ast::PrecomputedExpression> PrecomputedExpressions(
   return out;
 }
 
+const PropertyPredicate &RequirePropertyPredicate(const Predicate &predicate) {
+  const auto *property = predicate.GetIf<PropertyPredicate>();
+  RG_CHECK(property != nullptr, common::ErrorCode::InternalError,
+           "expected property predicate");
+  return *property;
+}
+
 const ast::Expression *PredicateValueExpression(const Predicate &predicate) {
-  RG_CHECK(predicate.property_value != nullptr,
-           common::ErrorCode::InvalidParameter,
+  const auto *value = RequirePropertyPredicate(predicate).Value();
+  RG_CHECK(value != nullptr, common::ErrorCode::InvalidParameter,
            "index seek predicate value is null");
-  return predicate.property_value;
+  return value;
 }
 
 void AddRangePredicateGroup(std::vector<std::vector<const Predicate *>> *groups,
@@ -196,11 +205,12 @@ void AddRangePredicateGroup(std::vector<std::vector<const Predicate *>> *groups,
   if (predicates.empty()) {
     return;
   }
-  const std::string &property_key = predicates.front()->property_key;
+  const std::string &property_key =
+      RequirePropertyPredicate(*predicates.front()).property_key;
   for (auto &group : *groups) {
     RG_CHECK(!group.empty(), common::ErrorCode::InternalError,
              "range predicate group is empty");
-    if (group.front()->property_key == property_key) {
+    if (RequirePropertyPredicate(*group.front()).property_key == property_key) {
       group.insert(group.end(), predicates.begin(), predicates.end());
       return;
     }
@@ -214,8 +224,10 @@ std::vector<std::string> LabelsFromPredicates(
   for (const Predicate *predicate : predicates) {
     RG_CHECK(predicate != nullptr, common::ErrorCode::InternalError,
              "predicate is null");
-    labels.insert(labels.end(), predicate->labels.begin(),
-                  predicate->labels.end());
+    const auto *label = predicate->GetIf<NodeLabelPredicate>();
+    RG_CHECK(label != nullptr, common::ErrorCode::InternalError,
+             "expected node label predicate");
+    labels.insert(labels.end(), label->labels.begin(), label->labels.end());
   }
   return SortedUniqueStrings(std::move(labels));
 }
@@ -962,7 +974,8 @@ QueryGraphPlanningContext::BuildNodeLeafCandidates(
        IndexRangePredicateGroups(query_graph.selections, variable,
                                  IndexEntityKind::kNode, labels)) {
     Restore(base_predicates);
-    const std::string property_key = range_predicates.front()->property_key;
+    const std::string property_key =
+        RequirePropertyPredicate(*range_predicates.front()).property_key;
     MarkPlanned(label_predicates);
     MarkPlanned(range_predicates);
     auto plan = std::make_unique<NodeIndexRangeSeekPlan>(
@@ -1052,7 +1065,8 @@ QueryGraphPlanningContext::BuildRelationshipLeafCandidates(
        IndexRangePredicateGroups(query_graph.selections, relationship.variable,
                                  IndexEntityKind::kRelationship, types)) {
     Restore(type_predicates);
-    const std::string property_key = range_predicates.front()->property_key;
+    const std::string property_key =
+        RequirePropertyPredicate(*range_predicates.front()).property_key;
     MarkPlanned(range_predicates);
     auto plan = std::make_unique<RelationshipIndexRangeSeekPlan>(
         relationship.left_node, relationship.variable, relationship.right_node,
@@ -1083,8 +1097,10 @@ std::vector<std::string> QueryGraphPlanningContext::ConsumeRelationshipTypes(
            selections, relationship.variable)) {
     RG_CHECK(predicate != nullptr, common::ErrorCode::InternalError,
              "predicate is null");
-    std::vector<std::string> predicate_types =
-        SortedUniqueStrings(predicate->relationship_types);
+    const auto *type = predicate->GetIf<RelationshipTypePredicate>();
+    RG_CHECK(type != nullptr, common::ErrorCode::InternalError,
+             "expected relationship type predicate");
+    std::vector<std::string> predicate_types = SortedUniqueStrings(type->types);
     if (predicate_types.empty()) {
       continue;
     }
@@ -1112,7 +1128,8 @@ std::size_t QueryGraphPlanningContext::ApplyAvailableFilters(
   bool changed = true;
   while (changed) {
     changed = false;
-    for (const auto &predicate : selections.predicates) {
+    for (const auto &predicate_ptr : selections.predicates) {
+      const auto &predicate = *predicate_ptr;
       if (planned_predicates_->contains(&predicate)) {
         continue;
       }
@@ -1122,18 +1139,17 @@ std::size_t QueryGraphPlanningContext::ApplyAvailableFilters(
       RG_CHECK(predicate.expression != nullptr,
                common::ErrorCode::InvalidParameter,
                "selection predicate expression is null");
-      if (predicate.kind == PredicateKind::kExistsSubquery) {
-        RG_CHECK(predicate.subquery != nullptr,
+      if (const auto *exists = predicate.GetIf<ExistsPredicate>()) {
+        RG_CHECK(predicate.Subquery() != nullptr,
                  common::ErrorCode::InvalidParameter,
                  "EXISTS predicate subquery is null");
-        *plan = std::make_unique<SemiApplyPlan>(
-            std::move(*plan), BuildNestedPlan(*predicate.subquery));
-      } else if (predicate.kind == PredicateKind::kNotExistsSubquery) {
-        RG_CHECK(predicate.subquery != nullptr,
-                 common::ErrorCode::InvalidParameter,
-                 "NOT EXISTS predicate subquery is null");
-        *plan = std::make_unique<AntiSemiApplyPlan>(
-            std::move(*plan), BuildNestedPlan(*predicate.subquery));
+        if (exists->negated) {
+          *plan = std::make_unique<AntiSemiApplyPlan>(
+              std::move(*plan), BuildNestedPlan(*predicate.Subquery()));
+        } else {
+          *plan = std::make_unique<SemiApplyPlan>(
+              std::move(*plan), BuildNestedPlan(*predicate.Subquery()));
+        }
       } else {
         const auto *expression = predicate.expression;
         const ast::Expression *guard = nullptr;
@@ -1218,7 +1234,8 @@ void QueryGraphPlanningContext::ApplyNestedExpressions(
 
 void QueryGraphPlanningContext::ValidateAllPredicatesPlanned(
     const Selections &selections) const {
-  for (const auto &predicate : selections.predicates) {
+  for (const auto &predicate_ptr : selections.predicates) {
+    const auto &predicate = *predicate_ptr;
     RG_CHECK(planned_predicates_->contains(&predicate),
              common::ErrorCode::InvalidParameter,
              UnsupportedInStage(kLogicalPlanStage,
@@ -1241,9 +1258,11 @@ QueryGraphPlanningContext::ConsumableNodeLabelPredicates(
     const Selections &selections, std::string_view variable) const {
   std::vector<const Predicate *> out;
   for (const Predicate *predicate : selections.NodeLabelPredicates(variable)) {
+    const auto *label =
+        predicate == nullptr ? nullptr : predicate->GetIf<NodeLabelPredicate>();
     if (predicate != nullptr && predicate->expression != nullptr &&
-        PredicateDependsOnlyOn(*predicate, variable) &&
-        !predicate->labels.empty()) {
+        PredicateDependsOnlyOn(*predicate, variable) && label != nullptr &&
+        !label->labels.empty()) {
       out.push_back(predicate);
     }
   }
@@ -1256,9 +1275,12 @@ QueryGraphPlanningContext::ConsumableRelationshipTypePredicates(
   std::vector<const Predicate *> out;
   for (const Predicate *predicate :
        selections.RelationshipTypePredicates(variable)) {
+    const auto *type = predicate == nullptr
+                           ? nullptr
+                           : predicate->GetIf<RelationshipTypePredicate>();
     if (predicate != nullptr && predicate->expression != nullptr &&
-        PredicateDependsOnlyOn(*predicate, variable) &&
-        !predicate->relationship_types.empty()) {
+        PredicateDependsOnlyOn(*predicate, variable) && type != nullptr &&
+        !type->types.empty()) {
       out.push_back(predicate);
     }
   }
@@ -1306,18 +1328,21 @@ QueryGraphPlanningContext::IndexSeekPredicates(
     IndexEntityKind entity_kind,
     const std::vector<std::string> &qualifiers) const {
   std::vector<IndexedPredicate> out;
-  for (const auto &predicate : selections.predicates) {
-    if (predicate.kind != PredicateKind::kPropertyEquality ||
-        !StringEquals(predicate.variable, variable) ||
-        predicate.property_key.empty() || predicate.expression == nullptr ||
+  for (const auto &predicate_ptr : selections.predicates) {
+    const auto &predicate = *predicate_ptr;
+    const auto *property = predicate.GetIf<PropertyPredicate>();
+    if (property == nullptr ||
+        property->Kind() != PredicateKind::kPropertyEquality ||
+        !StringEquals(property->variable, variable) ||
+        property->property_key.empty() || predicate.expression == nullptr ||
         !PredicateDependsOnlyOn(predicate, variable)) {
       continue;
     }
-    if (predicate.property_value == nullptr) {
+    if (property->Value() == nullptr) {
       continue;
     }
     std::optional<IndexDescriptor> index =
-        FindIndex(entity_kind, qualifiers, predicate.property_key);
+        FindIndex(entity_kind, qualifiers, property->property_key);
     if (!index.has_value() || !index->supports_equality) {
       continue;
     }
@@ -1329,7 +1354,8 @@ QueryGraphPlanningContext::IndexSeekPredicates(
         RG_CHECK(lhs.predicate != nullptr && rhs.predicate != nullptr,
                  common::ErrorCode::InternalError,
                  "index seek predicate is null");
-        return lhs.predicate->property_key < rhs.predicate->property_key;
+        return RequirePropertyPredicate(*lhs.predicate).property_key <
+               RequirePropertyPredicate(*rhs.predicate).property_key;
       });
   return out;
 }
@@ -1368,18 +1394,21 @@ QueryGraphPlanningContext::IndexRangePredicateGroups(
     }
     AddRangePredicateGroup(&groups, std::move(predicates));
   }
-  for (const auto &predicate : selections.predicates) {
-    if (predicate.kind != PredicateKind::kPropertyStringPredicate ||
-        !StringEquals(predicate.variable, variable) ||
-        predicate.property_key.empty() || predicate.property_value == nullptr ||
+  for (const auto &predicate_ptr : selections.predicates) {
+    const auto &predicate = *predicate_ptr;
+    const auto *property = predicate.GetIf<PropertyPredicate>();
+    if (property == nullptr ||
+        property->Kind() != PredicateKind::kPropertyStringPredicate ||
+        !StringEquals(property->variable, variable) ||
+        property->property_key.empty() || property->Value() == nullptr ||
         predicate.expression == nullptr ||
-        !StringEquals(predicate.comparison_op, "STARTS WITH") ||
+        property->Operator() != "STARTS WITH" ||
         !HasStaticIndexBound(predicate) ||
         !PredicateDependsOnlyOn(predicate, variable)) {
       continue;
     }
     const std::optional<IndexDescriptor> index =
-        FindIndex(entity_kind, qualifiers, predicate.property_key);
+        FindIndex(entity_kind, qualifiers, property->property_key);
     if (!index.has_value() || !index->supports_range) {
       continue;
     }
@@ -1391,7 +1420,8 @@ QueryGraphPlanningContext::IndexRangePredicateGroups(
          const std::vector<const Predicate *> &rhs) {
         RG_CHECK(!lhs.empty() && !rhs.empty(), common::ErrorCode::InternalError,
                  "index range predicate group is empty");
-        return lhs.front()->property_key < rhs.front()->property_key;
+        return RequirePropertyPredicate(*lhs.front()).property_key <
+               RequirePropertyPredicate(*rhs.front()).property_key;
       });
   return groups;
 }

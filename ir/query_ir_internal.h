@@ -61,7 +61,6 @@ bool StringSetContains(const std::unordered_set<std::string> &values,
                        std::string_view expected);
 bool StringSetEquals(const std::unordered_set<std::string> &lhs,
                      const std::unordered_set<std::string> &rhs);
-bool IsPropertyPredicateKind(PredicateKind kind);
 bool IsLowerBoundComparison(std::string_view op);
 bool IsUpperBoundComparison(std::string_view op);
 bool DependenciesMet(const std::unordered_set<std::string> &dependencies,

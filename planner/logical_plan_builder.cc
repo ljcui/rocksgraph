@@ -193,7 +193,8 @@ std::vector<std::string> ProjectionSelectionPassthroughVariables(
     const LogicalPlan &input, const QueryProjection &projection,
     const std::vector<std::string> &aliases) {
   std::vector<std::string> variables;
-  for (const auto &predicate : projection.selections.predicates) {
+  for (const auto &predicate_ptr : projection.selections.predicates) {
+    const auto &predicate = *predicate_ptr;
     for (const auto &dependency : predicate.dependencies) {
       if (dependency.empty() || StringVectorContains(aliases, dependency) ||
           !StringVectorContains(input.OutputColumns(), dependency)) {
@@ -425,8 +426,7 @@ bool IsValueHashJoinPredicate(const Predicate &predicate,
 
 bool CanUsePredicateJoin(const Predicate &predicate) {
   return predicate.nested_expressions.empty() &&
-         predicate.kind != PredicateKind::kExistsSubquery &&
-         predicate.kind != PredicateKind::kNotExistsSubquery;
+         predicate.GetIf<ExistsPredicate>() == nullptr;
 }
 
 std::vector<const ast::Expression *> JoinPredicateExpressions(
@@ -862,12 +862,11 @@ QueryGraph QueryGraphFromMergeMatchGraph(const MergeMatchGraph &match_graph) {
     }
     RG_CHECK(label.expression != nullptr, common::ErrorCode::InternalError,
              "MERGE label predicate expression is null");
-    Predicate predicate;
-    predicate.expression = label.expression;
-    predicate.dependencies.insert(label.variable);
-    predicate.kind = PredicateKind::kNodeLabel;
-    predicate.variable = label.variable;
-    predicate.labels = label.labels;
+    auto predicate = std::make_unique<NodeLabelPredicate>();
+    predicate->expression = label.expression;
+    predicate->dependencies.insert(label.variable);
+    predicate->variable = label.variable;
+    predicate->labels = label.labels;
     query_graph.selections.AddPredicate(std::move(predicate));
   }
   for (const auto &equality : match_graph.property_equalities) {
@@ -878,16 +877,15 @@ QueryGraph QueryGraphFromMergeMatchGraph(const MergeMatchGraph &match_graph) {
              "MERGE property equality value is null");
     RG_CHECK(equality.expression != nullptr, common::ErrorCode::InternalError,
              "MERGE property equality expression is null");
-    Predicate predicate;
-    predicate.expression = equality.expression;
-    predicate.dependencies.insert(equality.variable);
-    AddSymbols(&predicate.dependencies,
+    auto predicate = std::make_unique<PropertyComparisonPredicate>();
+    predicate->expression = equality.expression;
+    predicate->dependencies.insert(equality.variable);
+    AddSymbols(&predicate->dependencies,
                ast::CollectExpressionDependencies(*equality.value));
-    predicate.kind = PredicateKind::kPropertyEquality;
-    predicate.variable = equality.variable;
-    predicate.property_key = equality.property_key;
-    predicate.property_value = equality.value;
-    predicate.comparison_op = "=";
+    predicate->variable = equality.variable;
+    predicate->property_key = equality.property_key;
+    predicate->op = "=";
+    predicate->value = equality.value;
     query_graph.selections.AddPredicate(std::move(predicate));
   }
   AddAssertIsNodeVariables(&query_graph);
@@ -1012,7 +1010,8 @@ class LogicalPlanBuilder {
                                    component.pattern_nodes.end());
         }
         std::unordered_set<std::string> external_arguments;
-        for (const auto &predicate : query_graph.selections.predicates) {
+        for (const auto &predicate_ptr : query_graph.selections.predicates) {
+          const auto &predicate = *predicate_ptr;
           AddSymbols(&external_arguments, predicate.dependencies);
         }
         for (const auto &optional_match : query_graph.optional_matches) {
@@ -1083,10 +1082,10 @@ class LogicalPlanBuilder {
   void ValidateSupportedQueryGraph(const QueryGraph &query_graph) const {
     RG_CHECK(query_graph.hints.empty(), common::ErrorCode::InvalidParameter,
              UnsupportedInStage(kLogicalPlanStage, "planner hint"));
-    for (const auto &predicate : query_graph.selections.predicates) {
-      if (predicate.kind == PredicateKind::kExistsSubquery ||
-          predicate.kind == PredicateKind::kNotExistsSubquery) {
-        RG_CHECK(predicate.subquery != nullptr,
+    for (const auto &predicate_ptr : query_graph.selections.predicates) {
+      const auto &predicate = *predicate_ptr;
+      if (predicate.GetIf<ExistsPredicate>() != nullptr) {
+        RG_CHECK(predicate.Subquery() != nullptr,
                  common::ErrorCode::InvalidParameter,
                  "EXISTS predicate subquery is null");
       }
@@ -1195,7 +1194,8 @@ class LogicalPlanBuilder {
       const std::unordered_set<std::string> &right,
       bool value_hash_join) const {
     std::vector<const Predicate *> predicates;
-    for (const auto &predicate : selections.predicates) {
+    for (const auto &predicate_ptr : selections.predicates) {
+      const auto &predicate = *predicate_ptr;
       if (planned_predicates_.contains(&predicate)) {
         continue;
       }
@@ -1448,7 +1448,8 @@ class LogicalPlanBuilder {
     symbols.insert(pattern.variable);
     symbols.insert(pattern.right_node);
     std::vector<const ast::Expression *> predicates;
-    for (const auto &predicate : optional.selections.predicates) {
+    for (const auto &predicate_ptr : optional.selections.predicates) {
+      const auto &predicate = *predicate_ptr;
       if (!predicate.nested_expressions.empty() ||
           predicate.expression == nullptr ||
           !ExpressionIsDeterministic(*predicate.expression) ||
@@ -1507,7 +1508,8 @@ class LogicalPlanBuilder {
         return false;
       }
     }
-    for (const auto &predicate : optional.selections.predicates) {
+    for (const auto &predicate_ptr : optional.selections.predicates) {
+      const auto &predicate = *predicate_ptr;
       if (predicate.expression == nullptr ||
           !predicate.nested_expressions.empty() ||
           !ExpressionIsDeterministic(*predicate.expression)) {

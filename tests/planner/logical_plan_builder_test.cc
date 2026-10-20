@@ -1547,10 +1547,10 @@ TEST(LogicalPlanBuilderTest,
   query.query_graph.pattern_nodes.insert("n");
   auto predicate_expression = Equality(Variable("n"), Variable("missing"));
   const ast::Expression *predicate_ptr = predicate_expression.get();
-  query.query_graph.selections.predicates.push_back(
-      {.expression = predicate_ptr,
-       .dependencies = {"n", "missing"},
-       .kind = ir::PredicateKind::kGenericExpression});
+  auto predicate = std::make_unique<ir::GenericPredicate>();
+  predicate->expression = predicate_ptr;
+  predicate->dependencies = {"n", "missing"};
+  query.query_graph.selections.AddPredicate(std::move(predicate));
 
   ExpectLogicalPlanInvalidArgument(
       query, "selection predicate with unmet dependencies is not supported");

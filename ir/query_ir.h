@@ -78,17 +78,118 @@ struct NestedIRExpression {
 };
 
 struct Predicate {
+  Predicate() = default;
+  Predicate(const Predicate &) = delete;
+  Predicate &operator=(const Predicate &) = delete;
+  virtual ~Predicate() = default;
+
   const ast::Expression *expression = nullptr;
   std::unordered_set<std::string> dependencies;
-  PredicateKind kind = PredicateKind::kGenericExpression;
-  std::string variable;
-  std::string property_key;
-  const ast::Expression *property_value = nullptr;
-  std::vector<std::string> labels;
-  std::vector<std::string> relationship_types;
-  std::string comparison_op;
   std::vector<NestedIRExpression> nested_expressions;
-  QueryIR *subquery = nullptr;
+
+  [[nodiscard]] virtual PredicateKind Kind() const = 0;
+  [[nodiscard]] virtual std::string_view Variable() const { return {}; }
+  [[nodiscard]] const QueryIR *Subquery() const;
+
+  template <typename T>
+  [[nodiscard]] const T *GetIf() const {
+    return dynamic_cast<const T *>(this);
+  }
+};
+
+struct GenericPredicate final : Predicate {
+  LogicalVariable variable;
+
+  [[nodiscard]] PredicateKind Kind() const override {
+    return PredicateKind::kGenericExpression;
+  }
+  [[nodiscard]] std::string_view Variable() const override { return variable; }
+};
+
+struct NodeLabelPredicate final : Predicate {
+  LogicalVariable variable;
+  std::vector<std::string> labels;
+
+  [[nodiscard]] PredicateKind Kind() const override {
+    return PredicateKind::kNodeLabel;
+  }
+  [[nodiscard]] std::string_view Variable() const override { return variable; }
+};
+
+struct RelationshipTypePredicate final : Predicate {
+  LogicalVariable variable;
+  std::vector<std::string> types;
+
+  [[nodiscard]] PredicateKind Kind() const override {
+    return PredicateKind::kRelationshipType;
+  }
+  [[nodiscard]] std::string_view Variable() const override { return variable; }
+};
+
+struct PropertyPredicate : Predicate {
+  LogicalVariable variable;
+  std::string property_key;
+
+  [[nodiscard]] std::string_view Variable() const override { return variable; }
+  [[nodiscard]] virtual std::string_view Operator() const = 0;
+  [[nodiscard]] virtual const ast::Expression *Value() const = 0;
+};
+
+struct PropertyComparisonPredicate final : PropertyPredicate {
+  std::string op;
+  const ast::Expression *value = nullptr;
+
+  [[nodiscard]] PredicateKind Kind() const override {
+    return op == "=" ? PredicateKind::kPropertyEquality
+                     : PredicateKind::kPropertyComparison;
+  }
+  [[nodiscard]] std::string_view Operator() const override { return op; }
+  [[nodiscard]] const ast::Expression *Value() const override { return value; }
+};
+
+struct PropertyInPredicate final : PropertyPredicate {
+  const ast::Expression *list = nullptr;
+
+  [[nodiscard]] PredicateKind Kind() const override {
+    return PredicateKind::kPropertyIn;
+  }
+  [[nodiscard]] std::string_view Operator() const override { return "IN"; }
+  [[nodiscard]] const ast::Expression *Value() const override { return list; }
+};
+
+struct PropertyStringPredicate final : PropertyPredicate {
+  std::string op;
+  const ast::Expression *value = nullptr;
+
+  [[nodiscard]] PredicateKind Kind() const override {
+    return PredicateKind::kPropertyStringPredicate;
+  }
+  [[nodiscard]] std::string_view Operator() const override { return op; }
+  [[nodiscard]] const ast::Expression *Value() const override { return value; }
+};
+
+struct PropertyNullPredicate final : PropertyPredicate {
+  bool is_null = true;
+
+  [[nodiscard]] PredicateKind Kind() const override {
+    return is_null ? PredicateKind::kPropertyIsNull
+                   : PredicateKind::kPropertyIsNotNull;
+  }
+  [[nodiscard]] std::string_view Operator() const override {
+    return is_null ? "IS NULL" : "IS NOT NULL";
+  }
+  [[nodiscard]] const ast::Expression *Value() const override {
+    return nullptr;
+  }
+};
+
+struct ExistsPredicate final : Predicate {
+  bool negated = false;
+
+  [[nodiscard]] PredicateKind Kind() const override {
+    return negated ? PredicateKind::kNotExistsSubquery
+                   : PredicateKind::kExistsSubquery;
+  }
 };
 
 struct PropertyInequalityGroup {
@@ -99,13 +200,13 @@ struct PropertyInequalityGroup {
 };
 
 struct Selections {
-  std::vector<Predicate> predicates;
+  std::vector<std::unique_ptr<Predicate>> predicates;
   std::unordered_set<std::string> predicate_keys;
 
   [[nodiscard]] bool empty() const { return predicates.empty(); }
   [[nodiscard]] std::size_t size() const { return predicates.size(); }
 
-  bool AddPredicate(Predicate predicate);
+  bool AddPredicate(std::unique_ptr<Predicate> predicate);
 
   [[nodiscard]] std::vector<const Predicate *> PredicatesByKind(
       PredicateKind kind) const;

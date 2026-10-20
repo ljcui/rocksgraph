@@ -406,22 +406,15 @@ class QueryIRBuilder {
   void AttachSelectionSubqueries(Selections *selections) {
     RG_CHECK(selections != nullptr, common::ErrorCode::InternalError,
              "selections is null");
-    for (auto &predicate : selections->predicates) {
+    for (auto &predicate_ptr : selections->predicates) {
+      auto &predicate = *predicate_ptr;
       AppendNestedIRExpressions(
           &predicate.nested_expressions,
           CollectNestedIRExpressions(predicate.expression));
-      for (auto &nested : predicate.nested_expressions) {
-        if (nested.kind == NestedIRExpressionKind::kExists &&
-            nested.query != nullptr) {
-          predicate.subquery = nested.query.get();
-          break;
-        }
-      }
-      if (predicate.kind != PredicateKind::kExistsSubquery &&
-          predicate.kind != PredicateKind::kNotExistsSubquery) {
+      if (predicate.GetIf<ExistsPredicate>() == nullptr) {
         continue;
       }
-      RG_CHECK(predicate.subquery != nullptr,
+      RG_CHECK(predicate.Subquery() != nullptr,
                common::ErrorCode::InvalidParameter,
                Missing("EXISTS nested IR expression"));
     }

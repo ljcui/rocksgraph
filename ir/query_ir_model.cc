@@ -14,8 +14,20 @@
 
 namespace ir {
 
-bool Selections::AddPredicate(Predicate predicate) {
-  const std::string key = PredicateKey(predicate);
+const QueryIR *Predicate::Subquery() const {
+  for (const auto &nested : nested_expressions) {
+    if (nested.kind == NestedIRExpressionKind::kExists &&
+        nested.query != nullptr) {
+      return nested.query.get();
+    }
+  }
+  return nullptr;
+}
+
+bool Selections::AddPredicate(std::unique_ptr<Predicate> predicate) {
+  RG_CHECK(predicate != nullptr, common::ErrorCode::InternalError,
+           "selection predicate is null");
+  const std::string key = PredicateKey(*predicate);
   if (!predicate_keys.insert(key).second) {
     return false;
   }
@@ -26,8 +38,9 @@ bool Selections::AddPredicate(Predicate predicate) {
 std::vector<const Predicate *> Selections::PredicatesByKind(
     PredicateKind kind) const {
   std::vector<const Predicate *> result;
-  for (const auto &predicate : predicates) {
-    if (predicate.kind == kind) {
+  for (const auto &predicate_ptr : predicates) {
+    const auto &predicate = *predicate_ptr;
+    if (predicate.Kind() == kind) {
       result.push_back(&predicate);
     }
   }
@@ -37,8 +50,9 @@ std::vector<const Predicate *> Selections::PredicatesByKind(
 std::vector<const Predicate *> Selections::PredicatesByVariable(
     std::string_view variable) const {
   std::vector<const Predicate *> result;
-  for (const auto &predicate : predicates) {
-    if (StringEquals(predicate.variable, variable)) {
+  for (const auto &predicate_ptr : predicates) {
+    const auto &predicate = *predicate_ptr;
+    if (predicate.Variable() == variable) {
       result.push_back(&predicate);
     }
   }
@@ -48,7 +62,8 @@ std::vector<const Predicate *> Selections::PredicatesByVariable(
 std::vector<const Predicate *> Selections::PredicatesDependingOn(
     std::string_view symbol) const {
   std::vector<const Predicate *> result;
-  for (const auto &predicate : predicates) {
+  for (const auto &predicate_ptr : predicates) {
+    const auto &predicate = *predicate_ptr;
     if (StringSetContains(predicate.dependencies, symbol)) {
       result.push_back(&predicate);
     }
@@ -59,7 +74,8 @@ std::vector<const Predicate *> Selections::PredicatesDependingOn(
 std::vector<const Predicate *> Selections::PredicatesGiven(
     const std::unordered_set<std::string> &bound_symbols) const {
   std::vector<const Predicate *> result;
-  for (const auto &predicate : predicates) {
+  for (const auto &predicate_ptr : predicates) {
+    const auto &predicate = *predicate_ptr;
     if (DependenciesMet(predicate.dependencies, bound_symbols)) {
       result.push_back(&predicate);
     }
@@ -70,9 +86,10 @@ std::vector<const Predicate *> Selections::PredicatesGiven(
 std::vector<const Predicate *> Selections::NodeLabelPredicates(
     std::string_view variable) const {
   std::vector<const Predicate *> result;
-  for (const auto &predicate : predicates) {
-    if (predicate.kind == PredicateKind::kNodeLabel &&
-        StringEquals(predicate.variable, variable)) {
+  for (const auto &predicate_ptr : predicates) {
+    const auto &predicate = *predicate_ptr;
+    const auto *label = predicate.GetIf<NodeLabelPredicate>();
+    if (label != nullptr && StringEquals(label->variable, variable)) {
       result.push_back(&predicate);
     }
   }
@@ -82,9 +99,10 @@ std::vector<const Predicate *> Selections::NodeLabelPredicates(
 std::vector<const Predicate *> Selections::RelationshipTypePredicates(
     std::string_view variable) const {
   std::vector<const Predicate *> result;
-  for (const auto &predicate : predicates) {
-    if (predicate.kind == PredicateKind::kRelationshipType &&
-        StringEquals(predicate.variable, variable)) {
+  for (const auto &predicate_ptr : predicates) {
+    const auto &predicate = *predicate_ptr;
+    const auto *type = predicate.GetIf<RelationshipTypePredicate>();
+    if (type != nullptr && StringEquals(type->variable, variable)) {
       result.push_back(&predicate);
     }
   }
@@ -94,10 +112,11 @@ std::vector<const Predicate *> Selections::RelationshipTypePredicates(
 std::vector<const Predicate *> Selections::PropertyPredicates(
     std::string_view variable, std::string_view property_key) const {
   std::vector<const Predicate *> result;
-  for (const auto &predicate : predicates) {
-    if (IsPropertyPredicateKind(predicate.kind) &&
-        StringEquals(predicate.variable, variable) &&
-        StringEquals(predicate.property_key, property_key)) {
+  for (const auto &predicate_ptr : predicates) {
+    const auto &predicate = *predicate_ptr;
+    const auto *property = predicate.GetIf<PropertyPredicate>();
+    if (property != nullptr && StringEquals(property->variable, variable) &&
+        StringEquals(property->property_key, property_key)) {
       result.push_back(&predicate);
     }
   }
@@ -108,11 +127,12 @@ std::vector<const Predicate *> Selections::PropertyPredicates(
     std::string_view variable, std::string_view property_key,
     std::string_view comparison_op) const {
   std::vector<const Predicate *> result;
-  for (const auto &predicate : predicates) {
-    if (IsPropertyPredicateKind(predicate.kind) &&
-        StringEquals(predicate.variable, variable) &&
-        StringEquals(predicate.property_key, property_key) &&
-        StringEquals(predicate.comparison_op, comparison_op)) {
+  for (const auto &predicate_ptr : predicates) {
+    const auto &predicate = *predicate_ptr;
+    const auto *property = predicate.GetIf<PropertyPredicate>();
+    if (property != nullptr && StringEquals(property->variable, variable) &&
+        StringEquals(property->property_key, property_key) &&
+        property->Operator() == comparison_op) {
       result.push_back(&predicate);
     }
   }
@@ -121,10 +141,11 @@ std::vector<const Predicate *> Selections::PropertyPredicates(
 
 bool Selections::ContainsNodeLabel(std::string_view variable,
                                    std::string_view label) const {
-  for (const auto &predicate : predicates) {
-    if (predicate.kind == PredicateKind::kNodeLabel &&
-        StringEquals(predicate.variable, variable) &&
-        StringVectorContains(predicate.labels, label)) {
+  for (const auto &predicate_ptr : predicates) {
+    const auto &predicate = *predicate_ptr;
+    const auto *node_label = predicate.GetIf<NodeLabelPredicate>();
+    if (node_label != nullptr && StringEquals(node_label->variable, variable) &&
+        StringVectorContains(node_label->labels, label)) {
       return true;
     }
   }
@@ -133,10 +154,13 @@ bool Selections::ContainsNodeLabel(std::string_view variable,
 
 bool Selections::ContainsRelationshipType(std::string_view variable,
                                           std::string_view type) const {
-  for (const auto &predicate : predicates) {
-    if (predicate.kind == PredicateKind::kRelationshipType &&
-        StringEquals(predicate.variable, variable) &&
-        StringVectorContains(predicate.relationship_types, type)) {
+  for (const auto &predicate_ptr : predicates) {
+    const auto &predicate = *predicate_ptr;
+    const auto *relationship_type =
+        predicate.GetIf<RelationshipTypePredicate>();
+    if (relationship_type != nullptr &&
+        StringEquals(relationship_type->variable, variable) &&
+        StringVectorContains(relationship_type->types, type)) {
       return true;
     }
   }
@@ -145,10 +169,11 @@ bool Selections::ContainsRelationshipType(std::string_view variable,
 
 bool Selections::ContainsPropertyPredicate(
     std::string_view variable, std::string_view property_key) const {
-  for (const auto &predicate : predicates) {
-    if (IsPropertyPredicateKind(predicate.kind) &&
-        StringEquals(predicate.variable, variable) &&
-        StringEquals(predicate.property_key, property_key)) {
+  for (const auto &predicate_ptr : predicates) {
+    const auto &predicate = *predicate_ptr;
+    const auto *property = predicate.GetIf<PropertyPredicate>();
+    if (property != nullptr && StringEquals(property->variable, variable) &&
+        StringEquals(property->property_key, property_key)) {
       return true;
     }
   }
@@ -158,11 +183,12 @@ bool Selections::ContainsPropertyPredicate(
 bool Selections::ContainsPropertyPredicate(
     std::string_view variable, std::string_view property_key,
     std::string_view comparison_op) const {
-  for (const auto &predicate : predicates) {
-    if (IsPropertyPredicateKind(predicate.kind) &&
-        StringEquals(predicate.variable, variable) &&
-        StringEquals(predicate.property_key, property_key) &&
-        StringEquals(predicate.comparison_op, comparison_op)) {
+  for (const auto &predicate_ptr : predicates) {
+    const auto &predicate = *predicate_ptr;
+    const auto *property = predicate.GetIf<PropertyPredicate>();
+    if (property != nullptr && StringEquals(property->variable, variable) &&
+        StringEquals(property->property_key, property_key) &&
+        property->Operator() == comparison_op) {
       return true;
     }
   }
@@ -172,31 +198,34 @@ bool Selections::ContainsPropertyPredicate(
 std::vector<PropertyInequalityGroup> Selections::PropertyInequalityGroups()
     const {
   std::vector<PropertyInequalityGroup> groups;
-  for (const auto &predicate : predicates) {
-    if (predicate.kind != PredicateKind::kPropertyComparison ||
-        predicate.variable.empty() || predicate.property_key.empty()) {
+  for (const auto &predicate_ptr : predicates) {
+    const auto &predicate = *predicate_ptr;
+    const auto *property = predicate.GetIf<PropertyPredicate>();
+    if (property == nullptr ||
+        property->Kind() != PredicateKind::kPropertyComparison ||
+        property->variable.empty() || property->property_key.empty()) {
       continue;
     }
-    if (predicate.property_value == nullptr) {
+    if (property->Value() == nullptr) {
       continue;
     }
-    if (!IsLowerBoundComparison(predicate.comparison_op) &&
-        !IsUpperBoundComparison(predicate.comparison_op)) {
+    if (!IsLowerBoundComparison(property->Operator()) &&
+        !IsUpperBoundComparison(property->Operator())) {
       continue;
     }
     auto found = std::find_if(groups.begin(), groups.end(),
                               [&](const PropertyInequalityGroup &g) {
-                                return g.variable == predicate.variable &&
-                                       g.property_key == predicate.property_key;
+                                return g.variable == property->variable &&
+                                       g.property_key == property->property_key;
                               });
     if (found == groups.end()) {
       PropertyInequalityGroup group;
-      group.variable = predicate.variable;
-      group.property_key = predicate.property_key;
+      group.variable = property->variable;
+      group.property_key = property->property_key;
       groups.push_back(std::move(group));
       found = std::prev(groups.end());
     }
-    if (IsLowerBoundComparison(predicate.comparison_op)) {
+    if (IsLowerBoundComparison(property->Operator())) {
       found->lower_bounds.push_back(&predicate);
     } else {
       found->upper_bounds.push_back(&predicate);
@@ -280,7 +309,8 @@ std::unordered_set<LogicalVariable> QueryGraph::AllCoveredIds() const {
 std::unordered_set<LogicalVariable> QueryGraph::Dependencies() const {
   std::unordered_set<LogicalVariable> dependencies = argument_ids;
   AddSymbols(&dependencies, CoveredIdsForPatterns());
-  for (const auto &predicate : selections.predicates) {
+  for (const auto &predicate_ptr : selections.predicates) {
+    const auto &predicate = *predicate_ptr;
     AddSymbols(&dependencies, predicate.dependencies);
   }
   for (const auto &optional_match : optional_matches) {
@@ -296,7 +326,7 @@ std::unordered_set<std::string> QueryGraph::LabelsOnNode(
     std::string_view variable) const {
   std::unordered_set<std::string> labels;
   for (const auto *predicate : selections.NodeLabelPredicates(variable)) {
-    for (const auto &label : predicate->labels) {
+    for (const auto &label : predicate->GetIf<NodeLabelPredicate>()->labels) {
       labels.insert(label);
     }
   }
@@ -316,7 +346,8 @@ std::unordered_set<std::string> QueryGraph::TypesOnRelationship(
   }
   for (const auto *predicate :
        selections.RelationshipTypePredicates(variable)) {
-    for (const auto &type : predicate->relationship_types) {
+    for (const auto &type :
+         predicate->GetIf<RelationshipTypePredicate>()->types) {
       types.insert(type);
     }
   }
@@ -326,11 +357,12 @@ std::unordered_set<std::string> QueryGraph::TypesOnRelationship(
 std::unordered_set<std::string> QueryGraph::KnownProperties(
     std::string_view variable) const {
   std::unordered_set<std::string> properties;
-  for (const auto &predicate : selections.predicates) {
-    if (IsPropertyPredicateKind(predicate.kind) &&
-        StringEquals(predicate.variable, variable) &&
-        !predicate.property_key.empty()) {
-      properties.insert(predicate.property_key);
+  for (const auto &predicate_ptr : selections.predicates) {
+    const auto &predicate = *predicate_ptr;
+    const auto *property = predicate.GetIf<PropertyPredicate>();
+    if (property != nullptr && StringEquals(property->variable, variable) &&
+        !property->property_key.empty()) {
+      properties.insert(property->property_key);
     }
   }
   return properties;

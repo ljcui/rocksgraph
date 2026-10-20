@@ -351,33 +351,38 @@ class QueryIRPrinter {
       Dedent();
       return;
     }
-    for (const auto &predicate : selections.predicates) {
-      Line("- kind: " + PredicateKindToString(predicate.kind));
+    for (const auto &predicate_ptr : selections.predicates) {
+      const auto &predicate = *predicate_ptr;
+      Line("- kind: " + PredicateKindToString(predicate.Kind()));
       Indent();
       Line("expression: " + ExpressionText(predicate.expression));
       Line("dependencies: " + SortedList(predicate.dependencies));
-      if (!predicate.variable.empty()) {
-        Line("variable: " + predicate.variable);
+      if (!predicate.Variable().empty()) {
+        Line("variable: " + std::string(predicate.Variable()));
       }
-      if (!predicate.property_key.empty()) {
-        Line("property_key: " + predicate.property_key);
+      if (const auto *property = predicate.GetIf<PropertyPredicate>()) {
+        if (!property->property_key.empty()) {
+          Line("property_key: " + property->property_key);
+        }
+        if (property->Value() != nullptr) {
+          Line("property_value: " + ExpressionText(property->Value()));
+        }
+        if (!property->Operator().empty()) {
+          Line("comparison_op: " + std::string(property->Operator()));
+        }
       }
-      if (predicate.property_value != nullptr) {
-        Line("property_value: " + ExpressionText(predicate.property_value));
+      if (const auto *label = predicate.GetIf<NodeLabelPredicate>();
+          label != nullptr && !label->labels.empty()) {
+        Line("labels: " + List(label->labels));
       }
-      if (!predicate.labels.empty()) {
-        Line("labels: " + List(predicate.labels));
+      if (const auto *type = predicate.GetIf<RelationshipTypePredicate>();
+          type != nullptr && !type->types.empty()) {
+        Line("relationship_types: " + List(type->types));
       }
-      if (!predicate.relationship_types.empty()) {
-        Line("relationship_types: " + List(predicate.relationship_types));
-      }
-      if (!predicate.comparison_op.empty()) {
-        Line("comparison_op: " + predicate.comparison_op);
-      }
-      if (predicate.subquery != nullptr) {
+      if (predicate.Subquery() != nullptr) {
         Line("subquery:");
         Indent();
-        PrintQueryIRNode(*predicate.subquery);
+        PrintQueryIRNode(*predicate.Subquery());
         Dedent();
       }
       PrintNestedIRExpressions(predicate.nested_expressions);

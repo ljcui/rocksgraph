@@ -46,7 +46,8 @@ bool Contains(const std::unordered_set<std::string> &set,
 std::unordered_map<std::string, std::unordered_set<std::string>>
 SelectionDependenciesByExpression(const ir::Selections &selections) {
   std::unordered_map<std::string, std::unordered_set<std::string>> result;
-  for (const auto &predicate : selections.predicates) {
+  for (const auto &predicate_ptr : selections.predicates) {
+    const auto &predicate = *predicate_ptr;
     RG_CHECK(predicate.expression != nullptr,
              common::ErrorCode::InvalidParameter,
              "null selection predicate in QueryGraph");
@@ -754,11 +755,11 @@ TEST(QueryIRTest, BuildsGraphFromMatch) {
   EXPECT_TRUE(Contains(where_dependencies.at("a:Person"), "a"));
   EXPECT_TRUE(Contains(where_dependencies.at("a.name = 'Alice'"), "a"));
   EXPECT_TRUE(Contains(where_dependencies.at("a.age > 30"), "a"));
-  EXPECT_EQ(main.query_graph.selections.predicates[0].kind,
+  EXPECT_EQ(main.query_graph.selections.predicates[0]->Kind(),
             ir::PredicateKind::kNodeLabel);
-  EXPECT_EQ(main.query_graph.selections.predicates[1].kind,
+  EXPECT_EQ(main.query_graph.selections.predicates[1]->Kind(),
             ir::PredicateKind::kPropertyEquality);
-  EXPECT_EQ(main.query_graph.selections.predicates[2].kind,
+  EXPECT_EQ(main.query_graph.selections.predicates[2]->Kind(),
             ir::PredicateKind::kPropertyComparison);
 
   ASSERT_EQ(main.query_graph.pattern_relationships.size(), 1U);
@@ -939,20 +940,22 @@ TEST(QueryIRTest, QueriesSelectionsByStructuredPredicateFields) {
 
   const auto node_labels = selections.NodeLabelPredicates("a");
   ASSERT_EQ(node_labels.size(), 1U);
-  EXPECT_EQ(node_labels[0]->labels, std::vector<std::string>({"Person"}));
+  EXPECT_EQ(node_labels[0]->GetIf<ir::NodeLabelPredicate>()->labels,
+            std::vector<std::string>({"Person"}));
   EXPECT_TRUE(selections.ContainsNodeLabel("a", "Person"));
   EXPECT_FALSE(selections.ContainsNodeLabel("a", "Employee"));
 
   const auto relationship_types = selections.RelationshipTypePredicates("r");
   ASSERT_EQ(relationship_types.size(), 1U);
-  EXPECT_EQ(relationship_types[0]->relationship_types,
-            std::vector<std::string>({"KNOWS"}));
+  EXPECT_EQ(
+      relationship_types[0]->GetIf<ir::RelationshipTypePredicate>()->types,
+      std::vector<std::string>({"KNOWS"}));
   EXPECT_TRUE(selections.ContainsRelationshipType("r", "KNOWS"));
   EXPECT_FALSE(selections.ContainsRelationshipType("r", "LIKES"));
 
   const auto age_predicates = selections.PropertyPredicates("a", "age");
   ASSERT_EQ(age_predicates.size(), 1U);
-  EXPECT_EQ(age_predicates[0]->comparison_op, ">");
+  EXPECT_EQ(age_predicates[0]->GetIf<ir::PropertyPredicate>()->Operator(), ">");
   EXPECT_EQ(selections.PropertyPredicates("a", "age", ">").size(), 1U);
   EXPECT_TRUE(selections.ContainsPropertyPredicate("a", "age"));
   EXPECT_TRUE(selections.ContainsPropertyPredicate("a", "age", ">"));
@@ -974,44 +977,55 @@ TEST(QueryIRTest, ClassifiesNormalizedPropertyPredicates) {
 
   const auto id_predicates = selections.PropertyPredicates("n", "id", "=");
   ASSERT_EQ(id_predicates.size(), 1U);
-  EXPECT_EQ(id_predicates[0]->kind, ir::PredicateKind::kPropertyEquality);
-  ASSERT_NE(id_predicates[0]->property_value, nullptr);
-  EXPECT_EQ(ast::ExpressionToString(*id_predicates[0]->property_value), "1");
+  EXPECT_EQ(id_predicates[0]->Kind(), ir::PredicateKind::kPropertyEquality);
+  const auto *id = id_predicates[0]->GetIf<ir::PropertyPredicate>();
+  ASSERT_NE(id, nullptr);
+  ASSERT_NE(id->Value(), nullptr);
+  EXPECT_EQ(ast::ExpressionToString(*id->Value()), "1");
 
   const auto age_predicates = selections.PropertyPredicates("n", "age", ">=");
   ASSERT_EQ(age_predicates.size(), 1U);
-  EXPECT_EQ(age_predicates[0]->kind, ir::PredicateKind::kPropertyComparison);
-  ASSERT_NE(age_predicates[0]->property_value, nullptr);
-  EXPECT_EQ(ast::ExpressionToString(*age_predicates[0]->property_value), "5");
+  EXPECT_EQ(age_predicates[0]->Kind(), ir::PredicateKind::kPropertyComparison);
+  const auto *age = age_predicates[0]->GetIf<ir::PropertyPredicate>();
+  ASSERT_NE(age, nullptr);
+  ASSERT_NE(age->Value(), nullptr);
+  EXPECT_EQ(ast::ExpressionToString(*age->Value()), "5");
 
   const auto in_predicates = selections.PropertyPredicates("n", "prop", "IN");
   ASSERT_EQ(in_predicates.size(), 1U);
-  EXPECT_EQ(in_predicates[0]->kind, ir::PredicateKind::kPropertyIn);
-  ASSERT_NE(in_predicates[0]->property_value, nullptr);
-  EXPECT_EQ(ast::ExpressionToString(*in_predicates[0]->property_value),
-            "[1, 2]");
+  EXPECT_EQ(in_predicates[0]->Kind(), ir::PredicateKind::kPropertyIn);
+  const auto *in = in_predicates[0]->GetIf<ir::PropertyPredicate>();
+  ASSERT_NE(in, nullptr);
+  ASSERT_NE(in->Value(), nullptr);
+  EXPECT_EQ(ast::ExpressionToString(*in->Value()), "[1, 2]");
 
   const auto string_predicates =
       selections.PropertyPredicates("n", "name", "STARTS WITH");
   ASSERT_EQ(string_predicates.size(), 1U);
-  EXPECT_EQ(string_predicates[0]->kind,
+  EXPECT_EQ(string_predicates[0]->Kind(),
             ir::PredicateKind::kPropertyStringPredicate);
-  ASSERT_NE(string_predicates[0]->property_value, nullptr);
-  EXPECT_EQ(ast::ExpressionToString(*string_predicates[0]->property_value),
-            "'A'");
+  const auto *string = string_predicates[0]->GetIf<ir::PropertyPredicate>();
+  ASSERT_NE(string, nullptr);
+  ASSERT_NE(string->Value(), nullptr);
+  EXPECT_EQ(ast::ExpressionToString(*string->Value()), "'A'");
 
   const auto null_predicates =
       selections.PropertyPredicates("n", "deleted", "IS NULL");
   ASSERT_EQ(null_predicates.size(), 1U);
-  EXPECT_EQ(null_predicates[0]->kind, ir::PredicateKind::kPropertyIsNull);
-  EXPECT_EQ(null_predicates[0]->property_value, nullptr);
+  EXPECT_EQ(null_predicates[0]->Kind(), ir::PredicateKind::kPropertyIsNull);
+  const auto *is_null = null_predicates[0]->GetIf<ir::PropertyPredicate>();
+  ASSERT_NE(is_null, nullptr);
+  EXPECT_EQ(is_null->Value(), nullptr);
 
   const auto not_null_predicates =
       selections.PropertyPredicates("n", "email", "IS NOT NULL");
   ASSERT_EQ(not_null_predicates.size(), 1U);
-  EXPECT_EQ(not_null_predicates[0]->kind,
+  EXPECT_EQ(not_null_predicates[0]->Kind(),
             ir::PredicateKind::kPropertyIsNotNull);
-  EXPECT_EQ(not_null_predicates[0]->property_value, nullptr);
+  const auto *is_not_null =
+      not_null_predicates[0]->GetIf<ir::PropertyPredicate>();
+  ASSERT_NE(is_not_null, nullptr);
+  EXPECT_EQ(is_not_null->Value(), nullptr);
 }
 
 TEST(QueryIRTest, SelectionsExposePushdownAndInequalityGroups) {
@@ -1035,8 +1049,12 @@ TEST(QueryIRTest, SelectionsExposePushdownAndInequalityGroups) {
   EXPECT_EQ(groups[0].property_key, "age");
   ASSERT_EQ(groups[0].lower_bounds.size(), 1U);
   ASSERT_EQ(groups[0].upper_bounds.size(), 1U);
-  EXPECT_EQ(groups[0].lower_bounds[0]->comparison_op, ">");
-  EXPECT_EQ(groups[0].upper_bounds[0]->comparison_op, "<=");
+  EXPECT_EQ(
+      groups[0].lower_bounds[0]->GetIf<ir::PropertyPredicate>()->Operator(),
+      ">");
+  EXPECT_EQ(
+      groups[0].upper_bounds[0]->GetIf<ir::PropertyPredicate>()->Operator(),
+      "<=");
 }
 
 TEST(QueryIRTest, QueryGraphApisExposeCoveredIdsAndAvailability) {
@@ -1270,11 +1288,11 @@ TEST(QueryIRTest, BuildsProjectionSelectionsForWithWhere) {
   ASSERT_EQ(projection.items.size(), 1U);
   EXPECT_EQ(projection.items[0].alias, "x");
   ASSERT_EQ(projection.selections.size(), 1U);
-  const auto &predicate = projection.selections.predicates[0];
-  EXPECT_EQ(predicate.kind, ir::PredicateKind::kPropertyComparison);
-  EXPECT_EQ(predicate.variable, "x");
-  EXPECT_EQ(predicate.property_key, "age");
-  EXPECT_EQ(predicate.comparison_op, ">");
+  const auto &predicate = *projection.selections.predicates[0];
+  EXPECT_EQ(predicate.Kind(), ir::PredicateKind::kPropertyComparison);
+  EXPECT_EQ(predicate.Variable(), "x");
+  EXPECT_EQ(predicate.GetIf<ir::PropertyPredicate>()->property_key, "age");
+  EXPECT_EQ(predicate.GetIf<ir::PropertyPredicate>()->Operator(), ">");
   EXPECT_TRUE(Contains(predicate.dependencies, "x"));
   EXPECT_FALSE(Contains(predicate.dependencies, "n"));
 }
@@ -1290,7 +1308,7 @@ TEST(QueryIRTest, RewritesWithWhereProjectionExpressionToAlias) {
       first.horizon.RequireRegularProjection();
   ASSERT_EQ(projection.selections.size(), 1U);
 
-  const auto &predicate = projection.selections.predicates[0];
+  const auto &predicate = *projection.selections.predicates[0];
   EXPECT_EQ(ast::ExpressionToString(*predicate.expression), "age > 30");
   EXPECT_TRUE(Contains(predicate.dependencies, "age"));
   EXPECT_FALSE(Contains(predicate.dependencies, "n"));
@@ -1345,10 +1363,10 @@ TEST(QueryIRTest, NarrowsProjectionExistsSubqueryArgumentIds) {
       first.horizon.RequireRegularProjection();
 
   ASSERT_EQ(projection.selections.size(), 1U);
-  const auto &predicate = projection.selections.predicates[0];
-  EXPECT_EQ(predicate.kind, ir::PredicateKind::kExistsSubquery);
-  ASSERT_NE(predicate.subquery, nullptr);
-  const ir::SingleQueryIR &subquery = predicate.subquery->RequireSingle();
+  const auto &predicate = *projection.selections.predicates[0];
+  EXPECT_EQ(predicate.Kind(), ir::PredicateKind::kExistsSubquery);
+  ASSERT_NE(predicate.Subquery(), nullptr);
+  const ir::SingleQueryIR &subquery = predicate.Subquery()->RequireSingle();
   EXPECT_TRUE(Contains(subquery.query_graph.argument_ids, "a"));
   EXPECT_FALSE(Contains(subquery.query_graph.argument_ids, "unused"));
   EXPECT_FALSE(Contains(subquery.query_graph.argument_ids, "b"));
@@ -1365,10 +1383,10 @@ TEST(QueryIRTest, ClassifiesNotExistsSubqueryPredicate) {
   const ir::SingleQueryIR &query = query_ir->RequireSingle();
 
   ASSERT_EQ(query.query_graph.selections.size(), 1U);
-  const auto &predicate = query.query_graph.selections.predicates[0];
-  EXPECT_EQ(predicate.kind, ir::PredicateKind::kNotExistsSubquery);
-  ASSERT_NE(predicate.subquery, nullptr);
-  const ir::SingleQueryIR &subquery = predicate.subquery->RequireSingle();
+  const auto &predicate = *query.query_graph.selections.predicates[0];
+  EXPECT_EQ(predicate.Kind(), ir::PredicateKind::kNotExistsSubquery);
+  ASSERT_NE(predicate.Subquery(), nullptr);
+  const ir::SingleQueryIR &subquery = predicate.Subquery()->RequireSingle();
   EXPECT_TRUE(Contains(subquery.query_graph.argument_ids, "a"));
   EXPECT_FALSE(Contains(subquery.query_graph.argument_ids, "b"));
   EXPECT_FALSE(Contains(subquery.query_graph.argument_ids, "r"));
@@ -1387,10 +1405,10 @@ TEST(QueryIRTest, InlinedWithExistsDoesNotCaptureFutureVariables) {
   EXPECT_TRUE(Contains(main.query_graph.pattern_nodes, "b"));
   ASSERT_EQ(main.query_graph.selections.size(), 1U);
 
-  const ir::Predicate &predicate = main.query_graph.selections.predicates[0];
-  EXPECT_EQ(predicate.kind, ir::PredicateKind::kExistsSubquery);
-  ASSERT_NE(predicate.subquery, nullptr);
-  const ir::SingleQueryIR &subquery = predicate.subquery->RequireSingle();
+  const ir::Predicate &predicate = *main.query_graph.selections.predicates[0];
+  EXPECT_EQ(predicate.Kind(), ir::PredicateKind::kExistsSubquery);
+  ASSERT_NE(predicate.Subquery(), nullptr);
+  const ir::SingleQueryIR &subquery = predicate.Subquery()->RequireSingle();
   EXPECT_FALSE(Contains(subquery.query_graph.argument_ids, "a"));
   EXPECT_FALSE(Contains(subquery.query_graph.argument_ids, "b"));
 }
@@ -1557,10 +1575,11 @@ TEST(QueryIRTest, ClassifiesArgumentRelationshipTypeWithSemanticTable) {
 
   EXPECT_TRUE(Contains(second.query_graph.argument_ids, "r"));
   ASSERT_EQ(second.query_graph.selections.size(), 1U);
-  const auto &predicate = second.query_graph.selections.predicates[0];
-  EXPECT_EQ(predicate.kind, ir::PredicateKind::kRelationshipType);
-  EXPECT_EQ(predicate.variable, "r");
-  EXPECT_EQ(predicate.relationship_types, std::vector<std::string>({"KNOWS"}));
+  const auto &predicate = *second.query_graph.selections.predicates[0];
+  EXPECT_EQ(predicate.Kind(), ir::PredicateKind::kRelationshipType);
+  EXPECT_EQ(predicate.Variable(), "r");
+  EXPECT_EQ(predicate.GetIf<ir::RelationshipTypePredicate>()->types,
+            std::vector<std::string>({"KNOWS"}));
 }
 
 TEST(QueryIRTest, ClassifiesProjectionWhereWithScopedVariableType) {
@@ -1575,10 +1594,11 @@ TEST(QueryIRTest, ClassifiesProjectionWhereWithScopedVariableType) {
   const ir::RegularQueryProjection &projection =
       first.horizon.RequireRegularProjection();
   ASSERT_EQ(projection.selections.size(), 1U);
-  const ir::Predicate &predicate = projection.selections.predicates[0];
-  EXPECT_EQ(predicate.kind, ir::PredicateKind::kRelationshipType);
-  EXPECT_EQ(predicate.variable, "n");
-  EXPECT_EQ(predicate.relationship_types, std::vector<std::string>({"KNOWS"}));
+  const ir::Predicate &predicate = *projection.selections.predicates[0];
+  EXPECT_EQ(predicate.Kind(), ir::PredicateKind::kRelationshipType);
+  EXPECT_EQ(predicate.Variable(), "n");
+  EXPECT_EQ(predicate.GetIf<ir::RelationshipTypePredicate>()->types,
+            std::vector<std::string>({"KNOWS"}));
 }
 
 TEST(QueryIRTest, BuildsUnwindHorizonSegment) {
@@ -1642,7 +1662,7 @@ TEST(QueryIRTest, BuildsInQueryProcedureCallWithYieldWhere) {
             std::optional<std::string>("label"));
   EXPECT_EQ(call.yield_items[0].variable, "l");
   ASSERT_EQ(call.yield_selections.size(), 1U);
-  EXPECT_TRUE(Contains(call.yield_selections.predicates[0].dependencies, "l"));
+  EXPECT_TRUE(Contains(call.yield_selections.predicates[0]->dependencies, "l"));
 
   ASSERT_TRUE(call_segment.tail);
   const ir::SingleQueryIR &return_segment = *call_segment.tail;
@@ -1728,7 +1748,7 @@ TEST(QueryIRTest, ExcludesScopedQuantifierVariablesFromDependencies) {
 
   ASSERT_EQ(main.query_graph.selections.size(), 1U);
   const auto &dependencies =
-      main.query_graph.selections.predicates[0].dependencies;
+      main.query_graph.selections.predicates[0]->dependencies;
   EXPECT_TRUE(Contains(dependencies, "n"));
   EXPECT_FALSE(Contains(dependencies, "x"));
 }
@@ -1742,15 +1762,15 @@ TEST(QueryIRTest, TreatsOnlyOuterPatternVariablesAsExistsDependencies) {
   const ir::SingleQueryIR &main = query_ir->RequireSingle();
 
   ASSERT_EQ(main.query_graph.selections.size(), 1U);
-  const auto &predicate = main.query_graph.selections.predicates[0];
-  EXPECT_EQ(predicate.kind, ir::PredicateKind::kExistsSubquery);
+  const auto &predicate = *main.query_graph.selections.predicates[0];
+  EXPECT_EQ(predicate.Kind(), ir::PredicateKind::kExistsSubquery);
   const auto &dependencies = predicate.dependencies;
   EXPECT_TRUE(Contains(dependencies, "n"));
   EXPECT_FALSE(Contains(dependencies, "r"));
   EXPECT_FALSE(Contains(dependencies, "m"));
 
-  ASSERT_NE(predicate.subquery, nullptr);
-  const ir::SingleQueryIR &subquery = predicate.subquery->RequireSingle();
+  ASSERT_NE(predicate.Subquery(), nullptr);
+  const ir::SingleQueryIR &subquery = predicate.Subquery()->RequireSingle();
   EXPECT_TRUE(Contains(subquery.query_graph.argument_ids, "n"));
   EXPECT_FALSE(Contains(subquery.query_graph.argument_ids, "r"));
   EXPECT_FALSE(Contains(subquery.query_graph.argument_ids, "m"));
@@ -1774,9 +1794,9 @@ TEST(QueryIRTest, NarrowsExistsSubqueryArgumentIdsToUsedOuterVariables) {
   EXPECT_TRUE(Contains(main.query_graph.argument_ids, "a"));
   EXPECT_FALSE(Contains(main.query_graph.argument_ids, "unused"));
   ASSERT_EQ(main.query_graph.selections.size(), 1U);
-  const auto &predicate = main.query_graph.selections.predicates[0];
-  ASSERT_NE(predicate.subquery, nullptr);
-  const ir::SingleQueryIR &subquery = predicate.subquery->RequireSingle();
+  const auto &predicate = *main.query_graph.selections.predicates[0];
+  ASSERT_NE(predicate.Subquery(), nullptr);
+  const ir::SingleQueryIR &subquery = predicate.Subquery()->RequireSingle();
   EXPECT_TRUE(Contains(subquery.query_graph.argument_ids, "a"));
   EXPECT_FALSE(Contains(subquery.query_graph.argument_ids, "unused"));
   EXPECT_FALSE(Contains(subquery.query_graph.argument_ids, "b"));
@@ -1792,14 +1812,14 @@ TEST(QueryIRTest, BuildsNestedIRExpressionForPatternExists) {
   const ir::SingleQueryIR &main = query_ir->RequireSingle();
 
   ASSERT_EQ(main.query_graph.selections.size(), 1U);
-  const ir::Predicate &predicate = main.query_graph.selections.predicates[0];
-  EXPECT_EQ(predicate.kind, ir::PredicateKind::kExistsSubquery);
+  const ir::Predicate &predicate = *main.query_graph.selections.predicates[0];
+  EXPECT_EQ(predicate.Kind(), ir::PredicateKind::kExistsSubquery);
   ASSERT_EQ(predicate.nested_expressions.size(), 1U);
   const ir::NestedIRExpression &nested = predicate.nested_expressions[0];
   EXPECT_EQ(nested.kind, ir::NestedIRExpressionKind::kExists);
   EXPECT_TRUE(Contains(nested.dependencies, "n"));
   ASSERT_NE(nested.query, nullptr);
-  EXPECT_EQ(predicate.subquery, nested.query.get());
+  EXPECT_EQ(predicate.Subquery(), nested.query.get());
 
   const ir::SingleQueryIR &subquery = nested.query->RequireSingle();
   EXPECT_TRUE(Contains(subquery.query_graph.argument_ids, "n"));
@@ -1869,10 +1889,11 @@ TEST(QueryIRTest, DeduplicatesRepeatedNodeLabelWherePredicates) {
   const ir::SingleQueryIR &main = query_ir->RequireSingle();
 
   ASSERT_EQ(main.query_graph.selections.size(), 1U);
-  const auto &predicate = main.query_graph.selections.predicates[0];
-  EXPECT_EQ(predicate.kind, ir::PredicateKind::kNodeLabel);
-  EXPECT_EQ(predicate.variable, "n");
-  EXPECT_EQ(predicate.labels, std::vector<std::string>({"Person"}));
+  const auto &predicate = *main.query_graph.selections.predicates[0];
+  EXPECT_EQ(predicate.Kind(), ir::PredicateKind::kNodeLabel);
+  EXPECT_EQ(predicate.Variable(), "n");
+  EXPECT_EQ(predicate.GetIf<ir::NodeLabelPredicate>()->labels,
+            std::vector<std::string>({"Person"}));
 }
 
 TEST(QueryIRTest, DeduplicatesRepeatedRelationshipTypeWherePredicates) {
@@ -1884,10 +1905,11 @@ TEST(QueryIRTest, DeduplicatesRepeatedRelationshipTypeWherePredicates) {
   const ir::SingleQueryIR &main = query_ir->RequireSingle();
 
   ASSERT_EQ(main.query_graph.selections.size(), 1U);
-  const auto &predicate = main.query_graph.selections.predicates[0];
-  EXPECT_EQ(predicate.kind, ir::PredicateKind::kRelationshipType);
-  EXPECT_EQ(predicate.variable, "r");
-  EXPECT_EQ(predicate.relationship_types, std::vector<std::string>({"KNOWS"}));
+  const auto &predicate = *main.query_graph.selections.predicates[0];
+  EXPECT_EQ(predicate.Kind(), ir::PredicateKind::kRelationshipType);
+  EXPECT_EQ(predicate.Variable(), "r");
+  EXPECT_EQ(predicate.GetIf<ir::RelationshipTypePredicate>()->types,
+            std::vector<std::string>({"KNOWS"}));
 }
 
 TEST(QueryIRTest, DeduplicatesRepeatedPropertyComparisonWherePredicates) {
@@ -1899,11 +1921,11 @@ TEST(QueryIRTest, DeduplicatesRepeatedPropertyComparisonWherePredicates) {
   const ir::SingleQueryIR &main = query_ir->RequireSingle();
 
   ASSERT_EQ(main.query_graph.selections.size(), 1U);
-  const auto &predicate = main.query_graph.selections.predicates[0];
-  EXPECT_EQ(predicate.kind, ir::PredicateKind::kPropertyComparison);
-  EXPECT_EQ(predicate.variable, "n");
-  EXPECT_EQ(predicate.property_key, "age");
-  EXPECT_EQ(predicate.comparison_op, ">");
+  const auto &predicate = *main.query_graph.selections.predicates[0];
+  EXPECT_EQ(predicate.Kind(), ir::PredicateKind::kPropertyComparison);
+  EXPECT_EQ(predicate.Variable(), "n");
+  EXPECT_EQ(predicate.GetIf<ir::PropertyPredicate>()->property_key, "age");
+  EXPECT_EQ(predicate.GetIf<ir::PropertyPredicate>()->Operator(), ">");
 }
 
 TEST(QueryIRTest, DeduplicatesNormalizedPropertyPredicates) {
@@ -1944,8 +1966,24 @@ TEST(QueryIRTest, DeduplicatesRepeatedGenericWherePredicates) {
   const ir::SingleQueryIR &main = query_ir->RequireSingle();
 
   ASSERT_EQ(main.query_graph.selections.size(), 1U);
-  EXPECT_EQ(main.query_graph.selections.predicates[0].kind,
+  EXPECT_EQ(main.query_graph.selections.predicates[0]->Kind(),
             ir::PredicateKind::kGenericExpression);
+}
+
+TEST(QueryIRTest, KeepsDifferentConditionsOnSameProperty) {
+  auto statement = ParseOrFail(
+      "MATCH (n) WHERE n.p = 1 AND n.p <> 1 AND n.p > 1 AND n.p IN [1] "
+      "AND n.p IS NULL AND n.p IS NOT NULL AND n.p STARTS WITH 'A' "
+      "AND n.p ENDS WITH 'A' AND n.p CONTAINS 'A' RETURN n");
+  ASSERT_TRUE(statement);
+
+  std::unique_ptr<ir::QueryIR> query_ir = ir::CreateQueryIR(*statement);
+  const auto &selections = query_ir->RequireSingle().query_graph.selections;
+  ASSERT_EQ(selections.size(), 9U);
+  for (const auto *op : {"=", "<>", ">", "IN", "IS NULL", "IS NOT NULL",
+                         "STARTS WITH", "ENDS WITH", "CONTAINS"}) {
+    EXPECT_EQ(selections.PropertyPredicates("n", "p", op).size(), 1U) << op;
+  }
 }
 
 TEST(QueryIRTest, BuildsUnionBranch) {
