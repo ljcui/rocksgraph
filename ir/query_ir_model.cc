@@ -15,10 +15,12 @@
 namespace ir {
 
 const QueryIR *Predicate::Subquery() const {
-  for (const auto &nested : nested_expressions) {
-    if (nested.kind == NestedIRExpressionKind::kExists &&
-        nested.query != nullptr) {
-      return nested.query.get();
+  for (const auto &nested : subquery_expressions) {
+    RG_CHECK(nested != nullptr, common::ErrorCode::InternalError,
+             "subquery IR expression is null");
+    if (nested->GetIf<ExistsIRExpression>() != nullptr &&
+        nested->query != nullptr) {
+      return nested->query.get();
     }
   }
   return nullptr;

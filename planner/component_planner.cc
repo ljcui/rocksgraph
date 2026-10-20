@@ -111,7 +111,7 @@ std::vector<IdPredicate> IdPredicates(const QueryGraph &query_graph,
   std::vector<IdPredicate> result;
   for (const auto &predicate_ptr : query_graph.selections.predicates) {
     const auto &predicate = *predicate_ptr;
-    if (!predicate.nested_expressions.empty()) {
+    if (!predicate.subquery_expressions.empty()) {
       continue;
     }
     const auto *expression = predicate.expression;
@@ -159,26 +159,16 @@ std::vector<const ast::Expression *> PredicateExpressions(
 }
 
 std::vector<ast::PrecomputedExpression> PrecomputedExpressions(
-    const std::vector<NestedIRExpression> &nested_expressions) {
+    const SubqueryIRExpressions &subquery_expressions) {
   std::vector<ast::PrecomputedExpression> out;
-  out.reserve(nested_expressions.size());
-  for (const auto &nested : nested_expressions) {
-    if (nested.expression == nullptr) {
-      continue;
-    }
-    switch (nested.kind) {
-      case NestedIRExpressionKind::kExists:
-        if (!nested.value_variable.empty()) {
-          out.push_back({.expression = nested.expression,
-                         .variable = nested.value_variable});
-        }
-        break;
-      case NestedIRExpressionKind::kList:
-        if (!nested.collection_variable.empty()) {
-          out.push_back({.expression = nested.expression,
-                         .variable = nested.collection_variable});
-        }
-        break;
+  out.reserve(subquery_expressions.size());
+  for (const auto &nested : subquery_expressions) {
+    RG_CHECK(nested != nullptr, common::ErrorCode::InternalError,
+             "subquery IR expression is null");
+    const auto variable = nested->ResultVariable();
+    if (nested->expression != nullptr && !variable.empty()) {
+      out.push_back({.expression = nested->expression,
+                     .variable = std::string(variable)});
     }
   }
   return out;
@@ -1154,13 +1144,17 @@ std::size_t QueryGraphPlanningContext::ApplyAvailableFilters(
         const auto *expression = predicate.expression;
         const ast::Expression *guard = nullptr;
         bool anti = false;
+        const ExistsIRExpression *nested_exists = nullptr;
+        if (predicate.subquery_expressions.size() == 1) {
+          const auto &nested = predicate.subquery_expressions.front();
+          RG_CHECK(nested != nullptr, common::ErrorCode::InternalError,
+                   "subquery IR expression is null");
+          nested_exists = nested->GetIf<ExistsIRExpression>();
+        }
         if (expression->Is(ast::ASTNodeType::kOrExpression) &&
-            predicate.nested_expressions.size() == 1 &&
-            predicate.nested_expressions.front().kind ==
-                NestedIRExpressionKind::kExists) {
+            nested_exists != nullptr) {
           const auto &disjunction =
               *ast::CastAst<ast::OrExpression>(expression);
-          const auto &nested = predicate.nested_expressions.front();
           for (const bool swap : {false, true}) {
             const auto *candidate =
                 swap ? disjunction.left.get() : disjunction.right.get();
@@ -1172,7 +1166,7 @@ std::size_t QueryGraphPlanningContext::ApplyAvailableFilters(
             }
             const auto *other =
                 swap ? disjunction.right.get() : disjunction.left.get();
-            if (candidate == nested.expression &&
+            if (candidate == nested_exists->expression &&
                 ExpressionIsDeterministic(*other)) {
               guard = other;
               anti = negated;
@@ -1181,15 +1175,17 @@ std::size_t QueryGraphPlanningContext::ApplyAvailableFilters(
           }
         }
         if (guard != nullptr) {
+          RG_CHECK(nested_exists->query != nullptr,
+                   common::ErrorCode::InvalidParameter,
+                   "subquery IR expression query is null");
           *plan = std::make_unique<SelectOrSemiApplyPlan>(
-              std::move(*plan),
-              BuildNestedPlan(*predicate.nested_expressions.front().query),
-              guard, anti);
+              std::move(*plan), BuildNestedPlan(*nested_exists->query), guard,
+              anti);
         } else {
-          ApplyNestedExpressions(predicate.nested_expressions, plan);
+          ApplySubqueryExpressions(predicate.subquery_expressions, plan);
           *plan = std::make_unique<FilterPlan>(
               std::move(*plan), predicate.expression,
-              PrecomputedExpressions(predicate.nested_expressions));
+              PrecomputedExpressions(predicate.subquery_expressions));
         }
       }
       planned_predicates_->insert(&predicate);
@@ -1200,34 +1196,37 @@ std::size_t QueryGraphPlanningContext::ApplyAvailableFilters(
   return applied_count;
 }
 
-void QueryGraphPlanningContext::ApplyNestedExpressions(
-    const std::vector<NestedIRExpression> &nested_expressions,
+void QueryGraphPlanningContext::ApplySubqueryExpressions(
+    const SubqueryIRExpressions &subquery_expressions,
     std::unique_ptr<LogicalPlan> *plan) const {
   RG_CHECK(plan != nullptr && *plan != nullptr,
            common::ErrorCode::InternalError, "logical plan is null");
-  for (const auto &nested : nested_expressions) {
+  for (const auto &nested_ptr : subquery_expressions) {
+    RG_CHECK(nested_ptr != nullptr, common::ErrorCode::InternalError,
+             "subquery IR expression is null");
+    const auto &nested = *nested_ptr;
     RG_CHECK(nested.query != nullptr, common::ErrorCode::InvalidParameter,
-             "nested IR expression query is null");
-    switch (nested.kind) {
-      case NestedIRExpressionKind::kExists:
-        RG_CHECK(!nested.value_variable.empty(),
-                 common::ErrorCode::InvalidParameter,
-                 "EXISTS nested value variable is empty");
-        *plan = std::make_unique<LetSemiApplyPlan>(
-            std::move(*plan), BuildNestedPlan(*nested.query),
-            nested.value_variable);
-        break;
-      case NestedIRExpressionKind::kList:
-        RG_CHECK(!nested.collection_variable.empty(),
-                 common::ErrorCode::InvalidParameter,
-                 "list nested collection variable is empty");
-        RG_CHECK(!nested.value_variable.empty(),
-                 common::ErrorCode::InvalidParameter,
-                 "list nested value variable is empty");
-        *plan = std::make_unique<RollUpApplyPlan>(
-            std::move(*plan), BuildNestedPlan(*nested.query),
-            nested.collection_variable, nested.value_variable);
-        break;
+             "subquery IR expression query is null");
+    if (const auto *exists = nested.GetIf<ExistsIRExpression>()) {
+      RG_CHECK(!exists->value_variable.empty(),
+               common::ErrorCode::InvalidParameter,
+               "EXISTS subquery value variable is empty");
+      *plan = std::make_unique<LetSemiApplyPlan>(std::move(*plan),
+                                                 BuildNestedPlan(*nested.query),
+                                                 exists->value_variable);
+    } else {
+      const auto *list = nested.GetIf<ListIRExpression>();
+      RG_CHECK(list != nullptr, common::ErrorCode::InternalError,
+               "unknown subquery IR expression type");
+      RG_CHECK(!list->collection_variable.empty(),
+               common::ErrorCode::InvalidParameter,
+               "list subquery collection variable is empty");
+      RG_CHECK(!list->value_variable.empty(),
+               common::ErrorCode::InvalidParameter,
+               "list subquery value variable is empty");
+      *plan = std::make_unique<RollUpApplyPlan>(
+          std::move(*plan), BuildNestedPlan(*nested.query),
+          list->collection_variable, list->value_variable);
     }
   }
 }

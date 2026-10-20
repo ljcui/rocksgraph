@@ -63,19 +63,55 @@ enum class PredicateKind {
 
 class QueryIR;
 
-enum class NestedIRExpressionKind {
+enum class SubqueryIRExpressionKind {
   kExists,
   kList,
 };
 
-struct NestedIRExpression {
-  NestedIRExpressionKind kind = NestedIRExpressionKind::kExists;
+struct SubqueryIRExpression {
+  SubqueryIRExpression() = default;
+  SubqueryIRExpression(const SubqueryIRExpression &) = delete;
+  SubqueryIRExpression &operator=(const SubqueryIRExpression &) = delete;
+  virtual ~SubqueryIRExpression() = default;
+
   const ast::Expression *expression = nullptr;
   std::unordered_set<LogicalVariable> dependencies;
   std::unique_ptr<QueryIR> query;
+
+  [[nodiscard]] virtual SubqueryIRExpressionKind Kind() const = 0;
+  [[nodiscard]] virtual std::string_view ResultVariable() const = 0;
+
+  template <typename T>
+  [[nodiscard]] const T *GetIf() const {
+    return dynamic_cast<const T *>(this);
+  }
+};
+
+struct ExistsIRExpression final : SubqueryIRExpression {
+  std::string value_variable;
+
+  [[nodiscard]] SubqueryIRExpressionKind Kind() const override {
+    return SubqueryIRExpressionKind::kExists;
+  }
+  [[nodiscard]] std::string_view ResultVariable() const override {
+    return value_variable;
+  }
+};
+
+struct ListIRExpression final : SubqueryIRExpression {
   std::string value_variable;
   std::string collection_variable;
+
+  [[nodiscard]] SubqueryIRExpressionKind Kind() const override {
+    return SubqueryIRExpressionKind::kList;
+  }
+  [[nodiscard]] std::string_view ResultVariable() const override {
+    return collection_variable;
+  }
 };
+
+using SubqueryIRExpressions =
+    std::vector<std::unique_ptr<SubqueryIRExpression>>;
 
 struct Predicate {
   Predicate() = default;
@@ -85,7 +121,7 @@ struct Predicate {
 
   const ast::Expression *expression = nullptr;
   std::unordered_set<std::string> dependencies;
-  std::vector<NestedIRExpression> nested_expressions;
+  SubqueryIRExpressions subquery_expressions;
 
   [[nodiscard]] virtual PredicateKind Kind() const = 0;
   [[nodiscard]] virtual std::string_view Variable() const { return {}; }
@@ -478,7 +514,7 @@ struct QueryProjection {
   Selections selections;
   Pagination pagination;
   ProjectionPosition position = ProjectionPosition::kIntermediate;
-  std::vector<NestedIRExpression> nested_expressions;
+  SubqueryIRExpressions subquery_expressions;
 };
 
 struct RegularQueryProjection : QueryProjection {

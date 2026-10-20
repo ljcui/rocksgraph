@@ -160,36 +160,36 @@ class QueryIRArgumentFinalizer {
              "selections is null");
     for (auto &predicate_ptr : selections->predicates) {
       auto &predicate = *predicate_ptr;
-      for (auto &nested : predicate.nested_expressions) {
-        FinalizeNestedIRExpression(
-            &nested, IntersectSymbols(nested.dependencies, available_symbols));
+      for (auto &nested : predicate.subquery_expressions) {
+        FinalizeSubqueryIRExpression(nested.get(), available_symbols);
       }
       if (predicate.Subquery() == nullptr &&
           predicate.GetIf<ExistsPredicate>() != nullptr) {
         RG_THROW(common::ErrorCode::InvalidParameter,
-                 Missing("EXISTS nested IR expression"));
+                 Missing("EXISTS subquery IR expression"));
       }
     }
   }
 
-  void FinalizeNestedIRExpression(
-      NestedIRExpression *nested,
+  void FinalizeSubqueryIRExpression(
+      SubqueryIRExpression *nested,
       const std::unordered_set<std::string> &available_symbols) const {
     RG_CHECK(nested != nullptr, common::ErrorCode::InternalError,
-             "nested IR expression is null");
+             "subquery IR expression is null");
     RG_CHECK(nested->query != nullptr, common::ErrorCode::InvalidParameter,
-             "nested IR expression query is null");
-    FinalizeQueryIRArguments(*nested->query, available_symbols);
+             "subquery IR expression query is null");
+    FinalizeQueryIRArguments(
+        *nested->query,
+        IntersectSymbols(nested->dependencies, available_symbols));
   }
 
-  void FinalizeNestedIRExpressions(
-      std::vector<NestedIRExpression> *nested_expressions,
+  void FinalizeSubqueryIRExpressions(
+      SubqueryIRExpressions *subquery_expressions,
       const std::unordered_set<std::string> &available_symbols) const {
-    RG_CHECK(nested_expressions != nullptr, common::ErrorCode::InternalError,
-             "nested IR expression list is null");
-    for (auto &nested : *nested_expressions) {
-      FinalizeNestedIRExpression(
-          &nested, IntersectSymbols(nested.dependencies, available_symbols));
+    RG_CHECK(subquery_expressions != nullptr, common::ErrorCode::InternalError,
+             "subquery IR expression list is null");
+    for (auto &nested : *subquery_expressions) {
+      FinalizeSubqueryIRExpression(nested.get(), available_symbols);
     }
   }
 
@@ -202,24 +202,24 @@ class QueryIRArgumentFinalizer {
       case QueryHorizonKind::kRegularProjection:
         FinalizeSelectionSubqueries(
             &horizon->RequireRegularProjection().selections, available_symbols);
-        FinalizeNestedIRExpressions(
-            &horizon->RequireRegularProjection().nested_expressions,
+        FinalizeSubqueryIRExpressions(
+            &horizon->RequireRegularProjection().subquery_expressions,
             available_symbols);
         return;
       case QueryHorizonKind::kDistinctProjection:
         FinalizeSelectionSubqueries(
             &horizon->RequireDistinctProjection().selections,
             available_symbols);
-        FinalizeNestedIRExpressions(
-            &horizon->RequireDistinctProjection().nested_expressions,
+        FinalizeSubqueryIRExpressions(
+            &horizon->RequireDistinctProjection().subquery_expressions,
             available_symbols);
         return;
       case QueryHorizonKind::kAggregatingProjection:
         FinalizeSelectionSubqueries(
             &horizon->RequireAggregatingProjection().selections,
             available_symbols);
-        FinalizeNestedIRExpressions(
-            &horizon->RequireAggregatingProjection().nested_expressions,
+        FinalizeSubqueryIRExpressions(
+            &horizon->RequireAggregatingProjection().subquery_expressions,
             available_symbols);
         return;
       case QueryHorizonKind::kProcedureCall:

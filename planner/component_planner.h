@@ -34,8 +34,8 @@ class QueryGraphPlanningContext {
       const ir::PatternRelationship &relationship);
   std::size_t ApplyAvailableFilters(const ir::Selections &selections,
                                     std::unique_ptr<ir::LogicalPlan> *plan);
-  void ApplyNestedExpressions(
-      const std::vector<ir::NestedIRExpression> &nested_expressions,
+  void ApplySubqueryExpressions(
+      const ir::SubqueryIRExpressions &subquery_expressions,
       std::unique_ptr<ir::LogicalPlan> *plan) const;
   void ValidateAllPredicatesPlanned(const ir::Selections &selections) const;
 

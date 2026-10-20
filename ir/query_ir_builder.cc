@@ -377,20 +377,20 @@ class QueryIRBuilder {
       case QueryHorizonKind::kRegularProjection:
         AttachSelectionSubqueries(
             &horizon->RequireRegularProjection().selections);
-        AttachNestedIRExpressions(
-            &horizon->RequireRegularProjection().nested_expressions);
+        AttachSubqueryIRExpressions(
+            &horizon->RequireRegularProjection().subquery_expressions);
         return;
       case QueryHorizonKind::kDistinctProjection:
         AttachSelectionSubqueries(
             &horizon->RequireDistinctProjection().selections);
-        AttachNestedIRExpressions(
-            &horizon->RequireDistinctProjection().nested_expressions);
+        AttachSubqueryIRExpressions(
+            &horizon->RequireDistinctProjection().subquery_expressions);
         return;
       case QueryHorizonKind::kAggregatingProjection:
         AttachSelectionSubqueries(
             &horizon->RequireAggregatingProjection().selections);
-        AttachNestedIRExpressions(
-            &horizon->RequireAggregatingProjection().nested_expressions);
+        AttachSubqueryIRExpressions(
+            &horizon->RequireAggregatingProjection().subquery_expressions);
         return;
       case QueryHorizonKind::kProcedureCall:
         AttachSelectionSubqueries(
@@ -408,35 +408,38 @@ class QueryIRBuilder {
              "selections is null");
     for (auto &predicate_ptr : selections->predicates) {
       auto &predicate = *predicate_ptr;
-      AppendNestedIRExpressions(
-          &predicate.nested_expressions,
-          CollectNestedIRExpressions(predicate.expression));
+      AppendSubqueryIRExpressions(
+          &predicate.subquery_expressions,
+          CollectSubqueryIRExpressions(predicate.expression));
       if (predicate.GetIf<ExistsPredicate>() == nullptr) {
         continue;
       }
       RG_CHECK(predicate.Subquery() != nullptr,
                common::ErrorCode::InvalidParameter,
-               Missing("EXISTS nested IR expression"));
+               Missing("EXISTS subquery IR expression"));
     }
   }
 
-  void AttachNestedIRExpressions(
-      std::vector<NestedIRExpression> *nested_expressions) {
-    RG_CHECK(nested_expressions != nullptr, common::ErrorCode::InternalError,
-             "nested expression list is null");
-    for (auto &nested : *nested_expressions) {
-      RG_CHECK(nested.query != nullptr, common::ErrorCode::InvalidParameter,
-               "nested IR expression query is null");
+  void AttachSubqueryIRExpressions(
+      SubqueryIRExpressions *subquery_expressions) {
+    RG_CHECK(subquery_expressions != nullptr, common::ErrorCode::InternalError,
+             "subquery expression list is null");
+    for (auto &nested : *subquery_expressions) {
+      RG_CHECK(nested != nullptr, common::ErrorCode::InternalError,
+               "subquery IR expression is null");
+      RG_CHECK(nested->query != nullptr, common::ErrorCode::InvalidParameter,
+               "subquery IR expression query is null");
     }
   }
 
-  static void AppendNestedIRExpressions(
-      std::vector<NestedIRExpression> *target,
-      std::vector<NestedIRExpression> incoming) {
+  static void AppendSubqueryIRExpressions(SubqueryIRExpressions *target,
+                                          SubqueryIRExpressions incoming) {
     RG_CHECK(target != nullptr, common::ErrorCode::InternalError,
-             "nested expression target is null");
+             "subquery expression target is null");
     target->reserve(target->size() + incoming.size());
     for (auto &nested : incoming) {
+      RG_CHECK(nested != nullptr, common::ErrorCode::InternalError,
+               "subquery IR expression is null");
       target->push_back(std::move(nested));
     }
   }
@@ -449,18 +452,18 @@ class QueryIRBuilder {
     return out;
   }
 
-  std::vector<NestedIRExpression> CollectNestedIRExpressions(
+  SubqueryIRExpressions CollectSubqueryIRExpressions(
       const ast::Expression *expression) {
-    std::vector<NestedIRExpression> nested_expressions;
+    SubqueryIRExpressions subquery_expressions;
     if (expression == nullptr) {
-      return nested_expressions;
+      return subquery_expressions;
     }
 
     class Collector final : public ast::ASTConstWalker {
      public:
       Collector(QueryIRBuilder *builder,
-                std::vector<NestedIRExpression> *nested_expressions)
-          : builder_(builder), nested_expressions_(nested_expressions) {}
+                SubqueryIRExpressions *subquery_expressions)
+          : builder_(builder), subquery_expressions_(subquery_expressions) {}
 
      protected:
       void Visit(const ast::ListComprehension &node) override {
@@ -490,7 +493,7 @@ class QueryIRBuilder {
                           return dependencies.contains(variable);
                         });
         if (!locally_correlated) {
-          nested_expressions_->push_back(
+          subquery_expressions_->push_back(
               builder_->BuildExistsIRExpression(node));
         }
       }
@@ -504,7 +507,8 @@ class QueryIRBuilder {
                           return dependencies.contains(variable);
                         });
         if (!locally_correlated) {
-          nested_expressions_->push_back(builder_->BuildListIRExpression(node));
+          subquery_expressions_->push_back(
+              builder_->BuildListIRExpression(node));
         }
         WalkMaybe(node.where_expr);
         WalkMaybe(node.eval_expr);
@@ -512,30 +516,29 @@ class QueryIRBuilder {
 
      private:
       QueryIRBuilder *builder_ = nullptr;
-      std::vector<NestedIRExpression> *nested_expressions_ = nullptr;
+      SubqueryIRExpressions *subquery_expressions_ = nullptr;
       std::vector<std::string> local_variables_;
     };
 
-    Collector collector(this, &nested_expressions);
+    Collector collector(this, &subquery_expressions);
     expression->Accept(collector);
-    return nested_expressions;
+    return subquery_expressions;
   }
 
-  NestedIRExpression BuildExistsIRExpression(
+  std::unique_ptr<ExistsIRExpression> BuildExistsIRExpression(
       const ast::ExistentialSubquery &exists) {
     RG_CHECK(exists.query != nullptr, common::ErrorCode::InternalError,
              "EXISTS subquery must contain a regular query");
-    NestedIRExpression nested;
-    nested.kind = NestedIRExpressionKind::kExists;
-    nested.expression = &exists;
-    nested.dependencies = SemanticTableRef().ExpressionDependencies(exists);
-    nested.value_variable = NextNestedVariable("exists");
-    nested.query =
+    auto nested = std::make_unique<ExistsIRExpression>();
+    nested->expression = &exists;
+    nested->dependencies = SemanticTableRef().ExpressionDependencies(exists);
+    nested->value_variable = NextNestedVariable("exists");
+    nested->query =
         BuildRegularQuery(*exists.query, ProjectionPosition::kIntermediate);
     return nested;
   }
 
-  NestedIRExpression BuildListIRExpression(
+  std::unique_ptr<ListIRExpression> BuildListIRExpression(
       const ast::PatternComprehension &comprehension) {
     RG_CHECK(comprehension.relationships_pattern != nullptr,
              common::ErrorCode::InvalidParameter,
@@ -544,15 +547,14 @@ class QueryIRBuilder {
              common::ErrorCode::InvalidParameter,
              Missing("pattern comprehension eval expression"));
 
-    NestedIRExpression nested;
-    nested.kind = NestedIRExpressionKind::kList;
-    nested.expression = &comprehension;
-    nested.dependencies =
+    auto nested = std::make_unique<ListIRExpression>();
+    nested->expression = &comprehension;
+    nested->dependencies =
         SemanticTableRef().ExpressionDependencies(comprehension);
-    nested.value_variable = NextNestedVariable("list_value");
-    nested.collection_variable = comprehension.variable.empty()
-                                     ? NextNestedVariable("list")
-                                     : comprehension.variable;
+    nested->value_variable = NextNestedVariable("list_value");
+    nested->collection_variable = comprehension.variable.empty()
+                                      ? NextNestedVariable("list")
+                                      : comprehension.variable;
 
     SingleQueryIR query;
     AddRelationshipsPatternToQueryGraph(&query.query_graph,
@@ -567,13 +569,13 @@ class QueryIRBuilder {
     RegularQueryProjection projection;
     projection.position = ProjectionPosition::kIntermediate;
     projection.items.push_back({.expression = comprehension.eval_expr.get(),
-                                .alias = nested.value_variable});
-    AppendNestedIRExpressions(
-        &projection.nested_expressions,
-        CollectNestedIRExpressions(comprehension.eval_expr.get()));
+                                .alias = nested->value_variable});
+    AppendSubqueryIRExpressions(
+        &projection.subquery_expressions,
+        CollectSubqueryIRExpressions(comprehension.eval_expr.get()));
     query.horizon = QueryHorizon::ForRegularProjection(std::move(projection));
     AttachQueryHorizonSubqueries(&query.horizon);
-    nested.query = MakeSingleQueryIR(std::move(query));
+    nested->query = MakeSingleQueryIR(std::move(query));
     return nested;
   }
 
@@ -710,7 +712,7 @@ class QueryIRBuilder {
     InterestingOrder interesting_order;
     const ast::Expression *skip = nullptr;
     const ast::Expression *limit = nullptr;
-    std::vector<NestedIRExpression> nested_expressions;
+    SubqueryIRExpressions subquery_expressions;
   };
 
   static void MoveProjectionTail(ProjectionParts *parts,
@@ -724,7 +726,7 @@ class QueryIRBuilder {
     projection->pagination.skip = parts->skip;
     projection->pagination.limit = parts->limit;
     projection->position = parts->position;
-    projection->nested_expressions = std::move(parts->nested_expressions);
+    projection->subquery_expressions = std::move(parts->subquery_expressions);
   }
 
   void AddProjectionSelections(QueryHorizon *horizon,
@@ -807,9 +809,9 @@ class QueryIRBuilder {
       if (output_type != output_types.end()) {
         projection_item.semantic_type = output_type->second;
       }
-      AppendNestedIRExpressions(
-          &parts.nested_expressions,
-          CollectNestedIRExpressions(projection_item.expression));
+      AppendSubqueryIRExpressions(
+          &parts.subquery_expressions,
+          CollectSubqueryIRExpressions(projection_item.expression));
       parts.items.push_back(std::move(projection_item));
       const ProjectionItem &stored_item = parts.items.back();
       parts.interesting_order.reverse_projection.push_back(
@@ -832,9 +834,9 @@ class QueryIRBuilder {
       order_item.expression = item->expression.get();
       order_item.direction = item->ascending ? OrderDirection::kAscending
                                              : OrderDirection::kDescending;
-      AppendNestedIRExpressions(
-          &parts.nested_expressions,
-          CollectNestedIRExpressions(order_item.expression));
+      AppendSubqueryIRExpressions(
+          &parts.subquery_expressions,
+          CollectSubqueryIRExpressions(order_item.expression));
       parts.required_order.items.emplace_back(order_item);
     }
     parts.interesting_order.required_order = parts.required_order;
@@ -842,10 +844,10 @@ class QueryIRBuilder {
 
     parts.skip = body.skip.get();
     parts.limit = body.limit.get();
-    AppendNestedIRExpressions(&parts.nested_expressions,
-                              CollectNestedIRExpressions(parts.skip));
-    AppendNestedIRExpressions(&parts.nested_expressions,
-                              CollectNestedIRExpressions(parts.limit));
+    AppendSubqueryIRExpressions(&parts.subquery_expressions,
+                                CollectSubqueryIRExpressions(parts.skip));
+    AppendSubqueryIRExpressions(&parts.subquery_expressions,
+                                CollectSubqueryIRExpressions(parts.limit));
 
     if (!parts.aggregation_items.empty()) {
       AggregatingQueryProjection projection;

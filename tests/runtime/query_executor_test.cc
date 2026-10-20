@@ -1637,6 +1637,24 @@ TEST(QueryExecutorTest, ExecutesPatternComprehension) {
                                                    {"\"Grace\"", "[]"}}));
 }
 
+TEST(QueryExecutorTest, ProjectsExistsAndPatternComprehensionTogether) {
+  runtime::test::GraphDBTestDatabase graph;
+  SeedDemoGraph(&graph);
+
+  runtime::QueryResult result = runtime::test::ExecuteQueryAndCommit(
+      graph,
+      "MATCH (n:Person) "
+      "RETURN n.name AS name, "
+      "EXISTS { MATCH (n)-[:KNOWS]->(m) RETURN 1 } AS has, "
+      "[(n)-[:KNOWS]->(m) | m.name] AS names "
+      "ORDER BY name");
+
+  ASSERT_EQ(result.columns, (std::vector<std::string>{"name", "has", "names"}));
+  EXPECT_EQ(StringRows(result), (std::vector<std::vector<std::string>>{
+                                    {"\"Ada\"", "true", "[\"Grace\"]"},
+                                    {"\"Grace\"", "false", "[]"}}));
+}
+
 TEST(QueryExecutorTest, UsesPatternComprehensionInPagination) {
   runtime::test::GraphDBTestDatabase graph;
   SeedDemoGraph(&graph);

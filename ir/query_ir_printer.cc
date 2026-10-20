@@ -101,15 +101,15 @@ std::string PredicateKindToString(PredicateKind kind) {
   RG_THROW(common::ErrorCode::InternalError, "unknown predicate kind");
 }
 
-std::string NestedIRExpressionKindToString(NestedIRExpressionKind kind) {
+std::string SubqueryIRExpressionKindToString(SubqueryIRExpressionKind kind) {
   switch (kind) {
-    case NestedIRExpressionKind::kExists:
+    case SubqueryIRExpressionKind::kExists:
       return "exists";
-    case NestedIRExpressionKind::kList:
+    case SubqueryIRExpressionKind::kList:
       return "list";
   }
   RG_THROW(common::ErrorCode::InternalError,
-           "unknown nested IR expression kind");
+           "unknown subquery IR expression kind");
 }
 
 std::string MutatingPatternKindToString(MutatingPatternKind kind) {
@@ -385,29 +385,38 @@ class QueryIRPrinter {
         PrintQueryIRNode(*predicate.Subquery());
         Dedent();
       }
-      PrintNestedIRExpressions(predicate.nested_expressions);
+      PrintSubqueryIRExpressions(predicate.subquery_expressions);
       Dedent();
     }
     Dedent();
   }
 
-  void PrintNestedIRExpressions(
-      const std::vector<NestedIRExpression> &nested_expressions) {
-    if (nested_expressions.empty()) {
+  void PrintSubqueryIRExpressions(
+      const SubqueryIRExpressions &subquery_expressions) {
+    if (subquery_expressions.empty()) {
       return;
     }
-    Line("nested_expressions:");
+    Line("subquery_expressions:");
     Indent();
-    for (const auto &nested : nested_expressions) {
-      Line("- kind: " + NestedIRExpressionKindToString(nested.kind));
+    for (const auto &nested_ptr : subquery_expressions) {
+      RG_CHECK(nested_ptr != nullptr, common::ErrorCode::InternalError,
+               "subquery IR expression is null");
+      const auto &nested = *nested_ptr;
+      Line("- kind: " + SubqueryIRExpressionKindToString(nested.Kind()));
       Indent();
       Line("expression: " + ExpressionText(nested.expression));
       Line("dependencies: " + SortedList(nested.dependencies));
-      if (!nested.value_variable.empty()) {
-        Line("value_variable: " + nested.value_variable);
-      }
-      if (!nested.collection_variable.empty()) {
-        Line("collection_variable: " + nested.collection_variable);
+      if (const auto *exists = nested.GetIf<ExistsIRExpression>()) {
+        if (!exists->value_variable.empty()) {
+          Line("value_variable: " + exists->value_variable);
+        }
+      } else if (const auto *list = nested.GetIf<ListIRExpression>()) {
+        if (!list->value_variable.empty()) {
+          Line("value_variable: " + list->value_variable);
+        }
+        if (!list->collection_variable.empty()) {
+          Line("collection_variable: " + list->collection_variable);
+        }
       }
       if (nested.query != nullptr) {
         Line("query:");
@@ -498,7 +507,7 @@ class QueryIRPrinter {
 
   void PrintProjectionTail(const QueryProjection &projection) {
     PrintSelections(projection.selections);
-    PrintNestedIRExpressions(projection.nested_expressions);
+    PrintSubqueryIRExpressions(projection.subquery_expressions);
     Line("required_order:");
     Indent();
     if (projection.required_order.empty()) {

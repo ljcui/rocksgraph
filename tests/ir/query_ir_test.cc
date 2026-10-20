@@ -1803,7 +1803,7 @@ TEST(QueryIRTest, NarrowsExistsSubqueryArgumentIdsToUsedOuterVariables) {
   EXPECT_FALSE(Contains(subquery.query_graph.argument_ids, "r"));
 }
 
-TEST(QueryIRTest, BuildsNestedIRExpressionForPatternExists) {
+TEST(QueryIRTest, BuildsSubqueryIRExpressionForPatternExists) {
   auto statement = ParseOrFail(
       "MATCH (n) WHERE EXISTS { (n)-[r]->(m) WHERE m.age > 1 } RETURN n");
   ASSERT_TRUE(statement);
@@ -1814,9 +1814,14 @@ TEST(QueryIRTest, BuildsNestedIRExpressionForPatternExists) {
   ASSERT_EQ(main.query_graph.selections.size(), 1U);
   const ir::Predicate &predicate = *main.query_graph.selections.predicates[0];
   EXPECT_EQ(predicate.Kind(), ir::PredicateKind::kExistsSubquery);
-  ASSERT_EQ(predicate.nested_expressions.size(), 1U);
-  const ir::NestedIRExpression &nested = predicate.nested_expressions[0];
-  EXPECT_EQ(nested.kind, ir::NestedIRExpressionKind::kExists);
+  ASSERT_EQ(predicate.subquery_expressions.size(), 1U);
+  const auto *exists =
+      predicate.subquery_expressions[0]->GetIf<ir::ExistsIRExpression>();
+  ASSERT_NE(exists, nullptr);
+  const auto &nested = *exists;
+  EXPECT_EQ(nested.Kind(), ir::SubqueryIRExpressionKind::kExists);
+  EXPECT_FALSE(nested.value_variable.empty());
+  EXPECT_EQ(nested.ResultVariable(), nested.value_variable);
   EXPECT_TRUE(Contains(nested.dependencies, "n"));
   ASSERT_NE(nested.query, nullptr);
   EXPECT_EQ(predicate.Subquery(), nested.query.get());
@@ -1829,7 +1834,7 @@ TEST(QueryIRTest, BuildsNestedIRExpressionForPatternExists) {
   EXPECT_EQ(subquery.query_graph.pattern_relationships[0].variable, "r");
 }
 
-TEST(QueryIRTest, BuildsNestedIRExpressionForPatternComprehension) {
+TEST(QueryIRTest, BuildsSubqueryIRExpressionForPatternComprehension) {
   auto statement =
       ParseOrFail("MATCH (n) RETURN [(n)-[r]->(m) | m.name] AS names");
   ASSERT_TRUE(statement);
@@ -1838,12 +1843,16 @@ TEST(QueryIRTest, BuildsNestedIRExpressionForPatternComprehension) {
   const ir::RegularQueryProjection &projection =
       query_ir->RequireSingle().horizon.RequireRegularProjection();
 
-  ASSERT_EQ(projection.nested_expressions.size(), 1U);
-  const ir::NestedIRExpression &nested = projection.nested_expressions[0];
-  EXPECT_EQ(nested.kind, ir::NestedIRExpressionKind::kList);
+  ASSERT_EQ(projection.subquery_expressions.size(), 1U);
+  const auto *list =
+      projection.subquery_expressions[0]->GetIf<ir::ListIRExpression>();
+  ASSERT_NE(list, nullptr);
+  const auto &nested = *list;
+  EXPECT_EQ(nested.Kind(), ir::SubqueryIRExpressionKind::kList);
   EXPECT_TRUE(Contains(nested.dependencies, "n"));
   EXPECT_FALSE(nested.value_variable.empty());
   EXPECT_FALSE(nested.collection_variable.empty());
+  EXPECT_EQ(nested.ResultVariable(), nested.collection_variable);
   ASSERT_NE(nested.query, nullptr);
 
   const ir::SingleQueryIR &subquery = nested.query->RequireSingle();
@@ -1855,6 +1864,7 @@ TEST(QueryIRTest, BuildsNestedIRExpressionForPatternComprehension) {
   const ir::RegularQueryProjection &nested_projection =
       subquery.horizon.RequireRegularProjection();
   ASSERT_EQ(nested_projection.items.size(), 1U);
+  EXPECT_EQ(nested_projection.items[0].alias, nested.value_variable);
   EXPECT_EQ(ast::ExpressionToString(*nested_projection.items[0].expression),
             "m.name");
 }
