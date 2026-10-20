@@ -791,7 +791,7 @@ TEST(QueryIRTest, BuildsNamedPathBinding) {
   std::unique_ptr<ir::QueryIR> query_ir = ir::CreateQueryIR(*statement);
   const ir::SingleQueryIR &main = query_ir->RequireSingle();
 
-  EXPECT_TRUE(Contains(main.query_graph.pattern_paths, "p"));
+  EXPECT_TRUE(Contains(main.query_graph.path_variables, "p"));
   EXPECT_TRUE(Contains(main.query_graph.pattern_nodes, "a"));
   EXPECT_TRUE(Contains(main.query_graph.pattern_nodes, "b"));
   ASSERT_EQ(main.query_graph.pattern_relationships.size(), 1U);

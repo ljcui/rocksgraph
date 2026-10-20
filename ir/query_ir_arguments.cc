@@ -244,7 +244,7 @@ class QueryIRArgumentFinalizer {
   [[nodiscard]] std::unordered_set<std::string> QueryGraphDependencies(
       const QueryGraph &query_graph) const {
     std::unordered_set<std::string> dependencies;
-    AddSymbols(&dependencies, query_graph.pattern_paths);
+    AddSymbols(&dependencies, query_graph.path_variables);
     AddSymbols(&dependencies, query_graph.pattern_nodes);
     for (const auto &relationship : query_graph.pattern_relationships) {
       AddSymbol(&dependencies, relationship.variable);

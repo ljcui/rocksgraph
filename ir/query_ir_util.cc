@@ -187,8 +187,8 @@ std::unordered_set<std::string> MutatingPatternAvailableSymbols(
 std::unordered_set<std::string> QueryGraphLocalAvailableSymbols(
     const QueryGraph &query_graph) {
   std::unordered_set<std::string> symbols = query_graph.argument_ids;
-  symbols.insert(query_graph.pattern_paths.begin(),
-                 query_graph.pattern_paths.end());
+  symbols.insert(query_graph.path_variables.begin(),
+                 query_graph.path_variables.end());
   symbols.insert(query_graph.pattern_nodes.begin(),
                  query_graph.pattern_nodes.end());
   for (const auto &relationship : query_graph.pattern_relationships) {

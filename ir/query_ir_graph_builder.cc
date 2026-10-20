@@ -53,7 +53,7 @@ class PatternConverter {
       left = right;
     }
     if (!path_variable.empty()) {
-      graph_->pattern_paths.insert(path_variable);
+      graph_->path_variables.insert(path_variable);
       path.variable = std::move(path_variable);
       graph_->path_patterns.push_back(std::move(path));
     }
@@ -76,7 +76,7 @@ class PatternConverter {
       path.shortest_path_kind = kind;
     }
     if (!part.variable.empty()) {
-      graph_->pattern_paths.insert(part.variable);
+      graph_->path_variables.insert(part.variable);
       path.variable = part.variable;
       graph_->path_patterns.push_back(std::move(path));
     }

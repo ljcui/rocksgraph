@@ -253,8 +253,8 @@ class QueryIRPrinter {
       Line("assert_is_node_variables: " +
            SortedList(query_graph.assert_is_node_variables));
     }
-    if (!query_graph.pattern_paths.empty()) {
-      Line("pattern_paths: " + SortedList(query_graph.pattern_paths));
+    if (!query_graph.path_variables.empty()) {
+      Line("path_variables: " + SortedList(query_graph.path_variables));
     }
     Line("pattern_nodes: " + SortedList(query_graph.pattern_nodes));
     PrintRelationships(query_graph.pattern_relationships);

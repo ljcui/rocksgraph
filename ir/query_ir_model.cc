@@ -206,7 +206,7 @@ std::vector<PropertyInequalityGroup> Selections::PropertyInequalityGroups()
 }
 
 bool QueryGraph::HasLocalWork() const {
-  return !pattern_paths.empty() || !pattern_nodes.empty() ||
+  return !path_variables.empty() || !pattern_nodes.empty() ||
          !pattern_relationships.empty() || !selections.empty() ||
          !optional_matches.empty() || !hints.empty() ||
          !mutating_patterns.empty();
@@ -227,7 +227,7 @@ bool QueryGraph::ContainsUpdates() const {
 bool QueryGraph::ReadOnly() const { return !ContainsUpdates(); }
 
 bool QueryGraph::CouldContainRead() const {
-  if (!pattern_paths.empty() || !pattern_nodes.empty() ||
+  if (!path_variables.empty() || !pattern_nodes.empty() ||
       !pattern_relationships.empty() || !selections.empty()) {
     return true;
   }
@@ -240,7 +240,7 @@ bool QueryGraph::CouldContainRead() const {
 }
 
 std::unordered_set<LogicalVariable> QueryGraph::CoveredIdsForPatterns() const {
-  std::unordered_set<LogicalVariable> symbols = pattern_paths;
+  std::unordered_set<LogicalVariable> symbols = path_variables;
   AddSymbols(&symbols, pattern_nodes);
   for (const auto &relationship : pattern_relationships) {
     AddSymbol(&symbols, relationship.variable);
