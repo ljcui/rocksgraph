@@ -44,7 +44,6 @@ class QueryGraphBuilder {
   [[nodiscard]] const ast::SemanticTable &SemanticTableRef() const;
 
   QueryGraph graph_;
-  std::unordered_set<std::string> where_keys_;
   const ast::SemanticTable *semantic_table_ = nullptr;
 };
 

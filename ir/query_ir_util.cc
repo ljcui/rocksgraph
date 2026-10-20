@@ -684,14 +684,11 @@ void ClassifyPredicate(Predicate *predicate,
 void AddSelectionPredicates(const ast::Expression *where,
                             const ast::SemanticTable &semantic_table,
                             const QueryGraph *query_graph,
-                            Selections *selections,
-                            std::unordered_set<std::string> *selection_keys) {
+                            Selections *selections) {
   RG_CHECK(where != nullptr, common::ErrorCode::InvalidParameter,
            "selection predicate is null");
   RG_CHECK(selections != nullptr, common::ErrorCode::InternalError,
            "selections is null");
-  RG_CHECK(selection_keys != nullptr, common::ErrorCode::InternalError,
-           "selection keys is null");
   std::vector<const ast::Expression *> predicates;
   SplitConjunctivePredicates(where, &predicates);
   RG_CHECK(!predicates.empty(), common::ErrorCode::InvalidParameter,
@@ -705,11 +702,7 @@ void AddSelectionPredicates(const ast::Expression *where,
     selection_predicate.dependencies =
         semantic_table.ExpressionDependencies(*predicate);
     ClassifyPredicate(&selection_predicate, semantic_table, query_graph);
-    const std::string predicate_key = PredicateKey(selection_predicate);
-    if (!selection_keys->insert(predicate_key).second ||
-        !selections->AddPredicate(std::move(selection_predicate))) {
-      continue;
-    }
+    selections->AddPredicate(std::move(selection_predicate));
   }
 }
 

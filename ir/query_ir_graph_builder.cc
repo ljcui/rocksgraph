@@ -553,8 +553,8 @@ std::unordered_set<LogicalVariable> QueryGraphBuilder::AvailableSymbols()
 }
 
 void QueryGraphBuilder::AddWhere(const ast::Expression *where) {
-  AddSelectionPredicates(where, SemanticTableRef(), &graph_, &graph_.selections,
-                         &where_keys_);
+  AddSelectionPredicates(where, SemanticTableRef(), &graph_,
+                         &graph_.selections);
 }
 
 QueryGraph QueryGraphBuilder::Release() { return std::move(graph_); }

@@ -72,8 +72,7 @@ void AddAssertIsNodeVariables(QueryGraph *query_graph);
 void AddSelectionPredicates(const ast::Expression *where,
                             const ast::SemanticTable &semantic_table,
                             const QueryGraph *query_graph,
-                            Selections *selections,
-                            std::unordered_set<std::string> *selection_keys);
+                            Selections *selections);
 
 std::unique_ptr<QueryIR> BuildQueryIR(const ast::Statement &statement,
                                       const ast::SemanticTable &semantic_table);

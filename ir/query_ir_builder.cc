@@ -566,10 +566,8 @@ class QueryIRBuilder {
                                         *comprehension.relationships_pattern,
                                         comprehension.variable);
     if (comprehension.where_expr != nullptr) {
-      std::unordered_set<std::string> selection_keys;
       AddSelectionPredicates(comprehension.where_expr.get(), SemanticTableRef(),
-                             &query.query_graph, &query.query_graph.selections,
-                             &selection_keys);
+                             &query.query_graph, &query.query_graph.selections);
     }
     AttachQueryGraphSubqueries(&query.query_graph);
 
@@ -743,23 +741,20 @@ class QueryIRBuilder {
     if (where == nullptr) {
       return;
     }
-    std::unordered_set<std::string> selection_keys;
     switch (horizon->kind) {
       case QueryHorizonKind::kRegularProjection:
         AddSelectionPredicates(where, SemanticTableRef(), nullptr,
-                               &horizon->RequireRegularProjection().selections,
-                               &selection_keys);
+                               &horizon->RequireRegularProjection().selections);
         return;
       case QueryHorizonKind::kDistinctProjection:
-        AddSelectionPredicates(where, SemanticTableRef(), nullptr,
-                               &horizon->RequireDistinctProjection().selections,
-                               &selection_keys);
+        AddSelectionPredicates(
+            where, SemanticTableRef(), nullptr,
+            &horizon->RequireDistinctProjection().selections);
         return;
       case QueryHorizonKind::kAggregatingProjection:
         AddSelectionPredicates(
             where, SemanticTableRef(), nullptr,
-            &horizon->RequireAggregatingProjection().selections,
-            &selection_keys);
+            &horizon->RequireAggregatingProjection().selections);
         return;
       case QueryHorizonKind::kUnwind:
         RG_THROW(common::ErrorCode::InternalError,
@@ -967,9 +962,8 @@ class QueryIRBuilder {
                                    ProcedureCallHorizon *horizon) {
     RG_CHECK(horizon != nullptr, common::ErrorCode::InternalError,
              "procedure call horizon is null");
-    std::unordered_set<std::string> selection_keys;
     AddSelectionPredicates(where, SemanticTableRef(), nullptr,
-                           &horizon->yield_selections, &selection_keys);
+                           &horizon->yield_selections);
   }
 
   const ast::SemanticTable *semantic_table_ = nullptr;
