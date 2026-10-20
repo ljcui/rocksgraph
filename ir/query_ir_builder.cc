@@ -207,6 +207,111 @@ class QueryIRBuilder {
   }
 
  private:
+  class QuerySegmentBuilder {
+   public:
+    QuerySegmentBuilder(QueryIRBuilder &query_builder,
+                        const std::unordered_set<std::string> &argument_ids)
+        : query_builder_(query_builder),
+          current_argument_ids_(argument_ids),
+          builder_(query_builder.SemanticTableRef(), current_argument_ids_) {}
+
+    void Finish(QueryHorizon horizon) {
+      current_segment_->query_graph = builder_.Release();
+      query_builder_.AttachQueryGraphSubqueries(&current_segment_->query_graph);
+      current_segment_->horizon = std::move(horizon);
+      current_segment_finished_ = true;
+    }
+
+    void StartNext() {
+      current_argument_ids_ = SingleQueryIROutputSymbols(*current_segment_);
+      current_segment_->tail = std::make_unique<SingleQueryIR>();
+      current_segment_ = current_segment_->tail.get();
+      builder_ = QueryGraphBuilder(query_builder_.SemanticTableRef(),
+                                   current_argument_ids_);
+      current_segment_finished_ = false;
+    }
+
+    void FinishAndStartNext(QueryHorizon horizon) {
+      Finish(std::move(horizon));
+      StartNext();
+    }
+
+    void BuildReadingClauses(
+        const std::vector<std::unique_ptr<ast::ReadingClause>> &reading) {
+      for (const auto &clause : reading) {
+        RG_CHECK(clause != nullptr, common::ErrorCode::InvalidParameter,
+                 Missing("reading clause"));
+        if (clause->Is(ast::ASTNodeType::kUnwind)) {
+          FinishAndStartNext(
+              QueryHorizon::ForUnwind(query_builder_.BuildUnwindHorizon(
+                  *ast::CastAst<ast::Unwind>(clause.get()))));
+          continue;
+        }
+        if (clause->Is(ast::ASTNodeType::kInQueryCall)) {
+          FinishAndStartNext(QueryHorizon::ForProcedureCall(
+              query_builder_.BuildProcedureCallHorizon(
+                  *ast::CastAst<ast::InQueryCall>(clause.get()))));
+          continue;
+        }
+        builder_.BuildReadingClause(*clause);
+      }
+    }
+
+    void BuildUpdatingClauses(
+        const std::vector<std::unique_ptr<ast::UpdatingClause>> &updating,
+        bool has_following_work) {
+      for (std::size_t i = 0; i < updating.size(); ++i) {
+        const auto &clause = updating[i];
+        RG_CHECK(clause != nullptr, common::ErrorCode::InvalidParameter,
+                 Missing("updating clause"));
+        const bool is_merge = clause->Is(ast::ASTNodeType::kMerge);
+        if (is_merge && builder_.HasLocalWork()) {
+          FinishAndStartNext(QueryHorizon::ForPassthrough());
+        }
+        builder_.BuildUpdatingClause(*clause);
+        if (is_merge) {
+          Finish(QueryHorizon::ForPassthrough());
+          if (i + 1 < updating.size() || has_following_work) {
+            StartNext();
+          }
+        }
+      }
+    }
+
+    [[nodiscard]] bool CanInlineWith(const ast::With &with_clause,
+                                     bool has_update_boundary) const {
+      return query_builder_.CanInlineWith(
+          with_clause, builder_.AvailableSymbols(),
+          builder_.HasOptionalMatches(), has_update_boundary);
+    }
+
+    void AddWhere(const ast::Expression *where) { builder_.AddWhere(where); }
+
+    [[nodiscard]] bool HasLocalWork() const { return builder_.HasLocalWork(); }
+
+    [[nodiscard]] bool ContainsUpdates() const {
+      return builder_.ContainsUpdates();
+    }
+
+    [[nodiscard]] bool IsFinished() const { return current_segment_finished_; }
+
+    SingleQueryIR TakeRoot() { return std::move(root_); }
+
+    void FinishWithProjection(const ast::ProjectionClause *projection,
+                              ProjectionPosition projection_position) {
+      Finish(query_builder_.BuildProjectionClause(projection,
+                                                  projection_position));
+    }
+
+   private:
+    QueryIRBuilder &query_builder_;
+    SingleQueryIR root_;
+    SingleQueryIR *current_segment_ = &root_;
+    std::unordered_set<std::string> current_argument_ids_;
+    QueryGraphBuilder builder_;
+    bool current_segment_finished_ = false;
+  };
+
   [[nodiscard]] const ast::SemanticTable &SemanticTableRef() const {
     RG_CHECK(semantic_table_ != nullptr, common::ErrorCode::InternalError,
              "semantic table is null");
@@ -538,9 +643,18 @@ class QueryIRBuilder {
                                      ProjectionPosition projection_position) {
     RG_CHECK(query.return_clause || !query.updating_clauses.empty(),
              common::ErrorCode::InvalidParameter, Missing("RETURN clause"));
-    return BuildQuerySegment(query.reading_clauses, query.updating_clauses,
-                             query.return_clause.get(), {},
-                             projection_position);
+    QuerySegmentBuilder segment_builder(*this, {});
+    segment_builder.BuildReadingClauses(query.reading_clauses);
+    segment_builder.BuildUpdatingClauses(query.updating_clauses,
+                                         query.return_clause != nullptr);
+    if (query.return_clause != nullptr) {
+      segment_builder.FinishWithProjection(query.return_clause.get(),
+                                           projection_position);
+    } else if (!segment_builder.IsFinished() &&
+               segment_builder.HasLocalWork()) {
+      segment_builder.Finish(QueryHorizon::ForPassthrough());
+    }
+    return segment_builder.TakeRoot();
   }
 
   SingleQueryIR BuildMultiPartQuery(const ast::MultiPartQuery &query,
@@ -548,72 +662,7 @@ class QueryIRBuilder {
     RG_CHECK(query.final_single_part_query, common::ErrorCode::InvalidParameter,
              Missing("final single query"));
 
-    SingleQueryIR root;
-    SingleQueryIR *current_segment = &root;
-    std::unordered_set<std::string> current_argument_ids;
-    QueryGraphBuilder builder(SemanticTableRef(), current_argument_ids);
-    bool current_segment_finished = false;
-
-    auto finish_current_segment = [&](QueryHorizon horizon) {
-      current_segment->query_graph = builder.Release();
-      AttachQueryGraphSubqueries(&current_segment->query_graph);
-      current_segment->horizon = std::move(horizon);
-      current_segment_finished = true;
-    };
-
-    auto start_next_segment = [&]() {
-      current_argument_ids = SingleQueryIROutputSymbols(*current_segment);
-      current_segment->tail = std::make_unique<SingleQueryIR>();
-      current_segment = current_segment->tail.get();
-      builder = QueryGraphBuilder(SemanticTableRef(), current_argument_ids);
-      current_segment_finished = false;
-    };
-
-    auto finish_and_start_next = [&](QueryHorizon horizon) {
-      finish_current_segment(std::move(horizon));
-      start_next_segment();
-    };
-
-    auto build_reading_clauses =
-        [&](const std::vector<std::unique_ptr<ast::ReadingClause>> &reading) {
-          for (const auto &clause : reading) {
-            RG_CHECK(clause != nullptr, common::ErrorCode::InvalidParameter,
-                     Missing("reading clause"));
-            if (clause->Is(ast::ASTNodeType::kUnwind)) {
-              finish_and_start_next(QueryHorizon::ForUnwind(BuildUnwindHorizon(
-                  *ast::CastAst<ast::Unwind>(clause.get()))));
-              continue;
-            }
-            if (clause->Is(ast::ASTNodeType::kInQueryCall)) {
-              finish_and_start_next(
-                  QueryHorizon::ForProcedureCall(BuildProcedureCallHorizon(
-                      *ast::CastAst<ast::InQueryCall>(clause.get()))));
-              continue;
-            }
-            builder.BuildReadingClause(*clause);
-          }
-        };
-
-    auto build_updating_clauses =
-        [&](const std::vector<std::unique_ptr<ast::UpdatingClause>> &updating,
-            bool has_following_work) {
-          for (std::size_t i = 0; i < updating.size(); ++i) {
-            const auto &clause = updating[i];
-            RG_CHECK(clause != nullptr, common::ErrorCode::InvalidParameter,
-                     Missing("updating clause"));
-            const bool is_merge = clause->Is(ast::ASTNodeType::kMerge);
-            if (is_merge && builder.HasLocalWork()) {
-              finish_and_start_next(QueryHorizon::ForPassthrough());
-            }
-            builder.BuildUpdatingClause(*clause);
-            if (is_merge) {
-              finish_current_segment(QueryHorizon::ForPassthrough());
-              if (i + 1 < updating.size() || has_following_work) {
-                start_next_segment();
-              }
-            }
-          }
-        };
+    QuerySegmentBuilder segment_builder(*this, {});
 
     for (const auto &part : query.parts) {
       RG_CHECK(part.with_clause, common::ErrorCode::InvalidParameter,
@@ -621,48 +670,38 @@ class QueryIRBuilder {
       RG_CHECK(part.with_clause->body != nullptr,
                common::ErrorCode::InvalidParameter, Missing("WITH body"));
 
-      build_reading_clauses(part.reading_clauses);
-      build_updating_clauses(part.updating_clauses,
-                             /*has_following_work=*/true);
+      segment_builder.BuildReadingClauses(part.reading_clauses);
+      segment_builder.BuildUpdatingClauses(part.updating_clauses,
+                                           /*has_following_work=*/true);
 
       const ast::With &with_clause = *part.with_clause;
-      if (CanInlineWith(
-              with_clause, builder.AvailableSymbols(),
-              builder.HasOptionalMatches(),
-              !part.updating_clauses.empty() || builder.ContainsUpdates())) {
+      if (segment_builder.CanInlineWith(
+              with_clause, !part.updating_clauses.empty() ||
+                               segment_builder.ContainsUpdates())) {
         if (with_clause.where != nullptr) {
-          builder.AddWhere(with_clause.where.get());
+          segment_builder.AddWhere(with_clause.where.get());
         }
         continue;
       }
 
-      finish_and_start_next(BuildProjectionClause(
+      segment_builder.FinishAndStartNext(BuildProjectionClause(
           &with_clause, ProjectionPosition::kIntermediate));
     }
 
     const ast::SinglePartQuery &final = *query.final_single_part_query;
     RG_CHECK(final.return_clause || !final.updating_clauses.empty(),
              common::ErrorCode::InvalidParameter, Missing("RETURN clause"));
-    build_reading_clauses(final.reading_clauses);
-    build_updating_clauses(final.updating_clauses,
-                           final.return_clause != nullptr);
+    segment_builder.BuildReadingClauses(final.reading_clauses);
+    segment_builder.BuildUpdatingClauses(final.updating_clauses,
+                                         final.return_clause != nullptr);
     if (final.return_clause != nullptr) {
-      finish_current_segment(BuildProjectionClause(final.return_clause.get(),
-                                                   projection_position));
-    } else if (!current_segment_finished && builder.HasLocalWork()) {
-      finish_current_segment(QueryHorizon::ForPassthrough());
+      segment_builder.FinishWithProjection(final.return_clause.get(),
+                                           projection_position);
+    } else if (!segment_builder.IsFinished() &&
+               segment_builder.HasLocalWork()) {
+      segment_builder.Finish(QueryHorizon::ForPassthrough());
     }
-    return root;
-  }
-
-  SingleQueryIR BuildSinglePartQuery(
-      const ast::SinglePartQuery &query,
-      const std::unordered_set<std::string> &argument_ids) {
-    RG_CHECK(query.return_clause || !query.updating_clauses.empty(),
-             common::ErrorCode::InvalidParameter, Missing("RETURN clause"));
-    return BuildQuerySegment(query.reading_clauses, query.updating_clauses,
-                             query.return_clause.get(), argument_ids,
-                             ProjectionPosition::kIntermediate);
+    return segment_builder.TakeRoot();
   }
 
   struct ProjectionParts {
@@ -745,83 +784,6 @@ class QueryIRBuilder {
     }
     AttachQueryHorizonSubqueries(&horizon);
     return horizon;
-  }
-
-  SingleQueryIR BuildQuerySegment(
-      const std::vector<std::unique_ptr<ast::ReadingClause>> &reading,
-      const std::vector<std::unique_ptr<ast::UpdatingClause>> &updating,
-      const ast::ProjectionClause *projection,
-      const std::unordered_set<std::string> &argument_ids,
-      ProjectionPosition projection_position) {
-    RG_CHECK(projection != nullptr || !updating.empty(),
-             common::ErrorCode::InvalidParameter, Missing("projection clause"));
-    SingleQueryIR root;
-    SingleQueryIR *current_segment = &root;
-    std::unordered_set<std::string> current_argument_ids = argument_ids;
-    QueryGraphBuilder builder(SemanticTableRef(), current_argument_ids);
-    bool current_segment_finished = false;
-
-    auto finish_current_segment = [&](QueryHorizon horizon) {
-      current_segment->query_graph = builder.Release();
-      AttachQueryGraphSubqueries(&current_segment->query_graph);
-      current_segment->horizon = std::move(horizon);
-      current_segment_finished = true;
-    };
-
-    auto start_next_segment = [&]() {
-      current_argument_ids = SingleQueryIROutputSymbols(*current_segment);
-      current_segment->tail = std::make_unique<SingleQueryIR>();
-      current_segment = current_segment->tail.get();
-      builder = QueryGraphBuilder(SemanticTableRef(), current_argument_ids);
-      current_segment_finished = false;
-    };
-
-    auto finish_and_start_next = [&](QueryHorizon horizon) {
-      finish_current_segment(std::move(horizon));
-      start_next_segment();
-    };
-
-    for (const auto &clause : reading) {
-      RG_CHECK(clause != nullptr, common::ErrorCode::InvalidParameter,
-               Missing("reading clause"));
-      if (clause->Is(ast::ASTNodeType::kUnwind)) {
-        finish_and_start_next(QueryHorizon::ForUnwind(
-            BuildUnwindHorizon(*ast::CastAst<ast::Unwind>(clause.get()))));
-        continue;
-      }
-      if (clause->Is(ast::ASTNodeType::kInQueryCall)) {
-        finish_and_start_next(
-            QueryHorizon::ForProcedureCall(BuildProcedureCallHorizon(
-                *ast::CastAst<ast::InQueryCall>(clause.get()))));
-        continue;
-      }
-      builder.BuildReadingClause(*clause);
-    }
-
-    for (std::size_t i = 0; i < updating.size(); ++i) {
-      const auto &clause = updating[i];
-      RG_CHECK(clause != nullptr, common::ErrorCode::InvalidParameter,
-               Missing("updating clause"));
-      const bool is_merge = clause->Is(ast::ASTNodeType::kMerge);
-      if (is_merge && builder.HasLocalWork()) {
-        finish_and_start_next(QueryHorizon::ForPassthrough());
-      }
-      builder.BuildUpdatingClause(*clause);
-      if (is_merge) {
-        finish_current_segment(QueryHorizon::ForPassthrough());
-        if (i + 1 < updating.size() || projection != nullptr) {
-          start_next_segment();
-        }
-      }
-    }
-
-    if (projection != nullptr) {
-      finish_current_segment(
-          BuildProjectionClause(projection, projection_position));
-    } else if (!current_segment_finished && builder.HasLocalWork()) {
-      finish_current_segment(QueryHorizon::ForPassthrough());
-    }
-    return root;
   }
 
   QueryHorizon BuildProjectionBody(const ast::ProjectionBody &body,
