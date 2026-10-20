@@ -541,47 +541,46 @@ void AddAssertIsNodeVariables(QueryGraph *query_graph) {
   }
 }
 
-std::unique_ptr<Predicate> ClassifyPredicate(
+std::unique_ptr<Predicate> BuildPredicate(
     const ast::Expression *expression, const ast::SemanticTable &semantic_table,
     const QueryGraph *query_graph) {
   RG_CHECK(expression != nullptr, common::ErrorCode::InvalidParameter,
            "predicate expression is null");
+  std::unique_ptr<Predicate> predicate;
 
   if (expression->Is(ast::ASTNodeType::kLabelPredicateExpression)) {
     const auto *label = ast::CastAst<ast::LabelPredicateExpression>(expression);
     const ast::Variable *variable = AsVariableExpression(label->expr.get());
-    if (variable == nullptr) {
-      return std::make_unique<GenericPredicate>();
+    if (variable != nullptr) {
+      auto variable_type =
+          semantic_table.VariableTypeAt(*expression, variable->name);
+      if (!variable_type.has_value()) {
+        variable_type = semantic_table.VariableType(variable->name);
+      }
+      const bool type_unknown =
+          !variable_type.has_value() ||
+          *variable_type == ast::SemanticVariableType::kUnknown;
+      if (variable_type == ast::SemanticVariableType::kRelationship ||
+          (type_unknown && QueryGraphContainsRelationshipVariable(
+                               query_graph, variable->name))) {
+        auto type = std::make_unique<RelationshipTypePredicate>();
+        type->variable = variable->name;
+        type->types = label->labels;
+        predicate = std::move(type);
+      } else if (variable_type == ast::SemanticVariableType::kNode ||
+                 (type_unknown && QueryGraphContainsNodeVariable(
+                                      query_graph, variable->name))) {
+        auto node_label = std::make_unique<NodeLabelPredicate>();
+        node_label->variable = variable->name;
+        node_label->labels = label->labels;
+        predicate = std::move(node_label);
+      } else {
+        auto generic = std::make_unique<GenericPredicate>();
+        generic->variable = variable->name;
+        predicate = std::move(generic);
+      }
     }
-    auto variable_type =
-        semantic_table.VariableTypeAt(*expression, variable->name);
-    if (!variable_type.has_value()) {
-      variable_type = semantic_table.VariableType(variable->name);
-    }
-    const bool type_unknown =
-        !variable_type.has_value() ||
-        *variable_type == ast::SemanticVariableType::kUnknown;
-    if (variable_type == ast::SemanticVariableType::kRelationship ||
-        (type_unknown &&
-         QueryGraphContainsRelationshipVariable(query_graph, variable->name))) {
-      auto predicate = std::make_unique<RelationshipTypePredicate>();
-      predicate->variable = variable->name;
-      predicate->types = label->labels;
-      return predicate;
-    } else if (variable_type == ast::SemanticVariableType::kNode ||
-               (type_unknown &&
-                QueryGraphContainsNodeVariable(query_graph, variable->name))) {
-      auto predicate = std::make_unique<NodeLabelPredicate>();
-      predicate->variable = variable->name;
-      predicate->labels = label->labels;
-      return predicate;
-    }
-    auto predicate = std::make_unique<GenericPredicate>();
-    predicate->variable = variable->name;
-    return predicate;
-  }
-
-  if (expression->Is(ast::ASTNodeType::kComparisonExpression)) {
+  } else if (expression->Is(ast::ASTNodeType::kComparisonExpression)) {
     const auto *comparison =
         ast::CastAst<ast::ComparisonExpression>(expression);
     const ast::PropertyExpression *property =
@@ -593,59 +592,54 @@ std::unique_ptr<Predicate> ClassifyPredicate(
       value = comparison->left.get();
       comparison_op = ReverseComparisonOp(comparison->op);
     }
-    auto predicate = std::make_unique<PropertyComparisonPredicate>();
-    predicate->op = std::move(comparison_op);
-    predicate->value = value;
-    return MakePropertyPredicate(std::move(predicate), property);
-  }
-
-  if (expression->Is(ast::ASTNodeType::kListPredicateExpression)) {
+    auto property_comparison = std::make_unique<PropertyComparisonPredicate>();
+    property_comparison->op = std::move(comparison_op);
+    property_comparison->value = value;
+    predicate = MakePropertyPredicate(std::move(property_comparison), property);
+  } else if (expression->Is(ast::ASTNodeType::kListPredicateExpression)) {
     const auto *list_predicate =
         ast::CastAst<ast::ListPredicateExpression>(expression);
-    auto predicate = std::make_unique<PropertyInPredicate>();
-    predicate->list = list_predicate->list.get();
-    return MakePropertyPredicate(
-        std::move(predicate),
+    auto property_in = std::make_unique<PropertyInPredicate>();
+    property_in->list = list_predicate->list.get();
+    predicate = MakePropertyPredicate(
+        std::move(property_in),
         AsPropertyExpression(list_predicate->element.get()));
-  }
-
-  if (expression->Is(ast::ASTNodeType::kStringPredicateExpression)) {
+  } else if (expression->Is(ast::ASTNodeType::kStringPredicateExpression)) {
     const auto *string_predicate =
         ast::CastAst<ast::StringPredicateExpression>(expression);
-    auto predicate = std::make_unique<PropertyStringPredicate>();
-    predicate->op = string_predicate->op;
-    predicate->value = string_predicate->right.get();
-    return MakePropertyPredicate(
-        std::move(predicate),
+    auto property_string = std::make_unique<PropertyStringPredicate>();
+    property_string->op = string_predicate->op;
+    property_string->value = string_predicate->right.get();
+    predicate = MakePropertyPredicate(
+        std::move(property_string),
         AsPropertyExpression(string_predicate->left.get()));
-  }
-
-  if (expression->Is(ast::ASTNodeType::kNullPredicateExpression)) {
+  } else if (expression->Is(ast::ASTNodeType::kNullPredicateExpression)) {
     const auto *null_predicate =
         ast::CastAst<ast::NullPredicateExpression>(expression);
-    auto predicate = std::make_unique<PropertyNullPredicate>();
-    predicate->is_null = null_predicate->is_null;
-    return MakePropertyPredicate(
-        std::move(predicate),
+    auto property_null = std::make_unique<PropertyNullPredicate>();
+    property_null->is_null = null_predicate->is_null;
+    predicate = MakePropertyPredicate(
+        std::move(property_null),
         AsPropertyExpression(null_predicate->operand.get()));
-  }
-
-  if (AsExistentialSubquery(expression) != nullptr ||
-      AsPatternPredicateExpression(expression) != nullptr) {
-    return std::make_unique<ExistsPredicate>();
-  }
-
-  if (expression->Is(ast::ASTNodeType::kNotExpression)) {
+  } else if (AsExistentialSubquery(expression) != nullptr ||
+             AsPatternPredicateExpression(expression) != nullptr) {
+    predicate = std::make_unique<ExistsPredicate>();
+  } else if (expression->Is(ast::ASTNodeType::kNotExpression)) {
     const auto *not_expression = ast::CastAst<ast::NotExpression>(expression);
     const ast::Expression *operand = not_expression->operand.get();
     if (AsExistentialSubquery(operand) != nullptr ||
         AsPatternPredicateExpression(operand) != nullptr) {
-      auto predicate = std::make_unique<ExistsPredicate>();
-      predicate->negated = true;
-      return predicate;
+      auto exists = std::make_unique<ExistsPredicate>();
+      exists->negated = true;
+      predicate = std::move(exists);
     }
   }
-  return std::make_unique<GenericPredicate>();
+  if (predicate == nullptr) {
+    predicate = std::make_unique<GenericPredicate>();
+  }
+  predicate->expression = expression;
+  predicate->dependencies = semantic_table.ExpressionDependencies(*expression);
+  return predicate;
 }
 
 void AddSelectionPredicates(const ast::Expression *where,
@@ -664,12 +658,8 @@ void AddSelectionPredicates(const ast::Expression *where,
     RG_CHECK(predicate != nullptr, common::ErrorCode::InvalidParameter,
              "null selection predicate is not supported");
 
-    auto selection_predicate =
-        ClassifyPredicate(predicate, semantic_table, query_graph);
-    selection_predicate->expression = predicate;
-    selection_predicate->dependencies =
-        semantic_table.ExpressionDependencies(*predicate);
-    selections->AddPredicate(std::move(selection_predicate));
+    selections->AddPredicate(
+        BuildPredicate(predicate, semantic_table, query_graph));
   }
 }
 
