@@ -395,7 +395,7 @@ class IdpComponentPlanner final : public ComponentPlanner {
     }
 
     const std::unordered_set<const Predicate *> base_predicates =
-        context->Snapshot();
+        context->CopyPlannedPredicates();
     if (component.pattern_relationship_indices.empty()) {
       const std::vector<std::string> nodes = SortedComponentNodes(component);
       RG_CHECK(nodes.size() == 1, common::ErrorCode::InvalidParameter,
@@ -406,7 +406,8 @@ class IdpComponentPlanner final : public ComponentPlanner {
                               context, interesting_order, &plan_table);
       PlanCandidate final_candidate = plan_table.TakeBest(
           BestKeyWithRelationshipCount(plan_table, 0, interesting_order));
-      context->Restore(std::move(final_candidate.planned_predicates));
+      context->SetPlannedPredicates(
+          std::move(final_candidate.planned_predicates));
       return std::move(final_candidate.plan);
     }
 
@@ -440,7 +441,8 @@ class IdpComponentPlanner final : public ComponentPlanner {
     PlanCandidate final_candidate =
         plan_table.TakeBest(BestKeyWithRelationshipCount(
             plan_table, relationship_count, interesting_order));
-    context->Restore(std::move(final_candidate.planned_predicates));
+    context->SetPlannedPredicates(
+        std::move(final_candidate.planned_predicates));
     return std::move(final_candidate.plan);
   }
 
@@ -454,10 +456,10 @@ class IdpComponentPlanner final : public ComponentPlanner {
     const PatternRelationship &relationship =
         query_graph.pattern_relationships[relationship_index];
     const std::unordered_set<const Predicate *> base_predicates =
-        context->Snapshot();
+        context->CopyPlannedPredicates();
 
     auto build_node = [&](const std::string &variable) {
-      context->Restore(base_predicates);
+      context->SetPlannedPredicates(base_predicates);
       std::vector<LeafPlanCandidate> candidates =
           context->BuildNodeLeafCandidates(query_graph, variable);
       RG_CHECK(!candidates.empty(), common::ErrorCode::InternalError,
@@ -469,13 +471,13 @@ class IdpComponentPlanner final : public ComponentPlanner {
         RG_CHECK(candidate.plan != nullptr, common::ErrorCode::InternalError,
                  "shortest path node candidate is null");
         CostEstimate estimate = EstimateLeafPlan(*candidate.plan, cost_model_);
-        context->Restore(std::move(candidate.planned_predicates));
+        context->SetPlannedPredicates(std::move(candidate.planned_predicates));
         const std::size_t filter_count = context->ApplyAvailableFilters(
             query_graph.selections, &candidate.plan);
         estimate = ApplyFilterEstimates(estimate, filter_count, cost_model_);
         if (!best.has_value() || estimate.cost < std::get<1>(*best).cost) {
           best.emplace(std::move(candidate.plan), estimate,
-                       context->Snapshot());
+                       context->CopyPlannedPredicates());
         }
       }
       RG_CHECK(best.has_value(), common::ErrorCode::InternalError,
@@ -498,14 +500,14 @@ class IdpComponentPlanner final : public ComponentPlanner {
         argument_endpoints.size() ==
         (relationship.left_node == relationship.right_node ? 1U : 2U);
     if (endpoints_are_arguments) {
-      context->Restore(base_predicates);
+      context->SetPlannedPredicates(base_predicates);
       input = std::make_unique<ArgumentPlan>(argument_endpoints);
       input_estimate = cost_model_.EstimateArgument(argument_endpoints.size());
       const std::size_t filter_count =
           context->ApplyAvailableFilters(query_graph.selections, &input);
       input_estimate =
           ApplyFilterEstimates(input_estimate, filter_count, cost_model_);
-      planned_predicates = context->Snapshot();
+      planned_predicates = context->CopyPlannedPredicates();
     } else if (relationship.left_node == relationship.right_node) {
       std::tie(input, input_estimate, planned_predicates) =
           build_node(relationship.left_node);
@@ -517,7 +519,7 @@ class IdpComponentPlanner final : public ComponentPlanner {
       planned_predicates = std::move(left_predicates);
       planned_predicates.insert(right_predicates.begin(),
                                 right_predicates.end());
-      context->Restore(planned_predicates);
+      context->SetPlannedPredicates(planned_predicates);
       input = std::make_unique<CartesianProductPlan>(std::move(left),
                                                      std::move(right));
       input_estimate =
@@ -526,15 +528,15 @@ class IdpComponentPlanner final : public ComponentPlanner {
           context->ApplyAvailableFilters(query_graph.selections, &input);
       input_estimate =
           ApplyFilterEstimates(input_estimate, filter_count, cost_model_);
-      planned_predicates = context->Snapshot();
+      planned_predicates = context->CopyPlannedPredicates();
     }
 
     PlanCandidate candidate = MakePlanCandidate(
         std::move(input), {}, input_estimate, std::move(planned_predicates));
-    context->Restore(candidate.planned_predicates);
+    context->SetPlannedPredicates(candidate.planned_predicates);
     PlanCandidate expanded =
         ExpandCandidate(query_graph, candidate, relationship_index, context);
-    context->Restore(expanded.planned_predicates);
+    context->SetPlannedPredicates(expanded.planned_predicates);
     std::unique_ptr<LogicalPlan> plan = std::move(expanded.plan);
     if (!interesting_order.empty() &&
         !OrderingSatisfies(expanded.provided_order, interesting_order) &&
@@ -715,7 +717,7 @@ class IdpComponentPlanner final : public ComponentPlanner {
     RG_CHECK(plan_table != nullptr, common::ErrorCode::InternalError,
              "plan table is null");
 
-    context->Restore(base_predicates);
+    context->SetPlannedPredicates(base_predicates);
     std::unique_ptr<LogicalPlan> plan =
         std::make_unique<ArgumentPlan>(argument_nodes);
     CostEstimate estimate = cost_model_.EstimateArgument(argument_nodes.size());
@@ -724,7 +726,7 @@ class IdpComponentPlanner final : public ComponentPlanner {
     PutCandidate(MakePlanCandidate(
                      std::move(plan), {},
                      ApplyFilterEstimates(estimate, filter_count, cost_model_),
-                     context->Snapshot()),
+                     context->CopyPlannedPredicates()),
                  interesting_order, plan_table);
   }
 
@@ -739,7 +741,7 @@ class IdpComponentPlanner final : public ComponentPlanner {
     RG_CHECK(plan_table != nullptr, common::ErrorCode::InternalError,
              "plan table is null");
 
-    context->Restore(base_predicates);
+    context->SetPlannedPredicates(base_predicates);
     std::vector<LeafPlanCandidate> leaf_candidates =
         context->BuildNodeLeafCandidates(query_graph, node);
     RG_CHECK(!leaf_candidates.empty(), common::ErrorCode::InternalError,
@@ -747,7 +749,8 @@ class IdpComponentPlanner final : public ComponentPlanner {
     for (auto &leaf_candidate : leaf_candidates) {
       RG_CHECK(leaf_candidate.plan != nullptr, common::ErrorCode::InternalError,
                "node leaf candidate plan is null");
-      context->Restore(std::move(leaf_candidate.planned_predicates));
+      context->SetPlannedPredicates(
+          std::move(leaf_candidate.planned_predicates));
       CostEstimate estimate =
           EstimateLeafPlan(*leaf_candidate.plan, cost_model_);
       const std::size_t filter_count = context->ApplyAvailableFilters(
@@ -755,7 +758,7 @@ class IdpComponentPlanner final : public ComponentPlanner {
       PutCandidate(MakePlanCandidate(std::move(leaf_candidate.plan), {},
                                      ApplyFilterEstimates(
                                          estimate, filter_count, cost_model_),
-                                     context->Snapshot()),
+                                     context->CopyPlannedPredicates()),
                    interesting_order, plan_table);
     }
   }
@@ -773,7 +776,7 @@ class IdpComponentPlanner final : public ComponentPlanner {
 
     for (std::size_t relationship_index :
          component.pattern_relationship_indices) {
-      context->Restore(base_predicates);
+      context->SetPlannedPredicates(base_predicates);
       std::vector<LeafPlanCandidate> leaf_candidates =
           context->BuildRelationshipLeafCandidates(query_graph,
                                                    relationship_index);
@@ -781,7 +784,8 @@ class IdpComponentPlanner final : public ComponentPlanner {
         RG_CHECK(leaf_candidate.plan != nullptr,
                  common::ErrorCode::InternalError,
                  "relationship leaf candidate plan is null");
-        context->Restore(std::move(leaf_candidate.planned_predicates));
+        context->SetPlannedPredicates(
+            std::move(leaf_candidate.planned_predicates));
         CostEstimate estimate =
             EstimateLeafPlan(*leaf_candidate.plan, cost_model_);
         const std::size_t filter_count = context->ApplyAvailableFilters(
@@ -790,7 +794,7 @@ class IdpComponentPlanner final : public ComponentPlanner {
             MakePlanCandidate(
                 std::move(leaf_candidate.plan), {relationship_index},
                 ApplyFilterEstimates(estimate, filter_count, cost_model_),
-                context->Snapshot()),
+                context->CopyPlannedPredicates()),
             interesting_order, plan_table);
       }
     }
@@ -809,7 +813,7 @@ class IdpComponentPlanner final : public ComponentPlanner {
     RG_CHECK(context != nullptr, common::ErrorCode::InternalError,
              "query graph planning context is null");
     PlanCandidate candidate = CloneCandidate(input);
-    context->Restore(candidate.planned_predicates);
+    context->SetPlannedPredicates(candidate.planned_predicates);
 
     const PatternRelationship &relationship =
         query_graph.pattern_relationships[relationship_index];
@@ -871,7 +875,7 @@ class IdpComponentPlanner final : public ComponentPlanner {
         WithRelationshipIndex(candidate.relationship_indices,
                               relationship_index),
         ApplyFilterEstimates(estimate, filter_count, cost_model_),
-        context->Snapshot(), candidate.provided_order);
+        context->CopyPlannedPredicates(), candidate.provided_order);
   }
 
   PlanCandidate JoinCandidates(const QueryGraph &query_graph,
@@ -885,7 +889,7 @@ class IdpComponentPlanner final : public ComponentPlanner {
     PlanCandidate right = CloneCandidate(right_input);
     std::unordered_set<const Predicate *> planned_predicates =
         UnionPredicates(left.planned_predicates, right.planned_predicates);
-    context->Restore(planned_predicates);
+    context->SetPlannedPredicates(planned_predicates);
 
     CostEstimate estimate = cost_model_.EstimateNodeHashJoin(
         CandidateEstimate(left), CandidateEstimate(right), join_keys.size());
@@ -898,7 +902,7 @@ class IdpComponentPlanner final : public ComponentPlanner {
         MergeRelationshipIndices(left.relationship_indices,
                                  right.relationship_indices),
         ApplyFilterEstimates(estimate, filter_count, cost_model_),
-        context->Snapshot());
+        context->CopyPlannedPredicates());
   }
 
   CostModel cost_model_;
@@ -922,14 +926,15 @@ QueryGraphPlanningContext::BuildNodeLeafCandidates(
     const QueryGraph &query_graph, std::string_view variable) {
   RG_CHECK(!variable.empty(), common::ErrorCode::InvalidParameter,
            "node leaf variable is empty");
-  const std::unordered_set<const Predicate *> base_predicates = Snapshot();
+  const std::unordered_set<const Predicate *> base_predicates =
+      CopyPlannedPredicates();
   std::vector<LeafPlanCandidate> candidates;
 
   if (query_graph.argument_ids.contains(std::string(variable))) {
     auto plan = std::make_unique<ArgumentPlan>(
         std::vector<std::string>{std::string(variable)});
-    candidates.push_back(
-        {.plan = std::move(plan), .planned_predicates = Snapshot()});
+    candidates.push_back({.plan = std::move(plan),
+                          .planned_predicates = CopyPlannedPredicates()});
     return candidates;
   }
 
@@ -939,31 +944,31 @@ QueryGraphPlanningContext::BuildNodeLeafCandidates(
       LabelsFromPredicates(label_predicates);
 
   for (const auto &seek : IdPredicates(query_graph, variable)) {
-    Restore(base_predicates);
+    SetPlannedPredicates(base_predicates);
     planned_predicates_->insert(seek.predicate);
     candidates.push_back({.plan = std::make_unique<NodeByIdSeekPlan>(
                               std::string(variable), seek.ids, seek.many),
-                          .planned_predicates = Snapshot()});
+                          .planned_predicates = CopyPlannedPredicates()});
   }
 
   for (const IndexedPredicate &seek : IndexSeekPredicates(
            query_graph.selections, variable, IndexEntityKind::kNode, labels)) {
     RG_CHECK(seek.predicate != nullptr, common::ErrorCode::InternalError,
              "node index seek predicate is null");
-    Restore(base_predicates);
+    SetPlannedPredicates(base_predicates);
     MarkPlanned(label_predicates);
     planned_predicates_->insert(seek.predicate);
     auto plan = std::make_unique<NodeIndexSeekPlan>(
         std::string(variable), labels, seek.index.property_key,
         PredicateValueExpression(*seek.predicate), seek.index.unique);
-    candidates.push_back(
-        {.plan = std::move(plan), .planned_predicates = Snapshot()});
+    candidates.push_back({.plan = std::move(plan),
+                          .planned_predicates = CopyPlannedPredicates()});
   }
 
   for (const std::vector<const Predicate *> &range_predicates :
        IndexRangePredicateGroups(query_graph.selections, variable,
                                  IndexEntityKind::kNode, labels)) {
-    Restore(base_predicates);
+    SetPlannedPredicates(base_predicates);
     const std::string property_key =
         RequirePropertyPredicate(*range_predicates.front()).property_key;
     MarkPlanned(label_predicates);
@@ -971,22 +976,22 @@ QueryGraphPlanningContext::BuildNodeLeafCandidates(
     auto plan = std::make_unique<NodeIndexRangeSeekPlan>(
         std::string(variable), labels, property_key,
         PredicateExpressions(range_predicates));
-    candidates.push_back(
-        {.plan = std::move(plan), .planned_predicates = Snapshot()});
+    candidates.push_back({.plan = std::move(plan),
+                          .planned_predicates = CopyPlannedPredicates()});
   }
 
-  Restore(base_predicates);
+  SetPlannedPredicates(base_predicates);
   if (!labels.empty()) {
     MarkPlanned(label_predicates);
     auto plan =
         std::make_unique<NodeByLabelScanPlan>(std::string(variable), labels);
-    candidates.push_back(
-        {.plan = std::move(plan), .planned_predicates = Snapshot()});
+    candidates.push_back({.plan = std::move(plan),
+                          .planned_predicates = CopyPlannedPredicates()});
     return candidates;
   }
   auto plan = std::make_unique<AllNodeScanPlan>(std::string(variable));
   candidates.push_back(
-      {.plan = std::move(plan), .planned_predicates = Snapshot()});
+      {.plan = std::move(plan), .planned_predicates = CopyPlannedPredicates()});
   return candidates;
 }
 
@@ -1013,26 +1018,28 @@ QueryGraphPlanningContext::BuildRelationshipLeafCandidates(
     candidates.push_back(
         {.plan = std::make_unique<ProjectEndpointsPlan>(
              std::make_unique<ArgumentPlan>(arguments), pattern),
-         .planned_predicates = Snapshot()});
+         .planned_predicates = CopyPlannedPredicates()});
     return candidates;
   }
   if (relationship.length.variable) {
     return candidates;
   }
 
-  const std::unordered_set<const Predicate *> base_predicates = Snapshot();
+  const std::unordered_set<const Predicate *> base_predicates =
+      CopyPlannedPredicates();
   std::vector<std::string> types =
       ConsumeRelationshipTypes(query_graph.selections, relationship);
-  const std::unordered_set<const Predicate *> type_predicates = Snapshot();
+  const std::unordered_set<const Predicate *> type_predicates =
+      CopyPlannedPredicates();
 
   for (const auto &seek : IdPredicates(query_graph, relationship.variable)) {
-    Restore(type_predicates);
+    SetPlannedPredicates(type_predicates);
     planned_predicates_->insert(seek.predicate);
     auto pattern = relationship;
     pattern.types = types;
     candidates.push_back({.plan = std::make_unique<RelationshipByIdSeekPlan>(
                               pattern, seek.ids, seek.many),
-                          .planned_predicates = Snapshot()});
+                          .planned_predicates = CopyPlannedPredicates()});
   }
 
   for (const IndexedPredicate &seek :
@@ -1040,21 +1047,21 @@ QueryGraphPlanningContext::BuildRelationshipLeafCandidates(
                            IndexEntityKind::kRelationship, types)) {
     RG_CHECK(seek.predicate != nullptr, common::ErrorCode::InternalError,
              "relationship index seek predicate is null");
-    Restore(type_predicates);
+    SetPlannedPredicates(type_predicates);
     planned_predicates_->insert(seek.predicate);
     auto plan = std::make_unique<RelationshipIndexSeekPlan>(
         relationship.left_node, relationship.variable, relationship.right_node,
         ToExpandDirection(relationship.direction), types,
         seek.index.property_key, PredicateValueExpression(*seek.predicate),
         seek.index.unique);
-    candidates.push_back(
-        {.plan = std::move(plan), .planned_predicates = Snapshot()});
+    candidates.push_back({.plan = std::move(plan),
+                          .planned_predicates = CopyPlannedPredicates()});
   }
 
   for (const std::vector<const Predicate *> &range_predicates :
        IndexRangePredicateGroups(query_graph.selections, relationship.variable,
                                  IndexEntityKind::kRelationship, types)) {
-    Restore(type_predicates);
+    SetPlannedPredicates(type_predicates);
     const std::string property_key =
         RequirePropertyPredicate(*range_predicates.front()).property_key;
     MarkPlanned(range_predicates);
@@ -1062,19 +1069,19 @@ QueryGraphPlanningContext::BuildRelationshipLeafCandidates(
         relationship.left_node, relationship.variable, relationship.right_node,
         ToExpandDirection(relationship.direction), types, property_key,
         PredicateExpressions(range_predicates));
-    candidates.push_back(
-        {.plan = std::move(plan), .planned_predicates = Snapshot()});
+    candidates.push_back({.plan = std::move(plan),
+                          .planned_predicates = CopyPlannedPredicates()});
   }
 
-  Restore(type_predicates);
+  SetPlannedPredicates(type_predicates);
   if (!types.empty()) {
     auto plan = std::make_unique<RelationshipTypeScanPlan>(
         relationship.left_node, relationship.variable, relationship.right_node,
         ToExpandDirection(relationship.direction), std::move(types));
-    candidates.push_back(
-        {.plan = std::move(plan), .planned_predicates = Snapshot()});
+    candidates.push_back({.plan = std::move(plan),
+                          .planned_predicates = CopyPlannedPredicates()});
   }
-  Restore(base_predicates);
+  SetPlannedPredicates(base_predicates);
   return candidates;
 }
 
@@ -1242,12 +1249,12 @@ void QueryGraphPlanningContext::ValidateAllPredicatesPlanned(
   }
 }
 
-std::unordered_set<const Predicate *> QueryGraphPlanningContext::Snapshot()
-    const {
+std::unordered_set<const Predicate *>
+QueryGraphPlanningContext::CopyPlannedPredicates() const {
   return *planned_predicates_;
 }
 
-void QueryGraphPlanningContext::Restore(
+void QueryGraphPlanningContext::SetPlannedPredicates(
     std::unordered_set<const Predicate *> planned_predicates) {
   *planned_predicates_ = std::move(planned_predicates);
 }

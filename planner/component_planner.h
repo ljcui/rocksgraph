@@ -39,8 +39,10 @@ class QueryGraphPlanningContext {
       std::unique_ptr<ir::LogicalPlan> *plan) const;
   void ValidateAllPredicatesPlanned(const ir::Selections &selections) const;
 
-  [[nodiscard]] std::unordered_set<const ir::Predicate *> Snapshot() const;
-  void Restore(std::unordered_set<const ir::Predicate *> planned_predicates);
+  [[nodiscard]] std::unordered_set<const ir::Predicate *>
+  CopyPlannedPredicates() const;
+  void SetPlannedPredicates(
+      std::unordered_set<const ir::Predicate *> planned_predicates);
 
  private:
   enum class IndexEntityKind {
