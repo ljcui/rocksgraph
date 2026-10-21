@@ -29,7 +29,7 @@ class QueryGraphPlanningContext {
   [[nodiscard]] std::vector<LeafPlanCandidate> BuildNodeLeafCandidates(
       const ir::QueryGraph &query_graph, std::string_view variable) const;
   [[nodiscard]] std::vector<LeafPlanCandidate> BuildRelationshipLeafCandidates(
-      const ir::QueryGraph &query_graph, std::size_t relationship_index);
+      const ir::QueryGraph &query_graph, std::size_t relationship_index) const;
   [[nodiscard]] std::vector<std::string> ConsumeRelationshipTypes(
       const ir::Selections &selections,
       const ir::PatternRelationship &relationship);
@@ -69,6 +69,10 @@ class QueryGraphPlanningContext {
   [[nodiscard]] std::vector<const ir::Predicate *>
   ConsumableRelationshipTypePredicates(const ir::Selections &selections,
                                        std::string_view variable) const;
+  [[nodiscard]] std::vector<std::string> ConsumeRelationshipTypes(
+      const ir::Selections &selections,
+      const ir::PatternRelationship &relationship,
+      std::unordered_set<const ir::Predicate *> &planned_predicates) const;
   [[nodiscard]] std::optional<IndexDescriptor> FindIndex(
       IndexEntityKind entity_kind, const std::vector<std::string> &qualifiers,
       std::string_view property_key) const;
@@ -81,7 +85,6 @@ class QueryGraphPlanningContext {
                             std::string_view variable,
                             IndexEntityKind entity_kind,
                             const std::vector<std::string> &qualifiers) const;
-  void MarkPlanned(const std::vector<const ir::Predicate *> &predicates);
   [[nodiscard]] std::unique_ptr<ir::LogicalPlan> BuildNestedPlan(
       const ir::QueryIR &query) const;
 

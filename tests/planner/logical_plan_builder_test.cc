@@ -544,6 +544,114 @@ TEST(LogicalPlanBuilderTest, UsesRelationshipTypeScanWhenCheaper) {
       planner::LogicalPlanBuilderOptions{.planner_statistics = &statistics});
 }
 
+TEST(LogicalPlanBuilderTest, BuildsIndependentRelationshipLeafCandidates) {
+  auto statement = ParseOrFail(
+      "MATCH (a)-[r]->(b) WHERE r:KNOWS AND id(r) = 7 AND r.name = 'Ada' "
+      "AND r.age = 30 AND r.score > 10 AND r.score < 20 AND r.rank >= 5 "
+      "RETURN r");
+  ASSERT_TRUE(statement);
+  auto query_ir = ir::CreateQueryIR(*statement);
+  const auto &query_graph = query_ir->RequireSingle().query_graph;
+  const auto options = WithAllIndexes();
+  ir::GenericPredicate outer_predicate;
+  const std::unordered_set<const ir::Predicate *> base_predicates = {
+      &outer_predicate};
+  auto planned_predicates = base_predicates;
+  const planner::QueryGraphPlanningContext context(&planned_predicates,
+                                                   &options);
+
+  auto candidates = context.BuildRelationshipLeafCandidates(query_graph, 0);
+  EXPECT_EQ(planned_predicates, base_predicates);
+  const std::unordered_map<std::string, std::unordered_set<std::string>>
+      expected_predicates = {
+          {"RelationshipByIdSeek [(a)-[r:KNOWS]->(b) WHERE id(r) = 7]\n",
+           {"r:KNOWS", "id(r) = 7"}},
+          {"RelationshipIndexSeek [(a)-[r:KNOWS]->(b) WHERE r.name = 'Ada']\n",
+           {"r:KNOWS", "r.name = 'Ada'"}},
+          {"RelationshipIndexSeek [(a)-[r:KNOWS]->(b) WHERE r.age = 30]\n",
+           {"r:KNOWS", "r.age = 30"}},
+          {"RelationshipIndexRangeSeek [(a)-[r:KNOWS]->(b) WHERE r.score > 10 "
+           "AND r.score < 20]\n",
+           {"r:KNOWS", "r.score > 10", "r.score < 20"}},
+          {"RelationshipIndexRangeSeek [(a)-[r:KNOWS]->(b) WHERE r.rank >= "
+           "5]\n",
+           {"r:KNOWS", "r.rank >= 5"}},
+          {"RelationshipTypeScan [(a)-[r:KNOWS]->(b)]\n", {"r:KNOWS"}},
+      };
+  ASSERT_EQ(candidates.size(), expected_predicates.size());
+  std::unordered_set<std::string> seen_plans;
+  for (auto &candidate : candidates) {
+    const auto plan_text = ir::LogicalPlanToString(*candidate.plan);
+    SCOPED_TRACE(plan_text);
+    EXPECT_TRUE(seen_plans.insert(plan_text).second);
+    const auto expected = expected_predicates.find(plan_text);
+    ASSERT_NE(expected, expected_predicates.end());
+    EXPECT_TRUE(candidate.planned_predicates.contains(&outer_predicate));
+    std::unordered_set<std::string> actual_predicates;
+    for (const auto *predicate : candidate.planned_predicates) {
+      if (predicate != &outer_predicate) {
+        ASSERT_NE(predicate->expression, nullptr);
+        actual_predicates.insert(
+            ast::ExpressionToString(*predicate->expression));
+      }
+    }
+    EXPECT_EQ(actual_predicates, expected->second);
+
+    planner::QueryGraphPlanningContext candidate_context(
+        &candidate.planned_predicates, &options);
+    EXPECT_EQ(candidate_context.ApplyAvailableFilters(query_graph.selections,
+                                                      &candidate.plan),
+              query_graph.selections.size() - expected->second.size());
+    EXPECT_NO_THROW(
+        candidate_context.ValidateAllPredicatesPlanned(query_graph.selections));
+  }
+  EXPECT_EQ(planned_predicates, base_predicates);
+}
+
+TEST(LogicalPlanBuilderTest,
+     BuildsIndependentArgumentRelationshipLeafCandidate) {
+  auto statement = ParseOrFail(
+      "MATCH (a)-[r]->(b) WHERE r:KNOWS AND r:LIKES AND r.since >= 2000 "
+      "RETURN r");
+  ASSERT_TRUE(statement);
+  auto query_ir = ir::CreateQueryIR(*statement);
+  auto &query_graph = query_ir->RequireSingle().query_graph;
+  query_graph.argument_ids.insert("r");
+  const auto options = WithAllIndexes();
+  ir::GenericPredicate outer_predicate;
+  const std::unordered_set<const ir::Predicate *> base_predicates = {
+      &outer_predicate};
+  auto planned_predicates = base_predicates;
+  const planner::QueryGraphPlanningContext context(&planned_predicates,
+                                                   &options);
+
+  auto candidates = context.BuildRelationshipLeafCandidates(query_graph, 0);
+  EXPECT_EQ(planned_predicates, base_predicates);
+  ASSERT_EQ(candidates.size(), 1U);
+  auto &candidate = candidates.front();
+  EXPECT_EQ(ir::LogicalPlanToString(*candidate.plan),
+            "ProjectEndpoints [(a)-[r:KNOWS]->(b)]\n  Argument [r]\n");
+  auto expected_predicates = base_predicates;
+  for (const auto *predicate :
+       query_graph.selections.RelationshipTypePredicates("r")) {
+    if (predicate->GetIf<ir::RelationshipTypePredicate>()->types ==
+        std::vector<std::string>{"KNOWS"}) {
+      expected_predicates.insert(predicate);
+    }
+  }
+  ASSERT_EQ(expected_predicates.size(), 2U);
+  EXPECT_EQ(candidate.planned_predicates, expected_predicates);
+
+  planner::QueryGraphPlanningContext candidate_context(
+      &candidate.planned_predicates, &options);
+  EXPECT_EQ(candidate_context.ApplyAvailableFilters(query_graph.selections,
+                                                    &candidate.plan),
+            2U);
+  EXPECT_NO_THROW(
+      candidate_context.ValidateAllPredicatesPlanned(query_graph.selections));
+  EXPECT_EQ(planned_predicates, base_predicates);
+}
+
 TEST(LogicalPlanBuilderTest, UsesRelationshipPropertyIndexSeekWithCatalog) {
   ExpectLogicalPlanText("MATCH (a)-[r]->(b) WHERE r.since = 2020 RETURN r",
                         R"(ProduceResults [r]

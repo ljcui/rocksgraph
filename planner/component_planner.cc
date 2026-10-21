@@ -996,49 +996,49 @@ QueryGraphPlanningContext::BuildNodeLeafCandidates(
 
 std::vector<LeafPlanCandidate>
 QueryGraphPlanningContext::BuildRelationshipLeafCandidates(
-    const QueryGraph &query_graph, std::size_t relationship_index) {
+    const QueryGraph &query_graph, std::size_t relationship_index) const {
   RG_CHECK(relationship_index < query_graph.pattern_relationships.size(),
            common::ErrorCode::InvalidParameter,
            "relationship leaf index out of range");
   std::vector<LeafPlanCandidate> candidates;
   const PatternRelationship &relationship =
       query_graph.pattern_relationships[relationship_index];
-  if (query_graph.argument_ids.contains(relationship.variable) &&
+  const bool project_endpoints =
+      query_graph.argument_ids.contains(relationship.variable) &&
       (!relationship.length.variable ||
        relationship.length.min.value_or(1) > 0 ||
        query_graph.argument_ids.contains(relationship.left_node) ||
-       query_graph.argument_ids.contains(relationship.right_node))) {
+       query_graph.argument_ids.contains(relationship.right_node));
+  if (relationship.length.variable && !project_endpoints) {
+    return candidates;
+  }
+
+  std::unordered_set<const Predicate *> relationship_predicates =
+      *planned_predicates_;
+  std::vector<std::string> types = ConsumeRelationshipTypes(
+      query_graph.selections, relationship, relationship_predicates);
+  if (project_endpoints) {
     auto pattern = relationship;
-    pattern.types =
-        ConsumeRelationshipTypes(query_graph.selections, relationship);
+    pattern.types = std::move(types);
     std::vector<std::string> arguments(query_graph.argument_ids.begin(),
                                        query_graph.argument_ids.end());
     std::sort(arguments.begin(), arguments.end());
     candidates.push_back(
         {.plan = std::make_unique<ProjectEndpointsPlan>(
              std::make_unique<ArgumentPlan>(arguments), pattern),
-         .planned_predicates = CopyPlannedPredicates()});
+         .planned_predicates = std::move(relationship_predicates)});
     return candidates;
   }
-  if (relationship.length.variable) {
-    return candidates;
-  }
-
-  const std::unordered_set<const Predicate *> base_predicates =
-      CopyPlannedPredicates();
-  std::vector<std::string> types =
-      ConsumeRelationshipTypes(query_graph.selections, relationship);
-  const std::unordered_set<const Predicate *> type_predicates =
-      CopyPlannedPredicates();
 
   for (const auto &seek : IdPredicates(query_graph, relationship.variable)) {
-    SetPlannedPredicates(type_predicates);
-    planned_predicates_->insert(seek.predicate);
     auto pattern = relationship;
     pattern.types = types;
-    candidates.push_back({.plan = std::make_unique<RelationshipByIdSeekPlan>(
-                              pattern, seek.ids, seek.many),
-                          .planned_predicates = CopyPlannedPredicates()});
+    LeafPlanCandidate candidate{
+        .plan = std::make_unique<RelationshipByIdSeekPlan>(pattern, seek.ids,
+                                                           seek.many),
+        .planned_predicates = relationship_predicates};
+    candidate.planned_predicates.insert(seek.predicate);
+    candidates.push_back(std::move(candidate));
   }
 
   for (const IndexedPredicate &seek :
@@ -1046,46 +1046,53 @@ QueryGraphPlanningContext::BuildRelationshipLeafCandidates(
                            IndexEntityKind::kRelationship, types)) {
     RG_CHECK(seek.predicate != nullptr, common::ErrorCode::InternalError,
              "relationship index seek predicate is null");
-    SetPlannedPredicates(type_predicates);
-    planned_predicates_->insert(seek.predicate);
-    auto plan = std::make_unique<RelationshipIndexSeekPlan>(
-        relationship.left_node, relationship.variable, relationship.right_node,
-        ToExpandDirection(relationship.direction), types,
-        seek.index.property_key, PredicateValueExpression(*seek.predicate),
-        seek.index.unique);
-    candidates.push_back({.plan = std::move(plan),
-                          .planned_predicates = CopyPlannedPredicates()});
+    LeafPlanCandidate candidate{
+        .plan = std::make_unique<RelationshipIndexSeekPlan>(
+            relationship.left_node, relationship.variable,
+            relationship.right_node, ToExpandDirection(relationship.direction),
+            types, seek.index.property_key,
+            PredicateValueExpression(*seek.predicate), seek.index.unique),
+        .planned_predicates = relationship_predicates};
+    candidate.planned_predicates.insert(seek.predicate);
+    candidates.push_back(std::move(candidate));
   }
 
   for (const std::vector<const Predicate *> &range_predicates :
        IndexRangePredicateGroups(query_graph.selections, relationship.variable,
                                  IndexEntityKind::kRelationship, types)) {
-    SetPlannedPredicates(type_predicates);
     const std::string property_key =
         RequirePropertyPredicate(*range_predicates.front()).property_key;
-    MarkPlanned(range_predicates);
-    auto plan = std::make_unique<RelationshipIndexRangeSeekPlan>(
-        relationship.left_node, relationship.variable, relationship.right_node,
-        ToExpandDirection(relationship.direction), types, property_key,
-        PredicateExpressions(range_predicates));
-    candidates.push_back({.plan = std::move(plan),
-                          .planned_predicates = CopyPlannedPredicates()});
+    LeafPlanCandidate candidate{
+        .plan = std::make_unique<RelationshipIndexRangeSeekPlan>(
+            relationship.left_node, relationship.variable,
+            relationship.right_node, ToExpandDirection(relationship.direction),
+            types, property_key, PredicateExpressions(range_predicates)),
+        .planned_predicates = relationship_predicates};
+    candidate.planned_predicates.insert(range_predicates.begin(),
+                                        range_predicates.end());
+    candidates.push_back(std::move(candidate));
   }
 
-  SetPlannedPredicates(type_predicates);
   if (!types.empty()) {
     auto plan = std::make_unique<RelationshipTypeScanPlan>(
         relationship.left_node, relationship.variable, relationship.right_node,
         ToExpandDirection(relationship.direction), std::move(types));
-    candidates.push_back({.plan = std::move(plan),
-                          .planned_predicates = CopyPlannedPredicates()});
+    candidates.push_back(
+        {.plan = std::move(plan),
+         .planned_predicates = std::move(relationship_predicates)});
   }
-  SetPlannedPredicates(base_predicates);
   return candidates;
 }
 
 std::vector<std::string> QueryGraphPlanningContext::ConsumeRelationshipTypes(
     const Selections &selections, const PatternRelationship &relationship) {
+  return ConsumeRelationshipTypes(selections, relationship,
+                                  *planned_predicates_);
+}
+
+std::vector<std::string> QueryGraphPlanningContext::ConsumeRelationshipTypes(
+    const Selections &selections, const PatternRelationship &relationship,
+    std::unordered_set<const Predicate *> &planned_predicates) const {
   std::vector<std::string> types = SortedUniqueStrings(relationship.types);
   bool constrained = !types.empty();
 
@@ -1103,14 +1110,14 @@ std::vector<std::string> QueryGraphPlanningContext::ConsumeRelationshipTypes(
     if (!constrained) {
       types = std::move(predicate_types);
       constrained = true;
-      planned_predicates_->insert(predicate);
+      planned_predicates.insert(predicate);
       continue;
     }
     std::vector<std::string> intersection =
         IntersectSortedStrings(types, predicate_types);
     if (!intersection.empty()) {
       types = std::move(intersection);
-      planned_predicates_->insert(predicate);
+      planned_predicates.insert(predicate);
     }
   }
   return types;
@@ -1429,15 +1436,6 @@ QueryGraphPlanningContext::IndexRangePredicateGroups(
                RequirePropertyPredicate(*rhs.front()).property_key;
       });
   return groups;
-}
-
-void QueryGraphPlanningContext::MarkPlanned(
-    const std::vector<const Predicate *> &predicates) {
-  for (const Predicate *predicate : predicates) {
-    if (predicate != nullptr) {
-      planned_predicates_->insert(predicate);
-    }
-  }
 }
 
 std::unique_ptr<LogicalPlan> QueryGraphPlanningContext::BuildNestedPlan(
