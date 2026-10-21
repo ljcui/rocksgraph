@@ -938,11 +938,6 @@ QueryGraphPlanningContext::BuildNodeLeafCandidates(
     return candidates;
   }
 
-  const std::vector<const Predicate *> label_predicates =
-      ConsumableNodeLabelPredicates(query_graph.selections, variable);
-  const std::vector<std::string> labels =
-      LabelsFromPredicates(label_predicates);
-
   for (const auto &seek : IdPredicates(query_graph, variable)) {
     SetPlannedPredicates(base_predicates);
     planned_predicates_->insert(seek.predicate);
@@ -950,6 +945,11 @@ QueryGraphPlanningContext::BuildNodeLeafCandidates(
                               std::string(variable), seek.ids, seek.many),
                           .planned_predicates = CopyPlannedPredicates()});
   }
+
+  const std::vector<const Predicate *> label_predicates =
+      ConsumableNodeLabelPredicates(query_graph.selections, variable);
+  const std::vector<std::string> labels =
+      LabelsFromPredicates(label_predicates);
 
   for (const IndexedPredicate &seek : IndexSeekPredicates(
            query_graph.selections, variable, IndexEntityKind::kNode, labels)) {
