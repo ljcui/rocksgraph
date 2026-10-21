@@ -25,8 +25,9 @@ class QueryGraphPlanningContext {
       std::unordered_set<const ir::Predicate *> *planned_predicates,
       const LogicalPlanBuilderOptions *options);
 
+  // Each candidate owns its planned predicates; the context is unchanged.
   [[nodiscard]] std::vector<LeafPlanCandidate> BuildNodeLeafCandidates(
-      const ir::QueryGraph &query_graph, std::string_view variable);
+      const ir::QueryGraph &query_graph, std::string_view variable) const;
   [[nodiscard]] std::vector<LeafPlanCandidate> BuildRelationshipLeafCandidates(
       const ir::QueryGraph &query_graph, std::size_t relationship_index);
   [[nodiscard]] std::vector<std::string> ConsumeRelationshipTypes(

@@ -8,14 +8,17 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
 #include "ast/ast_builder.h"
 #include "ast/ast_node.h"
+#include "ast/expression_to_string.h"
 #include "common/exception.h"
 #include "ir/logical_plan_printer.h"
 #include "ir/query_ir.h"
+#include "planner/component_planner.h"
 #include "planner/planned_query.h"
 #include "tests/planner/assume_all_indexes_catalog.h"
 #include "tests/planner/fake_planner_statistics.h"
@@ -196,6 +199,97 @@ TEST(LogicalPlanBuilderTest, UsesMultiLabelPredicateAsLeafScan) {
   Projection [n]
     NodeByLabelScan [n:Employee:Person]
 )");
+}
+
+TEST(LogicalPlanBuilderTest, BuildsIndependentNodeLeafCandidates) {
+  auto statement = ParseOrFail(
+      "MATCH (n:Person) WHERE id(n) = 7 AND n.name = 'Ada' AND n.age = 30 "
+      "AND n.score > 10 AND n.score < 20 AND n.rank >= 5 RETURN n");
+  ASSERT_TRUE(statement);
+  auto query_ir = ir::CreateQueryIR(*statement);
+  const auto &query_graph = query_ir->RequireSingle().query_graph;
+  const auto options = WithAllIndexes();
+  ir::GenericPredicate outer_predicate;
+  const std::unordered_set<const ir::Predicate *> base_predicates = {
+      &outer_predicate};
+  auto planned_predicates = base_predicates;
+  const planner::QueryGraphPlanningContext context(&planned_predicates,
+                                                   &options);
+
+  auto candidates = context.BuildNodeLeafCandidates(query_graph, "n");
+  EXPECT_EQ(planned_predicates, base_predicates);
+  const std::unordered_map<std::string, std::unordered_set<std::string>>
+      expected_predicates = {
+          {"NodeByIdSeek [id(n) = 7]\n", {"id(n) = 7"}},
+          {"NodeIndexSeek [n:Person WHERE n.name = 'Ada']\n",
+           {"n:Person", "n.name = 'Ada'"}},
+          {"NodeIndexSeek [n:Person WHERE n.age = 30]\n",
+           {"n:Person", "n.age = 30"}},
+          {"NodeIndexRangeSeek [n:Person WHERE n.score > 10 AND n.score < "
+           "20]\n",
+           {"n:Person", "n.score > 10", "n.score < 20"}},
+          {"NodeIndexRangeSeek [n:Person WHERE n.rank >= 5]\n",
+           {"n:Person", "n.rank >= 5"}},
+          {"NodeByLabelScan [n:Person]\n", {"n:Person"}},
+      };
+  ASSERT_EQ(candidates.size(), expected_predicates.size());
+  std::unordered_set<std::string> seen_plans;
+  for (auto &candidate : candidates) {
+    const auto plan_text = ir::LogicalPlanToString(*candidate.plan);
+    SCOPED_TRACE(plan_text);
+    EXPECT_TRUE(seen_plans.insert(plan_text).second);
+    const auto expected = expected_predicates.find(plan_text);
+    ASSERT_NE(expected, expected_predicates.end());
+    EXPECT_TRUE(candidate.planned_predicates.contains(&outer_predicate));
+    std::unordered_set<std::string> actual_predicates;
+    for (const auto *predicate : candidate.planned_predicates) {
+      if (predicate != &outer_predicate) {
+        ASSERT_NE(predicate->expression, nullptr);
+        actual_predicates.insert(
+            ast::ExpressionToString(*predicate->expression));
+      }
+    }
+    EXPECT_EQ(actual_predicates, expected->second);
+
+    planner::QueryGraphPlanningContext candidate_context(
+        &candidate.planned_predicates, &options);
+    EXPECT_EQ(candidate_context.ApplyAvailableFilters(query_graph.selections,
+                                                      &candidate.plan),
+              query_graph.selections.size() - expected->second.size());
+    EXPECT_NO_THROW(
+        candidate_context.ValidateAllPredicatesPlanned(query_graph.selections));
+  }
+  EXPECT_EQ(planned_predicates, base_predicates);
+}
+
+TEST(LogicalPlanBuilderTest, KeepsArgumentNodeLeafPredicatesAsFilters) {
+  auto statement = ParseOrFail("MATCH (n:Person) WHERE n.age >= 18 RETURN n");
+  ASSERT_TRUE(statement);
+  auto query_ir = ir::CreateQueryIR(*statement);
+  auto &query_graph = query_ir->RequireSingle().query_graph;
+  query_graph.argument_ids.insert("n");
+  const auto options = WithAllIndexes();
+  ir::GenericPredicate outer_predicate;
+  const std::unordered_set<const ir::Predicate *> base_predicates = {
+      &outer_predicate};
+  auto planned_predicates = base_predicates;
+  const planner::QueryGraphPlanningContext context(&planned_predicates,
+                                                   &options);
+
+  auto candidates = context.BuildNodeLeafCandidates(query_graph, "n");
+  EXPECT_EQ(planned_predicates, base_predicates);
+  ASSERT_EQ(candidates.size(), 1U);
+  auto &candidate = candidates.front();
+  EXPECT_EQ(candidate.plan->Type(), ir::LogicalPlanNodeType::kArgument);
+  EXPECT_EQ(candidate.planned_predicates, base_predicates);
+
+  planner::QueryGraphPlanningContext candidate_context(
+      &candidate.planned_predicates, &options);
+  EXPECT_EQ(candidate_context.ApplyAvailableFilters(query_graph.selections,
+                                                    &candidate.plan),
+            query_graph.selections.size());
+  EXPECT_NO_THROW(
+      candidate_context.ValidateAllPredicatesPlanned(query_graph.selections));
 }
 
 TEST(LogicalPlanBuilderTest, UsesNodePropertyIndexSeekWithCatalog) {

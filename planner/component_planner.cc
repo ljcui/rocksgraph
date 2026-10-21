@@ -923,75 +923,74 @@ QueryGraphPlanningContext::QueryGraphPlanningContext(
 
 std::vector<LeafPlanCandidate>
 QueryGraphPlanningContext::BuildNodeLeafCandidates(
-    const QueryGraph &query_graph, std::string_view variable) {
+    const QueryGraph &query_graph, std::string_view variable) const {
   RG_CHECK(!variable.empty(), common::ErrorCode::InvalidParameter,
            "node leaf variable is empty");
-  const std::unordered_set<const Predicate *> base_predicates =
-      CopyPlannedPredicates();
+  const std::unordered_set<const Predicate *> &base_predicates =
+      *planned_predicates_;
   std::vector<LeafPlanCandidate> candidates;
 
   if (query_graph.argument_ids.contains(std::string(variable))) {
     auto plan = std::make_unique<ArgumentPlan>(
         std::vector<std::string>{std::string(variable)});
-    candidates.push_back({.plan = std::move(plan),
-                          .planned_predicates = CopyPlannedPredicates()});
+    candidates.push_back(
+        {.plan = std::move(plan), .planned_predicates = base_predicates});
     return candidates;
   }
 
   for (const auto &seek : IdPredicates(query_graph, variable)) {
-    SetPlannedPredicates(base_predicates);
-    planned_predicates_->insert(seek.predicate);
-    candidates.push_back({.plan = std::make_unique<NodeByIdSeekPlan>(
-                              std::string(variable), seek.ids, seek.many),
-                          .planned_predicates = CopyPlannedPredicates()});
+    LeafPlanCandidate candidate{.plan = std::make_unique<NodeByIdSeekPlan>(
+                                    std::string(variable), seek.ids, seek.many),
+                                .planned_predicates = base_predicates};
+    candidate.planned_predicates.insert(seek.predicate);
+    candidates.push_back(std::move(candidate));
   }
 
   const std::vector<const Predicate *> label_predicates =
       ConsumableNodeLabelPredicates(query_graph.selections, variable);
   const std::vector<std::string> labels =
       LabelsFromPredicates(label_predicates);
+  std::unordered_set<const Predicate *> node_predicates = base_predicates;
+  node_predicates.insert(label_predicates.begin(), label_predicates.end());
 
   for (const IndexedPredicate &seek : IndexSeekPredicates(
            query_graph.selections, variable, IndexEntityKind::kNode, labels)) {
     RG_CHECK(seek.predicate != nullptr, common::ErrorCode::InternalError,
              "node index seek predicate is null");
-    SetPlannedPredicates(base_predicates);
-    MarkPlanned(label_predicates);
-    planned_predicates_->insert(seek.predicate);
-    auto plan = std::make_unique<NodeIndexSeekPlan>(
-        std::string(variable), labels, seek.index.property_key,
-        PredicateValueExpression(*seek.predicate), seek.index.unique);
-    candidates.push_back({.plan = std::move(plan),
-                          .planned_predicates = CopyPlannedPredicates()});
+    LeafPlanCandidate candidate{
+        .plan = std::make_unique<NodeIndexSeekPlan>(
+            std::string(variable), labels, seek.index.property_key,
+            PredicateValueExpression(*seek.predicate), seek.index.unique),
+        .planned_predicates = node_predicates};
+    candidate.planned_predicates.insert(seek.predicate);
+    candidates.push_back(std::move(candidate));
   }
 
   for (const std::vector<const Predicate *> &range_predicates :
        IndexRangePredicateGroups(query_graph.selections, variable,
                                  IndexEntityKind::kNode, labels)) {
-    SetPlannedPredicates(base_predicates);
     const std::string property_key =
         RequirePropertyPredicate(*range_predicates.front()).property_key;
-    MarkPlanned(label_predicates);
-    MarkPlanned(range_predicates);
-    auto plan = std::make_unique<NodeIndexRangeSeekPlan>(
-        std::string(variable), labels, property_key,
-        PredicateExpressions(range_predicates));
-    candidates.push_back({.plan = std::move(plan),
-                          .planned_predicates = CopyPlannedPredicates()});
+    LeafPlanCandidate candidate{
+        .plan = std::make_unique<NodeIndexRangeSeekPlan>(
+            std::string(variable), labels, property_key,
+            PredicateExpressions(range_predicates)),
+        .planned_predicates = node_predicates};
+    candidate.planned_predicates.insert(range_predicates.begin(),
+                                        range_predicates.end());
+    candidates.push_back(std::move(candidate));
   }
 
-  SetPlannedPredicates(base_predicates);
   if (!labels.empty()) {
-    MarkPlanned(label_predicates);
     auto plan =
         std::make_unique<NodeByLabelScanPlan>(std::string(variable), labels);
     candidates.push_back({.plan = std::move(plan),
-                          .planned_predicates = CopyPlannedPredicates()});
+                          .planned_predicates = std::move(node_predicates)});
     return candidates;
   }
   auto plan = std::make_unique<AllNodeScanPlan>(std::string(variable));
   candidates.push_back(
-      {.plan = std::move(plan), .planned_predicates = CopyPlannedPredicates()});
+      {.plan = std::move(plan), .planned_predicates = base_predicates});
   return candidates;
 }
 
