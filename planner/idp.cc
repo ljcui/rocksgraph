@@ -14,7 +14,6 @@ std::vector<std::string> NormalizedSymbolKey(
     const std::unordered_set<std::string> &symbols) {
   std::vector<std::string> key(symbols.begin(), symbols.end());
   std::sort(key.begin(), key.end());
-  key.erase(std::unique(key.begin(), key.end()), key.end());
   return key;
 }
 
