@@ -1034,7 +1034,6 @@ class LogicalPlanBuilder {
       for (const auto &component : components) {
         std::unique_ptr<LogicalPlan> component_plan = component_planner_->Plan(
             query_graph, component, &context, interesting_order);
-        context.ApplyAvailableFilters(query_graph.selections, &component_plan);
         AnnotateLogicalPlanMetadata(component_plan.get(), cost_model_);
         component_plans.push_back(std::move(component_plan));
       }
